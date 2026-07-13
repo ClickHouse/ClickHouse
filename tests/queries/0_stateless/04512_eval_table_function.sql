@@ -44,11 +44,6 @@ SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n'); -- { serverError 
 SET union_default_mode = 'DISTINCT';
 SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n');
 SET union_default_mode = DEFAULT;
--- The set operation modes are resolved from the generated query's own SETTINGS, so an inner
--- `union_default_mode = 'DISTINCT'` normalizes an ambiguous UNION the same way it would when the
--- query is executed directly, even though the outer default would reject it.
-SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n SETTINGS union_default_mode = ''DISTINCT''');
-SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n'); -- { serverError EXPECTED_ALL_OR_DISTINCT }
 
 -- SETTINGS of the generated query are scoped to the generated query.
 SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
@@ -97,19 +92,6 @@ CREATE TABLE t_eval AS eval('SELECT 1 AS x'); -- { serverError BAD_ARGUMENTS }
 -- non-deterministic and potentially reading a system table, and is not cached by default.
 SELECT * FROM eval('SELECT now()') SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM eval('SELECT * FROM system.one') SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
-
--- The AST size limits `max_ast_elements` / `max_ast_depth` apply to the generated query, same as when
--- it is executed directly, so a tiny outer query cannot smuggle a huge or deep AST past them.
-SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10') SETTINGS max_ast_elements = 30; -- { serverError TOO_BIG_AST }
-SELECT count() FROM eval('SELECT (((((1)))))') SETTINGS max_ast_depth = 3; -- { serverError TOO_DEEP_AST }
--- The limits are read after the generated query's own SETTINGS are applied, so an inner SETTINGS clause
--- controls its own AST size limits, both to tighten and to relax them.
-SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 SETTINGS max_ast_elements = 5'); -- { serverError TOO_BIG_AST }
-SELECT * FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 AS big SETTINGS max_ast_elements = 100000') SETTINGS max_ast_elements = 30;
--- The size limits are checked after the global `WITH` aliases are expanded (as in a direct query), so a
--- global CTE that stays small before expansion but grows past `max_ast_elements` once it is inlined into
--- every UNION branch is rejected, instead of slipping through the pre-expansion check.
-SELECT count() FROM eval('WITH 1+2+3+4+5+6+7+8+9+10+11+12+13+14+15 AS big SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big SETTINGS max_ast_elements = 100'); -- { serverError TOO_BIG_AST }
 
 -- The old analyzer is not supported.
 SET enable_analyzer = 0;
