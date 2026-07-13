@@ -1,0 +1,11 @@
+-- DISTINCT over String keys, break: partial result bounded by the byte limit
+1	1
+-- DISTINCT over String keys, throw
+-- DISTINCT over FixedString keys, throw: key_fixed_string also stores keys in the pool
+-- IN set built from String keys, throw (default set_overflow_mode)
+-- IN set built from String keys, break: the probed keys are inserted before the limit trips
+10
+-- multi-column string keys use the hashed method (values not stored): the same limit must not trip
+100
+-- numeric keys are unaffected: a limit far above the fixed allocations does not trip
+1000
