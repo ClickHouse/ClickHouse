@@ -32,6 +32,8 @@
 #include <base/types.h>
 #include <base/range.h>
 
+#include <algorithm>
+#include <limits>
 #include <sstream>
 
 
@@ -376,7 +378,9 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
             column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
             column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
-            column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
+            /// The stored deadline can exceed the `DateTime` range (`VALID FOR` with a large interval
+            /// saturates at the `DateTime64` upper bound, year 2299), so clamp instead of wrapping around.
+            column_valid_until.insertValue(static_cast<UInt32>(std::min<time_t>(auth_data.getValidUntil(), std::numeric_limits<UInt32>::max())));
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());

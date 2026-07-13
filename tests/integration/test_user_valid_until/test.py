@@ -163,6 +163,29 @@ def test_valid_for_interval(started_cluster):
     node.query("DROP USER IF EXISTS user_valid_for")
 
 
+def test_valid_for_interval_overflow(started_cluster):
+    node.query("DROP USER IF EXISTS user_valid_for_overflow")
+
+    # An absurdly high interval must not overflow: the deadline is computed in DateTime64
+    # and saturates at its upper bound (year 2299) instead of wrapping around into the past.
+    node.query("CREATE USER user_valid_for_overflow VALID FOR INTERVAL 1000000 YEAR")
+
+    assert node.query("SELECT 1", user="user_valid_for_overflow") == "1\n"
+    assert "VALID UNTIL \\'2299-12-31" in node.query(
+        "SHOW CREATE USER user_valid_for_overflow"
+    )
+    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold year 2299;
+    # the value is clamped to the upper bound of `DateTime` instead of wrapping around.
+    assert (
+        node.query(
+            "SELECT valid_until[1] > now() + INTERVAL 50 YEAR, toYear(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_overflow'"
+        )
+        == "1\t2106\n"
+    )
+
+    node.query("DROP USER IF EXISTS user_valid_for_overflow")
+
+
 def test_multiple_authentication_methods(started_cluster):
     node.query("DROP USER IF EXISTS user_basic")
 
