@@ -131,7 +131,7 @@ Repeat the process until every broker hostname has a matching RPE.
 For custom private DNS behavior, naming rules, and API/Terraform options, see
 [Custom private DNS](/integrations/clickpipes/aws-privatelink#custom-private-dns).
 
-You can also create the reverse private endpoints with [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeReversePrivateEndpointCreate) or Terraform.
+You can also create the reverse private endpoints with [OpenAPI](/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) or Terraform.
 
 For OpenAPI, create one reverse private endpoint per broker with `type` set to `VPC_ENDPOINT_SERVICE`, the broker-specific VPC endpoint service name, and one custom private DNS mapping for the broker hostname:
 
