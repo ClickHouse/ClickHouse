@@ -23,14 +23,20 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection.
+AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) vs the `aiEmbed` function, which require different endpoints and usually use different models.
 
-Example statement to create a named collection with provider credentials:
+Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
-CREATE NAMED COLLECTION ai_credentials AS
+CREATE NAMED COLLECTION ai_text_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    model = 'text-embedding-3-small',
     api_key = 'sk-...';
 ```
 
@@ -48,6 +54,44 @@ CREATE NAMED COLLECTION ai_credentials AS
 :::note
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.
 :::
+
+### Selecting credentials {#selecting-credentials}
+
+A function resolves the named collection to use from, in order:
+
+1. the `credentials` key of its parameter map, when present;
+2. otherwise the applicable default-credentials setting:
+   - [`ai_function_text_default_credentials`](/operations/settings/settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   - [`ai_function_embedding_default_credentials`](/operations/settings/settings#ai_function_embedding_default_credentials) for `aiEmbed`.
+
+If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_text_credentials';
+
+-- Uses ai_text_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+### Parameter map {#parameter-map}
+
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default.
+
+The following parameters are common to all the AI functions:
+
+| Key | Description |
+|-----|-------------|
+| `credentials` | Named collection to use (see above). |
+| `model` | Overrides the collection's `model`. |
+
+Individual functions accept additional, function-specific parameters (such as `max_tokens`, `temperature`, `system_prompt`, `instructions`, and `dimensions`). See each function's reference below for the parameters it accepts and their defaults.
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
 
 ### Query-level settings {#query-level-settings}
 

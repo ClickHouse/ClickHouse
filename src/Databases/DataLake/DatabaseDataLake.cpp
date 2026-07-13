@@ -75,6 +75,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
@@ -132,6 +133,27 @@ namespace FailPoints
     extern const char datalake_try_get_table_return_nullptr[];
 }
 
+namespace
+{
+
+/// Translate the database-layer `TablesFilter` into the catalog-layer
+/// `TableNameFilter` so the catalog can restrict which namespaces it lists.
+DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
+{
+    switch (tables_filter.kind)
+    {
+        case TablesFilter::Kind::None:
+            return {DataLake::TableNameFilter::Kind::All, {}};
+        case TablesFilter::Kind::Equals:
+            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+        case TablesFilter::Kind::Like:
+            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+    }
+    return {DataLake::TableNameFilter::Kind::All, {}};
+}
+
+}
+
 DatabaseDataLake::DatabaseDataLake(
     const std::string & database_name_,
     const std::string & url_,
@@ -153,10 +175,10 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
-    /// On ATTACH (server startup / restore / user `ATTACH DATABASE`) defer catalog construction to first use:
-    /// building it can perform network I/O or credential validation that must not block startup. On CREATE
-    /// build eagerly so misconfiguration (including a restricted server-credential catalog) is reported
-    /// immediately.
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or internal creates (restore),
+    ///  defer catalog construction to first use: building it can perform network I/O or credential validation
+    ///  that must not block startup. On CREATE build eagerly so misconfiguration (including a restricted
+    ///  server-credential catalog) is reported immediately.
     if (!lazy_init)
     {
         std::lock_guard lock(catalog_mutex);
@@ -213,6 +235,21 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance());
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+        {
+            /// Databricks Delta Sharing speaks plain Iceberg REST; it differs only in having flat
+            /// (single-level) namespaces, which `DeltaSharingCatalog` reports via its catalog type.
+            catalog_impl = std::make_shared<DataLake::DeltaSharingCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
             catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
@@ -221,6 +258,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_secret].value,
+                settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
@@ -405,6 +443,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         {
             switch (type)
             {
@@ -733,6 +772,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
             rest_catalog->getTenantId(),
+            rest_catalog->getBearerToken(),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
@@ -868,6 +908,15 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
+    return getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded,
+    const TablesFilter & tables_filter) const
+{
     Tables tables;
     DB::Names iceberg_tables;
 
@@ -875,7 +924,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
@@ -958,9 +1007,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded) const
+{
+    return getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
     ContextPtr /*context_*/,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool /*skip_not_loaded*/,
+    const TablesFilter & tables_filter) const
 {
     DB::Names iceberg_tables;
     std::vector<LightWeightTableDetails> result;
@@ -969,7 +1027,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
@@ -1174,6 +1232,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+            case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -1181,6 +1240,23 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                {
+                    /// Require exactly one auth method: a bearer token, or a client id + secret pair.
+                    const bool has_bearer = !database_settings[DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+                    const bool has_client_id = !database_settings[DatabaseDataLakeSetting::onelake_client_id].value.empty();
+                    const bool has_client_secret = !database_settings[DatabaseDataLakeSetting::onelake_client_secret].value.empty();
+
+                    const bool has_client_pair = has_client_id && has_client_secret;
+                    bool has_exactly_one_method = has_bearer != has_client_pair;
+                    bool has_conflicting_fields = has_client_id != has_client_secret;
+
+                    if (!has_exactly_one_method || has_conflicting_fields)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "OneLake catalog requires exactly one authentication method: either `onelake_bearer_token` "
+                            "or both `onelake_client_id` and `onelake_client_secret`");
                 }
 
                 engine_func->name = "Iceberg";
@@ -1262,7 +1338,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /*lazy_init=*/args.create_query.attach);
+            /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
+            /// We don't want an unreachable or unauthorized catalog to block replica startup.
+            /*lazy_init=*/args.create_query.attach || args.internal);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -1313,7 +1391,7 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
@@ -1349,6 +1427,10 @@ SETTINGS
 SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```
+    To authenticate without sharing a client secret, set `onelake_bearer_token` to a pre-obtained
+    bearer token (scoped to https://storage.azure.com) instead of
+    `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
+    database must be recreated after it expires.
 )DOCS_MD",
         .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
         .related = {}});
