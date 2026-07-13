@@ -19,9 +19,13 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
 /** Estimate the amount of memory used by the input and output IO buffers of a merge:
   *   (number of input column streams over all source parts) * read IO buffer size
   * + (number of output column streams of the result part)   * write IO buffer size.
-  * Object storage (S3) write buffers are large and double-buffered, so they are accounted separately;
-  * since they only ever hold data that has already flown through them, their contribution is capped
-  * by the data volume of the merge (see the implementation for details).
+  * The number of on-disk streams of a wide part is taken from its actual substream layout
+  * (columns_substreams.txt), so that dynamic substreams of JSON / Dynamic columns are counted correctly
+  * instead of being collapsed to a single stream by the default serialization.
+  * Object storage (S3 / Azure) write buffers are large and double-buffered, so they are accounted
+  * separately: sized from the effective single-part upload settings; since they only ever hold data that
+  * has already flown through them, their contribution is capped by the data volume of the merge (see the
+  * implementation for details).
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
