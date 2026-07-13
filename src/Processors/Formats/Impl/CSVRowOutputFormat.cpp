@@ -99,6 +99,12 @@ void registerOutputFormatCSV(FormatFactory & factory)
         factory.markOutputFormatSupportsParallelFormatting(format_name);
         /// https://www.iana.org/assignments/media-types/text/csv
         factory.setContentType(format_name, String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent"));
+
+        /// With `output_format_csv_crlf_end_of_line`, rows end with `\r\n`. That carriage return
+        /// cannot survive the text `EventStream` framing, so it is base64-encoded there (see
+        /// `checkIfOutputFormatMayEmitCarriageReturn`).
+        factory.registerOutputFormatMayEmitCarriageReturnChecker(
+            format_name, [](const FormatSettings & settings) { return settings.csv.crlf_end_of_line; });
     };
 
     registerWithNamesAndTypes("CSV", register_func);

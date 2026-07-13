@@ -79,3 +79,18 @@ CustomSeparated (Escaped) accepted: OK
 1
 --- a compatibility error is delivered as a framed exception packet (wait_end_of_query)
 1
+--- EventStream base64-encodes TSV with a CRLF row terminator
+text/event-stream; charset=UTF-8; payload=base64
+TSV CRLF payload round-trips
+--- EventStream base64-encodes CSV with a CRLF row terminator
+text/event-stream; charset=UTF-8; payload=base64
+--- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)
+{"packet":"data","data":"0\r\n1\r\n2\r\n"}
+--- framing is rejected for output formats that write progress in-band (JSONEachRowWithProgress)
+writes progress in-band
+--- exception-only stream carries no data packet, only the exception (FORMAT JSON, streaming)
+data packets: 0
+exception packets: 1
+--- exception-only stream carries no data packet, only the exception (FORMAT JSON, wait_end_of_query)
+data packets: 0
+exception packets: 1

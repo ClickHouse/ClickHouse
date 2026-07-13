@@ -149,6 +149,13 @@ private:
     /// when the current settings make the output format write bytes verbatim (see `may_produce_raw_bytes`).
     using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings)>;
 
+    /// Some text output formats may emit raw carriage-return (`\r`) bytes depending on settings, for
+    /// example `TSV` / `CSV` with `output_format_tsv_crlf_end_of_line` / `output_format_csv_crlf_end_of_line`.
+    /// A carriage return cannot be embedded losslessly in the text `EventStream` framing, because the
+    /// server-sent events transport treats it as a line terminator, so such output is base64-encoded
+    /// there. The checker returns true when the current settings make the output format emit carriage returns.
+    using MayEmitCarriageReturnChecker = std::function<bool(const FormatSettings & settings)>;
+
     /// Obtain HTTP content-type for the output format.
     using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
@@ -193,6 +200,10 @@ private:
         bool may_produce_raw_bytes{false};
         /// The same, but settings-dependent (for example `CustomSeparated` with a `Raw` escaping rule).
         MayProduceRawBytesChecker may_produce_raw_bytes_checker;
+        /// Settings-dependent checker for text output formats that may emit raw carriage-return bytes
+        /// (for example `TSV` / `CSV` with a CRLF row terminator), which cannot survive the text
+        /// `EventStream` framing and are base64-encoded there instead.
+        MayEmitCarriageReturnChecker may_emit_carriage_return_checker;
         ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
@@ -351,6 +362,7 @@ public:
     void markOutputFormatNotTTYFriendly(const String & name);
     void markOutputFormatMayProduceRawBytes(const String & name);
     void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
+    void registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);
@@ -368,6 +380,7 @@ public:
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
     bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings) const;
+    bool checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
