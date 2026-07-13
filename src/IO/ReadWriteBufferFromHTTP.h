@@ -113,12 +113,18 @@ private:
 
     bool withPartialContent() const;
 
-    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
+    void prepareRequest(Poco::Net::HTTPRequest & request, const Poco::URI & uri, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+    /// `request_uri` is the URI being requested, used only for log messages. When set, it is a
+    /// request-local copy (readBigAt path) so the retry loop does not read the shared current_uri;
+    /// when nullopt, the shared current_uri is used (sequential next()/initialize() path).
+    void doWithRetries(std::function<void()> && callable, std::optional<Poco::URI> request_uri = {}, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
 
+    /// Issues one request against `uri`, passed explicitly rather than read from current_uri, so
+    /// readBigAt() can run on request-local state concurrently with a sequential next()/seek().
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
+        const Poco::URI & uri,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
         bool allow_redirects) const;
