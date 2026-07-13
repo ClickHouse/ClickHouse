@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/ProjectionIndex/MergeTreeProjectionIndexText.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnString.h>
+#include <Common/assert_cast.h>
+#include <base/range.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -115,9 +118,21 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
     if (tokens_to_read.empty())
         return;
 
-    DictionaryBlockBase sparse_index(projection_part->getIndex()->at(0));
-    if (sparse_index.empty())
+    /// The former `DictionaryBlockBase` wrapper was removed on master; binary-search the
+    /// projection part's primary-index `term` column directly (same as its `upperBound`).
+    ColumnPtr sparse_index_tokens = projection_part->getIndex()->at(0);
+    if (!sparse_index_tokens || sparse_index_tokens->empty())
         return;
+
+    auto sparse_index_upper_bound = [&](std::string_view token) -> size_t
+    {
+        auto range = collections::range(0, sparse_index_tokens->size());
+        auto it = std::upper_bound(range.begin(), range.end(), token, [&](std::string_view lhs_ref, size_t rhs_idx)
+        {
+            return lhs_ref < assert_cast<const ColumnString &>(*sparse_index_tokens).getDataAt(rhs_idx);
+        });
+        return it - range.begin();
+    };
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
@@ -130,7 +145,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 
     for (const auto & token : tokens_to_read)
     {
-        size_t pos = sparse_index.upperBound(token);
+        size_t pos = sparse_index_upper_bound(token);
 
         if (pos == 0)
         {
@@ -141,7 +156,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 
         size_t mark = pos - 1;
 
-        if (pos == sparse_index.size())
+        if (pos == sparse_index_tokens->size())
         {
             /// `pos == size` means the token is >= the last sparse key.
             /// `mark = pos - 1` already points to the correct (last) granule.
@@ -159,7 +174,8 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
     if (marks_to_read.empty())
         return;
 
-    StorageMetadataPtr metadata_ptr = projection_part->storage.getInMemoryMetadataPtr(Context::getGlobalContextInstance(), false);
+    auto metadata_handle = projection_part->storage.getInMemoryMetadataPtr(Context::getGlobalContextInstance(), false);
+    StorageMetadataPtr metadata_ptr = metadata_handle;
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(projection_part->storage, metadata_ptr);
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(projection_part, alter_conversions);
@@ -261,7 +277,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
         result.resize(cols.size());
         size_t rows_read = reader->readRows(
             mark,
-            sparse_index.size(),
+            sparse_index_tokens->size(),
             prev_mark && *prev_mark == mark - 1,
             rows_to_read,
             /*rows_offset=*/0,
@@ -554,14 +570,14 @@ const IndexDescription & getIndexDescriptionOrThrow(const ProjectionDescription 
 
 MergeTreeProjectionIndexText::MergeTreeProjectionIndexText(
     const ProjectionDescription & projection, std::shared_ptr<const MergeTreeIndexText> text_index_)
-    : IMergeTreeIndex(getIndexDescriptionOrThrow(projection))
+    : IMergeTreeIndex(nullptr, getIndexDescriptionOrThrow(projection))
     , text_index(std::move(text_index_))
 {
 }
 
 MergeTreeProjectionIndexText::MergeTreeProjectionIndexText(
     const IndexDescription & index_description, std::shared_ptr<const MergeTreeIndexText> text_index_)
-    : IMergeTreeIndex(index_description)
+    : IMergeTreeIndex(nullptr, index_description)
     , text_index(std::move(text_index_))
 {
 }
@@ -572,7 +588,7 @@ MergeTreeIndexSubstreams MergeTreeProjectionIndexText::getSubstreams() const
 }
 
 MergeTreeIndexFormat MergeTreeProjectionIndexText::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums, const std::string & /* path_prefix */) const
+    const MergeTreeDataPartChecksums & checksums, const std::string & /* path_prefix */, const IDataPartStorage * /* storage */) const
 {
     if (checksums.files.contains(index.name + ".proj"))
         return {1, getSubstreams()};

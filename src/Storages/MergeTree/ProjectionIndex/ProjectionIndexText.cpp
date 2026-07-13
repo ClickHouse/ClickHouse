@@ -64,7 +64,7 @@ void ProjectionIndexText::fillProjectionDescription(
     const ColumnsDescription & columns,
     const KeyDescription * /* partition_key */,
     const ContextPtr & query_context,
-    const MergeTreeSettings & /* projection_settings */) const
+    const MergeTreeSettings & projection_settings) const
 {
     chassert(result.index.get() == this);
     chassert(!index);

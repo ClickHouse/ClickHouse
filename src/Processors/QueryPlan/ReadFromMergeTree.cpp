@@ -2296,9 +2296,20 @@ void ReadFromMergeTree::buildIndexes(
                 auto index_helper = projection.index->getIndex();
                 if (index_helper)
                 {
-                    auto condition = index_helper->createIndexCondition(filter_dag.predicate, query_context);
-                    if (!condition->alwaysUnknownOrTrue())
-                        skip_indexes.useful_indices.emplace_back(index_helper, condition);
+                    ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory
+                        = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+                    {
+                        if (!predicate)
+                            return nullptr;
+                        return index_helper->createIndexCondition(predicate, query_context);
+                    };
+
+                    auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(
+                        filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
+
+                    const auto & unsubstituted = condition_template->generateUnsubstituted();
+                    if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
+                        skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
                 }
             }
         }

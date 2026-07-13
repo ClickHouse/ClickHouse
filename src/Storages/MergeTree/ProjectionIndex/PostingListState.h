@@ -78,7 +78,7 @@ public:
     ///   - The Arena-allocated state is not inherently const (placement-new'd as mutable)
     ///   - After merge, the source state is never read again (consumed during squash/merge)
     ///   - PostingListStream::merge() leaves the source in a valid moved-from state (doc_count=0)
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /* arena */) const override;
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /* arena */) const override;
 
     void serialize(ConstAggregateDataPtr, WriteBuffer &, std::optional<size_t>) const override;
 

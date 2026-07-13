@@ -120,7 +120,7 @@ void AggregateFunctionPostingList::deserialize(AggregateDataPtr place, ReadBuffe
     }
 }
 
-void AggregateFunctionPostingList::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /* arena */) const
+void AggregateFunctionPostingList::mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /* arena */) const
 {
     auto & lhs_posting_list_data = data(place);
     auto & rhs_posting_list_data = const_cast<PostingListData &>(data(rhs));

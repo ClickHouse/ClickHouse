@@ -32,14 +32,15 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     , projection_granule(std::move(index_granule_))
 {
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
         .version = index_format.version,
-        .condition = index.condition.get(),
+        .condition = index.condition_template->generateUnsubstituted().get(),
         .part = *data_part,
         .index = *index.index,
+        .readable_ranges = nullptr,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -205,7 +206,7 @@ void MergeTreeReaderTextProjectionIndex::ensureInitialized()
         return;
     }
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         auto search_query = condition_text.getSearchQueryForVirtualColumn(columns_to_read[i].name);
@@ -230,7 +231,7 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
 
     ensureCursorMap();
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
 
     std::vector<PostingCursorPtr> token_cursors;
@@ -360,7 +361,7 @@ void MergeTreeReaderTextProjectionIndex::fillColumnLazy(
         /// evaluates and produces the correct rows. For empty-token queries (e.g.
         /// hasAnyTokens(x, [''])), fill stays 0 (no match) — there is no post-filter to fall
         /// back to and an empty needle cannot match any document.
-        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
         if (search_query && !search_query->patterns.empty())
             memset(column_data.data() + column_offset, 1, num_rows);
