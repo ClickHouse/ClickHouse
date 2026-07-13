@@ -147,7 +147,7 @@ public:
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it
         };
         std::optional<TopKParams> top_k;
-      
+
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
         /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
