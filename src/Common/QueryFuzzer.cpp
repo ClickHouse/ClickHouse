@@ -1270,7 +1270,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
            "add_minmax_index_for_temporal_columns",
            "allow_coalescing_columns_in_partition_or_order_key",
            "allow_experimental_replacing_merge_with_cleanup",
-           "allow_experimental_text_index_positions",
+           "allow_experimental_text_index_phrase_search",
            "allow_floating_point_partition_key",
            "allow_minmax_index_for_json",
            "allow_nullable_key",
@@ -2082,7 +2082,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         add_missing_param("dictionary_block_frontcoding_compression", UInt64(fuzz_rand() % 2));
         add_missing_param("posting_list_block_size", UInt64(fuzz_rand() % 2048 + 1));
         add_missing_param("posting_list_codec", String(pickRandomly(fuzz_rand, posting_list_codecs)));
-        /// `positions = 1` requires the `allow_experimental_text_index_positions` MergeTree setting.
+        /// `support_phrase_search = 1` requires the `allow_experimental_text_index_phrase_search` MergeTree setting.
         add_missing_param("positions", UInt64(fuzz_rand() % 2));
     }
 
