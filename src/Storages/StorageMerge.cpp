@@ -1,5 +1,7 @@
 #include <functional>
 #include <iterator>
+#include <unordered_set>
+#include <base/scope_guard.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -460,6 +462,20 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
         return base_metadata;
+
+    /// Resolving the source-table virtuals below recurses into the first source's `getInMemoryMetadataPtr`,
+    /// so a cycle of mutually-referencing `Merge` tables - e.g. `m1 = Merge(db, 'm.*')` and
+    /// `m2 = Merge(db, 'm.*')`, each matching the other - would recurse `m1 -> m2 -> m1 -> ...` until
+    /// `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). That is reached before
+    /// `getModificationHash` even runs, so guard here too (matching the guard in `getModificationHash`):
+    /// track the tables whose metadata is being resolved on this thread and, on re-entry, return the base
+    /// metadata without folding in the source virtuals. Without this, `system.tables` and the consistent
+    /// query-cache / `REFRESH ... IF CHANGED` paths would fail with an exception on such wrapper tables
+    /// instead of failing closed to a `NULL` modification hash.
+    static thread_local std::unordered_set<const IStorage *> tables_resolving_metadata;
+    if (!tables_resolving_metadata.insert(this).second)
+        return base_metadata;
+    SCOPE_EXIT({ tables_resolving_metadata.erase(this); });
 
     auto virtuals = createVirtuals();
     try
@@ -1872,6 +1888,18 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
 
 std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    /// `getModificationHash` recurses into every source table's `getModificationHash` in-process, so wrapper
+    /// tables can form a cycle - e.g. two `Merge` tables `m1 = Merge(db, 'm.*')` and `m2 = Merge(db, 'm.*')`
+    /// each match the other, so `m1` recurses into `m2` and back into `m1`. `traverseTablesUntil` skips only
+    /// `this`, which stops the direct self-match but not the indirect cycle. Match `StorageDistributed`: track
+    /// the tables currently being hashed on this thread and fail closed (return nullopt) on re-entry, so the
+    /// cycle is detected in O(1) at the first repeat instead of relying on `checkStackSize` throwing
+    /// `TOO_DEEP_RECURSION` deep in the metadata traversal.
+    static thread_local std::unordered_set<const IStorage *> tables_being_hashed;
+    if (!tables_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ tables_being_hashed.erase(this); });
+
     try
     {
         std::vector<UInt128> table_hashes;
@@ -1923,11 +1951,11 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
     }
     catch (...)
     {
-        /// Ok to ignore: resolving the source tables can fail. Most importantly, two wrapper tables
-        /// referencing each other - e.g. `m1 = Merge(db, '^m2$')` and `m2 = Merge(db, '^m1$')`, or a
-        /// `Merge` and a `Distributed` pointing at each other - make resolving the source metadata recurse
-        /// until `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). We cannot
-        /// compute a hash then, so fail closed.
+        /// Ok to ignore: resolving the source tables can fail. The common `Merge`-cycle case is already
+        /// handled by the re-entry guard above, but a cycle that runs through a different engine (e.g. a
+        /// `Merge` and a `Distributed` pointing at each other) can still make resolving the source metadata
+        /// recurse until `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`), so keep
+        /// failing closed here as a backstop.
         return {};
     }
 }
