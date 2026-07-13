@@ -1,0 +1,351 @@
+---
+slug: /partitions
+title: 'أقسام الجدول'
+description: 'ما هي أقسام الجدول في ClickHouse'
+keywords: ['أقسام الجدول', 'partition by']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+<div id="what-are-table-partitions-in-clickhouse">
+  ## ما هي أقسام الجدول في ClickHouse؟
+</div>
+
+<br />
+
+تُجمِّع أقسام الجدول [أجزاء البيانات](/ar/concepts/core-concepts/parts) الخاصة بجدول ضمن [عائلة محركات MergeTree](/ar/reference/engines/table-engines/mergetree-family/index) في وحدات منطقية منظَّمة، وهي طريقة لتنظيم البيانات بما يجعلها ذات دلالة مفاهيمية ومتوافقة مع معايير محددة، مثل النطاقات الزمنية أو الفئات أو السمات الرئيسية الأخرى. وتُسهِّل هذه الوحدات المنطقية إدارة البيانات والاستعلام عنها وتحسينها.
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+يمكن تفعيل التقسيم عند تعريف الجدول مبدئيًا عبر [عبارة PARTITION BY](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ويمكن أن تتضمن هذه العبارة تعبير SQL على أيٍّ من الأعمدة، بحيث تحدد نتائج هذا التعبير القسم الذي ينتمي إليه الصف.
+
+ولتوضيح ذلك، نقوم [بتعديل](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQ\&run_query=true\&tab=results) جدول المثال في [ما هي أجزاء الجدول](/ar/concepts/core-concepts/parts) بإضافة عبارة `PARTITION BY toStartOfMonth(date)`، التي تنظّم أجزاء بيانات الجدول بحسب أشهر مبيعات العقارات:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date);
+```
+
+يمكنك [الاستعلام عن هذا الجدول](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results) في ClickHouse SQL Playground التابع لنا.
+
+<div id="structure-on-disk">
+  ### البنية على القرص
+</div>
+
+عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح القسم بين الصفوف المُدرجة:
+
+<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="معالجة INSERT" />
+
+<br />
+
+يقوم ClickHouse server أولًا بتقسيم الصفوف في مثال الإدراج، الذي يتضمن 4 صفوف كما هو موضح في المخطط أعلاه، وفقًا لقيمة مفتاح القسم `toStartOfMonth(date)`.
+ثم تُعالَج الصفوف، لكل قسم تم تحديده، [كالمعتاد](/ar/concepts/core-concepts/parts) من خلال تنفيذ عدة خطوات متسلسلة (① الفرز، ② التقسيم إلى أعمدة، ③ الضغط، ④ الكتابة إلى القرص).
+
+لاحظ أنه عند تمكين التقسيم، ينشئ ClickHouse تلقائيًا [فهارس MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) لكل جزء بيانات. وهي ببساطة ملفات لكل عمود في الجدول مستخدم في تعبير مفتاح القسم، وتحتوي على القيمتين الصغرى والكبرى لذلك العمود داخل جزء البيانات.
+
+<div id="per-partition-merges">
+  ### عمليات الدمج داخل كل قسم
+</div>
+
+عند تمكين التقسيم، لا يَدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل القسم نفسه، وليس عبر الأقسام. نوضّح ذلك في مثال الجدول أعلاه:
+
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+كما يوضّح المخطط أعلاه، لا تُدمَج الأجزاء التابعة لأقسام مختلفة مطلقًا. وإذا اخترت مفتاح تقسيم ذي عددية مرتفعة، فستتوزع الأجزاء على آلاف الأقسام، ولن تصبح مرشحة للدمج أبدًا، ما يؤدي إلى تجاوز الحدود المضبوطة مسبقًا والتسبب في ظهور الخطأ المزعج `Too many parts`. وحل هذه المشكلة بسيط: اختر مفتاح تقسيم مناسبًا ذي [عددية أقل من 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
+
+<div id="monitoring-partitions">
+  ## مراقبة الأقسام
+</div>
+
+يمكنك [الاستعلام عن](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results) قائمة جميع الأقسام الفريدة الموجودة في جدول المثال باستخدام [العمود الافتراضي](/ar/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value`:
+
+<RunnableCode>
+  ```sql
+  SELECT DISTINCT _partition_value AS partition
+  FROM uk.uk_price_paid_simple_partitioned
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+بدلاً من ذلك، يتتبع ClickHouse جميع الأجزاء والأقسام لكل الجداول في جدول النظام [system.parts](/ar/reference/system-tables/parts)، ويُرجع [الاستعلام](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBwYXJ0aXRpb24sCiAgICBjb3VudCgpIEFTIHBhcnRzLAogICAgc3VtKHJvd3MpIEFTIHJvd3MKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgID0gJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJykgQU5EIGFjdGl2ZQpHUk9VUCBCWSBwYXJ0aXRpb24KT1JERVIgQlkgcGFydGl0aW9uIEFTQzs\&run_query=true\&tab=results) التالي لجدول المثال أعلاه قائمةً بجميع الأقسام، بالإضافة إلى العدد الحالي من الأجزاء النشطة وإجمالي الصفوف في هذه الأجزاء لكل قسم:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      partition,
+      count() AS parts,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple_partitioned') AND active
+  GROUP BY partition
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+<div id="what-are-table-partitions-used-for">
+  ## فيما تُستخدم أقسام الجدول؟
+</div>
+
+<div id="data-management">
+  ### إدارة البيانات
+</div>
+
+في ClickHouse، يُعد التقسيم بالأساس ميزة لإدارة البيانات. فمن خلال تنظيم البيانات منطقيًا استنادًا إلى تعبير التقسيم، يمكن إدارة كل قسم على حدة. على سبيل المثال، يتيح مخطط التقسيم في جدول Example أعلاه حالات استخدام لا يُحتفَظ فيها إلا ببيانات آخر 12 شهرًا في الجدول الرئيسي، مع إزالة البيانات الأقدم تلقائيًا باستخدام [قاعدة TTL](/ar/concepts/features/operations/delete/ttl) (راجع الصف الأخير المُضاف في عبارة DDL):
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH DELETE;
+```
+
+نظرًا لأن الجدول مُقسَّم باستخدام `toStartOfMonth(date)`، فستُحذف الأقسام كاملةً (وهي مجموعات من [أجزاء الجدول](/ar/concepts/core-concepts/parts)) التي تستوفي شرط TTL، مما يجعل عملية التنظيف أكثر كفاءة، [من دون الحاجة إلى إعادة كتابة الأجزاء](/ar/reference/statements/alter/index#mutations).
+
+وبالمثل، بدلًا من حذف البيانات القديمة، يمكن نقلها تلقائيًا وبكفاءة إلى [فئة تخزين](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) أقل تكلفة:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
+```
+
+<div id="query-optimization">
+  ### تحسين الاستعلام
+</div>
+
+يمكن أن تساعد الأقسام في تحسين أداء الاستعلام، لكن ذلك يعتمد بدرجة كبيرة على أنماط الوصول. فإذا كانت الاستعلامات تستهدف عددًا قليلًا فقط من الأقسام (ومن الأفضل أن يكون قسمًا واحدًا)، فقد يتحسن الأداء. ويكون هذا مفيدًا عادةً فقط إذا لم يكن مفتاح التقسيم جزءًا من المفتاح الأساسي وكنت تُجري تصفية بناءً عليه، كما هو موضح في الاستعلام المثال أدناه.
+
+<RunnableCode>
+  ```sql
+  SELECT MAX(price) AS highest_price
+  FROM uk.uk_price_paid_simple_partitioned
+  WHERE date >= '2020-12-01'
+    AND date <= '2020-12-31'
+    AND town = 'LONDON';
+  ```
+</RunnableCode>
+
+يُنفَّذ هذا الاستعلام على جدول المثال المذكور أعلاه، ويقوم [بحساب](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) أعلى سعر لجميع العقارات المبيعة في لندن خلال ديسمبر 2020، وذلك عبر التصفية على كلٍّ من عمود (`date`) المُستخدَم في مفتاح تقسيم الجدول وعمود (`town`) المُستخدَم في المفتاح الأساسي للجدول (مع العلم أن `date` ليس جزءًا من المفتاح الأساسي).
+
+يعالج ClickHouse هذا الاستعلام من خلال تطبيق سلسلة من تقنيات تقليم البيانات لتجنّب فحص البيانات غير ذات الصلة:
+
+<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+
+<br />
+
+① **تقليم الأقسام**: تُستخدَم [فهارس MinMax](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) لتجاهل أقسام كاملة (مجموعات من الأجزاء) لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في مفتاح تقسيم الجدول.
+
+② **تقليم الحبيبات**: بالنسبة إلى أجزاء البيانات المتبقية بعد الخطوة ①، يُستخدَم [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) لتجاهل جميع [الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) التي لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في المفتاح الأساسي للجدول.
+
+يمكننا ملاحظة خطوات تقليم البيانات هذه من خلال [فحص](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) خطة تنفيذ الاستعلام الفعلية لاستعلام المثال المذكور أعلاه باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain):
+
+```sql style="fontSize:13px"
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE date >= '2020-12-01'
+  AND date <= '2020-12-31'
+  AND town = 'LONDON';
+```
+
+```response
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                    │
+ 2. │   Aggregating                                                                                                │
+ 3. │     Expression (Before GROUP BY)                                                                             │
+ 4. │       Expression                                                                                             │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned)                                              │
+ 6. │         Indexes:                                                                                             │
+ 7. │           MinMax                                                                                             │
+ 8. │             Keys:                                                                                            │
+ 9. │               date                                                                                           │
+10. │             Condition: and((date in (-Inf, 18627]), (date in [18597, +Inf)))                                 │
+11. │             Parts: 1/436                                                                                     │
+12. │             Granules: 11/3257                                                                                │
+13. │           Partition                                                                                          │
+14. │             Keys:                                                                                            │
+15. │               toStartOfMonth(date)                                                                           │
+16. │             Condition: and((toStartOfMonth(date) in (-Inf, 18597]), (toStartOfMonth(date) in [18597, +Inf))) │
+17. │             Parts: 1/1                                                                                       │
+18. │             Granules: 11/11                                                                                  │
+19. │           PrimaryKey                                                                                         │
+20. │             Keys:                                                                                            │
+21. │               town                                                                                           │
+22. │             Condition: (town in ['LONDON', 'LONDON'])                                                        │
+23. │             Parts: 1/1                                                                                       │
+24. │             Granules: 1/11                                                                                   │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+يوضح الناتج أعلاه ما يلي:
+
+① تقليم الأقسام: تُظهر الأسطر من 7 إلى 18 من ناتج EXPLAIN أعلاه أن ClickHouse يستخدم أولًا [MinMax index](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) الخاص بالحقل `date` لتحديد 11 من أصل 3257 [حبيبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) مخزَّنة في جزء بيانات نشط واحد من أصل 436 جزء بيانات نشط موجود، وتحتوي على صفوف تطابق عامل التصفية `date` الخاص بالاستعلام.
+
+② تقليم الحبيبة: تشير الأسطر من 19 إلى 24 من ناتج EXPLAIN أعلاه إلى أن ClickHouse يستخدم بعد ذلك [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) (الذي أُنشئ على الحقل `town`) لجزء البيانات الذي جرى تحديده في الخطوة ①، لتقليل عدد الحبيبات أكثر (التي تحتوي على صفوف قد تطابق أيضًا عامل التصفية `town` الخاص بالاستعلام) من 11 إلى 1. وينعكس ذلك أيضًا في ناتج ClickHouse-client الذي طبعناه أعلاه للاستعلام المُنفَّذ:
+
+```response
+... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+Peak memory usage: 2.73 MiB.
+```
+
+ما يعني أن ClickHouse فحص وعالج granule واحدة (كتلة من [8192](/ar/reference/settings/merge-tree-settings#index_granularity) صفًا) في غضون 6 مللي ثانية لحساب نتيجة الاستعلام.
+
+<div id="partitioning-is-primarily-a-data-management-feature">
+  ### يُعد التقسيم في المقام الأول ميزة لإدارة البيانات
+</div>
+
+انتبه إلى أن تنفيذ الاستعلام عبر جميع الأقسام يكون عادةً أبطأ من تنفيذ الاستعلام نفسه على جدول غير مُقسَّم.
+
+مع التقسيم، تتوزع البيانات عادةً على عدد أكبر من أجزاء البيانات، ما يؤدي غالبًا إلى أن يقوم ClickHouse بمسح حجم أكبر من البيانات ومعالجته.
+
+يمكننا توضيح ذلك عبر تشغيل الاستعلام نفسه على كلٍّ من جدول المثال [ما هي أجزاء الجدول](/ar/concepts/core-concepts/parts) (من دون تمكين التقسيم)، وجدول المثال الحالي أعلاه (مع تمكين التقسيم). يحتوي الجدولان [على](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIHN1bShyb3dzKSBBUyByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCBJTiBbJ3VrX3ByaWNlX3BhaWRfc2ltcGxlJywgJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJ10pIEFORCBhY3RpdmUKR1JPVVAgQlkgdGFibGU7\&run_query=true\&tab=results) على البيانات نفسها وعدد الصفوف نفسه:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+  ```
+</RunnableCode>
+
+ومع ذلك، فإن الجدول الذي فُعِّل فيه التقسيم [يحتوي على](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIGNvdW50KCkgQVMgcGFydHMKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgIElOIFsndWtfcHJpY2VfcGFpZF9zaW1wbGUnLCAndWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQnXSkgQU5EIGFjdGl2ZQpHUk9VUCBCWSB0YWJsZTs\&run_query=true\&tab=results) على عدد أكبر من [أجزاء البيانات](/ar/concepts/core-concepts/parts) النشطة، لأن ClickHouse، كما ذُكر أعلاه، لا [يدمج](/ar/concepts/core-concepts/parts) أجزاء البيانات إلا داخل الأقسام، وليس عبرها:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      count() AS parts
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+
+  ```
+</RunnableCode>
+
+كما هو موضح أعلاه، يحتوي الجدول المُقسَّم `uk_price_paid_simple_partitioned` على أكثر من 600 قسم، وبالتالي على 600 306 من أجزاء البيانات النشطة. أما جدولنا غير المُقسَّم `uk_price_paid_simple`، فقد أمكن دمج جميع أجزاء البيانات [الأولية](/ar/concepts/core-concepts/parts) فيه في جزء نشط واحد عبر عمليات الدمج في الخلفية.
+
+عندما [نتحقق من](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) خطة التنفيذ الفعلية للاستعلام باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain) لاستعلام المثال أعلاه، من دون مُرشِّح للقسم، عند تشغيله على الجدول المُقسَّم، يمكننا أن نرى في الصفين 19 و20 من المخرجات أدناه أن ClickHouse حدّد 671 من أصل 3257 [حبيبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) موجودة (كتل من الصفوف)، موزعة على 431 من أصل 436 جزء بيانات نشط موجود، قد تحتوي على صفوف تطابق مُرشِّح الاستعلام، ولذلك سيجري محرك الاستعلام مسحها ومعالجتها:
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                       │
+ 2. │   Aggregating                                                   │
+ 3. │     Expression (Before GROUP BY)                                │
+ 4. │       Expression                                                │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned) │
+ 6. │         Indexes:                                                │
+ 7. │           MinMax                                                │
+ 8. │             Condition: true                                     │
+ 9. │             Parts: 436/436                                      │
+10. │             Granules: 3257/3257                                 │
+11. │           Partition                                             │
+12. │             Condition: true                                     │
+13. │             Parts: 436/436                                      │
+14. │             Granules: 3257/3257                                 │
+15. │           PrimaryKey                                            │
+16. │             Keys:                                               │
+17. │               town                                              │
+18. │             Condition: (town in ['LONDON', 'LONDON'])           │
+19. │             Parts: 431/436                                      │
+20. │             Granules: 671/3257                                  │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+تُظهر [خطة تنفيذ الاستعلام المادية](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) للاستعلام نفسه عند تشغيله على الجدول من دون تقسيمات، في الصفَّين 11 و12 من المخرجات أدناه، أن ClickHouse حدَّد 241 من أصل 3083 كتلة صفوف موجودة ضمن جزء البيانات النشط الوحيد في الجدول، وقد تحتوي على صفوف تطابق عامل التصفية الخاص بالاستعلام:
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 1/1                                │
+12. │             Granules: 241/3083                        │
+    └───────────────────────────────────────────────────────┘
+```
+
+عند [تشغيل](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) الاستعلام على النسخة المُقسَّمة من الجدول، يفحص ClickHouse 671 كتلة من الصفوف (~ 5.5 مليون صف) ويعالجها خلال 90 مللي ثانية:
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 594.30 million
+└───────────────┘
+
+1 row in set. Elapsed: 0.090 sec. Processed 5.48 million rows, 27.95 MB (60.66 million rows/s., 309.51 MB/s.)
+Peak memory usage: 163.44 MiB.
+```
+
+أما عند [تنفيذ](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) الاستعلام على الجدول غير المُقسَّم، فإن ClickHouse يفحص 241 كتلة (~ مليوني صف) ويعالجها خلال 12 ميلي ثانية:
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 594.30 million
+└───────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 1.97 million rows, 9.87 MB (162.23 million rows/s., 811.17 MB/s.)
+Peak memory usage: 62.02 MiB.
+```

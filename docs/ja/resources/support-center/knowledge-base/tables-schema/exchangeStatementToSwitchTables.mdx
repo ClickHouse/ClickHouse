@@ -1,0 +1,95 @@
+---
+title: EXCHANGEコマンドでテーブルを切り替える方法
+description: "EXCHANGEコマンドでテーブルを切り替える方法"
+date: 2024-11-21
+tags: ['データ管理']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## 質問
+</div>
+
+テーブル名を入れ替えるには、[`EXCHANGE`](/ja/reference/statements/exchange) コマンドをどのように使用しますか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+`EXCHANGE` コマンドは、主キーやその他の設定が更新された可能性のある一時テーブルに、現在のテーブルを切り替える必要がある場合に便利です。
+これは `RENAME` コマンドとは異なり、アトミックに実行されます。
+また、ソーステーブルをトリガーとして動作する materialized view があり、その再構築を避けたい場合にも便利です。
+
+以下に、動作の仕組みとテスト方法を示す簡単な例を示します。
+
+* サンプルデータベースを作成する
+
+```sql
+create database db1;
+```
+
+* サンプルテーブルを作成
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* サンプル行を挿入する
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* EXCHANGE対象の一時テーブルの例を作成する
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* 一時テーブルにサンプルの行を挿入する
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* テーブルを切り替えるには `EXCHANGE` コマンドを実行します
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* テーブルが入れ替わり、行も入れ替わっていることを確認する
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```

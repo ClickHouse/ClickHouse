@@ -33,7 +33,7 @@ class ColumnReplicated;
 class IDataType;
 class Block;
 class ReadBuffer;
-struct ColumnsInfo;
+struct StoredBlock;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -85,7 +85,7 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<const StoredBlock *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
@@ -132,19 +132,23 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
+    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
+    /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
+    /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
+    /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
+    /// or use recursiveRemoveLowCardinality for recursive removal.
+    [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
     {
         Ptr converted = convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse()
-            ->convertToFullColumnIfLowCardinality();
+            ->convertToFullColumnIfSparse();
 
         Columns new_subcolumns;
         bool any_changed = false;
 
         converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
         {
-            auto new_sub = subcolumn->convertToFullIfNeeded();
+            auto new_sub = subcolumn->convertToFullIfWrapped();
             any_changed |= (new_sub.get() != subcolumn.get());
             new_subcolumns.push_back(std::move(new_sub));
         });
@@ -475,6 +479,15 @@ public:
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
+    /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
+      * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
+      * the value at `begin`. Returns `begin` if begin >= end. Equality is by value (`compareAt`), not collation-aware.
+      *
+      * PRECONDITION: [begin, end) is sorted so that equal values are contiguous. Only contiguity matters:
+      * the sort direction (ascending or descending) is irrelevant.
+      */
+    [[nodiscard]] virtual size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
@@ -528,7 +541,11 @@ public:
      * should have been, we form a new array with intervals that need to be sorted
      * If there is a limit, then for the last interval we do partial sorting and all that is described above,
      * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
-     * `equal_ranges` is not necessarily sorted. Single-element equal ranges are usually omitted.
+     * `equal_ranges` must be sorted in ascending order of `from`, both on input and on output: the limit
+     * handling relies on it (IColumn::updatePermutationImpl treats `equal_ranges.back()` as the only range
+     * that may straddle the limit, and getBlockSortPermutationImpl pops trailing ranges by `from`). An
+     * implementation that returns unsorted ranges silently drops below-limit ranges and yields wrong results
+     * (see issue #104376). Single-element equal ranges are usually omitted.
      */
     virtual void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
@@ -726,9 +743,18 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
+    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
+    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
+    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    virtual void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -952,6 +978,11 @@ bool isColumnNullable(const IColumn & column);
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
+/// True if the column can contain NULL values: it is ColumnNullable, ColumnVariant, ColumnDynamic,
+/// or ColumnLowCardinality with nullable nested column. The column-level counterpart of
+/// canContainNull(const IDataType &).
+bool canContainNull(const IColumn & column);
+
 /// Implement methods to devirtualize some calls of IColumn in final descendants.
 /// `typename Parent` is needed because some columns don't inherit IColumn directly.
 /// See ColumnFixedSizeHelper for example.
@@ -1003,9 +1034,15 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+    /// Fills column values from encoded join row refs
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value

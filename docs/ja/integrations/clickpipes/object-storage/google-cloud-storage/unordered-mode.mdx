@@ -1,0 +1,85 @@
+---
+sidebarTitle: '順不同モードを設定する'
+title: '継続的インジェスト向けの順不同モードの設定'
+slug: /integrations/clickpipes/object-storage/gcs/unordered-mode
+description: 'GCS ClickPipes で継続的インジェスト用の順不同モードを設定するためのステップバイステップガイド。'
+doc_type: 'guide'
+---
+
+デフォルトでは、GCS ClickPipe は、ファイルが [辞書式順序](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview#continuous-ingestion-lexicographical-order) でバケットに追加されることを前提としています。[Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションをバケットに接続するよう設定することで、暗黙的な順序を持たないファイルも取り込めるように GCS ClickPipe を構成できます。これにより、ClickPipes は `OBJECT_FINALIZE` 通知を受信して、ファイル名の規則に関係なく新しいファイルを取り込めるようになります。
+
+<Note>
+  順不同モードは**公開バケット**ではサポートされていません。利用するには、**サービス アカウント**認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
+</Note>
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードした後、指定したパスに一致するオブジェクト通知を Pub/Sub サブスクリプション 経由で待ち受けます。すでに確認済みのファイルに対するメッセージ、パスに一致しないファイル、または異なる種類のイベントはすべて**無視**されます。特定のファイルや時点からインジェストを開始することは**できません**。ClickPipes は常に、選択したパス内のすべてのファイルを読み込みます。
+
+データの取り込み中にはさまざまな障害が発生する可能性があり、その結果、部分的な insert や重複データが生じることがあります。Object Storage 用 ClickPipes は insert の失敗に対して耐性があり、一時的なステージングテーブルを使用して exactly-once セマンティクスを実現します。データはまずステージングテーブルに挿入され、問題が発生した場合はステージングテーブルを TRUNCATE して、クリーンな状態から insert を再試行します。insert が正常に完了した場合にのみ、パーティションがターゲットテーブルに移動されます。
+
+<Steps>
+  <Step>
+    ## Google Cloud Pub/Sub topic を作成する
+
+    **1.** Google Cloud Console で **Pub/Sub &gt; Topics &gt; Create topic** に移動します。デフォルト subscription 付きで新しい topic を作成し、**Topic Name** を控えておきます。
+
+    **2.** 上で作成した Pub/Sub topic に [`OBJECT_FINALIZE` events](https://docs.cloud.google.com/storage/docs/pubsub-notifications) を送信する GCS bucket notification を設定します。
+
+    **2.1.** この手順は Google Cloud Console では実行できないため、`gcloud` クライアントまたは Google Cloud 用の任意のプログラムによるインターフェイスを使用する必要があります。たとえば、`gcloud` を使う場合は次のとおりです。
+
+    ```bash
+    # bucket 内の新しいオブジェクト用の Pub/Sub notification を作成する
+    gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
+      --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
+      --event-types="OBJECT_FINALIZE" \
+      --payload-format="json"
+
+    # bucket 内の Pub/Sub notifications を一覧表示する
+    gcloud storage buckets notifications describe
+    ```
+  </Step>
+
+  <Step>
+    ## サービス アカウント を設定する
+
+    **1.** [サービス アカウント](http://docs.cloud.google.com/iam/docs/keys-create-delete) を設定し、ClickPipes が指定した bucket 内のオブジェクトを一覧表示および取得できるようにするとともに、Pub/Sub サブスクリプション からの通知を受信して監視できるよう、[必要な permissions](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) を付与します。
+
+    **1.1.** この手順は Google Cloud Console、`gcloud` クライアント、または Google Cloud 用の任意のプログラムによるインターフェイスで実行できます。たとえば、`gcloud` を使う場合は次のとおりです。
+
+    ```bash
+    # 1. GCS bucket への読み取りアクセスを付与する
+    gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/storage.objectViewer"
+
+    # 2. Pub/Sub subscription への読み取りアクセスを付与する
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.subscriber"
+
+    # 3. Pub/Sub subscription のメタデータを取得する権限を付与する
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.viewer"
+    ```
+  </Step>
+
+  <Step>
+    ## 順不同モードで ClickPipe を作成する
+
+    **1.** ClickHouse Cloud console で **Data Sources &gt; Create ClickPipe** に移動し、**Google Cloud Storage** を選択します。GCS bucket に接続するための情報を入力します。**Authentication method** では **サービス アカウント** を選択し、`.json` の サービス アカウント key を指定します。
+
+    **2.** **Continuous ingestion** をオンにし、インジェストモードとして **Any order** を選択したうえで、bucket に接続されている subscription の **Pub/Sub サブスクリプション** 名を指定します。subscription 名は次の形式に従う必要があります。
+
+    ```text
+    projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
+    ```
+
+    **3.** **Incoming data** をクリックします。ターゲットテーブルの **Sorting key** を定義します。マッピングされたスキーマに必要な調整を加えた後、ClickPipes データベースユーザーのロールを設定します。
+
+    **4.** 設定内容を確認し、**Create ClickPipe** をクリックします。ClickPipes は bucket の初期スキャンを実行して、指定したパスに一致する既存のすべてのファイルを読み込み、その後、topic に新しい `OBJECT_FINALIZE` events が届くたびにファイルの処理を開始します。
+  </Step>
+</Steps>

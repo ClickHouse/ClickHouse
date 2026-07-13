@@ -1,0 +1,85 @@
+---
+description: 'ALTER に関するドキュメント'
+sidebarTitle: 'ALTER'
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
+doc_type: 'reference'
+---
+
+ほとんどの `ALTER TABLE` クエリでは、テーブル設定またはデータを変更します。
+
+| 修飾子                                                                  |
+| -------------------------------------------------------------------- |
+| [COLUMN](/ja/reference/statements/alter/column)                         |
+| [PARTITION](/ja/reference/statements/alter/partition)                   |
+| [DELETE](/ja/reference/statements/alter/delete)                         |
+| [UPDATE](/ja/reference/statements/alter/update)                         |
+| [ORDER BY](/ja/reference/statements/alter/order-by)                     |
+| [INDEX](/ja/reference/statements/alter/skipping-index)                  |
+| [CONSTRAINT](/ja/reference/statements/alter/constraint)                 |
+| [TTL](/ja/reference/statements/alter/ttl)                               |
+| [STATISTICS](/ja/reference/statements/alter/statistics)                 |
+| [APPLY DELETED MASK](/ja/reference/statements/alter/apply-deleted-mask) |
+| [APPLY PATCHES](/ja/reference/statements/alter/apply-patches)           |
+
+<Note>
+  ほとんどの `ALTER TABLE` クエリは、[*MergeTree](/ja/reference/engines/table-engines/mergetree-family/index)、[Merge](/ja/reference/engines/table-engines/special/merge)、および [Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルでのみサポートされています。
+</Note>
+
+以下の `ALTER` ステートメントはビューを操作します。
+
+| ステートメント                                                          | 説明                                                                |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY QUERY](/ja/reference/statements/alter/view) | [materialized view](/ja/reference/statements/create/view) の構造を変更します。 |
+
+以下の `ALTER` ステートメントは、ロールベースのアクセス制御に関連するエンティティを変更します。
+
+| ステートメント                                                          |
+| ---------------------------------------------------------------- |
+| [USER](/ja/reference/statements/alter/user)                         |
+| [ROLE](/ja/reference/statements/alter/role)                         |
+| [QUOTA](/ja/reference/statements/alter/quota)                       |
+| [ROW POLICY](/ja/reference/statements/alter/row-policy)             |
+| [SETTINGS PROFILE](/ja/reference/statements/alter/settings-profile) |
+
+| ステートメント                                                                | 説明                                                                                            |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ja/reference/statements/alter/comment)  | 事前に設定されていたかどうかにかかわらず、テーブルのコメントを追加、変更、または削除します。                                                |
+| [ALTER NAMED COLLECTION](/ja/reference/statements/alter/named-collection) | [Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を変更します。 |
+
+<div id="mutations">
+  ## ミューテーション
+</div>
+
+テーブルデータの操作を目的とする `ALTER` クエリは、「ミューテーション」と呼ばれる仕組みによって実装されています。代表的なものとして、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) や [ALTER TABLE ... UPDATE](/ja/reference/statements/alter/update) があります。これらは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルにおけるマージと同様、新しい「変更後」のパーツを生成する非同期のバックグラウンド処理です。
+
+`*MergeTree` テーブルでは、ミューテーションは**データパーツ全体を書き換える**ことで実行されます。
+アトミック性はありません。パーツは準備ができ次第、変更後のパーツに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでに変更済みのパーツのデータと、まだ変更されていないパーツのデータの両方が見えることがあります。
+
+ミューテーションは作成順に完全に順序付けられ、その順序で各パーツに適用されます。また、`INSERT INTO` クエリに対しては部分的な順序関係もあります。ミューテーションの送信前にテーブルへ挿入されたデータは変更対象になりますが、その後に挿入されたデータは変更されません。なお、ミューテーションが insert をブロックすることはありません。
+
+ミューテーションのクエリは、ミューテーションエントリが追加されるとすぐに返ります (レプリケートテーブルの場合は ZooKeeper に、非レプリケートテーブルの場合は filesystem に追加されます) 。ミューテーション自体は、システムの profile 設定を使用して非同期に実行されます。ミューテーションの進行状況を追跡するには、[`system.mutations`](/ja/reference/system-tables/mutations) テーブルを使用できます。正常に送信されたミューテーションは、ClickHouse server が再起動しても実行が継続されます。いったん送信されたミューテーションをロールバックする方法はありませんが、何らかの理由で停止している場合は、[`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) クエリでキャンセルできます。
+
+完了したミューテーションのエントリはすぐには削除されません (保持するエントリ数は、ストレージエンジンのパラメータ `finished_mutations_to_keep` で決まります) 。古いミューテーションエントリは削除されます。
+
+<div id="synchronicity-of-alter-queries">
+  ## ALTERクエリの同期
+</div>
+
+非レプリケートテーブルでは、すべての `ALTER` クエリが同期的に実行されます。レプリケートテーブルでは、クエリは対応する操作の指示を `ZooKeeper` に追加するだけで、操作自体はできるだけ早く実行されます。ただし、クエリはそれらの操作がすべてのレプリカで完了するまで待機できます。
+
+ミューテーションを作成する `ALTER` クエリ (例: `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC` など) については、同期性は [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定によって決まります。
+
+メタデータのみを変更するその他の `ALTER` クエリについては、[alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定を使用して待機方法を設定できます。
+
+非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
+
+<Note>
+  すべての `ALTER` クエリについて、`alter_sync = 2` であり、かつ一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブな場合は、`UNFINISHED` 例外がスローされます。
+</Note>
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseでの更新と削除の処理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

@@ -14,7 +14,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -261,6 +260,15 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
             f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
         )
 
+    if storage_type == "local":
+        assert instance.query(
+            f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        ) == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+        # The disk-type mismatch check must still fire for the S3-flavoured function.
+        assert "Disk type doesn't match" in instance.query_and_get_error(
+            f"SELECT * FROM icebergS3(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        )
+
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_iceberg_trivial_count_optimization(started_cluster, storage_type):
@@ -387,7 +395,7 @@ def test_cluster_table_function(started_cluster, storage_type, with_cache):
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1

@@ -1,0 +1,60 @@
+---
+description: "Le moteur `ExternalDistributed` permet d'exécuter des requêtes `SELECT`
+  sur des données stockées sur des serveurs MySQL ou PostgreSQL distants. Il accepte les moteurs MySQL ou
+  PostgreSQL comme argument, ce qui permet le sharding."
+sidebarTitle: 'ExternalDistributed'
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'Moteur de table ExternalDistributed'
+doc_type: 'reference'
+---
+
+Le moteur `ExternalDistributed` permet d&#39;exécuter des requêtes `SELECT` sur des données stockées sur des serveurs MySQL ou PostgreSQL distants. Il accepte les moteurs [MySQL](/fr/reference/engines/table-engines/integrations/mysql) ou [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql) comme argument, ce qui permet le sharding.
+
+<div id="creating-a-table">
+  ## Création d’une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+Voir une description détaillée de la requête [CREATE TABLE](/fr/reference/statements/create/table).
+
+La structure de la table peut différer de celle de la table d&#39;origine :
+
+* Les noms de colonnes doivent être les mêmes que dans la table d&#39;origine, mais vous pouvez n&#39;utiliser qu&#39;une partie de ces colonnes, dans n&#39;importe quel ordre.
+* Les types de colonnes peuvent différer de ceux de la table d&#39;origine. ClickHouse tente de [convertir](/fr/reference/functions/regular-functions/type-conversion-functions#CAST) les valeurs vers les types de données ClickHouse.
+
+**Paramètres du moteur**
+
+* `engine` — Le moteur de table `MySQL` ou `PostgreSQL`.
+* `host:port` — Adresse du serveur MySQL ou PostgreSQL.
+* `database` — Nom de la base de données distante.
+* `table` — Nom de la table distante.
+* `user` — Nom d&#39;utilisateur.
+* `password` — Mot de passe de l&#39;utilisateur.
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+Prend en charge plusieurs répliques, qui doivent être séparées par `|`, et plusieurs shards, qui doivent être séparés par `,`. Par exemple :
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+Lorsque vous spécifiez des répliques, l’une des répliques disponibles est sélectionnée pour chaque shard au moment de la lecture. Si la connexion échoue, la réplique suivante est sélectionnée, et ainsi de suite jusqu’à épuisement de toutes les répliques. Si la tentative de connexion échoue pour toutes les répliques, elle est répétée plusieurs fois de la même manière.
+
+Vous pouvez spécifier autant de shards que vous le souhaitez, ainsi qu’un nombre quelconque de répliques pour chaque shard.
+
+**Voir aussi**
+
+* [moteur de table MySQL](/fr/reference/engines/table-engines/integrations/mysql)
+* [moteur de table PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql)
+* [moteur de table Distributed](/fr/reference/engines/table-engines/special/distributed)

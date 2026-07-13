@@ -1,0 +1,71 @@
+---
+description: 'nth_value 윈도 함수에 대한 문서'
+sidebarTitle: 'nth_value'
+slug: /sql-reference/window-functions/nth_value
+title: 'nth_value'
+doc_type: 'reference'
+---
+
+정렬된 프레임에서 n번째 행(offset)을 기준으로 계산한 첫 번째 NULL이 아닌 값을 반환합니다.
+
+**구문**
+
+```sql
+nth_value (x, offset)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+윈도 함수 구문에 대한 자세한 내용은 [윈도우 함수 - 구문](/ko/reference/functions/window-functions/index#syntax)을 참조하십시오.
+
+**매개변수**
+
+* `x` — 컬럼 이름입니다.
+* `offset` — 현재 행과 비교할 n번째 행입니다.
+
+**반환 값**
+
+* 정렬된 프레임 내에서 n번째 행(`offset`)을 기준으로 평가한 첫 번째 non-NULL 값입니다.
+
+**예시**
+
+이 예시에서는 `nth-value` 함수를 사용하여 Premier League 축구 선수 급여로 구성된 가상의 데이터셋에서 세 번째로 높은 급여를 찾습니다.
+
+```sql title="Query"
+DROP TABLE IF EXISTS salaries;
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─third_highest_salary─┐
+1. │ Gary Chen       │ 195000 │                      │
+2. │ Robert George   │ 195000 │                      │
+3. │ Charles Juarez  │ 190000 │ Charles Juarez       │
+4. │ Scott Harrison  │ 180000 │ Charles Juarez       │
+5. │ Douglas Benson  │ 150000 │ Charles Juarez       │
+6. │ James Henderson │ 140000 │ Charles Juarez       │
+7. │ Michael Stanley │ 100000 │ Charles Juarez       │
+   └─────────────────┴────────┴──────────────────────┘
+```

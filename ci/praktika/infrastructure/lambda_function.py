@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -323,7 +323,7 @@ class Lambda:
 
             # Fetch secrets and merge with environment (secrets overwrite existing)
             if self.secrets:
-                print(f"Fetching secrets from Parameter Store...")
+                print("Fetching secrets from Parameter Store...")
                 secrets_env = self._fetch_secrets()
                 environment = {**environment, **secrets_env}
                 print(
@@ -352,7 +352,7 @@ class Lambda:
                     print(
                         f"Code unchanged for Lambda function: {function_name} (SHA256: {new_code_sha256})"
                     )
-                    print(f"Skipping code update")
+                    print("Skipping code update")
                 else:
                     # Function exists, update it
                     print(f"Code changed for Lambda function: {function_name}")
@@ -376,7 +376,7 @@ class Lambda:
                 )
                 if config_changed:
                     if code_updated:
-                        print(f"Waiting for code update to complete...")
+                        print("Waiting for code update to complete...")
                         waiter = lambda_client.get_waiter("function_updated")
                         waiter.wait(FunctionName=function_name)
 

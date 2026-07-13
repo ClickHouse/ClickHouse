@@ -1,0 +1,180 @@
+---
+slug: /whats-new/cloud-compatibility
+sidebarTitle: 'Compatibilité Cloud'
+title: 'Compatibilité Cloud'
+description: 'Ce guide donne un aperçu de ce à quoi vous attendre, sur les plans fonctionnel et opérationnel, dans ClickHouse Cloud.'
+keywords: ['ClickHouse Cloud', 'compatibilité']
+doc_type: 'guide'
+---
+
+Ce guide donne un aperçu de ce à quoi vous attendre, sur les plans fonctionnel et opérationnel, dans ClickHouse Cloud. Bien que ClickHouse Cloud repose sur la distribution ClickHouse open-source, il peut y avoir certaines différences d’architecture et d’implémentation. Vous pourriez trouver intéressant et utile, pour le contexte, ce billet de blog sur [la manière dont nous avons conçu ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year).
+
+<div id="clickhouse-cloud-architecture">
+  ## Architecture de ClickHouse Cloud
+</div>
+
+ClickHouse Cloud réduit considérablement la complexité opérationnelle et le coût d’exploitation de ClickHouse à grande échelle. Inutile de dimensionner votre déploiement à l’avance, de configurer la réplication pour assurer la haute disponibilité, de répartir manuellement vos données en segments, d’augmenter la capacité de vos serveurs lorsque votre charge de travail augmente, ou de la réduire lorsque vous ne les utilisez pas — nous nous en chargeons pour vous.
+
+Ces avantages découlent des choix architecturaux à la base de ClickHouse Cloud :
+
+* La capacité de calcul et le stockage sont dissociés et peuvent donc être mis à l’échelle automatiquement de manière indépendante, ce qui vous évite de surprovisionner le stockage ou la capacité de calcul dans des configurations d’instance statiques.
+* Le stockage hiérarchisé sur stockage objet et la mise en cache multiniveau offrent une évolutivité pratiquement illimitée et un bon rapport prix-performances, ce qui vous évite de dimensionner votre capacité de stockage à l’avance et de vous soucier de coûts de stockage élevés.
+* La haute disponibilité est activée par défaut et la réplication est gérée de manière transparente, ce qui vous permet de vous concentrer sur le développement de vos applications ou l’analyse de vos données.
+* La mise à l’échelle automatique pour les charges de travail continues et variables est activée par défaut, ce qui vous évite de dimensionner votre service à l’avance, d’augmenter la capacité de vos serveurs lorsque votre charge de travail augmente, ou de réduire manuellement leur capacité lorsque l’activité diminue
+* La mise en veille transparente pour les charges de travail intermittentes est activée par défaut. Nous mettons automatiquement en pause vos ressources de calcul après une période d’inactivité et les redémarrons de manière transparente lorsqu’une nouvelle requête arrive, ce qui vous évite de payer pour des ressources inactives.
+* Les contrôles avancés de mise à l’échelle permettent de définir un maximum d’auto-scaling pour mieux maîtriser les coûts, ou un minimum d’auto-scaling afin de réserver des ressources de calcul pour les applications ayant des exigences de performance spécifiques.
+
+<div id="capabilities">
+  ## Fonctionnalités
+</div>
+
+ClickHouse Cloud donne accès à un ensemble sélectionné de fonctionnalités de la version open source de ClickHouse. Les tableaux ci-dessous décrivent certaines fonctionnalités actuellement désactivées dans ClickHouse Cloud.
+
+<div id="database-and-table-engines">
+  ### Moteurs de base de données et moteurs de table
+</div>
+
+ClickHouse Cloud est, par défaut, un service hautement disponible et répliqué, basé sur la famille de moteurs de table [SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree). Lorsque vous créez une table avec un moteur standard de la famille MergeTree, Cloud le remplace automatiquement par le moteur `Shared*` correspondant. Vous n’avez pas à ajouter vous-même le préfixe `Shared` ou `Replicated`.
+
+| Vous indiquez                  | Cloud utilise                        |
+| ------------------------------ | ------------------------------------ |
+| `MergeTree` (ou aucun moteur)  | `SharedMergeTree`                    |
+| `ReplacingMergeTree`           | `SharedReplacingMergeTree`           |
+| `SummingMergeTree`             | `SharedSummingMergeTree`             |
+| `AggregatingMergeTree`         | `SharedAggregatingMergeTree`         |
+| `CollapsingMergeTree`          | `SharedCollapsingMergeTree`          |
+| `VersionedCollapsingMergeTree` | `SharedVersionedCollapsingMergeTree` |
+| `GraphiteMergeTree`            | `SharedGraphiteMergeTree`            |
+
+Les moteurs `Replicated*` sont convertis en leurs équivalents `Shared*`. Cette substitution est visible dans `SHOW CREATE TABLE`, qui affiche le moteur `Shared*` même si votre instruction spécifiait la variante non préfixée.
+
+Les moteurs suivants sont également pris en charge et utilisés tels quels :
+
+* URL
+* View
+* MaterializedView
+* GenerateRandom
+* Null
+* Buffer
+* Memory
+* Deltalake
+* Hudi
+* MySQL
+* MongoDB
+* NATS
+* RabbitMQ
+* PostgreSQL
+* S3
+* Kafka
+
+<div id="interfaces">
+  ### Interfaces
+</div>
+
+ClickHouse Cloud prend en charge HTTPS, les interfaces natives et le [MySQL wire protocol](/fr/concepts/features/interfaces/mysql). D’autres interfaces, comme Postgres, seront bientôt prises en charge.
+
+<div id="dictionaries">
+  ### Dictionaries
+</div>
+
+Les dictionnaires sont un moyen courant d’accélérer les recherches dans ClickHouse. ClickHouse Cloud prend actuellement en charge les dictionnaires issus de PostgreSQL, MySQL, de serveurs ClickHouse distants et locaux, de Redis, de MongoDB et de sources HTTP.
+
+<div id="federated-queries">
+  ### Requêtes fédérées
+</div>
+
+Nous prenons en charge les requêtes fédérées ClickHouse pour la communication entre clusters dans le cloud, ainsi que pour la communication avec des clusters ClickHouse externes autogérés. ClickHouse Cloud prend actuellement en charge les requêtes fédérées à l’aide des moteurs d’intégration suivants :
+
+* Deltalake
+* Hudi
+* MySQL
+* MongoDB
+* NATS
+* RabbitMQ
+* PostgreSQL
+* S3
+
+Les requêtes fédérées avec certains moteurs de base de données et moteurs de table externes, comme SQLite, ODBC, JDBC, Redis, HDFS et Hive, ne sont pas encore prises en charge.
+
+<div id="user-defined-functions">
+  ### Fonctions définies par l’utilisateur
+</div>
+
+Les fonctions définies par l’utilisateur dans ClickHouse Cloud sont actuellement en [bêta publique](/fr/reference/functions/regular-functions/udf).
+
+<div id="udf-settings-behavior">
+  #### Comportement des paramètres
+</div>
+
+<Warning>
+  **Important**
+
+  Les UDFs dans ClickHouse Cloud **n&#39;héritent pas des paramètres définis au niveau utilisateur**. Elles s&#39;exécutent avec les paramètres système par défaut.
+</Warning>
+
+Cela signifie :
+
+* Les paramètres de session (définis via l&#39;instruction `SET`) ne sont pas transmis au contexte d&#39;exécution des UDFs
+* Les paramètres du profil utilisateur ne sont pas hérités par les UDFs
+* Les paramètres définis au niveau de la requête ne s&#39;appliquent pas lors de l&#39;exécution des UDFs
+
+<div id="experimental-features">
+  ### Fonctionnalités expérimentales
+</div>
+
+Les fonctionnalités expérimentales sont désactivées dans les services ClickHouse Cloud afin de garantir la stabilité des déploiements de services.
+
+<div id="named-collections">
+  ### Collections nommées
+</div>
+
+Les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) ne sont pas prises en charge actuellement dans ClickHouse Cloud.
+
+<div id="operational-defaults-and-considerations">
+  ## Valeurs par défaut et considérations opérationnelles
+</div>
+
+Voici les paramètres par défaut des services ClickHouse Cloud. Dans certains cas, ces paramètres sont définis de manière fixe afin de garantir le bon fonctionnement du service ; dans d’autres, ils peuvent être ajustés.
+
+<div id="operational-limits">
+  ### Limites opérationnelles
+</div>
+
+<div id="max_parts_in_total-10000">
+  #### `max_parts_in_total: 10,000`
+</div>
+
+La valeur par défaut du paramètre `max_parts_in_total` pour les tables MergeTree a été abaissée de 100 000 à 10 000. Cette modification s’explique par le fait que nous avons observé qu’un grand nombre de data parts peut entraîner un démarrage lent des services dans le cloud. Un grand nombre de parts indique généralement une clé de partitionnement trop granulaire, généralement choisie par inadvertance et à éviter. Cette nouvelle valeur par défaut permettra de détecter ces cas plus tôt.
+
+<div id="max_concurrent_queries-1000">
+  #### `max_concurrent_queries: 1,000`
+</div>
+
+Ce paramètre serveur a été augmenté de `100` à `1000` par rapport à la valeur par défaut afin de permettre davantage de requêtes concurrentes.
+Cela se traduira par `nombre de répliques * 1,000` requêtes concurrentes pour les services des niveaux d’offre proposés.
+`1000` requêtes concurrentes pour le service du niveau Basic, limité à une seule réplique, et `1000+` pour Scale et Enterprise,
+selon le nombre de répliques configurées.
+
+<div id="max_table_size_to_drop-1000000000000">
+  #### `max_table_size_to_drop: 1,000,000,000,000`
+</div>
+
+Ce paramètre a été augmenté par rapport à 50 Go afin de permettre la suppression de tables/partitions jusqu’à 1 To.
+
+<div id="system-settings">
+  ### Paramètres système
+</div>
+
+ClickHouse Cloud est optimisé pour des charges de travail variables ; c’est pourquoi la plupart des paramètres système ne sont pas configurables à l’heure actuelle. Nous ne pensons pas qu’il soit nécessaire d’ajuster les paramètres système pour la plupart des utilisateurs, mais si vous avez des questions sur le réglage avancé du système, veuillez contacter ClickHouse Cloud Support.
+
+<div id="advanced-security-administration">
+  ### Administration avancée de la sécurité
+</div>
+
+Dans le cadre de la création du service ClickHouse, nous créons une base de données par défaut, ainsi que l&#39;utilisateur par défaut, qui dispose d&#39;autorisations étendues sur cette base de données. Cet utilisateur initial peut créer des utilisateurs supplémentaires et leur attribuer des autorisations sur cette base de données. En revanche, la possibilité d&#39;activer dans la base de données les fonctionnalités de sécurité suivantes à l&#39;aide de l&#39;authentification Kerberos, LDAP ou par certificat SSL X.509 n&#39;est pas prise en charge pour le moment.
+
+<div id="roadmap">
+  ## Feuille de route
+</div>
+
+Nous évaluons la demande pour de nombreuses autres fonctionnalités dans ClickHouse Cloud. Si vous avez des retours ou souhaitez demander une fonctionnalité spécifique, veuillez [soumettre votre demande ici](https://console.clickhouse.cloud/support).

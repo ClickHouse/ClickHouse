@@ -1,0 +1,65 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/http
+title: 'مصدر قاموس HTTP(S)'
+sidebarTitle: 'HTTP(S)'
+description: 'هيّئ نقطة نهاية HTTP أو HTTPS كمصدر قاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+يعتمد العمل مع خادم HTTP(S) على [كيفية تخزين القاموس في الذاكرة](/ar/reference/statements/create/dictionary/layouts/overview). إذا كان القاموس مخزّنًا باستخدام `cache` و`complex_key_cache`، فإن ClickHouse يطلب المفاتيح اللازمة عبر إرسال طلب باستخدام الطريقة `POST`.
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(HTTP(
+        url 'http://[::1]/os.tsv'
+        format 'TabSeparated'
+        credentials(user 'user' password 'password')
+        headers(header(name 'API-KEY' value 'key'))
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعداد">
+    ```xml
+    <source>
+        <http>
+            <url>http://[::1]/os.tsv</url>
+            <format>TabSeparated</format>
+            <credentials>
+                <user>user</user>
+                <password>password</password>
+            </credentials>
+            <headers>
+                <header>
+                    <name>API-KEY</name>
+                    <value>key</value>
+                </header>
+            </headers>
+        </http>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+لكي يتمكن ClickHouse من الوصول إلى مورد HTTPS، يجب [تهيئة OpenSSL](/ar/reference/settings/server-settings/settings#openssl) في إعدادات الخادم.
+
+حقول الإعداد:
+
+| الإعداد       | الوصف                                                                               |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `url`         | عنوان URL للمصدر.                                                                   |
+| `format`      | تنسيق الملف. جميع التنسيقات الموضّحة في [Formats](/ar/reference/formats/index) مدعومة. |
+| `credentials` | مصادقة HTTP من نوع Basic. اختياري.                                                  |
+| `user`        | اسم المستخدم المطلوب للمصادقة.                                                      |
+| `password`    | كلمة المرور المطلوبة للمصادقة.                                                      |
+| `headers`     | جميع إدخالات ترويسات HTTP المخصصة المستخدمة في طلب HTTP. اختياري.                   |
+| `header`      | إدخال واحد لترويسة HTTP.                                                            |
+| `name`        | اسم المعرّف المستخدم للترويسة المُرسلة مع الطلب.                                    |
+| `value`       | القيمة المعيّنة لاسم معرّف محدد.                                                    |
+
+عند إنشاء قاموس باستخدام أمر DDL (`CREATE DICTIONARY ...`)، يتم التحقق من المضيفات البعيدة الخاصة بقواميس HTTP مقارنةً بمحتوى القسم `remote_url_allow_hosts` في الإعدادات، وذلك لمنع مستخدمي قاعدة البيانات من الوصول إلى أي خادم HTTP بشكل عشوائي.
