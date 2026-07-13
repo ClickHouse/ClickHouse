@@ -158,6 +158,26 @@ Non-finite `Float32` and `Float64` values are written using Hive's Java spelling
 tokens, so that Hive's `FLOAT`/`DOUBLE` parser reads them back as the same values
 instead of `NULL`.
 
+:::note Hive-compatible output, not a full round-trip through the input format
+The output side targets Hive's default `LazySimpleSerDe` and is not symmetric with
+ClickHouse's own `HiveText` input:
+
+- Nested [`Array`](/sql-reference/data-types/array), [`Map`](/sql-reference/data-types/map)
+  and [`Tuple`](/sql-reference/data-types/tuple) values are written with Hive's nested
+  separators (without brackets), but the input format parses each field with the same
+  `CSV`/bracketed rules described in [Description](#description) and ignores
+  [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings). So nested output such
+  as `SELECT [1, 2] FORMAT HiveText` is **not** read back by
+  `INSERT ... FORMAT HiveText` — only top-level scalar fields round-trip.
+- Only the default, unescaped `LazySimpleSerDe` subset is implemented. Fields are written
+  without escaping (there is no equivalent of Hive's optional `ROW FORMAT DELIMITED ...
+  ESCAPED BY`), and `NULL` is always written as `\N` (there is no equivalent of
+  `NULL DEFINED AS`). A `String` that itself contains an active field, row or nested
+  separator is therefore written literally and will be misread when parsed back — this
+  matches how Hive itself behaves with a non-escaping serde.
+:::
+
 ```sql title="Query"
 SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
 ```
