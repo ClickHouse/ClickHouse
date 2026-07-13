@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
 
@@ -18,6 +19,11 @@
 #include <fmt/format.h>
 
 using namespace DB;
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageParallelListingThreadsScheduled;
+}
 
 namespace
 {
@@ -525,6 +531,58 @@ TEST(ObjectStorageParallelListing, EmptyResult)
     s3.finalize();
     ObjectStorageParallelListingIterator iterator("nothing/", 4, 1000, makeListLevel(s3), makeProbeLevel(s3), descendAll);
     EXPECT_TRUE(drain(iterator).empty());
+}
+
+TEST(ObjectStorageParallelListing, WorkersStartOnDemandNotEagerly)
+{
+    /// Regression test: a large `s3_list_object_parallelism` must not reserve the whole clamped worker
+    /// count up front. Because the pool is backed by the global thread pool, eagerly scheduling
+    /// `num_threads` workers for a listing that needs far fewer would let a single glob iterator grab (and
+    /// idle) that many global-pool threads — enough to starve the server. Workers must be started on
+    /// demand instead, so a listing with no fan-out runs on a single worker regardless of the requested
+    /// parallelism.
+    ///
+    /// Here the root listing blocks and never returns (so it never discovers a sub-directory to fan out
+    /// into): the single root worker parks inside it, and no further range ever appears. On-demand
+    /// spawning schedules exactly one worker; the old eager code scheduled `num_threads` of them. We
+    /// observe this via the pool's "scheduled jobs" metric, which is bumped synchronously as each worker
+    /// is scheduled and only cleared when the worker finishes — and here no worker finishes before the
+    /// listing is released.
+    std::promise<void> worker_running;      /// fulfilled once the root worker is inside `list_level`
+    std::atomic<bool> running_signaled{false};
+    std::promise<void> release_listing;     /// fulfilled to let the (simulated) listing request return
+    auto release_future = release_listing.get_future().share();
+
+    auto list_level = [&](const std::string &, const std::string &, const std::string &, const std::string &) -> ObjectStorageListResult
+    {
+        if (!running_signaled.exchange(true))
+            worker_running.set_value();
+        release_future.wait();
+        return {};
+    };
+
+    constexpr size_t num_threads = 64;
+    const auto scheduled_before = CurrentMetrics::get(CurrentMetrics::ObjectStorageParallelListingThreadsScheduled);
+
+    ObjectStorageParallelListingIterator iterator(
+        "root/", num_threads, /* max_buffered_keys */ 256, list_level, list_level, descendAll);
+
+    /// Drive the iterator from a separate thread: draining blocks until the (stalled) listing produces a
+    /// batch or finishes.
+    std::thread consumer([&] { drain(iterator); });
+
+    /// Deterministic wait (no sleep): once the single worker is parked inside the blocked `list_level`,
+    /// its own scheduling is already reflected in the metric and — since nothing fans out — no other
+    /// worker is ever scheduled, so the count is stable at one.
+    worker_running.get_future().wait();
+    EXPECT_EQ(
+        CurrentMetrics::get(CurrentMetrics::ObjectStorageParallelListingThreadsScheduled) - scheduled_before, 1)
+        << "expected a single on-demand worker for a no-fan-out listing, not the full num_threads="
+        << num_threads;
+
+    /// Let the stalled request return so the walk finishes and the consumer thread unblocks.
+    release_listing.set_value();
+    consumer.join();
 }
 
 TEST(ObjectStorageParallelListing, CancellationUnblocksBlockedConsumer)

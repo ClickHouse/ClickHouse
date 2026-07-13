@@ -87,23 +87,44 @@ ObjectStorageParallelListingIterator::~ObjectStorageParallelListingIterator()
     pool.wait();
 }
 
-void ObjectStorageParallelListingIterator::ensureStarted(std::unique_lock<std::mutex> &)
+void ObjectStorageParallelListingIterator::ensureStarted(std::unique_lock<std::mutex> & lock)
 {
     if (started)
         return;
     started = true;
-    for (size_t i = 0; i < num_threads; ++i)
+    /// Start only as many workers as the initially queued range(s) need (one for the root); the pool
+    /// grows later, on demand, as sub-directories and keyspace-split slices are discovered.
+    maybeSpawnWorkers(lock);
+}
+
+void ObjectStorageParallelListingIterator::maybeSpawnWorkers(std::unique_lock<std::mutex> &)
+{
+    if (stop || finished)
+        return;
+
+    /// Every idle worker will pick up one queued range, and so will every worker we start here; start
+    /// just enough (capped at `num_threads`) to cover the ranges that no idle worker is waiting for.
+    /// This bounds the pool to the actual fan-out instead of eagerly grabbing `num_threads` global-pool
+    /// threads up front: a flat directory that never fans out runs on a single worker.
+    size_t covered = idle_workers;
+    while (covered < ranges_to_list.size() && scheduled_workers < num_threads)
+    {
         pool.scheduleOrThrowOnError([this] { worker(); });
+        ++scheduled_workers;
+        ++covered;
+    }
 }
 
 void ObjectStorageParallelListingIterator::enqueueLocked(
-    std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> &)
+    std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> & lock)
 {
     if (!new_ranges.empty())
     {
         outstanding_ranges += new_ranges.size();
         for (auto & r : new_ranges)
             ranges_to_list.push_back(std::move(r));
+        /// Grow the pool to match the new fan-out (bounded by `num_threads`) before waking workers.
+        maybeSpawnWorkers(lock);
         work_available.notify_all();
     }
     if (!batch.empty())
@@ -127,7 +148,9 @@ void ObjectStorageParallelListingIterator::worker()
         ListRange range;
         {
             std::unique_lock lock(mutex);
+            ++idle_workers;
             work_available.wait(lock, [this] { return !ranges_to_list.empty() || finished || stop; });
+            --idle_workers;
             if (stop || finished)
                 return;
             range = std::move(ranges_to_list.front());

@@ -39,6 +39,12 @@ namespace DB
 ///
 /// The order in which keys are produced is unspecified (it depends on thread scheduling).
 ///
+/// Worker threads are started on demand rather than all at once: the pool grows only as ranges appear
+/// and never past `num_threads`. A flat directory that never fans out lists on a single worker, so a
+/// large `s3_list_object_parallelism` does not reserve the whole clamped worker count up front (which,
+/// with the global-pool-backed `ThreadPool`, would otherwise be able to starve the server for a tiny
+/// listing); a wide tree still grows the pool up to `num_threads` as sub-directories are discovered.
+///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
@@ -116,6 +122,10 @@ private:
 
     std::optional<RelativePathsWithMetadata> popBatch(std::unique_lock<std::mutex> & lock);
     void ensureStarted(std::unique_lock<std::mutex> & lock);
+    /// Start just enough additional workers (up to `num_threads`) so that every currently queued range
+    /// has an idle or freshly started worker to serve it. Called whenever ranges are enqueued, so the
+    /// pool grows on demand instead of eagerly reserving `num_threads` workers up front. Requires lock.
+    void maybeSpawnWorkers(std::unique_lock<std::mutex> & lock);
     void advanceLocked(std::unique_lock<std::mutex> & lock);
     /// Enqueue ranges and emit a batch atomically; updates the outstanding-range counter. Requires lock.
     void enqueueLocked(std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> & lock);
@@ -148,6 +158,10 @@ private:
     bool started = false;
     bool finished = false;
     bool stop = false;
+    /// Workers scheduled on the pool so far (grows on demand up to `num_threads`).
+    size_t scheduled_workers = 0;
+    /// Workers currently blocked waiting for a range (i.e. immediately available to serve a new range).
+    size_t idle_workers = 0;
     std::exception_ptr first_exception;
 
     bool is_initialized = false;
