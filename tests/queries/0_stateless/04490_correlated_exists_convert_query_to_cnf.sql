@@ -35,3 +35,26 @@ WHERE exists((SELECT a <= 100)) OR (a >= 0 AND a <= 50 AND a > 10) OR (2 != a) O
 ORDER BY a;
 
 DROP TABLE m_04490;
+
+-- The dedup keys on the subquery body, not just the action node name, so two DIFFERENT
+-- correlated exists() subqueries in one filter must stay distinct (each decorrelates into its
+-- own join) and must not be merged. Each is combined with an AND-chain so CNF clones it.
+DROP TABLE IF EXISTS d_04490;
+DROP TABLE IF EXISTS ds_04490;
+CREATE TABLE d_04490 (a Int32, b Int32) ENGINE = Memory;
+INSERT INTO d_04490 VALUES (1, 10), (2, 20), (3, 30);
+CREATE TABLE ds_04490 (x Int32) ENGINE = Memory;
+INSERT INTO ds_04490 VALUES (2), (3);
+
+SELECT a FROM d_04490
+WHERE (exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR (b > 5 AND b < 100))
+  AND (exists((SELECT 1 FROM ds_04490 WHERE x = b / 10)) OR (a > 0 AND a < 100))
+ORDER BY a;
+
+-- Two distinct correlated exists() over the same table with different predicates, plus an AND-chain branch.
+SELECT a FROM d_04490
+WHERE exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR exists((SELECT 1 FROM ds_04490 WHERE x = a + 1)) OR (b > 0 AND b < 1000)
+ORDER BY a;
+
+DROP TABLE d_04490;
+DROP TABLE ds_04490;
