@@ -37,6 +37,14 @@ namespace
         bool isDeterministic() const override { return false; }
         bool isDeterministicInScopeOfQuery() const override { return false; }
 
+        /// Marking the function stateful preserves its per-block side effect against optimizations that would
+        /// otherwise reduce how many blocks reach it. In particular, `FilterStep` splits a `WHERE a AND logTrace(...)`
+        /// chain into separate filter transforms unless the expression `hasStatefulFunctions()`, which would run the
+        /// other conditions first and evaluate `logTrace` only on the surviving blocks - logging fewer times than
+        /// there are input blocks. It similarly keeps `splitFilter`, `filterPushDown`, and redundant-sort removal from
+        /// reordering the call. This mirrors other functions with block-level semantics such as `neighbor`.
+        bool isStateful() const override { return true; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
