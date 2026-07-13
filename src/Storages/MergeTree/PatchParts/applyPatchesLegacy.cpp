@@ -496,27 +496,9 @@ void applyPatchesIndicesCombined(
     }
 }
 
-void applyPatchesToBlock(
-    Block & result_block,
-    Block & versions_block,
-    const PatchesIndices & patches,
-    UInt64 source_data_version)
-{
-    if (patches.empty())
-        return;
-
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
-    auto updated_header = getUpdatedHeader(patches);
-
-    if (canApplyPatchesRaw(patches))
-        applyPatchesIndices(result_block, versions_block, patches, updated_header, source_data_version);
-    else
-        applyPatchesIndicesCombined(result_block, versions_block, patches, updated_header, source_data_version);
 }
 
-}
-
-void applyPatchReadResultsLegacy(
+void applyPatchesToBlockLegacy(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
@@ -558,14 +540,22 @@ void applyPatchReadResultsLegacy(
             }
             case PatchMode::MergeOnKey:
             {
-                /// The current format, applied in applyPatchReadResults.
+                /// The current format, applied in applyPatchesToBlock.
                 break;
             }
         }
     }
 
-    for (const auto & entry : patches_indices)
-        applyPatchesToBlock(result_block, versions_block, entry.second, source_data_version);
+    for (const auto & [_, patches] : patches_indices)
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
+        auto updated_header = getUpdatedHeader(patches);
+
+        if (canApplyPatchesRaw(patches))
+            applyPatchesIndices(result_block, versions_block, patches, updated_header, source_data_version);
+        else
+            applyPatchesIndicesCombined(result_block, versions_block, patches, updated_header, source_data_version);
+    }
 }
 
 }

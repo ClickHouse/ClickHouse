@@ -775,7 +775,7 @@ void MergeTreeReadersChain::applyPatches(
         }
     }
 
-    applyPatchReadResults(result_block, versions_block, patch_read_results, min_version, source_data_version);
+    applyPatchesToBlock(result_block, versions_block, patch_read_results, min_version, source_data_version);
 
     result_columns = result_block.getColumns();
     result_columns.resize(result_header.columns());

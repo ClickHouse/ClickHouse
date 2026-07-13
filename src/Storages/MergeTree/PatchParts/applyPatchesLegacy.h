@@ -10,7 +10,7 @@ namespace DB
 
 /// Builds and applies patches with the legacy Merge and Join modes from patch read results.
 /// Patches updating the same set of columns are combined and applied together.
-void applyPatchReadResultsLegacy(
+void applyPatchesToBlockLegacy(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,

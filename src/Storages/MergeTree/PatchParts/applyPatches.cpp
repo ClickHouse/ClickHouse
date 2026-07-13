@@ -68,12 +68,9 @@ IColumn::Versions & addDataVersionForColumn(Block & block, const String & column
     return getColumnUInt64Data(block, data_version_name);
 }
 
-namespace
-{
-
 /// Builds patch sources for a column from all patch blocks.
 /// @p converted_columns_storage keeps cast results alive while the returned sources reference them.
-VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const Blocks & patch_blocks, const ColumnWithTypeAndName & result_column, Columns & columns_holder)
+static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const Blocks & patch_blocks, const ColumnWithTypeAndName & result_column, Columns & columns_holder)
 {
     VectorWithMemoryTracking<IColumn::Patch::Source> sources;
     sources.reserve(patch_blocks.size());
@@ -104,8 +101,6 @@ VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const Blocks
     }
 
     return sources;
-}
-
 }
 
 Block getUpdatedHeader(const PatchesIndices & patches)
@@ -461,8 +456,9 @@ void processEqualRun(
             UInt128 identity = makeBlockIdentity((*cursor.block_number)[i], (*cursor.block_offset)[i]);
             auto [it, inserted] = run_map.try_emplace(identity, static_cast<UInt32>(run_entries.size()));
 
+            /// PODArray::resize does not initialize new elements, fill them with empty entries.
             if (inserted)
-                run_entries.resize(run_entries.size() + num_groups);
+                run_entries.resize_fill(run_entries.size() + num_groups, RunEntry{});
 
             /// Keep the row with the highest data version within each group. Conflicts
             /// across groups are resolved by row versions at application time.
@@ -764,14 +760,14 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
 }
 
-void applyPatchReadResults(
+void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
     std::optional<UInt64> min_version,
     UInt64 source_data_version)
 {
-    applyPatchReadResultsLegacy(result_block, versions_block, patch_read_results, source_data_version);
+    applyPatchesToBlockLegacy(result_block, versions_block, patch_read_results, source_data_version);
     std::vector<MergeOnKeyGroup> merge_on_key_groups;
 
     for (const auto & [patch, read_result, updated_columns] : patch_read_results)
