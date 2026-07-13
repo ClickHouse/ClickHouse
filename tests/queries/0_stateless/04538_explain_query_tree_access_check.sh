@@ -16,16 +16,21 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.x (y Int32, z String) ENGINE = MergeTree ORD
 CREATE USER ${user};
 "
 
-# Print 'ACCESS_DENIED' when the query is rejected, 'OK' when it succeeds.
+# Print 'OK' only when the query succeeds, 'ACCESS_DENIED' when it is rejected for access reasons,
+# and the full unexpected error otherwise (which makes the reference diff fail) so that a positive
+# case that starts throwing a different exception cannot silently pass.
 run() {
     local label="$1"
     local query="$2"
     local out
     out=$(${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer 1 --query "${query}" 2>&1)
-    if echo "${out}" | grep -q "ACCESS_DENIED"; then
+    local status=$?
+    if [ "${status}" -eq 0 ]; then
+        echo "${label}: OK"
+    elif echo "${out}" | grep -q "ACCESS_DENIED"; then
         echo "${label}: ACCESS_DENIED"
     else
-        echo "${label}: OK"
+        echo "${label}: UNEXPECTED ERROR: ${out}"
     fi
 }
 
