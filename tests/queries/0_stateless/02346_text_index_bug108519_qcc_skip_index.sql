@@ -18,6 +18,11 @@
 
 SET allow_experimental_full_text_index = 1;
 SET allow_experimental_analyzer = 1;
+-- Disable statistics-based part pruning: with materialize_statistics_on_insert = 1 (randomized by
+-- the test runner) the implicit minmax statistics prune the whole part for the never-matching
+-- predicates below before skip-index analysis runs, so the query condition cache entries this
+-- test asserts on via QueryConditionCacheHits are never written or consulted.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS tab;
 
