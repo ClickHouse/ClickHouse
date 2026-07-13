@@ -6373,6 +6373,9 @@ Possible values:
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \
+    DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
+Short-circuit a `JOIN` whose `ON` condition folds to a constant false (or whose input is already an empty source): replace the whole join (`INNER`/`CROSS`/`SEMI`) or the non-contributing input (`LEFT`/`RIGHT`) with an empty source so the non-contributing side is not read.
+)", 0) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 )", 0) \

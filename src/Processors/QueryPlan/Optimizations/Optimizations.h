@@ -101,6 +101,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Short-circuit a JOIN with a constant-false ON condition (or an already-empty input):
+/// replace the whole join (INNER/CROSS/SEMI) or the non-contributing input (LEFT/RIGHT) with an
+/// empty source, so the non-contributing side is not read.
+size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -162,7 +167,11 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
+        /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
+        /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
+        /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
+        {tryShortCircuitConstantFalseJoin, "shortCircuitConstantFalseJoin", &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
