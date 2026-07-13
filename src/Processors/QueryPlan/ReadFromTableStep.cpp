@@ -34,19 +34,8 @@ void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQu
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implemented for ReadFromTableStep");
 }
 
-static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-{
-    writeIntBinary(val.numerator, out);
-    writeIntBinary(val.denominator, out);
-}
-
-static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-{
-    TableExpressionModifiers::Rational val;
-    readIntBinary(val.numerator, in);
-    readIntBinary(val.denominator, in);
-    return val;
-}
+/// `serializeRational` / `deserializeRational` are the shared helpers declared in
+/// `Analyzer/TableExpressionModifiers.h` (transitively included via `ReadFromTableStep.h`).
 
 /// Serialization flags for ReadFromTableStep.
 static constexpr UInt8 FLAG_HAS_FINAL = 1;
