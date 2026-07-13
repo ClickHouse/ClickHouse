@@ -110,3 +110,17 @@ DROP TABLE t_in_one_col;
 DROP TABLE t_in_two_col;
 DROP TABLE t_in_tuple_col;
 DROP TABLE s_in_one_col;
+
+-- A right-hand side that resolves to no columns must still be validated. A parameterized view keeps
+-- no stored columns in its metadata, so its storage snapshot reports zero ordinary columns. When such
+-- a shape is turned into a set, the set builder (like `buildQueryToReadColumnsFromTableExpression`)
+-- synthesizes a single constant column to preserve the row count, so the effective right-hand side has
+-- one column. The analysis-time check mirrors that: a multi-column left side against a zero-column
+-- right-hand side is a genuine arity mismatch and must be caught here, not left to slip past the
+-- `right_columns_count > 0` guard and reach `FunctionIn`'s empty-set fast path. Regression for the
+-- zero-column RHS gap flagged in PR #97540.
+DROP VIEW IF EXISTS v_in_param;
+CREATE VIEW v_in_param AS SELECT number AS n FROM numbers(10) WHERE number = {pn:UInt64};
+SELECT (1, 1) IN v_in_param; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT (1, 1, 1) IN v_in_param; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+DROP VIEW v_in_param;

@@ -1357,10 +1357,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 left_columns_count = left_tuple_type->getElements().size();
 
             NamesAndTypes right_projection_columns;
+            /// Whether we could determine the right-side column set at all. An empty
+            /// `right_projection_columns` means "no columns" only when this is true; otherwise the
+            /// shape is simply unknown here (e.g. a `TableNode` whose set is built later in the
+            /// Planner and has no storage snapshot yet) and the check must be skipped.
+            bool right_columns_determined = false;
             if (const auto * query_node = in_second_argument->as<QueryNode>())
+            {
                 right_projection_columns = query_node->getProjectionColumns();
+                right_columns_determined = true;
+            }
             else if (const auto * union_node = in_second_argument->as<UnionNode>())
+            {
                 right_projection_columns = union_node->computeProjectionColumns();
+                right_columns_determined = true;
+            }
             else if (const auto * in_table_node = in_second_argument->as<TableNode>())
             {
                 /// `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`: the set is
@@ -1374,8 +1385,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
                     right_projection_columns = NamesAndTypes(table_columns.begin(), table_columns.end());
+                    right_columns_determined = true;
                 }
             }
+
+            /// A right-hand side that resolves to no columns (a table whose only columns are special
+            /// ones, a parameterized view carrying empty metadata, or an already-normalized
+            /// zero-projection query) is turned into a single synthesized `UInt64` constant column by
+            /// the set builder / `buildQueryToReadColumnsFromTableExpression` (which appends a constant
+            /// `1` to preserve the row count). Mirror that here so the arity check runs against the same
+            /// single column the executor will see - otherwise a multi-column left side would skip the
+            /// check and reach `FunctionIn`'s empty-set fast path, silently returning `0` instead of
+            /// throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+            if (right_columns_determined && right_projection_columns.empty())
+                right_projection_columns.emplace_back("1", std::make_shared<DataTypeUInt64>());
 
             size_t right_columns_count = right_projection_columns.size();
 
