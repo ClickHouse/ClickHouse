@@ -1,6 +1,8 @@
 #include <Processors/Transforms/DistinctSortedTransform.h>
 
+#include <algorithm>
 #include <Core/SortCursor.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -9,6 +11,11 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char distinct_sorted_transform_pause[];
 }
 
 /// calculate column positions to use during chunk transformation
@@ -225,10 +232,15 @@ bool DistinctSortedTransform::buildFilter(
 
         for (size_t i = run_begin; i < run_end; ++i)
         {
-            if ((i & 0xFFF) == 0 && isCancelled())
+            if ((i & 0xFFF) == 0)
             {
-                std::fill(filter.begin() + i, filter.end(), 0);
-                return false;
+                if (i > 0) [[unlikely]]
+                    FailPointInjection::pauseFailPoint("distinct_sorted_transform_pause");
+                if (isCancelled())
+                {
+                    std::fill(filter.begin() + i, filter.end(), 0);
+                    return false;
+                }
             }
 
             const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
