@@ -30,6 +30,13 @@ namespace
         /// Do not emit the log message during query analysis, and actually run the function for each block during execution.
         bool isSuitableForConstantFolding() const override { return false; }
 
+        /// The function has an observable execution-time side effect (a trace message per block), so it must run for
+        /// every block and must not be dropped by deterministic-only optimizations. `ActionsDAG` merges structurally
+        /// equivalent deterministic nodes, and `QueryResultCache` only refuses to cache queries that contain a
+        /// function with `isDeterministic() == false`; either of these would otherwise skip the per-block logging.
+        bool isDeterministic() const override { return false; }
+        bool isDeterministicInScopeOfQuery() const override { return false; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
