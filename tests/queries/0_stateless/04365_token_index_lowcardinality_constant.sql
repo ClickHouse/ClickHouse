@@ -97,6 +97,14 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_ngrambf W
 SELECT 'mapkey tokenbf correctness';
 SELECT count(), min(id) FROM t_map_tokenbf WHERE attrs[CAST('entity', 'LowCardinality(Nullable(String))')] = 'v';
 
+-- Absent-key lookup with an empty LowCardinality(Nullable(String)) needle. arrayElement returns
+-- the map default ('') for a missing key, so every row matches. The absent-key guard must compare
+-- against the UNWRAPPED default (''), not the raw LC(Nullable) default (NULL); otherwise the guard
+-- does not fire, a granule-skipping bloom condition is built, and rows are wrongly lost (false
+-- negative). Expect all 1024 rows.
+SELECT 'mapkey tokenbf absent-key empty LC(Nullable)';
+SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(Nullable(String))');
+
 DROP TABLE t_text;
 DROP TABLE t_tokenbf;
 DROP TABLE t_ngrambf;

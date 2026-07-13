@@ -34,3 +34,5 @@ mapkey ngrambf equals LowCardinality(Nullable)
 1
 mapkey tokenbf correctness
 1	500
+mapkey tokenbf absent-key empty LC(Nullable)
+1024
