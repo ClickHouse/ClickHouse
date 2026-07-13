@@ -1614,26 +1614,38 @@ class QueryProgressElement extends HTMLElement
             <style>
                 :host
                 {
-                    display: grid;
-                    /* A single row: the spinner, then one progress area that holds everything else -
-                       the rows-in-result/elapsed time and realtime resource usage on the left and the
-                       read stats on the right - so the progress-bar gradient renders behind all of
-                       them. The progress area takes all the remaining width. */
-                    grid-template-columns: auto minmax(0, 1fr);
-                    gap: 1rem;
+                    /* A single row: the spinner, the Logs toggle, then one progress area that holds
+                       everything else - the rows-in-result/elapsed time and realtime resource usage
+                       on the left and the read stats on the right - so the progress-bar gradient
+                       renders behind all of them. A flex row (not grid) so the Logs toggle, hidden
+                       until a framing query has logs, leaves no gap when absent (a display:none flex
+                       item is skipped, along with its gap). */
+                    display: flex;
                     align-items: center;
+                    gap: 1rem;
                 }
 
-                #hourglass, #check-mark
+                /* The Logs toggle sits at the front of the line (just before the progress area) and
+                   switches the result element(s) between the query result and the streamed server
+                   logs. Dotted underline; a yellow background while the logs view is active. Hidden
+                   unless the query produced at least one log line (see showLogsToggle). */
+                #logs-toggle
                 {
-                    grid-column: 1;
-                    grid-row: 1;
+                    display: none;
+                    flex: none;
+                    user-select: none;
+                    cursor: pointer;
+                    font-size: 10pt;
+                    padding: 0 0.25rem;
+                    color: var(--misc-text-color);
+                    text-decoration: underline dotted;
+                    text-underline-offset: 0.2em;
                 }
 
-                #progress
+                #logs-toggle.active
                 {
-                    grid-column: 2;
-                    grid-row: 1;
+                    color: var(--button-active-text-color);
+                    background-color: var(--button-color);
                 }
 
                 #hourglass
@@ -1675,7 +1687,8 @@ class QueryProgressElement extends HTMLElement
                 #progress
                 {
                     display: none;
-                    width: 100%;
+                    flex: 1;
+                    min-width: 0;
                     grid-template-columns: auto minmax(0, 1fr);
                     column-gap: 0.75rem;
                     align-items: baseline;
@@ -1728,9 +1741,9 @@ class QueryProgressElement extends HTMLElement
                     grid-column: 1;
                 }
 
-                /* Elapsed time, realtime metrics, and rows/bytes progress use a monospace font, so
-                   the numbers line up and stay steady as they change. */
-                #progress-text, #stats
+                /* The Logs toggle, elapsed time, realtime metrics, and rows/bytes progress use a
+                   monospace font, so the numbers line up and stay steady as they change. */
+                #logs-toggle, #progress-text, #stats
                 {
                     font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
                 }
@@ -1746,6 +1759,7 @@ class QueryProgressElement extends HTMLElement
             </style>
             <span id="hourglass">&#10711;</span>
             <span id="check-mark">&#10004;</span>
+            <span id="logs-toggle">Logs</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
@@ -1754,7 +1768,36 @@ class QueryProgressElement extends HTMLElement
         /// The elapsed time and the realtime metrics share this one element (see `_renderProgressLine`).
         this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
+
+        /// The Logs toggle switches the result view between the query result and the streamed logs.
+        /// It just tracks its own on/off state and announces the change via a `toggle-logs` event;
+        /// the page listener applies it to the result element(s).
+        this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
+        this._logs_active = false;
+        this._logsToggle.addEventListener('click', () =>
+        {
+            this._logs_active = !this._logs_active;
+            this._logsToggle.classList.toggle('active', this._logs_active);
+            this.dispatchEvent(new CustomEvent('toggle-logs', { detail: { logs: this._logs_active } }));
+        });
+
         this.resetResources();
+    }
+
+    /// Reveal the Logs toggle. Called once the query has produced at least one log line, so it is
+    /// shown only when there are logs to switch to. Idempotent; the result/logs state is reset by
+    /// `resetLogsToggle` when a new query starts.
+    showLogsToggle()
+    {
+        this._logsToggle.style.display = 'inline-block';
+    }
+
+    /// Hide the Logs toggle and reset it to the result state (used when a new query starts).
+    resetLogsToggle()
+    {
+        this._logs_active = false;
+        this._logsToggle.classList.remove('active');
+        this._logsToggle.style.display = 'none';
     }
 
     clear()
@@ -1791,6 +1834,9 @@ class QueryProgressElement extends HTMLElement
         /// While the query runs the CPU/memory/disk are shown live; once it finishes only the peak
         /// memory usage is kept (the last CPU and current memory are transient).
         this._resources_final = false;
+        /// Set once the query finishes; used to drop the leading "NN.N%, " from the read stats (the
+        /// percentage is only meaningful while the query is still progressing towards 100%).
+        this._finished = false;
         /// The elapsed time and the metrics are rendered into the single `#progress-text` element;
         /// each half is kept here and combined by `_renderProgressLine`.
         this._progress_elapsed = '';
@@ -1912,6 +1958,7 @@ class QueryProgressElement extends HTMLElement
     {
         this._checkMark.style.display = 'none';
         this._hourglass.style.display = 'inline-block';
+        this.resetLogsToggle();
     }
 
     finish()
@@ -1920,6 +1967,9 @@ class QueryProgressElement extends HTMLElement
         this._checkMark.style.display = 'inline-block';
         /// Collapse the resource line to the peak memory usage now that the query is done.
         this._resources_final = true;
+        /// Drop the now-meaningless leading "NN.N%, " from the read stats (the query reached 100%).
+        this._finished = true;
+        this._stats.innerHTML = this._stats.innerHTML.replace(/^\d+(\.\d+)?%,\s*/, '');
         this._renderResources();
     }
 
@@ -1965,7 +2015,7 @@ class QueryProgressElement extends HTMLElement
         /// "Read 0 rows, 0.00 B" before the query starts producing progress).
         if (rows || bytes)
         {
-            if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
+            if (total_rows && !this._finished) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
 
             text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
 
@@ -3546,11 +3596,12 @@ class QueryResultElement extends HTMLElement
 
     get logCount() { return this._log_count; }
 
-    /// Reveal the result/logs tab bar (used when a framing query starts, so the switcher is
-    /// available even before the first log line arrives).
+    /// The result/logs switcher is the Logs toggle in the progress line
+    /// (see QueryProgressElement.showLogsToggle); it appears on its own once the first log line
+    /// arrives (see `_flushLogs`). This element only holds the two views. Kept as a no-op hook for
+    /// the call sites that start a framing query.
     enableViews()
     {
-        this._viewToggle.style.display = 'flex';
     }
 
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
@@ -3585,8 +3636,8 @@ class QueryResultElement extends HTMLElement
             fragment.appendChild(this._buildLogLine(entry));
         this._logsContent.appendChild(fragment);
 
-        this._btnLogs.textContent = `Logs (${this._log_count})`;
-        this._viewToggle.style.display = 'flex';
+        /// Now that there is at least one log line, reveal the Logs toggle in the progress line.
+        progressEl.showLogsToggle();
 
         if (this._log_buffer.length > 0)
             this._log_flush_raf = requestAnimationFrame(() => this._flushLogs());
@@ -4088,6 +4139,15 @@ resultEl.addEventListener('query-progress', (e) => {
     elapsed_ns = +e.detail.elapsed_ns || 0;
     progressEl.updateProgress(e.detail);
     progressEl.updateText(resultEl.rowCount, elapsed_ns, resultEl.incompleteResult);
+});
+
+/// The Logs toggle lives in the progress line; apply its state to every result element on the page
+/// (the single result, or one per statement in multi-query mode), switching them between the query
+/// result and the streamed server logs.
+progressEl.addEventListener('toggle-logs', (e) => {
+    const view = e.detail.logs ? 'logs' : 'result';
+    for (const el of document.querySelectorAll('query-result'))
+        el.showView(view);
 });
 
 if (url_elem.value == '') {
