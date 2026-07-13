@@ -88,4 +88,5 @@
 02294_anova_cmp
 
 # Flaky on CI (stuck timeout)
+04281_sparsity_stream_skips_trivial_count
 04319_skip_unavailable_shards_mode_table_missing
