@@ -1,0 +1,45 @@
+---
+description: 'Документация по предложению INTO OUTFILE'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'Предложение INTO OUTFILE'
+doc_type: 'reference'
+---
+
+Предложение `INTO OUTFILE` перенаправляет результат запроса `SELECT` в файл на стороне **клиента**.
+
+Поддерживаются сжатые файлы. Тип сжатия определяется по расширению имени файла (по умолчанию используется режим `'auto'`). Либо его можно явно указать в предложении `COMPRESSION`. Уровень сжатия для конкретного типа можно указать в предложении `LEVEL`.
+
+**Синтаксис**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` и `type` — строковые литералы. Поддерживаются следующие типы сжатия: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+`level` — числовой литерал. Поддерживаются положительные целые числа в следующих диапазонах: `1-12` для типа `lz4`, `1-22` для типа `zstd` и `1-9` для остальных типов сжатия.
+
+<div id="implementation-details">
+  ## Подробности реализации
+</div>
+
+* Эта возможность доступна в [клиенте командной строки](/ru/concepts/features/interfaces/client) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local). Поэтому запрос, отправленный через [HTTP-интерфейс](/ru/concepts/features/interfaces/http), завершится ошибкой.
+* Запрос завершится ошибкой, если файл с таким именем уже существует.
+* [Формат вывода](/ru/reference/formats/index) по умолчанию — `TabSeparated` (как в пакетном режиме клиента командной строки). Чтобы изменить его, используйте предложение [FORMAT](/ru/reference/statements/select/format).
+* Если в запросе указан `AND STDOUT`, то вывод, записываемый в файл, также отображается в стандартном выводе. Если используется сжатие, в стандартный вывод выводятся исходные данные.
+* Если в запросе указан `APPEND`, то вывод дописывается в существующий файл. Если используется сжатие, `APPEND` использовать нельзя.
+* При записи в уже существующий файл необходимо использовать `APPEND` или `TRUNCATE`.
+
+**Пример**
+
+Выполните следующий запрос с помощью [клиента командной строки](/ru/concepts/features/interfaces/client):
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```

@@ -32,6 +32,7 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
+    bool precise_float_parsing = true;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -168,6 +169,11 @@ struct FormatSettings
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
         UInt64 max_object_size = 100000;
+        /// Max number of type nodes when decoding binary types. 0 == unlimited. The guard applies only to
+        /// untrusted input: FormatFactory populates this from input_format_binary_max_type_complexity for real
+        /// input formats. A default-constructed FormatSettings (internal decode of already-stored data) leaves
+        /// it at 0, so stored/background decode is never limited.
+        UInt64 max_binary_type_complexity = 0;
     } binary{};
 
     struct
@@ -184,6 +190,8 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
+        bool input_use_native_reader = true;
+        bool output_use_native_writer = true;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -227,8 +235,10 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool serialize_tuple_into_separate_columns = true;
+        bool header_serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
+        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
@@ -347,6 +357,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
+        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 

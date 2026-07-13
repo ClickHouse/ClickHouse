@@ -1,0 +1,93 @@
+---
+slug: /cloud/managed-postgres/read-replicas
+sidebarTitle: '읽기 레플리카'
+title: '읽기 레플리카'
+description: 'ClickHouse Managed Postgres에서 읽기 레플리카를 사용해 읽기 집약적 워크로드를 스케일링합니다'
+keywords: ['읽기 레플리카', '확장성', '읽기 스케일링', 'Postgres 레플리카', '수평 스케일링']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
+
+읽기 레플리카를 사용하면 프라이머리 Managed Postgres 데이터베이스의 복사본을 하나 이상 만들 수 있습니다. 이러한 레플리카는 PostgreSQL의 네이티브 복제를 사용해 프라이머리 데이터베이스를 지속적으로 따라가며 변경 사항을 반영합니다.
+
+읽기 레플리카를 관리하려면 warehouse에서 편집 아이콘을 클릭하세요:
+
+<Image img="/images/managed-postgres/warehouse-view.webp" alt="편집 아이콘이 있는 warehouse 화면" size="md" border />
+
+그러면 기존 서비스를 확인하고 새 읽기 레플리카를 만들 수 있는 warehouse 대화상자가 열립니다:
+
+<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="읽기 레플리카 관리 대화상자" size="md" border />
+
+<div id="managing-read-replicas">
+  ## 읽기 레플리카 관리
+</div>
+
+**Read replicas** 페이지에서는 오른쪽 상단의 **Flow** 및 **Table** 컨트롤로 전환할 수 있는 두 가지 보기를 제공합니다.
+
+**Flow** 보기에는 복제 토폴로지가 표시됩니다. 맨 위의 프라이머리 인스턴스에서 각 레플리카로 화살표가 아래로 이어지며, 티어, 리전, 상태를 한눈에 확인할 수 있습니다:
+
+<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="프라이머리 및 레플리카 토폴로지를 보여주는 읽기 레플리카 흐름 보기" size="lg" border />
+
+**Table** 보기에는 각 레플리카의 서비스 이름, 클라우드 제공업체와 리전, 서비스 상태, 생성 시간, 그리고 **Detach service** 작업이 나열됩니다:
+
+<Image img="/images/managed-postgres/read-replicas-table.webp" alt="읽기 레플리카 테이블 보기" size="lg" border />
+
+새 레플리카를 생성하려면 두 보기 중 어느 쪽에서든 오른쪽 상단의 **Create read replica**를 클릭하세요.
+
+<div id="why-use-read-replicas">
+  ## 읽기 레플리카를 사용하는 이유
+</div>
+
+<div id="scalability">
+  ### 확장성
+</div>
+
+읽기 레플리카를 사용하면 읽기 집약적인 워크로드를 여러 전용 인스턴스에 분산하여 데이터베이스를 수평으로 확장할 수 있습니다. 이는 리포팅 쿼리, 분석 처리, 실시간 대시보드에 특히 유용하며, 그렇지 않으면 이러한 작업이 프로덕션 트래픽과 리소스를 두고 경쟁하게 됩니다.
+
+<div id="isolation">
+  ### 격리
+</div>
+
+분석 및 비즈니스 인텔리전스 쿼리를 읽기 레플리카로 보내면 프라이머리 인스턴스는 쓰기 작업과 중요한 트랜잭션 처리 워크로드에 집중하면서도 높은 응답성을 유지할 수 있습니다. 이러한 분리를 통해 전체 시스템의 성능과 예측 가능성이 향상됩니다. 또한 분석 도구나 보고 도구에 쓰기 권한을 부여할 필요도 없습니다. 이러한 도구는 실수로 데이터를 수정할 위험 없이 레플리카에서 안전하게 작동할 수 있습니다.
+
+<div id="business-continuity">
+  ### 비즈니스 연속성
+</div>
+
+읽기 레플리카는 재해 복구에서 중요한 역할을 할 수 있습니다. 프라이머리 데이터베이스에 장애가 발생하면 읽기 레플리카를 프라이머리로 승격해 다운타임과 데이터 손실을 최소화할 수 있습니다. 이를 통해 고가용성을 위한 대기 인스턴스만으로는 확보하기 어려운 추가적인 복원력을 제공할 수 있습니다.
+
+<div id="how-read-replicas-work">
+  ## 읽기 레플리카 작동 방식
+</div>
+
+Managed Postgres의 읽기 레플리카는 스트리밍 복제 대신 WAL 배송 아키텍처를 사용합니다. 이 설계는 프라이머리 데이터베이스에 미치는 영향을 최소화하는 데 우선순위를 둡니다.
+
+<div id="wal-shipping-from-object-storage">
+  ### 객체 스토리지에서의 WAL 배송
+</div>
+
+프라이머리 데이터베이스가 트랜잭션을 처리하면 Write-Ahead Log(WAL) 레코드가 생성됩니다. 이러한 WAL 세그먼트는 객체 스토리지(S3)에 지속적으로 아카이브됩니다. 읽기 레플리카는 객체 스토리지에서 이 WAL 세그먼트를 가져와 재생하여 프라이머리와의 동기화를 유지합니다.
+
+이 아키텍처는 프라이머리와 직접 연결된 streaming replication을 사용하는 [고가용성 대기 인스턴스](/ko/products/managed-postgres/high-availability)와는 다릅니다.
+
+<div id="why-we-chose-this-approach">
+  ### 이 접근 방식을 선택한 이유
+</div>
+
+읽기 레플리카가 streaming standby로 프라이머리에 직접 연결되는 대신, 객체 스토리지에서 WAL을 가져오도록 의도적으로 설계했습니다. 이 방식은 읽기 레플리카와 프라이머리 데이터베이스를 완전히 분리해 줍니다.
+
+* **프라이머리에 복제 오버헤드가 전혀 없음**: 읽기 레플리카는 프라이머리와 streaming 연결을 유지하지 않으므로, 핵심 워크로드에 CPU, 메모리, 네트워크 부하를 전혀 추가하지 않습니다.
+* **독립적인 스케일링**: 프라이머리 성능에 영향을 주지 않고 읽기 레플리카를 추가하거나 제거할 수 있습니다.
+* **네트워크 격리**: 읽기 레플리카는 별도의 연결 엔드포인트를 사용하는 자체 네트워크 환경에서 운영됩니다.
+
+<div id="replication-lag-characteristics">
+  ### 복제 지연 특성
+</div>
+
+이 아키텍처의 트레이드오프는 복제 지연입니다. WAL 세그먼트는 프라이머리에서 일정한 간격으로 아카이브됩니다(일반적으로 60초마다 또는 세그먼트가 가득 차는 시점 중 더 이른 때). 즉, 정상적인 조건에서는 읽기 레플리카가 프라이머리보다 최대 수십 초까지 지연될 수 있습니다.
+
+대부분의 읽기 스케일링 사용 사례(리포팅, 분석, 대시보드)에서는 이러한 지연이 허용 가능합니다. 애플리케이션에 준실시간 읽기가 필요하다면, 쿼리를 프라이머리로 보낼 수 있는지 또는 이 정도 시간 범위의 최종 일관성이 요구 사항을 충족하는지 검토하십시오.

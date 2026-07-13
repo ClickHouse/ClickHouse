@@ -1,0 +1,103 @@
+---
+description: '딕셔너리 생성 및 구성에 관한 문서'
+sidebarTitle: '개요'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/ko/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+딕셔너리는 다양한 종류의 참조 목록에 유용한 매핑(`key -> attributes`)입니다.
+ClickHouse는 딕셔너리를 다루기 위한 특수 함수를 지원하며, 이러한 함수는 쿼리에서 사용할 수 있습니다. 참조 테이블과 `JOIN`을 사용하는 것보다 함수를 사용해 딕셔너리를 활용하는 편이 더 쉽고 효율적입니다.
+
+딕셔너리는 다음 두 가지 방법으로 생성할 수 있습니다:
+
+* [DDL 쿼리로 생성](#creating-a-dictionary-with-a-ddl-query) (권장)
+* [설정 파일로 생성](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## DDL 쿼리로 딕셔너리 생성하기
+</div>
+
+<CloudSupportedBadge />
+
+딕셔너리는 DDL 쿼리로 생성할 수 있습니다.
+다음과 같은 장점이 있으므로 이 방법을 권장합니다. DDL 쿼리로 생성한 딕셔너리는 다음과 같습니다:
+
+* 서버 설정 파일에 추가 항목을 기록할 필요가 없습니다.
+* 테이블이나 뷰와 같은 독립적인 엔터티처럼 사용할 수 있습니다.
+* 딕셔너리 테이블 함수 대신 익숙한 `SELECT` 구문을 사용해 데이터를 직접 읽을 수 있습니다. `SELECT` 문으로 딕셔너리에 직접 접근하면, 캐시된 딕셔너리는 캐시된 데이터만 반환하고 캐시되지 않은 딕셔너리는 저장된 모든 데이터를 반환합니다.
+* 딕셔너리 이름을 쉽게 변경할 수 있습니다.
+
+<div id="syntax">
+  ### 구문
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| 절                                                                    | 설명                                                                   |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [속성](/ko/reference/statements/create/dictionary/attributes)             | 딕셔너리 속성은 테이블 컬럼과 비슷하게 지정합니다. 필수 속성은 유형뿐이며, 나머지에는 모두 기본값을 지정할 수 있습니다. |
+| PRIMARY KEY                                                          | 딕셔너리 조회에 사용할 키 컬럼을 정의합니다. 레이아웃에 따라 하나 이상의 속성을 키로 지정할 수 있습니다.         |
+| [`SOURCE`](/ko/reference/statements/create/dictionary/sources/overview) | 딕셔너리의 데이터 소스를 정의합니다(예: ClickHouse 테이블, HTTP, PostgreSQL).            |
+| [`LAYOUT`](/ko/reference/statements/create/dictionary/layouts/overview) | 딕셔너리가 메모리에 저장되는 방식을 제어합니다(예: `FLAT`, `HASHED`, `CACHE`).             |
+| [`LIFETIME`](/ko/reference/statements/create/dictionary/lifetime)       | 딕셔너리의 갱신 주기를 설정합니다.                                                  |
+| [`ON CLUSTER`](/ko/reference/statements/distributed-ddl)                | 클러스터에 딕셔너리를 생성합니다. 선택 사항입니다.                                         |
+| `SETTINGS`                                                           | 추가 딕셔너리 설정입니다. 선택 사항입니다.                                             |
+| `COMMENT`                                                            | 딕셔너리에 텍스트 주석을 추가합니다. 선택 사항입니다.                                       |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## 설정 파일로 딕셔너리 생성하기
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  설정 파일을 사용한 딕셔너리 생성은 ClickHouse Cloud에서는 지원되지 않습니다. DDL(위 참조)을 사용하고, 딕셔너리는 `default` 사용자로 생성하십시오.
+</Note>
+
+딕셔너리 설정 파일의 포맷은 다음과 같습니다.
+
+```xml
+<clickhouse>
+    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
+
+    <!--선택적 요소. 대체값이 포함된 파일 이름-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- 딕셔너리 구성. -->
+        <!-- 설정 파일에는 딕셔너리 섹션을 원하는 만큼 포함할 수 있습니다. -->
+    </dictionary>
+
+</clickhouse>
+```
+
+같은 파일에 딕셔너리를 원하는 만큼 구성할 수 있습니다.
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [레이아웃](/ko/reference/statements/create/dictionary/layouts/overview) — 딕셔너리가 메모리에 저장되는 방식
+* [SOURCES](/ko/reference/statements/create/dictionary/sources/overview) — 데이터 소스 연결
+* [수명](/ko/reference/statements/create/dictionary/lifetime) — 자동 갱신 설정
+* [속성](/ko/reference/statements/create/dictionary/attributes) — 키 및 속성 구성
+* [내장 딕셔너리](/ko/reference/statements/create/dictionary/embedded) — 기본 제공 지오베이스 딕셔너리
+* [system.dictionaries](/ko/reference/system-tables/dictionaries) — 딕셔너리 정보를 제공하는 시스템 테이블

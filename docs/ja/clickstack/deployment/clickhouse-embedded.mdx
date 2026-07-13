@@ -1,0 +1,170 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickhouse-embedded
+title: 'ClickHouse に組み込み'
+description: 'ClickHouse Server に組み込まれた ClickStack を使用する - ClickHouse オブザーバビリティスタック'
+doc_type: 'guide'
+keywords: ['ClickStack の組み込み', 'ClickHouse の組み込み', 'ClickStack ClickHouse Server', '組み込みオブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack は ClickHouse server バイナリに直接組み込まれています。つまり、追加のコンポーネントをデプロイしなくても、ClickHouse インスタンスから ClickStack UI (HyperDX) にアクセスできます。このデプロイは [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) の公開デモに似ていますが、お使いの ClickHouse インスタンスとデータを対象に動作します。
+
+<div id="suitable-for">
+  ### 適した用途
+</div>
+
+* 最小限のセットアップでClickStackを試したい場合
+* オブザーバビリティUIで自分のClickHouseデータを確認したい場合
+* デモや評価
+
+<div id="limitations">
+  ### 制限事項
+</div>
+
+この組み込み版は、**本番環境での利用向けには設計されていません**。[本番対応の OSS デプロイメント](/ja/clickstack/deployment/oss)と比べると、以下の機能は利用できません。
+
+* [アラート](/ja/clickstack/features/alerts)
+* [ダッシュボード](/ja/clickstack/features/dashboards/overview)と[検索](/ja/clickstack/features/search)の永続化 — ダッシュボードと保存済み検索はセッションをまたいで保持されません
+* クエリ設定のカスタマイズ
+* [イベントパターン](/ja/clickstack/features/event-patterns)
+
+<div id="deployment-steps">
+  ## デプロイ手順
+</div>
+
+<Tabs>
+  <Tab title="Docker">
+    <Steps>
+      <Step>
+        ### ClickHouse を起動する
+
+        パスワードを設定して、ClickHouse server イメージを取得し、起動します。
+
+        ```shell
+        docker run --rm -it -p 8123:8123 -e CLICKHOUSE_PASSWORD=password clickhouse/clickhouse-server:head-alpine
+        ```
+
+        <Tip>
+          **パスワードなしで実行する**
+
+          パスワードなしで実行する場合は、デフォルトのアクセス管理を明示的に有効化する必要があります。
+
+          ```shell
+          docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 clickhouse/clickhouse-server:head-alpine
+          ```
+        </Tip>
+      </Step>
+
+      <Step>
+        ### ClickStack UI を開く
+
+        ブラウザで [http://localhost:8123](http://localhost:8123) を開き、**ClickStack** をクリックします。
+
+        ユーザー名 `default` とパスワード `password` を入力して、ローカルインスタンスに接続します。
+
+        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="認証" size="lg" />
+      </Step>
+
+      <Step>
+        ### ログソースを作成する
+
+        既存の OpenTelemetry テーブルがある場合、ClickStack がそれらを検出し、自動的にログソースを作成します。
+
+        新規インストールの場合は、ログソースの作成を求められます。**Table** フィールドに適切なテーブル名 (例: `otel_logs`) を入力し、**Save New Source** をクリックします。
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="ログソースを作成" size="lg" />
+
+        まだデータがない場合は、利用可能なオプションについて [Ingesting data](/ja/clickstack/ingesting-data/index) を参照してください。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="バイナリ">
+    <Steps>
+      <Step>
+        ### ClickHouse を起動する
+
+        ClickHouse をダウンロードして起動します。
+
+        ```shell
+        curl https://clickhouse.com/ | sh
+        ```
+
+        <Accordion title="任意: システムログテーブルを有効にする">
+          ClickHouse 自身の内部ログとメトリクスを確認するには、サーバーを起動する前に作業ディレクトリに設定スニペットを作成します。
+
+          ```shell
+          mkdir -p config.d && cat > config.d/query_logs.xml << 'EOF'
+          <clickhouse>
+              <query_log>
+                  <database>system</database>
+                  <table>query_log</table>
+              </query_log>
+              <query_thread_log>
+                  <database>system</database>
+                  <table>query_thread_log</table>
+              </query_thread_log>
+              <query_views_log>
+                  <database>system</database>
+                  <table>query_views_log</table>
+              </query_views_log>
+              <metric_log>
+                  <database>system</database>
+                  <table>metric_log</table>
+              </metric_log>
+              <asynchronous_metric_log>
+                  <database>system</database>
+                  <table>asynchronous_metric_log</table>
+              </asynchronous_metric_log>
+          </clickhouse>
+          EOF
+          ```
+
+          これを有効にすると、ClickStack を開いたあとで `system.query_log` を指す **Log Source** を作成できます。
+
+          | 設定                   | 値                                                                                                                                       |
+          | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+          | **Name**             | `Query Logs`                                                                                                                            |
+          | **Database**         | `system`                                                                                                                                |
+          | **Table**            | `query_log`                                                                                                                             |
+          | **Timestamp Column** | `event_time`                                                                                                                            |
+          | **Default Select**   | `event_time, query_kind, query, databases, tables, initial_user, projections, memory_usage, written_rows, read_rows, query_duration_ms` |
+        </Accordion>
+
+        サーバーを起動します。
+
+        ```shell
+        ./clickhouse server
+        ```
+      </Step>
+
+      <Step>
+        ### ClickStack UI を開く
+
+        ブラウザで [http://localhost:8123](http://localhost:8123) を開き、**ClickStack** をクリックします。ローカルインスタンスへの接続は自動的に作成されます。
+      </Step>
+
+      <Step>
+        ### ログソースを作成する
+
+        既存の OpenTelemetry テーブルがある場合、ClickStack がそれらを検出し、自動的にログソースを作成します。
+
+        まだデータがない場合は、利用可能なオプションについて [Ingesting data](/ja/clickstack/ingesting-data/index) を参照してください。
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="ログソースを作成" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+評価段階を終えて次に進む準備ができている場合は、本番運用に対応したデプロイを検討してください。
+
+* [All-in-One](/ja/clickstack/deployment/all-in-one) — 永続化と認証を含む、すべてのコンポーネントを備えた単一コンテナー
+* [Docker Compose](/ja/clickstack/deployment/docker-compose) — より細かく制御するための個別コンポーネント構成
+* [Helm](/ja/clickstack/deployment/helm) — 本番 Kubernetes デプロイに推奨
+* [Managed ClickStack](/ja/clickstack/getting-started/managed) — ClickHouse Cloud 上で提供される完全マネージド型

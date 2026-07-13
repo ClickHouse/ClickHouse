@@ -1,0 +1,192 @@
+---
+slug: /migrations/postgresql/dataset
+title: 'Migração de dados'
+description: 'Exemplo de conjunto de dados para migração do PostgreSQL para o ClickHouse'
+keywords: ['Postgres']
+show_related_blogs: true
+sidebarTitle: 'Parte 1'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+> Esta é a **Parte 1** de um guia sobre a migração do PostgreSQL para o ClickHouse. Por meio de um exemplo prático, ela mostra como realizar essa migração com eficiência usando uma abordagem de replicação em tempo real (CDC). Muitos dos conceitos abordados também se aplicam a transferências manuais em massa de dados do PostgreSQL para o ClickHouse.
+
+<div id="dataset">
+  ## Conjunto de dados
+</div>
+
+Como exemplo de conjunto de dados para mostrar uma migração típica de Postgres para ClickHouse, usamos o conjunto de dados do Stack Overflow documentado [aqui](/pt-BR/get-started/sample-datasets/stackoverflow). Ele contém todos os `post`, `vote`, `user`, `comment` e `badge` registrados no Stack Overflow de 2008 até abr. de 2024. O esquema do PostgreSQL para esses dados é mostrado abaixo:
+
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Esquema PostgreSQL do Stack Overflow" />
+
+*Os comandos DDL para criar as tabelas no PostgreSQL estão disponíveis [aqui](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
+
+Esse esquema, embora não seja necessariamente o mais otimizado, explora vários recursos populares do PostgreSQL, incluindo chaves primárias, chaves estrangeiras, particionamento e índices.
+
+Vamos migrar cada um desses conceitos para seus equivalentes no ClickHouse.
+
+Para os usuários que desejam carregar esse conjunto de dados em uma instância do PostgreSQL para testar as etapas da migração, disponibilizamos os dados para download no formato `pg_dump` junto com o DDL, e os comandos subsequentes de carregamento de dados são mostrados abaixo:
+
+```bash
+# users
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/users.sql.gz
+gzip -d users.sql.gz
+psql < users.sql
+
+# posts
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posts.sql.gz
+gzip -d posts.sql.gz
+psql < posts.sql
+
+# posthistory
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posthistory.sql.gz
+gzip -d posthistory.sql.gz
+psql < posthistory.sql
+
+# comments
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/comments.sql.gz
+gzip -d comments.sql.gz
+psql < comments.sql
+
+# votes
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/votes.sql.gz
+gzip -d votes.sql.gz
+psql < votes.sql
+
+# badges
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/badges.sql.gz
+gzip -d badges.sql.gz
+psql < badges.sql
+
+# postlinks
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/postlinks.sql.gz
+gzip -d postlinks.sql.gz
+psql < postlinks.sql
+```
+
+Embora seja pequeno para o ClickHouse, este conjunto de dados é substancial para o Postgres. O conteúdo acima representa um subconjunto que cobre os três primeiros meses de 2024.
+
+> Embora os resultados do nosso exemplo usem o conjunto de dados completo para mostrar as diferenças de desempenho entre o Postgres e o ClickHouse, todas as etapas documentadas abaixo são funcionalmente idênticas com o subconjunto menor. Os usuários que quiserem carregar o conjunto de dados completo no Postgres podem ver [aqui](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). Devido às restrições de chave estrangeira impostas pelo esquema acima, o conjunto de dados completo para PostgreSQL contém apenas linhas que satisfazem a integridade referencial. Uma [versão em Parquet](/pt-BR/get-started/sample-datasets/stackoverflow), sem essas restrições, pode ser carregada facilmente diretamente no ClickHouse, se necessário.
+
+<div id="migrating-data">
+  ## Migração de dados
+</div>
+
+<div id="real-time-replication-or-cdc">
+  ### Replicação em tempo real (CDC)
+</div>
+
+Consulte este [guia](/pt-BR/integrations/clickpipes/postgres/index) para configurar o ClickPipes para PostgreSQL. O guia aborda vários tipos diferentes de instâncias de origem do Postgres.
+
+Com a abordagem de CDC usando ClickPipes ou PeerDB, cada tabela no banco de dados PostgreSQL é replicada automaticamente no ClickHouse.
+
+Para lidar com atualizações e exclusões em tempo quase real, o ClickPipes mapeia tabelas do Postgres para o ClickHouse usando o motor [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), projetado especificamente para lidar com atualizações e exclusões no ClickHouse. Você pode encontrar mais informações sobre como os dados são replicados para o ClickHouse usando o ClickPipes [aqui](/pt-BR/integrations/clickpipes/postgres/deduplication#how-does-data-get-replicated). É importante observar que a replicação usando CDC cria linhas duplicadas no ClickHouse ao replicar operações de atualização ou exclusão. [Veja técnicas](/pt-BR/integrations/clickpipes/postgres/deduplication#deduplicate-using-final-keyword) que usam o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier) para lidar com esse problema no ClickHouse.
+
+Vamos ver como a tabela `users` é criada no ClickHouse usando o ClickPipes.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+Depois de configurado, o ClickPipes começa a migrar todos os dados do PostgreSQL para o ClickHouse. Dependendo da rede e do porte das implantações, isso deve levar apenas alguns minutos para o conjunto de dados do Stack Overflow.
+
+<div id="initial-bulk-load-with-periodic-updates">
+  ### Carga manual em massa com atualizações periódicas
+</div>
+
+Com uma abordagem manual, a carga inicial em massa do conjunto de dados pode ser feita por meio de:
+
+* **Funções de tabela** - Uso da [função de tabela Postgres](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse para fazer `SELECT` dos dados no Postgres e `INSERT` em uma tabela do ClickHouse. É indicada para cargas em massa de conjuntos de dados de até várias centenas de GB.
+* **Exportações** - Exportação para formatos intermediários, como CSV ou arquivos de script SQL. Esses arquivos podem então ser carregados no ClickHouse a partir do cliente, por meio da cláusula `INSERT FROM INFILE`, ou usando armazenamento de objetos e as funções associadas, como s3 e gcs.
+
+Ao carregar dados manualmente do PostgreSQL, primeiro é necessário criar as tabelas no ClickHouse. Consulte esta [documentação de modelagem de dados](/pt-BR/guides/clickhouse/data-modelling/schema-design#establish-initial-schema), que também usa o conjunto de dados Stack Overflow para otimizar o esquema da tabela no ClickHouse.
+
+Os tipos de dados entre PostgreSQL e ClickHouse podem ser diferentes. Para determinar os tipos equivalentes para cada uma das colunas da tabela, podemos usar o comando `DESCRIBE` com a [função de tabela Postgres](/pt-BR/reference/functions/table-functions/postgresql). O comando a seguir descreve a tabela `posts` no PostgreSQL; ajuste-o de acordo com o seu ambiente:
+
+```sql title="Query"
+DESCRIBE TABLE postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+SETTINGS describe_compact_output = 1
+```
+
+Para uma visão geral do mapeamento de tipos de dados entre PostgreSQL e ClickHouse, consulte a [documentação do apêndice](/pt-BR/get-started/migrate/postgres/appendix#data-type-mappings).
+
+As etapas para otimizar os tipos deste esquema são idênticas às usadas quando os dados são carregados de outras fontes, como Parquet no S3. Ao aplicar o processo descrito neste [guia alternativo usando Parquet](/pt-BR/guides/clickhouse/data-modelling/schema-design), obtém-se o seguinte esquema:
+
+```sql title="Query"
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+Podemos preencher isso com um simples `INSERT INTO SELECT`, lendo os dados do PostgreSQL e inserindo-os no ClickHouse:
+
+```sql title="Query"
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+As cargas incrementais, por sua vez, podem ser agendadas. Se a tabela do Postgres receber apenas inserções e houver um id incremental ou um timestamp, você poderá usar a abordagem de função de tabela acima para carregar os incrementos, ou seja, uma cláusula `WHERE` pode ser aplicada ao `SELECT`. Essa abordagem também pode ser usada para oferecer suporte a atualizações, desde que haja garantia de que elas sempre atualizem a mesma coluna. Já para dar suporte a exclusões, será necessária uma recarga completa, o que pode ser difícil de viabilizar à medida que a tabela cresce.
+
+Demonstramos uma carga inicial e uma carga incremental usando `CreationDate` (presumimos que ela seja atualizada se as linhas forem atualizadas)..
+
+```sql
+-- carga inicial
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
+
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
+```
+
+> O ClickHouse executará no servidor PostgreSQL cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN. Assim, cargas incrementais podem ser mais eficientes se houver um índice nas colunas usadas para identificar o conjunto de alterações.
+
+> Um método possível para detectar operações de UPDATE ao usar replicação de consultas é usar a [`coluna de sistema XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (IDs de transação) como watermark — uma mudança nessa coluna indica uma alteração e, portanto, pode ser aplicada à tabela de destino. Os usuários que adotarem essa abordagem devem estar cientes de que os valores de `XMIN` podem sofrer wraparound, e as comparações exigem uma varredura completa da tabela, o que torna o rastreamento de alterações mais complexo.
+
+[Clique aqui para a Parte 2](/pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part2)

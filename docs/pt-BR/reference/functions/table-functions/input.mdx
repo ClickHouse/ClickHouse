@@ -1,0 +1,47 @@
+---
+description: 'Função de tabela que permite converter e inserir com eficiência dados
+  enviados ao servidor com uma determinada estrutura em uma tabela com outra estrutura.'
+sidebarTitle: 'input'
+slug: /sql-reference/table-functions/input
+title: 'input'
+doc_type: 'reference'
+---
+
+`input(structure)` - função de tabela que permite converter e inserir com eficiência dados enviados ao
+servidor com uma determinada estrutura em uma tabela com outra estrutura.
+
+`structure` - estrutura dos dados enviados ao servidor no seguinte formato: `'column1_name column1_type, column2_name column2_type, ...'`.
+Por exemplo, `'id UInt32, name String'`.
+
+Essa função pode ser usada apenas na consulta `INSERT SELECT` e apenas uma vez, mas, fora isso, se comporta como uma função de tabela comum
+(por exemplo, pode ser usada em uma subconsulta etc.).
+
+Os dados podem ser enviados da mesma forma que em uma consulta `INSERT` comum e em qualquer [formato](/pt-BR/reference/formats/index)
+disponível, que deve ser especificado no final da consulta (diferentemente de um `INSERT SELECT` comum).
+
+O principal recurso dessa função é que, quando o servidor recebe dados do cliente, ele os converte simultaneamente
+de acordo com a lista de expressões na cláusula `SELECT` e os insere na tabela de destino. Não é criada uma tabela temporária
+com todos os dados transferidos.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+* Suponha que a tabela `test` tenha a seguinte estrutura `(a String, b String)`
+  e que os dados em `data.csv` tenham uma estrutura diferente `(col1 String, col2 Date, col3 Int32)`. A consulta para inserir
+  dados de `data.csv` na tabela `test` com conversão simultânea é assim:
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
+```
+
+* Se `data.csv` contiver dados com a mesma estrutura `test_structure` da tabela `test`, estas duas consultas serão equivalentes:
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
+```

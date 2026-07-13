@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: 'Atualizações'
+title: 'Atualizações'
+description: 'Como funcionam as atualizações de versão do PostgreSQL no ClickHouse Managed Postgres'
+keywords: ['atualizações do Managed Postgres', 'versão do Postgres', 'upgrade menor', 'upgrade principal', 'janela de manutenção']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+O Managed Postgres realiza atualizações de versão do PostgreSQL para manter suas instâncias seguras e atualizadas. Há suporte tanto para atualizações de versões secundárias quanto para atualizações entre versões principais, com interrupção mínima.
+
+<div id="maintenance-updates">
+  ## Atualizações de manutenção
+</div>
+
+A manutenção regular das instâncias do PostgreSQL inclui o seguinte:
+
+* Atualizações de versões menores (por exemplo, de 17.4 para 17.5), que incluem correções de bugs e patches de segurança do PostgreSQL.
+* Recursos do Managed Service. Melhorias no CDC nativo, observabilidade, pg&#95;clickhouse e outras extensões.
+* Patches do sistema operacional e dos componentes do sistema, incluindo correções de segurança, melhorias de eficiência e outros aprimoramentos.
+
+Essas operações são realizadas por meio de failover e normalmente resultam apenas em uma breve desconexão, muitas vezes de apenas alguns segundos.
+
+Para instâncias com [standbys](/pt-BR/products/managed-postgres/high-availability) habilitados, a atualização é aplicada primeiro ao standby, seguida de um failover para minimizar o tempo de inatividade.
+
+<div id="maintenance-windows">
+  ## Janelas de manutenção
+</div>
+
+A janela de manutenção padrão é das 14:00 às 16:00 UTC, aos domingos.
+O tempo de indisponibilidade esperado é inferior a 1 minuto durante essa janela.
+
+Para organizations do tier Enterprise, o Managed Postgres oferece suporte a janelas de manutenção, para que upgrades e outras operações de manutenção possam ser agendados no horário que cause o menor impacto possível à sua carga de trabalho. O suporte na UI e na API para configurar janelas de manutenção estará disponível em breve. Enquanto isso, entre em contato com o [suporte](https://clickhouse.com/support/program) para definir uma janela de manutenção para a sua instância.
+
+<div id="major-version-upgrades">
+  ## Atualizações entre versões principais
+</div>
+
+As atualizações entre versões principais (por exemplo, da 17.x para a 18.x) via UI e API estarão disponíveis em breve.
+Enquanto isso, entre em contato com o [suporte](https://clickhouse.com/support/program) para atualizar sua instância de Managed Postgres.
