@@ -34,6 +34,19 @@ FROM (
 )
 WHERE explain LIKE '%⋈%';
 
+-- A predicate proven false before `index_stats` are populated is still an exact
+-- empty read, not an unknown-cardinality relation.
+SELECT trimLeft(explain)
+FROM (
+    EXPLAIN
+    SELECT count()
+    FROM fact_04516 AS f
+    INNER JOIN dim_04516 AS d ON f.id = d.id
+    WHERE 0
+    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+)
+WHERE explain LIKE '%⋈%';
+
 -- Same with the statistics cache enabled: a pruned query must not be served
 -- by the table-wide cached estimator.
 SELECT trimLeft(explain)

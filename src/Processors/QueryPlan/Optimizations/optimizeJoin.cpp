@@ -365,6 +365,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
 
+        /// Early index-analysis returns have no `index_stats`, but an exact empty result
+        /// must not degrade from zero rows to unknown in the fallback below.
+        if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {

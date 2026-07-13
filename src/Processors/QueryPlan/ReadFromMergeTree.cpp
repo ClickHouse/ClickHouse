@@ -2814,7 +2814,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     if (indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
     {
@@ -2838,7 +2841,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->generateUnsubstituted().toString());
 
     if (indexes->key_condition->generateUnsubstituted().alwaysFalse())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
@@ -2870,7 +2876,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log);
 
     if (result.sampling.read_nothing)
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     for (const auto & part : res_parts)
         total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
