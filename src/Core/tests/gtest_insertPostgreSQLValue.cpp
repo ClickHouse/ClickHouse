@@ -30,7 +30,7 @@ TEST(InsertPostgreSQLValue, MalformedArrayClosingBracketThrows)
     auto array_type = std::make_shared<DataTypeArray>(nested_type);
     auto column = ColumnArray::create(ColumnInt32::create());
 
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
     preparePostgreSQLArrayInfo(array_info, 0, array_type);
 
     /// Input "}" causes row_end at dimension 0 — must throw BAD_ARGUMENTS,
@@ -55,7 +55,7 @@ TEST(InsertPostgreSQLValue, MalformedArrayClosingThenOpeningThrows)
     auto array_type = std::make_shared<DataTypeArray>(nested_type);
     auto column = ColumnArray::create(ColumnInt32::create());
 
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
     preparePostgreSQLArrayInfo(array_info, 0, array_type);
 
     /// Input "}{" also starts with row_end at dimension 0.
@@ -79,7 +79,7 @@ TEST(InsertPostgreSQLValue, WellFormedArraySucceeds)
     auto array_type = std::make_shared<DataTypeArray>(nested_type);
     auto column = ColumnArray::create(ColumnInt32::create());
 
-    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
     preparePostgreSQLArrayInfo(array_info, 0, array_type);
 
     /// Well-formed "{1,2,3}" must succeed without exceptions.

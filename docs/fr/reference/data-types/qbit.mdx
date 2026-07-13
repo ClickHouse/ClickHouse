@@ -1,0 +1,99 @@
+---
+description: 'Documentation du type de données QBit dans ClickHouse, qui permet une quantification fine pour la recherche vectorielle approximative'
+keywords: ['qbit', 'type de données']
+sidebarTitle: 'QBit'
+slug: /sql-reference/data-types/qbit
+title: 'Type de données QBit'
+doc_type: 'reference'
+---
+
+Le type de données `QBit` réorganise le stockage des vecteurs pour accélérer les recherches approximatives. Au lieu de stocker ensemble les éléments de chaque vecteur, il regroupe les mêmes positions de bits binaires pour l’ensemble des vecteurs.
+Ce type stocke les vecteurs à pleine précision tout en vous permettant de choisir le niveau de quantification fine au moment de la recherche : lisez moins de bits pour réduire les E/S et accélérer les calculs, ou davantage de bits pour une précision accrue. Vous bénéficiez ainsi des gains de vitesse liés à la réduction des transferts de données et des calculs grâce à la quantification, tout en conservant l’accès aux données d’origine lorsque nécessaire.
+
+Pour déclarer une colonne de type `QBit`, utilisez la syntaxe suivante :
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – le type de chaque élément du vecteur. Les types autorisés sont `BFloat16`, `Float32` et `Float64`
+* `dimension` – le nombre d’éléments de chaque vecteur
+
+<div id="creating-qbit">
+  ## Création de QBit
+</div>
+
+Utilisation du type `QBit` dans la définition d’une colonne de la table :
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+<div id="converting-arrays-to-qbit">
+  ## Conversion de tableaux en QBit
+</div>
+
+Les tableaux sont convertis en `QBit` lorsque leur longueur correspond à la dimension de `QBit`. Le type des éléments du tableau n’a pas besoin de correspondre à celui de `QBit`. Tout type d’élément numérique y est converti automatiquement. Cela vous permet de transférer directement une colonne d’embeddings existante vers une colonne `QBit` :
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+La conversion fonctionne également explicitement avec `CAST`, par exemple `CAST(embedding AS QBit(Float32, 8))`.
+
+<div id="qbit-subcolumns">
+  ## Sous-colonnes QBit
+</div>
+
+`QBit` implémente un mécanisme d’accès par sous-colonnes qui vous permet d’accéder à chaque plan de bits des vecteurs stockés. Chaque position de bit est accessible à l’aide de la syntaxe `.N`, où `N` correspond à la position du bit :
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+Le nombre de sous-colonnes accessibles dépend du type d’élément :
+
+* `BFloat16` : 16 sous-colonnes (1-16)
+* `Float32` : 32 sous-colonnes (1-32)
+* `Float64` : 64 sous-colonnes (1-64)
+
+<div id="vector-search-functions">
+  ## Fonctions de recherche vectorielle
+</div>
+
+Voici les fonctions de distance pour la recherche de similarité vectorielle qui utilisent le type de données `QBit` :
+
+* [`L2DistanceTransposed`](/fr/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/fr/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)

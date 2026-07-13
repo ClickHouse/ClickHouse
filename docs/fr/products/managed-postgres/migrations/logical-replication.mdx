@@ -1,0 +1,167 @@
+---
+slug: /cloud/managed-postgres/migrations/logical-replication
+sidebarTitle: 'Réplication logique'
+title: 'Migrer vers Managed Postgres avec la réplication logique'
+description: 'Découvrez comment migrer vos données PostgreSQL vers ClickHouse Managed Postgres avec la réplication logique'
+keywords: ['postgres', 'postgresql', 'réplication logique', 'migration', 'transfert de données', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide fournit des instructions détaillées, étape par étape, pour migrer votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de la réplication logique native de Postgres.
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
+
+<div id="migration-logical-replication-prerequisites">
+  ## Prérequis
+</div>
+
+* Accès à votre base de données PostgreSQL source.
+* `psql`, `pg_dump` et `pg_restore` installés sur votre machine locale. Ils servent à créer des tables vides dans votre base de données cible. Ils sont généralement inclus dans les installations de PostgreSQL. Sinon, vous pouvez les télécharger depuis le [site officiel de PostgreSQL](https://www.postgresql.org/download/).
+* Votre base de données source doit être accessible depuis ClickHouse Managed Postgres. Assurez-vous que toutes les règles de pare-feu ou tous les paramètres de groupe de sécurité nécessaires autorisent cette connectivité. Vous pouvez obtenir l’adresse IP de sortie de votre instance Managed Postgres comme suit :
+
+```shell
+dig +short <your-managed-postgres-hostname>
+```
+
+<div id="migration-logical-replication-setup">
+  ## La configuration
+</div>
+
+Pour que la réplication logique fonctionne, assurez-vous que la base de données source est correctement configurée. Voici les principales exigences :
+
+* La base de données source doit avoir `wal_level` défini sur `logical`.
+* La base de données source doit avoir `max_replication_slots` défini sur au moins `1`.
+* Pour RDS (utilisé ici comme exemple), vous devez vous assurer que votre groupe de paramètres a `rds.logical_replication` défini sur `1`.
+* Le database user de la base de données source doit disposer du privilège `REPLICATION`. Dans le cas de RDS, exécutez :
+  ```sql
+  GRANT rds_replication TO <your-username>;
+  ```
+* Le rôle que vous utilisez pour la base de données cible doit disposer des privilèges d&#39;écriture sur les objets de la base de données cible :
+  ```sql
+  GRANT USAGE ON SCHEMA <schema_i> TO subscriber_user;
+  GRANT CREATE ON DATABASE destination_db TO subscriber_user;
+  GRANT pg_create_subscription TO subscriber_user;
+
+  -- Accorder des droits sur les tables
+  GRANT INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA <schema_i> TO subscriber_user;
+  ```
+
+Assurez-vous que votre base de données source est configurée comme ceci :
+
+<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="Configuration de la réplication de la source PostgreSQL" size="md" border />
+
+<div id="migration-logical-replication-schema-dump">
+  ## Dump du schéma de la base de données source uniquement
+</div>
+
+Avant de configurer la réplication logique, nous devons créer le schéma dans la base de données cible ClickHouse Managed Postgres. Pour ce faire, nous pouvons créer un dump du schéma uniquement de la base de données source à l’aide de `pg_dump` :
+
+```shell
+pg_dump \
+    -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+    -s \
+    --format directory \
+    -f rds-dump
+```
+
+Ici :
+
+* Remplacez `<user>`, `<password>`, `<host>`, `<port>` et `<database>` par les credentials de votre base de données source.
+* `-s` indique que nous voulons un dump du schéma uniquement.
+* `--format directory` indique que nous voulons un dump au format répertoire, adapté à `pg_restore`.
+* `-f rds-dump` indique le répertoire de sortie des fichiers du dump. Notez que ce répertoire sera créé automatiquement et ne doit pas exister au préalable.
+
+Dans notre cas, nous avons deux tables : `events` et `users`. `events` contient un million de lignes, et `users` en contient mille.
+
+<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Configuration des tables PostgreSQL sources" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-create-pg">
+  ### Créez une instance Managed Postgres
+</div>
+
+Assurez-vous d’abord d’avoir configuré une instance Managed Postgres, de préférence dans la même région que la base source. Vous pouvez suivre le guide de démarrage rapide [ici](/fr/products/managed-postgres/quickstart#create-postgres-database). Voici ce que nous allons provisionner pour ce guide :
+
+<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Création d’une instance ClickHouse Managed Postgres" size="md" border />
+
+<div id="migration-logical-replication-restore-schema">
+  ## Restaurer le schéma dans ClickHouse Managed Postgres
+</div>
+
+Maintenant que nous disposons du dump du schéma, nous pouvons le restaurer dans notre instance ClickHouse Managed Postgres à l’aide de `pg_restore` :
+
+```shell
+pg_restore \
+    -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+    --verbose \
+    rds-dump
+```
+
+Ici :
+
+* Remplacez `<user>`, `<password>`, `<host>`, `<port>` et `<database>` par les identifiants de connexion de votre base de données cible ClickHouse Managed Postgres.
+* `--verbose` fournit une sortie détaillée pendant le processus de restauration.
+  Cette commande créera toutes les tables, tous les index, toutes les vues et les autres objets du schéma dans la base de données cible, sans aucune donnée.
+
+Dans notre cas, après avoir exécuté cette commande, nous avons nos deux tables et elles sont vides :
+
+<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="Configuration initiale de la cible ClickHouse Managed Postgres" size="xl" border />
+
+<div id="migration-logical-replication-setup-replication">
+  ## Configurer la réplication logique
+</div>
+
+Le schéma étant en place, nous pouvons maintenant configurer la réplication logique de la base de données source vers la base de données cible ClickHouse Managed Postgres. Cela consiste à créer une publication sur la base de données source et un abonnement sur la base de données cible.
+
+<div id="migration-logical-replication-create-publication">
+  ### Créer une publication dans la base de données source
+</div>
+
+Connectez-vous à votre base de données PostgreSQL source et créez une publication incluant les tables que vous souhaitez répliquer.
+
+```sql
+CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
+```
+
+<Info>
+  La création d’une publication FOR ALL TABLES peut entraîner un surcoût réseau s’il existe un grand nombre de tables. Il est recommandé de ne spécifier que les tables que vous souhaitez répliquer.
+</Info>
+
+<div id="migration-logical-replication-create-subscription">
+  ### Créer un abonnement sur la base de données ClickHouse Managed Postgres cible
+</div>
+
+Ensuite, connectez-vous à votre base de données ClickHouse Managed Postgres cible et créez un abonnement relié à la publication de la base de données source.
+
+```sql
+CREATE SUBSCRIPTION demo_rds_subscription
+CONNECTION 'postgresql://<user>:<password>@<host>:<port>/<database>'
+PUBLICATION <pub_name_you_entered_above>;
+```
+
+Cela créera automatiquement un slot de réplication sur la base de données source et commencera à répliquer les données des tables spécifiées vers la base de données cible. Selon le volume de vos données, ce processus peut prendre un certain temps.
+
+Dans notre cas, après avoir configuré l’abonnement, les données ont commencé à arriver :
+
+<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="Résultat de la migration après la réplication logique" size="xl" border />
+
+Les nouvelles lignes insérées dans la base de données source seront désormais répliquées vers la base de données cible ClickHouse Managed Postgres en quasi temps réel.
+
+<div id="migration-logical-replication-caveats">
+  ## Limites et points à prendre en compte
+</div>
+
+* La réplication logique ne réplique que les changements de données (INSERT, UPDATE, DELETE). Les changements de schéma (comme ALTER TABLE) doivent être gérés séparément.
+* Assurez-vous que la connexion réseau entre les bases de données source et cible est stable afin d’éviter toute interruption de la réplication.
+* Surveillez le retard de réplication pour vous assurer que la base de données cible suit bien la base de données source. Définir une valeur appropriée pour `max_slot_wal_keep_size` sur la base de données source peut aider à gérer la croissance d’un slot de réplication et à éviter qu’il ne consomme trop d’espace disque.
+* Selon votre cas d’usage, vous pouvez envisager de mettre en place une supervision et des alertes pour le processus de réplication.
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## Étapes suivantes
+</div>
+
+Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous pouvez maintenant découvrir les fonctionnalités de Managed Postgres et son intégration avec ClickHouse. Voici un quickstart de 10 minutes pour bien démarrer :
+
+* [Guide de quickstart de Managed Postgres](/fr/products/managed-postgres/quickstart)

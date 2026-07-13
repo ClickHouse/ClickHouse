@@ -1,0 +1,46 @@
+---
+description: '쿼리에 대해 더 유연한 메모리 제한을 설정할 수 있도록 하는 실험적 기법입니다.'
+slug: /operations/settings/memory-overcommit
+title: '메모리 오버커밋'
+doc_type: '참고'
+---
+
+메모리 오버커밋은 쿼리에 더 유연한 메모리 제한을 설정할 수 있도록 하는 실험적 기법입니다.
+
+이 기법의 핵심은 쿼리가 사용할 수 있는 보장된 메모리 양을 나타내는 설정을 도입하는 것입니다.
+메모리 오버커밋이 활성화된 상태에서 메모리 제한에 도달하면 ClickHouse는 가장 많이 오버커밋된 쿼리를 선택하고, 해당 쿼리를 종료해 메모리를 확보하려고 시도합니다.
+
+메모리 제한에 도달하면 모든 쿼리는 새 메모리를 할당하는 동안 일정 시간 대기합니다.
+timeout 내에 메모리가 확보되면 쿼리는 계속 실행됩니다.
+그렇지 않으면 예외가 발생하고 해당 쿼리는 종료됩니다.
+
+중지하거나 종료할 쿼리의 선택은 어떤 메모리 제한에 도달했는지에 따라 전역 오버커밋 트래커 또는 사용자 오버커밋 트래커가 수행합니다.
+오버커밋 트래커가 중지할 쿼리를 선택할 수 없으면 MEMORY&#95;LIMIT&#95;EXCEEDED 예외가 발생합니다.
+
+<div id="user-overcommit-tracker">
+  ## 사용자 오버커밋 트래커
+</div>
+
+사용자 오버커밋 트래커는 사용자 쿼리 목록에서 오버커밋 비율이 가장 높은 쿼리를 찾습니다.
+쿼리의 오버커밋 비율은 할당된 바이트 수를 `memory_overcommit_ratio_denominator_for_user` 설정값으로 나누어 계산됩니다.
+
+쿼리의 `memory_overcommit_ratio_denominator_for_user`가 0이면 오버커밋 트래커는 해당 쿼리를 선택하지 않습니다.
+
+시간 제한은 `memory_usage_overcommit_max_wait_microseconds` 설정으로 지정됩니다.
+
+**예시**
+
+```sql
+SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=4000, memory_usage_overcommit_max_wait_microseconds=500
+```
+
+<div id="global-overcommit-tracker">
+  ## 전역 오버커밋 트래커
+</div>
+
+전역 오버커밋 트래커는 전체 쿼리 목록에서 오버커밋 비율이 가장 큰 쿼리를 찾습니다.
+여기서 오버커밋 비율은 할당된 바이트 수를 `memory_overcommit_ratio_denominator` 설정의 값으로 나누어 계산합니다.
+
+쿼리의 `memory_overcommit_ratio_denominator`가 0이면 오버커밋 트래커는 해당 쿼리를 선택하지 않습니다.
+
+대기 시간 제한은 설정 파일의 `memory_usage_overcommit_max_wait_microseconds` 매개변수로 설정됩니다.

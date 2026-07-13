@@ -1,0 +1,67 @@
+---
+description: 'ClickHouse에서는 `SELECT` 쿼리와 함께 쿼리 처리에 필요한 데이터를 서버로 전송할 수
+  있습니다. 이 데이터는 임시 테이블에 저장되며 쿼리에서 사용할 수 있습니다(예: `IN`
+  연산자에서).'
+sidebarTitle: '쿼리 처리를 위한 외부 데이터'
+slug: /engines/table-engines/special/external-data
+title: '쿼리 처리를 위한 외부 데이터'
+doc_type: 'reference'
+---
+
+ClickHouse에서는 `SELECT` 쿼리와 함께 쿼리 처리에 필요한 데이터를 서버로 전송할 수 있습니다. 이 데이터는 임시 테이블(「Temporary tables」 섹션 참조)에 저장되며, 쿼리에서 사용할 수 있습니다(예: `IN` 연산자).
+
+예를 들어, 중요한 사용자 식별자가 들어 있는 텍스트 파일이 있다면, 이 목록을 기준으로 필터링하는 쿼리와 함께 해당 파일을 서버에 업로드할 수 있습니다.
+
+대용량 외부 데이터로 여러 쿼리를 실행해야 한다면, 이 기능은 사용하지 않는 것이 좋습니다. 데이터를 미리 DB에 업로드하는 편이 더 좋습니다.
+
+외부 데이터는 command-line client(비대화형 모드) 또는 HTTP 인터페이스를 사용해 업로드할 수 있습니다.
+
+command-line client에서는 다음 포맷으로 매개변수 섹션을 지정할 수 있습니다.
+
+```bash
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+```
+
+이와 같은 섹션이 전송할 테이블 수만큼 여러 개 있을 수 있습니다.
+
+**–external** – 절의 시작을 나타냅니다.
+**–file** – 테이블 dump가 있는 파일의 경로 또는 stdin을 의미하는 -입니다.
+stdin에서는 하나의 테이블만 읽어올 수 있습니다.
+
+다음 매개변수는 선택 사항입니다: **–name**– 테이블 이름입니다. 생략하면 &#95;data가 사용됩니다.
+**–format** – 파일의 데이터 포맷입니다. 생략하면 TabSeparated가 사용됩니다.
+
+다음 매개변수 중 하나는 필수입니다:**–types** – 쉼표로 구분된 컬럼 타입 목록입니다. 예시: `UInt64,String`. 컬럼 이름은 &#95;1, &#95;2, ...로 지정됩니다.
+**–structure**– `UserID UInt64`, `URL String` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 정의합니다.
+
+&#39;file&#39;에 지정된 파일은 &#39;format&#39;에 지정된 포맷으로 파싱되며, 이때 &#39;types&#39; 또는 &#39;structure&#39;에 지정된 데이터 타입이 사용됩니다. 이 테이블은 서버에 업로드되며, 서버에서 &#39;name&#39;에 지정된 이름의 임시 테이블로 사용할 수 있습니다.
+
+예시:
+
+```bash
+$ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
+849897
+$ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
+/bin/sh 20
+/bin/false      5
+/bin/bash       4
+/usr/sbin/nologin       1
+/bin/sync       1
+```
+
+HTTP 인터페이스를 사용할 때 외부 데이터는 multipart/form-data 포맷으로 전달됩니다. 각 테이블은 별도의 파일로 전송됩니다. 테이블 이름은 파일 이름에서 가져옵니다. `query_string`에는 `name_format`, `name_types`, `name_structure` 매개변수가 전달되며, 여기서 `name`은 각 매개변수가 대응하는 테이블 이름입니다. 이 매개변수의 의미는 command-line client를 사용할 때와 동일합니다.
+
+예시:
+
+```bash
+$ cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
+
+$ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count()+AS+c+FROM+passwd+GROUP+BY+shell+ORDER+BY+c+DESC&passwd_structure=login+String,+unused+String,+uid+UInt16,+gid+UInt16,+comment+String,+home+String,+shell+String'
+/bin/sh 20
+/bin/false      5
+/bin/bash       4
+/usr/sbin/nologin       1
+/bin/sync       1
+```
+
+분산 쿼리 처리 시 임시 테이블은 모든 원격 서버로 전송됩니다.

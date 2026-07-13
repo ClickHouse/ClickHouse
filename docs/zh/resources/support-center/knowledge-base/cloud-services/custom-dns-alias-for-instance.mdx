@@ -1,0 +1,126 @@
+---
+title: 通过配置反向代理创建自定义 DNS 别名
+description: 了解如何使用反向代理为您的实例配置自定义 DNS 别名
+date: 2025-05-16
+tags: ['服务器管理', '安全与身份验证']
+keywords: ['自定义 DNS 别名', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # 通过配置反向代理实现自定义 DNS 别名
+</div>
+
+> 在这篇知识库文章中，我们将逐步介绍如何借助反向代理 (例如为 ClickHouse native client 配置 Nginx) ，为您的 ClickHouse Cloud 实例设置自定义 DNS 别名。
+
+<div id="create-certificate">
+  ## 创建自签名证书
+</div>
+
+<Note>
+  如果您使用的是已签名的证书，则无需执行此步骤。
+</Note>
+
+使用您选择的域名创建自签名证书。
+本示例中，我们将使用域名 `xyz-customdomain.com`，并
+创建一个名为 `MyCertificate.crt` 的证书。更多详细信息，请参阅[&quot;创建 SSL 证书&quot;](/zh/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)。
+
+将证书添加到 `/etc/clickhouse-client/config.xml`：
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## 更新 Nginx 配置
+</div>
+
+在 `nginx.conf` 文件中添加以下内容：
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+其中，`isrgrootx1.pem` 是 ClickHouse Cloud 的根证书，可在[此处](https://letsencrypt.org/certs/isrgrootx1.pem)下载。
+
+<div id="update-hosts-file">
+  ## 更新 hosts 文件
+</div>
+
+<Note>
+  如果您使用自己的域控制器，则无需执行以下步骤
+</Note>
+
+在 Nginx 服务器的 `/etc/hosts` 文件中添加以下内容：
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+其中，`10.X.Y.Z` 是你的 Nginx 主机的 IP 地址。
+
+<div id="connect-to-cloud-using-alias">
+  ## 使用别名连接到 Cloud
+</div>
+
+现在，您可以使用自定义别名进行连接：
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

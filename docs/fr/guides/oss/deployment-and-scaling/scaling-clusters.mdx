@@ -1,0 +1,18 @@
+---
+slug: /guides/sre/scaling-clusters
+sidebarTitle: 'Rééquilibrage des shards'
+description: 'ClickHouse ne prend pas en charge le rééquilibrage automatique des shards. Nous présentons donc quelques bonnes pratiques pour les rééquilibrer.'
+title: 'Rééquilibrage des données'
+doc_type: 'guide'
+keywords: ['mise à l’échelle', 'clusters', 'mise à l’échelle horizontale', 'planification de capacité', 'performance']
+---
+
+ClickHouse ne prend pas en charge le rééquilibrage automatique des shards. Cependant, il existe plusieurs façons de rééquilibrer les shards, par ordre de préférence :
+
+1. Ajustez le shard de la [table distribuée](/fr/reference/engines/table-engines/special/distributed) afin d’orienter préférentiellement les écritures vers le nouveau shard. Cela peut entraîner des déséquilibres de charge et des points chauds sur le cluster, mais reste viable dans la plupart des cas où le débit d’écriture n’est pas extrêmement élevé. L’utilisateur n’a pas besoin de modifier sa cible d’écriture : elle peut rester la table distribuée. En revanche, cela n’aide pas à rééquilibrer les données existantes.
+
+2. Comme alternative à (1), modifiez le cluster existant et écrivez exclusivement sur le nouveau shard jusqu’à ce que le cluster soit équilibré, en pondérant manuellement les écritures. Cette approche présente les mêmes limites que (1).
+
+3. Si vous devez rééquilibrer des données existantes et que vos données sont partitionnées, envisagez de détacher les partitions et de les déplacer manuellement vers un autre nœud avant de les rattacher au nouveau shard. Cette méthode est plus manuelle que les techniques suivantes, mais peut être plus rapide et moins gourmande en ressources. Comme il s’agit d’une opération manuelle, il faut donc bien prendre en compte le rééquilibrage des données.
+
+4. Exportez les données du cluster source vers le nouveau cluster via un [INSERT FROM SELECT](/fr/reference/statements/insert-into#inserting-the-results-of-select). Cette méthode ne sera pas performante sur de très grands jeux de données, et risque d’entraîner un volume d’IO important sur le cluster source tout en consommant des ressources réseau considérables. Elle constitue une solution de dernier recours.
