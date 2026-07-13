@@ -563,9 +563,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// abnormal close (1006) indistinguishable from a network drop. Catch
     /// parse errors and send a deterministic policy close (1008) instead.
     ///
-    /// `auth_user` is seeded with the default session user (the `default_session_user`
-    /// server setting) so that omitting the "user" field in the JSON falls back to that default.
-    String auth_user = server.context()->getServerSettings()[ServerSetting::default_session_user];
+    /// `auth_user` is seeded with the default session user (the `default_session_user` server
+    /// setting, or its per-endpoint override) so that omitting the "user" field in the JSON falls
+    /// back to that default. An empty default session user leaves `auth_user` empty, so an auth
+    /// message without a "user" field fails authentication (anonymous connections are prohibited).
+    String auth_user = default_session_user
+        ? *default_session_user
+        : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
     String auth_password;
     bool auth_parsed = false;
     try

@@ -473,7 +473,11 @@ void addDefaultHandlersFactory(
     /// different (HMAC) trust model and is typically less-firewalled inside the
     /// cluster, so exposing an interactive PTY shell there would punch a hole
     /// through that boundary even when `enable_webterminal` is set.
-    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+    auto webterminal_creator = [&server, default_session_user] () -> std::unique_ptr<WebTerminalRequestHandler>
+    {
+        return std::make_unique<WebTerminalRequestHandler>(server, default_session_user);
+    };
+    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(std::move(webterminal_creator));
     webterminal_handler->attachNonStrictPath("/webterminal");
     webterminal_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/webterminal");
