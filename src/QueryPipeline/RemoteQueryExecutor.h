@@ -370,6 +370,20 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    ReadResult readImpl();
+    ReadResult readAsyncImpl();
+
+    /// Returns true if the query may be sent again after a network error
+    /// according to the `distributed_query_retries` setting.
+    bool canRetryAfterNetworkError(const Exception & e) const;
+
+    /// Drop the failed connections and reset the executor state so that the next read attempt
+    /// re-sends the query (possibly to another replica), then wait for the retry interval.
+    void prepareRetryAfterNetworkError(const Exception & e);
+
+    /// How many retries after a network error were done so far, see `distributed_query_retries`.
+    size_t network_error_retries_count = 0;
 };
 
 }

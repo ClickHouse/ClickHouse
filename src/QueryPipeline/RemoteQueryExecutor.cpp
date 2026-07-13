@@ -3,6 +3,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
+#include <base/sleep.h>
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -56,6 +57,8 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
+    extern const SettingsUInt64 distributed_query_retries;
+    extern const SettingsMilliseconds distributed_query_retry_interval_ms;
 }
 
 namespace ErrorCodes
@@ -66,6 +69,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 namespace FailPoints
@@ -545,6 +551,24 @@ Block RemoteQueryExecutor::readBlock()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 {
+    while (true)
+    {
+        try
+        {
+            return readImpl();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readImpl()
+{
     if (!sent_query)
     {
         sendQuery();
@@ -584,6 +608,24 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+{
+    while (true)
+    {
+        try
+        {
+            return readAsyncImpl();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsyncImpl()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     if (!read_context)
@@ -648,8 +690,64 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             return read_result;
     }
 #else
-    return read();
+    return readImpl();
 #endif
+}
+
+bool RemoteQueryExecutor::canRetryAfterNetworkError(const Exception & e) const
+{
+    /// `ATTEMPT_TO_READ_AFTER_EOF` is what reading from the connection throws when the remote server
+    /// is stopped or killed: the socket is closed on the remote side and the read hits EOF.
+    if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
+        && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+        return false;
+
+    /// An exception received from a remote server in a packet means that the query failed there,
+    /// not that the connection is broken.
+    if (hasThrownException())
+        return false;
+
+    /// After a part of the result has been received, re-sending the query would duplicate data in the result.
+    if (got_data_from_replica)
+        return false;
+
+    /// Queries with parallel replicas and queries of cluster functions distribute work between replicas
+    /// dynamically, and the work that was already assigned to the failed replica would be lost after a retry.
+    if (extension || task_iterator)
+        return false;
+
+    return network_error_retries_count < context->getSettingsRef()[Setting::distributed_query_retries];
+}
+
+void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
+{
+    ++network_error_retries_count;
+
+    LOG_WARNING(
+        log,
+        "Query failed with a network error, will retry ({}/{}): {}",
+        network_error_retries_count,
+        context->getSettingsRef()[Setting::distributed_query_retries].value,
+        e.displayText());
+
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+
+        if (connections)
+            connections->disconnect();
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        packet_in_progress = false;
+#endif
+        read_context.reset();
+
+        /// Make the next read attempt re-establish the connections and re-send the query.
+        established = false;
+        sent_query = false;
+        finished = false;
+    }
+
+    sleepForMilliseconds(context->getSettingsRef()[Setting::distributed_query_retry_interval_ms].totalMilliseconds());
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
