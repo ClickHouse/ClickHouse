@@ -1,6 +1,5 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -10,11 +9,6 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    size_t num_columns = header_->columns();
-
-    key_columns_pos.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        key_columns_pos.emplace_back(i);
 }
 
 
@@ -43,29 +37,80 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
         output.push(std::move(current_output_chunk));
     }
 
-    if (finished_second_input)
-    {
-        if (inputs.front().isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-    }
-    else if (inputs.back().isFinished())
-    {
-        finished_second_input = true;
-    }
-
     if (!has_input)
     {
-        InputPort & input = finished_second_input ? inputs.front() : inputs.back();
+        while (true)
+        {
+            if (stage == Stage::ReadLeftInput)
+            {
+                auto & input = inputs.front();
 
-        input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
+                if (input.isFinished())
+                {
+                    inputs.back().close();
+                    output.finish();
+                    return Status::Finished;
+                }
 
-        current_input_chunk = input.pull();
-        has_input = true;
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (stage == Stage::ReadRightInput)
+            {
+                auto & input = inputs.back();
+
+                if (input.isFinished())
+                {
+                    if (isIntersectOperator() && !has_right_input_rows)
+                    {
+                        inputs.front().close();
+                        output.finish();
+                        return Status::Finished;
+                    }
+
+                    stage = Stage::ReadRemainingLeftInput;
+                    continue;
+                }
+
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (has_left_input_chunk)
+            {
+                current_input_chunk = std::move(left_input_chunk);
+                has_left_input_chunk = false;
+                has_input = true;
+                break;
+            }
+
+            auto & input = inputs.front();
+
+            if (input.isFinished())
+            {
+                output.finish();
+                return Status::Finished;
+            }
+
+            input.setNeeded();
+            if (!input.hasData())
+                return Status::NeedData;
+
+            current_input_chunk = input.pull();
+            has_input = true;
+            break;
+        }
     }
 
     return Status::Ready;
@@ -74,8 +119,18 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (!finished_second_input)
+    if (stage == Stage::ReadLeftInput)
     {
+        if (current_input_chunk.hasRows())
+        {
+            left_input_chunk = std::move(current_input_chunk);
+            has_left_input_chunk = true;
+            stage = Stage::ReadRightInput;
+        }
+    }
+    else if (stage == Stage::ReadRightInput)
+    {
+        has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));
     }
     else
@@ -88,18 +143,49 @@ void IntersectOrExceptTransform::work()
 }
 
 
-UInt128 IntersectOrExceptTransform::hashRow(const ColumnRawPtrs & columns, size_t row)
+template <typename Method>
+void IntersectOrExceptTransform::addToCounts(
+    Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants) const
 {
-    SipHash hash;
-    for (const auto * column : columns)
-        column->updateHashWithValue(row, hash);
-    return hash.get128();
+    typename Method::State state(columns, key_sizes, nullptr);
+
+    for (size_t i = 0; i < rows; ++i)
+        ++state.emplaceKey(method.data, i, variants.string_pool).getMapped();
+}
+
+
+template <typename Method>
+size_t IntersectOrExceptTransform::filterWithCounts(
+    Method & method, const ColumnRawPtrs & columns, IColumn::Filter & filter, size_t rows, CountingSetVariants & variants) const
+{
+    typename Method::State state(columns, key_sizes, nullptr);
+    const bool is_except = (current_operator == Operator::EXCEPT_ALL);
+    size_t new_rows_num = 0;
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto find_result = state.findKey(method.data, i, variants.string_pool);
+
+        /// A remaining right-side occurrence of this row.
+        bool matched = find_result.isFound() && find_result.getMapped() > 0;
+        if (matched)
+            --find_result.getMapped();
+
+        /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
+        filter[i] = matched != is_except;
+
+        if (filter[i])
+            ++new_rows_num;
+    }
+    return new_rows_num;
 }
 
 
 template <typename Method>
 void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs & columns, size_t rows, SetVariants & variants) const
 {
+    chassert(!isAllOperator(), "addToSet must only be used for DISTINCT operators");
+
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
@@ -111,14 +197,17 @@ template <typename Method>
 size_t IntersectOrExceptTransform::buildFilter(
     Method & method, const ColumnRawPtrs & columns, IColumn::Filter & filter, size_t rows, SetVariants & variants) const
 {
+    /// ALL operators use the counting path, so only DISTINCT operators reach here; the branch
+    /// below therefore only needs to distinguish EXCEPT_DISTINCT from INTERSECT_DISTINCT.
+    chassert(!isAllOperator(), "buildFilter must only be used for DISTINCT operators");
+
     typename Method::State state(columns, key_sizes, nullptr);
     size_t new_rows_num = 0;
 
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
-        filter[i] = (current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL
-                     || current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
+        filter[i] = (current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
             ? !find_result.isFound()
             : find_result.isFound();
         if (filter[i])
@@ -136,23 +225,36 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     if (isAllOperator())
     {
-        /// For ALL variants, track occurrence counts using a HashMap.
-        for (size_t i = 0; i < num_rows; ++i)
+        /// For ALL variants, track right-side occurrence counts keyed on the real row value.
+        if (!counts_data)
+            counts_data.emplace();
+        if (counts_data->empty())
+            counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
+
+        auto & variants = *counts_data;
+        switch (variants.type)
         {
-            auto key = hashRow(column_ptrs, i);
-            ++counts[key];
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        addToCounts(*variants.NAME, column_ptrs, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
         }
+
         return;
     }
 
@@ -185,13 +287,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     size_t new_rows_num = 0;
@@ -199,24 +301,22 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
 
     if (isAllOperator())
     {
-        /// For ALL variants, decrement counts to respect row multiplicities.
-        bool is_except = (current_operator == Operator::EXCEPT_ALL);
+        if (!counts_data)
+            counts_data.emplace();
+        if (counts_data->empty())
+            counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
 
-        for (size_t i = 0; i < num_rows; ++i)
+        auto & variants = *counts_data;
+        switch (variants.type)
         {
-            auto key = hashRow(column_ptrs, i);
-            auto * it = counts.find(key);
-
-            /// Check if this row has remaining occurrences in the right side.
-            bool matched = (it != nullptr && it->getMapped() > 0);
-            if (matched)
-                --it->getMapped();
-
-            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
-            row_filter[i] = matched != is_except;
-
-            if (row_filter[i])
-                ++new_rows_num;
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        new_rows_num = filterWithCounts(*variants.NAME, column_ptrs, row_filter, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
         }
     }
     else

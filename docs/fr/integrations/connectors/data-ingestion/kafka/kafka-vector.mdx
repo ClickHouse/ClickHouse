@@ -1,0 +1,142 @@
+---
+sidebarTitle: 'Vector avec Kafka'
+slug: /integrations/kafka/kafka-vector
+description: 'Utiliser Vector avec Kafka et ClickHouse'
+title: 'Utiliser Vector avec Kafka et ClickHouse'
+doc_type: 'guide'
+keywords: ['kafka', 'vector', 'collecte de logs', 'observabilité', 'intégration']
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+<div id="using-vector-with-kafka-and-clickhouse">
+  ## Utiliser Vector avec Kafka et ClickHouse
+</div>
+
+Vector est un pipeline de données indépendant des fournisseurs, capable de lire des données depuis Kafka et d’envoyer des événements vers ClickHouse.
+
+Le guide de [prise en main](/fr/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) de Vector avec ClickHouse est centré sur le cas d’usage des logs et la lecture d’événements depuis un fichier. Nous utilisons le [jeu de données d’exemple GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson), dont les événements sont stockés dans un topic Kafka.
+
+Vector utilise des [sources](https://vector.dev/docs/about/concepts/#sources) pour récupérer les données selon un modèle push ou pull. Les [sinks](https://vector.dev/docs/about/concepts/#sinks) servent quant à eux de destination pour les événements. Nous utilisons donc la source Kafka et le sink ClickHouse. Notez que, bien que Kafka soit pris en charge comme sink, il n’existe pas de source ClickHouse. Vector n’est donc pas adapté si vous souhaitez transférer des données de ClickHouse vers Kafka.
+
+Vector prend également en charge la [transformation](https://vector.dev/docs/reference/configuration/transforms/) des données. Cela dépasse le cadre de ce guide. Si vous en avez besoin pour votre jeu de données, consultez la documentation de Vector.
+
+Notez que l’implémentation actuelle du sink ClickHouse utilise l’interface HTTP. Le sink ClickHouse ne prend pas en charge l’utilisation d’un schéma JSON pour le moment. Les données doivent être publiées dans Kafka soit au format JSON brut, soit sous forme de Strings.
+
+<div id="license">
+  ### Licence
+</div>
+
+Vector est distribué sous la [licence MPL-2.0](https://github.com/vectordotdev/vector/blob/master/LICENSE)
+
+<div id="gather-your-connection-details">
+  ### Rassemblez les informations de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="steps">
+  ### Étapes
+</div>
+
+1. Créez le topic Kafka `github` et insérez le [jeu de données GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson).
+
+```bash
+cat /opt/data/github/github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username> -X sasl.password=<password> -t github
+```
+
+Ce jeu de données comprend 200 000 lignes axées sur le dépôt `ClickHouse/ClickHouse`.
+
+2. Assurez-vous que la table cible est créée. Ci-dessous, nous utilisons la base de données par défaut.
+
+```sql
+
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,
+                    'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at);
+
+```
+
+3. [Téléchargez et installez Vector](https://vector.dev/docs/setup/quickstart/). Créez un fichier de configuration `kafka.toml`, puis modifiez les valeurs en fonction de vos instances Kafka et ClickHouse.
+
+```toml
+[sources.github]
+type = "kafka"
+auto_offset_reset = "smallest"
+bootstrap_servers = "<kafka_host>:<kafka_port>"
+group_id = "vector"
+topics = [ "github" ]
+tls.enabled = true
+sasl.enabled = true
+sasl.mechanism = "PLAIN"
+sasl.username = "<username>"
+sasl.password = "<password>"
+decoding.codec = "json"
+
+[sinks.clickhouse]
+type = "clickhouse"
+inputs = ["github"]
+endpoint = "http://localhost:8123"
+database = "default"
+table = "github"
+skip_unknown_fields = true
+auth.strategy = "basic"
+auth.user = "username"
+auth.password = "password"
+buffer.max_events = 10000
+batch.timeout_secs = 1
+```
+
+Quelques points importants concernant cette configuration et le comportement de Vector :
+
+* Cet exemple a été testé avec Confluent Cloud. Par conséquent, les options de sécurité `sasl.*` et `ssl.enabled` peuvent ne pas convenir aux environnements auto-gérés.
+* Un préfixe de protocole n’est pas nécessaire pour le paramètre de configuration `bootstrap_servers`, par ex. `pkc-2396y.us-east-1.aws.confluent.cloud:9092`
+* Le paramètre source `decoding.codec = "json"` garantit que le message est transmis au sink ClickHouse sous la forme d’un seul objet JSON. Si vous traitez les messages comme des `Strings` et utilisez la valeur par défaut `bytes`, le contenu du message sera ajouté à un champ `message`. Dans la plupart des cas, cela nécessitera un traitement dans ClickHouse, comme décrit dans le guide de [prise en main de Vector](/fr/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse#4-parse-the-logs).
+* Vector [ajoute plusieurs champs](https://vector.dev/docs/reference/configuration/sources/kafka/#output-data) aux messages. Dans notre exemple, nous ignorons ces champs dans le sink ClickHouse via le paramètre de configuration `skip_unknown_fields = true`. Cela permet d’ignorer les champs qui ne font pas partie du schéma de la table cible. N’hésitez pas à ajuster votre schéma pour inclure ces métachamps, comme `offset`.
+* Remarquez comment le sink fait référence à la source des événements via le paramètre `inputs`.
+* Notez le comportement du sink ClickHouse tel que décrit [ici](https://vector.dev/docs/reference/configuration/sinks/clickhouse/#buffers-and-batches). Pour un débit optimal, vous pouvez ajuster les paramètres `buffer.max_events`, `batch.timeout_secs` et `batch.max_bytes`. Conformément aux [recommandations](/fr/reference/statements/insert-into#performance-considerations) de ClickHouse, une valeur de 1000 doit être considérée comme le minimum pour le nombre d’événements dans un même batch. Pour les cas d’usage à débit élevé et régulier, vous pouvez augmenter le paramètre `buffer.max_events`. Des débits plus variables peuvent nécessiter d’ajuster le paramètre `batch.timeout_secs`
+* Le paramètre `auto_offset_reset = "smallest"` force la source Kafka à démarrer au début du topic, garantissant ainsi que nous consommons les messages publiés à l’étape (1). Vous pouvez avoir besoin d’un comportement différent. Voir [ici](https://vector.dev/docs/reference/configuration/sources/kafka/#auto_offset_reset) pour plus de détails.
+
+4. Démarrez Vector
+
+```bash
+vector --config ./kafka.toml
+```
+
+Par défaut, une [vérification d’état](https://vector.dev/docs/reference/configuration/sinks/clickhouse/#healthcheck) est requise avant de commencer les insertions dans ClickHouse. Cela garantit que la connexion peut être établie et que le schéma peut être lu. Faites précéder la commande de `VECTOR_LOG=debug` pour obtenir des logs supplémentaires, ce qui peut s’avérer utile si vous rencontrez des problèmes.
+
+5. Confirmez l’insertion des données.
+
+```sql
+SELECT count() AS count FROM github;
+```
+
+| count  |
+| :----- |
+| 200000 |

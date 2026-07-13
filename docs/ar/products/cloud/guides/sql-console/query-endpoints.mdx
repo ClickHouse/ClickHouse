@@ -1,0 +1,689 @@
+---
+sidebar_title: 'نقاط نهاية واجهة برمجة تطبيقات الاستعلام'
+slug: /cloud/get-started/query-endpoints
+description: 'أنشئ بسهولة نقاط نهاية REST API انطلاقًا من استعلاماتك المحفوظة'
+keywords: ['api', 'نقاط نهاية واجهة برمجة تطبيقات الاستعلام', 'نقاط نهاية الاستعلام', 'واجهة REST API للاستعلامات']
+title: 'إعداد نقاط نهاية واجهة برمجة تطبيقات الاستعلام'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تتيح لك ميزة **نقاط نهاية واجهة برمجة تطبيقات الاستعلام** إنشاء نقطة نهاية API مباشرةً من أي استعلام SQL محفوظ في وحدة تحكم ClickHouse Cloud. وستتمكن من الوصول إلى نقاط نهاية API عبر HTTP لتنفيذ استعلاماتك المحفوظة دون الحاجة إلى الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام برنامج تشغيل أصلي.
+
+<div id="quick-start-guide">
+  ## المتطلبات المسبقة
+</div>
+
+قبل المتابعة، تأكد من توفر ما يلي لديك:
+
+* مفتاح API بالأذونات المناسبة
+* دور Admin في Console
+
+يمكنك اتباع هذا الدليل [لإنشاء مفتاح API](/ar/products/cloud/features/admin-features/api/openapi) إذا لم يكن لديك مفتاح بعد.
+
+<Info>
+  **الحد الأدنى من الأذونات**
+
+  للاستعلام عن نقطة نهاية API، يجب أن يكون لمفتاح API دور organization `Member` مع إذن وصول الخدمة `Query Endpoints`. يُهيَّأ دور قاعدة البيانات عند إنشاء نقطة النهاية.
+</Info>
+
+<Steps>
+  <Step>
+    ### أنشئ استعلامًا محفوظًا
+
+    إذا كان لديك استعلام محفوظ، فيمكنك تخطي هذه الخطوة.
+
+    افتح علامة تبويب استعلام جديدة. لأغراض العرض التوضيحي، سنستخدم [youtube dataset](/ar/get-started/sample-datasets/youtube-dislikes)، التي تحتوي على نحو 4.5 مليار سجل.
+    اتبع الخطوات الواردة في قسم [&quot;Create table&quot;](/ar/get-started/sample-datasets/youtube-dislikes#create-the-table) لإنشاء الجدول على خدمة Cloud الخاصة بك وإدراج البيانات فيه.
+
+    <Tip>
+      **استخدم `LIMIT` لتحديد عدد الصفوف**
+
+      يُدرج شرح مجموعة بيانات المثال كمية كبيرة من البيانات — 4.65 مليار صف، وقد يستغرق إدراجها بعض الوقت.
+      ولهذا الدليل، نوصي باستخدام العبارة `LIMIT` لإدراج كمية أصغر من البيانات،
+      مثلًا 10 ملايين صف.
+    </Tip>
+
+    كمثال على استعلام، سنعرض أفضل 10 uploaders حسب متوسط عدد المشاهدات لكل فيديو، ضمن query parameter باسم `year` يُدخله المستخدم.
+
+    ```sql highlight={11}
+    WITH sum(view_count) AS view_sum,
+      round(view_sum / num_uploads, 2) AS per_upload
+    SELECT
+      uploader,
+      count() AS num_uploads,
+      formatReadableQuantity(view_sum) AS total_views,
+      formatReadableQuantity(per_upload) AS views_per_video
+    FROM
+      youtube
+    WHERE
+      toYear(upload_date) = {year: UInt16}
+    GROUP BY uploader
+    ORDER BY per_upload desc
+      LIMIT 10
+    ```
+
+    لاحظ أن هذا الاستعلام يحتوي على parameter (`year`) مميز في المقتطف أعلاه.
+    يمكنك تحديد query parameters باستخدام `{ }` مع نوع الـ parameter.
+    يكتشف محرر الاستعلام في SQL Console تلقائيًا تعبيرات query parameter في ClickHouse ويوفّر حقل إدخال لكل parameter.
+
+    لنشغّل هذا الاستعلام سريعًا للتأكد من أنه يعمل، وذلك بتحديد السنة `2010` في مربع إدخال query variables على الجانب الأيمن من محرر SQL:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="اختبر استعلام المثال" />
+
+    بعد ذلك، احفظ الاستعلام:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="احفظ استعلام المثال" />
+
+    يمكن العثور على مزيد من الوثائق حول استعلام محفوظ في قسم [&quot;Saving a query&quot;](/ar/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+  </Step>
+
+  <Step>
+    ### تهيئة نقطة نهاية واجهة برمجة تطبيقات الاستعلام ‏
+
+    يمكن تهيئة نقاط نهاية واجهة برمجة تطبيقات الاستعلام مباشرةً من عرض الاستعلام بالنقر على الزر **Share** ثم اختيار `API Endpoint`.
+    سيُطلب منك تحديد API keys التي يجب أن تتمكن من الوصول إلى الـ endpoint:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="هيئ نقطة نهاية الاستعلام" />
+
+    بعد اختيار API key، سيُطلب منك:
+
+    * تحديد دور قاعدة البيانات الذي سيُستخدم لتشغيل الاستعلام (`Full access` أو `Read only` أو `Create a custom role`)
+    * تحديد النطاقات المسموح بها لمشاركة الموارد عبر المصادر المختلفة (CORS)
+
+    بعد اختيار هذه الخيارات، سيتم provision الـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام تلقائيًا.
+
+    سيُعرض مثال لأمر `curl` حتى تتمكن من إرسال طلب اختبار:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="أمر curl لنقطة النهاية" />
+
+    يرد أمر curl المعروض في الواجهة أدناه للتيسير:
+
+    ```bash
+    curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
+    ```
+  </Step>
+
+  <Step>
+    ### معاملات Query API
+
+    يمكن تحديد query parameters في الاستعلام باستخدام الصياغة `{parameter_name: type}`. سيجري اكتشاف هذه المعاملات تلقائيًا، وستتضمن حمولة طلب المثال كائن `queryVariables` يمكنك من خلاله تمرير هذه المعاملات.
+  </Step>
+
+  <Step>
+    ### الاختبار والمراقبة
+
+    بمجرد إنشاء نقطة نهاية واجهة برمجة تطبيقات الاستعلام، يمكنك اختباره باستخدام `curl` أو أي HTTP client آخر:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="اختبار curl لنقطة النهاية" />
+
+    بعد إرسال أول طلب، من المفترض أن يظهر زر جديد مباشرةً إلى يمين الزر **Share**. سيؤدي النقر عليه إلى فتح flyout يحتوي على بيانات المراقبة الخاصة بالاستعلام:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="مراقبة نقطة النهاية" />
+  </Step>
+</Steps>
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+تُنفِّذ نقطة النهاية هذه الاستعلامات على نقاط نهاية واجهة برمجة تطبيقات الاستعلام المحفوظة لديك.
+وهي تدعم إصدارات متعددة، وتنسيقات استجابة مرنة، واستعلامات ذات معلمات، واستجابات متدفقة اختيارية (الإصدار 2 فقط).
+
+**نقطة النهاية:**
+
+```text
+GET /query-endpoints/{queryEndpointId}/run
+POST /query-endpoints/{queryEndpointId}/run
+```
+
+<div id="http-methods">
+  ### أساليب HTTP
+</div>
+
+| الأسلوب  | حالة الاستخدام                             | المعلمات                                                        |
+| -------- | ------------------------------------------ | --------------------------------------------------------------- |
+| **GET**  | استعلامات بسيطة مع معلمات                  | مرّر متغيرات الاستعلام عبر معلمات URL (`?param_name=value`)     |
+| **POST** | استعلامات معقدة أو عند استخدام محتوى الطلب | مرّر متغيرات الاستعلام في محتوى الطلب (الكائن `queryVariables`) |
+
+**متى تستخدم GET:**
+
+* استعلامات بسيطة من دون بيانات متداخلة معقدة
+* يمكن ترميز المعلمات بسهولة في URL
+* يستفيد التخزين المؤقت من دلالات HTTP GET
+
+**متى تستخدم POST:**
+
+* متغيرات استعلام معقدة (مصفوفات، كائنات، سلاسل نصية كبيرة)
+* عندما يكون محتوى الطلب مفضّلًا لأسباب تتعلق بالأمان أو الخصوصية
+* تحميل الملفات المتدفّق أو البيانات الكبيرة
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+**مطلوب:** نعم
+**الطريقة:** مصادقة أساسية باستخدام مفتاح/سر OpenAPI
+**الأذونات:** الأذونات المناسبة لنقطة نهاية الاستعلام
+
+<div id="request-configuration">
+  ### تهيئة الطلب
+</div>
+
+<div id="url-params">
+  #### معلمات عنوان URL
+</div>
+
+| المعلمة           | مطلوب   | الوصف                                                |
+| ----------------- | ------- | ---------------------------------------------------- |
+| `queryEndpointId` | **نعم** | المعرّف الفريد لنقطة نهاية الاستعلام المطلوب تشغيلها |
+
+<div id="query-params">
+  #### معلمات الاستعلام
+</div>
+
+| المعلمة               | مطلوب | الوصف                                                                             | مثال                     |
+| --------------------- | ----- | --------------------------------------------------------------------------------- | ------------------------ |
+| `format`              | لا    | تنسيق الاستجابة (يدعم جميع تنسيقات ClickHouse)                                    | `?format=JSONEachRow`    |
+| `param_:name`         | لا    | متغيرات الاستعلام عندما يكون نص الطلب دفقًا. استبدل `:name` باسم المتغير الخاص بك | `?param_year=2024`       |
+| `request_timeout`     | لا    | مهلة الاستعلام بالمللي ثانية (الافتراضي: 30000)                                   | `?request_timeout=60000` |
+| `:clickhouse_setting` | لا    | أي [إعداد في ClickHouse](/ar/reference/settings/session-settings) مدعوم              | `?max_threads=8`         |
+
+<div id="headers">
+  #### الترويسات
+</div>
+
+| الترويسة                        | مطلوب | الوصف                                                       | القيم                                           |
+| ------------------------------- | ----- | ----------------------------------------------------------- | ----------------------------------------------- |
+| `x-clickhouse-endpoint-version` | لا    | يحدد إصدار نقطة النهاية                                     | `1` أو `2` (الإعداد الافتراضي: آخر إصدار محفوظ) |
+| `x-clickhouse-endpoint-upgrade` | لا    | يُفعّل ترقية إصدار نقطة النهاية (يُستخدم مع ترويسة الإصدار) | `1` للترقية                                     |
+
+***
+
+<div id="request-body">
+  ### جسم الطلب
+</div>
+
+<div id="params">
+  #### المعلمات
+</div>
+
+| المعلمة          | النوع      | مطلوب | الوصف                            |
+| ---------------- | ---------- | ----- | -------------------------------- |
+| `queryVariables` | كائن       | لا    | المتغيرات المستخدمة في الاستعلام |
+| `format`         | سلسلة نصية | لا    | تنسيق الاستجابة                  |
+
+<div id="supported-formats">
+  #### التنسيقات المدعومة
+</div>
+
+| الإصدار               | التنسيقات المدعومة                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **الإصدار 2**         | جميع التنسيقات التي يدعمها ClickHouse                                                                                                                                    |
+| **الإصدار 1 (محدود)** | TabSeparated <br /> TabSeparatedWithNames <br /> TabSeparatedWithNamesAndTypes <br /> JSON <br /> JSONEachRow <br /> CSV <br /> CSVWithNames <br /> CSVWithNamesAndTypes |
+
+***
+
+<div id="responses">
+  ### الاستجابات
+</div>
+
+<div id="success">
+  #### نجاح
+</div>
+
+**الحالة:** `200 OK`
+تم تنفيذ الاستعلام بنجاح.
+
+<div id="error-codes">
+  #### رموز الخطأ
+</div>
+
+| رمز الحالة         | الوصف                                          |
+| ------------------ | ---------------------------------------------- |
+| `400 Bad Request`  | كان الطلب سيئ الصياغة                          |
+| `401 Unauthorized` | المصادقة مفقودة أو الأذونات غير كافية          |
+| `404 Not Found`    | لم يتم العثور على نقطة نهاية الاستعلام المحددة |
+
+<div id="error-handling-best-practices">
+  #### أفضل الممارسات لمعالجة الأخطاء
+</div>
+
+* تأكد من تضمين بيانات اعتماد مصادقة صالحة في الطلب
+* تحقّق من صحة `queryEndpointId` و`queryVariables` قبل الإرسال
+* طبّق معالجة مناسبة للأخطاء مع رسائل خطأ ملائمة
+
+***
+
+<div id="upgrading-endpoint-versions">
+  ### ترقية إصدارات endpoint
+</div>
+
+للترقية من الإصدار 1 إلى الإصدار 2:
+
+1. أدرِج الترويسة `x-clickhouse-endpoint-upgrade` مع تعيينها إلى `1`
+2. أدرِج الترويسة `x-clickhouse-endpoint-version` مع تعيينها إلى `2`
+
+يؤدي ذلك إلى إتاحة الوصول إلى ميزات الإصدار 2، بما في ذلك:
+
+* دعم جميع تنسيقات ClickHouse
+* إمكانات بث الاستجابة
+* تحسينات في الأداء والوظائف
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="basic-request">
+  ### طلب بسيط
+</div>
+
+**استعلام SQL الخاص بـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+SELECT database, name AS num_tables FROM system.tables LIMIT 3;
+```
+
+<div id="version-1">
+  #### الإصدار 1
+</div>
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -d '{ "format": "JSONEachRow" }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          format: "JSONEachRow",
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```json title="الاستجابة"
+    {
+      "data": {
+        "columns": [
+          {
+            "name": "database",
+            "type": "String"
+          },
+          {
+            "name": "num_tables",
+            "type": "String"
+          }
+        ],
+        "rows": [
+          ["INFORMATION_SCHEMA", "COLUMNS"],
+          ["INFORMATION_SCHEMA", "KEY_COLUMN_USAGE"],
+          ["INFORMATION_SCHEMA", "REFERENTIAL_CONSTRAINTS"]
+        ]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="version-2">
+  #### الإصدار 2
+</div>
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="الاستجابة"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="الاستجابة"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
+  ### طلب مع متغيرات الاستعلام والإصدار 2 بتنسيق JSONCompactEachRow
+</div>
+
+**SQL الخاص بنقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: String}) AND database = {database: String};
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow&param_tableNameRegex=query.*&param_database=system' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="الاستجابة"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{ "queryVariables": { "tableNameRegex": "query.*", "database": "system" } }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            tableNameRegex: "query.*",
+            database: "system",
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="الاستجابة"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
+  ### طلب يستخدم مصفوفة في متغيرات الاستعلام لإدراج بيانات في جدول
+</div>
+
+**تعليمة SQL للجدول:**
+
+```SQL
+CREATE TABLE default.t_arr
+(
+    `arr` Array(Array(Array(UInt32)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+**‏SQL لنقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{
+      "queryVariables": {
+        "arr": [[[12, 13, 0, 1], [12]]]
+      }
+    }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            arr: [[[12, 13, 0, 1], [12]]],
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```text title="الاستجابة"
+    OK
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-clickhouse-settings-max_threads-set-to-8">
+  ### طلب مع تعيين إعداد ClickHouse `max_threads` إلى 8
+</div>
+
+**SQL الخاص بـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+SELECT * FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8,' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-and-parse-the-response-as-a-stream">
+  ### أرسل الطلب وحلّل الاستجابة كتدفق
+</div>
+
+**SQL الخاص بنقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+SELECT name, database FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    async function fetchAndLogChunks(
+      url: string,
+      openApiKeyId: string,
+      openApiKeySecret: string
+    ) {
+      const auth = Buffer.from(`${openApiKeyId}:${openApiKeySecret}`).toString(
+        "base64"
+      );
+
+      const headers = {
+        Authorization: `Basic ${auth}`,
+        "x-clickhouse-endpoint-version": "2",
+      };
+
+      const response = await fetch(url, {
+        headers,
+        method: "POST",
+        body: JSON.stringify({ format: "JSONEachRow" }),
+      });
+
+      if (!response.ok) {
+        console.error(`HTTP error! Status: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body as unknown as Readable;
+      reader.on("data", (chunk) => {
+        console.log(chunk.toString());
+      });
+
+      reader.on("end", () => {
+        console.log("Stream ended.");
+      });
+
+      reader.on("error", (err) => {
+        console.error("Stream error:", err);
+      });
+    }
+
+    const endpointUrl =
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow";
+    const openApiKeyId = "<myOpenApiKeyId>";
+    const openApiKeySecret = "<myOpenApiKeySecret>";
+    // مثال للاستخدام
+    fetchAndLogChunks(endpointUrl, openApiKeyId, openApiKeySecret).catch((err) =>
+      console.error(err)
+    );
+    ```
+
+    ```shell title="الناتج"
+    > npx tsx index.ts
+    > {"name":"COLUMNS","database":"INFORMATION_SCHEMA"}
+    > {"name":"KEY_COLUMN_USAGE","database":"INFORMATION_SCHEMA"}
+    ...
+    > Stream ended.
+    ```
+  </Tab>
+</Tabs>
+
+<div id="insert-a-stream-from-a-file-into-a-table">
+  ### إدراج دفق من ملف في جدول
+</div>
+
+أنشئ ملفًا باسم `./samples/my_first_table_2024-07-11.csv` بالمحتوى التالي:
+
+```csv
+"user_id","json","name"
+"1","{""name"":""John"",""age"":30}","John"
+"2","{""name"":""Jane"",""age"":25}","Jane"
+```
+
+**صيغة SQL للأمر CREATE TABLE:**
+
+```sql
+create table default.my_first_table
+(
+    user_id String,
+    json String,
+    name String,
+) ENGINE = MergeTree()
+ORDER BY user_id;
+```
+
+**عبارة SQL الخاصة بـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
+
+```sql
+INSERT INTO default.my_first_table
+```
+
+```bash
+cat ./samples/my_first_table_2024-07-11.csv | curl --user '<openApiKeyId:openApiKeySecret>' \
+                                                   -X POST \
+                                                   -H 'Content-Type: application/octet-stream' \
+                                                   -H 'x-clickhouse-endpoint-version: 2' \
+                                                   "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=CSV" \
+                                                   --data-binary @-
+```

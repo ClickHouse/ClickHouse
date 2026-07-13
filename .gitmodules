@@ -27,13 +27,13 @@
 	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/re2"]
 	path = contrib/re2
-	url = https://github.com/google/re2
+	url = https://github.com/ClickHouse/re2
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/jemalloc/jemalloc
+	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -85,9 +85,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-[submodule "contrib/curl"]
-	path = contrib/curl
-	url = https://github.com/curl/curl
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse/icudata
@@ -124,7 +121,7 @@
 	url = https://github.com/ClickHouse/libuv
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
-	url = https://github.com/fmtlib/fmt
+	url = https://github.com/ClickHouse/fmt
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5
@@ -139,16 +136,13 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
-	url = https://github.com/xz-mirror/xz
+	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse/abseil-cpp.git
-[submodule "contrib/dragonbox"]
-	path = contrib/dragonbox
-	url = https://github.com/ClickHouse/dragonbox
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
@@ -360,6 +354,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/libpng"]
+	path = contrib/libpng
+	url = https://github.com/pnggroup/libpng.git
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -390,3 +387,21 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/zmij"]
+	path = contrib/zmij
+	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/librseq"]
+	path = contrib/librseq
+	url = https://github.com/compudj/librseq.git
+[submodule "contrib/silk"]
+	path = contrib/silk
+	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/wagyu"]
+	path = contrib/wagyu
+	url = https://github.com/ClickHouse/wagyu
+[submodule "contrib/mapbox-geometry"]
+	path = contrib/mapbox-geometry
+	url = https://github.com/ClickHouse/geometry.hpp

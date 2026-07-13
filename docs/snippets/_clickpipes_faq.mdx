@@ -1,0 +1,79 @@
+
+<Accordion title="What are ClickPipes replicas?">
+ClickPipes ingests data from remote data sources via a dedicated infrastructure
+that runs and scales independently of the ClickHouse Cloud service.
+For this reason, it uses dedicated compute replicas.
+The diagrams below show a simplified architecture.
+
+For streaming ClickPipes, ClickPipes replicas access the remote data sources (e.g., a Kafka broker),
+pull the data, process and ingest it into the destination ClickHouse service.
+
+<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes Replicas - Streaming ClickPipes" border force/>
+
+In the case of object storage ClickPipes,
+the ClickPipes replica orchestrates the data loading task
+(identifying files to copy, maintaining the state, and moving partitions),
+while the data is pulled directly from the ClickHouse service.
+
+<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes Replicas - Object Storage ClickPipes" border force/>
+</Accordion>
+
+<Accordion title="What's the default number of replicas and their size?">
+Each ClickPipe defaults to 1 replica that's provided with 2 GiB of RAM and 0.5 vCPU.
+This corresponds to **0.25** ClickHouse compute units (1 unit = 8 GiB RAM, 2 vCPUs).
+</Accordion>
+
+<Accordion title="Can ClickPipes replicas be scaled?">
+Yes, ClickPipes for streaming can be scaled both horizontally and vertically.
+Horizontal scaling adds more replicas to increase throughput, while vertical scaling increases the resources (CPU and RAM) allocated to each replica to handle more intensive workloads.
+This can be configured during ClickPipe creation, or at any other point under **Settings** -> **Advanced Settings** -> **Scaling**.
+</Accordion>
+
+<Accordion title="How many ClickPipes replicas do I need?">
+It depends on the workload throughput and latency requirements.
+We recommend starting with the default value of 1 replica, measuring your latency, and adding replicas if needed.
+Keep in mind that for Kafka ClickPipes, you also have to scale the Kafka broker partitions accordingly.
+The scaling controls are available under "settings" for each streaming ClickPipe.
+
+<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes Replicas - How many ClickPipes replicas do I need?" border force/>
+</Accordion>
+
+<Accordion title="What does the ClickPipes pricing structure look like?">
+It consists of two dimensions:
+- **Compute**: Price per unit per hour
+  Compute represents the cost of running the ClickPipes replica pods whether they actively ingest data or not.
+  It applies to all ClickPipes types.
+- **Ingested data**: per GB pricing
+  The ingested data rate applies to all streaming ClickPipes
+  (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream,
+  Azure Event Hubs) for the data transferred via the replica pods.
+  The ingested data size (GB) is charged based on bytes received from the source (uncompressed or compressed).
+</Accordion>
+
+<Accordion title="What are the ClickPipes public prices?">
+- Compute: \$0.20 per unit per hour ($0.05 per replica per hour)
+- Ingested data: $0.04 per GB
+</Accordion>
+
+<Accordion title="How does it look in an illustrative example?">
+For example, ingesting 1 TB of data over 24 hours using the Kafka connector using a single replica (0.25 compute unit) costs:
+
+$$
+(0.25 \times 0.20 \times 24) + (0.04 \times 1000) = \$41.2
+$$
+<br/>
+
+For object storage connectors (S3 and GCS),
+only the ClickPipes compute cost is incurred since the ClickPipes pod isn't processing data
+but only orchestrating the transfer which is operated by the underlying ClickHouse service:
+
+$$
+0.25 \times 0,20 \times 24 = \$1.2
+$$
+</Accordion>
+
+<Accordion title="How does ClickPipes pricing compare to the market?">
+The philosophy behind ClickPipes pricing is
+to cover the operating costs of the platform while offering an easy and reliable way to move data to ClickHouse Cloud.
+From that angle, our market analysis revealed that we're positioned competitively.
+</Accordion>

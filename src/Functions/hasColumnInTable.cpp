@@ -27,7 +27,7 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
@@ -114,8 +114,8 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     if (table_name.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
-    bool has_column;
-    bool has_alias_column;
+    bool has_column = false;
+    bool has_alias_column = false;
     if (host_name.empty())
     {
         // FIXME this (probably) needs a non-constant access to query context,
@@ -124,13 +124,13 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         const StoragePtr & table = DatabaseCatalog::instance().getTable(
             {database_name, table_name},
             const_pointer_cast<Context>(getContext()));
-        auto table_metadata = table->getInMemoryMetadataPtr();
+        auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
         has_column = table_metadata->getColumns().hasPhysical(column_name);
         has_alias_column = table_metadata->getColumns().hasAlias(column_name);
     }
     else
     {
-        std::vector<std::vector<String>> host_names = {{ host_name }};
+        HostsByShard host_names = {{host_name}};
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;

@@ -17,6 +17,7 @@ BlockIO InterpreterUseQuery::execute()
     return {};
 }
 
+void registerInterpreterUseQuery(InterpreterFactory & factory);
 void registerInterpreterUseQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

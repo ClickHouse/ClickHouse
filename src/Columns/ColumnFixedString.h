@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -138,8 +137,9 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -153,6 +153,15 @@ public:
         chassert(this->n == rhs.n);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
+
+    [[nodiscard]] Int64 compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const final;
+
+#if USE_EMBEDDED_COMPILER
+    bool isComparatorCompilable() const override;
+    llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
+#endif
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;

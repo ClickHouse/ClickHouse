@@ -6,20 +6,21 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
+#include <Examples/clickhouse_examples.h>
 
-int readAndPrint(DB::ReadBuffer & in)
+static int readAndPrint(DB::ReadBuffer & in)
 {
     try
     {
-        Int64 a;
-        Float64 b;
+        Int64 a = {};
+        Float64 b = {};
         String c;
         String d;
 
         DB::readIntText(a, in);
         in.ignore();
 
-        DB::readFloatText(b, in);
+        DB::readFloatTextPrecise(b, in);
         in.ignore();
 
         DB::readEscapedString(c, in);
@@ -38,7 +39,7 @@ int readAndPrint(DB::ReadBuffer & in)
     }
 }
 
-int main(int, char **)
+int mainEntryExampleReadBuffer(int, char **)
 {
     {
         std::string s = "-123456 123.456 вася pe\\ttya\t'\\'xyz\\\\'";

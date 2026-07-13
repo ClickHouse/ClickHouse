@@ -236,9 +236,7 @@ namespace QueryPlanOptimizations
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
 {
-    if (!optimization_settings.automatic_parallel_replicas_mode
-        || !optimization_settings.query_plan_with_parallel_replicas_builder
-        || optimization_settings.parallel_replicas_enabled)
+    if (!optimization_settings.automatic_parallel_replicas_mode || !optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
     // Cannot guarantee projection usage with parallel replicas
@@ -251,18 +249,25 @@ void considerEnablingParallelReplicas(
     // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
     // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     bool plan_is_simple_enough = true;
+    String unsupported_steps;
     traverseQueryPlan(
         stack,
         root,
         [&](auto & frame_node)
         {
-            plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+            if (!step_is_supported)
+                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
+            plan_is_simple_enough &= step_is_supported;
         });
     if (!plan_is_simple_enough)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
+            unsupported_steps);
         return;
     }
 
@@ -322,6 +327,8 @@ void considerEnablingParallelReplicas(
         if (apply_plan_with_parallel_replicas)
         {
             const auto max_threads = optimization_settings.max_threads;
+            // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
+            // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
             const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
                 ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
                 : SIZE_MAX;
@@ -356,7 +363,8 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
+                /// The step may already carry an analysis (planner runs index analysis on it when
+                /// parallel_replicas_min_number_of_rows_per_replica > 0); overwrite it to reuse the single-replica one.
                 local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));

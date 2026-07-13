@@ -90,6 +90,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
 
 }
 
+void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
     /// welchTTest documentation

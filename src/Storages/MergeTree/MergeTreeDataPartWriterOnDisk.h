@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <IO/PackedFilesWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -54,7 +55,6 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -63,6 +63,15 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams_);
 
     void cancel() noexcept override;
+
+    void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files) override;
+
+    /// Return the in-flight packed archive. Returns the borrowed pointer when this writer is
+    /// secondary; otherwise the owned writer (or nullptr if packing is disabled here).
+    PackedFilesWriter * getSkipIndicesPackedWriter() override
+    {
+        return skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+    }
 
     const Block & getColumnsSample() const override { return block_sample; }
     const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
@@ -95,11 +104,18 @@ protected:
 
     virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
-    /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
-    /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
-    /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
-    /// the structure from the sample.
-    void initOrAdjustDynamicStructureIfNeeded(Block & block);
+    /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
+    /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
+    /// set of streams.
+    void prepareBlockForWriting(Block & block);
+
+    /// Initialize all streams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initStreamsIfNeeded();
+
+    /// Initialize columns_substreams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initColumnsSubstreamsIfNeeded();
+
+    virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
@@ -112,6 +128,22 @@ protected:
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    /// Optional packed archive shared by all skip-index substreams that stayed under the
+    /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
+    /// files on data_part_storage by the size-adaptive packing wrapper and are not part of
+    /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
+    /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
+    std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
+    /// Non-owning pointer set when this writer is a "secondary" producer sharing an outer
+    /// writer's `PackedFilesWriter` (e.g. vertical-merge per-column writers sharing the
+    /// horizontal `MergedBlockOutputStream`'s archive). When set, this writer contributes
+    /// packed substreams to the borrowed archive but never writes `skp_idx.packed` itself; the
+    /// owner finalizes the archive on disk.
+    PackedFilesWriter * skip_indices_packed_writer_borrowed = nullptr;
+    /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
+    /// fillSkipIndicesChecksums when the writer has content to flush.
+    std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
@@ -133,8 +165,9 @@ protected:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
 
-    bool is_dynamic_streams_initialized = false;
     Block block_sample;
+
+    bool streams_initialized = false;
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;

@@ -25,7 +25,7 @@ SETTINGS
 -- { echo }
 insert into tab select 1, if(number < 4096, 'foo', repeat('b', 1000)) from numbers(400e3) settings max_block_size=65535, max_insert_threads=1;
 select name, rows, marks, index_granularity_bytes_in_memory_allocated from system.parts where database = currentDatabase() and table = 'tab' and active;
-optimize table tab;
+optimize table tab final;
 select name, rows, marks, index_granularity_bytes_in_memory_allocated from system.parts where database = currentDatabase() and table = 'tab' and active;
 select * from tab format Null;
 check table tab;

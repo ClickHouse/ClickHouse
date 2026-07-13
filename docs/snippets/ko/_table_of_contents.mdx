@@ -1,0 +1,16 @@
+---
+title: 목차
+---
+
+| 페이지                                                                       | 설명                                                               |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [프라이머리 키 선택하기](/ko/concepts/best-practices/choosing-a-primary-key)           | 쿼리 성능을 극대화하고 저장소 오버헤드를 최소화하는 프라이머리 키를 선택하는 방법입니다.                |
+| [데이터 타입 선택하기](/ko/concepts/best-practices/select-data-type)                  | 메모리 사용량을 줄이고 압축 효율을 높이며 쿼리 속도를 높일 수 있도록 최적의 데이터 타입을 선택합니다.       |
+| [Materialized View 사용하기](/ko/concepts/best-practices/use-materialized-views) | materialized view를 활용해 데이터를 사전 집계하고 분석 쿼리 속도를 크게 높입니다.           |
+| [JOIN 최소화 및 최적화](/ko/concepts/best-practices/minimize-optimize-joins)        | ClickHouse의 `JOIN` 기능을 효율적으로 사용하는 모범 사례를 설명합니다.                  |
+| [파티셔닝 키 선택하기](/ko/concepts/best-practices/partitioning-keys)                 | 효율적인 데이터 프루닝과 더 빠른 쿼리 실행이 가능하도록 파티셔닝 전략을 선택합니다.                  |
+| [삽입 전략 선택하기](/ko/concepts/best-practices/selecting-an-insert-strategy)       | 적절한 삽입 패턴을 사용해 데이터 수집 처리량을 최적화하고 리소스 사용량을 줄입니다.                  |
+| [데이터 스키핑 인덱스](/ko/concepts/best-practices/using-data-skipping-indices)       | 보조 인덱스를 전략적으로 적용해 불필요한 데이터 블록을 건너뛰고 필터링된 쿼리 속도를 높입니다.            |
+| [뮤테이션 피하기](/ko/concepts/best-practices/avoid-mutations)                      | 더 나은 성능을 위해 비용이 큰 `UPDATE`/`DELETE` 작업이 필요 없도록 스키마와 워크플로를 설계합니다. |
+| [OPTIMIZE FINAL 피하기](/ko/concepts/best-practices/avoid-optimize-final)       | `OPTIMIZE FINAL`이 도움이 되기보다 오히려 해가 되는 경우를 이해해 성능 병목을 방지합니다.       |
+| [JSON을 적절히 사용하기](/ko/concepts/best-practices/json-type)                      | ClickHouse에서 반정형 JSON 데이터를 다룰 때 유연성과 성능의 균형을 맞추는 방법을 설명합니다.      |

@@ -4,13 +4,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable MinMax statistics to ensure `SYSTEM STOP MERGES`` can successfully cancel subquery.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cancel_huge_mutation_subquery"
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE TABLE cancel_huge_mutation_subquery (key Int, value String) Engine=MergeTree ORDER BY tuple() SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0;
+    CREATE TABLE cancel_huge_mutation_subquery (key Int, value String) Engine=MergeTree ORDER BY tuple() SETTINGS number_of_free_entries_in_pool_to_execute_mutation=0, auto_statistics_types='';
     INSERT INTO cancel_huge_mutation_subquery SELECT number, toString(number) FROM numbers(10000);"
 
 
-$CLICKHOUSE_CLIENT --mutations_sync=2 -n -q "ALTER TABLE cancel_huge_mutation_subquery DELETE WHERE key IN (select number % 2 from numbers(100000000) where sleep(1) == 0)"   2>/dev/null &
+$CLICKHOUSE_CLIENT --mutations_sync=2 -n -q "ALTER TABLE cancel_huge_mutation_subquery DELETE WHERE key IN (select number % 2 from numbers(20000000) where sleep(1) == 0)"   2>/dev/null &
 
 # wait until mutation started
 i=0

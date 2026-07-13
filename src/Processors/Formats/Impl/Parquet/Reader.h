@@ -12,6 +12,7 @@
 
 #include <deque>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -150,9 +151,9 @@ struct Reader
     struct PrimitiveColumnInfo
     {
         /// Primitive column index in parquet file. NOT index in primitive_columns array.
-        size_t column_idx;
+        size_t column_idx{};
         /// Index in parquet `schema` (in FileMetaData).
-        size_t schema_idx;
+        size_t schema_idx{};
         /// Index of the top-level column that contains this primitive column.
         size_t idx_in_output_block = UINT64_MAX;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
@@ -161,6 +162,13 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
+        /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
+        /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
+        /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
+        /// map. We keep that null map (instead of throwing CANNOT_INSERT_NULL) and fill defaults at
+        /// the null rows; the group null map is later used to wrap the assembled ColumnTuple in
+        /// ColumnNullable. See OutputColumnInfo::nullable_group.
+        bool group_nullable = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -179,7 +187,15 @@ struct Reader
 
         bool used_by_key_condition = false;
 
-        /// If use_bloom_filter, these are the values that we need to find in bloom filter.
+        /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
+        /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
+        /// left out - such a set is still hashed for the exact dictionary filter (which reads no extra
+        /// data per value), but probing the probabilistic bloom filter for it would read one filter
+        /// block per value for little benefit. So this is empty exactly when the only query constants
+        /// for the column come from such over-cap sets, in which case the bloom filter stays disabled
+        /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
+        /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
+        /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
@@ -201,6 +217,13 @@ struct Reader
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
+
+        /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
+        /// null map reconstructed from the leaves' definition levels. Used to read a physically
+        /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
+        /// has no optional/nullable ancestor and an all-REQUIRED, non-array subtree, so every leaf's
+        /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
+        bool nullable_group = false;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -228,7 +251,7 @@ struct Reader
 
     struct BloomFilterBlock
     {
-        size_t block_idx;
+        size_t block_idx{};
         PrefetchHandle prefetch;
     };
 
@@ -263,14 +286,14 @@ struct Reader
         /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
         /// Either way the data is padded for simd.
         std::span<const char> data;
-        parq::Encoding::type encoding;
+        parq::Encoding::type encoding{};
 
         std::unique_ptr<PageDecoder> decoder;
         bool is_dictionary_encoded = false;
 
         /// If data_state is still compressed. We always decompress it before calling the decoder.
         /// Decompression is deferred a little to see if we can decompress directly into IColumn.
-        parq::CompressionCodec::type codec;
+        parq::CompressionCodec::type codec{};
         size_t values_uncompressed_size = 0;
 
         /// Empty if the corresponding max rep/def level is 0.
@@ -290,7 +313,7 @@ struct Reader
 
     struct ColumnChunk
     {
-        const parq::ColumnChunk * meta;
+        const parq::ColumnChunk * meta{};
 
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
@@ -339,7 +362,7 @@ struct Reader
         /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
         size_t data_pages_prefetch_idx = 0;
 
-        ReadStage stage;
+        ReadStage stage{};
     };
 
     struct ColumnSubchunk
@@ -349,12 +372,20 @@ struct Reader
 
         MutableColumnPtr null_map;
 
+        /// For a leaf of a physically-nullable struct read as Nullable(Tuple(...)) (see
+        /// PrimitiveColumnInfo::group_nullable): the group's definition-level null map, moved here
+        /// in decodePrimitiveColumn before any leaf-level Nullable wrapping can consume `null_map`.
+        /// formOutputColumn reads it from the group's first leaf to wrap the assembled ColumnTuple
+        /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
+        /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
+        MutableColumnPtr group_null_map;
+
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
         /// Derived from parquet's repetition/definition levels. See comment on LevelInfo.
         /// ("Arrays offsets" is intentionally grammatically incorrect to emphasize that it's a
         ///  list of lists.)
-        std::vector<MutableColumnPtr> arrays_offsets;
+        MutableColumns arrays_offsets;
 
         /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
         /// the former to the latter).
@@ -398,9 +429,9 @@ struct Reader
 
     struct RowGroup
     {
-        const parq::RowGroup * meta;
+        const parq::RowGroup * meta{};
 
-        size_t row_group_idx; // in parquet file
+        size_t row_group_idx{}; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
@@ -433,7 +464,7 @@ struct Reader
     };
 
     ReadOptions options;
-    const Block * sample_block;
+    const Block * sample_block{};
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
@@ -495,6 +526,11 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
+    /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
+    /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
+    /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
+    bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
+
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
@@ -532,6 +568,13 @@ private:
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };
+
+    /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
+    /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
+    /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
+    /// Defined out of line in Reader.cpp so that its `HashSet` member does not pull the hash-table
+    /// headers (and their transitive includes) into every translation unit that includes Reader.h.
+    struct DictionaryLookup;
 
     void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;

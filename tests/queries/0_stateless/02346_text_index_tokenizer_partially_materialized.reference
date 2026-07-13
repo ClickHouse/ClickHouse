@@ -1,5 +1,5 @@
 Fully materialized
-Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_ee46d5055daf0199da5ffad847e8763d UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_aec84632c5c510ddd2ec7f581b35e985 UInt8 : 0
 20000
 20000
 20000
@@ -9,7 +9,7 @@ Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_ee46d5055daf0199da5ffad847e8
 20000
 20000
 Partially materialized
-Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_ee46d5055daf0199da5ffad847e8763d UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_aec84632c5c510ddd2ec7f581b35e985 UInt8 : 0
 20000
 20000
 20000

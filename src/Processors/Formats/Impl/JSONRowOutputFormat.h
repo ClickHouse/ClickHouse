@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>

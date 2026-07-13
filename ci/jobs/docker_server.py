@@ -3,6 +3,7 @@ import atexit
 import json
 import logging
 import os
+import shlex
 import tempfile
 import traceback
 from pathlib import Path
@@ -44,6 +45,62 @@ class DockerImageData:
         self.name = name
         assert not path.startswith("/")
         self.path = path
+
+
+def is_distroless_image(docker_image: str) -> bool:
+    _, tag = docker_image.rsplit(":", 1)
+    return "distroless" in tag.split("-")
+
+
+def get_official_images_variant(docker_image: str) -> str:
+    # The official-images test runner derives its lookup variant from the final
+    # tag suffix. For example, head-distroless-amd64 is looked up as repo:amd64.
+    _, tag = docker_image.rsplit(":", 1)
+    return tag.rsplit("-", 1)[-1]
+
+
+def write_distroless_docker_library_config(docker_image: str, config_dir: Path) -> Path:
+    """Map arch-suffixed distroless tags to the distroless-safe config tests."""
+    # Generate a short config fragment for local arch-suffixed distroless CI tags.
+    # The runner derives tags like head-distroless-amd64 as repo:amd64; map that
+    # derived key to the distroless-safe tests because this helper is only used
+    # for images already identified as distroless.
+    repo, _ = docker_image.rsplit(":", 1)
+    variant = get_official_images_variant(docker_image)
+    image_variant = shlex.quote(f"{repo}:{variant}")
+    tests_var = (
+        "keeperDistrolessSafeTests"
+        if "clickhouse-keeper" in repo
+        else "clickhouseDistrolessSafeTests"
+    )
+
+    generated_config = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            prefix="docker-library-distroless-",
+            suffix=".sh",
+            dir=config_dir,
+            delete=False,
+            encoding="utf-8",
+        ) as f:
+            generated_config = Path(f.name)
+            f.write(
+                "#!/usr/bin/env bash\n"
+                "\n"
+                "explicitTests+=(\n"
+                f"\t[{image_variant}]=1\n"
+                ")\n"
+                "\n"
+                "imageTests+=(\n"
+                f"\t[{image_variant}]=\"${{{tests_var}}}\"\n"
+                ")\n"
+            )
+            return generated_config
+    except Exception:
+        if generated_config:
+            generated_config.unlink(missing_ok=True)
+        raise
 
 
 class DelOS(argparse.Action):
@@ -101,7 +158,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
+    parser.add_argument("--os", default=["ubuntu", "alpine", "distroless"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
         action=DelOS,
@@ -115,6 +172,13 @@ def parse_args() -> argparse.Namespace:
         nargs=0,
         default=argparse.SUPPRESS,
         help="don't build alpine image",
+    )
+    parser.add_argument(
+        "--no-distroless",
+        action=DelOS,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="don't build distroless image",
     )
     parser.add_argument(
         "--allow-build-reuse",
@@ -155,6 +219,38 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
     else:
         assert False, f"Invalid release type [{tag_type}]"
     return tags
+
+
+# `docker buildx build` resolves base/SBOM-scanner images such as
+# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# intermittently returns transient HTTP errors while resolving and while pushing
+# image layers, and the build itself hits `apt-get` package mirrors that occasionally
+# refuse connections. Retry the buildx commands only on genuine
+# registry/network/mirror *failure* signatures. None of these strings appear in
+# normal `--progress=plain` output (unlike progress text such as "resolve image
+# config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
+# fast on the first attempt.
+BUILDX_RETRIES = 5
+BUILDX_RETRY_ERRORS = [
+    # Docker registry (docker.io / registry-1.docker.io)
+    "failed to do request",
+    "unexpected status from HEAD request",
+    "500 Internal Server Error",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway Timeout",
+    "429 Too Many Requests",
+    # Network / TLS
+    "TLS handshake timeout",
+    "i/o timeout",
+    "connection reset by peer",
+    "connection refused",
+    "unexpected EOF",
+    # apt-get package mirrors
+    "Failed to fetch",
+    "Connection failed",
+    "Connection timed out",
+]
 
 
 def buildx_args(
@@ -215,10 +311,25 @@ def build_and_push_image(
         cmd_args = list(init_args)
         urls = []
         if direct_urls:
-            if os == "ubuntu" and "clickhouse-server" in image.name:
-                urls = [url for url in direct_urls[arch] if ".deb" in url]
+            # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
+            # need .deb packages. alpine and ubuntu-keeper use .tgz packages.
+            uses_deb = os == "distroless" or (
+                os == "ubuntu" and "clickhouse-server" in image.name
+            )
+            if uses_deb:
+                urls = [
+                    url
+                    for url in direct_urls[arch]
+                    if ".deb" in url and "-dbg" not in url
+                ]
             else:
-                urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                # For keeper/alpine tgz builds, only pass the keeper tgz.
+                # Excluding clickhouse-common-static.tgz avoids a large unnecessary download.
+                tgz_urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                if "keeper" in image.name:
+                    urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
+                else:
+                    urls = tgz_urls
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -236,6 +347,15 @@ def build_and_push_image(
                 f"--metadata-file={metadata_path}",
                 f"--build-arg=VERSION='{version}'",
                 "--progress=plain",
+            ]
+        )
+        # Distroless Dockerfiles have a multi-stage build with both production
+        # (no shell) and debug (busybox) targets. Build the production target
+        # explicitly to ensure the published image has no shell.
+        if os == "distroless":
+            cmd_args.append("--target=production")
+        cmd_args.extend(
+            [
                 f"--file={dockerfile}",
                 Path(image.path).as_posix(),
             ]
@@ -243,7 +363,12 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
         result.append(
-            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}-{arch}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
         )
         if not result[-1].is_ok():
             return result
@@ -256,7 +381,14 @@ def build_and_push_image(
             f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
-        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        result.append(
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
+        )
         if not result[-1].is_ok():
             return result
     else:
@@ -289,17 +421,36 @@ def test_docker_library(test_results) -> None:
             raise RuntimeError(f"Failed to clone {repo}")
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
-            test_results.append(
-                Result.from_commands_run(name=f"{test_name} ({image})", command=cmd)
-            )
+            generated_config = None
+            try:
+                configs = [repo_path / "test/config.sh", config_override]
+                if is_distroless_image(image):
+                    generated_config = write_distroless_docker_library_config(
+                        image, config_override.parent
+                    )
+                    configs.append(generated_config)
+                config_args = " ".join(
+                    f"-c {shlex.quote(config.as_posix())}" for config in configs
+                )
+                cmd = (
+                    f"{shlex.quote(run_sh.as_posix())} "
+                    f"{shlex.quote(image)} {config_args}"
+                )
+                test_results.append(
+                    Result.from_commands_run(
+                        name=f"{test_name} ({image})", command=cmd
+                    )
+                )
+            finally:
+                if generated_config:
+                    generated_config.unlink(missing_ok=True)
 
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
         test_results.append(
             Result(
                 name=test_name,
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
@@ -338,8 +489,8 @@ def main():
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
             )
-            info.add_workflow_report_message(
-                "WARNING: ClickHouse version has not been found in workflow kv storage"
+            info.add_workflow_warning(
+                "ClickHouse version has not been found in workflow kv storage"
             )
     assert version_dict
 
@@ -384,11 +535,20 @@ def main():
                     "clickhouse-common-static",
                 ]
             elif "clickhouse-keeper" in image_repo:
-                PACKAGES = ["clickhouse-keeper"]
+                # Both packages are needed to cover all three keeper image variants:
+                #   distroless: installs from .deb via dpkg; clickhouse-common-static
+                #               provides the clickhouse multi-tool binary (clickhouse-keeper
+                #               is a symlink to it). clickhouse-keeper .deb is not published
+                #               separately, so the common-static .deb is the only source.
+                #   alpine/ubuntu: installs from .tgz; clickhouse-keeper provides the
+                #               standalone keeper binary and its symlinks. The common-static
+                #               .tgz is implicitly excluded because the url filter below
+                #               keeps only urls containing "clickhouse-keeper" in the name.
+                PACKAGES = ["clickhouse-common-static", "clickhouse-keeper"]
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
-            assert urls, f"URLS has not been read from build report"
+            assert urls, "URLS has not been read from build report"
             direct_urls[arch] = [
                 url
                 for url in urls

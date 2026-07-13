@@ -1,4 +1,5 @@
 -- Tags: long
+SET explain_query_plan_default = 'legacy';
 
 drop table if exists test_1m;
 -- -min_bytes_for_wide_part -- wide parts are different (they respect index_granularity completely, unlike compact parts) -- FIXME
@@ -18,6 +19,8 @@ set additional_table_filters={'test_1m': 'key > 10000'};
 set allow_experimental_analyzer=1;
 -- Parallel replicas changes EXPLAIN output
 set allow_experimental_parallel_reading_from_replicas=0;
+-- disable statistics-based part pruning to keep EXPLAIN output stable
+SET use_statistics_for_part_pruning = 0;
 
 -- { echo }
 select count() from (select * from test_1m);

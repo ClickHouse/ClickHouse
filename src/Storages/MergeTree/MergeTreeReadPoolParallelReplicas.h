@@ -31,14 +31,22 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
+    size_t getMinMarksPerRequest() const { return min_marks_per_request; }
+    size_t getMarkSegmentSize() const { return mark_segment_size; }
+
 private:
     mutable std::mutex mutex;
 
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
-    size_t min_marks_per_task{0};
+
+    /// Retained for backward compatibility with old initiators that read it from each read request.
+    /// New initiators (protocol >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
+    /// use the value from the initial announcement instead.
+    size_t min_marks_per_request{0};
     size_t mark_segment_size{0};
+
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
 

@@ -24,18 +24,17 @@ uint64_t dateTimeToMillisecond(UInt32 date_time)
 }
 
 
-#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
-DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
-
-DECLARE_SEVERAL_IMPLEMENTATIONS(
-
-class FunctionDateTimeToUUIDv7Base : public IFunction
+class FunctionDateTimeToUUIDv7 : public IFunction
 {
 public:
     static constexpr auto name = "dateTimeToUUIDv7";
 
-    String getName() const final {  return name; }
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionDateTimeToUUIDv7>();
+    }
+
+    String getName() const final { return name; }
     size_t getNumberOfArguments() const final { return 1; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
@@ -95,40 +94,6 @@ public:
     }
 };
 
-) // DECLARE_SEVERAL_IMPLEMENTATIONS
-#undef DECLARE_SEVERAL_IMPLEMENTATIONS
-
-class FunctionDateTimeToUUIDv7 : public TargetSpecific::Default::FunctionDateTimeToUUIDv7Base
-{
-public:
-    using Self = FunctionDateTimeToUUIDv7;
-    using Parent = TargetSpecific::Default::FunctionDateTimeToUUIDv7Base;
-
-    explicit FunctionDateTimeToUUIDv7(ContextPtr context)
-        : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default, Parent>();
-
-#if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::x86_64_v3::FunctionDateTimeToUUIDv7Base;
-        selector.registerImplementation<TargetArch::x86_64_v3, ParentAVX2>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<Self>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
@@ -175,7 +140,7 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
        )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

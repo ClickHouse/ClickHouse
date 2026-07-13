@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
@@ -6,9 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
@@ -80,3 +78,7 @@ template class StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S
 template class StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>;
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>) }
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>) }

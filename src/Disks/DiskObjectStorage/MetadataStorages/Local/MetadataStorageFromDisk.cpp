@@ -8,8 +8,6 @@
 
 #include <Common/logger_useful.h>
 
-#include <limits>
-#include <ranges>
 #include <memory>
 #include <shared_mutex>
 
@@ -21,10 +19,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_)
+MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_)
     : disk(disk_)
     , compatible_key_prefix(std::move(compatible_key_prefix_))
     , key_generator(std::move(key_generator_))
+    , persist_removal_queue(persist_removal_queue_)
+    , removal_log_compaction_threshold(removal_log_compaction_threshold_)
+    , log(getLogger("MetadataStorageFromDisk"))
 {
 }
 
@@ -147,15 +148,147 @@ uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) con
     return readMetadata(path)->ref_count;
 }
 
+void MetadataStorageFromDisk::startup()
+{
+    if (!persist_removal_queue)
+        return;
+
+    if (!disk->existsDirectory(String(SYSTEM_METADATA_DIR)))
+        disk->createDirectory(String(SYSTEM_METADATA_DIR));
+
+    std::lock_guard guard(removed_objects_mutex);
+    bool needs_compaction = loadRemovalLog();
+
+    if (needs_compaction)
+        compactRemovalLog();
+
+    LOG_INFO(log, "Loaded {} blobs pending removal from {}", objects_to_remove.size(), REMOVAL_LOG_FILE);
+}
+
+bool MetadataStorageFromDisk::loadRemovalLog()
+{
+    const auto path = std::string(REMOVAL_LOG_FILE);
+    auto buf = disk->readFileIfExists(path, ReadSettings{});
+    if (!buf)
+        return false;
+
+    bool needs_compaction = false;
+
+    /// Read version header.
+    UInt32 version = 0;
+    try
+    {
+        readBinaryLittleEndian(version, *buf);
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "Truncated version header in {}, starting with empty queue: {}", REMOVAL_LOG_FILE, getCurrentExceptionMessage(false));
+        return true;
+    }
+
+    if (version > REMOVAL_LOG_CURRENT_VERSION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported removal log version: {}", version);
+
+    if (version != REMOVAL_LOG_CURRENT_VERSION)
+        needs_compaction = true;
+
+    while (!buf->eof())
+    {
+        try
+        {
+            /// Binary format (V0): entry_type (UInt8) | remote_path (binary string) | local_path (binary string) | bytes_size (UInt64 LE)
+            UInt8 entry_type = 0;
+            readBinaryLittleEndian(entry_type, *buf);
+
+            StoredObject object;
+            readStringBinary(object.remote_path, *buf);
+            readStringBinary(object.local_path, *buf);
+            readBinaryLittleEndian(object.bytes_size, *buf);
+
+            if (entry_type == RemovalLogEntryType::ADD)
+            {
+                objects_to_remove.submitForRemoval({std::move(object)});
+            }
+            else if (entry_type == RemovalLogEntryType::REMOVED)
+            {
+                objects_to_remove.markAsRemoved({object});
+                ++removal_log_stale_entries;
+            }
+            else
+            {
+                LOG_WARNING(log, "Skipping unknown entry type '{}' in {}", static_cast<UInt16>(entry_type), REMOVAL_LOG_FILE);
+            }
+        }
+        catch (...)
+        {
+            /// Truncated entry from a partial write (e.g. crash mid-append). Stop reading — everything
+            /// loaded so far is valid. Compaction will rewrite the file cleanly.
+            LOG_WARNING(log, "Truncated entry in {}, stopping: {}", REMOVAL_LOG_FILE, getCurrentExceptionMessage(false));
+            needs_compaction = true;
+            break;
+        }
+    }
+
+    return needs_compaction;
+}
+
+void MetadataStorageFromDisk::appendToRemovalLog(RemovalLogEntryType entry_type, const StoredObjects & blobs)
+{
+    bool file_exists = disk->existsFile(String(REMOVAL_LOG_FILE));
+    auto buf = disk->writeFile(String(REMOVAL_LOG_FILE), /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, /* settings */ {});
+
+    /// Write version header if this is a new file.
+    /// An empty or corrupt file cannot exist here because loadRemovalLog on startup
+    /// detects such cases and compactRemovalLog rewrites the file with a valid header.
+    if (!file_exists)
+    {
+        UInt32 version = REMOVAL_LOG_CURRENT_VERSION;
+        writeBinaryLittleEndian(version, *buf);
+    }
+
+    for (const auto & blob : blobs)
+    {
+        UInt8 type = entry_type;
+        writeBinaryLittleEndian(type, *buf);
+        writeStringBinary(blob.remote_path, *buf);
+        writeStringBinary(blob.local_path, *buf);
+        writeBinaryLittleEndian(blob.bytes_size, *buf);
+    }
+    buf->finalize();
+    buf->sync();
+}
+
+void MetadataStorageFromDisk::compactRemovalLog()
+{
+    static constexpr std::string_view REMOVAL_LOG_TMP_FILE = ".metadata/blobs_to_remove.log.tmp";
+
+    auto buf = disk->writeFile(String(REMOVAL_LOG_TMP_FILE), /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, /* settings */ {});
+
+    UInt32 version = REMOVAL_LOG_CURRENT_VERSION;
+    writeBinaryLittleEndian(version, *buf);
+
+    auto all_blobs = objects_to_remove.takeFirst(0);
+    for (const auto & blob : all_blobs)
+    {
+        UInt8 type = RemovalLogEntryType::ADD;
+        writeBinaryLittleEndian(type, *buf);
+        writeStringBinary(blob.remote_path, *buf);
+        writeStringBinary(blob.local_path, *buf);
+        writeBinaryLittleEndian(blob.bytes_size, *buf);
+    }
+    buf->finalize();
+    buf->sync();
+
+    disk->replaceFile(String(REMOVAL_LOG_TMP_FILE), String(REMOVAL_LOG_FILE));
+    removal_log_stale_entries = 0;
+}
+
 IMetadataStorage::BlobsToRemove MetadataStorageFromDisk::getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
     std::lock_guard guard(removed_objects_mutex);
 
-    if (max_count == 0)
-        max_count = std::numeric_limits<int64_t>::max();
-
     BlobsToRemove blobs_to_remove;
-    for (const auto & blob : objects_to_remove | std::views::take(max_count))
+    for (const auto & blob : objects_to_remove.takeFirst(max_count))
         blobs_to_remove[blob] = {cluster->getLocalLocation()};
 
     return blobs_to_remove;
@@ -165,11 +298,31 @@ int64_t MetadataStorageFromDisk::recordAsRemoved(const StoredObjects & blobs)
 {
     std::lock_guard guard(removed_objects_mutex);
 
-    int64_t recorded_count = 0;
-    for (const auto & removed_blob : blobs)
-        recorded_count += objects_to_remove.erase(removed_blob);
+    /// Persist REMOVED entries to WAL before erasing from in-memory queue,
+    /// so that on WAL failure the blobs remain tracked and will be retried.
+    if (persist_removal_queue && !blobs.empty())
+        appendToRemovalLog(RemovalLogEntryType::REMOVED, blobs);
 
-    return recorded_count;
+    /// Erase from in-memory queue before compaction, so that `compactRemovalLog`
+    /// (which snapshots the queue via `takeFirst(0)`) does not re-add these blobs
+    /// as ADD entries in the compacted file — otherwise a restart after compaction
+    /// would resurrect them as zombie pending-removal entries.
+    auto removed_count = objects_to_remove.markAsRemoved(blobs);
+
+    if (persist_removal_queue && !blobs.empty())
+    {
+        removal_log_stale_entries += blobs.size();
+        if (removal_log_stale_entries >= removal_log_compaction_threshold)
+            compactRemovalLog();
+    }
+
+    return removed_count;
+}
+
+bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs) const
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return objects_to_remove.containsAny(blobs);
 }
 
 MetadataStorageFromDiskTransaction::MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_)
@@ -189,9 +342,24 @@ void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVa
 
     operations.finalize();
 
+    if (!objects_to_remove.empty())
     {
         std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.insert_range(objects_to_remove);
+        if (metadata_storage.persist_removal_queue)
+        {
+            try
+            {
+                metadata_storage.appendToRemovalLog(MetadataStorageFromDisk::RemovalLogEntryType::ADD, objects_to_remove);
+            }
+            catch (...)
+            {
+                LOG_ERROR(metadata_storage.log, "Failed to persist removal queue entry: {}. "
+                    "Blobs are tracked in memory but may become orphaned on crash.",
+                    getCurrentExceptionMessage(false));
+            }
+        }
+
+        metadata_storage.objects_to_remove.submitForRemoval(objects_to_remove);
     }
 }
 

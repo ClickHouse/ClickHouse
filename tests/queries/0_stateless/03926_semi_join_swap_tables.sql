@@ -1,5 +1,7 @@
 -- Test for swapping the build and probe sides of a SEMI join
+SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE lhs(a UInt32)
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -14,9 +16,11 @@ INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
 SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
+SET query_plan_convert_any_join_to_semi_or_anti_join = 0; -- test is specifically about semi join swap, prevent interference
+SET query_plan_optimize_join_order_limit = 10; -- cardinality estimation needed for size-based swap decision
 
 -- swap LEFT SEMI join to RIGHT SEMI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -24,10 +28,11 @@ FROM (
     LEFT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
+SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
 
 -- no swapping for PARTIAL_MERGE join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -39,7 +44,7 @@ FROM (
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 -- no swapping for PREFER_PARTIAL_MERGE join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -51,11 +56,11 @@ FROM (
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
 
 -- no swapping for AUTO join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
-    FROM lhs 
+    FROM lhs
     LEFT SEMI JOIN rhs
     ON lhs.a = rhs.a
     SETTINGS join_algorithm='auto'
@@ -76,7 +81,7 @@ FROM system.query_log
 WHERE log_comment = '03926_left_semi_join_swap_tables' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE';
 
 -- swap RIGHT SEMI join to LEFT SEMI join
-SELECT *
+SELECT trimLeft(explain)
 FROM (
     EXPLAIN actions=1
     SELECT *
@@ -84,7 +89,8 @@ FROM (
     RIGHT SEMI JOIN rhs
     ON lhs.a = rhs.a
 )
-WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%');
+WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
+SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
 
 SELECT *
 FROM lhs

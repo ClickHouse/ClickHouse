@@ -36,7 +36,7 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) override;
     /// LibArchive needs to know the size of the file being written. If the file size is not
-    /// passed in the the archive writer tries to infer the size by looking at the available
+    /// passed in the archive writer tries to infer the size by looking at the available
     /// data in the buffer, if next is called before all data is written to the buffer
     /// an exception is thrown.
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) override;

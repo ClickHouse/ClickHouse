@@ -13,10 +13,12 @@ namespace ErrorCodes
 constexpr UInt16 MIN_PORT_NUMBER = 1;
 constexpr UInt16 MAX_PORT_NUMBER = 65535;
 
-/// Apply port offset and validate the result is within valid range
+/// Apply port offset and validate the result is within valid range.
+/// A zero port means "unset" or an OS-assigned (ephemeral) port, so it is
+/// returned unchanged and never offset.
 inline UInt16 applyPortOffset(UInt16 port, Int32 offset)
 {
-    if (offset == 0)
+    if (offset == 0 || port == 0)
         return port;
 
     Int64 effective_port = static_cast<Int64>(port) + offset;

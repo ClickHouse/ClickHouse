@@ -87,7 +87,7 @@ public:
                 if (err)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-                res = cellAreaM2(index);
+                cellAreaM2(index, &res);
             }
 
             dst_data[row] = res;

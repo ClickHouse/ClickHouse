@@ -14,6 +14,7 @@ system sync replica t1;
 system sync replica t2;
 system sync replica t3;
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan=0; -- corresponding logs about total rows are written only during interaction with remote nodes
                                     -- but with local plan a query execution can be finished locally even before we get response from remote node

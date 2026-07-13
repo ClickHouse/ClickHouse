@@ -1,0 +1,15 @@
+Before installing ClickHouse, review the following recommendations:
+
+- **Swap:** Disable the operating system's swap file in production environments.
+- **Disk space:** The ClickHouse binary requires at least 2.5 GB of disk space for installation.
+- **Network:** For distributed deployments (clustering), use at least 10 Gbit network connectivity. Network bandwidth is critical for processing distributed queries with large amounts of intermediate data, as well as for replication.
+
+**Estimating storage requirements**
+
+To estimate the disk space needed for your data:
+
+1. **Estimate data volume:** Take a sample of your data and calculate the average row size, then multiply by the number of rows you plan to store.
+2. **Apply the compression coefficient:** Load a sample into ClickHouse and compare the original data size with the stored table size. Clickstream data, for example, is typically compressed 6-10x.
+3. **Account for replicas:** If you plan to store data in multiple replicas, multiply the estimated volume by the number of replicas.
+
+For more detailed hardware requirements, see ["Sizing and hardware recommendations"](/guides/oss/best-practices/sizing-and-hardware-recommendations)

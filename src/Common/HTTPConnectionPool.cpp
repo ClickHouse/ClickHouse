@@ -22,14 +22,21 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 
+#include <climits>
+#include <sys/stat.h>
+
 #include <queue>
+#include <unordered_set>
+#include <unordered_map>
 
 #include "config.h"
 
 #if USE_SSL
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/SSLException.h>
 #endif
 
 
@@ -94,6 +101,17 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
+}
+
+
+static const char * connectionGroupTypeToString(HTTPConnectionGroupType type)
+{
+    switch (type)
+    {
+        case HTTPConnectionGroupType::DISK: return "Disk";
+        case HTTPConnectionGroupType::STORAGE: return "Storage";
+        case HTTPConnectionGroupType::HTTP: return "HTTP";
+    }
 }
 
 
@@ -179,6 +197,32 @@ public:
         return limits;
     }
 
+    void setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes sizes)
+    {
+        if (sizes.rcvbuf > static_cast<size_t>(INT_MAX))
+        {
+            LOG_ERROR(log, "rcvbuf value {} exceeds maximum {}, ignore buffer settings for {}", sizes.rcvbuf, INT_MAX, connectionGroupTypeToString(type));
+            return;
+        }
+        if (sizes.sndbuf > static_cast<size_t>(INT_MAX))
+        {
+            LOG_ERROR(log, "sndbuf value {} exceeds maximum {}, ignore buffer settings for {}", sizes.sndbuf, INT_MAX, connectionGroupTypeToString(type));
+            return;
+        }
+
+        std::lock_guard lock(mutex);
+        if (sizes.rcvbuf != socket_buffer_sizes.rcvbuf || sizes.sndbuf != socket_buffer_sizes.sndbuf)
+            LOG_DEBUG(log, "Socket buffer sizes updated for group {}: rcvbuf={}, sndbuf={}", connectionGroupTypeToString(type), sizes.rcvbuf, sizes.sndbuf);
+
+        socket_buffer_sizes = sizes;
+    }
+
+    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes() const
+    {
+        std::lock_guard lock(mutex);
+        return socket_buffer_sizes;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -191,7 +235,7 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate(std::string host, UInt16 port)
+    void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
 
@@ -199,29 +243,38 @@ public:
             throw Exception(
                 ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
                 "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
-                host, port, limits.hard_limit, getType());
+                host, port, limits.hard_limit, connectionGroupTypeToString(getType()));
 
         ++total_connections_in_group;
+        live_connections.emplace(session, 0);
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
             mute_warning_until = roundUp(total_connections_in_group, HTTPConnectionPools::Limits::warning_step);
             LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}, next warning at {}",
-                        type, total_connections_in_group, limits.warning_limit, mute_warning_until);
+                        connectionGroupTypeToString(type), total_connections_in_group, limits.warning_limit, mute_warning_until);
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void updateSocketInode(Poco::Net::HTTPClientSession * session, uint64_t inode) noexcept
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = live_connections.find(session); it != live_connections.end())
+            it->second = inode;
+    }
+
+    void atConnectionDestroy(Poco::Net::HTTPClientSession * session) noexcept
     {
         std::lock_guard lock(mutex);
 
         --total_connections_in_group;
+        live_connections.erase(session);
 
         const size_t gap = 20;
         const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
         if (mute_warning_until > 0 && total_connections_in_group < reduced_warning_limit)
         {
-            LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", type, total_connections_in_group);
+            LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", connectionGroupTypeToString(type), total_connections_in_group);
             mute_warning_until = 0;
         }
     }
@@ -229,6 +282,21 @@ public:
     HTTPConnectionGroupType getType() const { return type; }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
+
+    /// Return cached socket inodes of all tracked connections.
+    /// Inodes are updated by PooledConnection after each connect/reconnect.
+    std::vector<uint64_t> getSocketInodes() const
+    {
+        std::lock_guard lock(mutex);
+        std::vector<uint64_t> inodes;
+        inodes.reserve(live_connections.size());
+        for (const auto & [_, inode] : live_connections)
+        {
+            if (inode != 0)
+                inodes.push_back(inode);
+        }
+        return inodes;
+    }
 
 private:
     bool isHardLimitReached() const TSA_REQUIRES(mutex)
@@ -245,6 +313,8 @@ private:
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
+    HTTPConnectionPools::SocketBufferSizes socket_buffer_sizes TSA_GUARDED_BY(mutex);
+    std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
 };
 
 
@@ -287,8 +357,22 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
     void atStart(int bytes) override
     {
         Stopwatch timer;
-        request.enqueue(bytes, link);
-        request.wait();
+        try
+        {
+            request.enqueue(bytes, link);
+            request.wait();
+        }
+        catch (...)
+        {
+            // The request failed in `enqueue()` (before it was linked into the scheduler) or in `wait()`.
+            // `HTTPSession::write`/`HTTPSession::receive` catch the propagating exception and unconditionally
+            // call `atFail()` while unwinding, so recover the request to the `Finished` state now and keep
+            // `active` false. Otherwise `atFail()` would call `request.finish()` on a non-`Dequeued` request,
+            // tripping `chassert(state == Dequeued)` in debug builds and corrupting the queue budget in release.
+            request.recoverAfterConstructorFailure(link);
+            throw;
+        }
+        active = true;
         timer.stop();
         if (timer.elapsedMilliseconds() >= 5000)
             LOG_INFO(log, "Resource request took too long to finish: {} ms for {}", timer.elapsedMilliseconds(), http_request);
@@ -296,16 +380,23 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 
     void atFinish(int bytes) override
     {
+        if (!active)
+            return;
+        active = false;
         request.finish(bytes, link);
     }
 
     void atFail() override
     {
+        if (!active)
+            return;
+        active = false;
         request.finish(0, link);
     }
 
     ResourceLink link;
     ResourceGuard::Request request;
+    bool active = false; // Whether `request` is active (granted by the scheduler and not yet finished)
     LoggerPtr log;
     String http_request;
 };
@@ -358,6 +449,7 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
+            notifySocketInode();
         }
 
         String getTarget() const
@@ -476,13 +568,15 @@ private:
                     response_stream_completed = false;
                 }
             }
+            /// Unregister from live_connections first, before tearing down session internals,
+            /// so that the async metrics thread cannot dereference a partially-destructed session.
+            group->atConnectionDestroy(this);
+
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
             Session::setReceiveThrottler();
-
-            group->atConnectionDestroy();
 
             if (!isExpired)
                 if (auto lock = pool.lock())
@@ -507,7 +601,7 @@ private:
         {
             // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
             // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
-            group->atConnectionCreate(Session::getHost(), Session::getPort());
+            group->atConnectionCreate(this, Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
         }
 
@@ -524,9 +618,48 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
+        /// Notify the connection group about the current socket inode.
+        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        void notifySocketInode()
+        {
+            try
+            {
+                auto fd = Session::socket().impl()->sockfd();
+                if (fd < 0)
+                    return;
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                if (fstat(fd, &st) == 0)
+                    group->updateSocketInode(this, st.st_ino);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
+            {
+            }
+        }
+
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);
+            notifySocketInode();
+        }
+
+        /// Whether the underlying socket has actually established a connection to a remote peer.
+        /// `Poco::Net::Socket::peerAddress` issues `getpeername`, which succeeds only once the
+        /// socket is connected; a failed TCP connect leaves the fd open but without a peer, so
+        /// this reliably tells a completed TCP connect apart from one that never linked up.
+        /// Used to decide whether a connect-time failure belongs to the resolved address (TCP
+        /// connect itself failed) or to local post-connect socket setup (timeouts, `TCP_NODELAY`),
+        /// which `Poco::Net::HTTPSession::connect` performs after the TCP connect has succeeded.
+        bool isConnectedToPeer()
+        {
+            try
+            {
+                Session::socket().peerAddress();
+                return true;
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: no peer means the TCP connect did not complete
+            {
+                return false;
+            }
         }
 
         bool isCompleted() const
@@ -594,6 +727,8 @@ public:
             expired_connections.clear();
         });
 
+        ConnectionPtr reused_connection;
+
         {
             std::lock_guard lock(mutex);
             expired_connections.reserve(stored_connections.size());
@@ -602,16 +737,24 @@ public:
 
             if (!stored_connections.empty())
             {
-                auto it = stored_connections.top();
+                reused_connection = stored_connections.top();
                 stored_connections.pop();
-
-                setTimeouts(*it, timeouts);
-
-                ProfileEvents::increment(getMetrics().reused, 1);
-                CurrentMetrics::sub(getMetrics().stored_count, 1);
-
-                return it;
             }
+        }
+
+        if (reused_connection)
+        {
+            ProfileEvents::increment(getMetrics().reused, 1);
+            CurrentMetrics::sub(getMetrics().stored_count, 1);
+
+            setTimeouts(*reused_connection, timeouts);
+
+            /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
+            /// can throw, and PooledConnection destructor during stack unwinding would
+            /// try to re-lock this mutex, causing a deadlock.
+            applySocketBufferSizes(*reused_connection, group->getSocketBufferSizes());
+
+            return reused_connection;
         }
 
         return prepareNewConnection(timeouts, connect_time);
@@ -647,12 +790,12 @@ public:
             ProfileEvents::increment(getMetrics().expired, expired_connections.size());
         });
 
-        auto isSoftLimitReached = group->isSoftLimitReached();
+        auto is_soft_limit_reached = group->isSoftLimitReached();
         while (!stored_connections.empty())
         {
             auto connection = stored_connections.top();
 
-            if (!isExpired(connection, isSoftLimitReached))
+            if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
                 return stored_connections.size();
 
             stored_connections.pop();
@@ -682,30 +825,59 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
+    /// Apply SO_RCVBUF/SO_SNDBUF to a connection socket.
+    /// Note: once setsockopt(SO_RCVBUF) is called on a socket, the kernel permanently
+    /// disables TCP autotuning for that socket. Changing the setting back to 0 will stop
+    /// calling setsockopt on new connections, but already-configured pooled connections
+    /// will retain their fixed buffer sizes until they expire naturally from the pool.
+    static void applySocketBufferSizes(Session & connection, const HTTPConnectionPools::SocketBufferSizes & buf_sizes)
+    {
+        if (buf_sizes.rcvbuf > 0)
+            connection.socket().setReceiveBufferSize(static_cast<int>(buf_sizes.rcvbuf));
+        if (buf_sizes.sndbuf > 0)
+            connection.socket().setSendBufferSize(static_cast<int>(buf_sizes.sndbuf));
+    }
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    /// Detect connections that have been silently closed by the remote end.
+    /// An idle keep-alive connection should have no data pending in the socket.
+    /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
+    /// server has sent a FIN (or RST), so the next request on this connection
+    /// would fail with "No message received" (NoMessageException).
+    static bool isStale(Session & connection)
+    {
+        try
+        {
+            return connection.socket().poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ);
+        }
+        catch (Poco::IOException &)
+        {
+            return true;
+        }
+    }
+
+
+    /// Establish a connection through a non-bypassed proxy. Poco connects to the proxy, which
+    /// resolves and reaches the target, so the target `HostResolver` is not consulted and
+    /// `_resolved_host` is left empty (Poco then uses `_host` for the proxy request / `CONNECT`
+    /// target). A connect failure here belongs to the proxy, so it propagates without resolver
+    /// bookkeeping or per-address retry.
+    ConnectionPtr prepareConnectionViaProxy(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-
         connection->setKeepAlive(true);
-        setTimeouts(*connection, timeouts);
-
-        if (!proxy_configuration.isEmpty())
-        {
-            connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
-        }
-
-        auto address = HostResolversPool::instance().getResolver(host)->resolve();
-        connection->setResolvedHost(*address);
+        connection->setProxyConfig(poco_proxy_config);
 
         try
         {
+            setTimeouts(*connection, timeouts);
+
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
             connection->doConnect(connect_time);
+            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
         }
         catch (...)
         {
-            address.setFail();
             ProfileEvents::increment(getMetrics().errors);
             (*connection).reset();
             throw;
@@ -713,6 +885,196 @@ private:
 
         ProfileEvents::increment(getMetrics().created);
         return connection;
+    }
+
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    {
+        /// `Poco::Net::HTTPClientSession::reconnect` uses the proxy only when
+        /// `!_proxyConfig.host.empty() && !bypassProxy()`; route that case to
+        /// `prepareConnectionViaProxy`, which does not touch the target `HostResolver`. When
+        /// `no_proxy` matches the target host (`bypassProxy()` true) Poco connects directly to
+        /// `_resolved_host`, so per-address retries and `setFail` apply as in the no-proxy case.
+        auto poco_proxy_config = proxy_configuration.isEmpty()
+            ? Poco::Net::HTTPClientSession::ProxyConfig{}
+            : proxyConfigurationToPocoProxyConfig(proxy_configuration);
+        /// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`; keep in sync on Poco upgrades.
+        const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
+            && Poco::RegularExpression::match(
+                host,
+                poco_proxy_config.nonProxyHosts,
+                Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
+        const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
+
+        if (!retry_resolved_addresses)
+            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config);
+
+        /// When DNS returns several addresses (e.g. an IPv4 and an IPv6 record), try the next one
+        /// if the first fails with a network error. `max_connect_attempts` bounds real connect
+        /// attempts; duplicate addresses from the resolver are skipped without consuming one, and
+        /// `max_resolve_iterations` caps the loop so duplicates cannot starve real attempts or loop
+        /// forever.
+        static constexpr size_t max_connect_attempts = 4;
+        static constexpr size_t max_resolve_iterations = 16;
+
+        auto resolver = HostResolversPool::instance().getResolver(host);
+        std::unordered_set<String> tried_addresses;
+        std::exception_ptr last_net_error;
+        size_t connect_attempts = 0;
+
+        /// Pessimize the resolved address, swallowing any exception so we don't mask the original failure
+        /// or abort the retry across addresses.
+        auto pessimize = [](HostResolver::Entry & failed_address) noexcept
+        {
+            try
+            {
+                failed_address.setFail();
+            }
+            catch (...)
+            {
+                /// setFail can throw. Log it, since it is not worth throwing.
+                tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
+            }
+        };
+
+        /// Shared body for the `NetException` and `TimeoutException` paths. `HTTPSession::connect`
+        /// (and `SecureSocketImpl::connect` for HTTPS) does the TCP connect first, then socket setup
+        /// / the TLS handshake, which can fail after a peer exists. Probe the socket: a failure with
+        /// a peer is a post-connect problem, so leave the address a success and propagate (return
+        /// false); a failure before a peer is a per-address routing failure, so save the error,
+        /// pessimize, and retry (return true).
+        auto onConnectFailure = [&](ConnectionPtr & failed_connection, HostResolver::Entry & failed_address) -> bool
+        {
+            ProfileEvents::increment(getMetrics().errors);
+            const bool tcp_connected = failed_connection->isConnectedToPeer();
+            (*failed_connection).reset();
+            if (tcp_connected)
+                return false;
+            last_net_error = std::current_exception();
+            pessimize(failed_address);
+            return true;
+        };
+
+        /// Report the cumulative time spent across all connect attempts, including the failed
+        /// ones. The accumulated value is written back on every exit from the loop below -
+        /// success or failure - by this scope guard. `connect_time == nullptr` callers are
+        /// unaffected: the guard only writes through a non-null pointer.
+        UInt64 total_connect_time = 0;
+        SCOPE_EXIT({ if (connect_time) *connect_time = total_connect_time; });
+
+        for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
+        {
+            auto address = resolver->resolve();
+            if (!tried_addresses.insert(*address).second)
+            {
+                /// Already attempted this address in an earlier iteration. No real network
+                /// attempt happened, so report neither success nor failure: `setUnused` suppresses
+                /// the destructor's `setSuccess` without the `setFail` side effects (DNS refresh,
+                /// `HostResolverFailed` bump).
+                address.setUnused();
+                continue;
+            }
+
+            ++connect_attempts;
+
+            ConnectionPtr connection;
+            try
+            {
+                /// `PooledConnection::create` (via `ConnectionGroup::atConnectionCreate`) can throw
+                /// at the group hard limit, before any connect attempt. The catch below calls
+                /// `setUnused` so the destructor records neither success nor failure for an address
+                /// we never connected to.
+                connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+                connection->setKeepAlive(true);
+
+                if (!proxy_configuration.isEmpty())
+                {
+                    connection->setProxyConfig(poco_proxy_config);
+                }
+
+                connection->setResolvedHost(*address);
+            }
+            catch (...)
+            {
+                address.setUnused();
+                throw;
+            }
+
+            try
+            {
+                setTimeouts(*connection, timeouts);
+
+                auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
+                /// `reconnect` records this attempt's duration on success and failure; accumulate it
+                /// into `total_connect_time`. The guard fires during unwinding, before the catch
+                /// handlers, so a failed attempt's time is counted too.
+                UInt64 attempt_connect_time = 0;
+                SCOPE_EXIT({ total_connect_time += attempt_connect_time; });
+                connection->doConnect(&attempt_connect_time);
+            }
+#if USE_SSL
+            catch (const Poco::Net::SSLException &)
+            {
+                /// `SSLException` derives from `NetException`, but a TLS/certificate failure is not
+                /// a per-address routing problem and would recur on any address. Propagate without
+                /// `setFail`; `setUnused` so the destructor does not record a spurious success.
+                address.setUnused();
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                throw;
+            }
+#endif
+            catch (const Poco::Net::NetException &)
+            {
+                if (onConnectFailure(connection, address))
+                    continue;
+                throw;
+            }
+            catch (const Poco::TimeoutException &)
+            {
+                /// `Poco::TimeoutException` derives from `Poco::RuntimeException`, not
+                /// `Poco::Net::NetException`, so it needs its own clause to be retried instead of
+                /// falling into `catch (...)` and propagating at once.
+                if (onConnectFailure(connection, address))
+                    continue;
+                throw;
+            }
+            catch (...)
+            {
+                ProfileEvents::increment(getMetrics().errors);
+                /// Post-connect socket setup in `HTTPSession::connect` can also throw
+                /// non-`NetException` errors (`setsockopt` mapped to `Poco::IOException` /
+                /// `Poco::InvalidArgumentException`) after the TCP connect succeeded. Probe as in the
+                /// `NetException` handler: with a peer the address was reachable, so propagate
+                /// without `setFail`.
+                const bool tcp_connected = connection->isConnectedToPeer();
+                (*connection).reset();
+                if (!tcp_connected)
+                    pessimize(address);
+                throw;
+            }
+
+            /// Apply socket buffer sizes only after a successful connect. A failure here is a local
+            /// socket-option error, not a routing problem, so it propagates without `setFail` (the
+            /// address stays a success). Reset first so `atConnectionDestroy` does not pool a
+            /// half-configured socket.
+            try
+            {
+                applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+            }
+            catch (...)
+            {
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                throw;
+            }
+
+            /// The connection is fully established and configured.
+            ProfileEvents::increment(getMetrics().created);
+            return connection;
+        }
+
+        chassert(last_net_error);
+        std::rethrow_exception(last_net_error);
     }
 
     void atConnectionDestroy(PooledConnection & connection) noexcept
@@ -734,6 +1096,7 @@ private:
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
             connection_to_store->assign(connection);
+            connection_to_store->notifySocketInode();
 
             {
                 MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -876,10 +1239,43 @@ public:
         http_group->setLimits(std::move(http));
     }
 
+    void setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+    {
+        disk_group->setSocketBufferSizes(std::move(disk));
+        storage_group->setSocketBufferSizes(std::move(storage));
+        http_group->setSocketBufferSizes(std::move(http));
+    }
+
+    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        switch (type)
+        {
+            case HTTPConnectionGroupType::DISK:
+                return disk_group->getSocketBufferSizes();
+            case HTTPConnectionGroupType::STORAGE:
+                return storage_group->getSocketBufferSizes();
+            case HTTPConnectionGroupType::HTTP:
+                return http_group->getSocketBufferSizes();
+        }
+    }
+
     void dropCache()
     {
         std::lock_guard lock(mutex);
         endpoints_pool.clear();
+    }
+
+    HTTPConnectionPools::PoolSocketInodes getSocketInodes()
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        return {
+            .disk = disk_group->getSocketInodes(),
+            .storage = storage_group->getSocketInodes(),
+            .http = http_group->getSocketInodes()
+        };
     }
 
 protected:
@@ -970,6 +1366,16 @@ void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnec
     impl->setLimits(std::move(disk), std::move(storage), std::move(http));
 }
 
+void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+{
+    impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http));
+}
+
+HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const
+{
+    return impl->getSocketBufferSizes(type);
+}
+
 void HTTPConnectionPools::dropCache()
 {
     impl->dropCache();
@@ -980,4 +1386,10 @@ HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri
 {
     return impl->getPool(type, uri, proxy_configuration);
 }
+
+HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
+{
+    return impl->getSocketInodes();
+}
+
 }

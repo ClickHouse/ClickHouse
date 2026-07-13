@@ -1,0 +1,198 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: 'Демо воспроизведения сеанса'
+description: 'Интерактивное демо-приложение, показывающее, как подключить веб-приложение к воспроизведению сеанса в ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'воспроизведение сеанса', 'browser sdk', 'демо', 'обсервабилити', 'инструментация']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<Info>
+  **Кратко**
+
+  В этом руководстве показано, как настроить в веб-приложении сбор данных для воспроизведения сеанса с помощью ClickStack Browser SDK. В отличие от других примерных датасетов, которые загружают заранее подготовленные данные, в этой демонстрации предлагается интерактивное приложение, где вы сами генерируете данные сеанса своими действиями.
+
+  Требуемое время: 10–15 минут
+</Info>
+
+<div id="overview">
+  ## Обзор
+</div>
+
+[Демо-приложение для воспроизведения сеанса](https://github.com/ClickHouse/clickstack-session-replay-demo) — это обозреватель документации, созданный на чистом JavaScript. Оно показывает, насколько простым может быть подключение воспроизведения сеанса: один тег script и один вызов инициализации — и все действия пользователя автоматически фиксируются.
+
+Репозиторий включает две ветки:
+
+* **`main`** — версия с полностью настроенным воспроизведением сеанса, готовая к немедленному использованию
+* **`pre-instrumented`** — чистая версия без инструментирования, с комментариями в коде, которые показывают, где его нужно добавить
+
+В этом руководстве сначала используется ветка `main`, чтобы увидеть воспроизведение сеанса в действии, а затем разбирается код инструментирования, чтобы вы могли применить тот же подход в собственном приложении.
+
+Подробнее о том, что такое воспроизведение сеанса и как оно вписывается в ClickStack, см. на странице функции [Session Replay](/ru/clickstack/features/session-replay).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Установлены Docker и Docker Compose
+* Доступны порты 3000, 4317, 4318 и 8080
+
+<div id="running-the-demo">
+  ## Запуск демо
+</div>
+
+<Steps>
+  <Step>
+    ### Клонируйте репозиторий
+
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step>
+    ### Запустите ClickStack
+
+    ```shell
+    docker-compose up -d clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### Получите ключ API
+
+    1. Откройте HyperDX по адресу [http://localhost:8080](http://localhost:8080)
+    2. Создайте аккаунт или войдите в него, если это необходимо
+    3. Перейдите в **Team Settings → API Keys**
+    4. Скопируйте свой **ключ API для приёма данных**
+
+    <Image img="/images/clickstack/api-key.webp" alt="Ключ API ClickStack" />
+
+    5. Задайте его как переменную окружения:
+
+    ```shell
+    export CLICKSTACK_API_KEY='your-api-key-here'
+    ```
+  </Step>
+
+  <Step>
+    ### Запустите демо-приложение
+
+    ```shell
+    docker-compose --profile demo up demo-app
+    ```
+
+    <Note>
+      Убедитесь, что выполняете эту команду в том же терминале, где экспортировали переменную `CLICKSTACK_API_KEY`.
+    </Note>
+
+    Откройте [http://localhost:3000](http://localhost:3000) в браузере и взаимодействуйте с приложением — ищите темы, фильтруйте по категориям, просматривайте примеры кода и добавляйте элементы в закладки.
+
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Демо-приложение для воспроизведения сеанса" />
+
+    Все взаимодействия автоматически собираются Browser SDK ClickStack.
+  </Step>
+
+  <Step>
+    ### Просмотрите воспроизведение сеанса
+
+    Вернитесь в HyperDX по адресу [http://localhost:8080](http://localhost:8080) и в левой боковой панели перейдите в **Client Sessions**.
+
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Поиск воспроизведения сеанса" />
+
+    Вы увидите свой сеанс в списке с его длительностью и количеством событий. Нажмите кнопку ▶️, чтобы воспроизвести его.
+
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="Воспроизведение сеанса" />
+
+    Переключайтесь между режимами **Highlighted** и **All Events**, чтобы настроить уровень детализации на временной шкале.
+  </Step>
+</Steps>
+
+<div id="instrumentation">
+  ## Инструментирование
+</div>
+
+Демонстрационное приложение показывает, как мало кода нужно, чтобы включить воспроизведение сеанса. Для этого достаточно внести в приложение всего два изменения:
+
+**1. Подключите SDK (`app/public/index.html`):**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. Выполните инициализацию ClickStack (`app/public/js/app.js`):**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+Все остальное — стандартный прикладной код. SDK автоматически собирает все пользовательские взаимодействия, журналы консоли, сетевые запросы и ошибки — дополнительная инструментация не требуется.
+
+<div id="try-it-yourself">
+  ### Попробуйте сами
+</div>
+
+Чтобы с нуля настроить в приложении сбор телеметрии, переключитесь на ветку `pre-instrumented`:
+
+```shell
+git checkout pre-instrumented
+```
+
+Эта ветка содержит то же приложение без какой-либо инструментации ClickStack. Комментарии в коде в `app/public/index.html` и `app/public/js/app.js` точно указывают, куда добавить два приведённых выше фрагмента кода. После этого перезапустите демо-приложение, и ваши действия в приложении начнут отображаться в ClickStack.
+
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
+
+<div id="sessions-not-appearing">
+  ### Сеансы не отображаются в HyperDX
+</div>
+
+1. Проверьте консоль браузера на наличие ошибок
+2. Убедитесь, что ClickStack запущен: `docker-compose ps`
+3. Убедитесь, что задан API key: `echo $CLICKSTACK_API_KEY`
+4. Измените временной диапазон в представлении Client Sessions (попробуйте **Last 15 minutes**)
+5. Принудительно обновите страницу в браузере: `Cmd+Shift+R` (Mac) или `Ctrl+Shift+R` (Windows/Linux)
+
+<div id="401-errors">
+  ### Ошибки 401 Unauthorized
+</div>
+
+API-ключ задан неверно. Убедитесь, что вы:
+
+1. Экспортировали его в терминале: `export CLICKSTACK_API_KEY='your-key'`
+2. Запустили демо-приложение в **том же терминале**, где экспортировали его
+3. Получили ключ в интерфейсе HyperDX (а не использовали случайно сгенерированную строку)
+
+<div id="cleanup">
+  ## Очистка
+</div>
+
+Остановите сервисы:
+
+```bash
+docker-compose down
+```
+
+Удалите все данные:
+
+```bash
+docker-compose down -v
+```
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+* [воспроизведение сеанса](/ru/clickstack/features/session-replay) — обзор возможности, параметры SDK и настройки конфиденциальности
+* [Справочник по Browser SDK](/ru/clickstack/ingesting-data/sdks/browser) — полный набор параметров SDK и расширенная конфигурация
+* [Начало работы с ClickStack](/ru/clickstack/getting-started/index) — разверните ClickStack и отправьте первые данные
+* [Все демонстрационные наборы данных](/ru/clickstack/example-datasets/index) — другие демонстрационные наборы данных и руководства

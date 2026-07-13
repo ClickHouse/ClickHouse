@@ -169,7 +169,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", distanceM); }, documentation);
+    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", greatCircleDistanceM); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistKm)
 {
@@ -202,7 +202,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", distanceKm); }, documentation);
+    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", greatCircleDistanceKm); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistRads)
 {
@@ -235,7 +235,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in radians.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", distanceRads); }, documentation);
+    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", greatCircleDistanceRads); }, documentation);
 }
 
 }

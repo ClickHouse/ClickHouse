@@ -9,8 +9,6 @@ title: 'ExternalDistributed table engine'
 doc_type: 'reference'
 ---
 
-# ExternalDistributed table engine
-
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
 
 ## Creating a table {#creating-a-table}

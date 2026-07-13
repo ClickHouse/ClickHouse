@@ -189,7 +189,7 @@ void MergingAggregatedTransform::addChunk(Columns columns, size_t num_rows, Int3
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
+        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
         for (size_t group_id = 0; group_id < num_groups; ++group_id)
             split_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(split_columns[group_id]);
     }

@@ -1,0 +1,15 @@
+<clickhouse>
+<!--    <process_query_plan_packet>0</process_query_plan_packet>-->
+
+<!--    <max_database_num_to_warn>9</max_database_num_to_warn>-->
+<!--    <max_table_num_to_warn>9</max_table_num_to_warn>-->
+
+<!--    <max_database_num_to_throw>10</max_database_num_to_throw>-->
+<!--    <max_table_num_to_throw>10</max_table_num_to_throw>-->
+<!--    <max_part_num_to_warn>10</max_part_num_to_warn>-->
+<!--    max_part_num_to_warn-->
+<!--name:                       max_part_num_to_warn
+value:                      100000
+-->
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
