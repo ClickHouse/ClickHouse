@@ -56,6 +56,10 @@ Unknown framing format Unknown
 1
 --- framing is rejected for formats that defer totals and extremes to finalize (Template)
 is not compatible with framing formats
+--- the deferred-totals rejection is delivered as a framed exception packet
+1
+--- an exception raised before the output format exists is framed even for Template
+1
 --- EventStream base64-encodes binary output formats (Native)
 text/event-stream; charset=UTF-8; payload=base64
 Native payload round-trips
@@ -88,6 +92,8 @@ text/event-stream; charset=UTF-8; payload=base64
 {"packet":"data","data":"0\r\n1\r\n2\r\n"}
 --- framing is rejected for output formats that write progress in-band (JSONEachRowWithProgress)
 writes progress in-band
+--- the in-band-progress rejection is delivered as a framed exception packet
+1
 --- exception-only stream carries no data packet, only the exception (FORMAT JSON, streaming)
 data packets: 0
 exception packets: 1

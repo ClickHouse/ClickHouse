@@ -105,6 +105,22 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT 1 AS k FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
     | grep -o -m1 'is not compatible with framing formats'
 
+# `setFraming` throws this rejection after the output format was already created, so the
+# exception-recovery path must not reuse the leftover unframed format: the error is still
+# delivered as a framed `exception` packet.
+echo '--- the deferred-totals rejection is delivered as a framed exception packet'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 1 AS k FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
+    | grep -c '"packet":"exception"'
+
+# The exception-only framing uses a `Null` carrier format, so the exception is framed even when the
+# query's own format cannot be constructed on the exception path (here `Template` references a column
+# of the header, which is empty when the query failed before producing a header).
+echo '--- an exception raised before the output format exists is framed even for Template'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT k FROM table_does_not_exist_04512 FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
+    | grep -c '"packet":"exception"'
+
 # `EventStream` base64-encodes the payloads for output formats that may produce non-UTF-8 bytes
 # (binary formats, and raw passthrough formats that write the column bytes verbatim), signalling it
 # with a `payload=base64` content-type parameter. The base64-decoded payload is byte-for-byte the
@@ -203,6 +219,11 @@ echo '--- framing is rejected for output formats that write progress in-band (JS
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT JSONEachRowWithProgress" \
     | grep -o -m1 'writes progress in-band'
+
+echo '--- the in-band-progress rejection is delivered as a framed exception packet'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT JSONEachRowWithProgress" \
+    | grep -c '"packet":"exception"'
 
 # When the query fails before any output is produced (for example an unknown table), the exception stream
 # must carry only the `exception` packet: the real output format must not write its empty skeleton (for
