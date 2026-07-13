@@ -647,6 +647,34 @@ String encodeV4BasicNumericPayload(UInt64 row_count, const Field & min, const Fi
     return out;
 }
 
+/// Encode a legacy V1 single-stat `ColumnStatistics` blob by hand. The V1 layout has NO per-stat
+/// size prefix and NO stored_type_name: version, mask, rows, then the raw stat payload. Framing
+/// mirrors the V1/V2 legacy path in ColumnStatistics::deserialize.
+String encodeV1ColumnStatistics(StatisticsType type, UInt64 rows, const String & stat_payload)
+{
+    String out;
+    WriteBufferFromString buf(out);
+    writeIntBinary(static_cast<UInt16>(StatisticsFileVersion::V1), buf);
+    writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+    writeIntBinary(rows, buf);
+    buf.write(stat_payload.data(), stat_payload.size());
+    buf.finalize();
+    return out;
+}
+
+/// Legacy V1 MinMax payload: row_count, then min and max stored as raw Float64 (no type name, no
+/// has_nan). This is the format StatisticsMinMax::deserialize reads on the V1 early-return path.
+String encodeV1MinMaxPayload(UInt64 row_count, Float64 min_val, Float64 max_val)
+{
+    String out;
+    WriteBufferFromString buf(out);
+    writeIntBinary(row_count, buf);
+    writeFloatBinary(min_val, buf);
+    writeFloatBinary(max_val, buf);
+    buf.finalize();
+    return out;
+}
+
 }
 
 /// A pre-V5 numeric statistics blob carries no NaN flag, yet a part like [1.0, nan, 3.0] was stored
@@ -712,5 +740,28 @@ TEST(Statistics, PreV5FloatStatisticsConservativeRead)
         auto cs = ColumnStatistics::deserialize(rb, int_type);
         ASSERT_TRUE(cs != nullptr);
         EXPECT_FALSE(get_basic(cs).hasNaN()) << "pre-V5 integer Basic cannot be NaN";
+    }
+
+    /// Legacy V1 float MinMax: min/max stored as raw Float64, no has_nan. The V1 early-return path
+    /// in StatisticsMinMax::deserialize must apply the same conservative fallback -> has_nan = true.
+    {
+        String payload = encodeV1MinMaxPayload(3, 1.0, 3.0);
+        String blob = encodeV1ColumnStatistics(StatisticsType::MinMax, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, float_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_TRUE(get_minmax(cs).hasNaN()) << "legacy V1 float MinMax must be read as possibly-NaN";
+        EXPECT_EQ(get_minmax(cs).getMin(), Field(Float64(1.0)));
+        EXPECT_EQ(get_minmax(cs).getMax(), Field(Float64(3.0)));
+    }
+
+    /// Legacy V1 integer MinMax: cannot hold NaN -> has_nan stays false (pruning not disabled).
+    {
+        String payload = encodeV1MinMaxPayload(3, 1.0, 3.0);
+        String blob = encodeV1ColumnStatistics(StatisticsType::MinMax, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, int_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_FALSE(get_minmax(cs).hasNaN()) << "legacy V1 integer MinMax cannot be NaN";
     }
 }

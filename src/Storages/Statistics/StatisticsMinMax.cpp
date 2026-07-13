@@ -89,6 +89,10 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         readFloatBinary(max_val, buf);
         min = min_val;
         max = max_val;
+        /// V1 predates the `has_nan` flag too, so a float part with a hidden NaN reads a finite
+        /// [min, max]. Apply the same conservative fallback as the V2..V4 path below.
+        if (isFloat(removeLowCardinality(data_type)))
+            has_nan = true;
         return;
     }
 
