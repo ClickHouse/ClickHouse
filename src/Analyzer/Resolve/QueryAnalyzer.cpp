@@ -77,6 +77,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -5939,6 +5940,193 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+namespace
+{
+
+/** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
+  *
+  * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
+  * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - else any aggregate function -> `KeepInHaving`;
+  * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
+  *   `validateAggregates` rejects `grouping` in `WHERE`);
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else -> `Move`.
+  */
+enum class HavingConjunctMoveAction
+{
+    Move,
+    KeepInHaving,
+    AbortRewrite,
+};
+
+HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node)
+{
+    HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
+
+    QueryTreeNodes nodes_to_visit = {node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto current_type = current->getNodeType();
+        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction())
+                return HavingConjunctMoveAction::AbortRewrite;
+
+            if (function_node->isOrdinaryFunction())
+            {
+                if (auto function_base = function_node->getFunction())
+                {
+                    if (function_base->isStateful())
+                        return HavingConjunctMoveAction::AbortRewrite;
+
+                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                        verdict = HavingConjunctMoveAction::KeepInHaving;
+                }
+            }
+
+            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+
+            if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+
+    return verdict;
+}
+
+/** Mimic the legacy `tryMovePredicatesFromHavingToWhere` rewrite at the QueryTree level.
+  *
+  * All-or-nothing for stateful and window functions: if any conjunct contains either,
+  * the entire rewrite is skipped (matches legacy `return false`).
+  *
+  * Stricter than legacy for non-determinism: conjuncts containing non-deterministic calls
+  * (e.g. `rand`) stay in `HAVING` instead of moving. Legacy moved them, silently changing
+  * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
+  *
+  * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
+  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
+  * is in effect.
+  */
+void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    if (!query_node_typed.hasHaving())
+        return;
+
+    if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_non_aggregate_in_having])
+        return;
+
+    if (query_node_typed.isGroupByWithCube()
+        || query_node_typed.isGroupByWithRollup()
+        || query_node_typed.isGroupByWithTotals()
+        || query_node_typed.isGroupByWithGroupingSets())
+        return;
+
+    if (scope.group_by_use_nulls)
+        return;
+
+    /// HAVING without aggregation is handled by other validation paths; do not interfere.
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+    if (!query_node_typed.hasGroupBy() && aggregate_function_nodes.empty())
+        return;
+
+    auto & having_node = query_node_typed.getHaving();
+
+    /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
+    /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
+    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// Without this, a nested `and` containing an aggregate is classified as a single
+    /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
+    QueryTreeNodes conjuncts;
+    {
+        QueryTreeNodes worklist{having_node};
+        while (!worklist.empty())
+        {
+            auto current = std::move(worklist.back());
+            worklist.pop_back();
+
+            auto * current_function = current->as<FunctionNode>();
+            if (current_function && current_function->getFunctionName() == "and")
+            {
+                const auto & args = current_function->getArguments().getNodes();
+                /// Reverse-iterate into the LIFO worklist to preserve left-to-right order.
+                for (auto it = args.rbegin(); it != args.rend(); ++it)
+                    worklist.push_back(*it);
+            }
+            else
+            {
+                conjuncts.push_back(std::move(current));
+            }
+        }
+    }
+
+    std::vector<HavingConjunctMoveAction> classifications;
+    classifications.reserve(conjuncts.size());
+    for (const auto & conjunct : conjuncts)
+    {
+        auto action = classifyHavingConjunctForMove(conjunct);
+        if (action == HavingConjunctMoveAction::AbortRewrite)
+            return;
+        classifications.push_back(action);
+    }
+
+    QueryTreeNodes keep_in_having;
+    QueryTreeNodes move_to_where;
+    keep_in_having.reserve(conjuncts.size());
+    move_to_where.reserve(conjuncts.size());
+
+    for (size_t i = 0; i < conjuncts.size(); ++i)
+    {
+        if (classifications[i] == HavingConjunctMoveAction::KeepInHaving)
+            keep_in_having.push_back(std::move(conjuncts[i]));
+        else
+            move_to_where.push_back(std::move(conjuncts[i]));
+    }
+
+    if (move_to_where.empty())
+        return;
+
+    auto build_and = [&scope](QueryTreeNodes && args) -> QueryTreeNodePtr
+    {
+        if (args.size() == 1)
+            return std::move(args.front());
+        auto and_function = std::make_shared<FunctionNode>("and");
+        and_function->markAsOperator();
+        and_function->getArguments().getNodes() = std::move(args);
+        and_function->resolveAsFunction(FunctionFactory::instance().get("and", scope.context));
+        return and_function;
+    };
+
+    if (keep_in_having.empty())
+        having_node = nullptr;
+    else
+        having_node = build_and(std::move(keep_in_having));
+
+    QueryTreeNodes new_where_args;
+    new_where_args.reserve(1 + move_to_where.size());
+    if (query_node_typed.hasWhere())
+        new_where_args.push_back(query_node_typed.getWhere());
+    for (auto & moved : move_to_where)
+        new_where_args.push_back(std::move(moved));
+
+    query_node_typed.getWhere() = build_and(std::move(new_where_args));
+}
+
+}
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -6334,6 +6522,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     expandGroupByAll(query_node_typed);
+
+    tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
 
     validateFromClause(query_node);
     validateFilters(query_node);
