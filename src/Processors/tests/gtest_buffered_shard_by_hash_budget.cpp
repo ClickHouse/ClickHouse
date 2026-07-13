@@ -6,7 +6,9 @@
 #include <utility>
 #include <vector>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -232,6 +234,42 @@ TEST(BufferedShardByHashTransform, WrappedLowCardinalityDictionaryChargedOncePer
 
     EXPECT_GE(buffered, dict_bytes);
     EXPECT_LT(buffered, 2 * dict_bytes);
+}
+
+/// The same invariant for a shared `ColumnConst` payload: `ColumnConst::scatter` wraps the same backing `data`
+/// column for every shard chunk while each wrapper's `allocatedBytes()` reports the full payload, so the budget
+/// must charge a shared const payload exactly once per block - charging it per shard would inflate the counter
+/// up to `num_shards` times and trip `aggregation_in_order_shuffle_max_buffered_bytes` spuriously on queries
+/// with a wide constant column (e.g. a large constant aggregate argument).
+TEST(BufferedShardByHashTransform, ConstColumnPayloadChargedOncePerBlock)
+{
+    const size_t num_rows = 8000;
+    const size_t num_shards = 8;
+    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates the block's bytes.
+
+    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+
+    auto payload = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    payload->insertData(big_value.data(), big_value.size());
+    ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
+    const Int64 payload_bytes
+        = static_cast<Int64>(assert_cast<const ColumnConst &>(*constant).getDataColumn().allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns columns{key, constant};
+    const Int64 buffered = bufferedBytesAfterSplit(header, std::move(columns), num_shards, ColumnNumbers{0});
+
+    /// Charged once: at least one payload, and below two payloads (charging per shard would reach
+    /// ~`num_shards` payloads).
+    EXPECT_GE(buffered, payload_bytes);
+    EXPECT_LT(buffered, 2 * payload_bytes);
 }
 
 /// A chunk pushed to an output port stays resident in the port state (still consuming memory) until the

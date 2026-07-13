@@ -20,15 +20,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// `scatter` shares one dictionary across a block's shard chunks (`ColumnLowCardinality::scatter` builds a
-/// single dictionary and `setShared`s it into every shard), so `allocatedBytes()` reports that dictionary once
-/// per shard. Summing `allocatedBytes()` over the shards therefore counts a shared dictionary `num_shards`
-/// times. This walks a shard chunk's columns and, for every `LowCardinality` at any nesting depth (the outer
-/// `ColumnTuple`/`ColumnArray`/`ColumnNullable`/`ColumnMap` delegate `scatter` to their nested columns, so a
-/// wrapped dictionary is shared the same way), subtracts the dictionary's bytes from `block_bytes` whenever the
-/// same dictionary object was already counted for an earlier shard chunk of the block. A shared dictionary is
-/// thus charged exactly once per block; a genuinely per-shard (distinct) dictionary keeps its full charge.
-void subtractDuplicateSharedDictionaries(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & block_bytes)
+/// `scatter` can share one physical buffer across a block's shard chunks while `allocatedBytes()` reports it
+/// on every shard: `ColumnLowCardinality::scatter` builds a single dictionary and `setShared`s it into every
+/// shard, and `ColumnConst::scatter` wraps the same backing `data` column for every shard. The outer
+/// `ColumnTuple`/`ColumnArray`/`ColumnNullable`/`ColumnMap` delegate `scatter` to their nested columns, so the
+/// sharing appears at any nesting depth. Summing `allocatedBytes()` over the shards therefore counts such a
+/// shared subobject up to `num_shards` times. This walks a shard chunk's columns recursively (pointer identity)
+/// and, whenever the same column object is reached again, subtracts its bytes from `block_bytes`, so every
+/// shared buffer is charged exactly once per block; a genuinely per-shard (distinct) buffer keeps its full
+/// charge. `LowCardinality` needs an explicit case because `forEachSubcolumn` skips a shared dictionary
+/// (the column does not own it) - the exact object this must de-duplicate.
+void subtractDuplicateSharedSubobjects(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & block_bytes)
 {
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
     {
@@ -40,7 +42,15 @@ void subtractDuplicateSharedDictionaries(const IColumn & column, std::unordered_
 
     column.forEachSubcolumn([&](const auto & subcolumn)
     {
-        subtractDuplicateSharedDictionaries(*subcolumn, counted, block_bytes);
+        if (!counted.insert(subcolumn.get()).second)
+        {
+            /// This exact object was already counted through an earlier occurrence (its bytes are included in
+            /// every referencing parent's `allocatedBytes()`), so remove the duplicate charge. Its subtree was
+            /// de-duplicated together with the first occurrence, so don't descend into it again.
+            block_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
+            return;
+        }
+        subtractDuplicateSharedSubobjects(*subcolumn, counted, block_bytes);
     });
 }
 
@@ -428,13 +438,14 @@ void BufferedShardByHashTransform::generateOutputChunks()
     /// Charge the exact bytes resident after the split. `scatter` copies each column into independent per-shard
     /// buffers, so the post-split total can exceed the pre-split block (e.g. `ColumnString` does not reserve
     /// `chars`, so each shard regrows its own `chars` buffer by doubling); the pre-split provisional estimate
-    /// would under-count that. Sum each buffered shard chunk's `allocatedBytes()`, then discount any dictionary
-    /// `scatter` shares across the shards so it is charged exactly once per block (see
-    /// `subtractDuplicateSharedDictionaries`) - counting a shared dictionary once per shard would inflate the
-    /// counter up to `num_shards` times and trip the budget spuriously on safe inputs.
+    /// would under-count that. Sum each buffered shard chunk's `allocatedBytes()`, then discount any buffer
+    /// `scatter` shares across the shards (a `LowCardinality` dictionary, a `ColumnConst` payload) so it is
+    /// charged exactly once per block (see `subtractDuplicateSharedSubobjects`) - counting a shared buffer once
+    /// per shard would inflate the counter up to `num_shards` times and trip the budget spuriously on safe
+    /// inputs.
     const size_t block_id = next_block_id++;
     Int64 block_bytes = 0;
-    std::unordered_set<const void *> counted_dictionaries;
+    std::unordered_set<const void *> counted_subobjects;
     size_t enqueued_chunks = 0;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -449,7 +460,7 @@ void BufferedShardByHashTransform::generateOutputChunks()
         for (const auto & column : shard_columns[shard])
         {
             block_bytes += static_cast<Int64>(column->allocatedBytes());
-            subtractDuplicateSharedDictionaries(*column, counted_dictionaries, block_bytes);
+            subtractDuplicateSharedSubobjects(*column, counted_subobjects, block_bytes);
         }
 
         enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
