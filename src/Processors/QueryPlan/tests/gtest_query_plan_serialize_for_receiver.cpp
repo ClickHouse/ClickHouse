@@ -39,33 +39,33 @@ QueryPlan makeTrivialPlan()
 /// plan via ensureSerialized) is sent to several connections that may have negotiated different query
 /// plan serialization versions. serializeForReceiver must therefore reuse the cache only for a receiver
 /// that understands the cached version, and re-serialize on the fly for an older receiver - otherwise a
-/// not-yet-upgraded replica in a rolling upgrade would get a version-2 stream and reject it.
+/// not-yet-upgraded replica in a rolling upgrade would get a version-3 stream and reject it.
 TEST(QueryPlanSerializeForReceiver, CachedPlanReSerializedForOlderReceiver)
 {
     auto plan = makeTrivialPlan();
 
-    /// Cache the serialization at version 2, as the parallel-replicas path does on a v2 initiator.
-    plan.ensureSerialized(2);
+    /// Cache the serialization at version 3, as the parallel-replicas path does on a v3 initiator.
+    plan.ensureSerialized(3);
     ASSERT_TRUE(plan.isSerialized());
-    EXPECT_EQ(readLeadingVersion(plan.getSerializedData()), 2u);
+    EXPECT_EQ(readLeadingVersion(plan.getSerializedData()), 3u);
 
-    /// A version-2 receiver understands the cached stream, so the cache is reused verbatim.
+    /// A version-3 receiver understands the cached stream, so the cache is reused verbatim.
+    {
+        WriteBufferFromOwnString out;
+        plan.serializeForReceiver(out, 3);
+        out.finalize();
+        EXPECT_EQ(out.str(), std::string(plan.getSerializedData()));
+        EXPECT_EQ(readLeadingVersion(out.str()), 3u);
+    }
+
+    /// A receiver older than version 3 (a pre-PR server) must NOT get the cached version-3 stream. The
+    /// plan is re-serialized on the fly at the receiver's version, which omits the version-3 settings, so
+    /// the stream differs from the cache and carries the older version header.
     {
         WriteBufferFromOwnString out;
         plan.serializeForReceiver(out, 2);
         out.finalize();
-        EXPECT_EQ(out.str(), std::string(plan.getSerializedData()));
         EXPECT_EQ(readLeadingVersion(out.str()), 2u);
-    }
-
-    /// A version-1 receiver (a pre-PR server) must NOT get the cached version-2 stream. The plan is
-    /// re-serialized on the fly at version 1, which omits the version-2 settings, so the stream differs
-    /// from the cache and carries the version-1 header.
-    {
-        WriteBufferFromOwnString out;
-        plan.serializeForReceiver(out, 1);
-        out.finalize();
-        EXPECT_EQ(readLeadingVersion(out.str()), 1u);
         EXPECT_NE(out.str(), std::string(plan.getSerializedData()));
     }
 }
@@ -82,8 +82,8 @@ TEST(QueryPlanSerializeForReceiver, UncachedPlanSerializedAtReceiverVersion)
     out_v1.finalize();
     EXPECT_EQ(readLeadingVersion(out_v1.str()), 1u);
 
-    WriteBufferFromOwnString out_v2;
-    plan.serializeForReceiver(out_v2, 2);
-    out_v2.finalize();
-    EXPECT_EQ(readLeadingVersion(out_v2.str()), 2u);
+    WriteBufferFromOwnString out_v3;
+    plan.serializeForReceiver(out_v3, 3);
+    out_v3.finalize();
+    EXPECT_EQ(readLeadingVersion(out_v3.str()), 3u);
 }

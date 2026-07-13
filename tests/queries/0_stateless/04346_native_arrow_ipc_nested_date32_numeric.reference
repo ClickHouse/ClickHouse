@@ -1,0 +1,56 @@
+=== Arrow ===
+OK native==library | arr
+[0,3000000]
+[-25567]
+[]
+OK native==library | t
+(0,1)
+(3000000,2)
+(-25567,3)
+OK native==library | t.d
+0
+3000000
+-25567
+OK native==library | m
+{'k':0}
+{'k':3000000}
+{'k':-25567}
+--- case-insensitive: Arrow struct field 'D' -> requested 'd Int32' reads raw, native == library ---
+OK native==library | t
+(0,1)
+(3000000,2)
+(-25567,3)
+OK native==library | t.d
+0
+3000000
+-25567
+--- nested Date32 target still range-checks the out-of-range day (native) ---
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+=== ArrowStream ===
+OK native==library | arr
+[0,3000000]
+[-25567]
+[]
+OK native==library | t
+(0,1)
+(3000000,2)
+(-25567,3)
+OK native==library | t.d
+0
+3000000
+-25567
+OK native==library | m
+{'k':0}
+{'k':3000000}
+{'k':-25567}
+--- case-insensitive: Arrow struct field 'D' -> requested 'd Int32' reads raw, native == library ---
+OK native==library | t
+(0,1)
+(3000000,2)
+(-25567,3)
+OK native==library | t.d
+0
+3000000
+-25567
+--- nested Date32 target still range-checks the out-of-range day (native) ---
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE

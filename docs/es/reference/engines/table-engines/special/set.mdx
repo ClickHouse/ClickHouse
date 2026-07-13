@@ -1,0 +1,42 @@
+---
+description: 'Un conjunto de datos que siempre está en RAM. Está pensado para usarse en el lado
+  derecho del operador `IN`.'
+sidebarTitle: 'Set'
+slug: /engines/table-engines/special/set
+title: 'motor de tabla Set'
+doc_type: 'reference'
+---
+
+<Note>
+  En ClickHouse Cloud, si su servicio se creó con una versión anterior a 25.4, deberá establecer la compatibilidad como mínimo en 25.4 mediante `SET compatibility=25.4`.
+</Note>
+
+Un conjunto de datos que siempre está en RAM. Está pensado para usarse en el lado derecho del operador `IN` (consulte la sección &quot;operadores IN&quot;).
+
+Puede usar `INSERT` para insertar datos en la tabla. Los elementos nuevos se añadirán al conjunto de datos, mientras que los duplicados se ignorarán.
+Pero no puede realizar `SELECT` en la tabla. La única forma de recuperar los datos es usándola en la parte derecha del operador `IN`.
+
+Los datos siempre se almacenan en RAM. Para `INSERT`, los bloques de datos insertados también se escriben en el directorio de tablas en disco. Al iniciar el servidor, estos datos se cargan en RAM. En otras palabras, después de reiniciar, los datos siguen estando disponibles.
+
+En caso de un reinicio brusco del servidor, el bloque de datos en disco podría perderse o dañarse. En este último caso, es posible que deba eliminar manualmente el archivo con los datos dañados.
+
+<div id="join-limitations-and-settings">
+  ### Limitaciones y ajustes
+</div>
+
+Al crear una tabla, se aplican los siguientes ajustes:
+
+<div id="persistent">
+  #### Persistencia
+</div>
+
+Deshabilita la persistencia de los motores de tabla Set y [Join](/es/reference/engines/table-engines/special/join).
+
+Reduce la sobrecarga de E/S. Es adecuado para escenarios que priorizan el rendimiento y no requieren persistencia.
+
+Valores posibles:
+
+* 1 — Habilitado.
+* 0 — Deshabilitado.
+
+Valor predeterminado: `1`.

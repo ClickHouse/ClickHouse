@@ -1,0 +1,73 @@
+---
+description: '서브쿼리를 테이블로 변환합니다. 이 함수는 뷰를 구현합니다.'
+sidebarTitle: 'view'
+slug: /sql-reference/table-functions/view
+title: 'view'
+doc_type: 'reference'
+---
+
+서브쿼리를 테이블로 변환합니다. 이 함수는 뷰를 구현합니다([CREATE VIEW](/ko/reference/statements/create/view) 참조). 생성된 테이블은 데이터를 저장하지 않고, 지정된 `SELECT` 쿼리만 저장합니다. 이 테이블을 읽을 때 ClickHouse는 쿼리를 실행하고 결과에서 불필요한 컬럼을 모두 제거합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+view(subquery)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `subquery` — `SELECT` 쿼리.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+* 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+입력 테이블:
+
+```text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM view(SELECT name FROM months);
+```
+
+```text title="Response"
+┌─name─────┐
+│ January  │
+│ February │
+│ March    │
+│ April    │
+└──────────┘
+```
+
+[remote](/ko/reference/functions/table-functions/remote) 및 [cluster](/ko/reference/functions/table-functions/cluster) 테이블 함수의 매개변수로 `view` 함수를 사용할 수 있습니다:
+
+```sql title="Query"
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
+```
+
+```sql title="Query"
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
+```
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [View 테이블 엔진](/ko/reference/engines/table-engines/special/view)

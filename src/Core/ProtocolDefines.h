@@ -62,11 +62,15 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
 /// Query plan serialization version.
 /// Version 1: initial query plan serialization.
-/// Version 2: serialized join steps may carry the in-memory join compression settings
+/// Version 2: serializes a bucketed `ReadFromMergeTree` leaf read as just its bucket count; the per-bucket
+///            marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed
+///            step (its trailing part-name payload would desync the plan), so all `make_distributed_plan`
+///            nodes need one version.
+/// Version 3: serialized join steps may carry the in-memory join compression settings
 ///            (`max_memory_usage`, `enable_join_in_memory_compression`, `join_decompressed_columns_cache_bytes`).
-///            These names are omitted when serializing for a version-1 receiver, because
+///            These names are omitted when serializing for a receiver older than version 3, because
 ///            `BaseSettings::readBinary` throws on unknown setting names.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 2;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
@@ -162,6 +166,8 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 
 
 static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485;
 
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -170,5 +176,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54485;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54486;
 }

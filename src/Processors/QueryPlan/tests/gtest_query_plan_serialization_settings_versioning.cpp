@@ -30,11 +30,12 @@ QueryPlanSerializationSettings roundTrip(const QueryPlanSerializationSettings & 
 
 }
 
-/// The in-memory join compression settings were added to the plan serialization in version 2.
-/// When serializing for a version-1 receiver (a pre-PR server in a mixed-version cluster), their
-/// names must be omitted: BaseSettings::readBinary throws on unknown setting names, so emitting them
-/// would break mixed-version distributed queries with serialize_query_plan even at default values.
-TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForVersion1)
+/// The in-memory join compression settings were added to the plan serialization in version 3.
+/// When serializing for a receiver older than version 3 (a pre-PR server in a mixed-version cluster,
+/// including a version-2 server that only knows the bucketed-read encoding), their names must be
+/// omitted: BaseSettings::readBinary throws on unknown setting names, so emitting them would break
+/// mixed-version distributed queries with serialize_query_plan even at default values.
+TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersions)
 {
     QueryPlanSerializationSettings settings;
     settings[QueryPlanSerializationSetting::max_bytes_in_join] = 777;
@@ -42,22 +43,24 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForVersion1)
     settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
     settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
 
-    /// A version-2 receiver gets all of the settings, including the new ones.
+    /// A version-3 receiver gets all of the settings, including the new ones.
     {
-        auto v2 = roundTrip(settings, 2);
-        EXPECT_EQ(v2[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
-        EXPECT_EQ(v2[QueryPlanSerializationSetting::max_memory_usage].value, 12345u);
-        EXPECT_EQ(v2[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, true);
-        EXPECT_EQ(v2[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 4096u);
+        auto v3 = roundTrip(settings, 3);
+        EXPECT_EQ(v3[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
+        EXPECT_EQ(v3[QueryPlanSerializationSetting::max_memory_usage].value, 12345u);
+        EXPECT_EQ(v3[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, true);
+        EXPECT_EQ(v3[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 4096u);
     }
 
-    /// A version-1 receiver does not get the new settings (they fall back to their defaults), while
-    /// the pre-existing settings are still sent. This is exactly the stream a pre-PR server reads.
+    /// A receiver older than version 3 (both version 2 and version 1) does not get the new settings
+    /// (they fall back to their defaults), while the pre-existing settings are still sent. This is
+    /// exactly the stream a pre-PR server reads.
+    for (UInt64 old_version : {1u, 2u})
     {
-        auto v1 = roundTrip(settings, 1);
-        EXPECT_EQ(v1[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
-        EXPECT_EQ(v1[QueryPlanSerializationSetting::max_memory_usage].value, 0u);
-        EXPECT_EQ(v1[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, false);
-        EXPECT_EQ(v1[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 128ull * 1024 * 1024);
+        auto old = roundTrip(settings, old_version);
+        EXPECT_EQ(old[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
+        EXPECT_EQ(old[QueryPlanSerializationSetting::max_memory_usage].value, 0u);
+        EXPECT_EQ(old[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, false);
+        EXPECT_EQ(old[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 128ull * 1024 * 1024);
     }
 }

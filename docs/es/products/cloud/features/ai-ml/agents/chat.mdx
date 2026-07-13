@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Chat'
+slug: /cloud/features/ai-ml/agents/chat
+title: 'Chat'
+description: 'Conversaciones, marcadores, bifurcaciones, Multi-conversation y compartir chats en ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'chat', 'conversaciones', 'marcadores', 'bifurcación', 'compartir', 'Multi-conversation']
+doc_type: 'referencia'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+La interfaz de chat de ClickHouse Agents permite gestionar conversaciones, crear bifurcaciones, compararlas en paralelo y compartirlas.
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Interfaz de chat de ClickHouse Agent que muestra la navegación lateral izquierda, el encabezado de identidad del agente y el cuadro de redacción" size="lg" />
+
+<div id="conversations">
+  ## Conversaciones
+</div>
+
+Inicia una nueva conversación haciendo clic en el icono de redacción de la barra de navegación izquierda.
+Selecciona el agente que quieras usar en el cuadro de diálogo del selector de agentes, en la parte superior izquierda de la ventana de conversación; de forma predeterminada, está seleccionado **ClickHouse Agent**.
+Ahora puedes escribir tu mensaje en el cuadro de redacción y pulsar Enviar. Cada conversación se guarda en el historial de la barra lateral y se puede volver a abrir, renombrar o eliminar más tarde.
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="Interfaz de chat con el icono de redacción resaltado en la barra de navegación izquierda, la barra lateral mostrando el historial de Chats con una conversación guardada de Top 10 Tables Ranked, y el cuadro de redacción con una pregunta de ejemplo escrita" size="lg" />
+
+Puedes editar cualquiera de tus mensajes en el mismo lugar, y el agente volverá a generar su respuesta a partir de ese punto del historial de la conversación.
+También puedes volver a generar solo la última respuesta del agente, sin volver a enviar tu mensaje.
+
+<div id="bookmarks">
+  ## Marcadores
+</div>
+
+Marca un mensaje o una conversación completa para señalarlo y recuperarlo rápidamente. Los marcadores son privados y se conservan aunque cambies el nombre de la conversación.
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="Encabezado del chat con el icono de marcador resaltado y un tooltip de Add Bookmarks visible" size="lg" />
+
+<div id="forking">
+  ## Bifurcación
+</div>
+
+La bifurcación crea una nueva conversación a partir de un mensaje específico. Puedes usarla para explorar una ruta alternativa sin alterar el hilo original.
+Hay tres modos de bifurcación disponibles:
+
+* **Solo mensajes visibles** - te permite copiar la ruta directa hasta el mensaje bifurcado.
+* **Incluir ramas relacionadas** - te permite copiar la ruta principal junto con las ramas existentes.
+* **Incluir todo hasta aquí** - te permite copiar todo hasta el mensaje bifurcado.
+
+Las conversaciones bifurcadas son independientes, por lo que los cambios no se sincronizan con la conversación original.
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Cuadro de diálogo para seleccionar una opción de bifurcación que muestra tres iconos de modo de bifurcación, las casillas Start fork here y Remember, y la barra de herramientas de acciones del mensaje debajo" size="lg" />
+
+<div id="multi-conversation">
+  ## Multi-conversation
+</div>
+
+Multi-conversation muestra dos conversaciones una al lado de la otra y envía el mismo prompt a ambas. Úsalo para comparar respuestas entre modelos o para hacer pruebas A/B con distintas configuraciones del agente.
+
+Haz clic en el botón **+** del encabezado del chat para abrir una conversación paralela junto a la actual.
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="Encabezado del chat con el botón Add multi-conversation resaltado y un indicador + ClickHouse Agent encima del cuadro de redacción" size="lg" />
+
+Las dos conversaciones aparecen entonces una al lado de la otra y reciben el mismo prompt:
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="Vista de Multi-conversation con dos conversaciones de ClickHouse Agent una al lado de la otra, ambas ejecutando las mismas llamadas a la herramienta run_select_query" size="lg" />
+
+<div id="sharing-chats">
+  ## Compartir chats
+</div>
+
+Genera un enlace para compartir cualquier conversación y enviárselo a un compañero de equipo o guardarlo como referencia. Los destinatarios verán una vista de solo lectura, incluidos los artefactos y las ramas visibles. Puedes revocar un enlace desde el panel de uso compartido en cualquier momento.
+
+Las ediciones de los mensajes existentes aparecen en la vista compartida; los mensajes añadidos después de generar el enlace no aparecen.
+
+Para compartir una conversación, abre su menú en la barra lateral y selecciona **Share**:
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="Menú de la conversación en la barra lateral con las opciones Share, Rename, Duplicate, Archive y Delete visibles" size="lg" />
+
+Luego, haz clic en **Create link** en el cuadro de diálogo para compartir:
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Cuadro de diálogo Share link to chat con el botón Create link y una nota de que tu nombre y cualquier mensaje añadido después de compartir permanecen privados" size="md" />
