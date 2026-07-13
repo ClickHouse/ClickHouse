@@ -23,6 +23,8 @@ StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
     database_name = query.getDatabase();
     table_name = query.getTable();
+    database_name_quote = identifierPartQuoteFromAST(query.database);
+    table_name_quote = identifierPartQuoteFromAST(query.table);
     uuid = query.uuid;
     assertNotEmpty();
 }

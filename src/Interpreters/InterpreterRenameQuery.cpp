@@ -45,8 +45,6 @@ BlockIO InterpreterRenameQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
-
     String current_database = getContext()->getCurrentDatabase();
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
@@ -59,10 +57,31 @@ BlockIO InterpreterRenameQuery::execute()
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     TableGuards table_guards;
 
+    auto & database_catalog = DatabaseCatalog::instance();
+
     for (const auto & elem : rename.getElements())
     {
         descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        auto & description = descriptions.back();
+
+        /// Resolve the canonical spellings of the source and the destination database;
+        /// the destination table (or database) name is a new name and stays as written.
+        if (rename.database)
+        {
+            description.from_database_name = database_catalog.resolveDatabaseNameSpelling(
+                description.from_database_name, identifierPartQuoteFromAST(elem.from.database), getContext());
+        }
+        else
+        {
+            StorageID from_id{description.from_database_name, description.from_table_name};
+            from_id.database_name_quote = identifierPartQuoteFromAST(elem.from.database);
+            from_id.table_name_quote = identifierPartQuoteFromAST(elem.from.table);
+            from_id = database_catalog.resolveStorageIDNames(std::move(from_id), getContext());
+            description.from_database_name = from_id.database_name;
+            description.from_table_name = from_id.table_name;
+            description.to_database_name = database_catalog.resolveDatabaseNameSpelling(
+                description.to_database_name, identifierPartQuoteFromAST(elem.to.database), getContext());
+        }
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);
@@ -71,7 +90,8 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
-    auto & database_catalog = DatabaseCatalog::instance();
+    /// Check access against the resolved names, so the check covers the object the query acts on.
+    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable, descriptions));
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
@@ -236,6 +256,35 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     }
 
     return {};
+}
+
+AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRenameQuery::RenameType type, const RenameDescriptions & descriptions) const
+{
+    AccessRightsElements required_access;
+    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    for (const auto & elem : descriptions)
+    {
+        if (type == RenameType::RenameTable)
+        {
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from_database_name, elem.from_table_name);
+            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to_database_name, elem.to_table_name);
+            if (rename.exchange)
+            {
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from_database_name, elem.from_table_name);
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to_database_name, elem.to_table_name);
+            }
+        }
+        else if (type == RenameType::RenameDatabase)
+        {
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from_database_name);
+            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to_database_name);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of rename query");
+        }
+    }
+    return required_access;
 }
 
 AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRenameQuery::RenameType type) const

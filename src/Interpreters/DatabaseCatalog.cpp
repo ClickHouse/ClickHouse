@@ -402,6 +402,10 @@ StorageID DatabaseCatalog::resolveStorageIDNames(StorageID table_id, ContextPtr 
 {
     if (!context_ || table_id.hasUUID() || !table_id.hasDatabase())
         return table_id;
+    /// Internal references (e.g. per-table operations while dropping a database) are canonical
+    /// already; re-resolving them could report spurious ambiguity against case siblings.
+    if (context_->isInternalQuery())
+        return table_id;
     if (context_->getSettingsRef()[Setting::database_and_table_name_matching] != NameMatchMode::Standard)
         return table_id;
     if (table_id.database_name == TEMPORARY_DATABASE)
@@ -411,7 +415,7 @@ StorageID DatabaseCatalog::resolveStorageIDNames(StorageID table_id, ContextPtr 
     {
         std::lock_guard lock{databases_mutex};
         auto db_resolution = database_name_index.resolve({table_id.database_name, table_id.database_name_quote}, NameMatchMode::Standard);
-            if (db_resolution.outcome == FoldedNameIndex::Outcome::Ambiguous)
+        if (db_resolution.outcome == FoldedNameIndex::Outcome::Ambiguous)
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "Database name {} is ambiguous: it matches databases {}. Double-quote the name to select one exactly",
                 backQuoteIfNeed(table_id.database_name), fmt::join(db_resolution.candidates, ", "));
@@ -436,6 +440,28 @@ StorageID DatabaseCatalog::resolveStorageIDNames(StorageID table_id, ContextPtr 
     }
 
     return table_id;
+}
+
+String DatabaseCatalog::resolveDatabaseNameSpelling(const String & database_name, IdentifierPartQuote quote, ContextPtr context_) const
+{
+    if (!context_ || database_name.empty() || database_name == TEMPORARY_DATABASE)
+        return database_name;
+    if (context_->getSettingsRef()[Setting::database_and_table_name_matching] != NameMatchMode::Standard)
+        return database_name;
+
+    IdentifierPart part{database_name, quote};
+    if (!part.isCaseFoldable())
+        return database_name;
+
+    std::lock_guard lock{databases_mutex};
+    auto resolution = database_name_index.resolve(part, NameMatchMode::Standard);
+    if (resolution.outcome == FoldedNameIndex::Outcome::Ambiguous)
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Database name {} is ambiguous: it matches databases {}. Double-quote the name to select one exactly",
+            backQuoteIfNeed(database_name), fmt::join(resolution.candidates, ", "));
+    if (resolution.outcome == FoldedNameIndex::Outcome::Matched)
+        return resolution.canonical;
+    return database_name;
 }
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(

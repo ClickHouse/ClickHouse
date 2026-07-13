@@ -98,12 +98,17 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->table = table;
 }
 
-IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
+IdentifierPartQuote identifierPartQuoteFromAST(const IAST * node)
 {
     if (const auto * identifier = node ? node->as<ASTIdentifier>() : nullptr)
         if (!identifier->name_parts.empty())
             return identifier->name_parts[0].quote;
     return IdentifierPartQuote::Unquoted;
+}
+
+IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node)
+{
+    return identifierPartQuoteFromAST(node.get());
 }
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
@@ -266,12 +271,20 @@ String ASTTableIdentifier::getDatabaseName() const
     return {};
 }
 
+/// A single-part identifier carrying over the part's quote style.
+static ASTPtr makeIdentifierFromPart(const IdentifierPart & part)
+{
+    auto identifier = make_intrusive<ASTIdentifier>(part.spelling);
+    identifier->name_parts[0].quote = part.quote;
+    return identifier;
+}
+
 ASTPtr ASTTableIdentifier::getTable() const
 {
     if (name_parts.size() == 2)
     {
         if (!name_parts[1].spelling.empty())
-            return make_intrusive<ASTIdentifier>(name_parts[1].spelling);
+            return makeIdentifierFromPart(name_parts[1]);
 
         if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[1]->clone());
@@ -281,7 +294,7 @@ ASTPtr ASTTableIdentifier::getTable() const
     {
         if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0].spelling);
+        return makeIdentifierFromPart(name_parts[0]);
     }
     return {};
 }
@@ -292,7 +305,7 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     {
         if (name_parts[0].spelling.empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0].spelling);
+        return makeIdentifierFromPart(name_parts[0]);
     }
     return {};
 }

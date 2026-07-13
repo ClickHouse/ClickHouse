@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <memory>
@@ -445,7 +446,8 @@ BlockIO InterpreterCheckQuery::execute()
     else if (const auto * check_database_query = query_ptr->as<ASTCheckDatabaseQuery>())
     {
         /// Check specific database
-        const auto & database_name = check_database_query->getDatabase();
+        const String database_name = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            check_database_query->getDatabase(), identifierPartQuoteFromAST(check_database_query->database), context);
         LOG_DEBUG(log, "Checking database name = {} ", database_name);
         context->checkAccess(AccessType::CHECK, database_name);
         auto database = DatabaseCatalog::instance().getDatabase(database_name);

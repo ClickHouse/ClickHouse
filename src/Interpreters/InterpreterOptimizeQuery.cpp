@@ -36,9 +36,10 @@ BlockIO InterpreterOptimizeQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
-
+    /// Resolve the canonical names first, so the access check sees the same object the query acts on.
     auto table_id = getContext()->resolveStorageID(ast);
+    getContext()->checkAccess(AccessType::OPTIMIZE, table_id.database_name, table_id.table_name);
+
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

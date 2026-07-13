@@ -1,5 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -102,7 +103,8 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
     {
-        String database = getContext()->resolveDatabase(exists_query->getDatabase());
+        String database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            getContext()->resolveDatabase(exists_query->getDatabase()), identifierPartQuoteFromAST(exists_query->database), getContext());
         getContext()->checkAccess(AccessType::SHOW_DATABASES, database);
         result = DatabaseCatalog::instance().isDatabaseExist(database);
     }

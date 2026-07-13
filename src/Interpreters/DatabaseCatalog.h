@@ -157,6 +157,9 @@ public:
     /// spellings of the objects they fold to. Throws on an ambiguous fold; leaves unknown names
     /// untouched so the exact lookup downstream reports the usual error.
     StorageID resolveStorageIDNames(StorageID table_id, ContextPtr context_) const;
+    /// `standard` matching for a bare database reference: returns the canonical spelling,
+    /// the input unchanged when absent or mode is sensitive, throws on an ambiguous fold.
+    String resolveDatabaseNameSpelling(const String & database_name, IdentifierPartQuote quote, ContextPtr context_) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;

@@ -50,3 +50,27 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM \"${DB_TWO}\".renamed SETTINGS
 
 echo '--- standard: information_schema aliases are not ambiguous'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM Information_Schema.tables WHERE table_schema = 'system' SETTINGS database_and_table_name_matching = 'standard'"
+
+echo '--- standard: EXISTS DATABASE and SHOW TABLES FROM throw on an ambiguous fold'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS DATABASE ${DB_ONE_FOLDED}" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW TABLES FROM ${DB_ONE_FOLDED}" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+
+echo '--- standard: EXISTS DATABASE folds, double-quoted stays exact'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS DATABASE ${DB_ONE_FOLDED}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS DATABASE \"${DB_ONE_FOLDED}\""
+
+echo '--- standard: USE folds the database name'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "USE ${DB_ONE_FOLDED}; SELECT currentDatabase() = '${DB_ONE}'"
+
+echo '--- standard: double-quoted wrong-case SHOW CREATE TABLE stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW CREATE TABLE \"${DB_ONE_FOLDED}\".mytable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW CREATE TABLE \"${DB_ONE}\".\"mytable\"" 2>&1 | grep -oF "CANNOT_GET_CREATE_TABLE_QUERY" | uniq
+
+echo '--- standard: double-quoted wrong-case DROP TABLE stays exact and leaves the table intact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP TABLE \"${DB_ONE}\".\"mytable\"" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_ONE}.MyTable"
+
+echo '--- standard: folded DROP TABLE drops the exact-cased table'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP TABLE ${DB_ONE_FOLDED}.mytable"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB_ONE}.MyTable"

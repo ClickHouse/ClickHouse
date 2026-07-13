@@ -18,6 +18,7 @@ struct StorageID;
 class ASTTableIdentifier;
 
 /// Quote style of a single-part identifier AST; Unquoted when the node is absent or not an identifier.
+IdentifierPartQuote identifierPartQuoteFromAST(const IAST * node);
 IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node);
 
 /// FIXME: rewrite code about params - they should be substituted at the parsing stage,

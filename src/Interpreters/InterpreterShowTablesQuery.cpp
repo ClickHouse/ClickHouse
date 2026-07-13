@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
@@ -162,7 +163,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+        getContext()->resolveDatabase(query.getFrom()), identifierPartQuoteFromAST(query.from), getContext());
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
@@ -231,7 +233,8 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+        getContext()->resolveDatabase(query.getFrom()), identifierPartQuoteFromAST(query.from), getContext());
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

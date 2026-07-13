@@ -174,6 +174,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
+    /// Resolve the canonical names first, so the DDL guard, the access checks and the drop itself
+    /// all act on the same object.
+    table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context_);
+
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown
@@ -459,7 +463,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (query.kind != ASTDropQuery::Kind::Detach && query.kind != ASTDropQuery::Kind::Drop && query.kind != ASTDropQuery::Kind::Truncate)
         return {};
 
-    const auto & database_name = query.getDatabase();
+    /// Resolve the canonical database name first, so the guard, the access check and the drop
+    /// itself all act on the same object.
+    const String database_name = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+        query.getDatabase(), identifierPartQuoteFromAST(query.database), getContext());
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     database = tryGetDatabase(database_name, query.if_exists);
