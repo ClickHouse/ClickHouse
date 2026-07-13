@@ -59,7 +59,11 @@ DROP TABLE test_with_merge;
 SELECT 'With merge partition only';
 
 CREATE TABLE test_with_merge (i Int64) ENGINE = MergeTree ORDER BY i PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true,
+-- Force-merging an entire partition is skipped when the shared background pool is busy with
+-- unrelated tasks (see number_of_free_entries_in_pool_to_execute_optimize_entire_partition).
+-- Pin it low so this test does not depend on how busy the pool happens to be.
+number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1;
 INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 2 SETTINGS insert_deduplicate = 0;"
@@ -77,7 +81,8 @@ $CLICKHOUSE_CLIENT -mq "
 SELECT 'With merge partition only and disable limit';
 
 CREATE TABLE test_with_merge_limit (i Int64) ENGINE = MergeTree ORDER BY i PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=false, max_bytes_to_merge_at_max_space_in_pool=1;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=false, max_bytes_to_merge_at_max_space_in_pool=1,
+number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1;
 INSERT INTO test_with_merge_limit SELECT 1;
 INSERT INTO test_with_merge_limit SELECT 2;
 INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
@@ -91,7 +96,8 @@ DROP TABLE test_with_merge_limit;
 SELECT 'With merge partition only and enable limit';
 
 CREATE TABLE test_with_merge_limit (i Int64) ENGINE = MergeTree ORDER BY i PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=true, max_bytes_to_merge_at_max_space_in_pool=1;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=true, max_bytes_to_merge_at_max_space_in_pool=1,
+number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1;
 INSERT INTO test_with_merge_limit SELECT 1;
 INSERT INTO test_with_merge_limit SELECT 2;
 INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
