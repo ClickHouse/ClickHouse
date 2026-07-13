@@ -638,6 +638,24 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const ClientInfo & client_info,
     SettingsChanges & settings);
 
+/// Whether a credential for this authentication type is verified purely locally, with no external side effects.
+/// `LDAP`/`KERBEROS`/`HTTP`/`JWT` contact an external system, so they must not be re-checked during the fail-close
+/// ambiguity scan below: an extra probe with the same credential could fail against a different server and, for
+/// example, trip an account lockout there.
+static bool authenticationTypeIsVerifiedLocally(AuthenticationType type)
+{
+    switch (type)
+    {
+        case AuthenticationType::LDAP:
+        case AuthenticationType::KERBEROS:
+        case AuthenticationType::HTTP:
+        case AuthenticationType::JWT:
+            return false;
+        default:
+            return true;
+    }
+}
+
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
@@ -658,6 +676,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             bool skipped_not_allowed_authentication_methods = false;
 
             bool need_second_factor = false;
+            const AuthenticationData * matched_authentication_method = nullptr;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
@@ -671,11 +690,76 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
-                    auth_result.authentication_data = auth_method;
-                    return auth_result;
+                    matched_authentication_method = &auth_method;
+                    break;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
                     need_second_factor = true;
+            }
+
+            if (matched_authentication_method)
+            {
+                auth_result.authentication_data = *matched_authentication_method;
+
+                /// Fail-close against ambiguous credentials. Authentication returns the first matching method, but the
+                /// same effective credential can be accepted by more than one method (for example `IDENTIFIED BY 'p', BY 'p'`
+                /// stores two `sha256_password` methods with different random salts). If a broader or earlier method could
+                /// shadow a later token-style method, a limited credential would silently regain the full rights (or lifetime)
+                /// of the other method. To prevent that, the session is limited to the intersection of the `GRANTS` of all
+                /// matching methods and expires at the earliest of their `VALID UNTIL`.
+                ///
+                /// Methods that neither restrict the grants nor set an expiry cannot narrow anything and are skipped without
+                /// an extra credential check. Methods verified against an external system (LDAP/Kerberos/HTTP/JWT) are also
+                /// skipped, so authentication never performs an extra external probe here.
+                std::optional<AccessRights> combined_grants;
+                if (!matched_authentication_method->getGrants().structurallyEmpty())
+                    combined_grants.emplace(matched_authentication_method->getGrants());
+                bool another_method_restricts_grants = false;
+                time_t combined_valid_until = matched_authentication_method->getValidUntil();
+
+                for (const auto & other_method : user->authentication_methods)
+                {
+                    if (&other_method == matched_authentication_method)
+                        continue;
+
+                    const bool restricts_grants = !other_method.getGrants().structurallyEmpty();
+                    const time_t other_valid_until = other_method.getValidUntil();
+                    if (!restricts_grants && other_valid_until == 0)
+                        continue;
+                    if (!authenticationTypeIsVerifiedLocally(other_method.getType()))
+                        continue;
+
+                    SettingsChanges discarded_settings;
+                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings)
+                        != Authentication::CredentialsCheckResult::Success)
+                        continue;
+
+                    if (restricts_grants)
+                    {
+                        another_method_restricts_grants = true;
+                        AccessRights other_grants{other_method.getGrants()};
+                        if (combined_grants)
+                            combined_grants->makeIntersection(other_grants);
+                        else
+                            combined_grants.emplace(std::move(other_grants));
+                    }
+
+                    if (other_valid_until != 0 && (combined_valid_until == 0 || other_valid_until < combined_valid_until))
+                        combined_valid_until = other_valid_until;
+                }
+
+                if (another_method_restricts_grants)
+                {
+                    AccessRightsElements limited = combined_grants->getElements();
+                    if (limited.structurallyEmpty())
+                        limited.emplace_back(); /// Empty intersection means deny all (`USAGE ON *.*`), not "no limit".
+                    auth_result.authentication_data.setGrants(std::move(limited));
+                }
+
+                if (combined_valid_until != matched_authentication_method->getValidUntil())
+                    auth_result.authentication_data.setValidUntil(combined_valid_until);
+
+                return auth_result;
             }
 
             if (skipped_not_allowed_authentication_methods)
