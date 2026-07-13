@@ -9,7 +9,6 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/SelectQueryInfo.h>
 
-#include <DataTypes/NestedUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
@@ -2190,39 +2189,36 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                     ? ctx->tryGetParquetMetadataCache()
                     : nullptr;
 
-                /// The columns this query will actually read, keyed by top-level storage
-                /// column name — that is how the Parquet footer keys column chunks, so a
-                /// subcolumn read `t.x` must count the chunk of `t`. The split decision uses
-                /// their combined compressed size to avoid fanning a light/narrow read out
-                /// across many sources (whose per-source setup would not be amortized) — see
-                /// `computeBucketsByCountAndBytes`.
+                /// The leaf columns this query will actually read from the file. The split
+                /// decision uses their combined compressed size to avoid fanning a light/narrow
+                /// read out across many sources (whose per-source setup would not be amortized)
+                /// — see `computeBucketsByCountAndBytes`.
                 ///
-                /// `info.requested_columns` excludes columns used only as `PREWHERE` /
-                /// row-policy filter inputs, but the reader still has to scan them (e.g.
-                /// `SELECT sum(k1) FROM file(...) PREWHERE length(big) > 0` reads `big`), so
-                /// the required inputs of both filter DAGs are added as well, mirroring the
-                /// `needed_names` construction on the object-storage path. A name that
-                /// matches no footer chunk contributes nothing to the estimate, so the
-                /// full-name-plus-prefix over-approximation below only ever biases towards
-                /// allowing the split.
+                /// `info.format_header` already holds exactly the leaves the Parquet reader
+                /// requests: `filterTupleColumnsToRead` keeps an addressable tuple element as its
+                /// own leaf (`t.x`) but collapses a non-addressable subcolumn (dynamic subcolumn,
+                /// null map) to the whole column, matching what the reader scans. Using it means a
+                /// narrow subcolumn read like `SELECT sum(t.x)` is not charged for its heavy
+                /// siblings (`t.s`) and correctly stays single-source below the floor.
+                ///
+                /// `format_header` drops columns used only as `PREWHERE` / row-policy filter
+                /// inputs, but the reader still has to scan them (e.g. `SELECT sum(k) FROM
+                /// file(...) PREWHERE length(big) > 0` reads `big`), so the required inputs of
+                /// both filter DAGs are added as well, mirroring the `needed_names` construction
+                /// on the object-storage path. A name that matches no footer chunk contributes
+                /// nothing to the estimate.
                 std::unordered_set<String> requested_columns;
-                auto add_column_name = [&requested_columns](const String & name)
-                {
-                    requested_columns.insert(name);
-                    if (auto [head, tail] = Nested::splitName(name); !tail.empty())
-                        requested_columns.insert(head);
-                };
-                for (const auto & column : info.requested_columns)
-                    add_column_name(column.getNameInStorage());
+                for (const auto & column : info.format_header)
+                    requested_columns.insert(column.name);
                 if (info.row_level_filter)
                 {
                     for (const auto & input : info.row_level_filter->actions.getRequiredColumns())
-                        add_column_name(input.name);
+                        requested_columns.insert(input.name);
                 }
                 if (info.prewhere_info)
                 {
                     for (const auto & input : info.prewhere_info->prewhere_actions.getRequiredColumns())
-                        add_column_name(input.name);
+                        requested_columns.insert(input.name);
                 }
 
                 const size_t min_bytes_to_split = ctx->getSettingsRef()[Setting::input_format_parquet_min_bytes_to_split];

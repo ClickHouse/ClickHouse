@@ -3,11 +3,12 @@
 -- no-parallel because we're writing a file with a fixed name
 
 -- Regression test for the size-based single-file Parquet split gate in `StorageFile`:
--- the projected-read-size estimate must include columns used only as `PREWHERE`
--- inputs and must attribute subcolumn reads (`t.x`) to their top-level storage
--- column, because the Parquet footer keys column chunks by top-level name.
--- Before the fix both were dropped from the estimate, so heavy filtered reads
--- stayed single-source below `input_format_parquet_min_bytes_to_split`.
+-- the projected-read-size estimate must (1) include columns used only as `PREWHERE`
+-- inputs and (2) attribute each subcolumn read to the leaf the reader actually reads,
+-- so a narrow subcolumn read is charged only for its own leaf, not its siblings.
+-- Before the fix `PREWHERE`-only inputs were dropped from the estimate and every
+-- subcolumn was attributed to its whole top-level column, so `sum(t.x)` was charged
+-- for the heavy `t.s` sibling and split anyway, defeating the gate.
 
 -- 40 row groups; `k` and `t.x` are tiny (~32 KB of UInt64), while `big` and `t.s`
 -- are ~4 MB each of incompressible random data.
@@ -35,10 +36,20 @@ SELECT count() FROM (
         input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000
 ) WHERE explain LIKE '%File ×%';
 
--- A subcolumn read is attributed to its top-level column `t` (the footer has no
--- `t.x` chunk), so it also projects above the floor and must be split.
+-- A read of the light tuple element `t.x` touches only the `t.x` leaf (~32 KB), well
+-- below the floor, so the file must stay single-source — the estimate must not charge
+-- it for the heavy `t.s` sibling.
 SELECT count() FROM (
     EXPLAIN PIPELINE SELECT sum(t.x) FROM file('04546.parquet')
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000
+) WHERE explain LIKE '%File ×%';
+
+-- A read of the heavy tuple element `t.s` touches only the `t.s` leaf (~4 MB), above
+-- the floor, so the file must be split — proving the estimate is per-leaf, not per
+-- top-level column.
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT sum(length(t.s)) FROM file('04546.parquet')
     SETTINGS parallelize_output_from_storages = 1, max_threads = 8,
         input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000
 ) WHERE explain LIKE '%File ×%';
@@ -53,4 +64,9 @@ SELECT sum(t.x) FROM file('04546.parquet')
     SETTINGS max_threads = 8,
         input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000;
 SELECT sum(t.x) FROM file('04546.parquet')
+    SETTINGS max_threads = 8, parallelize_output_from_storages = 0;
+SELECT sum(length(t.s)) FROM file('04546.parquet')
+    SETTINGS max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000;
+SELECT sum(length(t.s)) FROM file('04546.parquet')
     SETTINGS max_threads = 8, parallelize_output_from_storages = 0;

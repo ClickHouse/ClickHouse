@@ -460,13 +460,20 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
     return result;
 }
 
-/// Sum of the compressed sizes of the column chunks the query will actually read
-/// (matched by top-level column name against `requested_columns`), across all row
-/// groups. Used to decide whether a single-file split is worth its per-source
-/// setup cost. An empty `requested_columns` set means "read everything" (be
-/// conservative and let the split proceed). Chunks with no metadata / no path are
-/// skipped. Nested columns are attributed to their top-level name, which
-/// over-counts a bit but only ever biases towards allowing the split.
+/// Sum of the compressed sizes of the column chunks the query will actually read,
+/// across all row groups. Used to decide whether a single-file split is worth its
+/// per-source setup cost. An empty `requested_columns` set means "read everything"
+/// (be conservative and let the split proceed). Chunks with no metadata / no path
+/// are skipped.
+///
+/// `requested_columns` holds the leaf names the reader actually reads: the full
+/// dotted path (e.g. `t.x`) for a tuple element the reader addresses on its own, or
+/// a top-level name for a column read only as a whole (Arrays, Maps, whole Tuples,
+/// dynamic subcolumns). A chunk matches when its full dotted `path_in_schema` is
+/// requested or, failing that, when its top-level name is — so `sum(t.x)` counts
+/// only the `t.x` chunk while `sum(t)` counts every leaf under `t`. Matching only
+/// the top-level name would over-count narrow subcolumn reads and split them anyway,
+/// defeating the point of the size gate.
 size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const std::unordered_set<String> & requested_columns)
 {
     size_t total = 0;
@@ -477,8 +484,24 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
             if (!col.__isset.meta_data)
                 continue;
             const auto & path = col.meta_data.path_in_schema;
-            if (!requested_columns.empty() && (path.empty() || !requested_columns.contains(path.front())))
+            if (path.empty())
                 continue;
+            if (!requested_columns.empty())
+            {
+                bool matched = requested_columns.contains(path.front());
+                if (!matched && path.size() > 1)
+                {
+                    String leaf_path = path.front();
+                    for (size_t i = 1; i < path.size(); ++i)
+                    {
+                        leaf_path += '.';
+                        leaf_path += path[i];
+                    }
+                    matched = requested_columns.contains(leaf_path);
+                }
+                if (!matched)
+                    continue;
+            }
             if (col.meta_data.total_compressed_size > 0)
                 total += static_cast<size_t>(col.meta_data.total_compressed_size);
         }
