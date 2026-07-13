@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -167,6 +168,10 @@ public:
 
     void setDatabase(const String & name);
     void setTable(const String & name);
+
+    /// Set the name together with its quote pin; used to write resolved canonical spellings back.
+    void setDatabase(const String & name, IdentifierPartQuote quote);
+    void setTable(const String & name, IdentifierPartQuote quote);
 
     String target_model;
     String target_function;

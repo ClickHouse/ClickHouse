@@ -123,6 +123,8 @@ void IStorageCluster::read(
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    /// Qualified names in the analyzed query carry canonical spellings, so match them canonically.
+    data.distributed_table.resolveCanonicalNames(context);
     data.remote_table.database = context->getCurrentDatabase();
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);

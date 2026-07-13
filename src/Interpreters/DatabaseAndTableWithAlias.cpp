@@ -1,4 +1,5 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
@@ -26,8 +27,14 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & 
 
     auto table_id = identifier.getTableId();
     std::tie(database, table, uuid) = std::tie(table_id.database_name, table_id.table_name, table_id.uuid);
+    database_quote = table_id.database_name_quote;
+    table_quote = table_id.table_name_quote;
     if (database.empty())
+    {
         database = current_database;
+        /// The implicit current database is canonical already; keep it exact.
+        database_quote = IdentifierPartQuote::DoubleQuoted;
+    }
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
@@ -35,14 +42,24 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     alias = identifier.tryGetAlias();
 
     if (identifier.name_parts.size() == 2)
+    {
         std::tie(database, table) = std::tie(identifier.name_parts[0].spelling, identifier.name_parts[1].spelling);
+        database_quote = identifier.name_parts[0].quote;
+        table_quote = identifier.name_parts[1].quote;
+    }
     else if (identifier.name_parts.size() == 1)
+    {
         table = identifier.name_parts[0].spelling;
+        table_quote = identifier.name_parts[0].quote;
+    }
     else
         throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
 
     if (database.empty())
+    {
         database = current_database;
+        database_quote = IdentifierPartQuote::DoubleQuoted;
+    }
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
@@ -73,6 +90,30 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No known elements in ASTTableExpression");
+}
+
+void DatabaseAndTableWithAlias::resolveCanonicalNames(ContextPtr context)
+{
+    if (!context || table.empty())
+        return;
+
+    const bool implicit_database = database.empty();
+    /// An unqualified name may refer to a temporary table, which resolves by exact name and must not fold.
+    if (implicit_database && context->tryResolveStorageID(StorageID{"", table}, Context::ResolveExternal))
+        return;
+
+    String database_name = implicit_database ? context->getCurrentDatabase() : database;
+    if (database_name.empty())
+        return;
+
+    StorageID table_id(database_name, table, uuid);
+    /// The implicit current database is canonical already; keep it exact.
+    table_id.database_name_quote = implicit_database ? IdentifierPartQuote::DoubleQuoted : database_quote;
+    table_id.table_name_quote = table_quote;
+    table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context);
+    if (!implicit_database)
+        database = table_id.database_name;
+    table = table_id.table_name;
 }
 
 bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const

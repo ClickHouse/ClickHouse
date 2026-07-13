@@ -74,6 +74,27 @@ void ASTSystemQuery::setTable(const String & name)
         set(table, make_intrusive<ASTIdentifier>(name));
 }
 
+static ASTPtr makeQuotedIdentifier(const String & name, IdentifierPartQuote quote)
+{
+    IdentifierName parts(std::vector<String>{name});
+    parts.front().quote = quote;
+    return make_intrusive<ASTIdentifier>(std::move(parts));
+}
+
+void ASTSystemQuery::setDatabase(const String & name, IdentifierPartQuote quote)
+{
+    reset(database);
+    if (!name.empty())
+        set(database, makeQuotedIdentifier(name, quote));
+}
+
+void ASTSystemQuery::setTable(const String & name, IdentifierPartQuote quote)
+{
+    reset(table);
+    if (!name.empty())
+        set(table, makeQuotedIdentifier(name, quote));
+}
+
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &

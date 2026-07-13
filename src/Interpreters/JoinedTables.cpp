@@ -236,7 +236,11 @@ StoragePtr JoinedTables::getLeftTableStorage()
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
     {
-        table_id = context->resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
+        StorageID id_in_query(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid);
+        /// Carry the quote pins into resolution, so double-quoted parts stay exact.
+        id_in_query.database_name_quote = left_db_and_table->database_quote;
+        id_in_query.table_name_quote = left_db_and_table->table_quote;
+        table_id = context->resolveStorageID(id_in_query);
     }
     else /// If the table is not specified - use the table `system.one`.
     {

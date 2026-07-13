@@ -401,7 +401,7 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, ContextPtr context, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -410,7 +410,7 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
+    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database, context};
     cross_to_inner.cross_to_inner_join_rewrite = static_cast<UInt8>(std::min<UInt64>(settings[Setting::cross_to_inner_join_rewrite], 2));
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
@@ -715,7 +715,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context, context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();

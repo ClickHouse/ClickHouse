@@ -172,3 +172,28 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.SrcTable VALUES (5)"
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.MvTarget"
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${DB_ONE}.MvBad TO ${DB_ONE_FOLDED}.mvtarget AS SELECT x FROM ${DB_ONE}.SrcTable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE MATERIALIZED VIEW ${DB_ONE}.MvBad TO \"${DB_ONE_FOLDED}\".mvtarget AS SELECT x FROM ${DB_ONE}.SrcTable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+
+echo '--- standard: CREATE INDEX folds, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE INDEX Idx1 ON \"${DB_ONE}\".\"newtable\" (x) TYPE minmax" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
+${CLICKHOUSE_CLIENT} --query "CREATE INDEX Idx1 ON ${DB_ONE_FOLDED}.newtable (x) TYPE minmax" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE INDEX Idx1 ON ${DB_ONE_FOLDED}.newtable (x) TYPE minmax"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.data_skipping_indices WHERE database = '${DB_ONE}' AND table = 'NewTable' AND name = 'Idx1'"
+
+echo '--- standard: DROP INDEX folds, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP INDEX Idx1 ON \"${DB_ONE}\".\"newtable\"" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP INDEX Idx1 ON ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.data_skipping_indices WHERE database = '${DB_ONE}' AND table = 'NewTable'"
+
+echo '--- legacy analyzer: folded SELECT binds the canonical qualifier'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.LegacyTable (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.LegacyTable VALUES (7)"
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT LegacyTable.x FROM ${DB_ONE_FOLDED}.legacytable"
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT x FROM \"${DB_ONE}\".\"legacytable\"" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --query "SELECT LegacyTable.x FROM ${DB_ONE}.LegacyTable"
+
+echo '--- legacy analyzer: cross join with folded names resolves consistently'
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT count() FROM ${DB_ONE_FOLDED}.legacytable, ${DB_ONE_FOLDED}.srctable"
+
+echo '--- legacy analyzer: sibling databases stay ambiguous'
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT x FROM ${DB_ONE_FOLDED}.legacytable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq

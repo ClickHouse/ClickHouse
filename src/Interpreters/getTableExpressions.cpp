@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
@@ -152,6 +153,18 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
             DatabaseAndTableWithAlias(*table_expression, current_database), names_and_types);
 
         auto & table = tables_with_columns.back();
+        /// The expression names an existing table: store the canonical spellings, so qualified
+        /// column matching binds to the same object as the catalog lookup above. Unqualified
+        /// names may refer to temporary tables, which resolve by exact name and must not fold.
+        if (const auto * identifier = table_expression->database_and_table_name
+                ? table_expression->database_and_table_name->as<ASTTableIdentifier>()
+                : nullptr)
+        {
+            bool is_temporary = identifier->name_parts.size() == 1
+                && context->tryResolveStorageID(identifier->getTableId(), Context::ResolveExternal);
+            if (!is_temporary)
+                table.table.resolveCanonicalNames(context);
+        }
         table.addHiddenColumns(materialized);
         table.addHiddenColumns(aliases);
         table.addHiddenColumns(virtuals);

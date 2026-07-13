@@ -5,6 +5,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 
@@ -54,12 +55,26 @@ bool validateCreateIndexQuery(const ASTCreateIndexQuery & query, const ContextPt
     return true;
 }
 
-ASTPtr rewriteToAlterTable(const ASTCreateIndexQuery & query)
+ASTPtr rewriteToAlterTable(const ASTCreateIndexQuery & query, const ContextPtr & context)
 {
     auto alter = make_intrusive<ASTAlterQuery>();
     alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
-    alter->setDatabase(query.getDatabase());
-    alter->setTable(query.getTable());
+
+    /// Resolve the canonical target quote-aware first and pin it: copying plain names
+    /// would drop the quote pins and let a double-quoted wrong-case target fold.
+    if (auto resolved = context->tryResolveStorageID(query))
+    {
+        if (query.database)
+            alter->setDatabase(resolved.database_name, IdentifierPartQuote::DoubleQuoted);
+        alter->setTable(resolved.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
+    else
+    {
+        if (query.database)
+            alter->setDatabase(query.getDatabase(), identifierPartQuoteFromAST(query.database));
+        alter->setTable(query.getTable(), identifierPartQuoteFromAST(query.table));
+    }
+
     alter->cluster = query.cluster;
 
     auto command_list = make_intrusive<ASTExpressionList>();
@@ -82,7 +97,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     if (!need_proceed)
         return {};
 
-    auto alter_query = rewriteToAlterTable(create_index);
+    auto alter_query = rewriteToAlterTable(create_index, context);
     return InterpreterAlterQuery(alter_query, context).execute();
 }
 

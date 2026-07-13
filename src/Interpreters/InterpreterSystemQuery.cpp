@@ -350,14 +350,41 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
+    using Type = ASTSystemQuery::Type;
+
+    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check
+    /// and DDL entry, as well as the local access checks, see the object the query acts on.
+    /// Dictionary references (RELOAD DICTIONARY) are looked up by plain name and do not fold.
+    if (query.type != Type::RELOAD_DICTIONARY)
+    {
+        if (query.table)
+        {
+            StorageID id_in_query(query.getDatabase(), query.getTable());
+            id_in_query.database_name_quote = identifierPartQuoteFromAST(query.database);
+            id_in_query.table_name_quote = identifierPartQuoteFromAST(query.table);
+            if (auto resolved = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary))
+            {
+                if (query.database)
+                    query.setDatabase(resolved.database_name, IdentifierPartQuote::DoubleQuoted);
+                query.setTable(resolved.table_name, IdentifierPartQuote::DoubleQuoted);
+            }
+        }
+        else if (query.database)
+        {
+            /// Database-only forms (SYNC/RESTORE DATABASE REPLICA, DROP REPLICA ... FROM DATABASE).
+            query.setDatabase(
+                DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                    query.getDatabase(), identifierPartQuoteFromAST(query.database), getContext()),
+                IdentifierPartQuote::DoubleQuoted);
+        }
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
-
-    using Type = ASTSystemQuery::Type;
 
     /// Use global context with fresh system profile settings
     auto system_context = Context::createCopy(getContext()->getGlobalContext());
