@@ -781,8 +781,12 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         can_be_directory = false;
     }
 
+    /// Validate against `user_files_absolute_path`, the same namespace the patterns were resolved in.
+    /// Validating against the raw `user_files_path` would reject ordinary relative reads on a
+    /// deployment where `user_files_path` itself is a symlink: the resolved path lives under the
+    /// canonicalized root and no longer lexically starts with the raw root.
     for (const auto & path : all_paths)
-        checkCreationIsAllowed(context, user_files_path, path, can_be_directory);
+        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
 
     return all_paths;
 }
