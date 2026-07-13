@@ -355,7 +355,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
 }
 
 /// NOLINTNEXTLINE(google-default-arguments)
-StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers) const
+StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers) const
 {
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
 

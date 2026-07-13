@@ -1210,7 +1210,7 @@ public:
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
     /// NOLINTNEXTLINE(google-default-arguments)
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers = std::nullopt) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
     /// the on-disk `metadata_version.txt` file. When true, the file is not written for new parts.

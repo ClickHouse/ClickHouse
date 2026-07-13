@@ -117,9 +117,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-    const TableExpressionModifiers * modifiers = table_expression_modifiers ? &*table_expression_modifiers : nullptr;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false, modifiers);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false, table_expression_modifiers);
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 }
 

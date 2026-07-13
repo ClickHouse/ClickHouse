@@ -361,8 +361,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    const TableExpressionModifiers * modifiers = table_expression_modifiers ? &*table_expression_modifiers : nullptr;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false, modifiers);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false, table_expression_modifiers);
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by

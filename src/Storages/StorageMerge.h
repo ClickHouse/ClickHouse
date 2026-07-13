@@ -64,7 +64,7 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     /// NOLINTNEXTLINE(google-default-arguments)
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers = std::nullopt) const override;
 
     void read(
         QueryPlan & query_plan,

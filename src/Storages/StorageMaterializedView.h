@@ -95,7 +95,7 @@ public:
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
     /// NOLINTNEXTLINE(google-default-arguments)
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers = std::nullopt) const override;
 
     void readImpl(
         QueryPlan & query_plan,

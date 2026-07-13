@@ -455,7 +455,7 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
 }
 
 /// NOLINTNEXTLINE(google-default-arguments)
-StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers) const
+StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers) const
 {
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
     if (!query_context)

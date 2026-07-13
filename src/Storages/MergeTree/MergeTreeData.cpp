@@ -11366,7 +11366,7 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
 }
 
 /// NOLINTNEXTLINE(google-default-arguments)
-StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * /*modifiers*/) const
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> /*modifiers*/) const
 {
     auto base = [&]() -> StorageMetadataHandle
     {

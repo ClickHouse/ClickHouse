@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Analyzer/TableExpressionModifiers.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -38,7 +39,6 @@ struct Settings;
 class AlterCommands;
 class MutationCommands;
 struct PartitionCommand;
-class TableExpressionModifiers;
 using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
@@ -214,7 +214,7 @@ public:
     virtual StorageMetadataHandle getInMemoryMetadataPtr(
         ContextPtr /*context*/,
         bool /*bypass_metadata_cache*/,
-        const TableExpressionModifiers * /*modifiers*/ = nullptr) const
+        std::optional<TableExpressionModifiers> /*modifiers*/ = std::nullopt) const
     {
         return metadata.get();
     }

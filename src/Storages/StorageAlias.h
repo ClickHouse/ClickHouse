@@ -114,7 +114,7 @@ public:
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
 
     /// NOLINTNEXTLINE(google-default-arguments)
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers = std::nullopt) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
