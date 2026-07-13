@@ -465,17 +465,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    /// Only the set-style functions below consume an array constant. For scalar-string
-    /// functions (equals, notEquals, like, ...) an array constant (e.g. `arr = ['x']`)
-    /// cannot be turned into a token atom, so treat it as UNKNOWN (scan all granules)
-    /// instead of calling safeGet<String>() on an array Field and throwing BAD_GET.
-    if (value_data_type.isArray()
-        && function_name != "has"
-        && function_name != "hasAny"
-        && function_name != "hasAll"
-        && function_name != "multiSearchAny")
-        return false;
-
     Field const_value = value_field;
 
     const auto column_name = key_node.getColumnName();
@@ -564,6 +553,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
+        /// A scalar-string function cannot consume an array constant (e.g. `arr = ['x']`);
+        /// treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET on safeGet<String>().
+        if (value_data_type.isArray())
+            return false;
+
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -654,8 +648,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
+    /// The scalar-string functions below call safeGet<String>() on the whole constant. A whole-array
+    /// comparison (e.g. `arr = ['x']`) supplies an array constant, which those functions cannot turn
+    /// into a token atom, so treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET.
+    /// (The array-consuming functions above -- has(array)/hasAny/hasAll/multiSearchAny -- are exempt.)
     if (function_name == "notEquals")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -665,6 +665,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "equals")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -674,6 +676,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "like")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -683,6 +687,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "notLike")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -692,6 +698,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "startsWith")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -701,6 +709,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "endsWith")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -730,6 +740,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "match")
     {
+        if (value_data_type.isArray())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_MATCH;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
