@@ -1439,6 +1439,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
+    M(SharedCatalogStateFetchFullFallback, "Number of times the incremental fetch of the Shared Catalog state failed too many times in a row and a full state fetch was performed instead", ValueType::Number) \
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
