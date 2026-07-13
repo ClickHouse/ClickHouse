@@ -689,9 +689,29 @@ bool explainQueryTree(
     }
     else
     {
+        /// The dumped tree here is the unresolved `query_tree`, which never carries resolved column
+        /// names or types, so the dump itself cannot leak table metadata. We still resolve a throwaway
+        /// copy to reproduce the planner's `SELECT` access check on the referenced tables. If the query
+        /// is not resolvable (e.g. an invalid or fuzzed query, or a table function whose arguments the
+        /// analyzer intentionally does not evaluate for `EXPLAIN SYNTAX`), there is no resolved metadata
+        /// to protect and a real query would fail with the same resolution error before the planner's
+        /// access check, so we skip the access check rather than turning a formatting request into a
+        /// resolution error. An `ACCESS_DENIED` raised during resolution is still propagated.
         auto resolved_query_tree = query_tree->clone();
-        query_tree_pass_manager.runOnlyResolve(resolved_query_tree);
-        checkAccessRightsForQueryTree(resolved_query_tree, query_context);
+        bool resolved = false;
+        try
+        {
+            query_tree_pass_manager.runOnlyResolve(resolved_query_tree);
+            resolved = true;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+        }
+
+        if (resolved)
+            checkAccessRightsForQueryTree(resolved_query_tree, query_context);
     }
 
     if (settings.dump_tree)
