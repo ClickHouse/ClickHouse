@@ -90,7 +90,7 @@ ORDER BY id
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE tab_fully DROP INDEX IF exists idx;
-ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -122,7 +122,7 @@ SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
-ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
+ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 0, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
@@ -153,10 +153,10 @@ CREATE TABLE tab_fully (
 )
 Engine = MergeTree()
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_positions = 1;
+SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_phrase_search = 1;
 
 ALTER TABLE tab_fully DROP INDEX IF exists idx;
-ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -183,12 +183,12 @@ CREATE TABLE tab_partially (
 )
 Engine = MergeTree()
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_positions = 1;
+SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
 ALTER TABLE tab_partially DROP INDEX IF EXISTS idx;
-ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), positions = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
+ALTER TABLE tab_partially ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1, posting_list_block_size = 10000000, posting_list_codec = 'none');
 
 SYSTEM STOP MERGES tab_partially;
 
@@ -214,11 +214,11 @@ DROP TABLE IF EXISTS tab_merge;
 CREATE TABLE tab_merge (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
 )
 Engine = MergeTree()
 ORDER BY id
-SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_positions = 1;
+SETTINGS add_minmax_index_for_numeric_columns = 0, allow_experimental_text_index_phrase_search = 1;
 
 SYSTEM STOP MERGES tab_merge;
 
