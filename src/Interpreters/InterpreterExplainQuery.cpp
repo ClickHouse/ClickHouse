@@ -585,23 +585,39 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
 {
     /// Collect every table referenced anywhere in the query tree, including inside subqueries in
     /// expressions (e.g. `WHERE x IN (SELECT ... FROM t)`), which `extractAllTableReferences` skips.
-    class CollectTablesVisitor : public InDepthQueryTreeVisitor<CollectTablesVisitor>
+    /// Each table is paired with the context of the scope it appears in: subtrees do not all execute
+    /// under the top-level `query_context`. When a view is inlined (`analyzer_inline_views`), its body
+    /// is resolved under `StorageView::getViewSubqueryContext`, and the planner checks the base-table
+    /// privileges with that per-scope context (see `buildPlannerContext` /
+    /// `prepareBuildQueryPlanForTableExpression`, which use `QueryNode::getContext`). Reproducing the
+    /// planner faithfully requires checking each table with the context of its own scope; otherwise a
+    /// valid `SQL SECURITY DEFINER` / `NONE` view explain would be denied because the user lacks direct
+    /// access to the base table. `InDepthQueryTreeVisitorWithContext` tracks the scope context as it
+    /// descends into `QueryNode` / `UnionNode` children.
+    class CollectTablesVisitor : public InDepthQueryTreeVisitorWithContext<CollectTablesVisitor>
     {
     public:
-        void visitImpl(QueryTreeNodePtr & node)
+        explicit CollectTablesVisitor(const ContextPtr & context)
+            : InDepthQueryTreeVisitorWithContext(context)
+        {
+        }
+
+        void enterImpl(QueryTreeNodePtr & node)
         {
             if (auto * table_node = node->as<TableNode>())
-                tables.push_back(table_node);
+                tables.emplace_back(table_node, getContext());
         }
-        std::vector<TableNode *> tables;
+
+        std::vector<std::pair<TableNode *, ContextPtr>> tables;
     };
 
-    CollectTablesVisitor visitor;
+    CollectTablesVisitor visitor(query_context);
     visitor.visit(query_tree);
 
-    /// The same table may appear several times (e.g. a self-join); check each distinct table once.
-    NameSet checked_tables;
-    for (auto * table_node : visitor.tables)
+    /// A `TableNode` instance is unique per scope, so each pair identifies one table in one scope.
+    /// Guard against the same node being visited twice (shared subtrees) so we check it only once.
+    std::unordered_set<const TableNode *> checked_tables;
+    for (auto & [table_node, scope_context] : visitor.tables)
     {
         /// StorageDummy is created on preliminary stages; ignore access check for it (as the planner does).
         if (typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
@@ -613,18 +629,20 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         if (!storage_id.hasDatabase())
             continue;
 
-        if (!checked_tables.emplace(storage_id.getFullTableName()).second)
+        if (!checked_tables.emplace(table_node).second)
             continue;
 
-        auto column_names = collectSelectedColumnsFromTable(query_tree, storage_id, query_context);
+        /// Columns selected from this specific table instance, so a base table referenced both directly
+        /// and through an inlined view is checked with the right column set in each scope.
+        auto column_names = collectSelectedColumnsForTableNode(query_tree, *table_node, scope_context);
         if (!column_names.empty())
         {
-            query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+            scope_context->checkAccess(AccessType::SELECT, storage_id, column_names);
             continue;
         }
 
         /// For trivial queries like "SELECT count() FROM table" access is granted if at least one column is accessible.
-        auto access = query_context->getAccess();
+        auto access = scope_context->getAccess();
         bool has_accessible_column = false;
         for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
         {
@@ -638,7 +656,7 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         if (!has_accessible_column)
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                query_context->getUserName(),
+                scope_context->getUserName(),
                 storage_id.getFullTableName());
     }
 }

@@ -14,8 +14,12 @@ namespace
 class CollectSelectedColumnsFromTableVisitor : public InDepthQueryTreeVisitorWithContext<CollectSelectedColumnsFromTableVisitor>
 {
 public:
-    explicit CollectSelectedColumnsFromTableVisitor(const StorageID & storage_id_, const ContextPtr & context)
-        : InDepthQueryTreeVisitorWithContext(context), storage_id(storage_id_)
+    /// Match columns either by the table's `StorageID` (every reference to that table anywhere in the
+    /// tree) or by a specific `TableNode` instance. The instance form is needed when the same physical
+    /// table is referenced from several scopes (e.g. once directly and once inside an inlined view):
+    /// each `TableNode` instance then owns exactly the columns selected from it in its own scope.
+    CollectSelectedColumnsFromTableVisitor(const StorageID & storage_id_, const TableNode * table_node_, const ContextPtr & context)
+        : InDepthQueryTreeVisitorWithContext(context), storage_id(storage_id_), table_node(table_node_)
     {
     }
 
@@ -35,7 +39,10 @@ public:
             return;
 
         const auto * source_table = column_node->getColumnSource()->as<TableNode>();
-        if (!source_table || source_table->getStorageID() != storage_id)
+        if (!source_table)
+            return;
+
+        if (table_node ? (source_table != table_node) : (source_table->getStorageID() != storage_id))
             return;
 
         /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
@@ -87,6 +94,8 @@ private:
     /// True if we are traversing arguments of function "indexHint".
     bool is_inside_index_hint_function = false;
     const StorageID & storage_id;
+    /// When set, match columns by this exact `TableNode` instance instead of by `storage_id`.
+    const TableNode * table_node = nullptr;
     std::unordered_set<String> selected_columns;
 };
 
@@ -94,7 +103,14 @@ private:
 
 std::vector<String> collectSelectedColumnsFromTable(QueryTreeNodePtr & query_tree, const StorageID & storage_id, const ContextPtr & context)
 {
-    CollectSelectedColumnsFromTableVisitor visitor(storage_id, context);
+    CollectSelectedColumnsFromTableVisitor visitor(storage_id, nullptr, context);
+    visitor.visit(query_tree);
+    return visitor.getSelectedColumns();
+}
+
+std::vector<String> collectSelectedColumnsForTableNode(QueryTreeNodePtr & query_tree, const TableNode & table_node, const ContextPtr & context)
+{
+    CollectSelectedColumnsFromTableVisitor visitor(table_node.getStorageID(), &table_node, context);
     visitor.visit(query_tree);
     return visitor.getSelectedColumns();
 }

@@ -7,9 +7,16 @@
 namespace DB
 {
 
+class TableNode;
+
 /// Collect list of selected columns for a specific table from query tree.
 /// Works similarly to collectTableExpressionData, but the difference is that here
 /// we also go through all subqueries.
 std::vector<String> collectSelectedColumnsFromTable(QueryTreeNodePtr & query_tree, const StorageID & storage_id, const ContextPtr & context);
+
+/// Same as above, but matches columns by a specific `TableNode` instance rather than by `StorageID`.
+/// Use this when the same physical table is referenced from several scopes (e.g. directly and inside
+/// an inlined view): each `TableNode` instance then owns only the columns selected from it in its own scope.
+std::vector<String> collectSelectedColumnsForTableNode(QueryTreeNodePtr & query_tree, const TableNode & table_node, const ContextPtr & context);
 
 }
