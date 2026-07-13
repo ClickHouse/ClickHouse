@@ -474,7 +474,7 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
             return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
         }))
         {
-            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
             for (const auto & column : source_table_metadata->virtuals)
             {
                 if (virtuals.has(column.name))
