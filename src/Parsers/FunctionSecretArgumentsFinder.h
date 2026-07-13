@@ -1043,6 +1043,13 @@ protected:
             findS3ExplicitUrlSecretNamedArguments(0);
             maskS3ExtraCredentials();
             markSecretArgument(2);
+
+            /// The backup S3 locator only accepts url, access_key_id, secret_access_key positionally. Any
+            /// further positional argument (e.g. a session token) is invalid but still formatted and logged,
+            /// so fail closed and hide every positional beyond secret_access_key.
+            size_t count = excludeS3OrURLNestedMaps();
+            for (size_t i = 3; i < count; ++i)
+                markSecretArgument(i);
         }
         else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
         {

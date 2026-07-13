@@ -60,6 +60,11 @@ BACKUP TABLE nonexistent_04510 TO S3('url_backup', 'ak', 'SEKRIT_SAK',
                  google_adc_refresh_token = 'SEKRIT_ADCRT',
                  extra_credentials(external_id = 'SEKRIT_EID')); -- { serverError BAD_ARGUMENTS }
 
+-- BACKUP ... TO S3 with an invalid 4th positional argument (a session token) is rejected by the
+-- backup engine, but the positional token must still be masked in the logged query text.
+BACKUP TABLE nonexistent_04510 TO S3('url_backup_pos', 'ak', 'SEKRIT_SAK',
+                 'SEKRIT_BACKUPTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
@@ -79,7 +84,8 @@ SELECT
     countIf(query LIKE '%url_interleaved%'  AND query LIKE '%[HIDDEN]%') > 0 AS s3_interleaved_masked,
     countIf(query LIKE '%url_postoken%'     AND query LIKE '%[HIDDEN]%') > 0 AS s3_positional_session_token_masked,
     countIf(query LIKE '%nc_04510_missing%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_named_collection_masked,
-    countIf(query LIKE '%url_backup%'       AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
+    countIf(query LIKE '%url_backup''%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
+    countIf(query LIKE '%url_backup_pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS backup_positional_masked,
     countIf(query LIKE '%db_04510_ec%'      AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_masked,
     countIf(query LIKE '%db_04510_hdr%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_headers_masked,
     countIf(query LIKE '%db_04510_expr%'    AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_expr_key_masked,
