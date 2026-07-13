@@ -414,7 +414,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Write both canonical names back so access checks and distributed DDL
+        /// operate on the object actually being altered.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
