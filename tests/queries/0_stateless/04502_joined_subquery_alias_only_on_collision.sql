@@ -56,6 +56,16 @@ SELECT id FROM mt, (SELECT '' AS _part) ORDER BY id SETTINGS joined_subquery_req
 -- No collision with a non-virtual, non-ordinary name: still allowed without an alias.
 SELECT id FROM mt, (SELECT 1 AS not_a_column) ORDER BY id;
 
+-- A table function exposes its own virtual columns too, not just the sibling's. An unaliased table
+-- function whose virtual `_part` collides with an aliased sibling's column is ambiguous, so an alias is
+-- required (previously the unaliased side's own virtual columns were ignored and this slipped through).
+SELECT _part FROM merge(currentDatabase(), '^mt$'), (SELECT '' AS _part) AS rhs; -- { serverError ALIAS_REQUIRED }
+
+-- The ubiquitous `_table` / `_database` virtuals are the exception: they are exposed by every table
+-- expression, so they never count for the unaliased side (otherwise this unaliased table function would
+-- collide with `item`'s identically-named virtuals). Nothing else collides, so the query is allowed.
+SELECT count() FROM merge(currentDatabase(), '^mt$'), item;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;

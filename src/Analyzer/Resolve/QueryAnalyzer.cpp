@@ -896,7 +896,28 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, bool include_virtuals = false);
+/// Which virtual columns of a table expression take part in the join-alias collision check.
+enum class JoinVirtualColumnsPolicy
+{
+    Exclude,          /// Only real (physical / projection) columns and their subcolumns.
+    Include,          /// Also every virtual column the table expression exposes.
+    ExcludeUniversal, /// Also virtual columns, except `_table` / `_database`: these are exposed by
+                      /// essentially every table expression, so a collision on them never signals a
+                      /// genuine ambiguity that adding an alias would resolve.
+};
+
+/// `_table` / `_database` are present on virtually every table expression (plain tables, `numbers`,
+/// file-like table functions, ...), so including them as virtual columns of the unaliased expression
+/// itself would make it collide with every sibling and force a spurious alias.
+static bool isUniversalVirtualColumn(std::string_view column_name)
+{
+    return column_name == "_table" || column_name == "_database";
+}
+
+static bool getColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression,
+    NameSet & existing_columns,
+    JoinVirtualColumnsPolicy virtuals_policy = JoinVirtualColumnsPolicy::Exclude);
 
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
@@ -927,17 +948,18 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * ambiguous with no way to qualify it. When there is no such collision every column can be referenced
       * unambiguously by its name, so the missing alias is harmless and we allow it.
       *
-      * The comparison is asymmetric on purpose. For the unaliased expression we take only the columns it
-      * actually exposes as output (its projection / physical columns). For the *siblings* we also include
-      * virtual columns (e.g. `_part`), because a bare identifier can bind to a sibling's virtual column too,
-      * so `SELECT _part FROM mt, (SELECT '' AS _part)` is genuinely ambiguous and must force the alias.
-      * Including virtual columns of the unaliased expression itself would instead create spurious collisions
-      * on the ubiquitous `_table` / `_database` virtuals present on every table expression. The reverse
-      * orientation is still covered because this validation runs for every unaliased sibling in turn.
+      * Virtual columns participate on both sides, because a bare identifier can bind to a virtual column
+      * too: `SELECT _part FROM mt, (SELECT '' AS _part)` and `SELECT _path FROM file(...), (SELECT '' AS
+      * _path) AS rhs` are both genuinely ambiguous and must force the alias. The only exception is the
+      * ubiquitous `_table` / `_database` virtuals of the unaliased expression itself: they are exposed by
+      * every table expression, so counting them would make an unaliased table function collide with every
+      * sibling (`SELECT number FROM t, numbers(3)`). We therefore drop only those two from the unaliased
+      * side; siblings still contribute them, so the reverse orientation stays covered.
       */
     NameSet table_expression_columns;
     NameSet sibling_columns;
-    bool columns_are_known = getColumnsFromTableExpression(table_expression_node, table_expression_columns);
+    bool columns_are_known = getColumnsFromTableExpression(
+        table_expression_node, table_expression_columns, JoinVirtualColumnsPolicy::ExcludeUniversal);
 
     QueryTreeNodes sibling_table_expressions;
     if (const auto * join = join_node->as<JoinNode>())
@@ -955,7 +977,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     {
         if (sibling.get() == table_expression_node.get())
             continue;
-        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns, /*include_virtuals=*/ true);
+        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns, JoinVirtualColumnsPolicy::Include);
     }
 
     /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.
@@ -5157,8 +5179,29 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
         validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, bool include_virtuals)
+static bool getColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, JoinVirtualColumnsPolicy virtuals_policy)
 {
+    /// Insert the storage's real columns (per `base_options`) and, unless virtuals are excluded, its virtual
+    /// columns on top. Real columns are collected first so a real column that happens to be named like a
+    /// universal virtual (`_table`) is kept even when `ExcludeUniversal` drops the virtual of the same name.
+    auto collect_storage_columns = [&](const StorageSnapshotPtr & storage_snapshot, const GetColumnsOptions & base_options)
+    {
+        for (const auto & column : storage_snapshot->getColumns(base_options))
+            existing_columns.insert(column.name);
+
+        if (virtuals_policy == JoinVirtualColumnsPolicy::Exclude)
+            return;
+
+        auto virtual_options = GetColumnsOptions(base_options).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        for (const auto & column : storage_snapshot->getColumns(virtual_options))
+        {
+            if (virtuals_policy == JoinVirtualColumnsPolicy::ExcludeUniversal && isUniversalVirtualColumn(column.name))
+                continue;
+            existing_columns.insert(column.name);
+        }
+    };
+
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
 
@@ -5174,11 +5217,8 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-                if (include_virtuals)
-                    get_column_options = get_column_options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
-                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                    existing_columns.insert(column.name);
+                collect_storage_columns(
+                    table_node->getStorageSnapshot(), GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
 
                 break;
             }
@@ -5187,11 +5227,8 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-                if (include_virtuals)
-                    get_column_options = get_column_options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
-                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                    existing_columns.insert(column.name);
+                collect_storage_columns(
+                    table_function_node->getStorageSnapshot(), GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
                 break;
             }
