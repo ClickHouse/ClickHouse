@@ -22,11 +22,12 @@ namespace DB
   *
   * Server-sent events is a text protocol. Text output formats are embedded as text, one `data:`
   * field per line. Output formats that may produce non-UTF-8 bytes (binary formats such as `Native`
-  * or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`) are base64-encoded
-  * instead, so arbitrary bytes survive the text transport. In that case the `Content-Type` carries
-  * a `payload=base64` parameter, so the client knows to base64-decode the `data`, `totals` and
-  * `extremes` payloads (the auxiliary JSON packets - progress, logs, profile events, exceptions -
-  * are never encoded).
+  * or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`), or that may emit raw
+  * carriage returns (`TSV` / `CSV` with a CRLF row terminator - the transport treats `\r` as a line
+  * terminator, so it cannot be carried losslessly as text), are base64-encoded instead, so arbitrary
+  * bytes survive the text transport. In that case the `Content-Type` carries a `payload=base64`
+  * parameter, so the client knows to base64-decode the `data`, `totals` and `extremes` payloads (the
+  * auxiliary JSON packets - progress, logs, profile events, exceptions - are never encoded).
   */
 class FramingFormatEventStream final : public IFramingFormat
 {

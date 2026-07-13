@@ -102,6 +102,12 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             /// so the output is not guaranteed to be valid UTF-8 text despite the textual content type.
             if (is_raw)
                 factory.markOutputFormatMayProduceRawBytes(format_name);
+
+            /// With `output_format_tsv_crlf_end_of_line`, rows end with `\r\n`. That carriage return
+            /// cannot survive the text `EventStream` framing, so it is base64-encoded there (see
+            /// `checkIfOutputFormatMayEmitCarriageReturn`).
+            factory.registerOutputFormatMayEmitCarriageReturnChecker(
+                format_name, [](const FormatSettings & settings) { return settings.tsv.crlf_end_of_line; });
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

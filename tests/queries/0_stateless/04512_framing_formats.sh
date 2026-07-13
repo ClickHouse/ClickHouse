@@ -172,3 +172,49 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
 echo '--- a compatibility error is delivered as a framed exception packet (wait_end_of_query)'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT RowBinary" | grep -c '"packet":"exception"'
+
+# A carriage return (`\r`) cannot survive the text `EventStream` framing (server-sent events treat it
+# as a line terminator), so output formats that may emit one - `TSV` / `CSV` with a CRLF row terminator -
+# are base64-encoded as well. The base64-decoded payload keeps the `\r\n` byte-for-byte.
+echo '--- EventStream base64-encodes TSV with a CRLF row terminator'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&output_format_tsv_crlf_end_of_line=1" \
+    -d "SELECT number FROM numbers(3) FORMAT TSV"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_tsv_crlf_end_of_line=1${SINGLE_BLOCK}" \
+    -d "SELECT number FROM numbers(3) FORMAT TSV" \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_tsv_crlf_end_of_line=1" -d "SELECT number FROM numbers(3) FORMAT TSV") \
+    && echo 'TSV CRLF payload round-trips' || echo 'MISMATCH'
+
+echo '--- EventStream base64-encodes CSV with a CRLF row terminator'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&output_format_csv_crlf_end_of_line=1" \
+    -d "SELECT number FROM numbers(3) FORMAT CSV"
+
+# `JSONEachPacketString` puts the payload bytes into a JSON string, which escapes `\r`, so a CRLF row
+# terminator is carried losslessly and the format is not rejected (unlike the text `EventStream`).
+echo '--- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_tsv_crlf_end_of_line=1${SINGLE_BLOCK}" \
+    -d "SELECT number FROM numbers(3) FORMAT TSV" \
+    | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
+
+# The `*WithProgress` output formats write progress as in-band rows that are part of their own output.
+# A framing format delivers progress as separate `progress` packets instead, so it rejects them, and the
+# error is delivered as a framed `exception` packet.
+echo '--- framing is rejected for output formats that write progress in-band (JSONEachRowWithProgress)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT JSONEachRowWithProgress" \
+    | grep -o -m1 'writes progress in-band'
+
+# When the query fails before any output is produced (for example an unknown table), the exception stream
+# must carry only the `exception` packet: the real output format must not write its empty skeleton (for
+# `FORMAT JSON`, `{"meta":[],"data":[],...}`) as a `data` packet.
+echo '--- exception-only stream carries no data packet, only the exception (FORMAT JSON, streaming)'
+response=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT * FROM no_such_table_04512 FORMAT JSON")
+echo "data packets: $(echo "$response" | grep -c '"packet":"data"')"
+echo "exception packets: $(echo "$response" | grep -c '"packet":"exception"')"
+
+echo '--- exception-only stream carries no data packet, only the exception (FORMAT JSON, wait_end_of_query)'
+response=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&framing_output_format=JSONEachPacketString" \
+    -d "SELECT * FROM no_such_table_04512 FORMAT JSON")
+echo "data packets: $(echo "$response" | grep -c '"packet":"data"')"
+echo "exception packets: $(echo "$response" | grep -c '"packet":"exception"')"

@@ -2490,7 +2490,17 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// `LineAsString`) that write the column bytes verbatim.
     const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
 
-    auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
+    /// Whether the output format may emit raw carriage returns (for example `TSV` / `CSV` with
+    /// `output_format_tsv_crlf_end_of_line` / `output_format_csv_crlf_end_of_line`). Those cannot be
+    /// carried losslessly by the text `EventStream` framing and are base64-encoded there instead.
+    const bool payload_has_carriage_returns
+        = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
+
+    auto framing = createFramingFormat(
+        framing_name,
+        ostr,
+        format_settings,
+        {.is_http = true, .binary_payload = binary_payload, .payload_has_carriage_returns = payload_has_carriage_returns});
 
     /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
     /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding

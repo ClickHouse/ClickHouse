@@ -214,6 +214,10 @@ protected:
     bool finished = false;
     bool finalized = false;
     bool framing_finalize_deferred = false;
+    /// The framing was attached only to serialize an exception packet (see `setFraming`'s
+    /// `for_exception`). In this case the real output format must not write anything into the payload
+    /// buffer on finalization, so that no empty format skeleton leaks as a `data` packet.
+    bool framing_exception_only = false;
 
     /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
