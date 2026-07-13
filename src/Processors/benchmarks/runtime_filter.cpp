@@ -12,7 +12,6 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/assert_cast.h>
 
 #include <benchmark/benchmark.h>
 
@@ -74,6 +73,12 @@ enum class RuntimeFilterKind
 };
 
 /// `mix` spreads sequential row numbers across key buckets for non-contiguous benchmark access patterns.
+/// It is a SplitMix64-style permutation of the full `UInt64` domain. The odd 64-bit golden-ratio
+/// increment has full period modulo `2^64`, so repeated addition would visit every `UInt64` value once.
+/// The following xor-shifts and odd multiplications are also bijective on `UInt64`, which makes
+/// `mix(row)` a valid source of unique high-entropy keys for a non-dense build-side distribution.
+/// Do not add `% key_count` when cardinality matters: that maps many unique `UInt64` values into the
+/// same bucket. For dense-key benchmarks, keep the key set `0..rows - 1` and randomize only its order.
 UInt64 mix(UInt64 value)
 {
     /// Odd 64-bit golden-ratio increment; repeated addition visits every `UInt64` value before repeating.
@@ -118,6 +123,54 @@ UInt64 probeKey(size_t row, size_t key_count, HitRatio hit_ratio, ValuePattern p
 String stringKey(UInt64 value)
 {
     return "runtime_filter_key_" + std::to_string(value);
+}
+
+std::vector<UInt64> makeShuffledKeyPermutation(size_t rows, UInt64 offset = 0)
+{
+    std::vector<UInt64> keys(rows);
+    for (size_t row = 0; row < rows; ++row)
+        keys[row] = row;
+
+    /// Sort by `mix` to get randomized order without reducing cardinality with `mix(row) % rows`.
+    std::sort(keys.begin(), keys.end(), [](UInt64 lhs, UInt64 rhs) { return mix(lhs) < mix(rhs); });
+
+    for (auto & key : keys)
+        key += offset;
+
+    return keys;
+}
+
+ColumnPtr makeShuffledUInt64Column(size_t rows, UInt64 offset = 0)
+{
+    auto keys = makeShuffledKeyPermutation(rows, offset);
+    auto column = ColumnUInt64::create(rows);
+    auto & data = column->getData();
+    for (size_t row = 0; row < rows; ++row)
+        data[row] = keys[row];
+    return column;
+}
+
+ColumnPtr makeShuffledUInt32Column(size_t rows)
+{
+    auto keys = makeShuffledKeyPermutation(rows);
+    auto column = ColumnUInt32::create(rows);
+    auto & data = column->getData();
+    for (size_t row = 0; row < rows; ++row)
+        data[row] = static_cast<UInt32>(keys[row]);
+    return column;
+}
+
+ColumnPtr makeShuffledStringColumn(size_t rows)
+{
+    auto keys = makeShuffledKeyPermutation(rows);
+    auto column = ColumnString::create();
+    column->reserve(rows);
+    for (auto key : keys)
+    {
+        const auto value = stringKey(key);
+        column->insertData(value.data(), value.size());
+    }
+    return column;
 }
 
 ColumnPtr makeUInt64Column(size_t rows, size_t key_count, HitRatio hit_ratio, ValuePattern pattern)
@@ -406,7 +459,7 @@ static void BM_RuntimeFilterApproximateBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto type = uint64Type();
-    auto build_column = makeUInt64Column(rows, rows, HitRatio::All, ValuePattern::Mixed);
+    auto build_column = makeShuffledUInt64Column(rows);
 
     for (auto _ : state)
     {
@@ -421,7 +474,7 @@ static void BM_RuntimeFilterApproximateBuildString(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto type = stringType();
-    auto build_column = makeStringColumn(rows, rows, HitRatio::All, ValuePattern::Mixed);
+    auto build_column = makeShuffledStringColumn(rows);
 
     for (auto _ : state)
     {
@@ -442,12 +495,8 @@ static void BM_RuntimeFilterApproximateMergeUInt64(benchmark::State & state)
     sources.reserve(filters_to_merge);
     for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
     {
-        auto column = makeUInt64Column(keys_per_filter, keys_per_filter, HitRatio::All, ValuePattern::Mixed);
-        auto mutable_column = IColumn::mutate(std::move(column));
-        auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-        for (auto & value : data)
-            value += filter_index * keys_per_filter;
-        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::Approximate, type, std::move(mutable_column)));
+        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
+        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::Approximate, type, column));
     }
 
     for (auto _ : state)
@@ -472,12 +521,8 @@ static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
     sources.reserve(filters_to_merge);
     for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
     {
-        auto column = makeUInt64Column(keys_per_filter, keys_per_filter, HitRatio::All, ValuePattern::Mixed);
-        auto mutable_column = IColumn::mutate(std::move(column));
-        auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-        for (auto & value : data)
-            value += filter_index * keys_per_filter;
-        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, std::move(mutable_column)));
+        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
+        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, column));
     }
 
     for (auto _ : state)
@@ -517,7 +562,7 @@ static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
     const auto rows = static_cast<size_t>(state.range(0));
     const auto chunk_rows = static_cast<size_t>(state.range(1));
     const auto type = uint64Type();
-    auto build_column = makeUInt64Column(rows, rows, HitRatio::All, ValuePattern::Mixed);
+    auto build_column = makeShuffledUInt64Column(rows);
     auto column_chunks = splitColumn(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(type));
 
@@ -558,7 +603,7 @@ static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & 
     const auto chunk_rows = static_cast<size_t>(state.range(1));
     const auto source_type = uint32Type();
     const auto target_type = uint64Type();
-    auto build_column = makeUInt32Column(rows, rows, HitRatio::All, ValuePattern::Mixed);
+    auto build_column = makeShuffledUInt32Column(rows);
     auto column_chunks = splitColumn(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(source_type));
 
