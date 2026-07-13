@@ -1172,6 +1172,17 @@ def test_uuid(started_cluster):
         """
     )
     assert node.query("SELECT kUUID FROM uuid2_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+
+    # `IN` over a `UUID2` column with `UUID`-typed constants: the `$in` pushdown flattens the
+    # constant tuple into an array, and the conversion to `Array(UUID2)` must swap the halves of
+    # every element (otherwise the wrong binary values are sent and matching rows are missed).
+    assert (
+        node.query(
+            "SELECT kUUID FROM uuid2_table WHERE kUUID IN (toUUID('f0e77736-91d1-48ce-8f01-15123ca1c7ed'), toUUID('00000000-0000-0000-0000-000000000001'))"
+        )
+        == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    )
+
     node.query("DROP TABLE uuid2_table")
     uuid_mongo_table.drop()
 

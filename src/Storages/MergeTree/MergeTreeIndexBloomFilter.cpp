@@ -689,10 +689,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
-static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
+static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type, const IDataType * value_type)
 {
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
+
+    /// The source type of the elements matters for layout-changing conversions (e.g. `UUID` -> `UUID2`):
+    /// hashing a value converted without it would silently drop granules that contain matches.
+    const IDataType * element_type_hint = nullptr;
+    if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(value_type))
+        element_type_hint = value_array_type->getNestedType().get();
 
     const bool is_nullable = actual_type->isNullable();
     auto mutable_column = actual_type->createColumn();
@@ -702,7 +708,7 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        auto converted = convertFieldToType(f, *actual_type);
+        auto converted = convertFieldToType(f, *actual_type, element_type_hint);
         if (converted.isNull())
             return nullptr;
 
@@ -828,7 +834,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (function_name == "has")
             {
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type, value_type.get());
 
                 if (!column)
                     return false;
@@ -843,7 +849,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type, value_type.get());
 
             if (!column)
                 return false;
