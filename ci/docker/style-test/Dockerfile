@@ -6,7 +6,6 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         git \
         libxml2-utils \
         locales \
-        docker.io \
         python3-pip \
         ripgrep \
         zstd \
@@ -18,5 +17,3 @@ ENV LC_ALL=en_US.UTF-8
 
 COPY requirements.txt /
 RUN pip3 install --no-cache-dir -r requirements.txt
-RUN pip3 install --no-cache-dir \
-        https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages/0.1/praktika-0.0.0-py3-none-any.whl
