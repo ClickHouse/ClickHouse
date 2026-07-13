@@ -78,7 +78,8 @@ Store credentials in a [named collection](/operations/named-collections) to avoi
 Notes:
 
 - BigQuery `DATETIME` has no time zone; it is mapped to `DateTime64(6, 'UTC')` so that the displayed value does not depend on the server time zone.
-- A `NULL` value of a `RECORD` becomes a `Tuple` of default values, and a `NULL` (or empty) array becomes an empty array, because `Tuple` and `Array` cannot be inside `Nullable` in ClickHouse. The elements of a `REPEATED` field are mapped to a `Nullable` type (except for `RECORD` elements, which cannot be `Nullable`), so a `NULL` array element is preserved rather than coerced to a default.
+- A `NULL` value of a `RECORD` becomes a `Tuple` of default values, and a `NULL` (or empty) array becomes an empty array, because `Tuple` and `Array` cannot be inside `Nullable` in ClickHouse by default. The elements of a `REPEATED` field are mapped to a `Nullable` type (except for `RECORD` elements, which cannot be `Nullable` by default), so a `NULL` array element is preserved rather than coerced to a default.
+- To read and write `NULL` `RECORD` values losslessly, enable the `enable_nullable_tuple_type` setting and declare the column with the `BigQuery` table engine as `Nullable(Tuple(...))` (or `Array(Nullable(Tuple(...)))` for a `REPEATED RECORD`). The engine accepts a declared type that differs from the inferred type only by such `Nullable` wrappers around a `Tuple`, and then a `NULL` record is read as `NULL` and written as a JSON `null` instead of being coerced to a default tuple.
 - `BIGNUMERIC` values with more than 38 digits in the integer part do not fit into `Decimal(76, 38)` and produce an error.
 - `TIMESTAMP` and `DATE` values outside of the range of `DateTime64`/`Date32` (years 1900-2299) are not supported.
 

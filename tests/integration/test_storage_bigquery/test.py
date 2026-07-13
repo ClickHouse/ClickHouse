@@ -160,6 +160,79 @@ def test_select_all_types():
     assert result == expected
 
 
+def test_nullable_record_opt_in():
+    # A BigQuery NULLABLE RECORD is inferred as a plain Tuple, so a whole-record NULL collapses into
+    # a tuple of defaults (see test_select_all_types, where `rec` for i=2 comes back as (NULL,'',[])).
+    # A user who enables `enable_nullable_tuple_type` can declare the column as Nullable(Tuple(...))
+    # (or Array(Nullable(Tuple(...)))) to read and write such NULLs losslessly; the engine must
+    # accept that opt-in type even though default inference maps the field to a plain Tuple.
+    settings = {"enable_nullable_tuple_type": 1}
+
+    # Reading a NULL RECORD losslessly.
+    node.query("DROP TABLE IF EXISTS bq_nullable_rec")
+    node.query(
+        "CREATE TABLE bq_nullable_rec "
+        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y String, tags Array(Nullable(String))))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    assert (
+        node.query("SELECT i, rec FROM bq_nullable_rec ORDER BY i FORMAT TSV", settings=settings)
+        == "1\t(7,'seven',['t1','t2'])\n2\t\\N\n3\t(NULL,'y-only',[])\n"
+    )
+    node.query("DROP TABLE bq_nullable_rec")
+
+    # Array(Nullable(Tuple(...))) is likewise accepted for a REPEATED RECORD field.
+    node.query("DROP TABLE IF EXISTS bq_nullable_recs")
+    node.query(
+        "CREATE TABLE bq_nullable_recs "
+        "(i Int64, recs Array(Nullable(Tuple(k Int64, val Nullable(String))))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    assert (
+        node.query("SELECT i, recs FROM bq_nullable_recs ORDER BY i FORMAT TSV", settings=settings)
+        == "1\t[(1,'one'),(2,NULL)]\n2\t[]\n3\t[]\n"
+    )
+    node.query("DROP TABLE bq_nullable_recs")
+
+    # Writing a NULL Nullable(Tuple) record: it is sent as a JSON null and round-trips as NULL.
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_nullable_write")
+    node.query(
+        "CREATE TABLE bq_nullable_write (id Int64, meta Nullable(Tuple(a Nullable(Int64)))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    node.query(
+        "INSERT INTO bq_nullable_write VALUES (1, NULL), (2, tuple(7))", settings=settings
+    )
+    assert (
+        node.query(
+            "SELECT id, meta FROM bq_nullable_write ORDER BY id FORMAT TSV", settings=settings
+        )
+        == "1\t\\N\n2\t(7)\n"
+    )
+    node.query("DROP TABLE bq_nullable_write")
+
+    # The opt-in only strips Nullable placed directly around a Tuple: a nullability difference on a
+    # non-record field (here the REQUIRED `y`) is still a type mismatch and is rejected.
+    node.query("DROP TABLE IF EXISTS bq_wrong_null")
+    node.query(
+        "CREATE TABLE bq_wrong_null "
+        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y Nullable(String), tags Array(Nullable(String))))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    error = node.query_and_get_error("SELECT rec FROM bq_wrong_null", settings=settings)
+    assert "declared as" in error and "maps it to" in error
+    node.query("DROP TABLE bq_wrong_null")
+
+
 def test_count_and_paging():
     mock_reset()
     assert node.query(f"SELECT count(), sum(i) FROM {bq('test_paging')}") == "10\t45\n"

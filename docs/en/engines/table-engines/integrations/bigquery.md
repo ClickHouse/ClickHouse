@@ -26,7 +26,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 ```
 
-The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](../../../sql-reference/table-functions/bigquery.md#data-type-mapping)).
+The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](../../../sql-reference/table-functions/bigquery.md#data-type-mapping)). As the one exception, a `RECORD` field may be declared as `Nullable(Tuple(...))` (or `Array(Nullable(Tuple(...)))`) with the `enable_nullable_tuple_type` setting enabled, to read and write `NULL` records losslessly instead of coercing them to a default tuple.
 
 **Engine parameters**
 

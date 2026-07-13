@@ -1,6 +1,9 @@
 #include <Storages/BigQuery/StorageBigQuery.h>
 
 #include <Core/Names.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -168,6 +171,35 @@ private:
     Poco::JSON::Array::Ptr pending_rows;
 };
 
+/// A BigQuery NULLABLE RECORD is inferred as a plain `Tuple`, because `Nullable(Tuple)` is gated
+/// behind the `enable_nullable_tuple_type` setting which is off by default. A user who enables that
+/// setting can declare a column as `Nullable(Tuple(...))` (or `Array(Nullable(Tuple(...)))`) to read
+/// and write NULL `RECORD` values losslessly - the read and write paths already honor `Nullable`
+/// columns. To let a user opt in, treat a declared type that differs from the inferred type only by
+/// `Nullable` wrappers placed directly around a `Tuple` as an accepted match: this function removes
+/// exactly those wrappers so the result can be compared with the inferred type.
+DataTypePtr stripNullableAroundTuple(const DataTypePtr & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto & nested = nullable->getNestedType();
+        if (typeid_cast<const DataTypeTuple *>(nested.get()))
+            return stripNullableAroundTuple(nested);
+        return std::make_shared<DataTypeNullable>(stripNullableAroundTuple(nested));
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(stripNullableAroundTuple(array->getNestedType()));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        elements.reserve(tuple->getElements().size());
+        for (const auto & element : tuple->getElements())
+            elements.push_back(stripNullableAroundTuple(element));
+        return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+    }
+    return type;
+}
+
 /// The columns a user declared (in CREATE TABLE) or requested must match the BigQuery schema.
 void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFields & fields)
 {
@@ -179,7 +211,8 @@ void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFiel
             column.name,
             fmt::join(std::ranges::views::transform(fields, [](const auto & f) { return f.name; }), ", "));
 
-    if (!column.type->equals(*field->data_type))
+    /// Accept the exact inferred type, or a `Nullable(Tuple)` opt-in of it (see stripNullableAroundTuple).
+    if (!column.type->equals(*field->data_type) && !stripNullableAroundTuple(column.type)->equals(*field->data_type))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Column '{}' is declared as {}, but the BigQuery table schema maps it to {}. "
