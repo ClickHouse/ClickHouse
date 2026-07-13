@@ -494,7 +494,7 @@ ClickHouse vector indexes supports the following quantization options:
 Quantization reduces the precision of vector searches compared to searching the original full-precision floating-point values (`f32`).
 However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
 Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
-We recommend both quantizations only if the the size of the vector similarity index is significantly larger than the available DRAM size.
+We recommend both quantizations only if the size of the vector similarity index is significantly larger than the available DRAM size.
 In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring)) to improve accuracy.
 Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
 Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
@@ -630,12 +630,13 @@ This is achieved by storing data in a bit-grouped format (meaning all i-th bits 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Where:
-* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
+* `element_type` – the type of each vector element. Supported types are `Int8`, `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. A divisor of `dimension` that partitions the dimensions into `dimension / stride` contiguous groups stored in separate streams, so a search over only the leading dimensions reads fewer streams (useful for Matryoshka embeddings). Defaults to `dimension`, in which case the type is byte-identical to a non-strided `QBit`. See the [`QBit` data type page](/sql-reference/data-types/qbit) for details.
 
 #### Creating a `QBit` Table and Adding Data {#qbit-create}
 

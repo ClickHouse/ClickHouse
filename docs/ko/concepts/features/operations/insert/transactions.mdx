@@ -1,0 +1,355 @@
+---
+description: 'ClickHouse의 트랜잭션(ACID) 지원을 설명하는 문서'
+slug: /guides/developer/transactional
+title: '트랜잭션(ACID) 지원'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
+  ## 사례 1: MergeTree* 계열의 한 테이블의 한 파티션에 INSERT
+</div>
+
+삽입되는 행이 패킹되어 단일 블록으로 삽입되면(참고 사항 참조) 트랜잭션(ACID)이 보장됩니다.
+
+* Atomic: INSERT는 전체가 성공하거나 전체가 거부됩니다. 클라이언트에 확인 응답이 전송되면 모든 행이 삽입된 것이고, 클라이언트에 오류가 전송되면 어떤 행도 삽입되지 않은 것입니다.
+* Consistent: 테이블 constraints를 위반하지 않으면 INSERT의 모든 행이 삽입되고 INSERT가 성공합니다. constraints를 위반하면 어떤 행도 삽입되지 않습니다.
+* Isolated: 동시 클라이언트는 테이블의 일관된 snapshot을 관찰합니다. 즉, INSERT 시도 이전의 테이블 상태 또는 성공적인 INSERT 이후의 테이블 상태만 보며, 중간 상태는 관찰되지 않습니다. 다른 transaction 내부의 클라이언트는 [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation)을 가지며, transaction 외부의 클라이언트는 [read uncommitted](https://en.wikipedia.org/wiki/Isolation_\(database_systems\)#Read_uncommitted) 격리 수준을 가집니다.
+* Durable: 성공한 INSERT는 클라이언트에 응답하기 전에 단일 레플리카 또는 여러 레플리카(`insert_quorum` setting으로 제어됨)의 파일 시스템에 기록되며, ClickHouse는 OS에 파일 시스템 데이터를 저장 매체와 동기화하도록 요청할 수 있습니다(`fsync_after_insert` setting으로 제어됨).
+* materialized view가 관련된 경우 하나의 statement로 여러 테이블에 INSERT할 수 있습니다(클라이언트의 INSERT 대상이 연결된 materialized view를 가진 테이블인 경우).
+
+<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
+  ## 사례 2: MergeTree* 계열의 단일 테이블에서 여러 파티션에 INSERT
+</div>
+
+위의 사례 1과 같지만, 다음과 같은 세부 사항이 있습니다:
+
+* 테이블에 파티션이 많고 INSERT가 여러 파티션에 걸쳐 수행되는 경우, 각 파티션에 대한 삽입은 각각 독립적인 트랜잭션으로 처리됩니다
+
+<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
+  ## 사례 3: MergeTree* 계열의 분산 테이블 하나에 INSERT
+</div>
+
+위의 사례 1과 동일하며, 다음과 같은 차이점이 있습니다:
+
+* Distributed 테이블에 대한 INSERT는 전체적으로는 트랜잭션이 아니지만, 각 세그먼트에 대한 삽입은 트랜잭션으로 처리됩니다
+
+<div id="case-4-using-a-buffer-table">
+  ## 사례 4: Buffer 테이블 사용
+</div>
+
+* Buffer 테이블에 삽입하는 작업은 원자성, 격리성, 일관성, 내구성을 모두 보장하지 않습니다
+
+<div id="case-5-using-async_insert">
+  ## 사례 5: `async_insert` 사용
+</div>
+
+위의 사례 1과 동일하지만, 다음 사항에 유의하십시오:
+
+* `async_insert`가 활성화되어 있고 `wait_for_async_insert`가 1(기본값)로 설정된 경우에도 원자성(atomicity)은 보장되지만, `wait_for_async_insert`가 0으로 설정된 경우에는 원자성(atomicity)이 보장되지 않습니다.
+
+<div id="notes">
+  ## 참고 사항
+</div>
+
+* 클라이언트에서 일부 데이터 포맷으로 삽입된 행은 다음과 같은 경우 하나의 블록으로 패킹됩니다:
+  * 삽입 포맷이 행 기반(CSV, TSV, Values, JSONEachRow 등)이고, 데이터가 `max_insert_block_size`행 미만(기본값 약 1 000 000행)이거나, 병렬 파싱을 사용하는 경우(기본적으로 활성화됨) `min_chunk_bytes_for_parallel_parsing`바이트 미만(기본값 10 MB)인 경우
+  * 삽입 포맷이 컬럼 기반(Native, Parquet, ORC 등)이고 데이터에 블록이 하나만 있는 경우
+* 일반적으로 삽입된 블록의 크기는 여러 설정에 따라 달라질 수 있습니다(예: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, `min_insert_block_size_bytes`, `preferred_block_size_bytes` 등)
+* 클라이언트가 서버로부터 응답을 받지 못한 경우, 트랜잭션이 성공했는지 알 수 없으므로 exactly-once 삽입 속성을 사용해 트랜잭션을 다시 시도할 수 있습니다
+* ClickHouse는 동시 트랜잭션을 위해 내부적으로 [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control)와 [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation)을 사용합니다
+* 모든 ACID 속성은 서버가 종료되거나 충돌하는 경우에도 유효합니다
+* 일반적인 구성에서 내구성 있는 삽입을 보장하려면 서로 다른 AZ에 `insert_quorum`을 사용하거나 `fsync`를 활성화해야 합니다
+* ACID에서 말하는 &quot;consistency&quot;는 분산 시스템의 의미를 다루지 않습니다. 이에 대해서는 https://jepsen.io/consistency 를 참조하십시오. 이는 다른 설정(`select_sequential_consistency`)으로 제어됩니다
+* 이 설명은 여러 테이블, materialized view, 여러 SELECT 등에 걸쳐 완전한 기능의 트랜잭션을 지원하는 새로운 트랜잭션 기능은 다루지 않습니다(다음 섹션인 Transactions, Commit, and Rollback 참조)
+
+<div id="transactions-commit-and-rollback">
+  ## 트랜잭션, 커밋 및 롤백
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+이 문서 상단에서 설명한 기능에 더해, ClickHouse는 트랜잭션, 커밋, 롤백 기능을 실험적으로 지원합니다.
+
+<div id="requirements">
+  ### 요구 사항
+</div>
+
+* 트랜잭션 추적을 위해 ClickHouse Keeper 또는 ZooKeeper를 배포합니다
+* atomic DB만 지원합니다(기본값)
+* 복제되지 않은 MergeTree 테이블 엔진만 지원합니다
+* Experimental 트랜잭션 지원을 사용하려면 `config.d/transactions.xml`에 다음 설정을 추가합니다:
+  ```xml
+  <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+  </clickhouse>
+  ```
+
+<div id="notes-1">
+  ### 참고 사항
+</div>
+
+* 이는 실험적 기능이므로 변경될 수 있습니다.
+* 트랜잭션(트랜잭션) 중 예외가 발생하면 해당 트랜잭션을 커밋할 수 없습니다. 여기에는 오타로 인해 발생한 `UNKNOWN_FUNCTION` 예외를 포함한 모든 예외가 해당합니다.
+* 중첩 트랜잭션은 지원되지 않습니다. 현재 트랜잭션을 완료한 후 새 트랜잭션을 시작하십시오.
+
+<div id="configuration">
+  ### 구성
+</div>
+
+다음 예시는 ClickHouse Keeper가 활성화된 단일 노드 ClickHouse 서버 환경을 기준으로 합니다.
+
+<div id="enable-experimental-transaction-support">
+  #### 실험적 트랜잭션 지원 활성화
+</div>
+
+```xml title=/etc/clickhouse-server/config.d/transactions.xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
+  #### ClickHouse Keeper가 활성화된 단일 ClickHouse 서버 노드용 기본 구성
+</div>
+
+<Note>
+  ClickHouse 서버와 적절한 정족수(quorum)의 ClickHouse Keeper 노드를 배포하는 방법에 대한 자세한 내용은 [배포](/ko/guides/oss/deployment-and-scaling/terminology) 문서를 참조하십시오. 여기에 제시된 구성은 실험 목적으로만 제공됩니다.
+</Note>
+
+```xml title=/etc/clickhouse-server/config.d/config.xml
+<clickhouse replace="true">
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <display_name>node 1</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <zookeeper>
+        <node>
+            <host>clickhouse-01</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="example">
+  ### 예시
+</div>
+
+<div id="verify-that-experimental-transactions-are-enabled">
+  #### 실험적 트랜잭션이 활성화되었는지 확인
+</div>
+
+실험적 트랜잭션과 ClickHouse Keeper가 활성화되었는지 확인하려면 `BEGIN TRANSACTION` 또는 `START TRANSACTION`을 실행한 다음 `ROLLBACK`을 실행하십시오. ClickHouse Keeper는 트랜잭션 추적에 사용됩니다.
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+<Tip>
+  다음 오류가 표시되면, 설정 파일에서 `allow_experimental_transactions`가 `1`로 설정되어 있는지(`0` 또는 `false`가 아닌 값) 확인하십시오.
+
+  ```response
+  Code: 48. DB::Exception: Received from localhost:9000.
+  DB::Exception: Transactions are not supported.
+  (NOT_IMPLEMENTED)
+  ```
+
+  다음 명령으로 ClickHouse Keeper 상태도 확인할 수 있습니다.
+
+  ```bash
+  echo ruok | nc localhost 9181
+  ```
+
+  ClickHouse Keeper는 `imok`를 반환해야 합니다.
+</Tip>
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+<div id="create-a-table-for-testing">
+  #### 테스트용 테이블 생성
+</div>
+
+<Tip>
+  테이블 생성은 트랜잭션으로 처리되지 않습니다. 이 DDL 쿼리는 트랜잭션 외부에서 실행하십시오.
+</Tip>
+
+```sql
+CREATE TABLE mergetree_table
+(
+    `n` Int64
+)
+ENGINE = MergeTree
+ORDER BY n
+```
+
+```response
+Ok.
+```
+
+<div id="begin-a-transaction-and-insert-a-row">
+  #### 트랜잭션을 시작하고 행을 삽입합니다
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (10)
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 10 │
+└────┘
+```
+
+<Note>
+  트랜잭션 내에서 테이블을 쿼리하면 아직 커밋되지 않았더라도 행이 삽입된 상태임을 확인할 수 있습니다.
+</Note>
+
+<div id="rollback-the-transaction-and-query-the-table-again">
+  #### 트랜잭션을 롤백한 다음 테이블을 다시 쿼리합니다
+</div>
+
+트랜잭션이 롤백되었는지 확인합니다:
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="complete-a-transaction-and-query-the-table-again">
+  #### 트랜잭션을 완료한 뒤 테이블을 다시 쿼리하기
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (42)
+```
+
+```response
+Ok.
+```
+
+```sql
+COMMIT
+```
+
+```response
+Ok. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 42 │
+└────┘
+```
+
+<div id="transactions-introspection">
+  ### 트랜잭션 내부 검사
+</div>
+
+`system.transactions` 테이블(table)을 쿼리하여 트랜잭션을 확인할 수 있지만, 트랜잭션이 진행 중인 세션(session)에서는 해당
+테이블을 쿼리할 수 없다는 점에 유의하십시오. 이 테이블을 쿼리하려면 두 번째 `clickhouse client` 세션을 여십시오.
+
+```sql
+SELECT *
+FROM system.transactions
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tid:         (33,61,'51e60bce-6b82-4732-9e1d-b40705ae9ab8')
+tid_hash:    11240433987908122467
+elapsed:     210.017820947
+is_readonly: 1
+state:       RUNNING
+```
+
+<div id="more-details">
+  ## 추가 정보
+</div>
+
+더 광범위한 테스트를 확인하고 진행 상황을 최신 상태로 파악하려면 이 [메타 이슈](https://github.com/ClickHouse/ClickHouse/issues/48794)를 참조하십시오.

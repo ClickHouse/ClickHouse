@@ -159,6 +159,17 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 
 bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 {
+    /// A collector is built once from the declared column type, so merging a part statistic built on a
+    /// different type (e.g. a MODIFY COLUMN that flips nullability) feeds mismatched aggregate-state
+    /// layouts to ColumnStatistics::merge. Treat a different declared type as a different structure so
+    /// the merge path rebuilds the statistics instead of merging incompatible states. Compare type
+    /// names rather than equals(): custom-named types like Bool share UInt8's typeid and compare equal
+    /// under equals(), but carry a distinct serialized statistics layout, so a name difference matters.
+    const auto & lhs_type = stats_desc.data_type;
+    const auto & rhs_type = other.stats_desc.data_type;
+    if (!lhs_type || !rhs_type || lhs_type->getName() != rhs_type->getName())
+        return false;
+
     if (stats.size() != other.stats.size())
         return false;
 
@@ -565,18 +576,44 @@ ColumnsStatistics ColumnsStatistics::cloneEmpty() const
     return result;
 }
 
+namespace
+{
+
+/// A collector is built once from the declared column type, so a block column of a different type
+/// mis-casts inside the aggregate function. Do not silently adapt the column here: a mismatch means
+/// the mutation pipeline or metadata produced a column disagreeing with the statistics' metadata,
+/// which is a bug to surface with diagnostics, not to hide.
+void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnStatisticsPtr & stat, const DataTypePtr & column_type)
+{
+    auto stats_data_type = stat->getDataType();
+    if (!column_type->equals(*stats_data_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Type mismatch when building statistics for column '{}': statistics expect type {} but block has type {}",
+            column_name, stats_data_type->getName(), column_type->getName());
+}
+
+}
+
 void ColumnsStatistics::build(const Block & block)
 {
     for (const auto & [column_name, stat] : *this)
-        stat->build(block.getByName(column_name).column);
+    {
+        const auto & col = block.getByName(column_name);
+        checkColumnTypeMatchesStatistics(column_name, stat, col.type);
+        stat->build(col.column);
+    }
 }
 
 void ColumnsStatistics::buildIfExists(const Block & block)
 {
     for (const auto & [column_name, stat] : *this)
     {
-        if (block.has(column_name))
-            stat->build(block.getByName(column_name).column);
+        if (!block.has(column_name))
+            continue;
+        const auto & col = block.getByName(column_name);
+        checkColumnTypeMatchesStatistics(column_name, stat, col.type);
+        stat->build(col.column);
     }
 }
 

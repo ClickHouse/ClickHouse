@@ -227,7 +227,9 @@ Arguments:
 - `--echo [ <bool> ]` — print each query before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode. Note: because `--echo` now takes an optional value, a positional query placed immediately after a bare `--echo` is consumed as its value; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false`, or piped `stdin` instead.
 - `--echo-formatted [ <bool> ]` — format the echoed queries. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
 - `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
+- `--echo-query-separator <string>` — print this separator before the formatted echoed query (requires `--echo-formatted`), making it easier to tell the typed query apart from its reformatted echo. Empty by default (disabled).
 - `--highlight`, `--hilite` `<bool>` — toggle syntax highlighting of the command prompt and the echoed queries. Enabled by default. Highlighting is applied only when writing to a terminal.
+- `--hints <bool>` — show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). Enabled by default.
 - `--verbose` — more details on query execution.
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.
@@ -351,6 +353,32 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+## Starting TCP and HTTP Listeners {#starting-listeners}
+
+`clickhouse-local` can be transformed into a lightweight server that accepts TCP (native protocol) and HTTP connections. This is useful when you want to give other ClickHouse tools or applications access to the databases and tables of a running `clickhouse-local` instance. Note that each incoming connection gets a session of its own: temporary tables and session-level settings of the interactive `clickhouse-local` session are not visible to external connections.
+
+Use `SYSTEM START LISTEN` to open a listener and `SYSTEM STOP LISTEN` to close it:
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+The `--listen_host`, `--tcp_port`, and `--http_port` options configure the bind address and ports. Default ports are `9000` for TCP and `8123` for HTTP.
+
+:::warning Security
+By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control by pointing the `users_config` setting at a custom `users.xml` (for example via `--config-file`). Listening on a non-loopback address without authentication exposes the data of the local instance to anyone who can reach the chosen port.
+:::
 
 ## Related Content {#related-content-1}
 

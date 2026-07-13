@@ -1,0 +1,6 @@
+# Special Values Test (NaN, Inf, Zeros, Clamp Bounds)
+4000	0
+4000	0
+# Low Cardinality (Full Block, All Dictionary-Encoded, No Exceptions)
+1024	0
+1024	0

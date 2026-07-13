@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/managed
+title: 'Managed ClickStack の利用を開始する'
+sidebarTitle: 'Managed'
+description: 'Managed ClickStack の利用を開始する'
+doc_type: 'guide'
+keywords: ['Managed ClickStack', 'はじめに', 'ClickHouse Cloud']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import SetupManagedIngestion from '/snippets/ja/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/ja/clickstack/_navigate_managed.mdx';
+
+開始する最も簡単な方法は、**ClickHouse Cloud** に **Managed ClickStack** をデプロイすることです。これにより、インジェスト、スキーマ、オブザーバビリティのワークフローを完全に制御したまま、完全マネージド型で安全なバックエンドを利用できます。ClickHouse を自分で運用する必要がなくなり、次のような利点が得られます。
+
+* ストレージから独立したコンピュートの自動スケーリング
+* オブジェクトストレージをベースにした、低コストかつ実質無制限の保持
+* ウェアハウスによって、読み取りワークロードと書き込みワークロードを個別に分離可能
+* 統合認証
+* 自動バックアップ
+* セキュリティ機能とコンプライアンス機能
+* シームレスなアップグレード
+
+<Steps>
+  <Step>
+    ## ClickHouse Cloud に登録
+
+    [ClickHouse Cloud](https://console.clickhouse.cloud) で Managed ClickStack サービスを作成するには、まず [ClickHouse Cloud クイックスタートガイド](/ja/get-started/setup/cloud) の**最初のステップ**を完了してください。
+
+    <ProviderSelection />
+  </Step>
+
+  <Step>
+    ## インジェストを設定
+
+    サービスのプロビジョニングが完了したら、対象のサービスが選択されていることを確認し、左側のメニューで &quot;ClickStack&quot; をクリックします。
+
+    <SetupManagedIngestion />
+  </Step>
+
+  <Step>
+    ## ClickStack UI に移動
+
+    <NavigateClickStackUI />
+  </Step>
+
+  <Step>
+    ## 次のステップ
+
+    <Warning>
+      **デフォルトの認証情報を記録**
+
+      上記の手順でデフォルトの認証情報を記録していない場合は、サービスに移動して `Connect` を選択し、パスワードと HTTP/native エンドポイントを記録してください。これらの管理者認証情報は安全に保管し、以降のガイドで再利用できます。
+    </Warning>
+
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+
+    新しいユーザーのプロビジョニングや追加のデータソースの追加などを行うには、[Managed ClickStack のデプロイガイド](/ja/clickstack/deployment/managed#additional-tasks) を参照してください。
+  </Step>
+</Steps>

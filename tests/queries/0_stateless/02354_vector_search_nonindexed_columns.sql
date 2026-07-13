@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: vector search needs usearch 3rd party library
-
 -- Tests vector search behavior when some vector columns have indexes and others don't.
 -- Verifies behavior of filter strategies for both indexed and non-indexed vector columns
 -- in the same table.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;

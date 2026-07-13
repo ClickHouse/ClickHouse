@@ -1,0 +1,128 @@
+---
+slug: /about-us/distinctive-features
+sidebarTitle: 'ClickHouse가 특별한 이유'
+description: 'ClickHouse를 다른 데이터베이스 관리 시스템과 차별화하는 요소를 알아보십시오'
+title: 'ClickHouse의 고유한 특징'
+keywords: ['compression', 'secondary-indexes','column-oriented']
+doc_type: 'guide'
+---
+
+<div id="true-column-oriented-database-management-system">
+  ## 진정한 컬럼 지향 데이터베이스 관리 시스템
+</div>
+
+진정한 컬럼 지향 DBMS에서는 값과 함께 추가 데이터가 저장되지 않습니다. 즉, 값 옆에 길이를 나타내는 &quot;숫자&quot;를 저장하지 않으려면 고정 길이 값을 지원해야 합니다. 예를 들어 UInt8 타입 값 10억 개는 비압축 상태에서 약 1 GB를 차지해야 하며, 그렇지 않으면 CPU 사용량에 큰 영향을 줍니다. 압축 해제 속도(CPU 사용량)는 주로 비압축 데이터의 양에 따라 결정되므로, 비압축 상태에서도 데이터를 조밀하게(&quot;불필요한 데이터&quot; 없이) 저장하는 것이 매우 중요합니다.
+
+이는 서로 다른 컬럼의 값을 별도로 저장할 수는 있지만, HBase, Bigtable, Cassandra, Hypertable처럼 다른 용도에 맞게 최적화되어 있어 분석 쿼리를 효과적으로 처리하지 못하는 시스템과는 대조적입니다. 이러한 시스템에서는 초당 약 수십만 행의 처리량은 얻을 수 있지만, 초당 수억 행의 처리량은 얻을 수 없습니다.
+
+마지막으로, ClickHouse는 단일 데이터베이스가 아니라 데이터베이스 관리 시스템입니다. ClickHouse는 서버를 재구성하거나 재시작하지 않고도 런타임에 테이블과 데이터베이스를 생성하고, 데이터를 로드하며, 쿼리를 실행할 수 있도록 합니다.
+
+<div id="data-compression">
+  ## 데이터 압축
+</div>
+
+일부 컬럼 지향 DBMS는 데이터 압축을 사용하지 않습니다. 그러나 데이터 압축은 뛰어난 성능을 구현하는 데 핵심적인 역할을 합니다.
+
+ClickHouse는 디스크 공간과 CPU 사용량 간의 다양한 절충점을 제공하는 효율적인 범용 압축 코덱뿐 아니라, 특정 유형의 데이터에 맞는 [특수 코덱](/ko/reference/statements/create/table#specialized-codecs)도 제공합니다. 이를 통해 ClickHouse는 시계열 데이터베이스처럼 더욱 특화된 데이터베이스와 경쟁하고, 더 나은 성능을 낼 수 있습니다.
+
+<div id="disk-storage-of-data">
+  ## 데이터의 디스크 저장
+</div>
+
+데이터를 프라이머리 키를 기준으로 물리적으로 정렬해 두면, 특정 값이나 값 범위에 따라 데이터를 수십 밀리초 이내의 낮은 지연 시간으로 추출할 수 있습니다. SAP HANA 및 Google PowerDrill과 같은 일부 컬럼 지향 DBMSs는 RAM에서만 작동할 수 있습니다. 이 방식은 실시간 분석에 필요한 수준보다 더 큰 하드웨어 예산을 요구합니다.
+
+ClickHouse는 일반 하드 드라이브에서도 작동하도록 설계되었으므로 데이터 저장용 GB당 비용이 낮고, SSD와 추가 RAM이 있는 경우에도 이를 충분히 활용합니다.
+
+<div id="parallel-processing-on-multiple-cores">
+  ## 여러 코어에서 병렬 처리
+</div>
+
+대규모 쿼리는 자연스럽게 병렬화되며, 현재 서버에서 사용할 수 있는 필요한 모든 리소스를 활용합니다.
+
+<div id="distributed-processing-on-multiple-servers">
+  ## 여러 서버에서의 분산 처리
+</div>
+
+위에서 언급한 열 지향 DBMS 중 분산 쿼리 처리를 지원하는 경우는 거의 없습니다.
+
+ClickHouse에서는 데이터가 서로 다른 세그먼트에 저장될 수 있습니다. 각 세그먼트는 장애 허용을 위해 사용되는 레플리카 그룹일 수 있습니다. 모든 세그먼트는 사용자가 별도로 인식하지 않아도 쿼리를 병렬로 실행하는 데 사용됩니다.
+
+<div id="sql-support">
+  ## SQL 지원
+</div>
+
+ClickHouse는 ANSI SQL 표준과 대부분 호환되는 SQL 기반 [선언형 쿼리 언어](/ko/reference/home)를 지원합니다.
+
+지원되는 쿼리에는 [GROUP BY](/ko/reference/statements/select/group-by), [ORDER BY](/ko/reference/statements/select/order-by), [FROM](/ko/reference/statements/select/from) 절의 서브쿼리, [JOIN](/ko/reference/statements/select/join) 절, [IN](/ko/reference/statements/in) 연산자, [윈도우 함수](/ko/reference/functions/window-functions/index), 스칼라 서브쿼리가 포함됩니다.
+
+현재는 상관(종속) 서브쿼리를 지원하지 않지만, 향후 지원될 수 있습니다.
+
+<div id="vector-engine">
+  ## 벡터 연산 엔진
+</div>
+
+데이터는 컬럼 단위로만 저장되는 것이 아니라 벡터(컬럼의 일부) 단위로 처리되므로 CPU 효율을 높일 수 있습니다.
+
+<div id="real-time-data-updates">
+  ## 실시간 데이터 삽입
+</div>
+
+ClickHouse는 프라이머리 키(primary key)가 있는 테이블을 지원합니다. 프라이머리 키 범위에 대한 쿼리를 빠르게 수행할 수 있도록 데이터는 MergeTree를 사용해 점진적으로 정렬됩니다. 따라서 테이블에 데이터를 지속적으로 추가할 수 있습니다. 새 데이터가 수집될 때도 잠금은 발생하지 않습니다.
+
+<div id="primary-index">
+  ## 프라이머리 인덱스
+</div>
+
+데이터를 프라이머리 키(primary key) 기준으로 물리적으로 정렬하면 특정 값이나 값 범위를 기준으로 수십 밀리초도 채 걸리지 않는 낮은 지연 시간으로 데이터를 추출할 수 있습니다.
+
+<div id="secondary-indexes">
+  ## 보조 인덱스
+</div>
+
+다른 데이터베이스 관리 시스템과 달리 ClickHouse의 보조 인덱스는 특정 행이나 행 범위를 가리키지 않습니다. 대신 일부 데이터 파트의 모든 행이 쿼리 필터링 조건과 일치하지 않음을 데이터베이스가 미리 판단하여, 해당 행을 아예 읽지 않도록 합니다. 그래서 이를 [데이터 스키핑 인덱스](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)라고 부릅니다.
+
+<div id="suitable-for-online-queries">
+  ## 온라인 쿼리에 적합
+</div>
+
+대부분의 OLAP 데이터베이스 관리 시스템은 1초 미만의 지연 시간으로 온라인 쿼리를 처리하도록 설계되지 않았습니다. 다른 시스템에서는 보고서를 생성하는 데 수십 초, 때로는 수분이 걸려도 충분히 허용 가능한 것으로 여겨집니다. 경우에 따라서는 이보다 더 오래 걸리기도 하므로, 시스템이 보고서를 오프라인으로 준비해야 할 때도 있습니다(미리 생성해 두거나 &quot;나중에 다시 오십시오&quot;라고 응답하는 방식).
+
+ClickHouse에서 &quot;낮은 지연 시간&quot;이란 사용자 인터페이스 페이지가 로드되는 바로 그 순간, 즉 *온라인* 상태에서 쿼리를 지연 없이 처리할 수 있고 응답을 미리 준비할 필요도 없다는 뜻입니다.
+
+<div id="support-for-approximated-calculations">
+  ## 근사 계산 지원
+</div>
+
+ClickHouse는 정확도와 성능을 절충할 수 있는 다양한 방법을 제공합니다:
+
+1. 고유값 개수, 중앙값, 분위수를 근사 계산하는 집계 함수
+2. 데이터의 일부([SAMPLE](/ko/reference/statements/select/sample))를 기반으로 쿼리를 실행해 근사 결과를 얻는 방법입니다. 이 경우 디스크에서 읽어오는 데이터 양도 비례해 줄어듭니다.
+3. 모든 키가 아니라 제한된 수의 무작위 키에 대해서만 집계를 실행하는 방법입니다. 데이터의 키 분포가 특정 조건을 만족하면 더 적은 리소스로도 충분히 정확한 결과를 얻을 수 있습니다.
+
+<div id="adaptive-join-algorithm">
+  ## 적응형 조인 알고리즘
+</div>
+
+ClickHouse는 여러 테이블을 [JOIN](/ko/reference/statements/select/join)하는 방식을 상황에 맞게 선택하며, 기본적으로 해시 조인을 선호하고 큰 테이블이 두 개 이상이면 머지 조인으로 전환합니다.
+
+<div id="data-replication-and-data-integrity-support">
+  ## 데이터 복제 및 데이터 무결성 지원
+</div>
+
+ClickHouse는 비동기 멀티 마스터 복제를 사용합니다. 사용 가능한 레플리카 중 어느 곳에 데이터를 쓰더라도, 나머지 모든 레플리카는 백그라운드에서 해당 데이터의 사본을 가져옵니다. 시스템은 서로 다른 레플리카 간에 동일한 데이터를 유지합니다. 대부분의 장애 발생 후 복구는 자동으로 수행되며, 복잡한 경우에는 반자동으로 수행됩니다.
+
+자세한 내용은 [데이터 복제](/ko/reference/engines/table-engines/mergetree-family/replication) 섹션을 참조하십시오.
+
+<div id="role-based-access-control">
+  ## 역할 기반 접근 제어
+</div>
+
+ClickHouse는 SQL 쿼리로 사용자 계정을 관리하며, ANSI SQL 표준과 널리 사용되는 관계형 데이터베이스 관리 시스템에서 볼 수 있는 방식과 유사한 [역할 기반 접근 제어 구성](/ko/concepts/features/security/access-rights)을 지원합니다.
+
+<div id="clickhouse-features-that-can-be-considered-disadvantages">
+  ## 단점으로 볼 수 있는 기능
+</div>
+
+1. 완전한 트랜잭션을 지원하지 않습니다.
+2. 이미 삽입된 데이터를 높은 처리량과 낮은 지연 시간으로 수정하거나 삭제하는 데 한계가 있습니다. 다만 데이터를 정리하거나 수정하기 위한 일괄 삭제 및 업데이트는 지원하며, 예를 들어 [GDPR](https://gdpr-info.eu) 준수에 사용할 수 있습니다.
+3. 희소 인덱스 때문에 키로 단일 행을 조회하는 포인트 쿼리에서는 ClickHouse의 효율이 다소 떨어집니다.

@@ -4,6 +4,7 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
+#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
@@ -126,13 +127,9 @@ public:
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
 
     int sendQueryAsync();
-
-    /// Query is resent to a replica, the query itself can be modified.
-    bool resent_query { false };
-    bool recreate_read_context { false };
 
     struct ReadResult
     {
@@ -228,12 +225,19 @@ public:
 
     bool needToSkipUnavailableShard();
 
+    /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
+    /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    void reportShardSkipped();
+
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
     bool isFinished() const { return finished; }
+
+    bool isCancelled() const { LockAndBlocker lock(was_cancelled_mutex); return was_cancelled; }
 
 private:
     RemoteQueryExecutor(
@@ -296,34 +300,42 @@ private:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    bool was_cancelled = false;
-    std::mutex was_cancelled_mutex;
+    mutable std::mutex was_cancelled_mutex;
+    bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
     bool got_exception_from_replica = false;
 
+    /** Whether the shard has already returned any data block with rows.
+      * Used by `skip_unavailable_shards_mode = unavailable_or_exception_before_processing`
+      * to decide whether an exception arrived before the shard started returning results.
+      */
+    bool got_data_from_replica = false;
+
+    /// Cached `skip_unavailable_shards` settings, read once at construction time.
+    const bool skip_unavailable_shards;
+    const SkipUnavailableShardsMode skip_unavailable_shards_mode;
+
+    /** Returns true if an exception packet received from the shard should be silently
+      * ignored according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
+      */
+    bool shouldIgnoreShardException(int exception_code) const;
+
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
     bool got_unknown_packet_from_replica = false;
 
-    /** Got duplicated uuids from replica
-      */
-    bool got_duplicated_part_uuids = false;
-
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;
 #endif
-
-    /// Parts uuids, collected from remote replicas
-    UUIDs duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = nullptr;
+    LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
@@ -341,22 +353,14 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
-    /// Set part uuids to a query context, collected from remote replicas.
-    /// Return true if duplicates found.
-    bool setPartUUIDs(const UUIDs & uuids);
-
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
-    /// Cancel query and restart it with info about duplicate UUIDs
-    /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs();
-
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void cancelUnlocked();
-    void tryCancel(const char * reason);
+    void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
     bool isQueryPending() const;

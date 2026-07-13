@@ -9,7 +9,6 @@
 -- it through the production reader path. This file fills that gap.
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET use_query_condition_cache = 0;
@@ -77,17 +76,17 @@ SELECT 'cardinality tkk', count() FROM tab_heap WHERE hasToken(s, 'tkk');
 
 -- 9-way AND just past the dispatch boundary (n == 9 -> heap).
 -- LCM(2..10) = 2520 -> floor(50000 / 2520) + 1 = 20 matches in [0, 50000).
--- Force leapfrog with text_index_density_threshold = 1.0 (min_density = 0.1 < 1.0).
+-- Force leapfrog with text_index_lazy_intersection_density_threshold = 1.0 (min_density = 0.1 < 1.0).
 SELECT 'and 9-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_density_threshold = 1.0,
+SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
          log_comment = '04258_heap_9way';
 
 -- Verify the exact matching row IDs (catches off-by-one regressions in the heap
 -- loop). Rows divisible by 2520 in [0, 50000): 0, 2520, 5040, ..., 47880.
 SELECT 'and 9-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_density_threshold = 1.0,
+SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
          log_comment = '04258_heap_9way_rows';
 
 -- 11-way AND stresses the heap deeper.
@@ -95,12 +94,12 @@ SETTINGS text_index_density_threshold = 1.0,
 -- floor(50000 / 360360) + 1 = 1 -> only row 0.
 SELECT 'and 11-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_density_threshold = 1.0,
+SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
          log_comment = '04258_heap_11way';
 
 SELECT 'and 11-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_density_threshold = 1.0;
+SETTINGS text_index_lazy_intersection_density_threshold = 1.0;
 
 -- Equivalence: the materialize path must produce the same count for both shapes.
 -- Without this, a heap-only bug producing the same wrong answer on both lazy
