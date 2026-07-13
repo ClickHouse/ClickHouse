@@ -1,0 +1,2569 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
+slug: /integrations/csharp
+description: 'ClickHouse に接続するための公式 C# クライアントです。'
+title: 'ClickHouse C# client'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse に接続するための公式 C# クライアントです。
+クライアントのソースコードは [GitHubリポジトリ](https://github.com/ClickHouse/clickhouse-cs) で公開されています。
+当初は [Oleg V. Kozlyuk](https://github.com/DarkWanderer) によって開発されました。
+
+このライブラリは、主に 2 つの API を提供します。
+
+* **`ClickHouseClient`** (推奨) : シングルトンとしての利用を想定して設計された、高水準でスレッドセーフなクライアントです。クエリと一括挿入のためのシンプルな非同期 API を提供します。ほとんどのアプリケーションに最適です。
+
+* **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): 標準的な .NET のデータベース抽象化です。ORM インテグレーション (Dapper、Linq2db) や、ADO.NET 互換性が必要な場合に必須です。`ClickHouseBulkCopy` は、ADO.NET 接続を使用してデータを効率的に挿入するためのヘルパークラスです。`ClickHouseBulkCopy` は非推奨であり、今後のリリースで削除される予定です。代わりに `ClickHouseClient.InsertBinaryAsync` を使用してください。
+
+どちらの API も同じ基盤となる HTTP 接続プールを共有しており、同じアプリケーション内で併用できます。
+
+<div id="migration-guide">
+  ## 移行ガイド
+</div>
+
+1. `.csproj` ファイルで、パッケージ名を新しい `ClickHouse.Driver` に変更し、[NuGet の最新バージョン](https://www.nuget.org/packages/ClickHouse.Driver) を指定します。
+2. コードベース内の `ClickHouse.Client` への参照をすべて `ClickHouse.Driver` に更新します。
+
+***
+
+<div id="supported-net-versions">
+  ## サポート対象の .NET バージョン
+</div>
+
+`ClickHouse.Driver` は、以下の .NET バージョンをサポートしています。
+
+* .NET 6.0
+* .NET 8.0
+* .NET 9.0
+* .NET 10.0
+
+<div id="installation">
+  ## インストール
+</div>
+
+NuGet からパッケージをインストールします。
+
+```bash
+dotnet add package ClickHouse.Driver
+```
+
+または、NuGet パッケージ マネージャーを使用します。
+
+```bash
+Install-Package ClickHouse.Driver
+```
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+```csharp
+using ClickHouse.Driver;
+
+// クライアントを作成する（通常はシングルトンとして）
+using var client = new ClickHouseClient("Host=my.clickhouse;Protocol=https;Port=8443;Username=user");
+
+// クエリを実行する
+var version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine(version);
+```
+
+<div id="configuration">
+  ## 設定
+</div>
+
+ClickHouse への接続を設定する方法は 2 つあります。
+
+* **接続文字列:** ホスト、認証情報、その他の接続オプションを指定する、セミコロン区切りのキーと値のペアです。
+* **`ClickHouseClientSettings` object:** 設定ファイルから読み込むことも、コード内で設定することもできる、厳密に型付けされた設定オブジェクトです。
+
+以下に、すべての設定項目、そのデフォルト値、およびそれぞれの動作への影響を一覧で示します。
+
+<div id="connection-settings">
+  ### 接続設定
+</div>
+
+| プロパティ    | 型          | デフォルト                      | 接続文字列キー    | 説明                                         |
+| -------- | ---------- | -------------------------- | ---------- | ------------------------------------------ |
+| Host     | `string`   | `"localhost"`              | `Host`     | ClickHouseサーバーのホスト名または IP アドレス             |
+| Port     | `ushort`   | 8123 (HTTP) / 8443 (HTTPS) | `Port`     | ポート番号。デフォルト値はプロトコルに応じて決まります                |
+| Username | `string`   | `"default"`                | `Username` | 認証用のユーザー名                                  |
+| Password | `string`   | `""`                       | `Password` | 認証用のパスワード                                  |
+| Database | `string`   | `""`                       | `Database` | デフォルトのデータベース。空の場合はサーバーまたはユーザーのデフォルトが使用されます |
+| Protocol | `string`   | `"http"`                   | `Protocol` | 接続プロトコル: `"http"` または `"https"`            |
+| Path     | `string`   | `null`                     | `Path`     | リバースプロキシ構成で使用する URL パス (例: `/clickhouse`)  |
+| Timeout  | `TimeSpan` | 2 分                        | `Timeout`  | 操作のタイムアウト (接続文字列では秒単位で保存されます)              |
+
+<div id="data-format-serialization">
+  ### データフォーマットとシリアライゼーション
+</div>
+
+| プロパティ                   | 型                        | デフォルト    | 接続文字列キー                   | 説明                                                                                                      |
+| ----------------------- | ------------------------ | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`   | `Compression`             | データ転送で gzip 圧縮を有効にします                                                                                   |
+| UseCustomDecimals       | `bool`                   | `true`   | `UseCustomDecimals`       | 任意精度には `ClickHouseDecimal` を使用します。false の場合は .NET の `decimal` (128 ビット制限) を使用します                        |
+| ReadStringsAsByteArrays | `bool`                   | `false`  | `ReadStringsAsByteArrays` | `String` および `FixedString` カラムを `string` ではなく `byte[]` として読み取ります。バイナリデータに便利です                           |
+| UseFormDataParameters   | `bool`                   | `false`  | `UseFormDataParameters`   | パラメータを URL のクエリ文字列ではなくフォームデータとして送信します                                                                   |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`   | —                         | `@` スタイルのパラメータ型対応に使用するカスタムリゾルバです。[カスタムパラメータ型対応](#parameter-type-mapping) を参照してください                      |
+| JsonReadMode            | `JsonReadMode`           | `Binary` | `JsonReadMode`            | JSON データの返却方法: `Binary` (`JsonObject` を返す) または `String` (生の JSON 文字列を返す)                                |
+| JsonWriteMode           | `JsonWriteMode`          | `String` | `JsonWriteMode`           | JSON データの送信方法: `String` (`JsonSerializer` 経由でシリアライズされ、すべての入力を受け付ける) または `Binary` (型ヒント付きの登録済み POCO のみ)  |
+
+<div id="session-management">
+  ### セッション管理
+</div>
+
+| プロパティ      | 型        | デフォルト   | 接続文字列キー      | 説明                                                    |
+| ---------- | -------- | ------- | ------------ | ----------------------------------------------------- |
+| UseSession | `bool`   | `false` | `UseSession` | ステートフルなセッションを有効にし、リクエストを直列化します                        |
+| SessionId  | `string` | `null`  | `SessionId`  | セッション ID。null で UseSession が true の場合は、GUID が自動生成されます |
+
+<Note>
+  `UseSession` フラグを有効にすると、サーバー側セッションの状態が保持され、`SET` ステートメントや一時テーブルを利用できるようになります。セッションは 60 秒間非アクティブな状態が続くとリセットされます (デフォルトのタイムアウト) 。セッションの有効期間は、ClickHouse ステートメントまたはサーバー設定でセッション設定を指定することで延長できます。
+
+  通常、`ClickHouseConnection` クラスでは並列動作が可能で、複数のスレッドからクエリを同時実行できます。ただし、`UseSession` フラグを有効にすると、1 つの接続で同時に実行できるアクティブなクエリは常に 1 つに制限されます (これはサーバー側の制約です) 。
+</Note>
+
+<div id="security">
+  ### セキュリティ
+</div>
+
+| プロパティ                           | 型      | デフォルト   | 接続文字列キー | 説明                                         |
+| ------------------------------- | ------ | ------- | ------- | ------------------------------------------ |
+| SkipServerCertificateValidation | `bool` | `false` | —       | HTTPS 証明書の検証をスキップします。**本番環境では使用しないでください。** |
+
+<div id="http-client-configuration">
+  ### HTTP クライアントの構成
+</div>
+
+| プロパティ             | 型                    | デフォルト  | 接続文字列キー | 説明                                    |
+| ----------------- | -------------------- | ------ | ------- | ------------------------------------- |
+| HttpClient        | `HttpClient`         | `null` | —       | カスタムの事前構成済み HttpClient インスタンス         |
+| HttpClientFactory | `IHttpClientFactory` | `null` | —       | HttpClient インスタンスを作成するためのカスタム ファクトリ   |
+| HttpClientName    | `string`             | `null` | —       | HttpClientFactory で特定のクライアントを作成する際の名前 |
+
+<div id="logging-debugging">
+  ### ログとデバッグ
+</div>
+
+| プロパティ           | 型                | デフォルト   | 接続文字列キー | 説明                                                                                |
+| --------------- | ---------------- | ------- | ------- | --------------------------------------------------------------------------------- |
+| LoggerFactory   | `ILoggerFactory` | `null`  | —       | 診断ログ用のロガーファクトリ                                                                    |
+| EnableDebugMode | `bool`           | `false` | —       | .NET のネットワーク トレースを有効にします (Trace レベルに設定された LoggerFactory が必要) 。**パフォーマンスへの影響が大きい** |
+
+<div id="custom-settings-roles">
+  ### カスタム設定とロール
+</div>
+
+| プロパティ          | 型                             | デフォルト | 接続文字列キー         | 説明                                                |
+| -------------- | ----------------------------- | ----- | --------------- | ------------------------------------------------- |
+| CustomSettings | `IDictionary<string, object>` | 空     | `set_*` プレフィックス | ClickHouse のサーバー設定。以下の注記を参照してください                 |
+| Roles          | `IReadOnlyList<string>`       | 空     | `Roles`         | カンマ区切りの ClickHouse ロール (例: `Roles=admin,reader`)  |
+
+<Note>
+  接続文字列でカスタム設定を指定する場合は、`set_` プレフィックスを使用します。たとえば `"set_max_threads=4"` のように指定します。ClickHouseClientSettings オブジェクトを使用する場合は、`set_` プレフィックスは使用しません。
+
+  使用可能な設定の一覧については、[こちら](/ja/reference/settings/session-settings)を参照してください。
+</Note>
+
+***
+
+<div id="connection-string-examples">
+  ### 接続文字列の例
+</div>
+
+<div id="basic-connection">
+  #### 基本接続
+</div>
+
+```text
+Host=localhost;Port=8123;Username=default;Password=secret;Database=mydb
+```
+
+<div id="with-custom-clickhouse-settings">
+  #### カスタムのClickHouse設定を使用する場合
+</div>
+
+```text
+Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
+```
+
+***
+
+<div id="query-options">
+  ### QueryOptions
+</div>
+
+`QueryOptions` を使用すると、クライアント レベルの設定をクエリごとに上書きできます。すべてのプロパティは省略可能で、指定した場合にのみクライアントのデフォルト値を上書きします。
+
+| プロパティ                 | 型                             | 説明                                                                                               |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| QueryId               | `string`                      | `system.query_log` での追跡やキャンセルに使用するカスタム クエリ識別子                                                    |
+| Database              | `string`                      | このクエリのデフォルト データベースを上書きします                                                                        |
+| Roles                 | `IReadOnlyList<string>`       | このクエリのクライアント ロールを上書きします                                                                          |
+| CustomSettings        | `IDictionary<string, object>` | このクエリに適用する ClickHouse のサーバー設定 (例: `max_threads`)                                                 |
+| CustomHeaders         | `IDictionary<string, string>` | このクエリ用の追加の HTTP ヘッダー                                                                             |
+| UseSession            | `bool?`                       | このクエリのセッションの動作を上書きします                                                                            |
+| SessionId             | `string`                      | このクエリのセッション ID (`UseSession = true` が必要)                                                         |
+| BearerToken           | `string`                      | このクエリの認証トークンを上書きします                                                                              |
+| ParameterTypeResolver | `IParameterTypeResolver`      | `@` 形式のパラメータ型対応に対するクライアント レベルのリゾルバを上書きします。詳細は [カスタム パラメータ型対応](#parameter-type-mapping) を参照してください |
+| MaxExecutionTime      | `TimeSpan?`                   | サーバー側のクエリ タイムアウト (`max_execution_time` 設定として渡されます) 。制限を超えると、サーバーがクエリをキャンセルします                    |
+
+**例:**
+
+```csharp
+var options = new QueryOptions
+{
+    QueryId = "report-2024-001",
+    Database = "analytics",
+    CustomSettings = new Dictionary<string, object>
+    {
+        { "max_threads", 4 },
+        { "max_memory_usage", 10_000_000_000 }
+    },
+    MaxExecutionTime = TimeSpan.FromMinutes(5)
+};
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM large_table",
+    parameters: null,
+    options: options
+);
+```
+
+***
+
+<div id="insert-options">
+  ### InsertOptions
+</div>
+
+`InsertOptions` は、`InsertBinaryAsync` による一括 insert 操作に固有の設定を追加して、`QueryOptions` を拡張したものです。
+
+| プロパティ                  | 型                                     | デフォルト       | 説明                                                          |
+| ---------------------- | ------------------------------------- | ----------- | ----------------------------------------------------------- |
+| BatchSize              | `int`                                 | 100,000     | Batch ごとの行数                                                 |
+| MaxDegreeOfParallelism | `int`                                 | 1           | 並列 Batch アップロード数                                            |
+| Format                 | `RowBinaryFormat`                     | `RowBinary` | バイナリフォーマット: `RowBinary` または `RowBinaryWithDefaults`         |
+| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`      | カラム名 → ClickHouse 型文字列。設定すると、スキーマプローブクエリをスキップします。        |
+| UseSchemaCache         | `bool`                                | `false`     | クライアントのライフタイム中、(database, table) ごとに完全なテーブルスキーマを cache します。 |
+
+`QueryOptions` のすべてのプロパティは、`InsertOptions` でも利用できます。
+
+**例:**
+
+```csharp
+var insertOptions = new InsertOptions
+{
+    BatchSize = 50_000,
+    MaxDegreeOfParallelism = 4,
+    QueryId = "bulk-import-001"
+};
+
+long rowsInserted = await client.InsertBinaryAsync(
+    "my_table",
+    columns,
+    rows,
+    insertOptions
+);
+```
+
+<div id="skip-schema-query">
+  #### スキーマプローブクエリのスキップ
+</div>
+
+デフォルトでは、`InsertBinaryAsync` は各 insert の前に `SELECT ... WHERE 1=0` クエリを送信し、カラムの型を特定します。高スループットが求められる場合は、2 つの方法でこのオーバーヘッドをなくせます。
+
+**オプション 1: カラム型を明示的に指定する**
+
+コンパイル時点でテーブルのスキーマがわかっている場合は、`ColumnTypes` で直接指定します。これにより、スキーマプローブクエリは一切送信されません。
+
+```csharp
+var options = new InsertOptions
+{
+    ColumnTypes = new Dictionary<string, string>
+    {
+        ["id"] = "UInt64",
+        ["name"] = "Nullable(String)",
+        ["score"] = "Float32",
+    },
+};
+
+await client.InsertBinaryAsync("my_table", ["id", "name", "score"], rows, options);
+```
+
+**オプション 2: スキーマをキャッシュする**
+
+同じテーブルに繰り返し insert する場合は、`UseSchemaCache = true` を設定すると、スキーマのクエリは最初の 1 回だけで済み、同じ `ClickHouseClient` インスタンスでの以降の insert に再利用されます:
+
+```csharp
+var options = new InsertOptions { UseSchemaCache = true };
+
+// 最初の呼び出しでサーバーからスキーマを取得する
+await client.InsertBinaryAsync("my_table", columns, batch1, options);
+
+// 2回目の呼び出しではキャッシュ済みスキーマを再利用する — 追加のラウンドトリップなし
+await client.InsertBinaryAsync("my_table", columns, batch2, options);
+```
+
+<Note>
+  * `ColumnTypes` は `UseSchemaCache` より優先されます。両方が設定されている場合は、明示的に指定した型が使用されます。
+  * スキーマ cache では `ALTER TABLE` による変更は検出されません。テーブルのスキーマを変更した場合は、新しい `ClickHouseClient` を作成するか、そのテーブルでは `UseSchemaCache` を使用しないでください。
+  * cache は `ClickHouseClient` インスタンス単位で管理され、キーは (database, table) です。同じテーブル上の異なるカラムのサブセットでは、1 つのキャッシュ済みスキーマが共有されます。
+</Note>
+
+<div id="clickhouse-client">
+  ## ClickHouseClient
+</div>
+
+`ClickHouseClient` は、ClickHouse と連携するための推奨 API です。スレッドセーフで、シングルトンとして利用することを前提に設計されており、HTTP 接続プーリングも内部で管理します。
+
+<div id="creating-a-client">
+  ### クライアントの作成
+</div>
+
+接続文字列または `ClickHouseClientSettings` オブジェクトを使用して、`ClickHouseClient` を作成します。利用可能なオプションについては、[Configuration](#configuration) セクションを参照してください。
+
+ClickHouse Cloud サービスの詳細は、ClickHouse Cloud コンソールで確認できます。
+
+サービスを選択し、**Connect** をクリックします。
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud service connect button" border />
+
+**C#** を選択します。接続情報が下に表示されます。
+
+<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# connection details" border />
+
+セルフマネージドの ClickHouse を使用している場合、接続情報は ClickHouse 管理者が設定します。
+
+接続文字列を使用する場合:
+
+```csharp
+using ClickHouse.Driver;
+
+using var client = new ClickHouseClient("Host=localhost;Username=default;Password=secret");
+```
+
+または、`ClickHouseClientSettings` を使用します。
+
+```csharp
+using ClickHouse.Driver;
+
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    Username = "default",
+    Password = "secret"
+};
+using var client = new ClickHouseClient(settings);
+```
+
+依存関係の注入のシナリオでは、`IHttpClientFactory` を使用します。
+
+```csharp
+// DIの設定内
+services.AddHttpClient("ClickHouse", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+});
+
+// ファクトリを使用してクライアントを作成する
+var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
+```
+
+<Note>
+  `ClickHouseClient` は長期間の利用を前提としており、アプリケーション全体で共有して使うように設計されています。一度だけ作成し (通常はシングルトンとして) 、すべてのデータベース操作で再利用してください。クライアントは内部で HTTP 接続プーリングを管理します。
+</Note>
+
+***
+
+<div id="executing-queries">
+  ### クエリの実行
+</div>
+
+結果を返さないステートメントには `ExecuteNonQueryAsync` を使用します:
+
+```csharp
+// テーブルを作成する
+await client.ExecuteNonQueryAsync(
+    "CREATE TABLE IF NOT EXISTS default.my_table (id Int64, name String) ENGINE = Memory"
+);
+
+// テーブルを削除する
+await client.ExecuteNonQueryAsync("DROP TABLE IF EXISTS default.my_table");
+```
+
+単一の値を取得するには、`ExecuteScalarAsync` を使用します：
+
+```csharp
+var count = await client.ExecuteScalarAsync("SELECT count() FROM default.my_table");
+Console.WriteLine($"行数: {count}");
+
+var version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine($"サーバーバージョン: {version}");
+```
+
+***
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+<div id="parameterized-inserts">
+  #### パラメーター化された挿入
+</div>
+
+`ExecuteNonQueryAsync` を使用して、パラメーター化クエリでデータを挿入します。パラメーターの型は、SQL 内で `{name:Type}` 構文を使って指定する必要があります。
+
+```csharp
+using ClickHouse.Driver;
+using ClickHouse.Driver.ADO.Parameters;
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("id", 1L);
+parameters.AddParameter("name", "Alice");
+
+await client.ExecuteNonQueryAsync(
+    "INSERT INTO default.my_table (id, name) VALUES ({id:Int64}, {name:String})",
+    parameters
+);
+```
+
+***
+
+<div id="bulk-insert">
+  #### 一括挿入
+</div>
+
+大量の行を効率よく挿入するには、`InsertBinaryAsync` を使用します。これは ClickHouse のネイティブな行バイナリ形式でデータをストリーミングし、バッチの並列アップロードをサポートするとともに、パラメーター化クエリで発生することがある「URL が長すぎる」エラーを回避します。
+
+```csharp
+// IEnumerable<object[]> としてデータを準備する
+var rows = Enumerable.Range(0, 1_000_000)
+    .Select(i => new object[] { (long)i, $"value{i}" });
+
+var columns = new[] { "id", "name" };
+
+// 基本的な挿入
+long rowsInserted = await client.InsertBinaryAsync("default.my_table", columns, rows);
+Console.WriteLine($"Rows inserted: {rowsInserted}");
+```
+
+大規模なデータセットでは、`InsertOptions` を使用してバッチ処理と並列度を設定します:
+
+```csharp
+var options = new InsertOptions
+{
+    BatchSize = 100_000,           // バッチあたりの行数（デフォルト: 100,000）
+    MaxDegreeOfParallelism = 4     // 並列バッチアップロード数（デフォルト: 1）
+};
+```
+
+<Note>
+  * クライアントは挿入前に `SELECT * FROM <table> WHERE 1=0` を実行して、テーブル構造を自動的に取得します。指定する値は、対象カラムの型と一致している必要があります。このクエリを省略するには、[`InsertOptions.ColumnTypes` または `InsertOptions.UseSchemaCache`](#skip-schema-query) を使用してください。
+  * `MaxDegreeOfParallelism > 1` の場合、バッチは並列にアップロードされます。セッションは並列挿入に対応していないため、セッションを無効にするか、`MaxDegreeOfParallelism = 1` に設定してください。
+  * 指定していないカラムに対してサーバーが DEFAULT 値を適用するようにするには、`InsertOptions.Format` で `RowBinaryFormat.RowBinaryWithDefaults` を使用してください。
+</Note>
+
+<div id="poco-insert">
+  #### POCO の挿入
+</div>
+
+`object[]` 配列を組み立てる代わりに、厳密に型付けされた POCO オブジェクトを直接 insert できます。型を一度登録したら、あとは `IEnumerable<T>` を渡します:
+
+```csharp
+// テーブルのカラムに対応するPOCOを定義する
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+// 型を登録する（クライアントのライフタイムにつき1回）
+client.RegisterBinaryInsertType<SensorReading>();
+
+// 直接挿入する — カラム名はプロパティ名から導出される
+var readings = Enumerable.Range(0, 100_000)
+    .Select(i => new SensorReading
+    {
+        Id = (ulong)i,
+        SensorName = $"sensor_{i % 10}",
+        Value = Random.Shared.NextDouble() * 100,
+        Timestamp = DateTime.UtcNow,
+    });
+
+long rowsInserted = await client.InsertBinaryAsync("sensors", readings);
+```
+
+既定では、公開されているすべての読み取り可能なプロパティは、厳密な大文字と小文字の区別を伴う名前一致によりカラムにマッピングされます。属性を使用して、このマッピングをカスタマイズできます。
+
+```csharp
+public class Event
+{
+    [ClickHouseColumn(Name = "event_id")]     // 異なる名前のカラムにマッピングする
+    public ulong Id { get; set; }
+
+    [ClickHouseColumn(Type = "LowCardinality(String)")]  // ClickHouseの型を明示的に指定
+    public string Category { get; set; }
+
+    public string Payload { get; set; }
+
+    [ClickHouseNotMapped]                     // insertから除外
+    public string InternalTag { get; set; }
+}
+```
+
+| 属性                                 | 目的                     |
+| ---------------------------------- | ---------------------- |
+| `[ClickHouseColumn(Name = "...")]` | 対象のカラム名を上書きする          |
+| `[ClickHouseColumn(Type = "...")]` | ClickHouse の型を明示的に指定する |
+| `[ClickHouseNotMapped]`            | 挿入対象からそのプロパティを除外する     |
+
+マップされたすべてのプロパティで `Type` が明示的に指定されている場合、スキーマプローブクエリは完全にスキップされます。一部のプロパティにしか明示的な型が指定されていない場合、ドライバーはカラム一式に対するスキーマプローブにフォールバックします。
+
+`InsertBinaryAsync<T>` は、`object[]` オーバーロードと同じ `InsertOptions` (バッチ化、並列度、スキーマキャッシュ) をサポートします。
+
+<Note>
+  `object[]` オーバーロードとは異なり、`InsertBinaryAsync<T>` では明示的なカラムリストを指定できません。カラムは、登録された型のマップ済みプロパティに基づいて決定されます。挿入するカラムを制御するには、`[ClickHouseNotMapped]` を使ってプロパティを除外するか、`[ClickHouseColumn(Name = "...")]` を使って名前を変更します。
+
+  `InsertOptions` で `ColumnTypes` が設定されている場合は、POCO 属性よりそちらが優先されます。
+</Note>
+
+<div id="poco-insert-schema-evolution">
+  #### スキーマ進化
+</div>
+
+型の登録後にターゲットテーブルへカラムが追加されても、POCO による insert はそのまま問題なく動作します。ドライバーが insert するのは POCO にマッピングされたカラムだけなので、`DEFAULT` (またはその他のデフォルト式) を持つ新しいカラムはサーバー側で自動的に補完されます。コードを変更したり、再登録したりする必要はありません。
+
+***
+
+<div id="reading-data">
+  ### データの読み取り
+</div>
+
+SELECT クエリの実行には `ExecuteReaderAsync` を使用します。返される `ClickHouseDataReader` では、`GetInt64()`、`GetString()`、`GetFieldValue<T>()` などのメソッドを使って、結果カラムに型付きでアクセスできます。
+
+次の行に進むには `Read()` を呼び出します。これ以上行がない場合は `false` を返します。カラムには、インデックス (0 始まり) またはカラム名でアクセスできます。
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("max_id", 100L);
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM default.my_table WHERE id < {max_id:Int64}",
+    parameters
+);
+
+while (reader.Read())
+{
+    Console.WriteLine($"Id: {reader.GetInt64(0)}, Name: {reader.GetString(1)}");
+}
+```
+
+***
+
+<div id="sql-parameters">
+  ### SQLパラメータ
+</div>
+
+ClickHouse では、SQLクエリのクエリパラメータの標準的なフォーマットは `{parameter_name:DataType}` です。
+
+**例:**
+
+```sql
+SELECT {value:Array(UInt16)} as a
+```
+
+```sql
+SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}
+```
+
+```sql
+INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
+```
+
+<Note>
+  SQL の&#39;bind&#39; パラメータは HTTP URI のクエリパラメータとして渡されるため、数が多すぎると &quot;URL が長すぎる&quot; 例外が発生することがあります。この制限を回避してデータを一括挿入するには、`InsertBinaryAsync` を使用してください。
+</Note>
+
+***
+
+<div id="query-id">
+  ### クエリ ID
+</div>
+
+すべてのクエリには一意の `query_id` が割り当てられます。これは、`system.query_log` テーブルからデータを取得したり、長時間実行中のクエリをキャンセルしたりする際に使用できます。`QueryOptions` でカスタムのクエリ ID を指定することもできます。
+
+```csharp
+var options = new QueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid()}"
+};
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM large_table",
+    parameters: null,
+    options: options
+);
+```
+
+<Tip>
+  カスタムの `QueryId` を指定する場合は、呼び出しごとに必ず一意になるようにしてください。ランダムな GUID を使うのが適切です。
+</Tip>
+
+***
+
+<div id="parameter-type-mapping">
+  ### カスタム パラメータ型対応
+</div>
+
+`@` 形式のパラメータ (例: `WHERE id = @id`) を使用すると、ドライバーは .NET の値型から ClickHouse の型を自動的に推論します。たとえば、`int` は `Int32` に、`DateTime` は `DateTime` にマッピングされます。
+
+これらの既定の対応を上書きするには、`ClickHouseClientSettings` で `ParameterTypeResolver` を設定します。これは、個々のパラメータごとに `ClickHouseType` を設定しなくても、すべての `DateTime` パラメータでミリ秒精度の `DateTime64(3)` を使いたい場合や、すべての `decimal` で特定の小数点以下桁数を使いたい場合に便利です。
+
+**シンプルな型マッピングに `DictionaryParameterTypeResolver` を使用する:**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterTypeResolver = new DictionaryParameterTypeResolver(new Dictionary<Type, string>
+    {
+        [typeof(DateTime)] = "DateTime64(3)",
+        [typeof(decimal)] = "Decimal64(4)",
+    }),
+};
+using var client = new ClickHouseClient(settings);
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("dt", DateTime.UtcNow);     // DateTime64(3) にマップされる
+parameters.AddParameter("amount", 99.1234m);         // Decimal64(4) にマップされる
+
+await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
+```
+
+**高度な用途向けのカスタム `IParameterTypeResolver`:**
+
+値や名前に基づいて解決する場合は、`IParameterTypeResolver` インターフェイスを直接実装します。既定の推論に委ねるには、`null` を返します。
+
+```csharp
+public class SmartDecimalResolver : IParameterTypeResolver
+{
+    public string ResolveType(Type clrType, object value, string parameterName)
+    {
+        if (clrType != typeof(decimal))
+            return null; // デフォルトの推論にフォールスルー
+
+        var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
+        return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
+    }
+}
+```
+
+単一のクエリに対しては、`QueryOptions.ParameterTypeResolver` を介してリゾルバを設定することもできます。設定した場合、クライアントレベルのリゾルバより優先されます。
+
+**型解決の優先順位:**
+
+リゾルバは優先順位チェーンの一要素です。優先度の高いものから低いものの順に示すと、次のとおりです。
+
+1. パラメータに明示的に設定された `ClickHouseType`
+2. クエリ内の `{name:Type}` 構文による SQL の型ヒント
+3. `IParameterTypeResolver` (`QueryOptions.ParameterTypeResolver` を使用し、未設定の場合は `ClickHouseClientSettings.ParameterTypeResolver` にフォールバック)
+4. 組み込みの型推論 (`TypeConverter.ToClickHouseType`)
+
+このリゾルバは、ADO.NET の `ClickHouseConnection` パスでも機能します。設定は、クライアントから作成された接続に引き継がれます。
+
+***
+
+<div id="raw-streaming">
+  ### 生データのストリーミング
+</div>
+
+データリーダーを介さず、特定のフォーマットでクエリ結果を直接ストリーミングするには、`ExecuteRawResultAsync` を使用します。これは、データをファイルにエクスポートしたり、他のシステムにそのまま渡したりする場合に便利です：
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM default.my_table LIMIT 100 FORMAT JSONEachRow"
+);
+
+await using var stream = await result.ReadAsStreamAsync();
+using var reader = new StreamReader(stream);
+var json = await reader.ReadToEndAsync();
+```
+
+一般的なフォーマット: `JSONEachRow`, `CSV`, `TSV`, `Parquet`, `Native`。利用可能なオプションについては、[フォーマットのドキュメント](/ja/reference/formats/index)を参照してください。
+
+***
+
+<div id="raw-stream-insert">
+  ### Raw ストリームの挿入
+</div>
+
+`InsertRawStreamAsync` を使用すると、CSV、JSON、Parquet など、または [ClickHouse でサポートされている任意のフォーマット](/ja/reference/formats/index)のデータを、ファイルストリームまたはメモリストリームから直接挿入できます。
+
+**CSVファイルから挿入する:**
+
+```csharp
+await using var fileStream = File.OpenRead("data.csv");
+
+using var response = await client.InsertRawStreamAsync(
+    table: "my_table",
+    stream: fileStream,
+    format: "CSV",
+    columns: ["id", "product", "price"] // Optional: specify columns
+);
+```
+
+<Note>
+  データ取り込みの動作を制御するオプションについては、[フォーマット設定のドキュメント](/ja/reference/settings/formats)を参照してください。
+</Note>
+
+***
+
+<div id="more-examples">
+  ### その他の例
+</div>
+
+さらに実践的な使用例については、GitHubリポジトリ内の[examplesディレクトリ](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples)を参照してください。
+
+<div id="ado-net">
+  ## ADO.NET
+</div>
+
+このライブラリは、`ClickHouseConnection`、`ClickHouseCommand`、`ClickHouseDataReader` を通じて、ADO.NET を完全にサポートしています。この API は、ORM インテグレーション (Dapper、Linq2db) や、標準的な .NET のdatabase 抽象化が必要な場合に不可欠です。
+
+<div id="ado-net-datasource">
+  ### ClickHouseDataSource によるライフタイム管理
+</div>
+
+**適切なライフタイム管理と接続プーリングを確実に行うため、接続は必ず `ClickHouseDataSource` から作成してください。** DataSource は内部で単一の `ClickHouseClient` を管理しており、すべての接続はその HTTP 接続プールを共有します。
+
+```csharp
+using ClickHouse.Driver.ADO;
+
+// DataSourceは一度だけ作成する（DIにシングルトンとして登録する）
+var dataSource = new ClickHouseDataSource("Host=localhost;Username=default;Password=secret");
+
+// 必要に応じて軽量な接続を作成する
+await using var connection = await dataSource.OpenConnectionAsync();
+
+// 接続を使用する
+await using var command = connection.CreateCommand("SELECT version()");
+var version = await command.ExecuteScalarAsync();
+```
+
+依存関係の挿入では:
+
+```csharp
+// Startup.cs または Program.cs 内
+services.AddSingleton(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    return new ClickHouseDataSource("Host=localhost", factory, "ClickHouse");
+});
+
+// サービス内
+public class MyService
+{
+    private readonly ClickHouseDataSource _dataSource;
+
+    public MyService(ClickHouseDataSource dataSource)
+    {
+        _dataSource = dataSource;
+    }
+
+    public async Task DoWorkAsync()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        // 接続を使用...
+    }
+}
+```
+
+<Warning>
+  **本番環境のコードで `ClickHouseConnection` を直接作成しないでください**。直接インスタンス化するたびに、新しい HTTP クライアントと接続プールが作成されるため、高負荷時にソケットが枯渇するおそれがあります。
+
+  ```csharp
+  // これは避けてください - 毎回新しい接続プールが作成されます
+  using var conn = new ClickHouseConnection("Host=localhost");
+  await conn.OpenAsync();
+  ```
+
+  代わりに、必ず `ClickHouseDataSource` を使用するか、単一の `ClickHouseClient` インスタンスを共有してください。
+</Warning>
+
+***
+
+<div id="ado-net-command">
+  ### ClickHouseCommand の使用
+</div>
+
+SQL を実行するコマンドを接続から作成します。
+
+```csharp
+await using var connection = await dataSource.OpenConnectionAsync();
+
+// SQLでコマンドを作成する
+await using var command = connection.CreateCommand("SELECT * FROM my_table WHERE id = {id:Int64}");
+command.AddParameter("id", 42L);
+
+// 実行して結果を読み取る
+await using var reader = await command.ExecuteReaderAsync();
+while (reader.Read())
+{
+    Console.WriteLine($"Name: {reader.GetString("name")}");
+}
+```
+
+コマンド メソッド:
+
+* `ExecuteNonQueryAsync()` - INSERT、UPDATE、DELETE、DDL ステートメントに使用します
+* `ExecuteScalarAsync()` - 最初の行の最初のカラムを返します
+* `ExecuteReaderAsync()` - 結果を反復処理するための `ClickHouseDataReader` を返します
+
+***
+
+<div id="ado-net-reader">
+  ### ClickHouseDataReader の使用
+</div>
+
+`ClickHouseDataReader` を使用すると、クエリ結果に型付きでアクセスできます。
+
+```csharp
+await using var reader = await command.ExecuteReaderAsync();
+
+while (reader.Read())
+{
+    // カラムインデックスによるアクセス
+    var id = reader.GetInt64(0);
+    var name = reader.GetString(1);
+
+    // カラム名によるアクセス
+    var email = reader.GetString("email");
+
+    // 汎用アクセス
+    var timestamp = reader.GetFieldValue<DateTime>("created_at");
+
+    // nullチェック
+    if (!reader.IsDBNull("optional_field"))
+    {
+        var value = reader.GetString("optional_field");
+    }
+}
+```
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="best-practices-connection-lifetime">
+  ### 接続の有効期間とプーリング
+</div>
+
+`ClickHouse.Driver` は内部で `System.Net.Http.HttpClient` を使用しています。`HttpClient` にはエンドポイントごとの接続プールがあります。そのため、次の点に注意してください。
+
+* データベースセッションは、接続プールで管理される HTTP 接続を介して多重化されます。
+* HTTP 接続はプールによって自動的に再利用されます。
+* `ClickHouseClient` または `ClickHouseConnection` オブジェクトを破棄した後でも、接続が維持される場合があります。
+
+**推奨パターン:**
+
+| シナリオ           | 推奨される方法                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------- |
+| 一般的な用途         | シングルトンの `ClickHouseClient` を使用する                                                        |
+| ADO.NET / ORMs | `ClickHouseDataSource` を使用する (同じプールを共有する接続が作成されます)                                      |
+| DI 環境          | `IHttpClientFactory` を使用して、`ClickHouseClient` または `ClickHouseDataSource` をシングルトンとして登録する |
+
+<Warning>
+  カスタムの `HttpClient` または `HttpClientFactory` を使用する場合は、半閉状態の接続によるエラーを避けるため、`PooledConnectionIdleTimeout` をサーバーの `keep_alive_timeout` より小さい値に設定してください。Cloud デプロイメントの既定の `keep_alive_timeout` は 10 秒です。
+</Warning>
+
+<Warning>
+  共有の `HttpClient` を使わずに、複数の `ClickHouseClient` や単独の `ClickHouseConnection` インスタンスを作成するのは避けてください。各インスタンスはそれぞれ独自の接続プールを作成します。
+</Warning>
+
+***
+
+<div id="best-practice-datetime">
+  ### DateTime の扱い
+</div>
+
+1. **可能な限り UTC を使用します。** タイムスタンプは `DateTime('UTC')` カラムとして保存し、コードでは `DateTimeKind.Utc` を使用します。これにより、タイムゾーンの曖昧さを排除できます。
+
+2. **タイムゾーンを明示的に扱うには `DateTimeOffset` を使用します。** `DateTimeOffset` は常に特定の時点を表し、オフセット情報を含みます。
+
+3. **SQL の型ヒントでタイムゾーンを指定します。** `Unspecified` の DateTime 値を持つパラメーターを使用して非 UTC カラムを対象とする場合は、SQL にタイムゾーンを含めます。
+   ```csharp
+   var parameters = new ClickHouseParameterCollection();
+   parameters.AddParameter("dt", myDateTime);
+
+   await client.ExecuteNonQueryAsync(
+       "INSERT INTO table (dt) VALUES ({dt:DateTime('Europe/Amsterdam')})",
+       parameters
+   );
+   ```
+
+***
+
+<div id="async-inserts">
+  ### 非同期 INSERT
+</div>
+
+[非同期 INSERT](/ja/concepts/features/operations/insert/asyncinserts) では、バッチ化の責任がクライアントからサーバーに移ります。クライアント側でバッチ化する代わりに、サーバーが受信データをバッファに保持し、設定可能なしきい値に基づいてストレージに書き出します。これは、多数のエージェントが小さなペイロードを送信するオブザーバビリティのワークロードのような、高い同時実行性が求められるシナリオで有効です。
+
+`CustomSettings` または接続文字列で非同期 INSERT を有効にします:
+
+```csharp
+// CustomSettingsを使用する場合
+var settings = new ClickHouseClientSettings("Host=localhost");
+settings.CustomSettings["async_insert"] = 1;
+settings.CustomSettings["wait_for_async_insert"] = 1; // 推奨: フラッシュの完了確認を待機する
+
+// または接続文字列を使用する場合
+// "Host=localhost;set_async_insert=1;set_wait_for_async_insert=1"
+```
+
+**2 つのモード** (`wait_for_async_insert` で制御) :
+
+| Mode                      | Behavior                                               | Use case           |
+| ------------------------- | ------------------------------------------------------ | ------------------ |
+| `wait_for_async_insert=1` | データがディスクにフラッシュされた後に insert が完了します。エラーはクライアントに返されます。    | ほとんどのワークロードで**推奨** |
+| `wait_for_async_insert=0` | データがバッファに格納された時点で、insert は即座に完了します。データが永続化される保証はありません。 | データ損失を許容できる場合のみ    |
+
+<Warning>
+  `wait_for_async_insert=0` では、エラーはフラッシュ時にのみ表面化するため、元の insert までさかのぼって特定できません。また、クライアント側でバックプレッシャーもかからないため、サーバーの過負荷を招くおそれがあります。
+</Warning>
+
+**主な設定:**
+
+| Setting                         | Description                 |
+| ------------------------------- | --------------------------- |
+| `async_insert_max_data_size`    | バッファがこのサイズ (バイト) に達したらフラッシュ |
+| `async_insert_busy_timeout_ms`  | このタイムアウト (ミリ秒) が経過したらフラッシュ  |
+| `async_insert_max_query_number` | この数のクエリが蓄積したらフラッシュ          |
+
+***
+
+<div id="best-practices-sessions">
+  ### セッション
+</div>
+
+セッションは、状態を保持するサーバー側の機能が必要な場合にのみ有効にしてください。例:
+
+* 一時テーブル (`CREATE TEMPORARY TABLE`)
+* 複数のステートメントにまたがってクエリコンテキストを維持する
+* セッションレベルの設定 (`SET max_threads = 4`)
+
+セッションを有効にすると、同じセッションの同時使用を防ぐため、リクエストは直列化されます。そのため、セッション状態を必要としないワークロードではオーバーヘッドが発生します。
+
+```csharp
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    UseSession = true,
+    SessionId = "my-session", // 省略可能 -- 指定しない場合は自動生成されます
+};
+
+using var client = new ClickHouseClient(settings);
+
+await client.ExecuteNonQueryAsync("CREATE TEMPORARY TABLE temp_ids (id UInt64)");
+await client.ExecuteNonQueryAsync("INSERT INTO temp_ids VALUES (1), (2), (3)");
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM users WHERE id IN (SELECT id FROM temp_ids)"
+);
+```
+
+**ADO.NET を使用する場合 (ORM との互換性のため) :**
+
+```csharp
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    UseSession = true,
+    SessionId = "my-session",
+};
+
+var dataSource = new ClickHouseDataSource(settings);
+await using var connection = await dataSource.OpenConnectionAsync();
+
+await using var cmd1 = connection.CreateCommand("CREATE TEMPORARY TABLE temp_ids (id UInt64)");
+await cmd1.ExecuteNonQueryAsync();
+
+await using var cmd2 = connection.CreateCommand("INSERT INTO temp_ids VALUES (1), (2), (3)");
+await cmd2.ExecuteNonQueryAsync();
+
+await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN (SELECT id FROM temp_ids)");
+await using var reader = await cmd3.ExecuteReaderAsync();
+```
+
+<div id="supported-data-types">
+  ## サポートされているデータ型
+</div>
+
+`ClickHouse.Driver` は、ClickHouse のすべてのデータ型をサポートしています。以下の表は、データベースからデータを読み取る際の ClickHouse の型とネイティブの .NET 型の対応関係を示しています。
+
+<div id="clickhouse-native-type-map-reading">
+  ### 型マッピング: ClickHouseから読み取る場合
+</div>
+
+<div id="type-map-reading-integer">
+  #### 整数型
+</div>
+
+| ClickHouse型 | .NET型        |
+| ----------- | ------------ |
+| Int8        | `sbyte`      |
+| UInt8       | `byte`       |
+| Int16       | `short`      |
+| UInt16      | `ushort`     |
+| Int32       | `int`        |
+| UInt32      | `uint`       |
+| Int64       | `long`       |
+| UInt64      | `ulong`      |
+| Int128      | `BigInteger` |
+| UInt128     | `BigInteger` |
+| Int256      | `BigInteger` |
+| UInt256     | `BigInteger` |
+
+***
+
+<div id="type-map-reading-floating-points">
+  #### 浮動小数点型
+</div>
+
+| ClickHouse型 | .NET型    |
+| ----------- | -------- |
+| Float32     | `float`  |
+| Float64     | `double` |
+| BFloat16    | `float`  |
+
+***
+
+<div id="type-map-reading-decimal">
+  #### Decimal 型
+</div>
+
+| ClickHouse 型  | .NET 型                          |
+| ------------- | ------------------------------- |
+| Decimal(P, S) | `decimal` / `ClickHouseDecimal` |
+| Decimal32(S)  | `decimal` / `ClickHouseDecimal` |
+| Decimal64(S)  | `decimal` / `ClickHouseDecimal` |
+| Decimal128(S) | `decimal` / `ClickHouseDecimal` |
+| Decimal256(S) | `decimal` / `ClickHouseDecimal` |
+
+<Note>
+  Decimal 型の変換は UseCustomDecimals 設定で制御されます。
+</Note>
+
+***
+
+<div id="type-map-reading-boolean">
+  #### Boolean 型
+</div>
+
+| ClickHouse 型 | .NET 型 |
+| ------------ | ------ |
+| Bool         | `bool` |
+
+***
+
+<div id="type-map-reading-strings">
+  #### String 型
+</div>
+
+| ClickHouse 型   | .NET 型   |
+| -------------- | -------- |
+| String         | `string` |
+| FixedString(N) | `string` |
+
+<Note>
+  デフォルトでは、`String` と `FixedString(N)` の両方のカラムは `string` として返されます。代わりに `byte[]` として読み取るには、接続文字列で `ReadStringsAsByteArrays=true` を設定します。これは、有効な UTF-8 でない可能性があるバイナリデータを保存する場合に便利です。
+</Note>
+
+***
+
+<div id="type-map-reading-datetime">
+  #### 日付と時刻の型
+</div>
+
+| ClickHouse 型 | .NET 型     |
+| ------------ | ---------- |
+| Date         | `DateTime` |
+| Date32       | `DateTime` |
+| DateTime     | `DateTime` |
+| DateTime32   | `DateTime` |
+| DateTime64   | `DateTime` |
+| Time         | `TimeSpan` |
+| Time64       | `TimeSpan` |
+
+ClickHouse では、`DateTime` と `DateTime64` の値は内部的に Unix timestamp (epoch からの秒、またはその下位単位) として保存されます。保存は常に UTC ですが、カラムにはタイムゾーンを関連付けることができ、これによって値の表示方法や解釈方法が変わります。
+
+`DateTime` の値を読み取る際、`DateTime.Kind` プロパティはカラムのタイムゾーンに基づいて設定されます。
+
+| カラム定義                          | 返される `DateTime.Kind` | 補足            |
+| ------------------------------ | -------------------- | ------------- |
+| `DateTime('UTC')`              | `Utc`                | UTC タイムゾーンを明示 |
+| `DateTime('Europe/Amsterdam')` | `Unspecified`        | オフセットが適用される   |
+| `DateTime`                     | `Unspecified`        | ローカル時刻をそのまま保持 |
+
+UTC 以外のカラムでは、返される `DateTime` はそのタイムゾーンでのローカル時刻を表します。そのタイムゾーンに対する正しいオフセットを持つ `DateTimeOffset` を取得するには、`ClickHouseDataReader.GetDateTimeOffset()` を使用してください。
+
+```csharp
+var reader = (ClickHouseDataReader)await connection.ExecuteReaderAsync(
+    "SELECT toDateTime('2024-06-15 14:30:00', 'Europe/Amsterdam')");
+reader.Read();
+
+var dt = reader.GetDateTime(0);    // 2024-06-15 14:30:00, Kind=Unspecified（未指定）
+var dto = reader.GetDateTimeOffset(0); // 2024-06-15 14:30:00 +02:00 (CEST)
+```
+
+明示的なタイムゾーンを **持たない** カラム (つまり `DateTime('Europe/Amsterdam')` ではなく `DateTime`) については、ドライバーは `Kind=Unspecified` の `DateTime` を返します。これにより、タイムゾーンについて何も仮定せず、保存されている時刻の値をそのまま正確に保持できます。
+
+明示的なタイムゾーンを持たないカラムでタイムゾーンを考慮した動作が必要な場合は、次のいずれかを行ってください。
+
+1. カラム定義で明示的なタイムゾーンを使用する: `DateTime('UTC')` または `DateTime('Europe/Amsterdam')`
+2. 読み取り後に自分でタイムゾーンを適用する。
+
+***
+
+<div id="type-map-reading-json">
+  #### JSON 型
+</div>
+
+| ClickHouse Type | .NET Type    | Notes                         |
+| --------------- | ------------ | ----------------------------- |
+| Json            | `JsonObject` | デフォルト (`JsonReadMode=Binary`) |
+| Json            | `string`     | `JsonReadMode=String` の場合     |
+
+JSON カラムの戻り値の型は、`JsonReadMode` 設定で制御されます。
+
+* **`Binary` (デフォルト)**: `System.Text.Json.Nodes.JsonObject` を返します。JSON データを構造化された形で扱えますが、特殊な ClickHouse 型 (IP アドレス、UUID、高精度の Decimal 値など) は、JSON 構造内では文字列表現に変換されます。
+
+* **`String`**: 生の JSON を `string` として返します。ClickHouse の JSON 表現をそのまま保持できるため、JSON をパースせずにそのまま受け渡したい場合や、デシリアライゼーションを自分で処理したい場合に便利です。
+
+```csharp
+// 設定でStringモードを構成する
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    JsonReadMode = JsonReadMode.String
+};
+
+// または接続文字列で指定する
+// "Host=localhost;JsonReadMode=String"
+```
+
+***
+
+<div id="type-map-reading-other">
+  #### その他の型
+</div>
+
+| ClickHouse 型            | .NET 型                              |
+| ----------------------- | ----------------------------------- |
+| UUID                    | `Guid`                              |
+| IPv4                    | `IPAddress`                         |
+| IPv6                    | `IPAddress`                         |
+| Nothing                 | `DBNull`                            |
+| Dynamic                 | 注を参照                                |
+| Array(T)                | `T[]`                               |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
+| Map(K, V)               | `Dictionary<K, V>`                  |
+| Nullable(T)             | `T?`                                |
+| Enum8                   | `string`                            |
+| Enum16                  | `string`                            |
+| LowCardinality(T)       | T と同じ                               |
+| SimpleAggregateFunction | 基底となる型と同じ                           |
+| Nested(...)             | `Tuple[]`                           |
+| Variant(T1, T2, ...)    | 注を参照                                |
+| QBit(T, dimension)      | `T[]`                               |
+
+<Note>
+  Dynamic 型と Variant 型は、各行で実際に使用されている基底型に対応する型に変換されます。
+</Note>
+
+***
+
+<div id="type-map-reading-geometry">
+  #### ジオメトリ型
+</div>
+
+| ClickHouse 型    | .NET 型                    |
+| --------------- | ------------------------- |
+| Point           | `Tuple<double, double>`   |
+| Ring            | `Tuple<double, double>[]` |
+| LineString      | `Tuple<double, double>[]` |
+| Polygon         | `Ring[]`                  |
+| MultiLineString | `LineString[]`            |
+| MultiPolygon    | `Polygon[]`               |
+| Geometry        | 注を参照                      |
+
+<Note>
+  Geometry 型は、任意のジオメトリ型を保持できる Variant 型で、対応する型に変換されます。
+</Note>
+
+***
+
+<div id="clickhouse-native-type-map-writing">
+  ### 型マッピング: ClickHouse への書き込み
+</div>
+
+データの挿入時に、ドライバーは .NET 型を対応する ClickHouse 型に変換します。以下の表は、各 ClickHouse カラム型で受け入れ可能な .NET 型を示しています。
+
+<div id="type-map-reading-integer">
+  #### 整数型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                                                                                          | 注記 |
+| ------------ | ------------------------------------------------------------------------------------------------------- | -- |
+| Int8         | `sbyte`、および `Convert.ToSByte()` と互換性のある任意の型                                                             |    |
+| UInt8        | `byte`、および `Convert.ToByte()` と互換性のある任意の型                                                               |    |
+| Int16        | `short`、および `Convert.ToInt16()` と互換性のある任意の型                                                             |    |
+| UInt16       | `ushort`、および `Convert.ToUInt16()` と互換性のある任意の型                                                           |    |
+| Int32        | `int`、および `Convert.ToInt32()` と互換性のある任意の型                                                               |    |
+| UInt32       | `uint`、および `Convert.ToUInt32()` と互換性のある任意の型                                                             |    |
+| Int64        | `long`、および `Convert.ToInt64()` と互換性のある任意の型                                                              |    |
+| UInt64       | `ulong`、および `Convert.ToUInt64()` と互換性のある任意の型                                                            |    |
+| Int128       | `BigInteger`、`decimal`、`double`、`float`、`int`、`uint`、`long`、`ulong`、および `Convert.ToInt64()` と互換性のある任意の型 |    |
+| UInt128      | `BigInteger`、`decimal`、`double`、`float`、`int`、`uint`、`long`、`ulong`、および `Convert.ToInt64()` と互換性のある任意の型 |    |
+| Int256       | `BigInteger`、`decimal`、`double`、`float`、`int`、`uint`、`long`、`ulong`、および `Convert.ToInt64()` と互換性のある任意の型 |    |
+| UInt256      | `BigInteger`、`decimal`、`double`、`float`、`int`、`uint`、`long`、`ulong`、および `Convert.ToInt64()` と互換性のある任意の型 |    |
+
+***
+
+<div id="type-map-reading-floating-points">
+  #### 浮動小数点型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                                | 備考                         |
+| --------------- | --------------------------------------------- | -------------------------- |
+| Float32         | `float`、および `Convert.ToSingle()` と互換性のある任意の型  |                            |
+| Float64         | `double`、および `Convert.ToDouble()` と互換性のある任意の型 |                            |
+| BFloat16        | `float`、および `Convert.ToSingle()` と互換性のある任意の型  | 16 ビットの bfloat 形式に切り詰められます |
+
+***
+
+<div id="type-map-writing-boolean">
+  #### ブール型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型 | 備考 |
+| ------------ | -------------- | -- |
+| Bool         | `bool`         |    |
+
+***
+
+<div id="type-map-writing-strings">
+  #### 文字列型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                                       | 注記                                                             |
+| --------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
+| String          | `string`, `byte[]`, `ReadOnlyMemory<byte>`, `Stream` | バイナリ型はそのまま書き込まれます。ストリームはシーク可能なものと不可能なものがあります                   |
+| FixedString(N)  | `string`, `byte[]`, `ReadOnlyMemory<byte>`, `Stream` | String は UTF-8 でエンコードされたうえでパディングされます。バイナリ型は厳密に N バイトである必要があります |
+
+***
+
+<div id="type-map-reading-datetime">
+  #### 日付と時刻の型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                                                    | 注記                                                                        |
+| --------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Date            | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `UInt16` に変換されます                                               |
+| Date32          | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | Unix 日数として `Int32` に変換されます                                                |
+| DateTime        | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 詳細は以下を参照                                                                  |
+| DateTime32      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | `DateTime` と同じ                                                            |
+| DateTime64      | `DateTime`, `DateTimeOffset`, `DateOnly`, NodaTime 型              | 精度はスケールパラメータに基づきます                                                        |
+| Time            | `TimeSpan`, `int`                                                 | ±999:59:59 に丸められます。`int` は秒として扱われます                                       |
+| Time64          | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | `string` は `[-]HHH:MM:SS[.fraction]` として解析され、±999:59:59.999999999 に丸められます |
+
+ドライバーは値の書き込み時に `DateTime.Kind` を考慮します。
+
+| DateTime.Kind | HTTP パラメータ                                  | バルクコピー                       |
+| ------------- | ------------------------------------------- | ---------------------------- |
+| Utc           | 時点は保持されます                                   | 時点は保持されます                    |
+| Local         | 時点は保持されます                                   | 時点は保持されます                    |
+| Unspecified   | パラメータ型の timezone の壁時計時刻として扱われます (既定では UTC)  | カラムの timezone の壁時計時刻として扱われます |
+
+`DateTimeOffset` の値では、常に正確な時点が保持されます。
+
+**例: UTC DateTime (時点は保持される)&#x20;**
+
+```csharp
+var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+// 12:00 UTC として保存
+// DateTime('Europe/Amsterdam') カラムから読み取り: 13:00 (UTC+1)
+// DateTime('UTC') カラムから読み取り: 12:00 UTC
+```
+
+**例: 未指定の DateTime (時計上の時刻)&#x20;**
+
+```csharp
+var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
+// DateTime('Europe/Amsterdam') カラムへの書き込み: アムステルダム時刻の 14:30 として保存
+// DateTime('Europe/Amsterdam') カラムからの読み取り: 14:30
+```
+
+**推奨事項:** 最もシンプルで予測しやすい動作にするため、すべての DateTime 操作で `DateTimeKind.Utc` または `DateTimeOffset` を使用してください。これにより、サーバーのタイムゾーン、クライアントのタイムゾーン、またはカラムのタイムゾーンに関係なく、コードが常に一貫して動作します。
+
+<div id="datetime-http-param-vs-bulkcopy">
+  #### HTTP パラメータと Bulk Copy の違い
+</div>
+
+`Unspecified` の DateTime 値を書き込む際、HTTP パラメータのバインドと Bulk Copy には重要な違いがあります。
+
+**Bulk Copy** は対象カラムのタイムゾーンを認識しており、そのタイムゾーンで `Unspecified` の値を正しく解釈します。
+
+**HTTP Parameters** はカラムのタイムゾーンを自動的には認識しません。SQL の型ヒントでそのタイムゾーンを指定する必要があります。
+
+```csharp
+// 正しい例: SQLの型ヒントにタイムゾーンを指定 - 型は自動的に抽出される
+command.CommandText = "INSERT INTO table (dt_amsterdam) VALUES ({dt:DateTime('Europe/Amsterdam')})";
+command.AddParameter("dt", myDateTime);
+
+// 誤った例: タイムゾーンヒントなしの場合、UTCとして解釈される
+command.CommandText = "INSERT INTO table (dt_amsterdam) VALUES ({dt:DateTime})";
+command.AddParameter("dt", myDateTime);
+// 文字列値 "2024-01-15 14:30:00" はアムステルダム時間ではなくUTCとして解釈される！
+```
+
+| `DateTime.Kind` | 対象カラム            | HTTP パラメータ (tz ヒントあり)  | HTTP パラメータ (tz ヒントなし)  | Bulk Copy        |
+| --------------- | ---------------- | ---------------------- | ---------------------- | ---------------- |
+| `Utc`           | UTC              | 時点が保持される               | 時点が保持される               | 時点が保持される         |
+| `Utc`           | Europe/Amsterdam | 時点が保持される               | 時点が保持される               | 時点が保持される         |
+| `Local`         | 任意               | 時点が保持される               | 時点が保持される               | 時点が保持される         |
+| `Unspecified`   | UTC              | UTC として扱われる            | UTC として扱われる            | UTC として扱われる      |
+| `Unspecified`   | Europe/Amsterdam | アムステルダム時間として扱われる       | **UTC として扱われる**        | アムステルダム時間として扱われる |
+
+***
+
+<div id="type-map-reading-decimal">
+  #### Decimal 型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                                                      | 注記                                  |
+| --------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| Decimal(P,S)    | `decimal`、`ClickHouseDecimal`、および `Convert.ToDecimal()` と互換性のある任意の型 | 精度を超えると `OverflowException` をスローします |
+| Decimal32       | `decimal`、`ClickHouseDecimal`、および `Convert.ToDecimal()` と互換性のある任意の型 | 最大精度 9                              |
+| Decimal64       | `decimal`、`ClickHouseDecimal`、および `Convert.ToDecimal()` と互換性のある任意の型 | 最大精度 18                             |
+| Decimal128      | `decimal`、`ClickHouseDecimal`、および `Convert.ToDecimal()` と互換性のある任意の型 | 最大精度 38                             |
+| Decimal256      | `decimal`、`ClickHouseDecimal`、および `Convert.ToDecimal()` と互換性のある任意の型 | 最大精度 76                             |
+
+***
+
+<div id="type-map-reading-json">
+  #### JSON 型
+</div>
+
+| ClickHouse 型 | 受け入れ可能な .NET 型                             | 注記                           |
+| ------------ | ------------------------------------------ | ---------------------------- |
+| Json         | `string`、`JsonObject`、`JsonNode`、任意のオブジェクト | 動作は `JsonWriteMode` 設定に依存します |
+
+JSON の書き込み時の動作は、`JsonWriteMode` 設定で制御されます。
+
+| 入力型                  | `JsonWriteMode.String` (デフォルト)           | `JsonWriteMode.Binary`                         |
+| -------------------- | ---------------------------------------- | ---------------------------------------------- |
+| `string`             | そのまま渡されます                                | `ArgumentException` をスローします                    |
+| `JsonObject`         | `ToJsonString()` でシリアライズされます             | `ArgumentException` をスローします                    |
+| `JsonNode`           | `ToJsonString()` でシリアライズされます             | `ArgumentException` をスローします                    |
+| 登録済み POCO            | `JsonSerializer.Serialize()` でシリアライズされます | 型ヒント付きのバイナリエンコーディング。カスタムパス属性もサポート              |
+| 未登録の POCO / 匿名オブジェクト | `JsonSerializer.Serialize()` でシリアライズされます | `ClickHouseJsonSerializationException` をスローします |
+
+* **`String` (デフォルト)**: `string`、`JsonObject`、`JsonNode`、または任意のオブジェクトを受け付けます。すべての入力は `System.Text.Json.JsonSerializer` でシリアライズされ、サーバー側でパースするために JSON 文字列として送信されます。これは最も柔軟なモードで、型登録なしで動作します。
+
+* **`Binary`**: 登録済みの POCO 型のみを受け付けます。データはクライアント側で、完全な型ヒントのサポート付きで ClickHouse のバイナリ JSON フォーマットに変換されます。使用する前に `connection.RegisterJsonSerializationType<T>()` を呼び出す必要があります。このモードで `string` または `JsonNode` の値を書き込むと、`ArgumentException` がスローされます。
+
+```csharp
+// デフォルトのStringモードはあらゆる入力で動作
+await client.InsertBinaryAsync(
+    "my_table",
+    new[] { "id", "data" },
+    new[] { new object[] { 1u, new { name = "test", value = 42 } } }
+);
+
+// Binaryモードは明示的なオプトインと型の登録が必要
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    JsonWriteMode = JsonWriteMode.Binary
+};
+using var client = new ClickHouseClient(settings);
+client.RegisterJsonSerializationType<MyPocoType>();
+```
+
+<div id="json-typed-columns">
+  ##### 型付き JSON カラム
+</div>
+
+JSON カラムに型ヒント (例: `JSON(id UInt64, price Decimal128(2))`) がある場合、ドライバーはそれらのヒントを使って、値を型情報を完全に保ったままシリアライズします。これにより、`UInt64`、`Decimal`、`UUID`、`DateTime64` など、汎用的な JSON としてシリアライズすると精度が失われる可能性のある型でも、精度を保持できます。
+
+<div id="json-poco-serialization">
+  ##### POCO のシリアライゼーション
+</div>
+
+POCO は、`JsonWriteMode` に応じて 2 つの方法で JSON カラムに書き込めます。
+
+**String mode (default)**: POCO は `System.Text.Json.JsonSerializer` によってシリアライズされます。型の登録は不要です。最もシンプルな方法で、匿名オブジェクトでも使用できます。
+
+**Binary mode**: POCO は、型ヒントを完全にサポートするドライバーのバイナリ JSON フォーマットを使用してシリアライズされます。使用前に `connection.RegisterJsonSerializationType<T>()` で型を登録する必要があります。このモードでは、属性を使ったカスタムパスマッピングをサポートします。
+
+* **`[ClickHouseJsonPath("path")]`**: プロパティをカスタム JSON パスにマッピングします。ネストされた structure や、プロパティ名が目的の JSON キーと異なる場合に便利です。**Binary mode でのみ機能します。**
+
+* **`[ClickHouseJsonIgnore]`**: プロパティをシリアライゼーションの対象から除外します。**Binary mode でのみ機能します。**
+
+```sql
+CREATE TABLE events (
+    id UInt32,
+    data JSON(`user.id` Int64, `user.name` String, Timestamp DateTime64(3))
+) ENGINE = MergeTree() ORDER BY id
+```
+
+```csharp
+using ClickHouse.Driver.Json;
+
+public class UserEvent
+{
+    [ClickHouseJsonPath("user.id")]
+    public long UserId { get; set; }
+
+    [ClickHouseJsonPath("user.name")]
+    public string UserName { get; set; }
+
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseJsonIgnore]
+    public string InternalData { get; set; }  // シリアライズされない
+}
+
+// バイナリモードの場合: 型を登録してバイナリモードを有効にする
+var settings = new ClickHouseClientSettings("Host=localhost") { JsonWriteMode = JsonWriteMode.Binary };
+using var client = new ClickHouseClient(settings);
+client.RegisterJsonSerializationType<UserEvent>();
+
+// POCOを挿入 - カスタムパス属性によりネスト構造を持つJSONにシリアライズされる
+await client.InsertBinaryAsync(
+    "events",
+    new[] { "id", "data" },
+    new[] { new object[] { 1u, new UserEvent { UserId = 123, UserName = "Alice", Timestamp = DateTime.UtcNow } } }
+);
+// 生成されるJSON: {"user": {"id": 123, "name": "Alice"}, "Timestamp": "2024-01-15T..."}
+```
+
+プロパティ名とカラムの型ヒントの照合では、大文字と小文字が区別されます。プロパティ `UserId` は、`userid` ではなく、`UserId` と定義されたヒントにのみ一致します。これは、`userName` と `UserName` のようなパスを別個のフィールドとして共存させられる ClickHouse の動作と一致しています。
+
+**制限事項 (Binary mode のみ) :**
+
+* POCO 型は、シリアライズする前に `connection.RegisterJsonSerializationType<T>()` を使用してコネクションに登録しておく必要があります。未登録の型をシリアライズしようとすると、`ClickHouseJsonSerializationException` がスローされます。
+* Dictionary および配列/リストのプロパティを正しくシリアライズするには、カラム定義に型ヒントが必要です。ヒントがない場合は、代わりに String mode を使用してください。
+* POCO プロパティの null 値は、カラム定義内のパスに `Nullable(T)` 型ヒントがある場合にのみ書き込まれます。ClickHouse では動的 JSON パス内で `Nullable` 型は使用できないため、ヒントのない null プロパティはスキップされます。
+* `ClickHouseJsonPath` 属性と `ClickHouseJsonIgnore` 属性は String mode では無視されます (有効なのは Binary mode のみです) 。
+
+***
+
+<div id="type-map-reading-other">
+  #### その他の型
+</div>
+
+| ClickHouse 型         | 受け入れ可能な .NET 型                    | 注記                                                      |
+| ----------------------- | --------------------------------- | ------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                  | `string` は Guid としてパースされます                              |
+| IPv4                    | `IPAddress`, `string`             | IPv4 である必要があります。`string` は `IPAddress.Parse()` でパースされます |
+| IPv6                    | `IPAddress`, `string`             | IPv6 である必要があります。`string` は `IPAddress.Parse()` でパースされます |
+| Nothing                 | Any                               | 何も書き込みません (no-op)                                       |
+| Dynamic                 | —                                 | **未サポート** (`NotImplementedException` をスローします)           |
+| Array(T)                | `IList`, `null`                   | `null` は空配列として書き込まれます                                   |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                 | 要素数はタプルの要素数と一致する必要があります                                 |
+| Map(K, V)               | `IDictionary`                     |                                                         |
+| Nullable(T)             | `null`, `DBNull`, または T で受け入れ可能な型 | 値の前に null フラグのバイトを書き込みます                                |
+| Enum8                   | `string`, `sbyte`, 数値型            | `string` は enum 辞書で参照されます                               |
+| Enum16                  | `string`, `short`, 数値型            | `string` は enum 辞書で参照されます                               |
+| LowCardinality(T)       | T で受け入れ可能な型                       | 基になる型に委譲します                                             |
+| SimpleAggregateFunction | 基になる型で受け入れ可能な型                    | 基になる型に委譲します                                             |
+| Nested(...)             | タプルの `IList`                      | 要素数はフィールド数と一致する必要があります                                  |
+| Variant(T1, T2, ...)    | T1, T2, ... のいずれかに一致する値           | 一致する型がない場合は `ArgumentException` をスローします                 |
+| QBit(T, dim)            | `IList`                           | Array に委譲します。次元はメタデータとしてのみ使用されます                        |
+
+***
+
+<div id="type-map-reading-geometry">
+  #### ジオメトリ型
+</div>
+
+| ClickHouse 型    | 受け入れ可能な .NET 型                                    | 注記                    |
+| --------------- | ------------------------------------------------- | --------------------- |
+| Point           | `System.Drawing.Point`, `ITuple`, `IList` (2 要素)  |                       |
+| Ring            | Point の `IList`                                   |                       |
+| LineString      | Point の `IList`                                   |                       |
+| Polygon         | Ring の `IList`                                    |                       |
+| MultiLineString | LineString の `IList`                              |                       |
+| MultiPolygon    | Polygon の `IList`                                 |                       |
+| Geometry        | 上記のいずれかのジオメトリ型                                    | すべてのジオメトリ型を含む Variant |
+
+***
+
+<div id="type-map-writing-not-supported">
+  #### 書き込みではサポートされていません
+</div>
+
+| ClickHouse 型      | 備考                                    |
+| ----------------- | ------------------------------------- |
+| Dynamic           | `NotImplementedException` がスローされます    |
+| AggregateFunction | `AggregateFunctionException` がスローされます |
+
+***
+
+<div id="nested-type-handling">
+  ### ネスト型の扱い
+</div>
+
+ClickHouse のネスト型 (`Nested(...)`) は、配列として読み書きできます。
+
+```sql
+CREATE TABLE test.nested (
+    id UInt32,
+    params Nested (param_id UInt8, param_val String)
+) ENGINE = Memory
+```
+
+```csharp
+var row1 = new object[] { 1, new[] { 1, 2, 3 }, new[] { "v1", "v2", "v3" } };
+var row2 = new object[] { 2, new[] { 4, 5, 6 }, new[] { "v4", "v5", "v6" } };
+
+await client.InsertBinaryAsync(
+    "test.nested",
+    new[] { "id", "params.param_id", "params.param_val" },
+    new[] { row1, row2 }
+);
+```
+
+<div id="logging-and-diagnostics">
+  ## ログと診断
+</div>
+
+ClickHouse の .NET クライアントは、`Microsoft.Extensions.Logging` の抽象化レイヤーと統合されており、軽量で必要に応じて有効化できるログ機能を提供します。有効にすると、ドライバーは接続ライフサイクル イベント、コマンド実行、トランスポート処理、バルク挿入操作に関する構造化メッセージを出力します。ログ機能は完全に任意であり、ロガーを設定していないアプリケーションも追加のオーバーヘッドなしでそのまま動作し続けます。
+
+<div id="logging-quick-start">
+  ### クイックスタート
+</div>
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Logging;
+
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Information);
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-appsettings-config">
+  #### appsettings.json を使用する
+</div>
+
+.NET の標準構成機能を使用してログレベルを設定できます。
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json")
+    .Build();
+
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConfiguration(configuration.GetSection("Logging"))
+        .AddConsole();
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-inmemory-config">
+  #### インメモリ構成を使用する
+</div>
+
+コード内で、カテゴリ別にログ出力の詳細度を設定することもできます。
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+var categoriesConfiguration = new Dictionary<string, string>
+{
+    { "LogLevel:Default", "Warning" },
+    { "LogLevel:ClickHouse.Driver.Connection", "Information" },
+    { "LogLevel:ClickHouse.Driver.Command", "Debug" }
+};
+
+var config = new ConfigurationBuilder()
+    .AddInMemoryCollection(categoriesConfiguration)
+    .Build();
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConfiguration(config)
+        .AddSimpleConsole();
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-categories">
+  ### カテゴリと出力元
+</div>
+
+ドライバーは専用のカテゴリを使用しているため、コンポーネントごとにログレベルを細かく調整できます。
+
+| カテゴリ                           | ソース                    | 主な内容                                                       |
+| ------------------------------ | ---------------------- | ---------------------------------------------------------- |
+| `ClickHouse.Driver.Connection` | `ClickHouseConnection` | 接続のライフサイクル、HTTP クライアント ファクトリーの選択、接続のオープン/クローズ、セッション管理。     |
+| `ClickHouse.Driver.Command`    | `ClickHouseCommand`    | クエリ実行の開始/完了、所要時間、クエリ ID、サーバー統計情報、エラーの詳細。                   |
+| `ClickHouse.Driver.Transport`  | `ClickHouseConnection` | 低レベルの HTTP ストリーミング リクエスト、圧縮フラグ、レスポンスのステータスコード、トランスポート エラー。 |
+| `ClickHouse.Driver.Client`     | `ClickHouseClient`     | バイナリ insert、クエリ、その他の操作                                     |
+| `ClickHouse.Driver.NetTrace`   | `TraceHelper`          | ネットワークトレース (デバッグモードが有効な場合のみ)                               |
+
+<div id="logging-config-example">
+  #### 例: 接続の問題を診断する
+</div>
+
+```json
+{
+    "Logging": {
+        "LogLevel": {
+            "ClickHouse.Driver.Connection": "Trace",
+            "ClickHouse.Driver.Transport": "Trace"
+        }
+    }
+}
+```
+
+以下の内容がログに記録されます。
+
+* HTTP クライアント ファクトリの選択 (既定のプールまたは単一接続)
+* HTTP ハンドラーの設定 (SocketsHttpHandler または HttpClientHandler)
+* 接続プールの設定 (MaxConnectionsPerServer、PooledConnectionLifetime など)
+* タイムアウトの設定 (ConnectTimeout、Expect100ContinueTimeout など)
+* SSL/TLS の設定
+* 接続のオープン/クローズ イベント
+* セッション ID の追跡
+
+<div id="logging-debugmode">
+  ### デバッグモード: ネットワークトレースと診断
+</div>
+
+ネットワーク関連の問題の診断に役立てるため、ドライバーライブラリには .NET のネットワーク内部処理の低レベルトレースを有効にするヘルパーが含まれています。これを有効にするには、レベルを Trace に設定した LoggerFactory を渡し、EnableDebugMode を true に設定する必要があります (または `ClickHouse.Driver.Diagnostic.TraceHelper` クラスを使って手動で有効にします) 。イベントは `ClickHouse.Driver.NetTrace` カテゴリにログ出力されます。警告: これにより非常に大量の logs が生成され、パフォーマンスに影響します。本番環境でデバッグモードを有効にすることは推奨されません。
+
+```csharp
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Trace); // ネットワークイベントを表示するにはTraceレベルが必要
+});
+
+var settings = new ClickHouseClientSettings()
+{
+    LoggerFactory = loggerFactory,
+    EnableDebugMode = true,  // 低レベルのネットワークトレースを有効にする
+};
+```
+
+<div id="opentelemetry">
+  ## OpenTelemetry
+</div>
+
+このドライバーは、.NET [`System.Diagnostics.Activity`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing) API を通じて、OpenTelemetry の分散トレーシングをネイティブにサポートしています。有効にすると、ドライバーはデータベース操作に対するスパンを出力し、それらを Jaeger や ClickHouse 自体 ([OpenTelemetry Collector](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry) 経由) などのオブザーバビリティバックエンドにエクスポートできます。
+
+<div id="opentelemetry-enabling">
+  ### トレーシングを有効にする
+</div>
+
+ASP.NET Core アプリケーションでは、ClickHouse ドライバーの `ActivitySource` を OpenTelemetry の設定に追加します。
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource(ClickHouseDiagnosticsOptions.ActivitySourceName)  // ClickHouse ドライバーのスパンを購読する
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter());             // または AddJaegerExporter() など
+```
+
+コンソールアプリケーション、テスト、または手動セットアップの場合:
+
+```csharp
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+
+var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource(ClickHouseDiagnosticsOptions.ActivitySourceName)
+    .AddConsoleExporter()
+    .Build();
+```
+
+<div id="opentelemetry-attributes">
+  ### スパン属性
+</div>
+
+各スパンには、標準的なOpenTelemetryのデータベース属性に加え、デバッグに利用できるClickHouse固有のクエリ統計情報が含まれます。
+
+| 属性                            | 説明                |
+| ----------------------------- | ----------------- |
+| `db.system`                   | 常に `"clickhouse"` |
+| `db.name`                     | データベース名           |
+| `db.user`                     | ユーザー名             |
+| `db.statement`                | SQLクエリ (有効な場合)    |
+| `db.clickhouse.read_rows`     | クエリで読み取られた行数      |
+| `db.clickhouse.read_bytes`    | クエリで読み取られたバイト数    |
+| `db.clickhouse.written_rows`  | クエリで書き込まれた行数      |
+| `db.clickhouse.written_bytes` | クエリで書き込まれたバイト数    |
+| `db.clickhouse.elapsed_ns`    | サーバー側の実行時間 (ナノ秒)  |
+
+<div id="opentelemetry-configuration">
+  ### 設定オプション
+</div>
+
+`ClickHouseDiagnosticsOptions` を使用して、トレーシングの動作を制御します。
+
+```csharp
+using ClickHouse.Driver.Diagnostic;
+
+// スパンにSQLステートメントを含める（デフォルト: セキュリティのためfalse）
+ClickHouseDiagnosticsOptions.IncludeSqlInActivityTags = true;
+
+// 長いSQLステートメントを切り詰める（デフォルト: 1000文字）
+ClickHouseDiagnosticsOptions.StatementMaxLength = 500;
+```
+
+<Warning>
+  `IncludeSqlInActivityTags` を有効にすると、トレースに機密データが含まれる可能性があります。本番環境での使用には注意してください。
+</Warning>
+
+<div id="tls-configuration">
+  ## TLS 設定
+</div>
+
+HTTPS 経由で ClickHouse に接続する場合、TLS/SSL の挙動はいくつかの方法で設定できます。
+
+<div id="custom-certificate-validation">
+  ### カスタム証明書の検証
+</div>
+
+本番環境でカスタムの証明書検証ロジックが必要な場合は、`ServerCertificateCustomValidationCallback` ハンドラーを構成した独自の `HttpClient` を指定します。
+
+```csharp
+using System.Net;
+using System.Net.Security;
+using ClickHouse.Driver;
+
+var handler = new HttpClientHandler
+{
+    // 圧縮が有効な場合に必要（デフォルトで有効）
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+
+    ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
+    {
+        // 例: 特定の証明書サムプリントを許可する
+        if (cert?.Thumbprint == "YOUR_EXPECTED_THUMBPRINT")
+            return true;
+
+        // 例: 特定の発行者からの証明書を許可する
+        if (cert?.Issuer.Contains("YourOrganization") == true)
+            return true;
+
+        // デフォルト: 標準の検証を使用
+        return sslPolicyErrors == SslPolicyErrors.None;
+    },
+};
+
+var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+
+var settings = new ClickHouseClientSettings
+{
+    Host = "my.clickhouse.server",
+    Protocol = "https",
+    HttpClient = httpClient,
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<Note>
+  カスタム HttpClient を指定する際の注意事項
+
+  * **自動圧縮解除**: 圧縮が無効になっていない場合は、`AutomaticDecompression` を有効にする必要があります (圧縮はデフォルトで有効です) 。
+  * **アイドルタイムアウト**: ハーフオープン接続による接続エラーを避けるため、`PooledConnectionIdleTimeout` はサーバーの `keep_alive_timeout` (ClickHouse Cloud では 10 秒) より短く設定してください。
+</Note>
+
+<div id="orm-support">
+  ## ORM サポート
+</div>
+
+ORM では ADO.NET API (`ClickHouseConnection`) が必要です。接続のライフサイクルを適切に管理するため、`ClickHouseDataSource` から接続を作成してください。
+
+```csharp
+// DataSourceをシングルトンとして登録する
+var dataSource = new ClickHouseDataSource("Host=localhost;Username=default");
+
+// ORM用のコネクションを作成する
+await using var connection = await dataSource.OpenConnectionAsync();
+// コネクションをORMに渡す...
+```
+
+<div id="orm-support-dapper">
+  ### Dapper
+</div>
+
+`ClickHouse.Driver` は Dapper に対応しています。ドライバーは、Dapper の `@parameter` 構文を ClickHouse のネイティブな `{parameter:Type}` 構文に自動変換し、型は .NET の値から推論されます。
+
+適切に connection のライフタイムを管理するには、`ClickHouseDataSource` を使用します。
+
+```csharp
+var dataSource = new ClickHouseDataSource("Host=localhost");
+services.AddSingleton(dataSource); // DIにシングルトンとして登録
+
+using var connection = dataSource.CreateConnection();
+```
+
+<div id="dapper-parameter-passing">
+  #### パラメーターの受け渡し形式
+</div>
+
+標準的な Dapper のパラメーター指定方法をすべてサポートしています。
+
+**匿名オブジェクト:**
+
+```csharp
+await connection.ExecuteAsync(
+    "INSERT INTO users (id, name, balance) VALUES (@Id, @Name, @Balance)",
+    new { Id = 1, Name = "alice", Balance = 3.14 });
+```
+
+**POCO クラス：**
+
+```csharp
+class InsertParams
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public double Balance { get; set; }
+}
+
+var param = new InsertParams { Id = 42, Name = "bob", Balance = 99.9 };
+await connection.ExecuteAsync(
+    "INSERT INTO users (id, name, balance) VALUES (@Id, @Name, @Balance)", param);
+```
+
+**Dictionary:**
+
+```csharp
+var parameters = new Dictionary<string, object> { { "Id", 2 } };
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id = @Id", parameters);
+```
+
+**`DynamicParameters` (ディクショナリまたは匿名オブジェクトから) :**
+
+```csharp
+var dynParams = new DynamicParameters(new { Id = 1 });
+// または: new DynamicParameters(new Dictionary<string, object> { { "Id", 1 } });
+
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id = @Id", dynParams);
+```
+
+<div id="dapper-pocos">
+  #### POCO へのクエリ
+</div>
+
+Dapper は、カラム名に基づいてプロパティにマッピングします (大文字と小文字を区別しません) 。
+
+```csharp
+class User
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public double Balance { get; set; }
+}
+
+// テーブルから
+var users = (await connection.QueryAsync<User>("SELECT id, name, balance FROM users")).ToList();
+
+// リテラルから
+var row = (await connection.QueryAsync<User>("SELECT 1 as id, 'hello' as name, 2.5 as balance")).Single();
+```
+
+<div id="dapper-clickhouse-param-syntax">
+  #### ClickHouseネイティブのパラメーター構文
+</div>
+
+型を明示的に制御する必要がある場合は、パラメーター値に `Dictionary<string, object>` を使用し、SQL 内で ClickHouse の `{param:Type}` 構文を直接使用してください。同じパラメーターに対して `@param` 構文と `{param:Type}` 構文を併用しないでください。
+
+```csharp
+var parameters = new Dictionary<string, object> { { "value", 42 } };
+var result = await connection.QueryAsync<int>("SELECT {value:Int32}", parameters);
+```
+
+<div id="dapper-where-in">
+  #### WHERE IN
+</div>
+
+**DapperのネイティブなIN展開が機能します：**
+
+```csharp
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id IN @Ids ORDER BY id",
+    new { Ids = new[] { 1, 3, 5 } });
+```
+
+Dapper はこれを `WHERE id IN (@Ids1, @Ids2, @Ids3)` に書き換え、ドライバーが展開された各パラメーターをそれぞれ変換します。
+
+**Array パラメーターを使った ClickHouse の `has()` も動作します:**
+
+```csharp
+var parameters = new Dictionary<string, object> { { "ids", new[] { 1, 3, 5 } } };
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE has({ids:Array(Int32)}, id) ORDER BY id",
+    parameters);
+```
+
+<div id="dapper-type-handlers">
+  #### カスタム型ハンドラー
+</div>
+
+`ITuple`、`BigInteger`、`ClickHouseDecimal` など、一部の ClickHouse の型では、起動時にハンドラーを登録する必要があります。
+
+```csharp
+// ClickHouseDecimal（Decimal64/128/256カラム用）
+SqlMapper.AddTypeHandler(new ClickHouseDecimalHandler());
+
+// BigInteger（Int128/Int256/UInt128/UInt256カラム用）
+SqlMapper.AddTypeHandler(new BigIntegerHandler());
+
+// IPAddress（IPv4/IPv6カラム用）
+SqlMapper.AddTypeHandler(new IpAddressHandler());
+```
+
+型ハンドラーの実装例は、[Dapper の例](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/ORM/ORM_001_Dapper.cs)を参照してください。
+
+<div id="dapper-contrib">
+  #### Dapper.Contrib
+</div>
+
+`GetAll<T>()` と `Get<T>(id)` は動作します。`Insert<T>()` は動作しません。これは SQL Server の構文 (`SCOPE_IDENTITY`、`[]`) を生成するためです。代わりに、ClickHouseClient のネイティブな `InsertBinaryAsync` メソッドを使用することを推奨します。
+
+```csharp
+[Table("test.users")]
+record class UserRecord(int Id, string Name, DateTime Timestamp);
+
+var all = await connection.GetAllAsync<UserRecord>();
+var one = await connection.GetAsync<UserRecord>(1);
+```
+
+プロパティ名は ClickHouse のカラム名と完全に一致している必要があります (大文字と小文字を区別します) 。
+
+<div id="dapper-limitations">
+  #### 制限事項
+</div>
+
+| 項目                           | ステータス | 詳細                                                              |
+| ---------------------------- | ----- | --------------------------------------------------------------- |
+| **結果**としての Tuple             | 動作します | `SqlMapper.TypeHandler<ITuple>` の登録が必要です                        |
+| **パラメーター**としての Tuple         | 未対応   | Dapper は `ITuple`/`Tuple<>` を `DbParameter` の値としてシリアル化できません     |
+| パラメーターとしてのネストされた型            | 未対応   | 同じ理由で、Dapper は複雑な型をパラメーター値として受け付けません                            |
+| パラメーターとしての Geo 型             | 未対応   | Point, Ring, Polygon, LineString, MultiLineString, MultiPolygon |
+| `Dapper.Contrib.Insert<T>()` | 未対応   | SQL Server 固有の構文を生成します                                          |
+| `Nothing` 型                  | 未対応   | 意味のある .NET での表現がありません                                           |
+
+<div id="orm-support-linq2db">
+  ### Linq2db
+</div>
+
+このドライバーは、.NET 向けの軽量な ORM／LINQ プロバイダーである [linq2db](https://github.com/linq2db/linq2db) に対応しています。詳細なドキュメントについては、プロジェクトの Web サイトを参照してください。
+
+**使用例:**
+
+ClickHouse プロバイダーを使用して `DataConnection` を作成します。
+
+```csharp
+using LinqToDB;
+using LinqToDB.Data;
+using LinqToDB.DataProvider.ClickHouse;
+
+var connectionString = "Host=localhost;Port=8123;Database=default";
+var options = new DataOptions()
+    .UseClickHouse(connectionString, ClickHouseProvider.ClickHouseDriver);
+
+await using var db = new DataConnection(options);
+```
+
+テーブルのマッピングは、属性または Fluent API を使用して定義できます。クラス名とプロパティ名がテーブル名およびカラム名と完全に一致している場合は、設定は不要です。
+
+```csharp
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public decimal Price { get; set; }
+}
+```
+
+**クエリの実行:**
+
+```csharp
+await using var db = new DataConnection(options);
+
+var products = await db.GetTable<Product>()
+    .Where(p => p.Price > 100)
+    .OrderByDescending(p => p.Name)
+    .ToListAsync();
+```
+
+**バルクコピー:**
+
+効率的な一括挿入には `BulkCopyAsync` を使用します。
+
+```csharp
+await using var db = new DataConnection(options);
+var table = db.GetTable<Product>();
+
+var options = new BulkCopyOptions
+{
+    MaxBatchSize = 100000,
+    MaxDegreeOfParallelism = 1,
+    WithoutSession = true
+};
+
+await table.BulkCopyAsync(options, products);
+```
+
+<div id="orm-support-ef-core">
+  ### Entity Framework Core
+</div>
+
+ClickHouse 向けの公式 Entity Framework Core プロバイダーです。C# クラスを ClickHouse テーブルにマッピングし、LINQ でクエリを実行し、`SaveChanges` を通じてデータを insert できます。いずれも使い慣れた EF Core のパターンで行えます。
+
+* **NuGet**: [`ClickHouse.EntityFrameworkCore`](https://www.nuget.org/packages/ClickHouse.EntityFrameworkCore)
+* **Source**: [GitHub](https://github.com/ClickHouse/ClickHouse.EntityFrameworkCore)
+
+<Note>
+  このプロバイダーは現在も活発に開発が進められています。現行の release では、LINQ クエリ (JOIN、subqueries、set operations を含む) 、`SaveChanges` / `BulkInsertAsync` による `INSERT`、完全な DDL (CREATE / ALTER / DROP) を伴う移行、そして ClickHouse 固有の table engine 設定をサポートしています。`UPDATE` / `DELETE` には対応していません。
+</Note>
+
+<div id="ef-core-installation">
+  #### インストール
+</div>
+
+```bash
+dotnet add package ClickHouse.EntityFrameworkCore
+```
+
+.NET 10.0 と EF Core 10 が必要です。
+
+<div id="ef-core-quick-start">
+  #### クイックスタート
+</div>
+
+エンティティと`DbContext`を定義し、LINQ でクエリを実行します。
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+
+public class PageView
+{
+    public long Id { get; set; }
+    public string Path { get; set; }
+    public DateOnly Date { get; set; }
+    public string UserAgent { get; set; }
+}
+
+public class AnalyticsContext : DbContext
+{
+    public DbSet<PageView> PageViews { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        => optionsBuilder.UseClickHouse("Host=localhost;Database=analytics");
+}
+
+// クエリ
+await using var ctx = new AnalyticsContext();
+
+var topPages = await ctx.PageViews
+    .Where(v => v.Date >= new DateOnly(2024, 1, 1))
+    .GroupBy(v => v.Path)
+    .Select(g => new { Path = g.Key, Views = g.Count() })
+    .OrderByDescending(x => x.Views)
+    .Take(10)
+    .ToListAsync();
+```
+
+<div id="ef-core-types">
+  #### サポートされる型
+</div>
+
+| カテゴリ        | ClickHouse 型                                                                            | CLR 型                                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **整数**      | `Int8`–`Int64`, `UInt8`–`UInt64`                                                        | `sbyte`, `short`, `int`, `long`, `byte`, `ushort`, `uint`, `ulong`                                             |
+| **大きな整数**   | `Int128`, `Int256`, `UInt128`, `UInt256`                                                | `BigInteger`                                                                                                   |
+| **浮動小数点数**  | `Float32`, `Float64`, `BFloat16`                                                        | `float`, `double`                                                                                              |
+| **Decimal** | `Decimal(P,S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`                         | `decimal` または `ClickHouseDecimal`                                                                              |
+| **Bool**    | `Bool`                                                                                  | `bool`                                                                                                         |
+| **String**  | `String`, `FixedString(N)`                                                              | `string`                                                                                                       |
+| **列挙型**     | `Enum8(...)`, `Enum16(...)`                                                             | `string` または C# `enum`                                                                                         |
+| **日付/時刻**   | `Date`, `Date32`, `DateTime`, `DateTime64(P, 'TZ')`                                     | `DateOnly`, `DateTime`                                                                                         |
+| **Time**    | `Time`, `Time64(N)`                                                                     | `TimeSpan`                                                                                                     |
+| **UUID**    | `UUID`                                                                                  | `Guid`                                                                                                         |
+| **ネットワーク**  | `IPv4`, `IPv6`                                                                          | `IPAddress`                                                                                                    |
+| **Array**   | `Array(T)`                                                                              | `T[]`, `List<T>`, `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `IEnumerable<T>` |
+| **Map**     | `Map(K, V)`                                                                             | `Dictionary<K,V>`                                                                                              |
+| **Tuple**   | `Tuple(T1, ...)`                                                                        | `Tuple<...>` または `ValueTuple<...>`                                                                             |
+| **Variant** | `Variant(T1, T2, ...)`                                                                  | `object`                                                                                                       |
+| **Dynamic** | `Dynamic`                                                                               | `object`                                                                                                       |
+| **JSON**    | `Json`                                                                                  | `JsonNode` または `string`                                                                                        |
+| **地理空間**    | `Point`, `Ring`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`, `Geometry` | `Tuple<double,double>` とその配列。`Geometry` には `object`                                                            |
+| **ラッパー型**   | `Nullable(T)`, `LowCardinality(T)`                                                      | 自動的にアンラップされます                                                                                                  |
+
+`Decimal128`/`Decimal256` カラムの完全な精度が必要な場合は、`decimal` ではなく `ClickHouseDecimal` (`ClickHouse.Driver.Numerics` のもの) を使用してください。.NET の `decimal` は有効桁数が 28～29 桁に制限されます。
+
+<div id="ef-core-linq">
+  #### サポートされている LINQ 操作
+</div>
+
+**クエリ:** `Where`, `OrderBy`, `Take`, `Skip`, `Select`, `First`, `Single`, `Any`, `All`, `Count`, `Distinct`, `AsNoTracking`
+
+**GROUP BY と集計:** `Count`, `LongCount`, `Sum`, `Average`, `Min`, `Max` を伴う `GroupBy` — `HAVING` (`.GroupBy()` の後に `.Where()` を使用) 、1 つのプロジェクション内での複数の集計、集計結果に対する `OrderBy` を含みます。
+
+**JOIN:** `Join` (INNER) 、`GroupJoin`/`SelectMany` パターン (LEFT および CROSS) 。LEFT JOIN は、一致しない行に対して実際の `null` 値を返します (下記の [LEFT JOIN の NULL セマンティクス](#ef-core-join-nulls) を参照) 。
+
+**サブクエリ:** 相関 `Contains` / `IN`、`Any` / `EXISTS`、`All`、およびプロジェクション内のスカラー サブクエリ。
+
+**集合演算:** `Concat` (→ `UNION ALL`) 、`Union` (→ `UNION DISTINCT`) 、`Intersect`、`Except`。
+
+**インラインのローカルコレクション:** インメモリコレクション (`int[]`、`List<T>` など) に対する join や `Contains` は、一連の UNION に変換されます。
+
+**文字列メソッド:** `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `Replace`, `Substring`, `Trim`/`TrimStart`/`TrimEnd`, `ToLower`, `ToUpper`, `Length`, `IsNullOrEmpty`, `Concat` (および `+` 演算子) 。
+
+**数学関数:** 標準の `Math` および `MathF` メソッドは、対応する ClickHouse の関数に変換されます — 算術、対数、三角、およびユーティリティ関数。
+
+<div id="ef-core-join-nulls">
+  ##### LEFT JOIN の NULL セマンティクス
+</div>
+
+このプロバイダーは、JOIN の挙動に関する Entity Framework の想定に合わせるため、接続のたびに `set_join_use_nulls=1` を自動的に設定します。
+
+ClickHouse サーバーまたは profile でこの設定の変更が禁止されている場合 (例: `readonly=1` の profile) 、次のように無効化してください。
+
+```csharp
+optionsBuilder.UseClickHouse(connectionString, o => o.DisableJoinNullSemantics());
+```
+
+オプトアウトが有効な場合、LEFT JOIN は ClickHouse のカラムのデフォルト値を返すため、EF の null ベースのナビゲーション検出は期待どおりに機能しなくなります。`== null` の代わりに、`0` / `""` との明示的な比較を使用してください。
+
+<div id="ef-core-insert">
+  #### データの挿入
+</div>
+
+`SaveChanges` では、ドライバーが提供するネイティブの `InsertBinaryAsync` API を使用します。RowBinary エンコーディングと GZip 圧縮を利用するため、パラメーター化 SQL よりもはるかに効率的です。
+
+```csharp
+await using var ctx = new AnalyticsContext();
+
+ctx.PageViews.Add(new PageView
+{
+    Id = 1,
+    Path = "/home",
+    Date = new DateOnly(2024, 6, 15),
+    UserAgent = "Mozilla/5.0"
+});
+
+await ctx.SaveChangesAsync();
+```
+
+エンティティは、保存後に他の EF Core プロバイダーと同様、`Added` から `Unchanged` に変わります。
+
+**バッチサイズ** は設定できます (デフォルトは 1000) :
+
+```csharp
+optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
+```
+
+<div id="bulk-insert">
+  #### 一括挿入
+</div>
+
+高スループットの読み込みでは、`SaveChanges` ではなく `BulkInsertAsync` を使用してください。これは `DbContext` の拡張メソッドで、EF Core の変更トラッカー、ID 解決、状態管理を完全にバイパスし、RowBinary エンコーディングと GZip 圧縮を使用して、ドライバーの `InsertBinaryAsync` を直接呼び出します。
+
+そのため、挿入後にエンティティの追跡が不要な大規模データセットの読み込みに適しています。
+
+```csharp
+var events = Enumerable.Range(0, 100_000)
+    .Select(i => new PageView
+    {
+        Id = i,
+        Path = $"/page/{i}",
+        Date = DateOnly.FromDateTime(DateTime.Today)
+    });
+
+long rowsInserted = await ctx.BulkInsertAsync(events);
+```
+
+入力には任意の `IEnumerable<T>` を使用できます。エンティティはすべてをメモリに読み込むことなく順次処理されます。戻り値は挿入された行数です。挿入後もエンティティは `DbContext` にアタッチされないため、`Added` → `Unchanged` の状態遷移は発生しません。
+
+<div id="ef-core-enums">
+  #### 列挙型
+</div>
+
+ClickHouse `Enum8`/`Enum16` カラムは、`string` プロパティまたは C# の `enum` 型にマッピングできます。C# の列挙型を使用する場合、プロバイダーは列挙型とその文字列表現の間で自動的に変換します。
+
+```csharp
+public enum Status { Active, Inactive, Pending }
+
+public class User
+{
+    public long Id { get; set; }
+    public Status Status { get; set; }
+}
+
+// enum値を使ったクエリ
+var active = await ctx.Users
+    .Where(u => u.Status == Status.Active)
+    .ToListAsync();
+```
+
+<div id="ef-core-value-converters">
+  #### カスタム型の変換
+</div>
+
+EF Core の `ValueConverter` システムを使うと、カスタム型をプロバイダーがすでにサポートしている型にマッピングできます。プロバイダーがカスタム型を直接扱うことはなく、EF Core がその境界で変換を行います。
+
+**プロパティ単位の変換:**
+
+```csharp
+public class Money
+{
+    public decimal Amount { get; set; }
+    public string Currency { get; set; }
+}
+
+public class Order
+{
+    public long Id { get; set; }
+    public Money Price { get; set; }
+}
+
+// OnModelCreating 内:
+modelBuilder.Entity<Order>()
+    .Property(o => o.Price)
+    .HasConversion(
+        m => $"{m.Amount}|{m.Currency}",
+        s => new Money
+        {
+            Amount = decimal.Parse(s.Split('|')[0]),
+            Currency = s.Split('|')[1]
+        })
+    .HasColumnType("String");
+```
+
+**再利用可能なコンバータークラス:**
+
+```csharp
+public class MoneyConverter : ValueConverter<Money, string>
+{
+    public MoneyConverter() : base(
+        m => $"{m.Amount}|{m.Currency}",
+        s => Parse(s)) { }
+
+    private static Money Parse(string s)
+    {
+        var parts = s.Split('|');
+        return new Money { Amount = decimal.Parse(parts[0]), Currency = parts[1] };
+    }
+}
+
+// 単一のプロパティに適用する場合:
+.HasConversion<MoneyConverter>()
+
+// または、規約を使用して型のすべてのプロパティに適用する場合:
+protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+{
+    configurationBuilder.Properties<Money>()
+        .HaveConversion<MoneyConverter>();
+}
+```
+
+<div id="ef-core-column-types">
+  #### カラム型のアノテーション
+</div>
+
+`string`、`int`、`DateTime` などのスカラー型では、プロバイダーが ClickHouse の型を自動的に推論します。パラメーター化された型やラッパーについては、ClickHouse の型を明示的に指定する必要があります。
+
+**データ アノテーション (属性) を使用する場合:**
+
+```csharp
+using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+
+[Table("sensor_readings")]
+public class SensorReading
+{
+    public long Id { get; set; }
+
+    [Column(TypeName = "Array(String)")]
+    public string[] Tags { get; set; }
+
+    [Column(TypeName = "Map(String, String)")]
+    public Dictionary<string, string> Metadata { get; set; }
+
+    [Column(TypeName = "Nullable(Float64)")]
+    public double? Value { get; set; }
+
+    [Column(TypeName = "Decimal128(18)")]
+    public decimal HighPrecision { get; set; }
+}
+```
+
+**`OnModelCreating` で fluent API を使用する方法:**
+
+```csharp
+modelBuilder.Entity<SensorReading>(e =>
+{
+    e.ToTable("sensor_readings");
+    e.Property(x => x.Tags).HasColumnType("Array(String)");
+    e.Property(x => x.Metadata).HasColumnType("Map(String, String)");
+    e.Property(x => x.Value).HasColumnType("Nullable(Float64)");
+    e.Property(x => x.Category).HasColumnType("LowCardinality(String)");
+    e.Property(x => x.HighPrecision).HasColumnType("Decimal128(18)");
+});
+```
+
+`Array(Nullable(Int32))` や `LowCardinality(Nullable(String))` のようなネストされたラッパー型をサポートしています — プロバイダーは `Nullable` と `LowCardinality` をどのネストレベルでも自動的にアンラップします。
+
+<div id="ef-core-variant-dynamic">
+  #### Variant と Dynamic カラム
+</div>
+
+ClickHouse の `Variant(T1, T2, ...)` カラムおよび `Dynamic` カラムは、.NET では `object` にマップされます。`object` は自動的な型推論には汎用的すぎるため、`.HasColumnType()` でストア型を明示的に指定する必要があります。
+
+```csharp
+public class Event
+{
+    public long Id { get; set; }
+    public object? Payload { get; set; }
+}
+
+// OnModelCreating 内:
+entity.Property(e => e.Payload).HasColumnType("Variant(String, UInt64, Array(UInt64))");
+// または:
+entity.Property(e => e.Payload).HasColumnType("Dynamic");
+```
+
+読み取り時には、値は保存されている判別子に対応する .NET 型 (例: `string`、`ulong`、`ulong[]`) に自動的にデシリアライズされます。
+
+<div id="ef-core-json">
+  #### JSON カラム
+</div>
+
+このプロバイダーは ClickHouse の `Json` カラム型をサポートしており、`System.Text.Json.Nodes.JsonNode` (プライマリ) または `string` (自動 `ValueConverter` 使用時) に対応付けられます。
+
+```csharp
+using System.Text.Json.Nodes;
+
+public class Event
+{
+    public long Id { get; set; }
+    public JsonNode? Data { get; set; }
+}
+
+// OnModelCreating 内:
+entity.Property(e => e.Data).HasColumnType("Json");
+```
+
+JSON の読み書きは、`SaveChanges` と `BulkInsertAsync` の両方で利用できます:
+
+```csharp
+ctx.Events.Add(new Event
+{
+    Id = 1,
+    Data = JsonNode.Parse("""{"action": "click", "x": 100, "y": 200}""")
+});
+await ctx.SaveChangesAsync();
+
+var ev = await ctx.Events.Where(e => e.Id == 1).SingleAsync();
+string action = ev.Data!["action"]!.GetValue<string>(); // "click"
+```
+
+生の JSON 文字列を使いたい場合は、プロパティを `string` として `Json` カラム型にマップしてください。プロバイダーが `ValueConverter` を自動的に適用します。
+
+```csharp
+public class Event
+{
+    public long Id { get; set; }
+    public string? Data { get; set; }  // 生のJSON文字列
+}
+
+entity.Property(e => e.Data).HasColumnType("Json");
+```
+
+<Note>
+  * **JSON パスは変換されません** — LINQ の `entity.Data["name"]` は、ClickHouse の `data.name` という SQL 構文には変換されません。JSON 以外のカラムでフィルタし、JSON はメモリ上で確認してください。
+  * **NULL セマンティクス** — ClickHouse の JSON type は、NULL 値に対して SQL NULL ではなく `{}` (空のオブジェクト) を返します。
+  * **整数の精度** — ClickHouse の JSON は、すべての整数を `Int64` として格納します。`JsonNode` 経由で読み取る場合は、`GetValue<int>()` ではなく `GetValue<long>()` を使用してください。
+</Note>
+
+<div id="ef-core-engines">
+  #### テーブルエンジン
+</div>
+
+`ToTable(name, t => ...)` のフルーエント API を使用して、ClickHouse テーブルのエンジンとエンジン固有の句を設定します。エンジンが設定されていない場合、プロバイダーは既定で `MergeTree` を使用し、`ORDER BY` はエンティティの主キーに基づいて決定されます。
+
+```csharp
+modelBuilder.Entity<Event>(e =>
+{
+    e.ToTable("events", t => t
+        .HasMergeTreeEngine()
+        .WithOrderBy("UserId", "Timestamp")
+        .WithPartitionBy("toYYYYMM(Timestamp)")
+        .WithPrimaryKey("UserId")
+        .WithSettings("index_granularity = 8192"));
+});
+```
+
+サポートされているエンジンファミリー:
+
+| Engine                                  | Fluent method                                                                                             | Notes                            |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `MergeTree`                             | `HasMergeTreeEngine()`                                                                                    | 設定がない場合のデフォルト                    |
+| `ReplacingMergeTree`                    | `HasReplacingMergeTreeEngine("Version", "IsDeleted")` or `HasReplacingMergeTreeEngine<T>(e => e.Version)` | `Version` / `IsDeleted` カラムは省略可能 |
+| `SummingMergeTree`                      | `HasSummingMergeTreeEngine(…)` or `HasSummingMergeTreeEngine<T>(e => new { … })`                          | 合計対象のカラムは省略可能                    |
+| `AggregatingMergeTree`                  | `HasAggregatingMergeTreeEngine()`                                                                         | —                                |
+| `CollapsingMergeTree`                   | `HasCollapsingMergeTreeEngine("Sign")` or `HasCollapsingMergeTreeEngine<T>(e => e.Sign)`                  | `Sign` カラムは `Int8` である必要があります    |
+| `VersionedCollapsingMergeTree`          | `HasVersionedCollapsingMergeTreeEngine("Sign", "Version")` or `<T>(e => e.Sign, e => e.Version)`          | —                                |
+| `GraphiteMergeTree`                     | `HasGraphiteMergeTreeEngine("config_section")`                                                            | —                                |
+| `Log`, `TinyLog`, `StripeLog`, `Memory` | `HasLogEngine()`, `HasTinyLogEngine()`, `HasStripeLogEngine()`, `HasMemoryEngine()`                       | ORDER BY / PARTITION BY は使用不可    |
+
+**エンジン句:** `WithOrderBy`, `WithPartitionBy`, `WithPrimaryKey`, `WithSampleBy`, `WithTtl`, `WithSettings`。いずれも `HasXxxEngine()` が返すエンジンビルダーに対して指定します。
+
+**カラムレベルの機能:** `HasCodec`, `HasTtl`, `HasComment`, `HasDefault` — いずれも移行の対象になります。
+
+**データスキッピング索引** — `HasIndex(...).HasSkippingIndexType(...)` で指定します:
+
+```csharp
+modelBuilder.Entity<Event>()
+    .HasIndex(e => e.UserId)
+    .HasSkippingIndexType("minmax")
+    .HasGranularity(4);
+
+// パラメータ付きインデックス（例: bloom_filter、tokenbf_v1）:
+modelBuilder.Entity<Event>()
+    .HasIndex(e => e.Tag)
+    .HasSkippingIndexType("bloom_filter")
+    .HasSkippingIndexParams("0.01")
+    .HasGranularity(1);
+```
+
+標準の (スキップしない) 索引は、ClickHouse に相当するものがないため、黙って無視されます。一意索引については、ClickHouse では一意性が保証されないため、例外がスローされます。
+
+<div id="ef-core-migrations">
+  #### 移行
+</div>
+
+標準的な EF Core の移行ワークフロー:
+
+```bash
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+```
+
+サポートされている操作:
+
+| 操作                                     | 生成内容                                                                  |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `CREATE TABLE`                         | engine 句、ORDER BY、PARTITION BY、SETTINGS、カラムの codec/TTL/コメント/デフォルト値を含む |
+| `ALTER TABLE ADD COLUMN`               | —                                                                     |
+| `ALTER TABLE DROP COLUMN`              | —                                                                     |
+| `ALTER TABLE MODIFY COLUMN`            | 型変更に加え、属性の追加/削除 (CODEC、TTL、COMMENT、DEFAULT) に対応                       |
+| `ALTER TABLE RENAME COLUMN`            | —                                                                     |
+| `RENAME TABLE`                         | —                                                                     |
+| `ALTER TABLE ADD INDEX` / `DROP INDEX` | データスキッピング索引のみ                                                         |
+| `CREATE DATABASE` / `DROP DATABASE`    | `EnsureCreated` / `EnsureDeleted` および移行を介して実行                         |
+
+<div id="ef-core-limitations">
+  #### 移行の制限事項
+</div>
+
+| 機能                                     | 理由                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 外部キー                                   | ClickHouse は外部キーを強制しません。移行では `AddForeignKey` は拒否され、モデル バリデーターはモデルのビルド時に警告を出します。                                                |
+| 一意制約 / 一意索引                            | ClickHouse は一意性を保証しません。一意索引は移行時に例外をスローします。                                                                                     |
+| サーバー生成値 (auto-increment / `IDENTITY`)  | ClickHouse に相当する機能はありません。                                                                                                      |
+| `Nested(…)` カラム                        | マップされた CLR 型としてはまだサポートされていません。                                                                                                 |
+| JSON としての所有エンティティ (`.ToJson()`)        | 所有エンティティに対する構造的な JSON マッピングはまだ実装されていません。代わりに、`Json` カラムで `JsonNode` / `string` を使用してください ([JSON カラム](#ef-core-json) を参照) 。 |
+
+移行以外にも、このプロバイダーはまだ以下をサポートしていません。
+
+* **`UPDATE` / `DELETE`**
+* **トランザクション**: `BeginTransaction` は no-op です。ClickHouse は ACID トランザクションをサポートしていません。
+* **JSON パス クエリの変換**: LINQ の `entity.Data["key"]` は、ClickHouse の `data.key` SQL 構文に変換されません。JSON 以外のカラムでフィルタリングし、JSON はメモリ上で確認してください。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+<div id="aggregatefunction-columns">
+  ### AggregateFunction カラム
+</div>
+
+`AggregateFunction(...)` 型のカラムは、直接クエリしたり、挿入したりすることはできません。
+
+挿入するには:
+
+```sql
+INSERT INTO t VALUES (uniqState(1));
+```
+
+取得するには:
+
+```sql
+SELECT uniqMerge(c) FROM t;
+```
+
+***

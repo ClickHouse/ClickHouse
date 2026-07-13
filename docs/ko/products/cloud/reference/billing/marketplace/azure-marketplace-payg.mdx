@@ -1,0 +1,132 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-payg
+title: 'Azure Marketplace PAYG'
+description: 'Azure Marketplace(PAYG)를 통해 ClickHouse Cloud를 구독할 수 있습니다.'
+keywords: ['azure', '마켓플레이스', '청구', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+PAYG(사용량 기반 과금) Public Offer를 통해 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps)에서 ClickHouse Cloud를 시작하세요.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 청구 관리자가 구매 권한을 활성화한 Azure 프로젝트가 필요합니다.
+* Azure Marketplace에서 ClickHouse Cloud를 구독하려면 구매 권한이 있는 계정으로 로그인하고 적절한 프로젝트를 선택해야 합니다.
+
+1. [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps)로 이동하여 ClickHouse Cloud를 검색합니다. 마켓플레이스에서 서비스를 구매할 수 있도록 로그인되어 있는지 확인하십시오.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+2. 제품 목록 페이지에서 **Get It Now**를 클릭합니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+3. 다음 화면에서 이름, 이메일, 위치 정보를 입력해야 합니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+4. 다음 화면에서 **Subscribe**를 클릭합니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+5. 다음 화면에서 구독, 리소스 그룹, 리소스 그룹 위치를 선택합니다. 리소스 그룹 위치는 ClickHouse Cloud에서 서비스를 시작하려는 위치와 같을 필요는 없습니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+6. 구독 이름도 입력해야 하며, 사용 가능한 옵션에서 청구 기간을 선택해야 합니다. **Recurring billing**은 켜거나 끌 수 있습니다. 이를 &quot;off&quot;로 설정하면 청구 기간이 끝난 후 계약이 종료되고 리소스가 해제됩니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+7. **&quot;Review + subscribe&quot;**를 클릭합니다.
+
+8. 다음 화면에서 모든 내용이 올바른지 확인한 다음 **Subscribe**를 클릭합니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+9. 이 시점에는 ClickHouse Cloud의 Azure 구독이 완료되지만, ClickHouse Cloud에서의 계정 설정은 아직 완료되지 않았습니다. 다음 단계는 반드시 필요하며 매우 중요합니다. Azure Marketplace를 통해 청구가 올바르게 처리되려면 ClickHouse Cloud가 Azure 구독과 연결될 수 있어야 하기 때문입니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+10. Azure 설정이 완료되면 **Configure account now** 버튼이 활성화됩니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+11. **Configure account now**를 클릭합니다.
+
+<br />
+
+아래와 같이 계정 구성에 대한 세부 정보가 포함된 이메일을 받게 됩니다.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+12. ClickHouse Cloud 가입 또는 로그인 페이지로 리디렉션됩니다. ClickHouse Cloud로 이동한 후에는 기존 계정으로 로그인하거나 새 계정을 등록할 수 있습니다. 이 단계는 ClickHouse Cloud organization을 Azure Marketplace 청구와 연결하기 위해 매우 중요합니다.
+
+13. 새 사용자인 경우 비즈니스에 대한 몇 가지 기본 정보도 입력해야 합니다. 아래 스크린샷을 참조하십시오.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+**Complete sign up**를 클릭하면 ClickHouse Cloud 내 organization으로 이동합니다. 여기에서 청구 화면을 확인하여 Azure Marketplace를 통해 청구되고 있는지 확인하고 서비스를 생성할 수 있습니다.
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud 가입 정보 양식" border />
+
+<br />
+
+14. 문제가 발생하면 언제든지 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

@@ -96,6 +96,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
     {
         "Combined with initializeAggregation",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,

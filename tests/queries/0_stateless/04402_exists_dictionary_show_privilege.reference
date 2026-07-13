@@ -1,0 +1,8 @@
+-- SHOW DICTIONARIES grantee, plain EXISTS (expect 1):
+1
+-- SHOW DICTIONARIES grantee, EXISTS DICTIONARY (expect 1):
+1
+-- SHOW TABLES grantee, plain EXISTS (expect 1, unchanged behaviour):
+1
+-- no-access user, plain EXISTS (expect SHOW TABLES denial):
+it's necessary to have the grant SHOW TABLES

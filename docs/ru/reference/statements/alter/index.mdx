@@ -1,0 +1,85 @@
+---
+description: 'Документация по ALTER'
+sidebarTitle: 'ALTER'
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
+doc_type: 'reference'
+---
+
+Большинство запросов `ALTER TABLE` изменяют настройки таблицы или данные:
+
+| Модификатор                                                          |
+| -------------------------------------------------------------------- |
+| [COLUMN](/ru/reference/statements/alter/column)                         |
+| [PARTITION](/ru/reference/statements/alter/partition)                   |
+| [DELETE](/ru/reference/statements/alter/delete)                         |
+| [UPDATE](/ru/reference/statements/alter/update)                         |
+| [ORDER BY](/ru/reference/statements/alter/order-by)                     |
+| [INDEX](/ru/reference/statements/alter/skipping-index)                  |
+| [CONSTRAINT](/ru/reference/statements/alter/constraint)                 |
+| [TTL](/ru/reference/statements/alter/ttl)                               |
+| [STATISTICS](/ru/reference/statements/alter/statistics)                 |
+| [APPLY DELETED MASK](/ru/reference/statements/alter/apply-deleted-mask) |
+| [APPLY PATCHES](/ru/reference/statements/alter/apply-patches)           |
+
+<Note>
+  Большинство запросов `ALTER TABLE` поддерживаются только для таблиц [*MergeTree](/ru/reference/engines/table-engines/mergetree-family/index), [Merge](/ru/reference/engines/table-engines/special/merge) и [Distributed](/ru/reference/engines/table-engines/special/distributed).
+</Note>
+
+Эти операторы `ALTER` изменяют представления:
+
+| Оператор                                                         | Описание                                                                   |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY QUERY](/ru/reference/statements/alter/view) | Изменяет структуру [materialized view](/ru/reference/statements/create/view). |
+
+Эти операторы `ALTER` изменяют сущности, связанные с ролевым управлением доступом:
+
+| Оператор                                                         |
+| ---------------------------------------------------------------- |
+| [USER](/ru/reference/statements/alter/user)                         |
+| [ROLE](/ru/reference/statements/alter/role)                         |
+| [QUOTA](/ru/reference/statements/alter/quota)                       |
+| [ROW POLICY](/ru/reference/statements/alter/row-policy)             |
+| [SETTINGS PROFILE](/ru/reference/statements/alter/settings-profile) |
+
+| Оператор                                                               | Описание                                                                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ru/reference/statements/alter/comment)  | Добавляет, изменяет или удаляет комментарии к таблице вне зависимости от того, были ли они заданы ранее. |
+| [ALTER NAMED COLLECTION](/ru/reference/statements/alter/named-collection) | Изменяет [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections).      |
+
+<div id="mutations">
+  ## Мутации
+</div>
+
+Запросы `ALTER`, предназначенные для изменения данных в таблице, реализованы с помощью механизма под названием «мутации», в частности [ALTER TABLE ... DELETE](/ru/reference/statements/alter/delete) и [ALTER TABLE ... UPDATE](/ru/reference/statements/alter/update). Это асинхронные фоновые процессы, похожие на слияния в таблицах [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index), которые создают новые «мутированные» версии частей.
+
+Для таблиц `*MergeTree` мутации выполняются путем **перезаписи частей данных целиком**.
+Атомарности здесь нет — части заменяются мутированными, как только они готовы, и запрос `SELECT`, который начал выполняться во время мутации, увидит данные из уже измененных частей вместе с данными из частей, которые еще не были изменены.
+
+Мутации полностью упорядочены по порядку создания и применяются к каждой части именно в этом порядке. Кроме того, мутации частично упорядочены относительно запросов `INSERT INTO`: данные, вставленные в таблицу до отправки мутации, будут изменены, а данные, вставленные после этого, — нет. Обратите внимание, что мутации никак не блокируют вставки.
+
+Запрос мутации возвращает результат сразу после добавления записи о мутации (в случае реплицируемых таблиц — в ZooKeeper, для нереплицируемых таблиц — в файловую систему). Сама мутация выполняется асинхронно с использованием настроек системного профиля. Для отслеживания прогресса мутаций можно использовать таблицу [`system.mutations`](/ru/reference/system-tables/mutations). Успешно отправленная мутация продолжит выполняться, даже если серверы ClickHouse будут перезапущены. После отправки мутацию нельзя откатить, но, если она по какой-либо причине зависла, ее можно отменить запросом [`KILL MUTATION`](/ru/reference/statements/kill#kill-mutation).
+
+Записи о завершенных мутациях удаляются не сразу (количество сохраняемых записей определяется параметром движка хранения `finished_mutations_to_keep`). Более старые записи о мутациях удаляются.
+
+<div id="synchronicity-of-alter-queries">
+  ## Синхронность запросов `ALTER`
+</div>
+
+Для нереплицируемых таблиц все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц запрос лишь добавляет в `ZooKeeper` инструкции для соответствующих действий, а сами действия выполняются как можно скорее. Однако запрос может ждать завершения этих действий на всех репликах.
+
+Для запросов `ALTER`, создающих мутации (например, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` и другие), синхронность определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync).
+
+Для других запросов `ALTER`, которые изменяют только метаданные, можно использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync), чтобы настроить ожидание.
+
+С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят все запросы `ALTER`.
+
+<Note>
+  Для всех запросов `ALTER`: если `alter_sync = 2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+</Note>
+
+<div id="related-content">
+  ## См. также
+</div>
+
+* Блог: [Обновления и удаления в ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
