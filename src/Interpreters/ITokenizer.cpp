@@ -17,8 +17,6 @@
 #endif
 
 #if USE_ICU
-#  include <unicode/brkiter.h>
-#  include <unicode/locid.h>
 #  include <unicode/ubrk.h>
 #  include <unicode/utext.h>
 #  include <unicode/utypes.h>
@@ -810,13 +808,15 @@ void AsciiCJKTokenizer::substringToTokens(
 namespace
 {
 
-/// `icu::BreakIterator` is stateful and not thread-safe, while tokenizers are shared as `const`
+using UBreakIteratorPtr = std::unique_ptr<UBreakIterator, decltype(&ubrk_close)>;
+
+/// A word break iterator is stateful and not thread-safe, while tokenizers are shared as `const`
 /// pointers across threads. Keeping one iterator per (thread, locale) makes the tokenizer itself
 /// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
-icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
+UBreakIterator * getThreadLocalIcuWordIterator(const String & locale)
 {
     static constexpr size_t max_cached_iterators = 32;
-    thread_local std::unordered_map<String, std::unique_ptr<icu::BreakIterator>> iterators;
+    thread_local std::unordered_map<String, UBreakIteratorPtr> iterators;
 
     auto it = iterators.find(locale);
     if (it == iterators.end())
@@ -825,8 +825,7 @@ icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
             iterators.clear();
 
         UErrorCode status = U_ZERO_ERROR;
-        std::unique_ptr<icu::BreakIterator> iterator(
-            icu::BreakIterator::createWordInstance(icu::Locale::createCanonical(locale.c_str()), status));
+        UBreakIteratorPtr iterator(ubrk_open(UBRK_WORD, locale.c_str(), nullptr, 0, &status), &ubrk_close);
 
         if (U_FAILURE(status))
             throw Exception(
@@ -837,7 +836,7 @@ icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
         it = iterators.emplace(locale, std::move(iterator)).first;
     }
 
-    return *it->second;
+    return it->second.get();
 }
 
 /// Holds the UTF-8 `UText` currently bound to the thread-local break iterator.
@@ -845,7 +844,7 @@ struct IcuTextBinding
 {
     UText * utext = nullptr;
     const char * data = nullptr;
-    const icu::BreakIterator * iterator = nullptr;
+    const UBreakIterator * iterator = nullptr;
 
     ~IcuTextBinding()
     {
@@ -865,32 +864,32 @@ bool IcuTokenizer::nextInString(
     [[maybe_unused]] size_t & __restrict token_length) const
 {
 #if USE_ICU
-    icu::BreakIterator & iterator = getThreadLocalIcuWordIterator(locale);
+    UBreakIterator * iterator = getThreadLocalIcuWordIterator(locale);
 
     /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
     /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
     thread_local IcuTextBinding binding;
 
-    if (pos == 0 || data != binding.data || &iterator != binding.iterator)
+    if (pos == 0 || data != binding.data || iterator != binding.iterator)
     {
         UErrorCode status = U_ZERO_ERROR;
         binding.utext = utext_openUTF8(binding.utext, data, static_cast<int64_t>(length), &status);
         if (U_FAILURE(status))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot open ICU UTF-8 text: {}", u_errorName(status));
 
-        iterator.setText(binding.utext, status);
+        ubrk_setUText(iterator, binding.utext, &status);
         if (U_FAILURE(status))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set ICU break iterator text: {}", u_errorName(status));
 
         binding.data = data;
-        binding.iterator = &iterator;
+        binding.iterator = iterator;
     }
 
     auto start = static_cast<int32_t>(pos);
     int32_t end = 0;
-    while ((end = iterator.following(start)) != icu::BreakIterator::DONE)
+    while ((end = ubrk_following(iterator, start)) != UBRK_DONE)
     {
-        if (iterator.getRuleStatus() >= UBRK_WORD_NONE_LIMIT)
+        if (ubrk_getRuleStatus(iterator) >= UBRK_WORD_NONE_LIMIT)
         {
             token_start = static_cast<size_t>(start);
             token_length = static_cast<size_t>(end - start);
