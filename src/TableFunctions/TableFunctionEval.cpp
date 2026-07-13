@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -26,6 +27,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_eval_table_function;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -149,6 +152,13 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     /// `eval` is analyzer-only, and the same validation rejects such a change for a usual query.
     validateAnalyzerSettings(query, settings[Setting::allow_experimental_analyzer]);
 
+    /// Resolve the generated query's own `SETTINGS` clause into a private context, before the
+    /// normalization visitors below rewrite the query tree (which can move or drop the `SETTINGS`).
+    /// The AST size limits are then read from this context, so an inner `... SETTINGS max_ast_elements = N`
+    /// controls its own limits the same way it would when the query is executed directly.
+    auto limits_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, limits_context);
+
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
     /// for a usual query.
@@ -160,6 +170,18 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     {
         NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
+    }
+
+    /// Apply the AST size limits to the generated query, same as `executeQueryImpl` does for a usual
+    /// query. Without this, `max_ast_depth` / `max_ast_elements` are ineffective for the inner query:
+    /// a tiny outer `SELECT * FROM eval('...')` could smuggle a huge or very deep AST into the analyzer,
+    /// even though executing the same inner query directly would be rejected.
+    {
+        const auto & limits_settings = limits_context->getSettingsRef();
+        if (limits_settings[Setting::max_ast_depth])
+            query->checkDepth(limits_settings[Setting::max_ast_depth]);
+        if (limits_settings[Setting::max_ast_elements])
+            query->checkSize(limits_settings[Setting::max_ast_elements]);
     }
 
     create.set(create.select, query);

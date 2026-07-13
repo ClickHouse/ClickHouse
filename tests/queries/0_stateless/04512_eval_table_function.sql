@@ -93,6 +93,15 @@ CREATE TABLE t_eval AS eval('SELECT 1 AS x'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT now()') SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM eval('SELECT * FROM system.one') SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 
+-- The AST size limits `max_ast_elements` / `max_ast_depth` apply to the generated query, same as when
+-- it is executed directly, so a tiny outer query cannot smuggle a huge or deep AST past them.
+SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10') SETTINGS max_ast_elements = 30; -- { serverError TOO_BIG_AST }
+SELECT count() FROM eval('SELECT (((((1)))))') SETTINGS max_ast_depth = 3; -- { serverError TOO_DEEP_AST }
+-- The limits are read after the generated query's own SETTINGS are applied, so an inner SETTINGS clause
+-- controls its own AST size limits, both to tighten and to relax them.
+SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 SETTINGS max_ast_elements = 5'); -- { serverError TOO_BIG_AST }
+SELECT * FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 AS big SETTINGS max_ast_elements = 100000') SETTINGS max_ast_elements = 30;
+
 -- The old analyzer is not supported.
 SET enable_analyzer = 0;
 SELECT * FROM eval('SELECT 28'); -- { serverError NOT_IMPLEMENTED }
