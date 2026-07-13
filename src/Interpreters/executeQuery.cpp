@@ -1197,6 +1197,15 @@ struct CollectTablesData
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
 ///
+/// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
+/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP`/`RESTORE`, and the
+/// `ASTQueryWithTableAndOutput` family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`,
+/// `ALTER`, ...). Query classes that keep table references in other AST shapes — `SHOW COLUMNS`,
+/// `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE` — are deliberately not covered: `RENAME` and `EXCHANGE`
+/// manipulate the tables' catalog registration themselves, and broadening the randomized `DETACH`/`ATTACH`
+/// to pure-metadata queries would add churn to the test suite without exercising the data-integrity paths
+/// this testing hook targets.
+///
 /// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
 /// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
 /// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
