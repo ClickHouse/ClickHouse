@@ -178,7 +178,10 @@ def test_nullable_record_opt_in():
         settings=settings,
     )
     assert (
-        node.query("SELECT i, rec FROM bq_nullable_rec ORDER BY i FORMAT TSV", settings=settings)
+        node.query(
+            "SELECT i, rec FROM bq_nullable_rec ORDER BY i FORMAT TSV",
+            settings=settings,
+        )
         == "1\t(7,'seven',['t1','t2'])\n2\t\\N\n3\t(NULL,'y-only',[])\n"
     )
     node.query("DROP TABLE bq_nullable_rec")
@@ -193,7 +196,10 @@ def test_nullable_record_opt_in():
         settings=settings,
     )
     assert (
-        node.query("SELECT i, recs FROM bq_nullable_recs ORDER BY i FORMAT TSV", settings=settings)
+        node.query(
+            "SELECT i, recs FROM bq_nullable_recs ORDER BY i FORMAT TSV",
+            settings=settings,
+        )
         == "1\t[(1,'one'),(2,NULL)]\n2\t[]\n3\t[]\n"
     )
     node.query("DROP TABLE bq_nullable_recs")
@@ -208,11 +214,13 @@ def test_nullable_record_opt_in():
         settings=settings,
     )
     node.query(
-        "INSERT INTO bq_nullable_write VALUES (1, NULL), (2, tuple(7))", settings=settings
+        "INSERT INTO bq_nullable_write VALUES (1, NULL), (2, tuple(7))",
+        settings=settings,
     )
     assert (
         node.query(
-            "SELECT id, meta FROM bq_nullable_write ORDER BY id FORMAT TSV", settings=settings
+            "SELECT id, meta FROM bq_nullable_write ORDER BY id FORMAT TSV",
+            settings=settings,
         )
         == "1\t\\N\n2\t(7)\n"
     )
