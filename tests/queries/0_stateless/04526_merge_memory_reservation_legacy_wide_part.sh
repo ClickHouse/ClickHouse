@@ -51,7 +51,7 @@ ${CLICKHOUSE_LOCAL} --path "${DB_PATH}" -q "
     OPTIMIZE TABLE t_merge_mem_legacy FINAL SETTINGS optimize_throw_if_noop = 1;
 
     SELECT count() FROM t_merge_mem_legacy;
-    SELECT count() FROM system.parts WHERE table = 't_merge_mem_legacy' AND active;
+    SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_mem_legacy' AND active;
 " -- --merges_mutations_memory_usage_soft_limit=1
 
 rm -rf "${WORKING_FOLDER}"
