@@ -30,6 +30,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_concat_merge_data;
 DROP TABLE IF EXISTS t_concat_merge;
+DROP TABLE IF EXISTS t_concat_merge_nested;
 DROP TABLE IF EXISTS t_concat_merge_join_right;
 
 CREATE TABLE t_concat_merge_data (key UInt64, value String)
@@ -39,6 +40,11 @@ INSERT INTO t_concat_merge_data SELECT number, toString(number) FROM numbers(900
 OPTIMIZE TABLE t_concat_merge_data FINAL;
 
 CREATE TABLE t_concat_merge AS t_concat_merge_data ENGINE = Merge(currentDatabase(), '^t_concat_merge_data\$');
+
+-- A nested \`Merge\` table: its only child is itself a \`Merge\` table. The child readers of the
+-- inner \`Merge\` live in the inner step's internal child plans, so the safeguards must be
+-- propagated through the nested \`ReadFromMerge\` step, not only to direct \`ReadFromMergeTree\` ones.
+CREATE TABLE t_concat_merge_nested AS t_concat_merge_data ENGINE = Merge(currentDatabase(), '^t_concat_merge\$');
 
 -- A small right table for the read-in-order-through-join case below. Its keys are a sparse
 -- subset of the left keys, so a LEFT JOIN keeps every left row and does not multiply them.
@@ -55,6 +61,9 @@ QID_DISTINCT="${CLICKHOUSE_DATABASE}_distinct"
 QID_PLAIN="${CLICKHOUSE_DATABASE}_plain"
 QID_JOIN="${CLICKHOUSE_DATABASE}_join"
 QID_VROW="${CLICKHOUSE_DATABASE}_vrow"
+QID_AGG_NESTED="${CLICKHOUSE_DATABASE}_agg_nested"
+QID_PLAIN_NESTED="${CLICKHOUSE_DATABASE}_plain_nested"
+QID_JOIN_NESTED="${CLICKHOUSE_DATABASE}_join_nested"
 
 # Aggregation-in-order over a `Merge` table on top of a multi-part table.
 $CLICKHOUSE_CLIENT --query_id "$QID_AGG" --query \
@@ -85,6 +94,26 @@ $CLICKHOUSE_CLIENT --query_id "$QID_JOIN" --query \
     "SELECT t.key, r.tag FROM t_concat_merge AS t LEFT JOIN t_concat_merge_join_right AS r ON t.key = r.key
      ORDER BY t.key LIMIT 10 FORMAT Null SETTINGS $SETTINGS, query_plan_read_in_order_through_join = 1, enable_analyzer = 1"
 
+# The same shapes through a nested `Merge` table (a `Merge` whose child is a `Merge`).
+# The safeguards are propagated through the nested `ReadFromMerge` step to the inner readers
+# (`recursivelyApplyToReadingSteps` descends into nested `ReadFromMerge` child plans).
+#
+# NOTE: today the read-in-order optimization does not engage for a nested `Merge` at all:
+# the reading-step discovery requires every selected table to have a non-empty sorting key,
+# and a `Merge` table's metadata has none, so the outer `ReadFromMerge` is rejected before
+# `requestReadingInOrder` / `setPreferMultipleStreams` are ever called. The checks below pin
+# down that behavior as canaries: if nested `Merge` ever starts reading in order, they flip,
+# and the safeguard propagation (already recursive) must be re-verified with positive controls.
+$CLICKHOUSE_CLIENT --query_id "$QID_AGG_NESTED" --query \
+    "SELECT key, count() FROM t_concat_merge_nested GROUP BY key FORMAT Null SETTINGS $SETTINGS, optimize_aggregation_in_order = 1"
+
+$CLICKHOUSE_CLIENT --query_id "$QID_PLAIN_NESTED" --query \
+    "SELECT * FROM t_concat_merge_nested WHERE value LIKE '%5%' ORDER BY key FORMAT Null SETTINGS $SETTINGS"
+
+$CLICKHOUSE_CLIENT --query_id "$QID_JOIN_NESTED" --query \
+    "SELECT t.key, r.tag FROM t_concat_merge_nested AS t LEFT JOIN t_concat_merge_join_right AS r ON t.key = r.key
+     ORDER BY t.key LIMIT 10 FORMAT Null SETTINGS $SETTINGS, query_plan_read_in_order_through_join = 1, enable_analyzer = 1"
+
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS processors_profile_log"
 
 # Aggregation-in-order and distinct-in-order must NOT collapse streams with per-part
@@ -108,6 +137,20 @@ SELECT 'join_outer_limit_reads_in_order', countIf(name LIKE '%algorithm: InOrder
 -- ... but the outer LIMIT (has_outer_limit) keeps per-part PrefetchingConcat disabled.
 SELECT 'join_outer_limit_no_prefetching_merge', countIf(name = 'PrefetchingConcat') = 0
     FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_JOIN';
+-- Nested Merge canary: today the read-in-order optimization does not engage through a nested
+-- Merge (see the note above). If this flips to reading in order, re-verify the safeguard
+-- propagation with positive controls instead of these canaries.
+SELECT 'plain_nested_merge_not_read_in_order_yet', countIf(name LIKE '%algorithm: InOrder%') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_PLAIN_NESTED';
+-- Nested Merge: per-part PrefetchingConcat must not appear on the inner readers in any of
+-- these shapes (today because no read-in-order engages at all; with future nested in-order
+-- support, because the safeguards are propagated through the nested ReadFromMerge step).
+SELECT 'agg_in_order_no_prefetching_nested_merge', countIf(name = 'PrefetchingConcat') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_AGG_NESTED';
+SELECT 'plain_no_prefetching_nested_merge', countIf(name = 'PrefetchingConcat') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_PLAIN_NESTED';
+SELECT 'join_outer_limit_no_prefetching_nested_merge', countIf(name = 'PrefetchingConcat') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_JOIN_NESTED';
 "
 
 # Correctness: aggregation and distinct produce the expected results.
@@ -122,6 +165,12 @@ SELECT 'join_correctness';
 SELECT arraySort(groupArray(key)) FROM (
     SELECT t.key AS key FROM t_concat_merge AS t LEFT JOIN t_concat_merge_join_right AS r ON t.key = r.key
     ORDER BY t.key LIMIT 10) SETTINGS query_plan_read_in_order_through_join = 1, enable_analyzer = 1;
+SELECT 'nested_correctness';
+SELECT sum(key), count() FROM (SELECT key, count() AS c FROM t_concat_merge_nested GROUP BY key SETTINGS optimize_aggregation_in_order = 1);
+SELECT groupArray(key) = arraySort(groupArray(key)) FROM (SELECT key FROM t_concat_merge_nested ORDER BY key);
+SELECT arraySort(groupArray(key)) FROM (
+    SELECT t.key AS key FROM t_concat_merge_nested AS t LEFT JOIN t_concat_merge_join_right AS r ON t.key = r.key
+    ORDER BY t.key LIMIT 10) SETTINGS query_plan_read_in_order_through_join = 1, enable_analyzer = 1;
 "
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_concat_merge; DROP TABLE t_concat_merge_data; DROP TABLE t_concat_merge_join_right;"
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_concat_merge_nested; DROP TABLE t_concat_merge; DROP TABLE t_concat_merge_data; DROP TABLE t_concat_merge_join_right;"

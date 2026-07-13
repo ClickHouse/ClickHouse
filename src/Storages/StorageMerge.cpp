@@ -1215,11 +1215,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+static bool recursivelyApplyToReadingSteps(
+    QueryPlan::Node * node,
+    const std::function<bool(ReadFromMergeTree &)> & func,
+    const std::function<bool(ReadFromMerge &)> & merge_func)
 {
     bool ok = true;
     for (auto * child : node->children)
-        ok &= recursivelyApplyToReadingSteps(child, func);
+        ok &= recursivelyApplyToReadingSteps(child, func, merge_func);
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
     // In this case it is ok if one child will read in order and other will not (though I don't know when it is possible),
@@ -1229,6 +1232,11 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
 
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         ok &= func(*read_from_merge_tree);
+    /// A child table of a `Merge` table can itself be a `Merge` table. The readers of the nested
+    /// `Merge` live in the nested step's internal child plans, not in `node->children`, so they
+    /// can only be reached through the nested step itself.
+    else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get()))
+        ok &= merge_func(*read_from_merge);
 
     return ok;
 }
@@ -1742,10 +1750,18 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
             order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit);
     };
 
+    /// A nested `Merge` table is handled through its own `requestReadingInOrder`, so the nested
+    /// step also records the order it must preserve when uniting its child pipelines, and the
+    /// `query_limit` reaches the readers of the nested child plans (`has_outer_limit`).
+    auto request_read_in_order_nested = [order_info_, query_limit](ReadFromMerge & nested_read_from_merge)
+    {
+        return nested_read_from_merge.requestReadingInOrder(order_info_, query_limit);
+    };
+
     bool ok = true;
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            ok &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), request_read_in_order);
+            ok &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), request_read_in_order, request_read_in_order_nested);
 
     if (!ok)
         return false;
@@ -1765,9 +1781,15 @@ void ReadFromMerge::setPreferMultipleStreams()
         return true;
     };
 
+    auto prefer_multiple_streams_nested = [](ReadFromMerge & nested_read_from_merge)
+    {
+        nested_read_from_merge.setPreferMultipleStreams();
+        return true;
+    };
+
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams);
+            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams, prefer_multiple_streams_nested);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
