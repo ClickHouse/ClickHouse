@@ -23,6 +23,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
@@ -3129,4 +3130,134 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
+    /// releases its query context, but a concurrent holder for the same query_id revives the
+    /// context first. The release must then be a no-op: the revived context must survive (so the
+    /// per-query download limit keeps being enforced for the rest of the query) and a later release
+    /// of the revived context must not fail with "Attempt to release query context that does not exist".
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    /// holder2 revives the same context before holder1 releases (getOrSetQueryContext returns the
+    /// existing entry). Now query_map, holder1 and holder2 all reference it (use_count == 3).
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// holder1 releases. The map still maps query_id to the live context and another holder is
+    /// alive, so the entry must be kept (no erase, no throw) and nothing is handed back for
+    /// destruction.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    context1.reset();
+
+    /// Enforcement is preserved: the revived context is still discoverable.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), context2.get());
+    }
+
+    /// holder2 is now the last holder; releasing it actually removes the entry, once, and hands the
+    /// orphaned context back so it is destroyed by the caller outside the cache lock.
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    context2.reset();
+
+    /// After full release the context is gone.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    /// Regression for #109508: two holders for the same query_id release "at the same time".
+    /// A query with parallel read streams has several holders (each CachedOnDiskReadBufferFromFile
+    /// creates its own), so use_count is > 2. If the last-holder decision reads use_count before this
+    /// holder drops its own reference (or drops it outside the lock), both releasers observe the shared
+    /// count, both skip the erase, and after both drop their reference only the map entry remains and is
+    /// never removed. That orphans query_map[query_id] for the lifetime of the cache and lets a later
+    /// query reusing the same query_id pick up stale per-query limit state. The fix drops each holder's
+    /// reference under the lock and erases once the map entry is the sole owner.
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// Keep a raw pointer to assert which release actually surrenders the context for destruction.
+    const auto * context_raw = context1.get();
+
+    /// Both holders decide to release while both are still alive (the interleaving that leaks): each
+    /// removeQueryContext drops that holder's reference under the lock. The first keeps the entry (one
+    /// holder still alive) and returns nullptr; the second erases it and returns the now-orphaned
+    /// context so the caller destroys it after the cache lock is released. Neither throws.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    /// removeQueryContext resets each passed reference, so both are already null here.
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+
+    /// Only the last release hands the context back for out-of-lock destruction; the earlier one
+    /// returns nullptr because another holder was still alive.
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+
+    /// The entry must be gone: with the pre-fix logic both releases skipped the erase and the entry
+    /// leaked, so tryGetQueryContext would still find it.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
 }
