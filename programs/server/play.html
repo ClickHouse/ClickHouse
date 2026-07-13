@@ -6307,6 +6307,11 @@ query_area.onkeydown = (e) => {
 
 function clear()
 {
+    /// Also hide the floating image preview here, not only from `mouseleave` / `scroll`:
+    /// rerunning a query (`Ctrl+Enter`) tears down the hovered result cell through this
+    /// path without delivering either event, so the `position: fixed` preview would
+    /// otherwise stay pinned over the next result until some later scroll.
+    hideImagePreview();
     resultEl.clear();
     resultEl.style.display = '';
     progressEl.clear();
