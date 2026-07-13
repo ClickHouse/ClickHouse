@@ -157,7 +157,9 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=full4" -d "DROP
 # user itself is granted it.
 echo "-- A token limited to SELECT cannot create a temporary table, though the user (granted CREATE TEMPORARY TABLE) can"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user5} IDENTIFIED WITH plaintext_password BY 'full5', plaintext_password BY 'token5' GRANTS (SELECT ON t1)"
-${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user5}" -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${user5}"
+# TABLE ENGINE ON Memory is required too when table_engines_require_grant is enabled (as it is in the CI test config);
+# the SELECT-only token gets neither CREATE TEMPORARY TABLE nor TABLE ENGINE ON Memory, so it stays denied regardless.
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user5}" -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${user5}" -q "GRANT TABLE ENGINE ON Memory TO ${user5}"
 # The full credential (no GRANTS clause) has CREATE TEMPORARY TABLE and succeeds (no output on success).
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user5}&password=full5" -d "CREATE TEMPORARY TABLE tmp5 (x UInt64) ENGINE = Memory"
 # The token's SELECT-only intersection does not imply CREATE TEMPORARY TABLE, so the implicit expansion cannot bring it back.
