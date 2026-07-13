@@ -7900,6 +7900,21 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
+    DECLARE(NameMatchMode, database_and_table_name_matching, NameMatchMode::Sensitive, R"(
+Controls how database and table names in queries are matched against existing objects.
+
+Possible values:
+- `sensitive` — Names must match exactly (default).
+- `standard` — SQL-standard-like matching. A name component that is not double-quoted is matched
+  through an ASCII-case-folded namespace: `SELECT * FROM MyDb.MyTable` finds a database and table
+  whose names fold to `mydb` / `mytable`, and the exact spelling gets no priority over other case
+  variants. If several existing objects fold to the same name, the reference is ambiguous and the
+  query fails with the full sorted candidate list. Double-quoted components (`"MyDb"`) are always
+  matched exactly. Backtick-quoted components fold like unquoted ones.
+
+The mode applies to references to existing objects. Names of newly created objects are stored as
+written.
+)", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", 0) \

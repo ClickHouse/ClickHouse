@@ -328,6 +328,10 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
 
+IMPLEMENT_SETTING_ENUM(NameMatchMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"sensitive", NameMatchMode::Sensitive},
+     {"standard", NameMatchMode::Standard}})
+
 IMPLEMENT_SETTING_ENUM(
     GroupArrayActionWhenLimitReached,
     ErrorCodes::BAD_ARGUMENTS,
