@@ -39,6 +39,13 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (aggregating_step->isGroupingSets())
         return nullptr;
 
+    /// Aggregation in order executes through AggregatingInOrderTransform, which
+    /// never consults the heap, and its limit hint already cuts the read short
+    /// (see optimizeLimitForAggregationInOrder). Do not annotate a Top-K the
+    /// execution would ignore.
+    if (aggregating_step->inOrder())
+        return nullptr;
+
     const auto & params = aggregating_step->getParams();
 
     /// WITH TOTALS uses overflow_row which is incompatible with key pruning.

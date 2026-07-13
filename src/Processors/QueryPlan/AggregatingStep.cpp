@@ -176,6 +176,13 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+
+    /// Aggregation in order executes through AggregatingInOrderTransform, which
+    /// never consults the top-K heap, and its limit hint already cuts the read
+    /// short (see optimizeLimitForAggregationInOrder).  Drop a previously
+    /// pushed-down top-K so the plan does not advertise an optimization the
+    /// execution would ignore.
+    params.top_k.reset();
 }
 
 void AggregatingStep::applyLimitPushdown(
