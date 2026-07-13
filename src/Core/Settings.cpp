@@ -299,6 +299,7 @@ Cloud default value:
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
 For a plain `INSERT`, the input data is read and parsed as a single stream, and the pipeline is then resized to this many streams for writing.
+The write-side parallelization applies only to synchronous plain `INSERT`s: asynchronous inserts ([`async_insert`](#async_insert) `= 1`) are stored in a queue and flushed in the background, so they are unaffected by this setting and always stay single-stream.
 The writing side is parallelized only when it is safe to do so; otherwise it stays single-stream and this setting has no effect on it. In particular, the write is kept single-stream when a destination table (or a table it forwards to) deduplicates inserted blocks, when the destination has dependent materialized views (unless [`parallel_view_processing`](#parallel_view_processing) is enabled), and for `Buffer` and `Distributed` destinations.
 Higher values will lead to higher memory usage.
 )", 0) \
