@@ -89,6 +89,14 @@ public:
     /// Profile events of the query will be written as packets, at most once in `period_us` microseconds.
     void setProfileEventsQueue(const InternalProfileEventsQueuePtr & queue, const String & host_name_, UInt64 period_us);
 
+    /// Accessors for the log and profile-events queue wiring, so it can be carried over when a
+    /// framing format is recreated for the buffered exception path (see `HTTPHandler`), keeping the
+    /// `log` and `profile_events` packets collected during parsing and planning.
+    const std::shared_ptr<InternalTextLogsQueue> & getLogsQueue() const { return logs_queue; }
+    const InternalProfileEventsQueuePtr & getProfileEventsQueue() const { return profile_events_queue; }
+    const String & getProfileEventsHostName() const { return host_name; }
+    UInt64 getProfileEventsPeriodMicroseconds() const { return profile_events_period_us; }
+
 protected:
     virtual void writePayloadPacket(FramedPacketKind kind, std::string_view data) = 0;
     virtual void writeProgressPacket(const Progress & progress) = 0;

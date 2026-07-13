@@ -9,6 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # so only the presence and the structure are checked.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
+# The buffered path (`http_wait_end_of_query=1`) discards all output and rebuilds the framing format
+# for the exception; it must still drain the log / profile-events queues collected before the failure.
+WAIT_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=1&output_format_parallel_formatting=0"
 
 result_file="${CLICKHOUSE_TMP}/framing_packets_$$.ndjson"
 
@@ -53,4 +56,14 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_l
     -d "SELECT * FROM table_that_does_not_exist_04513" > "$result_file"
 [ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'planning-phase log packets: OK'
 [ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'exception packet: OK'
+rm "$result_file"
+
+# The buffered path (`http_wait_end_of_query=1`) throws away everything buffered before the failure and
+# recreates the framing format for the exception. It must carry over the queues attached during parsing
+# and planning, so the framed response still delivers the `log` packets, not only the `exception` packet.
+echo '--- planning-phase logs are framed with wait_end_of_query when the query fails before producing output'
+${CLICKHOUSE_CURL} -sS "${WAIT_URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
+    -d "SELECT * FROM table_that_does_not_exist_04513" > "$result_file"
+[ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'wait_end_of_query planning-phase log packets: OK'
+[ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'wait_end_of_query exception packet: OK'
 rm "$result_file"
