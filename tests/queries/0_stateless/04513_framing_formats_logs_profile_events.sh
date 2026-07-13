@@ -67,3 +67,35 @@ ${CLICKHOUSE_CURL} -sS "${WAIT_URL}&framing_output_format=JSONEachPacketString&s
 [ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'wait_end_of_query planning-phase log packets: OK'
 [ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'wait_end_of_query exception packet: OK'
 rm "$result_file"
+
+# The framing / logs / profile-events settings can be set by the query's own SETTINGS clause, which is
+# applied only after parsing. The queues are reconciled with the effective settings after the query is
+# interpreted, so a query that enables framing (and logs) from its SETTINGS clause - while the URL keeps
+# the default `framing_output_format=None` - still gets its `profile_events` and `log` packets.
+echo '--- profile events packets when framing is enabled by the query SETTINGS clause'
+${CLICKHOUSE_CURL} -sS "${URL}" \
+    -d "SELECT sum(number) FROM numbers(1000000) SETTINGS framing_output_format='JSONEachPacketString' FORMAT JSONEachRow" > "$result_file"
+[ "$(grep -c '"packet":"profile_events"' "$result_file")" -ge 1 ] && echo 'query SETTINGS profile_events packets: OK'
+rm "$result_file"
+
+echo '--- log packets when framing and logs are enabled by the query SETTINGS clause'
+${CLICKHOUSE_CURL} -sS "${URL}" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 SETTINGS framing_output_format='JSONEachPacketString', send_logs_level='trace' FORMAT Null" > "$result_file"
+[ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'query SETTINGS log packets: OK'
+rm "$result_file"
+
+# The inverse override must not keep queues that nobody drains: a session / URL that enables framing (or
+# the logs) but a query that disables it in its own SETTINGS clause must produce plain, unframed output
+# (respectively, no `log` packets), because the queues are dropped once the effective settings are known.
+echo '--- the query SETTINGS clause can disable framing enabled by the URL'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 1 AS x SETTINGS framing_output_format='None' FORMAT JSONEachRow" > "$result_file"
+[ "$(grep -c '"packet":' "$result_file")" -eq 0 ] && echo 'query SETTINGS framing None disables framing: OK'
+cat "$result_file"
+rm "$result_file"
+
+echo '--- the query SETTINGS clause can disable logs enabled by the URL while framing stays on'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 SETTINGS send_logs_level='none' FORMAT Null" > "$result_file"
+[ "$(grep -c '"packet":"log"' "$result_file")" -eq 0 ] && echo 'query SETTINGS send_logs_level none drops log packets: OK'
+rm "$result_file"
