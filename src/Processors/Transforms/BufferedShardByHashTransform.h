@@ -76,15 +76,17 @@ private:
     /// Budget bookkeeping for one input block. Accounting is per input block, NOT per queued chunk, because
     /// `scatter` can share one physical buffer across all shard chunks of a block (the canonical case is a
     /// `LowCardinality` dictionary: `ColumnLowCardinality::scatter` keeps a single dictionary shared across
-    /// the shards). Measuring the block *before* the split - when nothing is shared yet - and using
-    /// `allocatedBytes()` counts every buffer, dictionary included, exactly once, regardless of how the
-    /// shards share it afterwards. Charging per shard chunk instead would either count the shared buffer
-    /// once per shard (inflating the counter up to `num_shards` times) or, with `Chunk::bytes()`, drop it
-    /// entirely (a shared dictionary reports zero owned bytes). The charge is held until `outstanding_chunks`
-    /// reaches zero, i.e. until the block no longer keeps any buffer alive.
+    /// the shards). `generateOutputChunks` charges the exact bytes actually resident after the split: the
+    /// per-shard *owned* bytes summed across the buffered shard chunks, plus each shared dictionary once. This
+    /// captures buffers `scatter` grows beyond the pre-split block (e.g. `ColumnString` does not reserve
+    /// `chars`, so each shard regrows its own `chars` buffer) without the two errors of a naive per-shard
+    /// `allocatedBytes()` sum: counting a shared dictionary once per shard (inflating the counter up to
+    /// `num_shards` times) or, with `Chunk::bytes()`, dropping it entirely (a shared dictionary reports zero
+    /// owned bytes). The charge is held until `outstanding_chunks` reaches zero, i.e. until the block no
+    /// longer keeps any buffer alive.
     struct BlockBudget
     {
-        Int64 bytes = 0;             /// The whole block's `allocatedBytes()` at split time.
+        Int64 bytes = 0;             /// The block's exact resident bytes after the split (owned + shared dictionaries).
         size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
     };
 

@@ -1,9 +1,11 @@
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -98,9 +100,11 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
 
 void BufferedShardByHashTransform::chargePendingInput()
 {
-    /// Charge the whole pre-split block: `allocatedBytes()` counts every buffer (dictionary included) once,
-    /// whereas summing the shard chunks after the split would double-count or drop buffers that `scatter`
-    /// shares across the shards (see `BlockBudget`).
+    /// Charge a provisional estimate the moment the chunk is pulled, before it is split: this bounds the
+    /// in-flight read-ahead of every scatter so an admission decision cannot overshoot by a whole chunk. The
+    /// pre-split `allocatedBytes()` is only an estimate of the post-split resident bytes - `scatter` can grow
+    /// per-shard buffers beyond the source (e.g. `ColumnString` regrows each shard's `chars`) - so once the
+    /// split is done `generateOutputChunks` reconciles this charge to the exact bytes actually buffered.
     pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
     total_buffered_bytes->fetch_add(pending_input_bytes, std::memory_order_relaxed);
 }
@@ -345,10 +349,10 @@ void BufferedShardByHashTransform::work()
 void BufferedShardByHashTransform::generateOutputChunks()
 {
     const auto num_rows = pending_input_chunk.getNumRows();
-    /// The charge added when this chunk was pulled is carried over to the block's `BlockBudget` below (or
-    /// released if the block produces no buffered chunk), so the shared counter stays continuous across the
-    /// split. Nothing is discharged and re-charged here.
-    const Int64 block_bytes = pending_input_bytes;
+    /// The provisional charge added when this chunk was pulled (`chargePendingInput`, the whole pre-split
+    /// block via `allocatedBytes()`) is already in the shared counter. Below we replace it with the exact
+    /// bytes actually resident after the split and reconcile the counter by the difference.
+    const Int64 provisional_bytes = pending_input_bytes;
     pending_input_bytes = 0;
     auto columns = pending_input_chunk.detachColumns();
 
@@ -374,7 +378,19 @@ void BufferedShardByHashTransform::generateOutputChunks()
             shard_columns[s].push_back(std::move(split[s]));
     }
 
+    /// A `LowCardinality` column keeps ONE dictionary shared across all of its shard chunks
+    /// (`ColumnLowCardinality::scatter` calls `setShared`), so the dictionary is resident once no matter how
+    /// many shards buffer it. Measure it once here, up front, before the shard columns are moved into the
+    /// queues; the per-shard owned bytes (the index column only, for `LowCardinality`) are summed in the loop
+    /// below. Every shard shares the same dictionary object, so reading it from shard 0 is exact regardless
+    /// of which shards end up buffered.
+    Int64 shared_dictionary_bytes = 0;
+    for (const auto & column : shard_columns[0])
+        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column.get()))
+            shared_dictionary_bytes += static_cast<Int64>(lc->getDictionary().allocatedBytes());
+
     const size_t block_id = next_block_id++;
+    Int64 owned_bytes = 0;
     size_t enqueued_chunks = 0;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -386,17 +402,36 @@ void BufferedShardByHashTransform::generateOutputChunks()
         if (shard_rows == 0)
             continue;
 
+        /// Sum the bytes this shard chunk owns, excluding the shared dictionary (added once above). `scatter`
+        /// copies non-`LowCardinality` columns into independent per-shard buffers, so their post-split total
+        /// can exceed the pre-split block (e.g. `ColumnString` does not reserve `chars`, so each shard regrows
+        /// its own `chars` buffer by doubling); the pre-split estimate would under-count that.
+        for (const auto & column : shard_columns[shard])
+        {
+            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column.get()))
+                owned_bytes += static_cast<Int64>(lc->getIndexes().allocatedBytes());
+            else
+                owned_bytes += static_cast<Int64>(column->allocatedBytes());
+        }
+
         enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
         ++enqueued_chunks;
     }
 
     if (enqueued_chunks > 0)
-        /// The charge is already in the shared counter (added by chargePendingInput); record it against the
-        /// block so it is released when the block's last shard chunk leaves a queue.
+    {
+        /// The block keeps its shared dictionaries alive as long as any of its shard chunks is buffered, so
+        /// the dictionary bytes are part of the block's charge and released with it (when its last shard chunk
+        /// drains). Reconcile the provisional charge already in the counter to these exact resident bytes.
+        const Int64 block_bytes = owned_bytes + shared_dictionary_bytes;
+        total_buffered_bytes->fetch_add(block_bytes - provisional_bytes, std::memory_order_relaxed);
         block_budgets[block_id].bytes = block_bytes;
+    }
     else
+    {
         /// No shard chunk was buffered (every row went to an already-finished output), so release the charge.
-        total_buffered_bytes->fetch_sub(block_bytes, std::memory_order_relaxed);
+        total_buffered_bytes->fetch_sub(provisional_bytes, std::memory_order_relaxed);
+    }
 }
 
 }
