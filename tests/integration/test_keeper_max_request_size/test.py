@@ -113,7 +113,6 @@ def test_advertised_limit_znode(started_cluster):
     keeper_utils.wait_until_connected(cluster, node)
     zk = keeper_utils.get_fake_zk(cluster, "node")
     try:
-        assert zk.exists("/keeper/max_request_size") is not None
         data, _ = zk.get("/keeper/max_request_size")
         assert data == b"1048576"
     finally:
