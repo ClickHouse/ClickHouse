@@ -48,12 +48,19 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
+    /// For the `key_string` and `key_fixed_string` methods the hash table holds only `StringRef`
+    /// entries; the key bytes themselves are copied into `string_pool` on insertion. The pool is
+    /// therefore part of the set size — without it, the byte limits (`max_bytes_in_distinct`,
+    /// `max_bytes_in_set`) would see only the fixed-width entries and under-count string keys by
+    /// an unbounded factor. For all other methods the pool stays at its initial allocation.
+    const size_t string_pool_bytes = string_pool.allocatedBytes();
+
     switch (type)
     {
-        case Type::EMPTY: return 0;
+        case Type::EMPTY: return string_pool_bytes;
 
     #define M(NAME) \
-        case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
+        case Type::NAME: return string_pool_bytes + (NAME)->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
