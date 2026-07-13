@@ -396,7 +396,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
             if (chunk.chunk.getNumRows() > 0)
             {
                 chassert(chunk.chunk.getColumns().size() == 1);
-                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfNeeded();
+                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
 
                 auto add_offsets = [&]<typename Offset>(Offset)

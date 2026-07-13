@@ -272,9 +272,9 @@ one step takes longer time
 ## cache_populated_by_fetch {#cache_populated_by_fetch} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 When `cache_populated_by_fetch` is disabled (the default setting), new data
 parts are loaded into the filesystem cache only when a query is run that requires
@@ -294,9 +294,9 @@ to trigger such an action.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "New setting"}]}]}/>
 
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
 
@@ -724,9 +724,9 @@ If the number of inactive parts in a single partition in the table exceeds
 the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
 slowed down.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up parts quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -1578,11 +1578,11 @@ insert is not executed. Note that this setting:
 Possible values:
 - Any positive integer.
 
-:::note
+<Note>
 If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
 are specified, ClickHouse will count on the value that will allow to perform
 inserts on a bigger amount of free memory.
-:::
+</Note>
 
 ## min_free_disk_ratio_to_perform_insert {#min_free_disk_ratio_to_perform_insert} 
 <SettingsInfoBlock type="Float" default_value="0" />
@@ -1629,9 +1629,9 @@ Minimal part level to create a data part in `Wide` format instead of `Compact`.
 The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
 setting.
 
-:::note
+<Note>
 Queries will still be limited by other `max_concurrent_queries` settings.
-:::
+</Note>
 
 Possible values:
 - Positive integer.
@@ -2274,13 +2274,13 @@ The interval of refreshing statistics cache in seconds. If it is set to zero, th
 When this setting has a value greater than zero only a single replica starts
 the merge immediately if merged part on shared storage.
 
-:::note
+<Note>
 Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and
 higher.
 
 This feature is not recommended for production use.
-:::
+</Note>
 
 Possible values:
 - Any positive integer.
