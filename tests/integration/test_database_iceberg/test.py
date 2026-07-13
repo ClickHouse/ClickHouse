@@ -449,7 +449,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -1493,7 +1493,7 @@ def test_database_priority_over_namespace(started_cluster):
     # create a regular database with the same name as the namespace
     node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
     node.query(f"CREATE DATABASE `{namespace}`")
-    
+
     # create a table with the same name in the regular database (3 rows)
     node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
     node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
@@ -1678,7 +1678,7 @@ def test_namespace_prefix_in_non_select_queries(started_cluster):
     assert node.query(use + f"EXISTS TABLE {table_name}").strip() == "1"
 
     describe = node.query(use + f"DESCRIBE TABLE {table_name}")
-    assert "id" in describe and "data" in describe, f"DESCRIBE failed: {describe}"
+    assert "symbol" in describe and "bid" in describe, f"DESCRIBE failed: {describe}"
 
     show_create = node.query(use + f"SHOW CREATE TABLE {table_name}")
     assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
@@ -1873,11 +1873,11 @@ def test_namespace_prefix_show_columns_and_reconnect(started_cluster):
     cols = node.query(
         f"USE {CATALOG_NAME}.{namespace}; SHOW COLUMNS FROM {table_name}"
     )
-    assert "id" in cols and "data" in cols, f"SHOW COLUMNS lost the namespace: {cols}"
+    assert "symbol" in cols and "bid" in cols, f"SHOW COLUMNS lost the namespace: {cols}"
 
     # Dotted form without USE.
     cols_dotted = node.query(f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}")
-    assert "id" in cols_dotted and "data" in cols_dotted, f"dotted SHOW COLUMNS failed: {cols_dotted}"
+    assert "symbol" in cols_dotted and "bid" in cols_dotted, f"dotted SHOW COLUMNS failed: {cols_dotted}"
 
     # A fresh connection with default database "catalog.namespace" (as persisted by
     # clients after USE) must resolve bare names in the namespace.
@@ -1912,7 +1912,7 @@ def test_namespace_two_part_in_non_select_queries(started_cluster):
     assert node.query(use + f"EXISTS TABLE {namespace}.{table_name}").strip() == "1"
 
     describe = node.query(use + f"DESCRIBE TABLE {namespace}.{table_name}")
-    assert "id" in describe and "data" in describe, f"DESCRIBE failed: {describe}"
+    assert "symbol" in describe and "bid" in describe, f"DESCRIBE failed: {describe}"
 
     show_create = node.query(use + f"SHOW CREATE TABLE {namespace}.{table_name}")
     assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
@@ -1921,7 +1921,7 @@ def test_namespace_two_part_in_non_select_queries(started_cluster):
     assert count == 2
 
     cols = node.query(use + f"SHOW COLUMNS FROM {namespace}.{table_name}")
-    assert "id" in cols and "data" in cols, f"two-part SHOW COLUMNS failed: {cols}"
+    assert "symbol" in cols and "bid" in cols, f"two-part SHOW COLUMNS failed: {cols}"
 
     # Iceberg tables expose no data-skipping indices; success without error is enough.
     node.query(use + f"SHOW INDEXES FROM {namespace}.{table_name}")
@@ -1946,11 +1946,11 @@ def test_namespace_prefix_materialized_view_target(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    node.query(f"CREATE TABLE {src_table} (id Float64, data String) ENGINE = Memory")
+    node.query(f"CREATE TABLE {src_table} (symbol Nullable(String), bid Nullable(Float64)) ENGINE = Memory")
     try:
         node.query(
             f"USE {CATALOG_NAME}.{namespace}; "
-            f"CREATE MATERIALIZED VIEW {mv} TO {table_name} AS SELECT id, data FROM {src_table}"
+            f"CREATE MATERIALIZED VIEW {mv} TO {table_name} AS SELECT symbol, bid FROM {src_table}"
         )
         show_create = node.query(f"SHOW CREATE TABLE {mv}")
         assert (
@@ -1990,17 +1990,24 @@ def test_namespace_prefix_mysql_field_list(started_cluster):
     try:
         # COM_FIELD_LIST (0x04): table name, NUL, wildcard.
         conn._execute_command(4, table_name.encode() + b"\x00")
+
+        def read_lenenc_str(data, pos):
+            n = data[pos]
+            assert n < 251, f"unexpected lenenc prefix {n}"
+            return data[pos + 1 : pos + 1 + n].decode(), pos + 1 + n
+
         columns = []
         while True:
             packet = conn._read_packet()
             if packet.is_eof_packet():
                 break
-            # Column definition: catalog (lenenc "def"), schema, table, org_table, name, ...
-            data = packet.get_all_data()
-            columns.append(data)
-        assert len(columns) >= 2, f"expected column definitions, got {len(columns)} packets"
-        joined = b"".join(columns)
-        assert b"id" in joined and b"data" in joined, f"unexpected field list: {joined[:200]!r}"
+            # column definition: catalog, schema, table, org_table, name, ...
+            data, pos = packet.get_all_data(), 0
+            for _ in range(4):
+                _, pos = read_lenenc_str(data, pos)
+            name, _ = read_lenenc_str(data, pos)
+            columns.append(name)
+        assert "symbol" in columns and "bid" in columns, f"unexpected field list: {columns}"
     finally:
         conn.close()
 
@@ -2021,28 +2028,28 @@ def test_namespace_prefix_create_drop_table(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    node.query(
-        f"USE {CATALOG_NAME}.{namespace}; "
-        f"CREATE TABLE {table_name} (x String) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')",
-        settings={"write_full_path_in_iceberg_metadata": 1},
-    )
     full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
-    assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+    try:
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"CREATE TABLE {table_name} (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}')",
+            settings={"write_full_path_in_iceberg_metadata": 1},
+        )
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
 
-    # DROP via the two-part form under USE catalog.
-    node.query(f"USE {CATALOG_NAME}; DROP TABLE {namespace}.{table_name}")
-    assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
+        # DROP via the two-part form under USE catalog.
+        node.query(f"USE {CATALOG_NAME}; DROP TABLE {namespace}.{table_name}")
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
 
-    # CREATE via the two-part form under USE catalog.
-    node.query(
-        f"USE {CATALOG_NAME}; "
-        f"CREATE TABLE {namespace}.{table_name} (x String) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')",
-        settings={"write_full_path_in_iceberg_metadata": 1},
-    )
-    assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
-    node.query(f"DROP TABLE {full_name}")
+        # A two-part CREATE under plain USE catalog must not silently create a dotted
+        # table when the qualifier is not a real database.
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE TABLE {namespace}.{table_name} (x String) ENGINE = Memory"
+        )
+        assert "UNKNOWN_DATABASE" in err, f"two-part CREATE must be rejected: {err}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {full_name}")
 
 
 def test_namespace_prefix_update_authorization(started_cluster):
@@ -2068,7 +2075,7 @@ def test_namespace_prefix_update_authorization(started_cluster):
     try:
         update = (
             f"USE {CATALOG_NAME}.{namespace}; "
-            f"UPDATE {table_name} SET data = 'x' WHERE 1 "
+            f"UPDATE {table_name} SET symbol = 'x' WHERE 1 "
             f"SETTINGS enable_lightweight_update = 1"
         )
         # Grant on the bare (wrong) name only: must be denied.
@@ -2132,7 +2139,7 @@ def test_namespace_prefix_create_authorization(started_cluster):
     create = (
         f"USE {CATALOG_NAME}.{namespace}; "
         f"CREATE TABLE {table_name} (x String) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}') "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}') "
         f"SETTINGS write_full_path_in_iceberg_metadata = 1"
     )
     node.query(f"DROP USER IF EXISTS {user}")
@@ -2150,8 +2157,8 @@ def test_namespace_prefix_create_authorization(started_cluster):
         node.query(create, user=user)
         full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
         assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
-        node.query(f"DROP TABLE {full_name}")
     finally:
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table_name}`")
         node.query(f"DROP USER IF EXISTS {user}")
 
 
@@ -2188,7 +2195,7 @@ def test_namespace_prefix_create_as(started_cluster):
         )
         for copy in copies:
             describe = node.query(f"DESCRIBE TABLE {copy}")
-            assert "id" in describe and "data" in describe, f"{copy} structure wrong: {describe}"
+            assert "symbol" in describe and "bid" in describe, f"{copy} structure wrong: {describe}"
     finally:
         for copy in copies:
             node.query(f"DROP TABLE IF EXISTS {copy}")
