@@ -1,0 +1,319 @@
+---
+slug: /cloud/managed-postgres/migrations/peerdb
+sidebarTitle: 'PeerDB'
+title: 'PeerDB を使用した Managed Postgres への移行'
+description: 'PeerDB を使用して PostgreSQL データを ClickHouse Managed Postgres に移行する方法を説明します'
+keywords: ['postgres', 'postgresql', 'logical replication', '移行', 'data transfer', 'managed postgres', 'peerdb']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このガイドでは、PeerDB を使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、手順を追って説明します。
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
+
+<div id="migration-peerdb-prerequisites">
+  ## 前提条件
+</div>
+
+* ソース PostgreSQL データベースへのアクセス。
+* データの移行先となる ClickHouse Managed Postgres インスタンス。
+* マシンに PeerDB がインストールされていること。[PeerDB GitHub リポジトリ](https://github.com/PeerDB-io/peerdb?tab=readme-ov-file#get-started) のインストール手順に従ってください。必要なのは、リポジトリをクローンして `docker-compose up` を実行することだけです。このガイドでは **PeerDB UI** を使用します。PeerDB の起動後、`http://localhost:3000` からアクセスできます。
+
+<div id="migration-peerdb-considerations-before">
+  ## 移行前の考慮事項
+</div>
+
+移行を開始する前に、次の点を考慮してください。
+
+* **データベースオブジェクト**: PeerDB は、ソーススキーマに基づいてターゲットデータベースにテーブルを自動作成します。ただし、索引、制約、トリガーなど、一部のデータベースオブジェクトは自動では移行されません。これらのオブジェクトは、移行後にターゲットデータベース側で手動で再作成する必要があります。
+* **DDL の変更**: 継続的レプリケーションを有効にすると、PeerDB は DML 操作 (INSERT、UPDATE、DELETE) についてターゲットデータベースをソースと同期した状態に保ち、ADD COLUMN 操作も反映します。ただし、その他の DDL の変更 (DROP COLUMN、ALTER COLUMN など) は自動では反映されません。スキーマ変更のサポートの詳細は[こちら](/ja/integrations/clickpipes/postgres/schema-changes)を参照してください。
+* **ネットワーク接続**: ソースデータベースとターゲットデータベースの両方に対して、PeerDB が実行されているマシンから到達できることを確認してください。接続を許可するには、ファイアウォールルールまたはセキュリティグループの設定が必要になる場合があります。
+
+<div id="migration-peerdb-create-peers">
+  ## ピアを作成する
+</div>
+
+まず、ソースデータベースとターゲットデータベースの両方に対してピアを作成する必要があります。ピアは、データベースへの接続を表します。PeerDB UI で、サイドバーの「Peers」をクリックして「Peers」セクションに移動します。新しいピアを作成するには、`+ New peer` ボタンをクリックします。
+
+<div id="migration-peerdb-source-peer">
+  ### ソースピアの作成
+</div>
+
+ホスト、ポート、データベース名、ユーザー名、パスワードなどの接続情報を入力して、ソース PostgreSQL データベース用のピアを作成します。入力が完了したら、`Create peer` ボタンをクリックしてピアを保存します。
+
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="ソースピアの作成" size="md" border />
+
+<div id="migration-peerdb-target-peer">
+  ### ターゲットピアの作成
+</div>
+
+同様に、必要な接続情報を指定して、ClickHouse Managed Postgres インスタンス用のピアを作成します。インスタンスの[接続情報](/ja/products/managed-postgres/connection)は、ClickHouse Cloudコンソールから取得できます。詳細を入力したら、`Create peer` ボタンをクリックしてターゲットピアを保存します。
+
+<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="ターゲットピアの作成" size="md" border />
+
+これで、&quot;Peers&quot; セクションにソースピアとターゲットピアの両方が表示されるはずです。
+
+<Image img="/images/managed-postgres/peerdb/peers.webp" alt="ピア一覧" size="md" border />
+
+<div id="migration-peerdb-source-schema-dump">
+  ### ソーススキーマのダンプを取得する
+</div>
+
+ソースデータベースの構成をターゲットデータベースに再現するには、ソースデータベースのスキーマダンプを取得する必要があります。`pg_dump` を使うと、ソース PostgreSQL データベースのスキーマのみのダンプを作成できます。
+
+<Accordion title="pg_dump のインストール">
+  **Ubuntu:**
+
+  パッケージリストを更新します:
+
+  ```shell
+  sudo apt update
+  ```
+
+  PostgreSQL クライアントをインストールします:
+
+  ```shell
+  sudo apt install postgresql-client
+  ```
+
+  **macOS:**
+
+  方法 1: Homebrew を使用する (推奨)
+
+  Homebrew がインストールされていない場合は、次のコマンドでインストールします:
+
+  ```shell
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+  PostgreSQL をインストールします:
+
+  ```shell
+  brew install postgresql
+  ```
+
+  インストールを確認します:
+
+  ```shell
+  pg_dump --version
+  ```
+</Accordion>
+
+```shell
+pg_dump -d 'postgresql://<user>:<password>@<host>:<port>/<database>'  -s > source_schema.sql
+```
+
+<div id="migration-peerdb-remove-constraints-indexes">
+  #### スキーマダンプから一意制約と索引を削除する
+</div>
+
+これをターゲットデータベースに適用する前に、これらの制約によって PeerDB からターゲットテーブルへのインジェストが妨げられないよう、ダンプファイルから UNIQUE 制約と索引を削除する必要があります。削除には次を使用できます。
+
+```shell
+# プレビュー
+grep -n "CONSTRAINT.*UNIQUE" <dump_file_path>
+grep -n "CREATE UNIQUE INDEX" <dump_file_path>
+grep -n -E "(CONSTRAINT.*UNIQUE|CREATE UNIQUE INDEX)" <dump_file_path>
+
+# 削除
+sed -i.bak -E '/CREATE UNIQUE INDEX/,/;/d; /(CONSTRAINT.*UNIQUE|ADD CONSTRAINT.*UNIQUE)/d' <dump_file_path>
+```
+
+<div id="migration-peerdb-apply-schema-dump">
+  ### スキーマダンプをターゲットデータベースに適用する
+</div>
+
+スキーマダンプファイルを整理したら、`psql` で[接続](/ja/products/managed-postgres/connection)し、スキーマダンプファイルを実行して、ターゲットの ClickHouse Managed Postgres データベースに適用できます。
+
+```shell
+psql -h <target_host> -p <target_port> -U <target_username> -d <target_database> -f source_schema.sql
+```
+
+ターゲット側では、外部キー制約によって PeerDB のインジェストが妨げられないようにします。そのため、ターゲットのロール (上記でターゲットピアに使用したもの) を変更して、`session_replication_role` を `replica` に設定できます。
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = replica;
+```
+
+<div id="migration-peerdb-create-mirror">
+  ## ミラーを作成する
+</div>
+
+次に、ソースピアとターゲットピア間のデータ移行プロセスを定義するため、ミラーを作成します。PeerDB UI で、サイドバーの &quot;Mirrors&quot; をクリックして &quot;Mirrors&quot; セクションに移動します。新しいミラーを作成するには、`+ New mirror` ボタンをクリックします。
+
+<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="ミラーの作成" size="md" border />
+
+1. 移行内容が分かる名前をミラーに付けます。
+2. ドロップダウンメニューから、先ほど作成したソースピアとターゲットピアを選択します。
+3. 次のことを確認します。
+
+* Soft delete が OFF になっていること。
+* `Advanced settings` を展開し、**Postgres type system が有効**で、**PeerDB columns が無効**になっていることを確認します。
+
+<Image img="/images/managed-postgres/peerdb/settings.webp" alt="ミラー設定" size="md" border />
+
+4. 移行するテーブルを選択します。特定のテーブルを選ぶことも、ソースデータベース内のすべてのテーブルを選ぶこともできます。
+
+<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="テーブル選択" size="md" border />
+
+<Info>
+  **テーブルの選択**
+
+  前の手順でスキーマをそのまま移行しているため、ターゲットデータベース内の宛先テーブル名がソーステーブル名と同じであることを確認してください。
+</Info>
+
+5. ミラーの設定が完了したら、`Create mirror` ボタンをクリックします。
+
+&quot;Mirrors&quot; セクションに、新しく作成したミラーが表示されます。
+
+<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="ミラー一覧" size="md" border />
+
+<div id="migration-peerdb-initial-load">
+  ## 初期ロードを待つ
+</div>
+
+ミラーを作成すると、PeerDB はソースからターゲットデータベースへの初期データロードを開始します。ミラーをクリックし、**初期ロード** タブを開くと、初期データ移行の進捗を確認できます。
+
+<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="初期ロードの進捗" size="md" border />
+
+初期ロードが完了すると、移行が完了したことを示すステータスが表示されます。
+
+<div id="migration-peerdb-monitoring">
+  ## 初期ロードとレプリケーションの監視
+</div>
+
+ソースピアをクリックすると、PeerDB が実行中のコマンド一覧を確認できます。たとえば、次のとおりです。
+
+1. まず、各テーブルの行数を見積もるために COUNT クエリを実行します。
+2. 次に、NTILE を使用したパーティション化クエリを実行し、大きなテーブルを効率的に転送できるよう、より小さな chunk に分割します。
+3. その後、FETCH コマンドを実行してソースデータベースからデータを取得し、PeerDB がそれらをターゲットデータベースに同期します。
+
+<div id="migration-peerdb-considerations">
+  ## 移行後の作業
+</div>
+
+<Note>
+  これらの手順は、具体的なユースケースやアプリケーション要件によって異なる場合があります。重要なのは、新しいシステムへ完全に切り替える前に、データの整合性を確保し、ダウンタイムを最小限に抑え、移行したデータに問題がないことを検証することです。
+</Note>
+
+移行が完了したら、次の作業を実施します。
+
+* **カットオーバー前の検証を実行する**
+
+トラフィックを切り替える前に、ソース側とターゲット側の主要なテーブルを比較します。
+
+```sql
+-- 重要なテーブルの行数比較
+SELECT 'public.orders' AS table_name, COUNT(*) AS row_count FROM public.orders;
+SELECT 'public.customers' AS table_name, COUNT(*) AS row_count FROM public.customers;
+
+-- 高頻度テーブルの最新レコードの抜き取り確認
+SELECT MAX(updated_at) FROM public.orders;
+SELECT MAX(id) FROM public.orders;
+```
+
+* **ソースシステムでの書き込みを停止する**
+
+まず、アプリケーションからの書き込みを一時停止します。さらに安全性を高めるため、切り替え時にはソースデータベースを読み取り専用に設定します。
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+ロールバックが必要な場合は、書き込みを再度有効化できます。
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = off;
+```
+
+* **レプリケーションが完全に追いついていることを確認する**
+
+書き込み頻度の高い1つ以上のテーブルについて、最新の行が移行元と移行先で一致していることを確認します。
+
+```sql
+-- ソースとターゲットの両方で実行し、結果を比較する
+SELECT MAX(id) AS latest_id, MAX(updated_at) AS latest_ts FROM public.orders;
+```
+
+* **制約、索引、トリガーを再作成して有効にする**
+
+インジェストのために制約や索引を削除したり適用を保留したりしていた場合は、ここで再度適用します。また、以前にターゲット側のレプリケーションロールを `replica` に設定していた場合は、それもリセットしてください。
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = origin;
+```
+
+```shell
+# 例: 制約/索引/トリガーを含むSQLファイルを適用する
+psql -h <target_host> -p <target_port> -U <target_user> -d <target_db> -f post_migration_objects.sql
+```
+
+* **ターゲットテーブルのシーケンスをリセットする**
+
+データの読み込み後、シーケンスをテーブルの現在の値に合わせます。
+
+```sql
+-- システムスキーマ以外の全シリアル/IDカラムに対する汎用シーケンスリセット
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+* **アプリケーショントラフィックを切り替える**
+
+検証が完了し、シーケンスと制約の設定が済んだら:
+
+1. 読み取りトラフィックの送信先を ClickHouse Managed Postgres に切り替えます。
+2. 書き込みトラフィックの送信先を ClickHouse Managed Postgres に切り替えます。
+3. アプリケーションエラー、制約違反、データベースの健全性を監視します。
+
+* **リソースをクリーンアップする**
+
+移行に問題がないことを確認し、アプリケーションの切り替え先を ClickHouse Managed Postgres に変更したら、PeerDB のミラーとピアを削除できます。
+
+<Info>
+  **レプリケーションスロット**
+
+  継続的レプリケーションを有効にしている場合、PeerDB は移行元の PostgreSQL データベースに **レプリケーションスロット** を作成します。不要なリソース消費を避けるため、移行が完了したら、移行元データベースからレプリケーションスロットを手動で削除してください。
+</Info>
+
+<div id="migration-peerdb-references">
+  ## 参考資料
+</div>
+
+* [ClickHouse Managed Postgres ドキュメント](/ja/products/managed-postgres/overview)
+* [CDC 作成に関する PeerDB ガイド](https://docs.peerdb.io/mirror/cdc-pg-pg)
+* [Postgres ClickPipe よくある質問 (PeerDB にも同様に当てはまります) ](/ja/integrations/clickpipes/postgres/faq)
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## 次のステップ
+</div>
+
+おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres に正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを確認する準備は万全です。使い始めるには、以下の 10 分で読めるクイックスタートをご覧ください。
+
+* [Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)

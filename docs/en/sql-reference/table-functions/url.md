@@ -26,7 +26,7 @@ url(URL [,format] [,structure] [,headers])
 
 | Parameter   | Description                                                                                                                                            |
 |-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URL`       | Single quoted HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md). |
+| `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](../../sql-reference/data-types/string.md). |
 | `format`    | [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
@@ -51,10 +51,58 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
+## Dispatching by URL scheme {#scheme-dispatch}
+
+The `url` function acts as a unified wrapper on top of the other file- and object-storage table functions: it dispatches to the right backend based on the URL scheme. This lets you read from any supported location with a single uniform syntax.
+
+| Scheme                                              | Dispatches to                                              |
+|-----------------------------------------------------|------------------------------------------------------------|
+| `http`, `https` (and any unrecognized scheme)       | the `URL` engine itself (HTTP `GET`/`POST`)                |
+| `file`                                              | the [`file`](file.md) function                             |
+| `s3`, `gs`, `gcs`, `oss`                            | the [`s3`](s3.md) function                                 |
+| `az`, `azure`, `abfss`, `abfs`                      | the [`azureBlobStorage`](azureBlobStorage.md) function     |
+| `hdfs`                                              | the [`hdfs`](hdfs.md) function                             |
+
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so a `cos://…` URL is treated as an unrecognized scheme and reported as an error; use the [`s3`](s3.md) function directly (with `url_scheme_mappers` configured) for those backends.
+
+For `file://`, a relative path (`file://data.csv`) is resolved inside the [user_files](/operations/server-configuration-parameters/settings#user_files_path) directory, and an absolute path (`file:///home/user/data.csv`) must point inside it as usual.
+
+The `format`, `structure` and `compression_method` arguments and the [url_base](#resolving-relative-urls) setting work the same regardless of the dispatch target.
+
+```sql
+SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
+SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
+```
+
+Scheme dispatch is not yet wired through [`urlCluster`](urlCluster.md): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
+For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](file.md#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
+
+## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
+
+For `url` and the `URL` table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
+
+Notes:
+- Relative URLs are resolved against the index page URL.
+- `URL` templates are expanded before fetching index pages, including comma and numeric range shard expansion and `|` failover options outside the path component.
+- `|` failover patterns inside the path component are not supported for HTTP index-page expansion.
+- Wildcard matching is applied to the URL path component.
+- If a listed URL already contains a query string or fragment, it takes precedence over the ones from the source URL. Otherwise, the query string and fragment from the source URL are used.
+- An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
+- The maximum index page size is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size).
+- The maximum number of directories read during recursive expansion is limited by [url_wildcard_max_directories_to_read](/operations/settings/settings.md#url_wildcard_max_directories_to_read).
+
+Example:
+
+```sql
+SELECT count()
+FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+```
 
 ## Virtual Columns {#virtual-columns}
 

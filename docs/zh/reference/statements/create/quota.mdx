@@ -1,0 +1,65 @@
+---
+description: 'QUOTA 文档'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/create/quota
+title: 'CREATE QUOTA'
+doc_type: 'reference'
+---
+
+创建可分配给用户或角色的[配额](/zh/concepts/features/security/access-rights#quotas-management)。
+
+语法：
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+键 `user_name`、`ip_address`、`forwarded_ip_address`、`client_key`、`client_key, user_name`、`client_key, ip_address` 和 `normalized_query_hash` 与 [system.quotas](/zh/reference/system-tables/quotas) 表中的字段对应。
+
+`IPV4_PREFIX_BITS` 和 `IPV6_PREFIX_BITS` 选项只能在 `KEYED BY` 为 `ip_address` 或 `forwarded_ip_address` 时使用。它们与 [system.quotas](/zh/reference/system-tables/quotas) 表中的字段对应。
+
+参数 `queries`、`query_selects`、`query_inserts`、`errors`、`result_rows`、`result_bytes`、`read_rows`、`read_bytes`、`written_bytes`、`execution_time`、`failed_sequential_authentications`、`queries_per_normalized_hash` 与 [system.quotas&#95;usage](/zh/reference/system-tables/quotas_usage) 表中的字段对应。
+
+`ON CLUSTER` 子句允许在集群上创建配额，参见 [分布式 DDL](/zh/reference/statements/distributed-ddl)。
+
+**示例**
+
+将当前用户在 15 个月内的最大查询次数限制为 123 次：
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+对于默认用户，将 30 分钟内的最大执行时间限制为半秒，并将最大查询数限制为 321，5 个季度内允许的最大错误数限制为 10：
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+创建一个 QUOTA，为每个不同的归一化查询模式分配单独的 bucket，并将其执行次数限制为每小时 100 次：
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+将任一归一化查询模式限制为每小时最多执行 50 次 (无论 QUOTA 键类型为何) ：
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+更多使用 xml 配置的示例 (ClickHouse Cloud 不支持) 可参见[配额指南](/zh/concepts/features/configuration/server-config/quotas)。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[使用 ClickHouse 构建单页应用](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

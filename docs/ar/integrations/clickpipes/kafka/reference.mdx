@@ -1,0 +1,196 @@
+---
+sidebarTitle: 'مرجع'
+description: 'يتناول بالتفصيل التنسيقات والمصادر ودلالات التسليم والمصادقة والميزات التجريبية التي يدعمها Kafka ClickPipes.'
+slug: /integrations/clickpipes/kafka/reference
+title: 'مرجع'
+doc_type: 'reference'
+keywords: ['مرجع Kafka', 'ClickPipes', 'مصادر البيانات', 'avro', 'الأعمدة الافتراضية']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="supported-data-sources">
+  ## مصادر البيانات المدعومة
+</div>
+
+| الاسم            | الشعار                                                                                               | النوع | الحالة | الوصف                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | ----- | ------ | --------------------------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="شعار Apache Kafka" width="32" />                | متدفق | مستقر  | قم بإعداد ClickPipes وابدأ بإدخال البيانات المتدفقة من Apache Kafka إلى ClickHouse Cloud.     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="شعار Confluent Cloud" width="32" />         | متدفق | مستقر  | استفد من الإمكانات المشتركة لـ Confluent وClickHouse Cloud من خلال تكاملنا المباشر.           |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="شعار Redpanda" width="32" />            | متدفق | مستقر  | قم بإعداد ClickPipes وابدأ بإدخال البيانات المتدفقة من Redpanda إلى ClickHouse Cloud.         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="شعار AWS MSK" width="32" />                       | متدفق | مستقر  | قم بإعداد ClickPipes وابدأ بإدخال البيانات المتدفقة من AWS MSK إلى ClickHouse Cloud.          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="شعار Azure Event Hubs" width="32" /> | متدفق | مستقر  | قم بإعداد ClickPipes وابدأ بإدخال البيانات المتدفقة من Azure Event Hubs إلى ClickHouse Cloud. |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="شعار WarpStream" width="32" />             | متدفق | مستقر  | قم بإعداد ClickPipes وابدأ بإدخال البيانات المتدفقة من WarpStream إلى ClickHouse Cloud.       |
+
+<div id="supported-data-formats">
+  ## تنسيقات البيانات المدعومة
+</div>
+
+التنسيقات المدعومة هي:
+
+* [JSON](/ar/guides/clickhouse/data-formats/json/intro)
+* [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent)
+* [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
+
+<div id="supported-data-types">
+  ## أنواع البيانات المدعومة
+</div>
+
+<div id="standard-types-support">
+  ### الأنواع القياسية
+</div>
+
+أنواع بيانات ClickHouse القياسية التالية مدعومة حاليًا في ClickPipes:
+
+* الأنواع الرقمية الأساسية - [U]Int8/16/32/64 و Float32/64 و BFloat16
+* أنواع الأعداد الصحيحة الكبيرة - [U]Int128/256
+* Decimal Types
+* Boolean
+* String
+* FixedString
+* Date و Date32
+* DateTime و DateTime64 (مناطق زمنية UTC فقط)
+* Enum8/Enum16
+* معرّف UUID
+* IPv4
+* IPv6
+* Time و Time64
+* JSON
+* جميع أنواع LowCardinality في ClickHouse
+* Map بمفاتيح وقيم تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable)
+* Tuple و Array بعناصر تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable، وبعمق مستوى واحد فقط)
+* أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
+
+<div id="variant-type-support">
+  ### دعم نوع Variant
+</div>
+
+يدعم ClickPipes نوع Variant في الحالات التالية:
+
+* اتحادات Avro. إذا كان مخطط Avro لديك يحتوي على `union` يضم عدة أنواع غير NULL، فسيستنتج ClickPipes
+  نوع Variant المناسب. بخلاف ذلك، لا تكون أنواع Variant مدعومة في بيانات Avro.
+* حقول JSON. يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON
+  في مصدر تدفق البيانات. لا تُدعَم الأنواع الفرعية المعقدة (arrays/maps/tuples). بالإضافة إلى ذلك، ونظرًا للطريقة التي يحدد بها ClickPipes
+  النوع الفرعي الصحيح من Variant الذي يجب استخدامه، لا يمكن استخدام أكثر من نوع عدد صحيح واحد أو نوع DateTime واحد في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
+
+<div id="json-type-support">
+  ### دعم نوع JSON
+</div>
+
+تدعم ClickPipes نوع JSON في الحالات التالية:
+
+* يمكن دائمًا إسناد حقول Avro Record وProtobuf Message إلى عمود JSON.
+* يمكن إسناد حقول Avro String وBytes إلى عمود JSON إذا كان حقل Avro يحتوي فعليًا على كائنات JSON مخزنة كسلاسل نصية.
+* يمكن إسناد أنواع Protobuf String وBytes إلى عمود JSON إذا كان حقل Protobuf يحتوي فعليًا على كائنات JSON مخزنة كسلاسل نصية.
+* يمكن إسناد حقول JSON التي تكون دائمًا كائنات JSON إلى عمود JSON في الوجهة.
+
+لاحظ أنك ستحتاج إلى تغيير عمود الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متخطاة.
+
+<div id="avro">
+  ### Avro
+</div>
+
+<div id="supported-avro-data-types">
+  #### أنواع بيانات Avro المدعومة
+</div>
+
+تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع.
+وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
+
+<div id="nullable-types-and-avro-unions">
+  #### أنواع Nullable وUnion في Avro
+</div>
+
+تُعرَّف أنواع Nullable في Avro باستخدام مخطط Union بالشكل `(T, null)` أو `(null, T)`، حيث إن T هو نوع Avro الأساسي. أثناء استنتاج المخطط، تُربَط أنواع Union هذه بعمود &quot;Nullable&quot; في ClickHouse. لاحظ أن ClickHouse لا يدعم الأنواع
+`Nullable(Array)` و`Nullable(Map)` و`Nullable(Tuple)`. ستُحوَّل اتحادات null في Avro لهذه الأنواع إلى إصدارات غير Nullable (وتُحوَّل أنواع Avro Record إلى named Tuple في ClickHouse). وستُدرَج قيم Avro &quot;nulls&quot; لهذه الأنواع على النحو التالي:
+
+* Array فارغة لصفيف Avro null
+* Map فارغة لـ Avro Map null
+* named Tuple تحتوي على جميع القيم الافتراضية/الصفرية لـ Avro Record null
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+<div id="supported-protobuf-data-types">
+  #### أنواع بيانات Protobuf المدعومة
+</div>
+
+يدعم ClickPipes جميع أنواع Protobuf 2 و3، باستثناء النوع `group` في proto 2، وهو نوع أُعلن عن إهماله منذ وقت طويل. وتستخدم تحويلات الأنواع الأساسية
+عمليات التحويل التالية:
+
+<Note>
+  تتوفّر أيضًا متغيرات `Array` و`Map` و`Nullable` لجميع الأنواع الأساسية.
+</Note>
+
+| نوع Protobuf                  | نوع ClickHouse |
+| ----------------------------- | -------------- |
+| `bool`                        | `UInt8`        |
+| `float`                       | `Float32`      |
+| `double`                      | `Float64`      |
+| `int32`, `sint32`, `sfixed32` | `Int32`        |
+| `int64`, `sint64`, `sfixed64` | `Int64`        |
+| `uint32`, `fixed32`           | `UInt32`       |
+| `uint64`, `fixed64`           | `UInt64`       |
+| `string`, `bytes`             | `String`       |
+| `enum`                        | `Enum`         |
+| `repeated T`                  | `Array(T)`     |
+| `message`                     | `Tuple`        |
+
+<Tip>
+  بالنسبة إلى الأنواع الرقمية، يُوصى باستخدام تطابق تام لتجنّب overflow أو فقدان precision.
+</Tip>
+
+الأنواع [الشائعة المعروفة](https://protobuf.dev/reference/protobuf/google.protobuf/) التالية مدعومة أيضًا:
+
+| النوع الشائع المعروف                                                                         | نوع ClickHouse           |
+| -------------------------------------------------------------------------------------------- | ------------------------ |
+| `google.protobuf.Timestamp`                                                                  | `DateTime`, `DateTime64` |
+| `google.protobuf.Duration`                                                                   | `Time`, `Time64`         |
+| `google.protobuf.StringValue`, `google.protobuf.BytesValue`                                  | `Nullable(String)`       |
+| `google.protobuf.Int32Value`, `google.protobuf.SInt32Value`, `google.protobuf.SFixed32Value` | `Nullable(Int32)`        |
+| `google.protobuf.Int64Value`, `google.protobuf.SInt64Value`, `google.protobuf.SFixed64Value` | `Nullable(Int64)`        |
+| `google.protobuf.UInt32Value`, `google.protobuf.Fixed32Value`                                | `Nullable(UInt32)`       |
+| `google.protobuf.UInt64Value`, `google.protobuf.Fixed64Value`                                | `Nullable(UInt64)`       |
+| `google.protobuf.FloatValue`                                                                 | `Nullable(Float32)`      |
+| `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
+| `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
+
+<div id="protobuf-one-ofs">
+  #### ‏Protobuf `oneof`
+</div>
+
+أثناء استنتاج المخطط، تُربَط حقول Protobuf `oneof` افتراضيًا بـ `Tuple` مُسمّى، بحيث لا يحمل قيمة غير افتراضية سوى حقل واحد كحد أقصى.
+ويمكن أيضًا ربط هذه الحقول تلقائيًا بعمود `Variant`، بحيث تأخذ القيمة النشطة نوع الحقل المكوّن الذي جرى تعيينه.
+وبدلاً من ذلك، يمكن ربط كل حقل مكوّن يدويًا بعمود ClickHouse خاص به؛ ونظرًا إلى أن حقول `oneof` متنافية فيما بينها، فلن يُملأ لكل سجل سوى عمود واحد.
+
+<div id="protobuf-message-lists">
+  #### قوائم الرسائل
+</div>
+
+إذا كان مخطط Protobuf المعرّف لـ ClickPipe على المستوى الأعلى يحتوي على حقل متكرر واحد يكون بحد ذاته رسالة protobuf، فسيعتمد استنتاج المخطط وتعيين الأعمدة على حقل الرسالة &quot;المضمَّنة&quot;. وستُعالَج رسالة Kafka على أنها قائمة من هذه الرسائل، كما ستُفكَّك رسالة Kafka واحدة إلى عدة صفوف في ClickHouse.
+
+<div id="kafka-virtual-columns">
+  ## الأعمدة الافتراضية في Kafka
+</div>
+
+الأعمدة الافتراضية التالية مدعومة لمصادر البيانات المتدفقة المتوافقة مع Kafka. عند إنشاء وجهة جديدة، يمكن إضافة الأعمدة الافتراضية إلى الجدول الهدف باستخدام الزر `Add Column`.
+
+| الاسم            | الوصف                                       | نوع البيانات الموصى به |
+| ---------------- | ------------------------------------------- | ---------------------- |
+| `_key`           | مفتاح رسالة Kafka                           | `String`               |
+| `_timestamp`     | الطابع الزمني في Kafka (بدقة الملّي ثانية)  | `DateTime64(3)`        |
+| `_partition`     | قسم Kafka                                   | `Int32`                |
+| `_offset`        | إزاحة Kafka                                 | `Int64`                |
+| `_topic`         | موضوع Kafka                                 | `String`               |
+| `_header_keys`   | مصفوفة موازية من المفاتيح في ترويسات السجل  | `Array(String)`        |
+| `_header_values` | مصفوفة موازية من الترويسات في ترويسات السجل | `Array(String)`        |
+| `_raw_message`   | رسالة Kafka الكاملة                         | `String`               |
+
+لاحظ أن العمود `_raw_message` يُوصى به فقط لبيانات JSON.
+وفي حالات الاستخدام التي تكون فيها سلسلة JSON فقط هي المطلوبة (مثل استخدام دوال ClickHouse [`JsonExtract*`](/ar/reference/functions/regular-functions/json-functions#jsonextract-functions) من أجل
+ملء عرض مادي لاحق)، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.

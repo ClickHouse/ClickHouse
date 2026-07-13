@@ -1,0 +1,182 @@
+---
+description: 'Aprenda a añadir una clave de partición personalizada a tablas MergeTree.'
+sidebarTitle: 'Clave de partición personalizada'
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: 'Clave de partición personalizada'
+doc_type: 'guide'
+---
+
+<Note>
+  En la mayoría de los casos, no necesita una clave de partición y, en la mayoría de los demás, tampoco necesita una clave de partición con una granularidad mayor que la mensual, salvo en casos de uso de observabilidad, donde la partición por día es habitual.
+
+  Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de cliente. En su lugar, haga que el identificador o nombre del cliente sea la primera columna de la expresión `ORDER BY`.
+</Note>
+
+El particionamiento está disponible para las [tablas de la familia MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree), incluidas las [tablas replicadas](/es/reference/engines/table-engines/mergetree-family/replication) y las [vistas materializadas](/es/reference/statements/create/view#materialized-view).
+
+Una partición es una agrupación lógica de registros de una tabla según un criterio determinado. Puede definir una partición con cualquier criterio, por ejemplo, por mes, por día o por tipo de evento. Cada partición se almacena por separado para simplizar la manipulación de estos datos. Al acceder a los datos, ClickHouse utiliza el subconjunto más pequeño posible de particiones. Las particiones mejoran el rendimiento de las consultas que incluyen una clave de partición porque ClickHouse filtrará por esa partición antes de seleccionar las partes y los gránulos dentro de ella.
+
+La partición se especifica en la cláusula `PARTITION BY expr` al [crear una tabla](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). La clave de partición puede ser cualquier expresión basada en las columnas de la tabla. Por ejemplo, para especificar el particionamiento por mes, use la expresión `toYYYYMM(date_column)`:
+
+```sql
+CREATE TABLE visits
+(
+    VisitDate Date,
+    Hour UInt8,
+    ClientID UUID
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(VisitDate)
+ORDER BY Hour;
+```
+
+La clave de partición también puede ser una tupla de expresiones (igual que la [clave primaria](/es/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)). Por ejemplo:
+
+```sql
+ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
+PARTITION BY (toMonday(StartDate), EventType)
+ORDER BY (CounterID, StartDate, intHash32(UserID));
+```
+
+En este ejemplo, configuramos el particionamiento por los tipos de eventos que se produjeron durante la semana actual.
+
+De forma predeterminada, no se admite la clave de partición de coma flotante. Para usarla, habilite la opción [allow&#95;floating&#95;point&#95;partition&#95;key](/es/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+
+Al insertar datos nuevos en una tabla, estos se almacenan como una parte independiente (fragmento), ordenada por la clave primaria. Entre 10 y 15 minutos después de la inserción, las partes de la misma partición se fusionan en una sola parte.
+
+<Info>
+  La fusión solo funciona con partes de datos que tienen el mismo valor para la expresión de particionamiento. Esto significa que **no debe crear particiones demasiado granulares** (más de aproximadamente mil particiones). De lo contrario, la consulta `SELECT` tendrá un rendimiento deficiente debido a un número excesivamente grande de archivos en el sistema de archivos y de descriptores de archivo abiertos.
+</Info>
+
+Use la tabla [system.parts](/es/reference/system-tables/parts) para ver las partes de la tabla y las particiones. Por ejemplo, supongamos que tenemos una tabla `visits` con particionamiento por mes. Realicemos la consulta `SELECT` sobre la tabla `system.parts`:
+
+```sql
+SELECT
+    partition,
+    name,
+    active
+FROM system.parts
+WHERE table = 'visits'
+```
+
+```text
+┌─partition─┬─name──────────────┬─active─┐
+│ 201901    │ 201901_1_3_1      │      0 │
+│ 201901    │ 201901_1_9_2_11   │      1 │
+│ 201901    │ 201901_8_8_0      │      0 │
+│ 201901    │ 201901_9_9_0      │      0 │
+│ 201902    │ 201902_4_6_1_11   │      1 │
+│ 201902    │ 201902_10_10_0_11 │      1 │
+│ 201902    │ 201902_11_11_0_11 │      1 │
+└───────────┴───────────────────┴────────┘
+```
+
+La columna `partition` contiene los nombres de las particiones. En este ejemplo hay dos particiones: `201901` y `201902`. Puede usar el valor de esta columna para especificar el nombre de la partición en las consultas [ALTER ... PARTITION](/es/reference/statements/alter/partition).
+
+La columna `name` contiene los nombres de las partes de datos de la partición. Puede usar esta columna para especificar el nombre de la parte en la consulta [ALTER ATTACH PART](/es/reference/statements/alter/partition#attach-partitionpart).
+
+Desglosemos el nombre de la parte: `201901_1_9_2_11`:
+
+* `201901` es el nombre de la partición.
+* `1` es el número mínimo del bloque de datos.
+* `9` es el número máximo del bloque de datos.
+* `2` es el nivel del fragmento (la profundidad del árbol de fusiones del que se forma).
+* `11` es la versión de la mutación (si la parte fue mutada)
+
+<Info>
+  Las partes de las tablas de tipo antiguo tienen el siguiente nombre: `20190117_20190123_2_2_0` (fecha mínima - fecha máxima - número mínimo de bloque - número máximo de bloque - nivel).
+</Info>
+
+La columna `active` muestra el estado de la parte. `1` está activa; `0`, inactiva. Las partes inactivas son, por ejemplo, partes de origen que permanecen tras fusionarse en una parte más grande. Las partes de datos corruptas también se indican como inactivas.
+
+Como puede ver en el ejemplo, hay varias partes separadas de la misma partición (por ejemplo, `201901_1_3_1` y `201901_1_9_2`). Esto significa que esas partes aún no se han fusionado. ClickHouse fusiona periódicamente las partes de datos insertadas, aproximadamente 15 minutos después de la inserción. Además, puede realizar una fusión no programada mediante la consulta [OPTIMIZE](/es/reference/statements/optimize). Ejemplo:
+
+```sql
+OPTIMIZE TABLE visits PARTITION 201902;
+```
+
+```text
+┌─partition─┬─name─────────────┬─active─┐
+│ 201901    │ 201901_1_3_1     │      0 │
+│ 201901    │ 201901_1_9_2_11  │      1 │
+│ 201901    │ 201901_8_8_0     │      0 │
+│ 201901    │ 201901_9_9_0     │      0 │
+│ 201902    │ 201902_4_6_1     │      0 │
+│ 201902    │ 201902_4_11_2_11 │      1 │
+│ 201902    │ 201902_10_10_0   │      0 │
+│ 201902    │ 201902_11_11_0   │      0 │
+└───────────┴──────────────────┴────────┘
+```
+
+Las partes inactivas se eliminarán aproximadamente 10 minutos después de la fusión.
+
+Otra forma de ver el conjunto de partes y particiones es entrar en el directorio de la tabla: `/var/lib/clickhouse/data/<database>/<table>/`. Por ejemplo:
+
+```bash
+/var/lib/clickhouse/data/default/visits$ ls -l
+total 40
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_8_8_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_9_9_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_10_10_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_11_11_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:19 201902_4_11_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
+```
+
+Las carpetas &#39;201901&#95;1&#95;1&#95;0&#39;, &#39;201901&#95;1&#95;7&#95;1&#39;, etc. son los directorios de las partes. Cada parte corresponde a una partición y contiene datos solo de un mes determinado (la tabla de este ejemplo tiene particionamiento por mes).
+
+El directorio `detached` contiene partes que se desvincularon de la tabla mediante la consulta [DETACH](/es/reference/statements/detach). Las partes corruptas también se mueven a este directorio en lugar de eliminarse. El servidor no utiliza las partes del directorio `detached`. Puede añadir, eliminar o modificar los datos de este directorio en cualquier momento; el servidor no tendrá constancia de ello hasta que ejecute la consulta [ATTACH](/es/reference/statements/alter/partition#attach-partitionpart).
+
+Tenga en cuenta que, mientras el servidor está en funcionamiento, no puede cambiar manualmente el conjunto de partes ni sus datos en el sistema de archivos, ya que el servidor no tendrá constancia de ello. En las tablas no replicadas, puede hacerlo cuando el servidor está detenido, pero no se recomienda. En las tablas replicadas, el conjunto de partes no puede modificarse en ningún caso.
+
+ClickHouse le permite realizar operaciones con las particiones: eliminarlas, copiarlas de una tabla a otra o crear una copia de seguridad. Consulte la lista de todas las operaciones en la sección [Manipulación de particiones y partes](/es/reference/statements/alter/partition).
+
+<div id="group-by-optimisation-using-partition-key">
+  ## Optimización de Group By mediante la clave de partición
+</div>
+
+Para algunas combinaciones de la clave de partición de la tabla y la clave de agrupación de la consulta, puede ser posible ejecutar la agregación de cada partición de forma independiente.
+Así, no tendremos que fusionar al final los datos parcialmente agregados de todos los hilos de ejecución,
+porque tenemos la garantía de que cada valor de la clave de agrupación no puede aparecer en los conjuntos de trabajo de dos hilos distintos.
+
+El ejemplo típico es:
+
+```sql
+CREATE TABLE session_log
+(
+    UserID UInt64,
+    SessionID UUID
+)
+ENGINE = MergeTree
+PARTITION BY sipHash64(UserID) % 16
+ORDER BY tuple();
+
+SELECT
+    UserID,
+    COUNT()
+FROM session_log
+GROUP BY UserID;
+```
+
+<Note>
+  El rendimiento de una consulta de este tipo depende en gran medida de la estructura de la tabla. Por ello, esta optimización no está habilitada de forma predeterminada.
+</Note>
+
+Los factores clave para obtener un buen rendimiento son:
+
+* el número de particiones implicadas en la consulta debe ser suficientemente grande (más de `max_threads / 2`); de lo contrario, la consulta no aprovechará completamente la máquina
+* las particiones no deben ser demasiado pequeñas, para evitar que el procesamiento por lotes se degrade a un procesamiento fila por fila
+* las particiones deben tener tamaños comparables, para que todos los hilos realicen aproximadamente la misma cantidad de trabajo
+
+<Info>
+  Se recomienda aplicar alguna función hash a las columnas de la cláusula `partition by` para distribuir los datos de manera uniforme entre las particiones.
+</Info>
+
+Los ajustes relevantes son:
+
+* `allow_aggregate_partitions_independently` - controla si se habilita el uso de la optimización
+* `force_aggregate_partitions_independently` - fuerza su uso cuando es aplicable desde el punto de vista de la corrección, pero la lógica interna que evalúa su conveniencia lo deshabilita
+* `max_number_of_partitions_for_independent_aggregation` - límite estricto del número máximo de particiones que puede tener la tabla

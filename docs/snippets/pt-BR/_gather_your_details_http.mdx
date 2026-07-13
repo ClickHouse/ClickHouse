@@ -1,0 +1,22 @@
+---
+title: Reúna seus detalhes de HTTP
+---
+
+Para se conectar ao ClickHouse via HTTP(S), você precisa das seguintes informações:
+
+| Parâmetro(s)              | Descrição                                                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `HOST` and `PORT`         | Normalmente, a porta é 8443 ao usar TLS ou 8123 quando não se usa TLS.                                            |
+| `DATABASE NAME`           | Por padrão, há um banco de dados chamado `default`; use o nome do banco de dados ao qual você deseja se conectar. |
+| `USERNAME` and `PASSWORD` | Por padrão, o nome de usuário é `default`. Use o nome de usuário apropriado para o seu caso de uso.               |
+
+Os detalhes do seu serviço do ClickHouse Cloud estão disponíveis no console do ClickHouse Cloud.
+Selecione um serviço e clique em **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="botão Connect do serviço do ClickHouse Cloud" border />
+
+Escolha **HTTPS**. Os detalhes de conexão são exibidos em um comando `curl` de exemplo.
+
+<Image img="/images/_snippets/connection-details-https.webp" size="md" alt="detalhes de conexão HTTPS do ClickHouse Cloud" border />
+
+Se você estiver usando ClickHouse autogerenciado, os detalhes de conexão são definidos pelo administrador do seu ClickHouse.

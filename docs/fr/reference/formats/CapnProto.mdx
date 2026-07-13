@@ -1,0 +1,131 @@
+---
+alias: []
+description: 'Documentation sur CapnProto'
+input_format: true
+keywords: ['CapnProto']
+output_format: true
+slug: /interfaces/formats/CapnProto
+title: 'CapnProto'
+doc_type: 'référence'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Le format `CapnProto` est un format de messages binaires semblable au format [`Protocol Buffers`](https://developers.google.com/protocol-buffers/) et à [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), mais contrairement à [JSON](/fr/reference/formats/JSON/JSON) ou à [MessagePack](https://msgpack.org/).
+Les messages CapnProto sont strictement typés et ne sont pas auto-descriptifs, ce qui signifie qu&#39;ils nécessitent une description de schéma externe. Le schéma est appliqué à la volée et mis en cache pour chaque requête.
+
+Voir aussi [Schéma de format](/fr/reference/formats/index#formatschema).
+
+<div id="data_types-matching-capnproto">
+  ## Correspondance des types de données
+</div>
+
+Le tableau ci-dessous présente les types de données pris en charge et leur correspondance avec les [types de données](/fr/reference/data-types/index) ClickHouse dans les requêtes `INSERT` et `SELECT`.
+
+| Type de données CapnProto (`INSERT`)                 | Type de données ClickHouse                                                                                                        | Type de données CapnProto (`SELECT`)                 |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `UINT8`, `BOOL`                                      | [UInt8](/fr/reference/data-types/int-uint)                                                                                           | `UINT8`                                              |
+| `INT8`                                               | [Int8](/fr/reference/data-types/int-uint)                                                                                            | `INT8`                                               |
+| `UINT16`                                             | [UInt16](/fr/reference/data-types/int-uint), [Date](/fr/reference/data-types/date)                                                      | `UINT16`                                             |
+| `INT16`                                              | [Int16](/fr/reference/data-types/int-uint)                                                                                           | `INT16`                                              |
+| `UINT32`                                             | [UInt32](/fr/reference/data-types/int-uint), [DateTime](/fr/reference/data-types/datetime)                                              | `UINT32`                                             |
+| `INT32`                                              | [Int32](/fr/reference/data-types/int-uint), [Decimal32](/fr/reference/data-types/decimal)                                               | `INT32`                                              |
+| `UINT64`                                             | [UInt64](/fr/reference/data-types/int-uint)                                                                                          | `UINT64`                                             |
+| `INT64`                                              | [Int64](/fr/reference/data-types/int-uint), [DateTime64](/fr/reference/data-types/datetime), [Decimal64](/fr/reference/data-types/decimal) | `INT64`                                              |
+| `FLOAT32`                                            | [Float32](/fr/reference/data-types/float)                                                                                            | `FLOAT32`                                            |
+| `FLOAT64`                                            | [Float64](/fr/reference/data-types/float)                                                                                            | `FLOAT64`                                            |
+| `TEXT, DATA`                                         | [String](/fr/reference/data-types/string), [FixedString](/fr/reference/data-types/fixedstring)                                          | `TEXT, DATA`                                         |
+| `union(T, Void), union(Void, T)`                     | [Nullable(T)](/fr/reference/data-types/date)                                                                                         | `union(T, Void), union(Void, T)`                     |
+| `ENUM`                                               | [Enum(8/16)](/fr/reference/data-types/enum)                                                                                          | `ENUM`                                               |
+| `LIST`                                               | [Array](/fr/reference/data-types/array)                                                                                              | `LIST`                                               |
+| `STRUCT`                                             | [Tuple](/fr/reference/data-types/tuple)                                                                                              | `STRUCT`                                             |
+| `UINT32`                                             | [IPv4](/fr/reference/data-types/ipv4)                                                                                                | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/fr/reference/data-types/ipv6)                                                                                                | `DATA`                                               |
+| `DATA`                                               | [Int128/UInt128/Int256/UInt256](/fr/reference/data-types/int-uint)                                                                   | `DATA`                                               |
+| `DATA`                                               | [Decimal128/Decimal256](/fr/reference/data-types/decimal)                                                                            | `DATA`                                               |
+| `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/fr/reference/data-types/map)                                                                                                  | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
+
+* Les types entiers peuvent être convertis les uns dans les autres lors des opérations d&#39;entrée/sortie.
+* Pour utiliser `Enum` au format CapnProto, utilisez le paramètre [format&#95;capn&#95;proto&#95;enum&#95;comparising&#95;mode](/fr/reference/settings/formats#format_capn_proto_enum_comparising_mode).
+* Les `Array` peuvent être imbriqués et accepter une valeur de type `Nullable` comme argument. Les types `Tuple` et `Map` peuvent également être imbriqués.
+
+<div id="example-usage">
+  ## Exemple d&#39;utilisation
+</div>
+
+<div id="inserting-and-selecting-data-capnproto">
+  ### Insertion et sélection de données
+</div>
+
+Vous pouvez insérer des données CapnProto à partir d’un fichier dans une table ClickHouse à l’aide de la commande suivante :
+
+```bash
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
+```
+
+où le `schema.capnp` se présente ainsi :
+
+```capnp
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+Vous pouvez sélectionner des données d’une table ClickHouse et les enregistrer dans un fichier au format `CapnProto` à l’aide de la commande suivante :
+
+```bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
+
+<div id="using-autogenerated-capn-proto-schema">
+  ### Utilisation d’un schéma généré automatiquement
+</div>
+
+Si vous ne disposez pas d’un schéma `CapnProto` externe pour vos données, vous pouvez tout de même lire/écrire des données au format `CapnProto` à l’aide d’un schéma généré automatiquement.
+
+Par exemple :
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS format_capn_proto_use_autogenerated_schema=1
+```
+
+Dans ce cas, ClickHouse générera automatiquement un schéma CapnProto à partir de la structure de la table à l’aide de la fonction [structureToCapnProtoSchema](/fr/reference/functions/regular-functions/other-functions#structureToCapnProtoSchema) et utilisera ce schéma pour sérialiser les données au format CapnProto.
+
+Vous pouvez également lire un fichier CapnProto avec un schéma généré automatiquement (dans ce cas, le fichier doit être créé à l’aide du même schéma) :
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_capn_proto_use_autogenerated_schema=1 FORMAT CapnProto"
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+Le paramètre [`format_capn_proto_use_autogenerated_schema`](/fr/reference/settings/formats#format_capn_proto_use_autogenerated_schema) est activé par défaut et s&#39;applique si [`format_schema`](/fr/reference/formats/index#formatschema) n&#39;est pas défini.
+
+Vous pouvez également enregistrer le schéma généré automatiquement dans un fichier lors des opérations d&#39;entrée/sortie à l&#39;aide du paramètre [`output_format_schema`](/fr/reference/settings/formats#output_format_schema).
+
+Par exemple :
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS 
+    format_capn_proto_use_autogenerated_schema=1,
+    output_format_schema='path/to/schema/schema.capnp'
+```
+
+Dans ce cas, le schéma `CapnProto` généré automatiquement sera enregistré dans le fichier `path/to/schema/schema.capnp`.

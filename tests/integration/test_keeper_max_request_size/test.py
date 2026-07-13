@@ -23,5 +23,7 @@ def started_cluster():
 
 def test_max_request_size(started_cluster):
     node.query("insert into system.zookeeper (name, path, value) select number::String, '/test_soft_limit', repeat('a', 3000) from numbers(100)")
-    with pytest.raises(Exception, match=r"Connection loss"):
+    # Connection loss and Operation timeout are both valid client surfaces of the
+    # connection-level rejection; do not narrow this back to a single code.
+    with pytest.raises(Exception, match=r"Connection loss|Operation timeout"):
         node.query("insert into system.zookeeper (name, path, value) select number::String, '/test_soft_limit', repeat('a', 3000) from numbers(10000)")

@@ -1,0 +1,20 @@
+<clickhouse>
+    <remote_servers>
+        <parallel_replicas>
+            <shard>
+                <replica>
+                    <host>split_node0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>split_node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>split_node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </parallel_replicas>
+    </remote_servers>
+</clickhouse>

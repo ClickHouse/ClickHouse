@@ -1,0 +1,41 @@
+---
+description: 'Документация по работе со статистикой столбцов'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: 'Работа со статистикой столбцов'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Доступны следующие операции:
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - Добавляет описание статистики в метаданные таблицы.
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - Изменяет описание статистики в метаданных таблицы.
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - Удаляет статистику из метаданных указанных столбцов и удаляет все объекты статистики во всех частях для указанных столбцов.
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - Удаляет все объекты статистики во всех частях для указанных столбцов. Объекты статистики можно пересобрать с помощью `ALTER TABLE MATERIALIZE STATISTICS`.
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Перестраивает статистику для столбцов. Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+Первые две команды легковесны: они лишь изменяют метаданные или удаляют файлы.
+
+Кроме того, они реплицируются: метаданные статистики синхронизируются через ZooKeeper.
+
+<div id="example">
+  ## Пример:
+</div>
+
+Добавление двух типов статистики для двух столбцов:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  Статистика поддерживается только для таблиц семейства [`*MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) варианты).
+</Note>
