@@ -656,6 +656,19 @@ static bool authenticationTypeIsVerifiedLocally(AuthenticationType type)
     }
 }
 
+/// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
+/// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
+/// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
+/// `VALID UNTIL` of an allowed login, contradicting the "skip this authentication type entirely" contract.
+static bool authenticationTypeIsAllowed(AuthenticationType type, bool allow_no_password, bool allow_plaintext_password)
+{
+    if (type == AuthenticationType::NO_PASSWORD)
+        return allow_no_password;
+    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
+        return allow_plaintext_password;
+    return true;
+}
+
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
@@ -680,8 +693,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
-                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                if (!authenticationTypeIsAllowed(auth_type, allow_no_password, allow_plaintext_password))
                 {
                     skipped_not_allowed_authentication_methods = true;
                     continue;
@@ -720,6 +732,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 for (const auto & other_method : user->authentication_methods)
                 {
                     if (&other_method == matched_authentication_method)
+                        continue;
+
+                    /// A method disabled by `allow_no_password` / `allow_plaintext_password` must be ignored here too,
+                    /// exactly as in the primary loop above; otherwise it could narrow or expire an otherwise allowed login.
+                    if (!authenticationTypeIsAllowed(other_method.getType(), allow_no_password, allow_plaintext_password))
                         continue;
 
                     const bool restricts_grants = !other_method.getGrants().structurallyEmpty();
