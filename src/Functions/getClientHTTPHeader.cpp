@@ -55,6 +55,13 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// NOTE: with async_insert=1, inserts are flushed by a background thread under a
+        /// fresh context built from global_context without the originating HTTP headers.
+        /// This function returns empty string for ALL expressions evaluated during async
+        /// flush: DEFAULT, MATERIALIZED, CHECK, VALUES expressions, dependent MV SELECTs,
+        /// and downstream target-table defaults. To use this function reliably, either
+        /// disable async_insert or use INSERT ... SELECT FROM input() (which runs
+        /// synchronously even when async_insert=1).
         const ClientInfo & client_info = getContext()->getClientInfo();
 
         const auto & source = arguments[0].column;
@@ -87,6 +94,17 @@ Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricte
 :::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+:::
+
+:::warning Does not work with async inserts
+When `async_insert = 1`, inserts are buffered and flushed in batches by a background thread.
+The HTTP headers of the originating request are not available during the flush, so
+`getClientHTTPHeader` returns an empty string for all expressions evaluated at flush
+time: `DEFAULT`, `MATERIALIZED`, `CHECK`, `VALUES` expressions, dependent materialized
+view `SELECT`s, and downstream target-table defaults.
+To use this function reliably with async inserts, use
+`INSERT ... SELECT getClientHTTPHeader(...) FROM input(...) FORMAT ...`
+which runs synchronously even when `async_insert = 1` is set.
 :::
 
 HTTP headers are case sensitive for this function.
