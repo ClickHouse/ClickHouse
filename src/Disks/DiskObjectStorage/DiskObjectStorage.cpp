@@ -846,8 +846,16 @@ void DiskObjectStorage::prepareRead(
         pipeline.needDistributedCache();
 
     /// Memory cache (page cache).
+    /// The page cache key has no file version here (see `ReadPipeline::wrapMemoryCache`), so it
+    /// relies on a blob never being rewritten under the same key. That holds when the backend
+    /// assigns a fresh random blob path to every write, or cannot write at all (`web`).
+    /// Deterministic-path writable backends (plain, plain-rewritable) reuse the key on rewrite
+    /// and would serve stale content — e.g. the disk access check file, which is rewritten at
+    /// a fixed path on every startup. Same reasoning as the encryption header cache in
+    /// `DiskEncrypted::prepareRead`.
     const bool use_page_cache =
         read_settings.page_cache_settings.cache
+        && (areBlobPathsRandom() || isReadOnly())
         && (use_distributed_cache
             ? read_settings.use_page_cache_with_distributed_cache
             : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
