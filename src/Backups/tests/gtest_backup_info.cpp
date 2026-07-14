@@ -606,6 +606,33 @@ TEST(BackupInfo, NormalizedStringRejectsNonOverridableNamedCollectionOverride)
     EXPECT_THROW((void)info.toNormalizedString(context), Exception);
 }
 
+TEST(BackupInfo, NormalizedStringRejectsDuplicateNamedCollectionOverrides)
+{
+    const String collection_name = "backup_info_duplicate_override";
+
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("url", Field("s3://bucket/base"));
+    create_query->overridability.emplace("url", true);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    SCOPE_EXIT({
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    });
+
+    auto context = getContext().context;
+    auto first = BackupInfo::fromString(
+        "S3(" + collection_name + ", url='s3://bucket/a', url='s3://bucket/b')");
+    auto second = BackupInfo::fromString(
+        "S3(" + collection_name + ", url='s3://bucket/b', url='s3://bucket/a')");
+
+    EXPECT_THROW((void)first.toNormalizedString(), Exception);
+    EXPECT_THROW((void)second.toNormalizedString(context), Exception);
+}
+
 TEST(BackupInfo, NormalizedStringRejectsNonStringKeyValueArg)
 {
     auto info = BackupInfo::fromString("S3(collection, url=concat('s3://bucket/', 'backup'))");

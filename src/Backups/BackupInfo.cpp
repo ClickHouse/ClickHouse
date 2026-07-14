@@ -30,6 +30,7 @@
 #include <filesystem>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -580,6 +581,7 @@ namespace
         {
             Strings kv_strings;
             kv_strings.reserve(info.kv_args.size());
+            std::unordered_set<String> keys;
             for (const auto & kv : info.kv_args)
             {
                 auto key = getKeyValueArgName(kv);
@@ -589,6 +591,9 @@ namespace
                         "Backup engine '{}' key-value argument {} must have a string key for normalized backup identity",
                         info.backup_engine_name,
                         kv->formatForErrorMessage());
+
+                if (!keys.emplace(*key).second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicated key '{}' in backup named collection overrides", *key);
 
                 if (isCredentialKeyForNormalizedIdentity(info.backup_engine_name, *key))
                     continue;
@@ -934,6 +939,8 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
 
     if (!context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", id_arg);
+
+    (void)getParamsMapFromAST(kv_args, context);
 
     ASTs collection_args;
     collection_args.reserve(1 + kv_args.size());
