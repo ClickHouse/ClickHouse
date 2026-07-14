@@ -603,6 +603,10 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     if (!ttl_seconds)
         return;
 
+    if (refresh_check_watch.elapsedSeconds() < static_cast<double>(ttl_seconds) / 4)
+        return;
+    refresh_check_watch.restart();
+
     for (auto & [processor, holders] : bucket_holders)
         for (auto & holder : *holders)
             if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
