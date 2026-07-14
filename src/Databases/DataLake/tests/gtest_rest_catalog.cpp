@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Interpreters/Context.h>
@@ -27,6 +28,13 @@
 #include <string>
 
 using namespace DataLake;
+
+namespace ProfileEvents
+{
+    extern const Event OneLakeAccessTokenRequests;
+    extern const Event OneLakeAccessTokenRequestFailures;
+    extern const Event OneLakeAccessTokenExpirations;
+}
 
 namespace DB
 {
@@ -487,8 +495,14 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
     const auto requests_after_construction = server.tokenRequests();
     EXPECT_GE(requests_after_construction, 1u);
 
+    const auto token_requests_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequests];
+    const auto expirations_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenExpirations];
+
     EXPECT_TRUE(catalog.empty());
     EXPECT_GT(server.tokenRequests(), requests_after_construction);
+
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequests], token_requests_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenExpirations], expirations_before);
 
     const auto requests_before_storage_token = server.tokenRequests();
     const auto [storage_token, expires_on] = catalog.getCurrentAccessToken();
@@ -501,6 +515,8 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
     RestCatalogTestServer server(CatalogShape::Empty);
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
+
+    const auto failures_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequestFailures];
 
     try
     {
@@ -525,6 +541,8 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
         EXPECT_NE(e.message().find("onelake_refresh_token"), std::string::npos);
         EXPECT_NE(e.message().find("AADSTS700082"), std::string::npos);
     }
+
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequestFailures], failures_before);
 }
 
 TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)

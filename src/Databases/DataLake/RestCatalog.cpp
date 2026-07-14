@@ -50,6 +50,9 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 
@@ -70,6 +73,14 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+}
+
+namespace ProfileEvents
+{
+    extern const Event OneLakeAccessTokenRequests;
+    extern const Event OneLakeAccessTokenRequestFailures;
+    extern const Event OneLakeAccessTokenRequestMicroseconds;
+    extern const Event OneLakeAccessTokenExpirations;
 }
 
 namespace DB::DatabaseDataLakeSetting
@@ -503,6 +514,8 @@ AccessToken OneLakeCatalog::getValidAccessToken(const CatalogState & catalog_sta
     auto current = access_token.get();
     if (!current || force_update || current->isExpired())
     {
+        if (current && !force_update && current->isExpired())
+            ProfileEvents::increment(ProfileEvents::OneLakeAccessTokenExpirations);
         access_token.set(std::make_unique<AccessToken>(retrieveAccessTokenViaRefreshToken(catalog_state)));
         current = access_token.get();
     }
@@ -717,6 +730,15 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
 
 AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const
 {
+    ProfileEvents::increment(ProfileEvents::OneLakeAccessTokenRequests);
+    Stopwatch watch;
+    bool success = false;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::OneLakeAccessTokenRequestMicroseconds, watch.elapsedMicroseconds());
+        if (!success)
+            ProfileEvents::increment(ProfileEvents::OneLakeAccessTokenRequestFailures);
+    });
+
     /// https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
     Poco::URI url;
     if (!oauth_server_uri.empty())
@@ -809,6 +831,7 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     /// only the token provided in CREATE/ALTER is stored and persisted, and Entra ID does
     /// not revoke it on use, so it stays valid for its full lifetime (90 days by default).
     /// Once it expires, the user rotates it with `ALTER DATABASE ... MODIFY SETTING`.
+    success = true;
     return token;
 }
 
