@@ -100,11 +100,11 @@ void registerOutputFormatCSV(FormatFactory & factory)
         /// https://www.iana.org/assignments/media-types/text/csv
         factory.setContentType(format_name, String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent"));
 
-        /// With `output_format_csv_crlf_end_of_line`, rows end with `\r\n`. That carriage return
-        /// cannot survive the text `EventStream` framing, so it is base64-encoded there (see
-        /// `checkIfOutputFormatMayEmitCarriageReturn`).
-        factory.registerOutputFormatMayEmitCarriageReturnChecker(
-            format_name, [](const FormatSettings & settings) { return settings.csv.crlf_end_of_line; });
+        /// The CSV quoting (`writeCSVString`) passes a carriage return in a `String` value through
+        /// verbatim, and with `output_format_csv_crlf_end_of_line` rows end with `\r\n`. A raw carriage
+        /// return cannot survive the text `EventStream` framing, so the output is base64-encoded there
+        /// (see `checkIfOutputFormatMayEmitCarriageReturn`).
+        factory.markOutputFormatMayEmitCarriageReturns(format_name);
     };
 
     registerWithNamesAndTypes("CSV", register_func);

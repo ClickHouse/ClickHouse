@@ -265,6 +265,11 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("XML");
     factory.setContentType("XML", "application/xml; charset=UTF-8");
 
+    /// The XML text-element escaping covers `<`, `&`, `>` and the quotes only: a carriage return in a
+    /// `String` value passes through verbatim. It cannot survive the text `EventStream` framing, so
+    /// the output is base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
+    factory.markOutputFormatMayEmitCarriageReturns("XML");
+
     factory.setDocumentation("XML", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |

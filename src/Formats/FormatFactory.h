@@ -150,10 +150,12 @@ private:
     using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings)>;
 
     /// Some text output formats may emit raw carriage-return (`\r`) bytes depending on settings, for
-    /// example `TSV` / `CSV` with `output_format_tsv_crlf_end_of_line` / `output_format_csv_crlf_end_of_line`.
-    /// A carriage return cannot be embedded losslessly in the text `EventStream` framing, because the
-    /// server-sent events transport treats it as a line terminator, so such output is base64-encoded
-    /// there. The checker returns true when the current settings make the output format emit carriage returns.
+    /// example `TSV` with `output_format_tsv_crlf_end_of_line` or `CustomSeparated` with a `CSV`
+    /// escaping rule or delimiters containing `\r`. A carriage return cannot be embedded losslessly in
+    /// the text `EventStream` framing, because the server-sent events transport treats it as a line
+    /// terminator, so such output is base64-encoded there. The checker returns true when the current
+    /// settings make the output format able to emit carriage returns. Formats that may emit them
+    /// regardless of settings are marked with `markOutputFormatMayEmitCarriageReturns` instead.
     using MayEmitCarriageReturnChecker = std::function<bool(const FormatSettings & settings)>;
 
     /// Obtain HTTP content-type for the output format.
@@ -200,9 +202,13 @@ private:
         bool may_produce_raw_bytes{false};
         /// The same, but settings-dependent (for example `CustomSeparated` with a `Raw` escaping rule).
         MayProduceRawBytesChecker may_produce_raw_bytes_checker;
-        /// Settings-dependent checker for text output formats that may emit raw carriage-return bytes
-        /// (for example `TSV` / `CSV` with a CRLF row terminator), which cannot survive the text
-        /// `EventStream` framing and are base64-encoded there instead.
+        /// If true, the output may contain raw carriage-return (`\r`) bytes coming from the data itself,
+        /// because the field serialization passes them through verbatim (for example the `CSV` quoting,
+        /// `XML` text elements, or the unescaped values of `Pretty` / `Vertical`). Such output cannot
+        /// survive the text `EventStream` framing (server-sent events treat `\r` as a line terminator)
+        /// and is base64-encoded there instead.
+        bool may_emit_carriage_returns{false};
+        /// The same, but settings-dependent (for example `TSV` with a CRLF row terminator).
         MayEmitCarriageReturnChecker may_emit_carriage_return_checker;
         ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
@@ -362,6 +368,7 @@ public:
     void markOutputFormatNotTTYFriendly(const String & name);
     void markOutputFormatMayProduceRawBytes(const String & name);
     void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
+    void markOutputFormatMayEmitCarriageReturns(const String & name);
     void registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker);
 
     void setContentType(const String & name, const String & content_type);

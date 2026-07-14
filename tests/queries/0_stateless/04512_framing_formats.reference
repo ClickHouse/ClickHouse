@@ -86,8 +86,25 @@ CustomSeparated (Escaped) accepted: OK
 --- EventStream base64-encodes TSV with a CRLF row terminator
 text/event-stream; charset=UTF-8; payload=base64
 TSV CRLF payload round-trips
---- EventStream base64-encodes CSV with a CRLF row terminator
+--- EventStream base64-encodes CSV (the CSV quoting passes a carriage return in the data verbatim)
 text/event-stream; charset=UTF-8; payload=base64
+CSV payload with a carriage return round-trips
+--- EventStream base64-encodes formats that write values without escaping (Vertical)
+Vertical payload with a carriage return round-trips
+--- EventStream base64-encodes Pretty and XML (values are written without escaping the carriage return)
+text/event-stream; charset=UTF-8; payload=base64
+text/event-stream; charset=UTF-8; payload=base64
+--- EventStream base64-encodes CustomSeparated with the CSV escaping rule
+text/event-stream; charset=UTF-8; payload=base64
+--- EventStream base64-encodes CustomSeparated when a delimiter contains a carriage return
+text/event-stream; charset=UTF-8; payload=base64
+--- EventStream still embeds CustomSeparated with the Escaped rule as plain text
+text/event-stream; charset=UTF-8
+--- EventStream base64-encodes Markdown only with escape_special_characters (that path passes a carriage return verbatim)
+text/event-stream; charset=UTF-8; payload=base64
+text/event-stream; charset=UTF-8
+--- JSONEachPacketString accepts CSV with a carriage return in the data (escaped in the JSON string)
+{"packet":"data","data":"\"a\rb\"\n"}
 --- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)
 {"packet":"data","data":"0\r\n1\r\n2\r\n"}
 --- framing is rejected for output formats that write progress in-band (JSONEachRowWithProgress)
