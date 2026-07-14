@@ -1,0 +1,536 @@
+---
+sidebarTitle: '物化类型'
+slug: /integrations/dbt/materializations
+description: '可用的物化类型及其配置'
+keywords: ['clickhouse', 'dbt', '物化类型', 'materialized view', '增量']
+title: '物化类型'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+本节介绍 dbt-clickhouse 中提供的所有物化类型，包括实验性功能。
+
+<div id="general-materialization-configurations">
+  ## 通用物化类型配置
+</div>
+
+下表列出了一些可用物化类型共用的配置。有关通用 dbt 模型配置的详细信息，请参阅 [dbt 文档](https://docs.getdbt.com/category/general-configs)：
+
+| 选项                 | 说明                                                                                                       | 默认值 (如有)      |
+| ------------------ | -------------------------------------------------------------------------------------------------------- | ------------- |
+| engine             | 创建表时使用的表引擎 (表类型)                                                                                         | `MergeTree()` |
+| order&#95;by       | 由列名或任意表达式组成的元组。这样可以创建较小的稀疏索引，帮助更快定位数据。                                                                   | `tuple()`     |
+| partition&#95;by   | 分区是按指定条件对表中记录进行的逻辑分组。分区键可以是表列中的任意表达式。                                                                    |               |
+| primary&#95;key    | 与 `order_by` 类似，是一个 ClickHouse 主键表达式。如果未指定，ClickHouse 将使用 `order_by` 表达式作为主键。                            |               |
+| settings           | 用于此模型相关 DDL 语句 (如 `CREATE TABLE`) 的 `"TABLE"` settings map/字典                                            |               |
+| query&#95;settings | 用于与此模型配合执行 `INSERT` 或 `DELETE` 语句的 ClickHouse 用户级 settings map/字典                                        |               |
+| ttl                | 用于该表的 TTL 表达式。TTL 表达式是一个字符串，可用于指定表的 TTL。                                                                 |               |
+| sql&#95;security   | 执行该视图底层查询时使用的 ClickHouse 用户。[可接受的值](/zh/reference/statements/create/view#sql_security)：`definer`、`invoker`。 |               |
+| definer            | 如果 `sql_security` 设置为 `definer`，则必须在 `definer` 子句中指定一个现有用户或 `CURRENT_USER`。                              |               |
+
+<div id="supported-table-engines">
+  ### 支持的表引擎
+</div>
+
+| 类型                     | 详情                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| MergeTree (默认)         | [docs](/zh/reference/engines/table-engines/mergetree-family/mergetree).          |
+| HDFS                   | [docs](/zh/reference/engines/table-engines/integrations/hdfs)                    |
+| MaterializedPostgreSQL | [docs](/zh/reference/engines/table-engines/integrations/materialized-postgresql) |
+| S3                     | [docs](/zh/reference/engines/table-engines/integrations/s3)                      |
+| EmbeddedRocksDB        | [docs](/zh/reference/engines/table-engines/integrations/embedded-rocksdb)        |
+| Hive                   | [docs](/zh/reference/engines/table-engines/integrations/hive)                    |
+
+**注意**：对于 materialized view，所有 *MergeTree 引擎均受支持。
+
+<div id="experimental-supported-table-engines">
+  #### Experimental 支持的表引擎
+</div>
+
+| 类型   | 详情                                                          |
+| ---- | ----------------------------------------------------------- |
+| 分布式表 | [文档](/zh/reference/engines/table-engines/special/distributed). |
+| 字典   | [文档](/zh/reference/engines/table-engines/special/dictionary)   |
+
+如果你在使用上述任一引擎时遇到 dbt 连接 ClickHouse 的问题，请在[这里](https://github.com/ClickHouse/dbt-clickhouse/issues)提交
+issue。
+
+<div id="a-note-on-model-settings">
+  ### 关于模型设置的说明
+</div>
+
+ClickHouse 有多种类型/层级的“设置”。在上面的模型配置中，其中有两类是可配置的。`settings` 指的是在 `CREATE TABLE/VIEW` 这类 DDL 语句中使用的 `SETTINGS`
+子句，因此通常是特定于具体 ClickHouse 表引擎的设置。新增的
+`query_settings` 用于为模型物化所使用的 `INSERT` 和 `DELETE` 查询添加 `SETTINGS` 子句 (
+包括增量物化类型) 。
+ClickHouse 有数百种设置，而且“表”设置和“用户”
+设置的界限并不总是那么清晰 (不过后者通常
+可在 `system.settings` 表中找到) 。一般来说，建议使用默认值；如需使用这些属性，
+应先经过充分研究和测试。
+
+<div id="column-configuration">
+  ### 列配置
+</div>
+
+> ***注意：*** 以下列配置选项要求强制执行 [模型契约](https://docs.getdbt.com/docs/collaborate/govern/model-contracts)。
+
+| Option | Description                                                                                                                                              | Default if any |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| codec  | 一个字符串，由传递给列 DDL 中 `CODEC()` 的参数组成。例如：`codec: "Delta, ZSTD"` 将编译为 `CODEC(Delta, ZSTD)`。                                                                   |                |
+| ttl    | 一个字符串，由 [生存时间 (TTL) 表达式](/zh/concepts/features/operations/delete/ttl) 组成，用于在列的 DDL 中定义 TTL 规则。例如：`ttl: ts + INTERVAL 1 DAY` 将编译为 `TTL ts + INTERVAL 1 DAY`。 |                |
+
+<div id="example-of-schema-configuration">
+  #### schema 配置示例
+</div>
+
+```yaml
+models:
+  - name: table_column_configs
+    description: 'Testing column-level configurations'
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: ts
+        data_type: timestamp
+        codec: ZSTD
+      - name: x
+        data_type: UInt8
+        ttl: ts + INTERVAL 1 DAY
+```
+
+<div id="adding-complex-types">
+  #### 添加复杂类型
+</div>
+
+dbt 会通过分析用于创建模型的 SQL，自动确定每一列的数据类型。不过，在某些情况下，这一过程可能无法准确判断数据类型，导致与 contract `data_type` 属性中指定的类型发生冲突。为了解决这个问题，我们建议在模型 SQL 中使用 `CAST()` 函数来显式指定所需的类型。例如：
+
+```sql
+{{
+    config(
+        materialized="materialized_view",
+        engine="AggregatingMergeTree",
+        order_by=["event_type"],
+    )
+}}
+
+select
+  -- event_type 可能被推断为 String，但我们可能更倾向于使用 LowCardinality(String)：
+  CAST(event_type, 'LowCardinality(String)') as event_type,
+  -- countState() 可能被推断为 `AggregateFunction(count)`，但我们可能更倾向于修改所用参数的类型：
+  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count, 
+  -- maxSimpleState() 可能被推断为 `SimpleAggregateFunction(max, String)`，但我们同样可能更倾向于修改所用参数的类型：
+  CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
+from {{ ref('user_events') }}
+group by event_type
+```
+
+<div id="materialization-view">
+  ## 物化：视图
+</div>
+
+dbt 模型可创建为 [ClickHouse 视图](/zh/reference/functions/table-functions/view)，
+并可使用以下语法进行配置：
+
+项目文件 (`dbt_project.yml`) ：
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: view
+```
+
+或配置代码块 (`models/<model_name>.sql`) ：
+
+```python
+{{ config(materialized = "view") }}
+```
+
+<div id="materialization-table">
+  ## 物化：表
+</div>
+
+可将 dbt 模型创建为 [ClickHouse 表](/zh/reference/system-tables/tables)，并使用以下语法进行配置：
+
+项目文件 (`dbt_project.yml`) ：
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: table
+    +order_by: [ <column-name>, ... ]
+    +engine: <engine-type>
+    +partition_by: [ <column-name>, ... ]
+```
+
+或配置代码块 (`models/<model_name>.sql`) ：
+
+```python
+{{ config(
+    materialized = "table",
+    engine = "<engine-type>",
+    order_by = [ "<column-name>", ... ],
+    partition_by = [ "<column-name>", ... ],
+      ...
+    ]
+) }}
+```
+
+<div id="data-skipping-indexes">
+  ### 数据跳过索引
+</div>
+
+你可以通过 `indexes` 配置，为 `table` 物化类型添加[数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)：
+
+```sql
+{{ config(
+        materialized='table',
+        indexes=[{
+          'name': 'your_index_name',
+          'definition': 'your_column TYPE minmax GRANULARITY 2'
+        }]
+) }}
+```
+
+<div id="projections">
+  ### 投影
+</div>
+
+你可以使用 `projections` 配置，为 `table` 和 `distributed_table` 物化类型添加[投影](/zh/concepts/features/projections/projections)：
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'your_projection_name',
+               'query': 'SELECT department, avg(age) AS avg_age GROUP BY department'
+           }
+       ]
+) }}
+```
+
+**注意**：对于分布式表，投影会应用到 `_local` 表上，而不是分布式代理表本身。
+
+<div id="materialization-incremental">
+  ## 物化：incremental
+</div>
+
+每次执行 dbt 时，表模型都会被重建。对于较大的结果集或复杂的转换，这样做可能并不现实，而且成本很高。为应对这一问题并缩短构建时间，可以将 dbt 模型创建为增量式 ClickHouse 表，并使用以下语法进行配置：
+
+`dbt_project.yml` 中的模型定义：
+
+```yaml
+models:
+  <resource-path>:
+    +materialized: incremental
+    +order_by: [ <column-name>, ... ]
+    +engine: <engine-type>
+    +partition_by: [ <column-name>, ... ]
+    +unique_key: [ <column-name>, ... ]
+    +inserts_only: [ True|False ]
+```
+
+或者在 `models/<model_name>.sql` 的配置块中：
+
+```python
+{{ config(
+    materialized = "incremental",
+    engine = "<engine-type>",
+    order_by = [ "<column-name>", ... ],
+    partition_by = [ "<column-name>", ... ],
+    unique_key = [ "<column-name>", ... ],
+    inserts_only = [ True|False ],
+      ...
+    ]
+) }}
+```
+
+<div id="incremental-configurations">
+  ### 配置
+</div>
+
+下面列出了此物化类型特有的配置：
+
+| Option                   | Description                                                                                                                        | Required?                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `unique_key`             | 由列名组成、用于唯一标识行的元组。有关唯一性约束的更多信息，请参见[此处](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional)。       | 必需。若未提供，已更改的行会被重复添加到增量表中。   |
+| `inserts_only`           | 此配置已弃用，建议改用 `append` 增量 `strategy`，两者行为相同。若在增量模型中将其设为 True，增量更新将直接插入目标表，而不会创建中间表。如果设置了 `inserts_only`，则会忽略 `incremental_strategy`。 | 可选 (默认值：`False`)            |
+| `incremental_strategy`   | 用于增量物化的策略。支持 `delete+insert`、`append`、`insert_overwrite` 或 `microbatch`。有关各策略的更多信息，请参见[此处](#incremental-model-strategies)          | 可选 (默认值：&#39;default&#39;)  |
+| `incremental_predicates` | 应用于增量物化的附加条件 (仅适用于 `delete+insert` 策略)                                                                                             | 可选                          |
+
+<div id="incremental-model-strategies">
+  ### 增量模型策略
+</div>
+
+`dbt-clickhouse` 支持三种增量模型策略。
+
+<div id="default-legacy-strategy">
+  #### 默认 (旧版) 策略
+</div>
+
+一直以来，ClickHouse 对更新和删除的支持都比较有限，主要通过异步“变更”实现。
+为了模拟预期中的 dbt 行为，
+dbt-clickhouse 默认会创建一个新的临时表，其中包含所有未受影响 (未删除、未更改) 的“旧”
+记录，以及所有新增或更新后的记录，
+然后将这个临时表与现有增量模型的 relation 交换。这是唯一一种
+在操作完成前如果出现问题时仍能保留原始 relation 的策略；不过，由于它需要完整复制原始表，因此执行起来可能
+成本较高且速度较慢。
+
+<div id="delete-insert-strategy">
+  #### Delete+Insert 策略
+</div>
+
+ClickHouse 在 22.8 版本中将“lightweight deletes”作为一项 Experimental 功能引入。轻量级删除明显快于 ALTER TABLE ... DELETE
+操作，因为它们不需要重写 ClickHouse 数据分区片段。增量策略 `delete+insert`
+利用轻量级删除来实现
+性能显著优于“legacy”策略的增量物化。不过，使用此策略时有一些重要
+注意事项：
+
+* 必须在你的 ClickHouse server 上通过设置
+  `allow_experimental_lightweight_delete=1` 启用轻量级删除，或者你
+  必须在你的 profile 中设置 `use_lw_deletes=true` (这会为你的 dbt session 启用该设置)
+* 轻量级删除现已可用于生产环境，但在早于 23.3 的 ClickHouse 版本上可能仍存在性能及其他问题。
+* 该策略直接作用于受影响的表/relation (不会创建任何中间表或临时表) ，
+  因此如果操作期间出现问题，
+  增量模型中的数据很可能会处于无效状态
+* 使用轻量级删除时，dbt-clickhouse 会启用设置 `allow_nondeterministic_mutations`。在某些非常
+  罕见的情况下，如果使用非确定性的 incremental&#95;predicates，
+  这可能会导致已更新/已删除项出现竞态条件 (以及 ClickHouse 日志中相关的日志消息) 。
+  为确保结果一致，
+  增量谓词应只包含针对在增量
+  物化期间不会被修改的数据的子查询。
+
+<div id="microbatch-strategy">
+  #### 微批次策略 (需要 dbt-core &gt;= 1.9)
+</div>
+
+增量策略 `microbatch` 是 dbt-core 自 1.9 版本起提供的一项功能，旨在高效处理大规模时间序列数据转换。在 dbt-clickhouse 中，它基于现有的 `delete_insert`
+增量策略，根据 `event_time` 和
+`batch_size` 模型配置，将增量处理拆分为预定义的时间序列批次。
+
+除了能够处理大规模转换，微批次还支持：
+
+* [重新处理失败的批次](https://docs.getdbt.com/docs/build/incremental-microbatch#retry)。
+* 自动检测[批次并行执行](https://docs.getdbt.com/docs/build/parallel-batch-execution)。
+* 在[回填](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills)时，无需编写复杂的条件逻辑。
+
+有关微批次的详细用法，请参阅[官方文档](https://docs.getdbt.com/docs/build/incremental-microbatch)。
+
+<div id="available-microbatch-configurations">
+  ##### 可用的 微批次 配置
+</div>
+
+| Option                 | Description                                                                                                                                                                                     | Default if any |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| event&#95;time         | 用于指示“该行发生于何时”的列。它是 微批次 模型以及任何需要被过滤的直接父级模型的必填项。                                                                                                                                           |                |
+| begin                  | 微批次 模型的“时间起点”。这是任何初始构建或全量刷新构建的起始点。例如，一个按天粒度的 微批次 模型在 2024-10-01 运行，且 `begin = '2023-10-01'` 时，将处理 366 个批次 (因为这是闰年！) ，再加上“今天”的那个批次。                                                |                |
+| batch&#95;size         | 批次的粒度。支持的值为 `hour`、`day`、`month` 和 `year`                                                                                                                                                       |                |
+| lookback               | 处理最新书签之前的 X 个批次，以捕获延迟到达的记录。                                                                                                                                                                     | 1              |
+| concurrent&#95;batches | 覆盖 dbt 对是否并发运行批次 (同时运行) 的自动检测。有关更多信息，请参阅[配置并发批次](https://docs.getdbt.com/docs/build/incremental-microbatch#configure-concurrent_batches)。设置为 true 时，批次会并发运行 (并行) ；设置为 false 时，批次会按顺序运行 (逐个执行) 。 |                |
+
+<div id="append-strategy">
+  #### 追加策略
+</div>
+
+该策略取代了早期版本 dbt-clickhouse 中的 `inserts_only` 设置。这种方式只是将
+新行追加到现有 relation 中。
+因此，重复行不会被去除，也不会使用临时表或中间表。如果数据允许重复，
+或者增量查询的 WHERE 子句/过滤器已将重复项排除在外，那么这是最快的
+方式。
+
+<div id="insert-overwrite-strategy">
+  #### insert_overwrite 策略 (Experimental)
+</div>
+
+> [IMPORTANT]
+> 当前，`insert_overwrite` 策略尚未完全支持分布式物化类型。
+
+执行以下步骤：
+
+1. 创建一个与增量模型 relation 结构相同的暂存 (临时) 表：
+   `CREATE TABLE <staging> AS <target>`.
+2. 仅将新记录 (由 `SELECT` 生成) 插入到暂存表中。
+3. 仅将新分区 (即暂存表中存在的分区) 替换到目标表中。
+
+这种方法具有以下优点：
+
+* 它比默认策略更快，因为不需要复制整个表。
+* 它比其他策略更安全，因为在 INSERT 操作成功完成之前，不会修改原始表：
+  如果中途失败，原始表不会被修改。
+* 它实现了“分区不可变性”这一数据工程最佳实践，从而简化增量和并行数据
+  处理、回滚等操作。
+
+该策略要求在模型配置中设置 `partition_by`。模型配置中所有其他特定于策略的
+参数都会被忽略。
+
+<div id="materialized-view">
+  ## 物化：materialized_view
+</div>
+
+`materialized_view` 物化会创建一个 ClickHouse [materialized view](/zh/reference/statements/create/view#materialized-view)，它可充当插入触发器，自动将源表中的新行转换后插入到目标表中。这是 dbt-clickhouse 中最强大的物化类型之一。
+
+由于这一物化较为复杂，我们为其提供了单独的页面。完整文档请参阅 **[Materialized Views 指南](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)**
+
+<div id="materialization-dictionary">
+  ## 物化：字典 (Experimental)
+</div>
+
+有关如何为
+ClickHouse 字典实现物化的示例，请参阅测试
+https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py
+
+<div id="materialization-distributed-table">
+  ## 物化：distributed_table (experimental)
+</div>
+
+按以下步骤创建分布式表：
+
+1. 创建包含 SQL 查询的临时视图，以获取正确的结构
+2. 基于视图创建空的本地表
+3. 基于本地表创建分布式表。
+4. 将数据插入分布式表，从而分发到各个分片，且不会发生重复。
+
+注意：
+
+* dbt-clickhouse 查询现在会自动包含设置 `insert_distributed_sync = 1`，以确保
+  下游增量
+  物化操作能够正确执行。这可能会导致某些分布式表插入操作的速度比
+  预期更慢。
+
+<div id="distributed-table-model-example">
+  ### 分布式表模型示例
+</div>
+
+```sql
+{{
+    config(
+        materialized='distributed_table',
+        order_by='id, created_at',
+        sharding_key='cityHash64(id)',
+        engine='ReplacingMergeTree'
+    )
+}}
+
+select id, created_at, item
+from {{ source('db', 'table') }}
+```
+
+<div id="distributed-table-generated-migrations">
+  ### 已生成的迁移
+</div>
+
+```sql
+CREATE TABLE db.table_local on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = ReplacingMergeTree
+    ORDER BY (id, created_at);
+
+CREATE TABLE db.table on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
+```
+
+<div id="incremental-configurations">
+  ### 配置
+</div>
+
+下面列出了此物化类型特有的配置：
+
+| 选项               | 描述                                                          | 默认值 (如有)  |
+| ---------------- | ----------------------------------------------------------- | --------- |
+| sharding&#95;key | 分片键决定了向 Distributed 引擎表中插入数据时的目标服务器。分片键可以是随机值，也可以是哈希函数的输出结果 | `rand()`) |
+
+<div id="materialization-distributed-incremental">
+  ## materialization: distributed_incremental (experimental)
+</div>
+
+基于与分布式表相同思路的增量模型，主要难点在于正确处理各种增量
+策略。
+
+1. *追加策略* 只是将数据插入分布式表。
+2. *Delete+Insert* 策略会创建分布式临时表，以便在每个分片上处理全部数据。
+3. *默认 (旧版) 策略* 出于同样的原因，会创建分布式临时表和中间表。
+
+只有分片表会被替换，因为分布式表本身不存储数据。
+只有在启用 full&#95;refresh 模式或表结构可能发生变化时，分布式表才会重新加载。
+
+<div id="distributed-incremental-model-example">
+  ### Distributed 增量模型示例
+</div>
+
+```sql
+{{
+    config(
+        materialized='distributed_incremental',
+        engine='MergeTree',
+        incremental_strategy='append',
+        unique_key='id,created_at'
+    )
+}}
+
+select id, created_at, item
+from {{ source('db', 'table') }}
+```
+
+<div id="distributed-table-generated-migrations">
+  ### 已生成的迁移
+</div>
+
+```sql
+CREATE TABLE db.table_local on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = MergeTree;
+
+CREATE TABLE db.table on cluster cluster (
+    `id` UInt64,
+    `created_at` DateTime,
+    `item` String
+)
+    ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
+```
+
+<div id="snapshot">
+  ## 快照
+</div>
+
+dbt 快照可用于记录可变模型随时间发生的变化。这进一步支持对模型执行时间点
+查询，使分析人员能够“回溯”查看模型先前的状态。此功能由
+ClickHouse 连接器支持，并按以下语法进行配置：
+
+`snapshots/<model_name>.sql` 中的配置块：
+
+```python
+{{
+   config(
+     schema = "<schema-name>",
+     unique_key = "<column-name>",
+     strategy = "<strategy>",
+     updated_at = "<updated-at-column-name>",
+   )
+}}
+```
+
+有关配置的更多信息，请参阅 [快照配置](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs)参考页。
+
+<div id="contracts-and-constraints">
+  ## 契约与约束
+</div>
+
+仅支持完全精确匹配的列类型契约。例如，如果某个契约要求列类型为 UInt32，而模型返回的是 UInt64 或其他整数类型，
+该契约就会失败。
+ClickHouse 也 *仅* 支持针对整个表/模型的 `CHECK` 约束。不支持主键、外键、唯一约束以及
+列级 `CHECK` 约束。
+(参见 ClickHouse 关于主键 / ORDER BY 键的文档。)

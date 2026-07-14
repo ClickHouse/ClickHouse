@@ -10,7 +10,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -82,9 +81,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Storages/IStorage.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -142,15 +141,22 @@ extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
+extern const SettingsSeconds lock_acquire_timeout;
+extern const SettingsSeconds iceberg_compaction_delay_bias;
+extern const SettingsSeconds iceberg_compaction_data_cleanup;
+extern const SettingsBool allow_experimental_cleanup_old_data_files_compaction;
+extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
+extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
+extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
 }
 
 namespace
 {
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss);
-    return removeEscapedSlashes(oss.str());
+    return stringifyJSON(metadata_object);
 }
 }
 
@@ -444,6 +450,18 @@ bool IcebergMetadata::optimize(
     [[maybe_unused]] ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
+#if CLICKHOUSE_CLOUD
+    if (!compaction_enabled)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables.");
+
+    if (!iceberg_compaction_metadata_generator)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Background compaction is not initialized. This is a bug.");
+
+    iceberg_compaction_metadata_generator->waitUntilUpdated();
+    return true;
+#else
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
@@ -464,6 +482,7 @@ bool IcebergMetadata::optimize(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
     }
+#endif
 }
 
 std::pair<IcebergDataSnapshotPtr, Int32>
@@ -829,6 +848,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
 }
+
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
@@ -1221,8 +1241,12 @@ void IcebergMetadata::addDeleteTransformers(
             {
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
-                block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
-                equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
+                size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
+                /// Take the type from the delete file header rather than from the table schema:
+                /// the nullability of a column in the delete file may differ from its nullability
+                /// in the table schema, and the columns read below have exactly the header's types.
+                block_for_set.insert(ColumnWithTypeAndName(delete_file_header.getByPosition(position_in_delete_file).type, name_and_type.name));
+                equality_indexes_delete_file.push_back(position_in_delete_file);
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();

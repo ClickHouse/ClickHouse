@@ -1,0 +1,112 @@
+---
+title: ClickHouse에서 기본 데이터 타입을 최적화하는 팁과 요령
+description: "ClickHouse에서 기본 데이터 타입을 최적화하는 팁과 요령"
+date: 2024-07-02
+tags: ['성능 및 최적화']
+keywords: ['기본 데이터 타입 최적화']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 질문
+</div>
+
+ClickHouse에서 쿼리 속도와 저장 효율을 최적화하려면 어떤 데이터 타입을 사용해야 하나요?
+
+<div id="answer">
+  ## 답변
+</div>
+
+다른 시스템에서 자동 변환을 사용하거나 데이터 타입을 선택할 때, 사용자들은 흔히 &quot;많을수록 좋다&quot;, &quot;더 쉬운 것을 선택한다&quot;, &quot;가장 범용적인 것을 선택한다&quot;는 방식을 택하곤 합니다. 이러한 접근 방식은 수백만 건, 경우에 따라서는 수십억 행 규모의 소규모 데이터셋에서는 대체로 문제없이 동작합니다. 사용 사례에서 쿼리 성능 차이가 크지 않은 규모라면 차이가 눈에 띄지 않을 수 있으며, 이 경우에는 허용 가능한 수준입니다.
+
+그러나 데이터가 증가하여 더욱 두드러지게 되면 이는 허용하기 어렵습니다.
+
+쿼리 실행 시간이 50ms와 500ms인 경우의 차이는 웹 UI처럼 대부분의 사용 사례에서는 허용 가능한 수준일 수 있습니다. 그러나 실제로는 한쪽이 다른 쪽보다 10배 느린 것으로, 프론트엔드 사용자 입장에서는 크게 체감되지 않더라도 무시할 수 없는 차이입니다.
+
+예시 초기 테이블:
+
+```
+timestamp Datetime64(9),
+group_id Int64,
+vendor_id String,
+product_id String,
+category1 Int64,
+code_name String,
+paid_status String,
+country_code String,
+description String,
+price Float64,
+attributes Map(String, String)
+```
+
+샘플 데이터:
+
+```
+3456, 0123456789, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:01.000", 98, "bear", paid", "us", "corvette model car", 123.45, {"color" : "blue", "size" : "S"}
+156, 0000012345, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:02:123", 45, "tiger", "not paid", "uk", "electric car", 53432.10, {"color" : "red", "model" : "X"} 
+...
+```
+
+다음은 이 데이터를 최적화할 수 있는 몇 가지 권장 사항입니다.
+
+`timestamp : DateTime64(9)`
+과학적 정밀도가 필요한 경우가 아니라면, 정밀도 9(나노초)는 거의 필요하지 않습니다. 표시나 정렬 목적으로는 활용될 수 있지만, 검색이나 기본 키(primary key) 등을 위한 쿼리에서는 일반적으로 불필요합니다.
+
+* **권장 사항:**
+  PK의 경우, ORDER BY: DateTime
+  표시 또는 정렬용으로는 추가 컬럼을 사용합니다 - 예: `timestamp_microseconds : DateTime64(6)`
+
+`group_id : Int64`
+정수형으로 보입니다. 해당 컬럼에 필요한 최댓값을 수용할 수 있는 가장 작은 정수 유형을 선택하십시오. 이 샘플 데이터셋과 컬럼 이름을 고려할 때 100경(quintillion) 규모의 값이 필요할 가능성은 낮으므로, 최대 약 16,000개의 값을 저장할 수 있는 Int16으로 충분할 것입니다.
+
+* **권장**: Int16
+
+`vendor_id : String`
+이 컬럼은 숫자처럼 보이지만 앞에 0이 붙어 있으므로 포맷을 유지하는 것이 중요합니다. 또한 고정된 자릿수로 구성된 것으로 보입니다.
+
+* **권장**: FixedString(10)
+
+`product_id : String`
+이 값은 영숫자로 구성되어 있어 직관적으로는 문자열(String)처럼 보이지만, UUID이기도 합니다.
+
+* **권장**: UUID
+
+`category1 : Int64`
+값이 작고, 범주(category) 수가 많지 않으며 크게 증가하지 않거나 제한적입니다. 255 미만입니다.
+
+* **권장**: UInt8
+
+`code_name : String`
+이 필드는 사용되는 문자열의 종류가 제한적일 것으로 보입니다.
+문자열 값의 종류가 수백에서 수천 개 수준인 경우, 낮은 카디널리티 필드를 활용하면 효과적입니다.
+
+* **권장**: LowCardinality(String)
+
+`paid_status : String`
+&quot;paid&quot; 또는 &quot;not&#95;paid&quot;의 String 값이 있습니다. 값이 두 가지뿐인 상황이라면 boolean을 사용하십시오.
+
+* **권장 사항**: Bool
+
+`country_code : String`
+여러 최적화 조건을 동시에 충족하는 컬럼이 존재하는 경우도 있습니다. 이 예시에서 국가 코드는 종류가 제한적이며, 모두 두 글자로 구성된 식별자입니다.
+
+* **권장값**: LowCardinality(FixedString(2))
+
+`price : Float64`
+고정 소수점 정밀도(precision)가 정해져 있는 경우, 특히 금융 데이터 및 계산에서는 Float 사용을 권장하지 않습니다. 필요한 정밀도에 맞는 Decimal 타입을 사용하는 것이 좋습니다. 이 사용 사례에서는 항목 가격이 999,999.00을 초과하지 않을 것으로 예상됩니다.
+
+* **권장값**: Decimal(10,2)
+
+`attributes : map`
+맵(map)에 동적 속성(attribute)을 저장하는 테이블이 있는 경우가 많습니다. 키(key)나 값(value)을 검색하는 작업은 일반적으로 속도가 느립니다. 맵의 성능을 개선하는 방법은 몇 가지가 있습니다. 대부분의 레코드에 존재하는 키는 낮은 카디널리티의 별도 컬럼으로 분리하고, 희소하게 나타나는 키는 높은 카디널리티의 다른 컬럼에 배치하는 것이 좋습니다. 이렇게 구성하면 스킵 인덱스를 생성하는 것이 더 효율적이지만, 쿼리의 복잡도가 높아질 수 있습니다.
+
+* **권장 사항:** lc&#95;attributes: Map(String, String), hc&#95;attributes: Map(String, String).
+
+쿼리에 따라 스킵 인덱스를 생성하거나 속성을 추출하는 데 사용할 수 있는 옵션은 다음과 같습니다:
+materialized view를 사용해 ARRAY JOIN으로 컬럼에 추출:
+https://clickhouse.com/docs/knowledgebase/using-array-join-to-extract-and-query-attributes
+키에 대해 스킵 인덱스 사용:
+https://clickhouse.com/docs/knowledgebase/improve-map-performance

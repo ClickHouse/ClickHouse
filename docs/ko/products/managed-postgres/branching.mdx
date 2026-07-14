@@ -1,0 +1,122 @@
+---
+slug: /cloud/managed-postgres/branching
+sidebarTitle: '브랜칭'
+title: '브랜칭'
+description: '개발, 스테이징, 테스트 및 복구 워크플로를 위해 특정 시점 스냅샷에서 격리된 데이터베이스 브랜치를 생성합니다'
+keywords: ['managed postgres', 'branching', 'pitr', 'point-in-time recovery', 'staging', 'development', 'database branch']
+doc_type: 'guide'
+---
+
+Managed Postgres는 Point-in-Time Recovery(PITR)를 사용해 격리된 데이터베이스 브랜치를 생성할 수 있습니다.
+
+브랜치는 기존 데이터베이스의 특정 시점을 기준으로 생성되는 완전히 독립적인 PostgreSQL 배포입니다. 브랜치는 개발, 스테이징, 테스트, 디버깅, 데이터 검증 또는 복구 워크플로에 사용할 수 있으며, 원본 데이터베이스에 영향을 주지 않습니다.
+
+프라이머리 데이터베이스와 스토리지를 공유하는 쓰기 시 복사(copy-on-write) 방식과 달리, Managed Postgres 브랜치는 백업에서 복원되며 독립적인 PostgreSQL 배포로 실행됩니다.
+
+<div id="branching">
+  ## 브랜치 작동 방식
+</div>
+
+브랜치 생성은 [Point-in-Time Recovery (PITR)](/ko/products/managed-postgres/backup-and-restore)에 사용되는 것과 동일한 백업 및 복구 인프라를 기반으로 합니다.
+
+브랜치를 생성하면 Managed Postgres가 객체 스토리지에서 기준 백업을 복원하고, 요청한 복구 시점에 도달하는 데 필요한 WAL 세그먼트를 재생한 다음, 복구된 상태를 바탕으로 새 PostgreSQL 배포를 프로비저닝합니다. 복구가 완료되면 브랜치는 원본 데이터베이스와 독립적으로 운영됩니다.
+
+생성된 브랜치는 선택한 시점의 원본 데이터베이스를 그대로 반영한 완전한 복사본입니다.
+
+<div id="common-use-cases">
+  ## 일반적인 활용 사례
+</div>
+
+<div id="dev-and-testing">
+  ### 개발 및 테스트
+</div>
+
+운영 또는 스테이징 데이터베이스에서 브랜치를 생성해 애플리케이션 변경 사항, 마이그레이션 또는 새로운 기능을 실제와 유사한 데이터로 검증합니다.
+
+<div id="staging-environments">
+  ### 스테이징 환경
+</div>
+
+운영 워크로드에 영향을 주지 않으면서 운영 환경을 최대한 가깝게 재현하는 스테이징 환경을 유지합니다.
+
+<div id="date-validation">
+  ### 데이터 검증
+</div>
+
+운영 환경에 배포하기 전에 스키마 변경, 인덱싱 전략, 쿼리 최적화를 테스트하십시오.
+
+<div id="recovery-and-investigation">
+  ### 복구 및 조사
+</div>
+
+문제 해결, 감사 또는 애플리케이션 동작 검증을 위해 데이터베이스를 특정 시점으로 복구합니다.
+
+<div id="branch-sizing">
+  ## 브랜치 용량 산정
+</div>
+
+브랜치는 각각 독립적인 PostgreSQL 배포이므로 원본 데이터베이스와 별도로 용량을 산정할 수 있습니다.
+
+예를 들어, 프로덕션 배포는 더 큰 구성으로 실행하고, 개발 또는 스테이징 브랜치는 비용 절감을 위해 더 작은 컴퓨트 프로필을 사용할 수 있습니다. 이를 통해 팀은 프로덕션과 동일한 컴퓨트 리소스를 갖추지 않고도 임시 환경을 만들 수 있습니다.
+
+<div id="branch-creation-time">
+  ## 브랜치 생성 시간
+</div>
+
+Managed Postgres는 NVMe 기반 PostgreSQL 스토리지를 사용하므로, 브랜치는 스토리지 수준의 copy-on-write 메커니즘을 통해 생성되는 것이 아니라 백업에서 복원됩니다. 따라서 브랜치 생성은 즉시 이루어지지는 않습니다.
+
+일반적인 브랜치 생성 시간은 몇 분에서 수십 분까지 걸리며, 다음 요소에 따라 달라집니다.
+
+* 데이터베이스 크기
+* 백업 크기
+* 복구 시점
+* 재생해야 하는 WAL의 양
+* 전체 클러스터 구성
+
+대부분의 배포에서는 브랜치를 몇 분 안에 사용할 수 있습니다. 데이터베이스가 클수록 더 많은 시간이 필요할 수 있습니다.
+
+브랜치 생성 시간이 워크플로에서 병목이 된다면 ClickHouse 팀에 문의하십시오. 많은 경우 워크로드 특성과 복구 요구 사항에 맞춰 브랜치 복구 성능을 최적화할 수 있습니다.
+
+<div id="branches-v-local-dev">
+  ## 브랜치와 로컬 개발 비교
+</div>
+
+흔히 받는 질문 중 하나는 모든 개발자가 개발 환경으로 프로덕션 브랜치를 사용해야 하는지입니다.
+
+브랜치는 테스트, 검증, 스테이징 워크플로에 유용하지만, 일반적으로 일상적인 애플리케이션 개발에 권장되는 방식은 아닙니다. 각 브랜치는 백업에서 복원하고 별도로 유지 관리해야 하는 독립적인 PostgreSQL 배포입니다. 브랜치를 대량으로 생성하면 인프라 비용과 운영 복잡성이 증가할 수 있습니다.
+
+대부분의 조직에는 다음을 권장합니다.
+
+* 스테이징, 테스트, 디버깅, 검증 워크플로에는 PostgreSQL 브랜치를 사용합니다.
+* 일상적인 개발에는 로컬 PostgreSQL 환경을 사용합니다.
+* 적절한 경우 합성 개발 데이터셋을 생성하거나 비식별화된 데이터셋을 사용합니다.
+* 프로덕션에서 파생된 브랜치에서 직접 일상적인 개발을 수행하는 것은 피합니다.
+
+이 접근 방식은 프로덕션 시스템의 부하를 줄이고 개발 속도를 높이며, 프로덕션 데이터가 적절히 보호되도록 돕습니다.
+
+Docker를 사용해 로컬 PostgreSQL 개발 환경을 만드는 방법은 [로컬 개발 환경](/ko/products/managed-postgres/local-development)을 참조하십시오.
+
+<div id="recommended-workflow">
+  ## 권장 워크플로
+</div>
+
+일반적으로 다음과 같은 워크플로를 따릅니다:
+
+```text
+Production Database
+        │
+        ├─────────────► Branch
+        │                  │
+        │                  ├── Staging
+        │                  ├── Validation
+        │                  ├── Migration Testing
+        │                  └── Incident Investigation
+        │
+        └─────────────► Local Development
+                               │
+                               ├── Docker PostgreSQL
+                               ├── Application Migrations
+                               └── Synthetic Test Data
+```
+
+브랜치는 실제 운영 환경과 유사한 데이터베이스 사본이 필요한 환경에 가장 적합합니다. 일상적인 개발 작업에는 일반적으로 로컬 PostgreSQL 환경이 더 빠르고 비용 효율적이며 확장성도 뛰어난 워크플로를 제공합니다.

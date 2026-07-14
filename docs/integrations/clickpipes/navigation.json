@@ -1,0 +1,208 @@
+{
+  "groups": [
+    {
+      "group": "ClickPipes for Object Storage",
+      "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
+      "pages": [
+        {
+          "group": "Amazon S3",
+          "icon": "/images/integrations/logos/amazon_s3_logo.svg",
+          "pages": [
+            "integrations/clickpipes/object-storage/amazon-s3/overview",
+            "integrations/clickpipes/object-storage/amazon-s3/get-started",
+            "integrations/clickpipes/object-storage/amazon-s3/unordered-mode"
+          ]
+        },
+        {
+          "group": "Google Cloud Storage",
+          "icon": "/images/integrations/logos/gcs.svg",
+          "pages": [
+            "integrations/clickpipes/object-storage/google-cloud-storage/overview",
+            "integrations/clickpipes/object-storage/google-cloud-storage/get-started",
+            "integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode"
+          ]
+        },
+        {
+          "group": "Azure Blob Storage",
+          "icon": "/images/integrations/logos/azureblobstorage.svg",
+          "pages": [
+            "integrations/clickpipes/object-storage/azure-blob-storage/overview",
+            "integrations/clickpipes/object-storage/azure-blob-storage/get-started"
+          ]
+        }
+      ],
+      "root": "integrations/clickpipes/home"
+    },
+    {
+      "group": "ClickPipes for Postgres",
+      "icon": "/images/integrations/logos/postgresql.svg",
+      "pages": [
+        "integrations/clickpipes/postgres/deduplication",
+        "integrations/clickpipes/postgres/ordering-keys",
+        "integrations/clickpipes/postgres/toast",
+        "integrations/clickpipes/postgres/connecting-to-postgresql",
+        "integrations/clickpipes/postgres/inserting-data",
+        "integrations/clickpipes/postgres/schema-changes",
+        "integrations/clickpipes/postgres/faq",
+        "integrations/clickpipes/postgres/postgres-generated-columns",
+        "integrations/clickpipes/postgres/parallel-initial-load",
+        "integrations/clickpipes/postgres/lifecycle",
+        "integrations/clickpipes/postgres/auth",
+        {
+          "group": "Operations",
+          "pages": [
+            "integrations/clickpipes/postgres/add-table",
+            "integrations/clickpipes/postgres/pause-and-resume",
+            "integrations/clickpipes/postgres/remove-table",
+            "integrations/clickpipes/postgres/table-resync",
+            "integrations/clickpipes/postgres/resync",
+            "integrations/clickpipes/postgres/controlling-sync",
+            "integrations/clickpipes/postgres/scaling"
+          ]
+        },
+        {
+          "group": "Source",
+          "pages": [
+            "integrations/clickpipes/postgres/source/alloydb",
+            "integrations/clickpipes/postgres/source/rds",
+            "integrations/clickpipes/postgres/source/aurora",
+            "integrations/clickpipes/postgres/source/supabase",
+            "integrations/clickpipes/postgres/source/google-cloudsql",
+            "integrations/clickpipes/postgres/source/azure-flexible-server-postgres",
+            "integrations/clickpipes/postgres/source/neon-postgres",
+            "integrations/clickpipes/postgres/source/crunchy-postgres",
+            "integrations/clickpipes/postgres/source/generic",
+            "integrations/clickpipes/postgres/source/timescale",
+            "integrations/clickpipes/postgres/source/planetscale"
+          ]
+        }
+      ],
+      "root": "integrations/clickpipes/postgres/index"
+    },
+    {
+      "group": "ClickPipes for Kafka",
+      "icon": "/images/integrations/logos/kafka.svg",
+      "pages": [
+        "integrations/clickpipes/kafka/create-kafka-clickpipe",
+        "integrations/clickpipes/kafka/schema-registries",
+        "integrations/clickpipes/kafka/reference",
+        "integrations/clickpipes/kafka/best-practices",
+        "integrations/clickpipes/kafka/faq"
+      ],
+      "root": "integrations/clickpipes/kafka/index"
+    },
+    {
+      "group": "ClickPipes for Kinesis",
+      "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
+      "pages": [
+        "integrations/clickpipes/kinesis/overview",
+        "integrations/clickpipes/kinesis/auth"
+      ],
+      "root": "integrations/clickpipes/kinesis/index"
+    },
+    {
+      "group": "ClickPipes for GCP Pub/Sub",
+      "icon": "/images/integrations/logos/google_pubsub.svg",
+      "pages": [
+        "integrations/clickpipes/pubsub/overview",
+        "integrations/clickpipes/pubsub/auth"
+      ],
+      "root": "integrations/clickpipes/pubsub/index"
+    },
+    {
+      "group": "ClickPipes for MySQL",
+      "icon": "/images/integrations/logos/mysql.svg",
+      "pages": [
+        "integrations/clickpipes/mysql/faq",
+        "integrations/clickpipes/mysql/datatypes",
+        "integrations/clickpipes/mysql/parallel-initial-load",
+        "integrations/clickpipes/mysql/schema-changes",
+        "integrations/clickpipes/mysql/lifecycle",
+        {
+          "group": "Operations",
+          "pages": [
+            "integrations/clickpipes/mysql/add-table",
+            "integrations/clickpipes/mysql/pause-and-resume",
+            "integrations/clickpipes/mysql/remove-table",
+            "integrations/clickpipes/mysql/table-resync",
+            "integrations/clickpipes/mysql/resync",
+            "integrations/clickpipes/mysql/controlling-sync",
+            "integrations/clickpipes/mysql/scaling"
+          ]
+        },
+        {
+          "group": "Source",
+          "pages": [
+            "integrations/clickpipes/mysql/source/rds",
+            "integrations/clickpipes/mysql/source/aurora",
+            "integrations/clickpipes/mysql/source/gcp",
+            "integrations/clickpipes/mysql/source/azure-flexible-server-mysql",
+            "integrations/clickpipes/mysql/source/generic",
+            "integrations/clickpipes/mysql/source/rds-maria",
+            "integrations/clickpipes/mysql/source/generic-maria"
+          ]
+        }
+      ],
+      "root": "integrations/clickpipes/mysql/index"
+    },
+    {
+      "group": "ClickPipes for MongoDB",
+      "icon": "/images/integrations/logos/mongodb.svg",
+      "pages": [
+        "integrations/clickpipes/mongodb/datatypes",
+        "integrations/clickpipes/mongodb/quickstart",
+        "integrations/clickpipes/mongodb/lifecycle",
+        "integrations/clickpipes/mongodb/faq",
+        {
+          "group": "Operations",
+          "pages": [
+            "integrations/clickpipes/mongodb/add-table",
+            "integrations/clickpipes/mongodb/remove-table",
+            "integrations/clickpipes/mongodb/pause-and-resume",
+            "integrations/clickpipes/mongodb/table-resync",
+            "integrations/clickpipes/mongodb/resync",
+            "integrations/clickpipes/mongodb/controlling-sync",
+            "integrations/clickpipes/mongodb/scaling"
+          ]
+        },
+        {
+          "group": "Source",
+          "pages": [
+            "integrations/clickpipes/mongodb/source/atlas",
+            "integrations/clickpipes/mongodb/source/generic",
+            "integrations/clickpipes/mongodb/source/documentdb"
+          ]
+        }
+      ],
+      "root": "integrations/clickpipes/mongodb/index"
+    },
+    {
+      "group": "ClickPipes for BigQuery",
+      "icon": "/images/logo-bigquery.svg",
+      "pages": [
+        "integrations/clickpipes/bigquery/overview",
+        "integrations/clickpipes/bigquery/get-started"
+      ]
+    },
+    {
+      "group": "Programmatic access",
+      "icon": "code",
+      "pages": [
+        "integrations/clickpipes/programmatic-access/openapi",
+        "integrations/clickpipes/programmatic-access/terraform"
+      ]
+    },
+    {
+      "group": "Other",
+      "icon": "ellipsis",
+      "pages": [
+        "integrations/clickpipes/aws-privatelink",
+        "integrations/clickpipes/dynamodb",
+        "integrations/clickpipes/monitoring"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-clickpipes.svg",
+  "item": "ClickPipes",
+  "root": "integrations/clickpipes/home"
+}
