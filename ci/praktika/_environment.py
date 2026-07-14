@@ -165,7 +165,7 @@ class _Environment(MetaClasses.Serializable):
                         if LINKED_PR_NUMBER
                         else ""
                     )
-                except:
+                except Exception:
                     LINKED_PR_NUMBER = 0
                     CHANGE_URL = ""
 
@@ -356,7 +356,7 @@ class _Environment(MetaClasses.Serializable):
                 env = cls.from_workflow_data()
                 env.dump()
                 return env
-            except FileNotFoundError as e:
+            except FileNotFoundError:
                 # For workflows without Config job
                 print(
                     f"NOTE: Workflow context file [{Settings.WORKFLOW_STATUS_FILE}] does not exist - read context from GH event"
@@ -428,7 +428,7 @@ class _Environment(MetaClasses.Serializable):
             prefix = f"REFs/{branch}"
         assert sha or latest
         if latest:
-            prefix += f"/latest"
+            prefix += "/latest"
         elif sha:
             prefix += f"/{sha}"
         if cls._should_include_workflow_name_in_s3_prefix(workflow_name):

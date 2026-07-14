@@ -87,8 +87,6 @@ class ImageBuilder:
             self.image_pipeline_name = f"{base}-imagebuilder-pipeline" if base else ""
 
         def _client(self):
-            import boto3
-
             return aws_client("imagebuilder", self.region, self.name)
 
         def _split_commands(self, script: str) -> List[str]:
@@ -114,8 +112,6 @@ class ImageBuilder:
         def _account_id(self) -> str:
             if self.ext.get("account_id"):
                 return self.ext["account_id"]
-
-            import boto3
 
             sts = aws_client("sts", self.region, self.name)
             account_id = sts.get_caller_identity().get("Account", "")

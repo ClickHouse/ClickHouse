@@ -25,7 +25,7 @@ and the checked-out PR source (``grep_repo`` / ``read_file``, rooted at the repo
 import difflib
 import os
 
-from .provider import Observation, Turn, Usage, resolve_provider
+from .provider import Observation, Turn as Turn, Usage as Usage, resolve_provider
 from .session import SessionManager
 from .trace import TraceLogger, UsageLedger
 

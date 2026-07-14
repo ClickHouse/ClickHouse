@@ -26,8 +26,6 @@ class IAMInstanceProfile:
         ext: Dict[str, Any] = field(default_factory=dict)
 
         def deploy(self):
-            import boto3
-
             if not self.role_name:
                 raise ValueError(f"role_name must be set for IAMInstanceProfile '{self.name}'")
 
@@ -88,7 +86,6 @@ class IAMInstanceProfile:
             return self
 
         def delete(self):
-            import boto3
             iam = aws_client("iam", self.region, self.name)
             try:
                 ip = iam.get_instance_profile(InstanceProfileName=self.name)["InstanceProfile"]

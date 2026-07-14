@@ -1,6 +1,5 @@
 from ._utils import aws_client
-import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
@@ -56,8 +55,6 @@ class AutoScalingGroup:
             Raises:
                 Exception: If ASG does not exist or AWS API call fails
             """
-            import boto3
-
             asg_client = aws_client("autoscaling", self.region, self.name)
 
             resp = asg_client.describe_auto_scaling_groups(
@@ -124,8 +121,6 @@ class AutoScalingGroup:
                 raise ValueError(
                     f"subnet_ids must be specified (non-empty) for ASG '{self.name}' or provide vpc_id/vpc_name for subnet discovery"
                 )
-
-            import boto3
 
             ec2 = aws_client("ec2", self.region, self.name)
 
@@ -242,7 +237,6 @@ class AutoScalingGroup:
                 - This component intentionally does not try to manage every ASG attribute.
                 - It focuses on core runner-like ASG needs: subnets, LT, capacity, target groups, tags.
             """
-            import boto3
             from botocore.config import Config
 
             self.ext.pop("deferred_missing_launch_template", None)
@@ -392,7 +386,6 @@ class AutoScalingGroup:
             return self
 
         def delete(self):
-            import boto3
             client = aws_client("autoscaling", self.region, self.name)
             try:
                 client.delete_auto_scaling_group(

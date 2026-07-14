@@ -28,7 +28,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from praktika.settings import Settings
 
 from .store import make_store
 from .trace import TraceLogger

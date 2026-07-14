@@ -11,7 +11,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .event import Event
@@ -563,13 +563,13 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             return self
         self.ext["labels"] = [
-            l for l in self.ext["labels"] if self._label_name(l) != label
+            item for item in self.ext["labels"] if self._label_name(item) != label
         ]
         return self
 
     def get_labels(self):
         """Return list of label names."""
-        return [self._label_name(l) for l in self.ext.get("labels", [])]
+        return [self._label_name(item) for item in self.ext.get("labels", [])]
 
     def has_label(self, label):
         if label in self.get_labels():
@@ -578,9 +578,9 @@ class Result(MetaClasses.Serializable):
         return label in [x[0] for x in self.ext.get("hlabels", []) if x]
 
     def get_label_link(self, label):
-        for l in self.ext.get("labels", []):
-            if isinstance(l, dict) and l.get("name") == label:
-                return l.get("link")
+        for item in self.ext.get("labels", []):
+            if isinstance(item, dict) and item.get("name") == label:
+                return item.get("link")
         # Legacy fallback for results stored before the label/hlabel unification.
         for h in self.ext.get("hlabels", []):
             if isinstance(h, (list, tuple)) and len(h) >= 2 and h[0] == label:
@@ -588,9 +588,9 @@ class Result(MetaClasses.Serializable):
         return None
 
     def get_label_hint(self, label):
-        for l in self.ext.get("labels", []):
-            if isinstance(l, dict) and l.get("name") == label:
-                return l.get("hint")
+        for item in self.ext.get("labels", []):
+            if isinstance(item, dict) and item.get("name") == label:
+                return item.get("hint")
         return None
 
     def set_comment(self, comment):

@@ -4,8 +4,6 @@ import re
 import sys
 import time
 from collections import defaultdict, deque
-from dataclasses import dataclass
-from typing import Optional
 
 from ..mangle import _get_artifact_to_providing_job_map, _get_workflows
 from ..settings import Settings

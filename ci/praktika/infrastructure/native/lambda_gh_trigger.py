@@ -196,7 +196,7 @@ def _build_workflow(action, payload, event_ts):
         "sender": payload.get("sender", {}).get("login", ""),
         "title": pr.get("title", ""),
         "draft": pr.get("draft", False),
-        "labels": [l.get("name", "") for l in pr.get("labels", [])],
+        "labels": [label.get("name", "") for label in pr.get("labels", [])],
         "external_pr": _is_external_pr(pr, repo),
         "head_repo": pr.get("head", {}).get("repo", {}).get("full_name", ""),
     }

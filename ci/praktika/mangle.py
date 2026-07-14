@@ -107,7 +107,7 @@ def _get_workflows(
                     _file_names_out.append(py_file.name.removeprefix(".py"))
             if default and not matched_default_workflow and not _is_local_run():
                 print(f"Skip [{py_file.name}]")
-        except Exception as e:
+        except Exception:
             pass
             # print(
             #     f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"

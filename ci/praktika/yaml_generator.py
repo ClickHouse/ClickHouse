@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-from typing import List
 
 from . import Job, Workflow
 from .mangle import _get_workflows

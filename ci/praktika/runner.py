@@ -7,6 +7,8 @@ import os
 import re
 import shlex
 import site
+import shutil
+import tempfile
 import sys
 import textwrap
 import traceback
@@ -67,6 +69,33 @@ def _job_python_env() -> dict:
     env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
     env["PYTHONSAFEPATH"] = "1"
     return env
+
+
+def _praktika_package_dir() -> str:
+    # Use the installed package location, not the checkout root. In a
+    # production runner this points at the system path that contains the
+    # praktika package the host is actually using.
+    return str(Path(__file__).resolve().parent)
+
+
+def _staged_praktika_package_dir() -> str:
+    package_dir = Path(_praktika_package_dir())
+    stage_root = Path("/private/tmp") if sys.platform == "darwin" else Path(tempfile.gettempdir())
+    stage_root = stage_root / "praktika-docker-packages"
+    stage_root.mkdir(parents=True, exist_ok=True)
+
+    # Keep the staged path stable per installed package location and a coarse
+    # content freshness signal so repeated job runs reuse the same mirror.
+    package_stat = package_dir.stat()
+    cache_key = hashlib.sha1(
+        f"{package_dir.resolve().as_posix()}:{package_stat.st_mtime_ns}".encode()
+    ).hexdigest()[:16]
+    staged_site_packages = stage_root / f"site-packages-{cache_key}"
+    staged_package = staged_site_packages / "praktika"
+    if not staged_package.exists():
+        staged_site_packages.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(package_dir, staged_package)
+    return str(staged_site_packages)
 
 
 def _should_post_commit_status(workflow):
@@ -495,7 +524,6 @@ class Runner:
             )
             if not timeout_shell_cleanup:
                 timeout_shell_cleanup = f"docker rm -f {container_name}"
-            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -508,7 +536,6 @@ class Runner:
                     print(
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
-                    workdir = ""
             if Shell.check(
                 f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
                 verbose=False,
@@ -545,14 +572,25 @@ class Runner:
                     extra_mounts += f" --volume {p_}:{p_}"
 
             # PRAKTIKA_HOST_WORKDIR overrides the host-side path used in
-            # --volume for the working directory mount.  Two main use cases:
+            # --volume for the checkout mount. Two main use cases:
             #   1. Point the mount at an arbitrary host directory.
             #   2. Docker-in-Docker: the inner Docker daemon needs the real
-            #      host path (not the outer container's CWD) for volume mounts.
-            #      This variable makes it more flexible to set the real host path.
-            # When unset, defaults to "./" (current directory).
+            #      host path (not the outer container's CWD) so the job
+            #      container can see the host checkout and ci/ tree.
+            # When unset, defaults to the current directory.
+            staged_package_dir = _staged_praktika_package_dir()
             host_dir = os.environ.get("PRAKTIKA_HOST_WORKDIR", "./")
             host_dir_q = shlex.quote(host_dir)
+            package_dir_q = shlex.quote(staged_package_dir)
+            current_dir_q = shlex.quote(current_dir)
+            # PYTHONPATH must carry BOTH: the staged Praktika package dir (so a
+            # bare `import praktika` resolves to the installed copy, not the
+            # repo's vendored ci/praktika) AND the checkout root (so the repo's
+            # own `ci.*` modules are importable). Staged dir first so Praktika
+            # always wins; the checkout root is the container workdir mount.
+            container_pythonpath_q = shlex.quote(
+                f"{staged_package_dir}:{current_dir}"
+            )
 
             # Rewrite relative host paths in user-supplied --volume settings
             # so that they resolve correctly when PRAKTIKA_HOST_WORKDIR is set
@@ -572,7 +610,7 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH=. {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH={container_pythonpath_q} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
         job_env = _job_python_env()
@@ -587,8 +625,8 @@ class Runner:
             print(f"Custom --count [{count}] will be passed to job's script")
             cmd += f" --count {count}"
         if debug:
-            print(f"Custom --debug will be passed to job's script")
-            cmd += f" --debug"
+            print("Custom --debug will be passed to job's script")
+            cmd += " --debug"
         if path:
             print(f"Custom --path [{path}] will be passed to job's script")
             cmd += f" --path {path}"
@@ -607,8 +645,6 @@ class Runner:
             preserve_stdio=preserve_stdio,
             timeout_shell_cleanup=timeout_shell_cleanup,
         ) as process:
-            start_time = Utils.timestamp()
-
             exit_code = process.wait()
 
             result = Result.from_fs(job.name)
@@ -648,11 +684,11 @@ class Runner:
         # 2. Root-owned files remain in the repository working directory
         # The ownership fix below ensures all root-owned files are changed to the current user
         if job.run_in_docker and not no_docker and from_root:
-            print(f"--- Fixing file ownership after running docker as root")
+            print("--- Fixing file ownership after running docker as root")
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir_q} --workdir={current_dir_q} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
             Shell.run(chown_cmd)
 
         return exit_code
@@ -911,7 +947,7 @@ class Runner:
 
         # always in the end
         if workflow.enable_cache:
-            print(f"Run CI cache hook")
+            print("Run CI cache hook")
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
@@ -949,11 +985,11 @@ class Runner:
                     env.add_workflow_error(
                         "Failed to post GH commit status for the job"
                     )
-                    print(f"ERROR: Failed to post commit status for the job")
+                    print("ERROR: Failed to post commit status for the job")
 
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
-            print(f"Run html report hook")
+            print("Run html report hook")
             status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated and _should_post_commit_status(workflow):
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
@@ -997,7 +1033,7 @@ class Runner:
                     comment_tags_and_bodies={"summary": summary_body},
                     only_update=True,
                 ):
-                    print(f"ERROR: failed to post CI summary")
+                    print("ERROR: failed to post CI summary")
             except Exception as e:
                 print(f"ERROR: failed to post CI summary, ex: {e}")
                 traceback.print_exc()
@@ -1229,7 +1265,7 @@ class Runner:
                 print(f"ERROR: Setup env script failed with exception [{e}]")
                 traceback.print_exc()
                 Info().store_traceback()
-            print(f"=== Setup env finished ===\n\n")
+            print("=== Setup env finished ===\n\n")
 
         # Pre-run dumps the running Result and pulls required artifacts from S3.
         # The dev-sandbox path skips it unless the user passed the legacy
@@ -1246,7 +1282,7 @@ class Runner:
                 print(f"ERROR: Pre-run script failed with exception [{e}]")
                 traceback.print_exc()
                 Info().store_traceback()
-            print(f"=== Pre run finished ===\n\n")
+            print("=== Pre run finished ===\n\n")
 
         prehook_result = None
         if res and not local_job_run and job.pre_hooks:
@@ -1294,7 +1330,7 @@ class Runner:
                     f"Job got terminated with an error, exit code [{run_code}]"
                 ).dump()
 
-            print(f"=== Run script finished ===\n\n")
+            print("=== Run script finished ===\n\n")
 
         # Post-run wraps up the Result, runs job post_hooks, and uploads
         # provides=[...] artifacts so downstream jobs can consume them. Only
@@ -1321,13 +1357,13 @@ class Runner:
                 result.results.append(
                     Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
                 )
-                print(f"=== Post hooks finished ===")
+                print("=== Post hooks finished ===")
 
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             post_res = self._post_run(
                 result, workflow, job, run_code
             )
-            print(f"=== Post run script finished ===")
+            print("=== Post run script finished ===")
 
         if not post_res or result is None or (not result.is_ok() and not job.force_success):
             sys.exit(1)

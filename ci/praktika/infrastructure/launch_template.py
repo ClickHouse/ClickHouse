@@ -74,7 +74,6 @@ class LaunchTemplate:
             Raises:
                 Exception: If launch template does not exist or AWS API call fails
             """
-            import boto3
 
             ec2 = aws_client("ec2", self.region, self.name)
 
@@ -412,7 +411,6 @@ class LaunchTemplate:
                 - This component expects `data` to be a valid EC2 LaunchTemplateData dict.
                 - It intentionally does not attempt to diff/merge existing template data.
             """
-            import boto3
 
             ec2 = aws_client("ec2", self.region, self.name)
 
@@ -494,7 +492,6 @@ class LaunchTemplate:
             return self
 
         def delete(self):
-            import boto3
             client = aws_client("ec2", self.region, self.name)
             try:
                 client.delete_launch_template(LaunchTemplateName=self.name)

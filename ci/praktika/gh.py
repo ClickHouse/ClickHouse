@@ -79,7 +79,7 @@ class GH:
                 raise RuntimeError(
                     f"Failed to extract repository name from remote URL [{repo_url}]"
                 )
-            sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
+            sha = Shell.get_output("git rev-parse HEAD", strict=True)
 
         assert repo_name
         print(repo_name)
@@ -797,7 +797,7 @@ class GH:
         else:
             if not only_update:
                 cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
-                print(f"Create new comment")
+                print("Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
@@ -856,7 +856,7 @@ class GH:
             pr_data = json.loads(output)
             title = pr_data["title"]
             body = pr_data["body"]
-            labels = [l["name"] for l in pr_data["labels"]]
+            labels = [label["name"] for label in pr_data["labels"]]
         except Exception:
             print("ERROR: Failed to get PR data")
             traceback.print_exc()
@@ -1115,7 +1115,7 @@ class GH:
         sha: str = ""
         start_time: Optional[float] = None
         duration: Optional[float] = None
-        failed_results: List["ResultSummaryForGH"] = dataclasses.field(
+        failed_results: List["GH.ResultSummaryForGH"] = dataclasses.field(
             default_factory=list
         )
         info: str = ""

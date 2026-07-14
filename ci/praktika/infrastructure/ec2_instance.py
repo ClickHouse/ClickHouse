@@ -86,8 +86,6 @@ class EC2Instance:
             if not self.host_resource_group_name:
                 return ""
 
-            import boto3
-
             rg = aws_client("resource-groups", self.region, self.name)
             resp = rg.get_group(GroupName=self.host_resource_group_name)
             group = resp.get("Group") or {}
@@ -104,8 +102,6 @@ class EC2Instance:
                 return self.root_device_name
             if not self.image_id:
                 return ""
-
-            import boto3
 
             ec2 = aws_client("ec2", self.region, self.name)
             resp = ec2.describe_images(ImageIds=[self.image_id])
@@ -135,7 +131,6 @@ class EC2Instance:
 
         def _find_existing_instances(self) -> List[Dict[str, Any]]:
             """Find all existing instances matching the name."""
-            import boto3
 
             ec2 = aws_client("ec2", self.region, self.name)
 
@@ -205,7 +200,6 @@ class EC2Instance:
             return self
 
         def deploy(self):
-            import boto3
             import os
 
             if not self.image_id or not self.instance_type:
@@ -392,8 +386,6 @@ class EC2Instance:
             Args:
                 force: If True, forcefully terminate without stopping first (default: True).
             """
-            import boto3
-
             existing_instances = self._find_existing_instances()
             if not existing_instances:
                 print(

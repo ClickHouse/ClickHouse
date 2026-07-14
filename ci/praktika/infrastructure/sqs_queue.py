@@ -1,7 +1,7 @@
 from ._utils import aws_client
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 class SQSQueue:
@@ -22,7 +22,6 @@ class SQSQueue:
 
         def fetch(self):
             """Fetch queue configuration from AWS."""
-            import boto3
 
             sqs = aws_client("sqs", self.region, self.name)
 
@@ -43,7 +42,6 @@ class SQSQueue:
 
         def deploy(self):
             """Create or update the SQS queue."""
-            import boto3
 
             sqs = aws_client("sqs", self.region, self.name)
 
@@ -111,7 +109,6 @@ class SQSQueue:
 
         def shutdown(self, force: bool = True):
             """Delete the queue and its DLQ."""
-            import boto3
 
             sqs = aws_client("sqs", self.region, self.name)
 

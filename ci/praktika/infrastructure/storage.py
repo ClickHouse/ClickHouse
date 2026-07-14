@@ -47,7 +47,7 @@ class Storage:
                             break
                         except ClientError as ce:
                             if ce.response["Error"]["Code"] == "OperationAborted" and attempt < 4:
-                                print(f"Bucket operation in progress, retrying in 5s...")
+                                print("Bucket operation in progress, retrying in 5s...")
                                 time.sleep(5)
                             else:
                                 raise

@@ -6,7 +6,6 @@ import platform
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict
 
 from . import Job, Workflow
 from ._environment import _Environment
@@ -38,7 +37,7 @@ def _GH_Auth(force=False):
         return
     from .gh_auth import GHAuth
 
-    if force or not Shell.check(f"gh auth status", verbose=True):
+    if force or not Shell.check("gh auth status", verbose=True):
         GHAuth.auth_from_settings()
 
 
@@ -343,7 +342,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # - all authors who contributed to the PR
     # - the original commit messages before GitHub's ephemeral merge commit
     commands = [
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
     ]
     if env.BASE_BRANCH and env.PR_NUMBER:
         commands.append(
@@ -542,9 +541,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             unaffected_jobs_with_artifacts = {}
             all_required_artifacts = set()
 
-            # Build set of all job names for quick lookup
-            job_names = {j.name for j in workflow.jobs}
-
             for job in workflow.jobs:
                 # Skip native Praktika jobs
                 if _is_praktika_job(job.name):
@@ -609,7 +605,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             workflow_config = CacheRunnerHooks.configure(workflow)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
-        except Exception as e:
+        except Exception:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
@@ -662,7 +658,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                                 )
                                 has_base_parent = True
                                 break
-                            except:
+                            except Exception:
                                 pass
 
                         if not has_base_parent:
@@ -903,7 +899,7 @@ def _finish_workflow(workflow, job_name):
             description=ready_for_merge_description,
             url="",
         ):
-            print(f"ERROR: failed to set ReadyForMerge status")
+            print("ERROR: failed to set ReadyForMerge status")
             env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
@@ -938,7 +934,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception as e:
+    except Exception:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)

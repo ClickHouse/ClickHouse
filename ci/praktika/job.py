@@ -3,7 +3,7 @@ import fnmatch
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Iterable, List, Optional
+from typing import Any, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils

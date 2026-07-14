@@ -148,7 +148,7 @@ class VPC:
             attached_vpcs = [a["VpcId"] for a in igw_info.get("Attachments", [])]
             if vpc_id not in attached_vpcs:
                 ec2.attach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
-                print(f"Attached Internet Gateway to VPC")
+                print("Attached Internet Gateway to VPC")
             self.ext["igw_id"] = igw_id
 
             # Route Table

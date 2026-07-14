@@ -11,7 +11,6 @@ sys.path.append("./")
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
 from ci.settings.settings import SECRET_CI_DB_CONNECTION
 

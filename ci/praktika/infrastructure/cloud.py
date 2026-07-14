@@ -147,7 +147,6 @@ class CloudInfrastructure:
             # consistent with the generated AWS names.
             if isinstance(value, str):
                 result = value
-                project_prefix = f"{self._project_prefix()}-"
                 for old, new in sorted(
                     replacements.items(), key=lambda item: len(item[0]), reverse=True
                 ):
@@ -903,7 +902,7 @@ class CloudInfrastructure:
                 ProfileNotFound,
             )
 
-            from ._utils import aws_client, aws_account_id
+            from ._utils import aws_account_id
 
             profile = self._settings.AWS_PROFILE or "<default>"
             try:
@@ -1089,7 +1088,6 @@ class CloudInfrastructure:
 
             # Deploy IAM roles before anything that depends on them
             if _wants("IAMRole", "IAMRoles"):
-                from .iam_role import IAMRole as _IAMRole
                 for role_config in self.iam_roles:
                     role_config.region = self._settings.AWS_REGION
                     print("\n" + "=" * 60)

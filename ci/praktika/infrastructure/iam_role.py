@@ -1,7 +1,7 @@
 from ._utils import aws_client
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 class IAMRole:
@@ -60,8 +60,6 @@ class IAMRole:
             return True
 
         def deploy(self):
-            import boto3
-
             iam = aws_client("iam", self.region, self.name)
 
             if self._is_up_to_date(iam):
@@ -147,7 +145,6 @@ class IAMRole:
             return self
 
         def delete(self):
-            import boto3
             iam = aws_client("iam", self.region, self.name)
             try:
                 for page in iam.get_paginator("list_attached_role_policies").paginate(RoleName=self.name):

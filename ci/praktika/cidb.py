@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import json
-import os
 import time
 import urllib
 from typing import List, Optional
@@ -16,7 +15,8 @@ except ImportError as ex:
         raise ex
     else:
         print(
-            f"WARNING: 'requests' module is not installed: {ex}. CIDB will not work - ok for local runs only."
+            "WARNING: 'requests' module is not installed: "
+            f"{ex}. CIDB will not work - ok for local runs only."
         )
 
 from .result import Result
@@ -429,7 +429,7 @@ ORDER BY day DESC
         # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         error = ""
         for retry in range(2):

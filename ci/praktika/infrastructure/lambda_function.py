@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -54,7 +54,6 @@ class Lambda:
             Raises:
                 Exception: If Lambda function does not exist or AWS API call fails
             """
-            import boto3
 
             lambda_client = aws_client("lambda", self.region, self.name)
 
@@ -109,7 +108,6 @@ class Lambda:
             if not self.secrets:
                 return {}
 
-            import boto3
 
             ssm_client = aws_client("ssm", self.region, self.name)
             env_vars = {}
@@ -136,7 +134,6 @@ class Lambda:
                 role_arn: Lambda execution role ARN
                 worker_function_name: Worker Lambda function name to invoke
             """
-            import boto3
 
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
@@ -183,7 +180,6 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
-            import boto3
 
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
@@ -221,7 +217,6 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
-            import boto3
 
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
@@ -264,7 +259,6 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
-            import boto3
 
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
@@ -303,7 +297,6 @@ class Lambda:
             """Raise if any SSM Parameter Store secrets declared in self.secrets do not exist."""
             if not self.secrets:
                 return
-            import boto3
             ssm = aws_client("ssm", self.region, self.name)
             missing = []
             for param_name in self.secrets:
@@ -324,7 +317,6 @@ class Lambda:
             Deploy a Lambda function to AWS using self.ext configuration.
             If Lambda exists, fetches current configuration including role_arn.
             """
-            import boto3
 
             self._validate_secrets()
 
@@ -362,7 +354,7 @@ class Lambda:
 
             # Fetch secrets and merge with environment (secrets overwrite existing)
             if self.secrets:
-                print(f"Fetching secrets from Parameter Store...")
+                print("Fetching secrets from Parameter Store...")
                 secrets_env = self._fetch_secrets()
                 environment = {**environment, **secrets_env}
                 print(
@@ -400,7 +392,7 @@ class Lambda:
                     print(
                         f"Code unchanged for Lambda function: {function_name} (SHA256: {new_code_sha256})"
                     )
-                    print(f"Skipping code update")
+                    print("Skipping code update")
                 else:
                     # Function exists, update it
                     print(f"Code changed for Lambda function: {function_name}")
@@ -434,7 +426,7 @@ class Lambda:
                     )
                 if config_changed or code_updated:
                     if code_updated:
-                        print(f"Waiting for code update to complete...")
+                        print("Waiting for code update to complete...")
                         waiter = lambda_client.get_waiter("function_updated")
                         waiter.wait(FunctionName=function_name)
 
@@ -497,7 +489,6 @@ class Lambda:
             return self
 
         def delete(self):
-            import boto3
 
             if self.schedule_expression:
                 self._delete_eventbridge_schedule()
@@ -510,7 +501,6 @@ class Lambda:
 
         def _attach_inline_policies(self, role_arn: str):
             """Attach inline IAM policies to the Lambda execution role."""
-            import boto3
 
             role_name = role_arn.split("/")[-1]
             iam = aws_client("iam", self.region, self.name)
@@ -528,7 +518,6 @@ class Lambda:
 
         def _ensure_api_gateway(self, function_name: str):
             """Create or verify an HTTP API Gateway for this Lambda."""
-            import boto3
 
             apigw = aws_client("apigatewayv2", self.region, self.name)
             lambda_client = aws_client("lambda", self.region, self.name)
@@ -587,7 +576,6 @@ class Lambda:
 
         def _ensure_eventbridge_schedule(self, function_name: str):
             """Create or update an EventBridge schedule that invokes this Lambda."""
-            import boto3
 
             events = aws_client("events", self.region, self.name)
             lambda_client = aws_client("lambda", self.region, self.name)
@@ -633,7 +621,6 @@ class Lambda:
             self.ext["schedule_rule_arn"] = rule_arn
 
         def _delete_eventbridge_schedule(self):
-            import boto3
 
             events = aws_client("events", self.region, self.name)
             rule_name = self._schedule_rule_name()
@@ -758,7 +745,6 @@ class Lambda:
             """
             import time
 
-            import boto3
 
             logs_client = aws_client("logs", self.region, self.name)
             log_group_name = f"/aws/lambda/{self.name}"
@@ -838,7 +824,6 @@ class Lambda:
             Returns:
                 Response from Lambda invoke call
             """
-            import boto3
 
             lambda_client = aws_client("lambda", self.region, self.name)
 

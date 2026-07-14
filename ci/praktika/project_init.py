@@ -297,7 +297,7 @@ def _validate_aws_profile(value: str) -> bool:
 
 def _prompt_aws_profile(default: str = "default") -> str:
     profiles = sorted(detect_aws_profiles())
-    prompt = f"\nAWS profile name"
+    prompt = "\nAWS profile name"
     if profiles:
         prompt += f" (options: {', '.join(profiles)}"
         if default:

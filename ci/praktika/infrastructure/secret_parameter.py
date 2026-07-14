@@ -29,7 +29,6 @@ class SecretParameter:
         def deploy(self):
             import secrets
 
-            import boto3
 
             ssm = aws_client("ssm", self.region, self.name)
 
@@ -58,7 +57,6 @@ class SecretParameter:
             return self
 
         def _dump_secret(self, value: str):
-            from .cloud import CloudInfrastructure
             from ..settings import Settings
 
             out_dir = Path(Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH).parent
@@ -68,7 +66,6 @@ class SecretParameter:
             print(f"Secret value written to {out_file} (keep this file safe)")
 
         def delete(self):
-            import boto3
             ssm = aws_client("ssm", self.region, self.name)
             try:
                 ssm.delete_parameter(Name=self.name)
