@@ -58,9 +58,15 @@ Float32 MergeTreeCleanupThread::iterate()
         if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
                 static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
         {
-            /// Both use relative_data_path which changes during rename, so we do it under share lock
+            /// Both use relative_data_path which changes during rename, so we do it under share lock.
+            /// Include `delete_tmp_` in addition to the default prefixes: under `leader_election` the
+            /// unconditional startup cleanup is skipped (a follower must not delete the leader's data),
+            /// so this periodic pass is the only place where `delete_tmp_<name>` leftovers of a remove
+            /// interrupted by a crash are ever cleaned up. Concurrent removal of the same directory is
+            /// tolerated by the remove path (see `DataPartStorageOnDiskBase::remove`).
             cleaned_part_like += storage.clearOldTemporaryDirectories(
-                (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
+                (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds(),
+                {"tmp_", "delete_tmp_", "tmp-fetch_"});
         }
     }
 
