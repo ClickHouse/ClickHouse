@@ -9,6 +9,7 @@ See Mintlify's docs on [custom scripts](https://www.mintlify.com/docs/customize/
 
 - `ask-ai-button.js` — tweaks the Ask-AI button styling/behavior.
 - `custom-footer.js` — renders the custom site footer (`#ch-custom-footer`).
+- `galaxy.js` — initializes ClickHouse Galaxy analytics, tracks docs and knowledge-base page lifecycle events across Mintlify SPA navigation, sends canonical `https://clickhouse.com/docs` traffic to the production Galaxy API and `.mintlify.app` preview traffic to the development Galaxy API (disabled on localhost and unknown origins), and adds attribution plus the Galaxy visitor ID to ClickHouse Cloud links only on canonical production docs.
 - `inkeep-init.js` — replaces Mintlify's native search (⌘K / navbar search bar) with the Inkeep search modal. Search-only; AI chat stays on Kapa.
 - `kapa-init.js` — bootstraps the Kapa.ai RAG widget.
 - `navbar-cta.js` — adds the "Get started" CTA to the navbar.
