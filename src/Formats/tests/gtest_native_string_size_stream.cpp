@@ -8,6 +8,7 @@
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
@@ -192,4 +193,26 @@ TEST(NativeStringSizeStream, TruncatedSizeStreamWithRowsOffset)
     {
         ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
     }
+}
+
+TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
+{
+    /// The flattened Dynamic representation serializes its subtypes through the same
+    /// revision-dependent settings, so a flattened `String` alternative also uses the
+    /// size-stream layout at the new revision and round-trips.
+    Block block;
+    addColumn(block, "d", "Dynamic", {Field("alpha"), Field(UInt64(7)), Field("beta"), Field("")});
+
+    FormatSettings fmt;
+    fmt.native.use_flattened_dynamic_and_json_serialization = true;
+
+    WriteBufferFromOwnString out;
+    NativeWriter writer(
+        out, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION, std::make_shared<const Block>(block.cloneEmpty()), fmt);
+    writer.write(block);
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    NativeReader reader(in, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+    assertBlocksEqual(block, reader.read());
 }
