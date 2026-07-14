@@ -43,10 +43,10 @@ TEST(AsyncInsertKey, SettingsChanges)
 
     auto kind = AsynchronousInsertQueueDataKind::Parsed;
 
-    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, {}, {}, settings1, kind);
-    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, {}, {}, settings2, kind);
-    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, {}, {}, settings3, kind);
-    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, {}, {}, settings4, kind);
+    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, {}, {}, {}, settings1, kind);
+    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, {}, {}, {}, settings2, kind);
+    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, {}, {}, {}, settings3, kind);
+    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, {}, {}, {}, settings4, kind);
 
     EXPECT_EQ(key1, key2);
     EXPECT_NE(key1, key3);
@@ -68,7 +68,7 @@ TEST(AsyncInsertKey, IdentityHashIsNotAmbiguous)
     auto make_key = [&](const String & current_user, const String & initial_user, const String & authenticated_user)
     {
         return AsynchronousInsertQueue::InsertQuery(
-            query, {}, {}, {}, {}, current_user, initial_user, authenticated_user, settings, kind);
+            query, {}, {}, {}, {}, {}, current_user, initial_user, authenticated_user, settings, kind);
     };
 
     /// The three identity fields are variable-length strings folded into the queue key hash,
@@ -122,7 +122,7 @@ TEST(AsyncInsertKey, AuthenticationGrantsAreDistinguished)
 
     auto make_key = [&](const std::shared_ptr<const AccessRightsElements> & grants)
     {
-        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, settings, kind);
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, {}, settings, kind);
     };
 
     /// The credential grant limit (from the GRANTS clause of an authentication method) is part of the
@@ -175,7 +175,7 @@ TEST(AsyncInsertKey, AuthenticationGrantsUsePreciseSerialization)
 
     auto make_key = [&](const std::shared_ptr<const AccessRightsElements> & grants)
     {
-        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, settings, kind);
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, {}, settings, kind);
     };
 
     /// Two credentials that differ only by the source filter. Under the default `enable_read_write_grants=0`
@@ -202,4 +202,40 @@ TEST(AsyncInsertKey, AuthenticationGrantsUsePreciseSerialization)
     auto key_write_file = make_key(std::shared_ptr<const AccessRightsElements>(write_file));
     EXPECT_NE(key_read_file.hash, key_write_file.hash);
     EXPECT_NE(key_read_file, key_write_file);
+}
+
+TEST(AsyncInsertKey, AuthenticationValidUntilIsPartOfKey)
+{
+    /// The per-method expiry (VALID UNTIL) is part of the batching key: the flush checks a single
+    /// expiry, so inserts made under credentials with different expiries must never coalesce into one
+    /// flush, otherwise a longer-lived credential could carry an expired one's work past its deadline.
+    String query_str = "INSERT INTO test (a, b, c) VALUES (1, 2, 3)";
+    ParserInsertQuery parser(query_str.data() + query_str.size(), false);
+    ASTPtr query = parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    Settings settings;
+    settings.set("async_insert", 1);
+
+    auto kind = AsynchronousInsertQueueDataKind::Parsed;
+
+    auto make_key = [&](time_t valid_until)
+    {
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, {}, valid_until, {}, {}, {}, settings, kind);
+    };
+
+    /// A credential with an expiry must never coalesce with one that never expires (0).
+    auto key_none = make_key(0);
+    auto key_a = make_key(2000000000);
+    EXPECT_NE(key_none.hash, key_a.hash);
+    EXPECT_NE(key_none, key_a);
+
+    /// Two different expiries must never coalesce with each other.
+    auto key_b = make_key(2000000001);
+    EXPECT_NE(key_a.hash, key_b.hash);
+    EXPECT_NE(key_a, key_b);
+
+    /// The same expiry still coalesces (batching preserved for one credential).
+    auto key_a_again = make_key(2000000000);
+    EXPECT_EQ(key_a.hash, key_a_again.hash);
+    EXPECT_EQ(key_a, key_a_again);
 }

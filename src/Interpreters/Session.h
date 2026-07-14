@@ -119,6 +119,10 @@ private:
     /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.
     std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
 
+    /// Returns the expiry (VALID UNTIL) of the authentication method the user logged in with, or 0 if none.
+    /// Carried into the session/query context so deferred-execution paths can fail closed after expiry.
+    time_t getAuthenticationValidUntil() const;
+
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;

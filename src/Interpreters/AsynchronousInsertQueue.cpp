@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int USER_EXPIRED;
 }
 
 static const NameSet settings_to_skip
@@ -121,6 +122,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const std::vector<UUID> & current_roles_,
     const std::vector<UUID> & external_roles_,
     const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+    time_t authentication_valid_until_,
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
@@ -132,6 +134,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , current_roles(current_roles_)
     , external_roles(external_roles_)
     , authentication_grants(authentication_grants_)
+    , authentication_valid_until(authentication_valid_until_)
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
@@ -167,6 +170,13 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(grants_str);
     }
 
+    /// Fold the per-method expiry into the key so inserts made under credentials with different
+    /// `VALID UNTIL` are never coalesced: the flush checks a single expiry, so a longer-lived
+    /// credential must not carry an expired one's work past its deadline. 0 (the common, no-expiry
+    /// case) contributes nothing, so it does not change the hash of existing keys.
+    if (authentication_valid_until != 0)
+        siphash.update(authentication_valid_until);
+
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
     for (const String & identity_field : {current_user, initial_user, authenticated_user})
@@ -201,6 +211,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     current_roles = other.current_roles;
     external_roles = other.external_roles;
     authentication_grants = other.authentication_grants;
+    authentication_valid_until = other.authentication_valid_until;
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
@@ -221,6 +232,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         current_roles = other.current_roles;
         external_roles = other.external_roles;
         authentication_grants = other.authentication_grants;
+        authentication_valid_until = other.authentication_valid_until;
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
@@ -588,6 +600,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         query_context->getCurrentRoles(),
         query_context->getExternalRoles(),
         query_context->getAuthenticationGrants(),
+        query_context->getAuthenticationValidUntil(),
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
@@ -1017,6 +1030,18 @@ try
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
+    /// Fail closed if the authentication method that queued this insert has expired between enqueue
+    /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
+    /// deferred flush has no session, so without this a token could enqueue data just before expiry
+    /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
+    /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
+    if (key.authentication_valid_until != 0)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        if (now > key.authentication_valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
+    }
+
     bool internal = true;
     bool async_insert = true;
 
@@ -1035,10 +1060,11 @@ try
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
     {
-        /// Replay the whole originating identity in one call: the external (pushed) roles and the
-        /// credential grant limit are restored together with the user, so a limited credential does not
-        /// regain the full user's rights and a pushed-role session does not fail role revalidation.
-        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants);
+        /// Replay the whole originating identity in one call: the external (pushed) roles, the
+        /// credential grant limit and its expiry are restored together with the user, so a limited
+        /// credential does not regain the full user's rights and a pushed-role session does not fail
+        /// role revalidation.
+        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
         /// `current_roles` are the session's *effective* current roles, which already include the
         /// external roles restored above. Re-apply them without the grant check: external roles are not
         /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally

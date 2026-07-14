@@ -369,6 +369,11 @@ protected:
     /// If not null, the access rights are limited to the intersection with these elements.
     /// This comes from the GRANTS clause of the authentication method the user logged in with.
     std::shared_ptr<const AccessRightsElements> authentication_grants;
+    /// Expiry (VALID UNTIL) of the authentication method the user logged in with, 0 if none.
+    /// Carried alongside `authentication_grants` so deferred-execution paths (asynchronous insert
+    /// flush, `QueryRunner` invoker jobs) can fail closed if the credential has expired between
+    /// enqueue and execution; the synchronous path re-checks it in `Session::checkIfUserIsStillValid`.
+    time_t authentication_valid_until = 0;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -872,7 +877,9 @@ public:
     /// `authentication_grants_` limits the access rights to the intersection with these elements
     /// (it comes from the GRANTS clause of the authentication method the user logged in with);
     /// it is reset if not specified, because it is a property of the authentication, not of the user.
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr);
+    /// `authentication_valid_until_` records the method's expiry (0 = none) for the same reason; it is
+    /// likewise reset if not specified, so switching the principal never keeps a stale expiry.
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
     UserPtr getUser() const;
 
     /// Limits the access rights to the intersection with the elements (or resets the limit if null).
@@ -884,6 +891,12 @@ public:
     /// the `QueryRunner` invoker) must carry this over, otherwise a limited credential would regain
     /// full rights when its work is replayed under a freshly-built context.
     std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
+    /// Records the expiry (VALID UNTIL) of the authentication method used to log in (0 = no expiry).
+    /// Like `authentication_grants`, deferred executors carry this over so a credential's queued work
+    /// can be failed closed if the credential has expired before the deferred job runs.
+    void setAuthenticationValidUntil(time_t authentication_valid_until_);
+    time_t getAuthenticationValidUntil() const;
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
@@ -1958,6 +1971,8 @@ private:
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 

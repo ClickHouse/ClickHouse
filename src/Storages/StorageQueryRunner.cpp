@@ -82,6 +82,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -135,6 +136,12 @@ struct QueryRunnerJobOrigin
     /// under a freshly-built context. Only meaningful in the INVOKER case; the DEFINER/NONE cases
     /// intentionally run as a different (or no) principal, so it stays null there.
     std::shared_ptr<const AccessRightsElements> authentication_grants;
+    /// Expiry (VALID UNTIL) of the authenticating method of the originating session, 0 if none.
+    /// Carried over so the deferred job fails closed if the credential has expired between the
+    /// insert and the moment the job runs. The synchronous path re-checks expiry per query in
+    /// `Session::checkIfUserIsStillValid`, but the deferred job has no session, so it must re-check
+    /// here. Only meaningful in the INVOKER case; 0 (no expiry) in the DEFINER/NONE cases.
+    time_t authentication_valid_until = 0;
     String current_user;
     String initial_user;
     String authenticated_user;
@@ -435,11 +442,25 @@ private:
         if (job.origin->user_id)
         {
             chassert(cluster_name.empty());
-            /// Replay the whole originating identity in one call: the external (pushed) roles and the
-            /// credential grant limit are restored together with the user, so a limited credential does
-            /// not regain full rights and a pushed-role session does not fail role revalidation when the
-            /// deferred job runs. `authentication_grants` is null in the DEFINER/NONE cases (a no-op).
-            job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants);
+            /// Fail closed if the authentication method that queued this job has expired between the
+            /// insert and now. The synchronous path re-checks per query in
+            /// `Session::checkIfUserIsStillValid`; the deferred job has no session, so without this a
+            /// token could enqueue work just before expiry and keep executing it afterwards.
+            /// `authentication_valid_until` is 0 (no check) in the DEFINER/NONE cases and for an
+            /// unrestricted credential.
+            if (job.origin->authentication_valid_until != 0)
+            {
+                const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                if (now > job.origin->authentication_valid_until)
+                    throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred query has expired");
+            }
+
+            /// Replay the whole originating identity in one call: the external (pushed) roles, the
+            /// credential grant limit and its expiry are restored together with the user, so a limited
+            /// credential does not regain full rights and a pushed-role session does not fail role
+            /// revalidation when the deferred job runs. `authentication_grants` is null in the
+            /// DEFINER/NONE cases (a no-op).
+            job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants, job.origin->authentication_valid_until);
         }
         if (job.origin->roles)
         {
@@ -824,6 +845,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
             .roles = {},
             .external_roles = {},
             .authentication_grants = {},
+            .authentication_valid_until = 0,
             .current_user = {},
             .initial_user = {},
             .authenticated_user = inserter.authenticated_user,
@@ -839,6 +861,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                     .roles = local_context->getCurrentRoles(),
                     .external_roles = local_context->getExternalRoles(),
                     .authentication_grants = local_context->getAuthenticationGrants(),
+                    .authentication_valid_until = local_context->getAuthenticationValidUntil(),
                     .current_user = inserter.current_user,
                     .initial_user = inserter.initial_user,
                     .authenticated_user = inserter.authenticated_user,
@@ -850,6 +873,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                     .roles = {},
                     .external_roles = {},
                     .authentication_grants = {},
+                    .authentication_valid_until = 0,
                     .current_user = *metadata_snapshot->definer,
                     .initial_user = *metadata_snapshot->definer,
                     .authenticated_user = inserter.authenticated_user,
@@ -861,6 +885,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                     .roles = {},
                     .external_roles = {},
                     .authentication_grants = {},
+                    .authentication_valid_until = 0,
                     .current_user = {},
                     .initial_user = {},
                     .authenticated_user = inserter.authenticated_user,
