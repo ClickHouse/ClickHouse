@@ -65,3 +65,21 @@ SELECT count() FROM t_04350_merge2 WHERE b < toLowCardinality(toNullable(7));
 
 DROP TABLE t_04350_lc2;
 DROP TABLE t_04350_merge2;
+
+-- Nested wrapper case: a Merge table with a plain Array(T) header over a source whose key is
+-- Array(LowCardinality(T)). The monotonic function chain is built against the recursively-stripped
+-- (plain) key type, so the strip at the execution site must also be recursive; a top-level-only
+-- removeLowCardinality would leave a ColumnArray whose nested data is still ColumnLowCardinality and
+-- feed it to arithmetic dispatched on the plain type. recursiveRemoveLowCardinality unwraps the
+-- nested LowCardinality in lockstep with the type. (Through Merge the array CAST currently keeps this
+-- off the applyFunction path, but the strip is aligned with the chain construction and prunes safely.)
+DROP TABLE IF EXISTS t_04350_arr_lc;
+DROP TABLE IF EXISTS t_04350_arr_merge;
+CREATE TABLE t_04350_arr_lc (a Array(LowCardinality(Int64))) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_04350_arr_lc VALUES ([1]), ([2]), ([3]);
+CREATE TABLE t_04350_arr_merge (a Array(Int64)) ENGINE = Merge(currentDatabase(), 't_04350_arr_lc');
+SELECT count() FROM t_04350_arr_merge
+    WHERE plus(a, CAST([0] AS Array(Int16))) < CAST([3] AS Array(Int64));
+
+DROP TABLE t_04350_arr_lc;
+DROP TABLE t_04350_arr_merge;
