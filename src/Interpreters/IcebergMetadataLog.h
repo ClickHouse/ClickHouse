@@ -6,6 +6,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -27,9 +29,11 @@ struct IcebergMetadataLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
+/// Inserts a row into `system.iceberg_metadata_log` if the query-level setting
+/// `iceberg_metadata_log_level` admits `row_log_level`.
 void insertRowToLogTable(
     const ContextPtr & local_context,
-    String row,
+    std::function<String()> get_row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const Iceberg::IcebergPathFromMetadata & file_path,
