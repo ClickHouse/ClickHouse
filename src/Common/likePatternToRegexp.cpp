@@ -1,6 +1,7 @@
 #include <Common/likePatternToRegexp.h>
 
 #include <Common/Exception.h>
+#include <absl/base/attributes.h>
 
 namespace DB
 {
@@ -278,6 +279,94 @@ String similarToPatternToRegexp(std::string_view pattern)
     res += ")$";
     return res;
 }
+
+template <bool is_similar_to>
+bool likePatternIsSubstring(std::string_view pattern, String & res)
+{
+    /// TODO: ignore multiple leading or trailing %
+    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
+        return false;
+
+    res.clear();
+    res.reserve(pattern.size() - 2);
+
+    const char * pos = pattern.data() + 1;
+    const char * const end = pattern.data() + pattern.size() - 1;
+
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '%':
+            case '_':
+                return false;
+            case '\\':
+                ++pos;
+                if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
+                    return false;
+
+                switch (*pos)
+                {
+                    /// Known LIKE escape sequences:
+                    case '%':
+                    case '_':
+                    case '\\':
+                        res += *pos;
+                        break;
+                    /// Escaped excluded metacharacters ^ $ . are literal characters in SIMILAR TO,
+                    /// the same as their unescaped forms. For [I]LIKE the backslash is not special
+                    /// before these characters, so keep the literal backslash (same as the default).
+                    case '^':
+                    case '$':
+                    case '.':
+                        if constexpr (is_similar_to)
+                            res += *pos;
+                        else
+                        {
+                            res += '\\';
+                            res += *pos;
+                        }
+                        break;
+#define CASES(c) case c:
+                    SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                        if constexpr (is_similar_to)
+                        {
+                            res += *pos;
+                            break;
+                        }
+                        else
+                            ABSL_FALLTHROUGH_INTENDED;
+                    /// For all other escape sequences, the backslash loses its special meaning
+                    default:
+                        res += '\\';
+                        res += *pos;
+                        break;
+                }
+
+                break;
+#define CASES(c) case c:
+            SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                /// A SIMILAR TO metacharacter (other than %/_) makes the pattern more than a plain
+                /// substring search, so it does not qualify. For [I]LIKE these are ordinary literals.
+                if constexpr (is_similar_to)
+                    return false;
+                else
+                    ABSL_FALLTHROUGH_INTENDED;
+            default:
+                res += *pos;
+                break;
+        }
+        ++pos;
+    }
+
+    return true;
+}
+
+template bool likePatternIsSubstring<false>(std::string_view pattern, String & res);
+template bool likePatternIsSubstring<true>(std::string_view pattern, String & res);
 
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char)
 {

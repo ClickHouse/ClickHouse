@@ -29,6 +29,13 @@ String likePatternToRegexp(std::string_view pattern);
 /// Transforms the SIMILAR TO expression into regexp re2. For example, a.c%def -> ^a\.c.*def$
 String similarToPatternToRegexp(std::string_view pattern);
 
+/// Is the [I]LIKE / SIMILAR TO pattern equivalent to a substring search?
+/// Returns true if the pattern is of the form '%substring%' (with no other wildcards),
+/// and writes the extracted substring to 'res'. Templated on `is_similar_to` because the escape
+/// semantics of the excluded metacharacters differ between the two grammars.
+template <bool is_similar_to = false>
+bool likePatternIsSubstring(std::string_view pattern, String & res);
+
 /// Rewrites a LIKE pattern with custom escape character into a LIKE pattern with standard escape character (backslash).
 /// Example: with escape_char='#': "50#%off" -> "50\%off"
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char);
