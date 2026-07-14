@@ -162,7 +162,7 @@ EnabledQuota::Interval::Interval(std::chrono::seconds duration_, bool randomize_
     : duration(duration_) , randomize_interval(randomize_interval_)
 {
     std::chrono::system_clock::time_point initial_end{};
-    if (randomize_interval_)
+    if (randomize_interval_ && duration_ > std::chrono::seconds::zero())
         initial_end += Impl::randomDuration(duration_);
     end_of_interval = initial_end.time_since_epoch();
 
@@ -220,6 +220,15 @@ std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(s
     auto end_loaded = end_of_interval.load();
     auto end = std::chrono::system_clock::time_point{end_loaded};
     if (current_time < end)
+    {
+        counters_were_reset = false;
+        return end;
+    }
+
+    /// A zero (or negative) duration would divide by zero below. CREATE/ALTER QUOTA rejects such
+    /// intervals, but a legacy quota stored on disk before that validation is loaded as-is, so
+    /// guard here too: treat a non-positive interval as non-expiring and never reset its counters.
+    if (duration <= std::chrono::seconds::zero())
     {
         counters_were_reset = false;
         return end;

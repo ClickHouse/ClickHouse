@@ -29,7 +29,8 @@ namespace
         Quota & quota,
         const ASTCreateQuotaQuery & query,
         const String & override_name,
-        const std::optional<RolesOrUsersSet> & override_to_roles)
+        const std::optional<RolesOrUsersSet> & override_to_roles,
+        bool validate)
     {
         if (!override_name.empty())
             quota.setName(override_name);
@@ -77,7 +78,11 @@ namespace
         {
             auto duration = query_limits.duration;
 
-            if (!query_limits.drop && duration.count() <= 0)
+            /// Reject a non-positive interval only on the user-facing CREATE/ALTER path.
+            /// Deserialization of already-stored entities (AccessEntityIO) passes validate=false
+            /// so a legacy zero-interval quota still loads on startup after an upgrade; the
+            /// division-by-zero it would cause is guarded at the consumption site instead.
+            if (validate && !query_limits.drop && duration.count() <= 0)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Quota interval duration must be positive, got {} seconds",
@@ -152,7 +157,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_quota = typeid_cast<std::shared_ptr<Quota>>(entity->clone());
-            updateQuotaFromQueryImpl(*updated_quota, query, {}, roles_from_query);
+            updateQuotaFromQueryImpl(*updated_quota, query, {}, roles_from_query, /* validate= */ true);
             return updated_quota;
         };
         if (query.if_exists)
@@ -169,7 +174,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         for (const String & name : query.names)
         {
             auto new_quota = std::make_shared<Quota>();
-            updateQuotaFromQueryImpl(*new_quota, query, name, roles_from_query);
+            updateQuotaFromQueryImpl(*new_quota, query, name, roles_from_query, /* validate= */ true);
             new_quotas.emplace_back(std::move(new_quota));
         }
 
@@ -196,7 +201,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
 void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
 {
-    updateQuotaFromQueryImpl(quota, query, {}, {});
+    updateQuotaFromQueryImpl(quota, query, {}, {}, /* validate= */ false);
 }
 
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
