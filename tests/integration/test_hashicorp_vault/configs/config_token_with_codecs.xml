@@ -1,0 +1,12 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+    <encryption_codecs>
+        <aes_256_gcm_siv>
+            <key_hex from_hashicorp_vault="aes_256" hashicorp_vault_key="key"/>
+            <nonce_hex from_hashicorp_vault="aes_256" hashicorp_vault_key="nonce_key"/>
+        </aes_256_gcm_siv>
+    </encryption_codecs>
+</clickhouse>

@@ -62,6 +62,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/HashiCorpVault.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
@@ -1808,6 +1809,8 @@ try
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
+
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
@@ -2461,6 +2464,26 @@ try
         dns_cache_updater->start();
     }
 
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
+
+    /// Add vault SSL certificate and CA paths to the watched file set so that
+    /// rotating them on disk triggers a config reload (same as server/protocol
+    /// TLS paths above).
+    if (config().has("hashicorp_vault.ssl"))
+    {
+        auto add_vault_ssl_path = [&](const std::string & ssl_key)
+        {
+            auto ssl_val = config().getString("hashicorp_vault.ssl." + ssl_key, "");
+            if (!ssl_val.empty())
+                extra_paths.push_back(ssl_val);
+        };
+        add_vault_ssl_path("privateKeyFile");
+        add_vault_ssl_path("certificateFile");
+        add_vault_ssl_path("caConfig");
+    }
+
+    auto transient_vault = std::make_shared<HashiCorpVault>();
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2880,7 +2903,21 @@ try
 
             /// Must be the last.
             latest_config = loaded_config;
-        });
+
+            /// Commit the transient vault state to the singleton only after the
+            /// updater has succeeded — this ensures transactional atomicity: if
+            /// the updater throws, the singleton retains the previous consistent
+            /// state.
+            HashiCorpVault::instance().commit(*transient_vault);
+        },
+        [transient_vault](ConfigurationPtr new_config) -> bool
+        {
+            /// Load vault into the transient instance — the result is committed
+            /// to the singleton only after the updater succeeds.
+            transient_vault->load(*new_config, "hashicorp_vault");
+            return new_config->has("hashicorp_vault");
+        },
+        transient_vault.get());
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());

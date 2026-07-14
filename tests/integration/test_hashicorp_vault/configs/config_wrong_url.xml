@@ -1,0 +1,6 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://wrong:8200</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>

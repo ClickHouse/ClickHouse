@@ -1,0 +1,21 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>https://hashicorpvault:8210</url>
+      <cert>
+        <name>client</name>
+      </cert>
+      <ssl>
+        <verificationMode>strict</verificationMode>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>false</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+        <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
+        <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+        <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+      </ssl>
+    </hashicorp_vault>
+</clickhouse>

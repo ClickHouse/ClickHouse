@@ -63,6 +63,10 @@
 #endif
 #include <ucontext.h>
 
+#if USE_SSL
+#    include <Common/HashiCorpVault.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -71,6 +75,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int BAD_ARGUMENTS;
     }
 }
 
@@ -124,7 +129,22 @@ void BaseDaemon::loadConfiguration()
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+
     config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
+
+#if USE_SSL
+    if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_hashicorp_vault"))
+    {
+        if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "hashicorp_vault", "from_zk"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "from_zk is not supported under <hashicorp_vault> when from_hashicorp_vault is used in encryption_codecs. "
+                "Use a direct value instead.");
+
+        HashiCorpVault::instance().load(config(), "hashicorp_vault");
+        loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, /* is_config_changed = */ true, &HashiCorpVault::instance());
+        config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+#endif
 }
 
 
