@@ -1,0 +1,36 @@
+--- standard: unquoted spellings fold, header shows the canonical column
+FirstName
+a
+FirstName
+a
+FirstName
+a
+--- standard: case siblings are ambiguous for any unquoted spelling, including the exact one
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+--- standard: double quotes pin the exact spelling
+Val
+1
+val
+2
+UNKNOWN_IDENTIFIER
+--- standard: tuple subcolumn suffixes fold, quoted suffix pins
+Data.Name
+n
+Data.Name
+n
+UNKNOWN_IDENTIFIER
+--- sensitive default: exact spellings work, folded spellings fail
+FirstName
+a
+UNKNOWN_IDENTIFIER
+1	2
+n
+UNKNOWN_IDENTIFIER
+--- standard: WHERE / GROUP BY / ORDER BY fold like SELECT
+a
+x	3
+y	5
+y
+x

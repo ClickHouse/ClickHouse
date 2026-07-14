@@ -3,7 +3,10 @@
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
+#include <Core/IdentifierName.h>
 #include <DataTypes/NestedUtils.h>
+
+#include <map>
 
 namespace DB
 {
@@ -129,6 +132,36 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
+    /// Result of a `standard`-mode column or subcolumn lookup, see `tryMatchColumnOrSubcolumnStandard`.
+    struct StandardMatchResult
+    {
+        enum class Outcome : UInt8
+        {
+            NotFound,
+            Matched,
+            Ambiguous,
+        };
+
+        Outcome outcome = Outcome::NotFound;
+        /// Canonical column full name, when Matched.
+        String column_name;
+        /// Canonical subcolumn path within the column type, empty when the whole column matched.
+        String subcolumn_name;
+        ColumnNodePtr column_node;
+        DataTypePtr subcolumn_type;
+        /// Sorted canonical full names of all matches, when Ambiguous.
+        std::vector<String> candidates;
+    };
+
+    /// Resolve `name` against table columns and type-level subcolumns with `standard` matching
+    /// semantics: unquoted and backticked parts match through ASCII case folding with no priority
+    /// for the exact spelling, double-quoted parts match exactly.
+    StandardMatchResult tryMatchColumnOrSubcolumnStandard(const IdentifierName & name) const;
+
+    /// Whether `name` could bind to this table's columns under `standard` matching,
+    /// by its first part. Never reports ambiguity, mirroring `canBindIdentifier`.
+    bool canBindIdentifierStandard(const IdentifierName & name) const;
+
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const
     {
         ensureColumnMembershipSetsArePopulated();
@@ -151,8 +184,17 @@ struct AnalysisTableExpressionData
     }
 
 private:
+    void ensureFoldedColumnIndexIsPopulated() const;
+
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
     std::function<void(ColumnNameToColumnNodeMap &)> populate_column_node_map;
+
+    /// Index for `standard` matching, built once on the first standard-mode lookup.
+    /// Folded full column name -> sorted canonical full names.
+    mutable std::map<String, std::vector<String>> folded_column_names;
+    /// Folded `Identifier(name).at(0)` of every column name, for binding checks.
+    mutable std::unordered_set<String> folded_column_first_parts;
+    mutable bool folded_column_index_populated = false;
 };
 
 }

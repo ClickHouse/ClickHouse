@@ -432,6 +432,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+        identifier_lookup.identifier_name = first_argument_identifier.getIdentifierName();
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())

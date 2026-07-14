@@ -5,6 +5,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Core/IdentifierName.h>
 
 namespace DB
 {
@@ -42,9 +43,21 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
   */
 struct IdentifierLookup
 {
+    IdentifierLookup(Identifier identifier_, IdentifierLookupContext lookup_context_)
+        : identifier(std::move(identifier_))
+        , lookup_context(lookup_context_)
+    {}
+
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+
+    /// Per-part quoting of the identifier as written in the query, mirroring `identifier`.
+    /// Empty when the lookup was synthesized from an internal (already resolved) name; such
+    /// lookups match exactly under any name matching mode. Intentionally not part of equality
+    /// and hashing: the identifier resolve cache is disabled under `standard` matching, and
+    /// the in-lookup-process map only breaks alias resolution cycles by spelling.
+    IdentifierName identifier_name;
 
     bool isExpressionLookup() const
     {

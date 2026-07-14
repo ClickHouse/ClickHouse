@@ -223,11 +223,14 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// TODO: remove when standard matching is implemented for query-scope names.
-void checkNameMatchModeIsImplemented(const ContextPtr & context)
+/// The identifier resolve cache is keyed by identifier spelling only, but under `standard`
+/// matching differently quoted spellings of one name may resolve differently, so results
+/// must not be shared between them.
+bool identifierResolveCacheIsSupported(const ContextPtr & context)
 {
-    if (context->getSettingsRef()[Setting::column_and_query_name_matching] != NameMatchMode::Sensitive)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting 'column_and_query_name_matching = standard' is not implemented yet");
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::enable_identifier_resolve_cache]
+        && settings[Setting::column_and_query_name_matching] == NameMatchMode::Sensitive;
 }
 
 }
@@ -246,10 +249,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     if (!scope.context)
         scope.context = context;
 
-    if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
+    if (!identifierResolveCacheIsSupported(scope.context))
         scope.disableIdentifierCachePermanently();
-
-    checkNameMatchModeIsImplemented(scope.context);
 
     auto node_type = node->getNodeType();
 
@@ -333,10 +334,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     if (!scope.context)
         scope.context = context;
 
-    if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
+    if (!identifierResolveCacheIsSupported(scope.context))
         scope.disableIdentifierCachePermanently();
-
-    checkNameMatchModeIsImplemented(scope.context);
 
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
@@ -1247,6 +1246,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
+        alias_identifier_lookup.identifier_name = alias_identifier_node.getIdentifierName();
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
@@ -3172,6 +3172,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             auto & identifier_node = node->as<IdentifierNode &>();
             auto unresolved_identifier = identifier_node.getIdentifier();
             IdentifierLookup identifier_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
+            identifier_lookup.identifier_name = identifier_node.getIdentifierName();
             if (node->hasOriginalAST())
                 identifier_lookup.original_ast_node = node->getOriginalAST();
             auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
