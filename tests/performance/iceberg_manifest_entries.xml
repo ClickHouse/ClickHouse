@@ -2,6 +2,7 @@
     <settings>
         <max_threads>1</max_threads>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
     </settings>
 
     <!-- Local data lake paths must be inside user_files_path, whose location depends on
