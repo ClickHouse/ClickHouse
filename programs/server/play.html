@@ -69,6 +69,16 @@
                gray -> black over the whole fill. */
             --progress-text-peak-color: #000;
             --progress-text-peak-fraction: 1;
+            /* Metrics-table rate tiers (see renderMetricsTable), mirroring the escalating palette of
+               the clickhouse-client progress table: dim -> light -> green -> yellow -> orange ->
+               bold-gold -> red, as the per-second rate grows. Tuned to read on the light theme. */
+            --metric-c0: #b0b4ba;
+            --metric-c1: #8a8f96;
+            --metric-c2: #15803d;
+            --metric-c3: #a16207;
+            --metric-c4: #c2410c;
+            --metric-c5: #9a3412;
+            --metric-c6: #dc2626;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #EEE;
             --table-hover-filter: brightness(0.9);
@@ -140,6 +150,14 @@
                for the remaining three quarters, returning to gray past the progress edge. */
             --progress-text-peak-color: #FFF;
             --progress-text-peak-fraction: 0.25;
+            /* Metrics-table rate tiers (see the light theme), brightened for the dark background. */
+            --metric-c0: #4b4b4b;
+            --metric-c1: #808080;
+            --metric-c2: #34d058;
+            --metric-c3: #e3b341;
+            --metric-c4: #f0883e;
+            --metric-c5: #ffd33d;
+            --metric-c6: #f85149;
             --error-color: #400;
             --table-header-color: #102020;
             --table-hover-filter: contrast(0.9) brightness(2);
@@ -1625,11 +1643,13 @@ class QueryProgressElement extends HTMLElement
                     gap: 1rem;
                 }
 
-                /* The Logs toggle sits at the front of the line (just before the progress area) and
-                   switches the result element(s) between the query result and the streamed server
-                   logs. Dotted underline; a yellow background while the logs view is active. Hidden
-                   unless the query produced at least one log line (see showLogsToggle). */
-                #logs-toggle
+                /* The view toggles sit at the front of the line (just before the progress area) and
+                   switch the result element(s) between the query result and one of the streamed
+                   extras: the server logs (Logs) or the extended profile-event metrics (Metrics,
+                   like the clickhouse-client progress table shown on Space). Dotted underline; a
+                   yellow background while that view is active. Each is hidden until the query
+                   provides the corresponding data (see showLogsToggle / showMetricsToggle). */
+                .progress-toggle
                 {
                     display: none;
                     flex: none;
@@ -1642,11 +1662,14 @@ class QueryProgressElement extends HTMLElement
                     text-underline-offset: 0.2em;
                 }
 
-                #logs-toggle.active
+                .progress-toggle.active
                 {
                     color: var(--button-active-text-color);
                     background-color: var(--button-color);
                 }
+
+                /* Keep the two toggles close together, tightening the :host row gap between them. */
+                #logs-toggle + #metrics-toggle { margin-left: -0.75rem; }
 
                 #hourglass
                 {
@@ -1741,9 +1764,9 @@ class QueryProgressElement extends HTMLElement
                     grid-column: 1;
                 }
 
-                /* The Logs toggle, elapsed time, realtime metrics, and rows/bytes progress use a
+                /* The view toggles, elapsed time, realtime metrics, and rows/bytes progress use a
                    monospace font, so the numbers line up and stay steady as they change. */
-                #logs-toggle, #progress-text, #stats
+                .progress-toggle, #progress-text, #stats
                 {
                     font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
                 }
@@ -1759,7 +1782,8 @@ class QueryProgressElement extends HTMLElement
             </style>
             <span id="hourglass">&#10711;</span>
             <span id="check-mark">&#10004;</span>
-            <span id="logs-toggle">Logs</span>
+            <span id="logs-toggle" class="progress-toggle">Logs</span>
+            <span id="metrics-toggle" class="progress-toggle">Metrics</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
@@ -1769,35 +1793,52 @@ class QueryProgressElement extends HTMLElement
         this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
 
-        /// The Logs toggle switches the result view between the query result and the streamed logs.
-        /// It just tracks its own on/off state and announces the change via a `toggle-logs` event;
-        /// the page listener applies it to the result element(s).
+        /// The Logs and Metrics toggles switch the result view between the query result and one of
+        /// the streamed extras (server logs, or the extended profile-event metrics). The progress
+        /// element only tracks which view is selected and announces changes via a `set-view` event;
+        /// the page listener applies the view to the result element(s).
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
-        this._logs_active = false;
-        this._logsToggle.addEventListener('click', () =>
-        {
-            this._logs_active = !this._logs_active;
-            this._logsToggle.classList.toggle('active', this._logs_active);
-            this.dispatchEvent(new CustomEvent('toggle-logs', { detail: { logs: this._logs_active } }));
-        });
+        this._metricsToggle = this.shadowRoot.getElementById('metrics-toggle');
+        this._view = 'result';
+        this._logsToggle.addEventListener('click', () => this._toggleView('logs'));
+        this._metricsToggle.addEventListener('click', () => this._toggleView('metrics'));
 
         this.resetResources();
     }
 
+    /// Toggle the given view: activate it (deactivating the other toggle), or return to the result
+    /// view if it is already active. Announces the new view via a `set-view` event.
+    _toggleView(target)
+    {
+        this._view = (this._view === target) ? 'result' : target;
+        this._logsToggle.classList.toggle('active', this._view === 'logs');
+        this._metricsToggle.classList.toggle('active', this._view === 'metrics');
+        this.dispatchEvent(new CustomEvent('set-view', { detail: { view: this._view } }));
+    }
+
     /// Reveal the Logs toggle. Called once the query has produced at least one log line, so it is
-    /// shown only when there are logs to switch to. Idempotent; the result/logs state is reset by
-    /// `resetLogsToggle` when a new query starts.
+    /// shown only when there are logs to switch to. Idempotent (reset by `resetViewToggles`).
     showLogsToggle()
     {
         this._logsToggle.style.display = 'inline-block';
     }
 
-    /// Hide the Logs toggle and reset it to the result state (used when a new query starts).
-    resetLogsToggle()
+    /// Reveal the Metrics toggle. Called once the query has produced profile-event metrics, so it is
+    /// shown only when there are metrics to show. Idempotent (reset by `resetViewToggles`).
+    showMetricsToggle()
     {
-        this._logs_active = false;
-        this._logsToggle.classList.remove('active');
-        this._logsToggle.style.display = 'none';
+        this._metricsToggle.style.display = 'inline-block';
+    }
+
+    /// Hide both view toggles and return to the result view (used when a new query starts).
+    resetViewToggles()
+    {
+        this._view = 'result';
+        for (const t of [this._logsToggle, this._metricsToggle])
+        {
+            t.classList.remove('active');
+            t.style.display = 'none';
+        }
     }
 
     clear()
@@ -1958,7 +1999,10 @@ class QueryProgressElement extends HTMLElement
     {
         this._checkMark.style.display = 'none';
         this._hourglass.style.display = 'inline-block';
-        this.resetLogsToggle();
+        this.resetViewToggles();
+        /// Reset the metric-width debouncing (see _padMetric) for every new query, so a new query's
+        /// CPU/RAM numbers are laid out fresh and not left-padded to the previous query's widths.
+        this._resources_widths = {};
     }
 
     finish()
@@ -2534,6 +2578,84 @@ class QueryResultElement extends HTMLElement
                 .log-prio-Debug { }
                 .log-prio-Trace { opacity: 0.6; }
                 .log-prio-Test { opacity: 0.5; }
+
+                /* The extended profile-event metrics table (the Metrics toggle), mirroring the
+                   clickhouse-client progress table shown on Space. Grows to fit; the page scrolls. */
+                #metrics_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #metrics-table
+                {
+                    border-collapse: collapse;
+                    width: 100%;
+                    font-size: 90%;
+                    color: var(--text-color);
+                }
+
+                /* Rows are separated by horizontal lines only - no vertical cell borders. */
+                #metrics-table td
+                {
+                    /* Reset the generic td border (used by the data table) to a horizontal line
+                       only - no vertical cell borders. */
+                    border: none;
+                    border-bottom: 1px solid var(--border-color);
+                    background-color: transparent;
+                    padding: 0.05rem 0.25rem;
+                    white-space: nowrap;
+                }
+
+                /* Flush the outer edges: no padding on the far-left and far-right columns. */
+                #metrics-table td:first-child { padding-left: 0; }
+                #metrics-table td:last-child { padding-right: 0; }
+
+                #metrics-table tr { cursor: pointer; }
+
+                /* Highlight the row under the pointer. */
+                #metrics-table tbody tr:hover td { background-color: var(--table-header-color); }
+
+                /* A clicked row is selected and pinned in place (see renderMetricsTable). */
+                #metrics-table tr.selected td { background-color: var(--table-header-color); }
+
+                /* Hovering a word in a metric name highlights every row whose name shares that word. */
+                #metrics-table td span { cursor: pointer; }
+                #metrics-table tr.word-hover td { background-color: var(--table-header-color); }
+
+                /* The Value and Per-second columns are numeric: right-aligned, tabular figures. */
+                #metrics-table td.metric-value,
+                #metrics-table td.metric-rate
+                {
+                    text-align: right;
+                    font-variant-numeric: tabular-nums;
+                }
+
+                /* The per-second rate (and its sparkline) is tinted by magnitude, mirroring the
+                   clickhouse-client progress table: an escalating palette from dim through
+                   green/yellow/orange to red (top two tiers bold), the tier chosen per value type. */
+                #metrics-table td.metric-c0 { color: var(--metric-c0); }
+                #metrics-table td.metric-c1 { color: var(--metric-c1); }
+                #metrics-table td.metric-c2 { color: var(--metric-c2); }
+                #metrics-table td.metric-c3 { color: var(--metric-c3); }
+                #metrics-table td.metric-c4 { color: var(--metric-c4); }
+                #metrics-table td.metric-c5 { color: var(--metric-c5); font-weight: bold; }
+                #metrics-table td.metric-c6 { color: var(--metric-c6); font-weight: bold; }
+
+                /* The sparkline column fills the remaining page width. The trace is drawn at natural
+                   resolution (one sample per pixel) and grows left-to-right; while it fits, the whole
+                   history is shown from the left edge. Once it overflows the cell (the scroll state,
+                   set in renderMetricsTable), it is pinned to the right - direction: rtl + overflow:
+                   hidden clip the older (left) part - so the cell shows the latest window and scrolls.
+                   In fit mode (a finished query whose history overflowed) the SVG instead stretches
+                   to the cell so the whole history fits at once. */
+                #metrics-table td.metric-spark { width: 100%; overflow: hidden; }
+                #metrics-table td.metric-spark svg { display: inline-block; vertical-align: middle; }
+                #metrics-table.scroll td.metric-spark { direction: rtl; }
+                #metrics-table.scroll td.metric-spark svg { direction: ltr; }
+                #metrics-table.fit td.metric-spark svg { width: 100%; }
             </style>
             <div id="view-toggle">
                 <button type="button" class="view-btn active" id="view-result">Result</button>
@@ -2550,6 +2672,7 @@ class QueryResultElement extends HTMLElement
                 <p id="error" class="monospace shadow"></p>
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
+            <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
         `;
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
@@ -2558,6 +2681,68 @@ class QueryResultElement extends HTMLElement
         this._btnLogs = this.shadowRoot.getElementById('view-logs');
         this._logsDiv = this.shadowRoot.getElementById('logs_div');
         this._logsContent = this.shadowRoot.getElementById('logs-content');
+        this._metricsDiv = this.shadowRoot.getElementById('metrics_div');
+        this._metricsTable = this.shadowRoot.getElementById('metrics-table');
+        this._metricsBody = this.shadowRoot.getElementById('metrics-body');
+        /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
+        /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
+        /// to the query-average once the query finishes. See `updateMetrics`/`renderMetricsTable`.
+        this._metrics = new Map();
+        this._metrics_t0 = 0;
+        this._metrics_last_sec = 0;
+        this._metrics_final = false;
+        /// Number of sampling steps taken (one per profile-events packet). Every metric's sparkline
+        /// history has exactly this many points - a new metric is back-filled with leading zeros -
+        /// so all sparklines advance in lock-step and stay time-aligned even if a metric appears late
+        /// or stops receiving data. When the trace outgrows its cell, renderMetricsTable puts the
+        /// table into the scroll state (running: show the latest window) or fit state (finished:
+        /// compress the whole history).
+        this._metrics_ticks = 0;
+        /// Names of the metric rows the user pinned by clicking them, and the row index each was
+        /// pinned at, so a pinned row keeps its position while the others reorder (see
+        /// renderMetricsTable). Clicking a row toggles its selection.
+        this._metrics_selected = new Set();
+        this._metrics_pinned_index = new Map();
+        this._metricsBody.addEventListener('click', (e) =>
+        {
+            /// Ignore the click that ends a text selection, so the user can select/copy a metric
+            /// name instead of the click toggling (and re-rendering away) the selection.
+            if (this._hasMetricsSelection()) return;
+            const tr = e.target.closest('tr');
+            if (!tr || !tr.dataset.metric) return;
+            const name = tr.dataset.metric;
+            if (this._metrics_selected.has(name))
+            {
+                this._metrics_selected.delete(name);
+                this._metrics_pinned_index.delete(name);
+            }
+            else
+            {
+                this._metrics_selected.add(name);
+                /// Freeze the row at its current visual position.
+                this._metrics_pinned_index.set(name, Array.prototype.indexOf.call(this._metricsBody.children, tr));
+            }
+            this.renderMetricsTable();
+        });
+        /// Hovering a word in a metric name highlights every row whose name shares that word. The
+        /// hovered word is remembered so the highlight survives the live re-renders. The row under
+        /// the pointer is also pinned in place (like a selected row) so it does not slide away from
+        /// the cursor as the others reorder - see renderMetricsTable.
+        this._hovered_word = null;
+        this._metrics_hover_name = null;
+        this._metrics_hover_index = -1;
+        this._metricsBody.addEventListener('mouseover', (e) =>
+        {
+            const span = e.target.closest('span[data-word]');
+            this._setHoveredWord(span ? span.dataset.word : null);
+            const tr = e.target.closest('tr');
+            this._setHoveredRow(tr && tr.dataset.metric ? tr.dataset.metric : null, tr);
+        });
+        this._metricsBody.addEventListener('mouseleave', () =>
+        {
+            this._setHoveredWord(null);
+            this._setHoveredRow(null, null);
+        });
         this._log_count = 0;
         /// Incoming log lines are buffered and appended to the DOM in batches (see `appendLog`),
         /// at most `MAX_PER_FRAME` per animation frame, so a burst of many lines does not block.
@@ -2674,6 +2859,7 @@ class QueryResultElement extends HTMLElement
         this._incomplete_result = false;
         this._is_explain_graph = false;
         this._explain_graph = '';
+        this._table_layout_pending = false;
         this._current_selected_cell = null;
         this._emphasized_col_idx = null;
         this._emphasized_value = null;
@@ -2686,9 +2872,26 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._logsContent);
         this._logsContent.style.display = 'block';
         this._log_count = 0;
+
+        /// Reset the extended metrics view (streamed via the framing format).
+        this._metrics = new Map();
+        this._metrics_t0 = 0;
+        this._metrics_last_sec = 0;
+        this._metrics_final = false;
+        this._metrics_ticks = 0;
+        this._metricsTable.classList.remove('fit', 'scroll');
+        this._metrics_selected = new Set();
+        this._metrics_pinned_index = new Map();
+        this._hovered_word = null;
+        this._metrics_hover_name = null;
+        this._metrics_hover_index = -1;
+        /// Empty the table body without hiding it (see renderMetricsTable) so a later render shows.
+        this._metricsBody.replaceChildren();
+
         this._view = 'result';
         this._resultGroup.style.display = '';
         this._logsDiv.style.display = 'none';
+        this._metricsDiv.style.display = 'none';
         this._viewToggle.style.display = 'none';
         this._btnLogs.textContent = 'Logs';
         this._btnResult.classList.add('active');
@@ -3503,6 +3706,18 @@ class QueryResultElement extends HTMLElement
     _changeTableLayout()
     {
         const table = this._dataTable;
+
+        /// This freezes the current (auto-layout) column widths into an explicit fixed layout by
+        /// measuring offsetWidth/offsetHeight. If the table is not visible (e.g. the logs or metrics
+        /// view is showing, so the result group is display:none), every measurement is 0 and the
+        /// columns would collapse. Defer until the table is shown again (see showView).
+        if (table.offsetParent === null)
+        {
+            this._table_layout_pending = true;
+            return;
+        }
+        this._table_layout_pending = false;
+
         const headers = table.querySelectorAll('th');
 
         table.style.setProperty('--table-width', `${table.offsetWidth}px`);
@@ -3695,15 +3910,325 @@ class QueryResultElement extends HTMLElement
         return line;
     }
 
-    /// Switch between the query result and the server logs.
+    /// Switch between the query result, the server logs, and the extended metrics table.
     showView(view)
     {
         this._view = view;
-        const logs = view === 'logs';
-        this._resultGroup.style.display = logs ? 'none' : '';
-        this._logsDiv.style.display = logs ? 'block' : 'none';
-        this._btnResult.classList.toggle('active', !logs);
-        this._btnLogs.classList.toggle('active', logs);
+        this._resultGroup.style.display = view === 'result' ? '' : 'none';
+        this._logsDiv.style.display = view === 'logs' ? 'block' : 'none';
+        this._metricsDiv.style.display = view === 'metrics' ? 'block' : 'none';
+        /// The metrics table is rendered lazily - only while its view is visible, plus once more on
+        /// finish - so switching to it must render the current snapshot.
+        if (view === 'metrics')
+            this.renderMetricsTable();
+        /// If the fixed table layout was deferred because the table was hidden (see
+        /// _changeTableLayout), run it now that the result group is visible again.
+        if (view === 'result' && this._table_layout_pending)
+            this._changeTableLayout();
+        this._btnResult.classList.toggle('active', view === 'result');
+        this._btnLogs.classList.toggle('active', view === 'logs');
+    }
+
+    /// Update the extended profile-event metrics model from a `profile_events` packet, mirroring
+    /// clickhouse-client's ProgressTable: only the per-query rows (thread_id 0) are used, each
+    /// metric is aggregated per host, and ~1s snapshots feed the per-second rate. Reveals the
+    /// Metrics toggle on the first metric and re-renders the table if it is the visible view.
+    updateMetrics(events)
+    {
+        if (!this._metrics_t0)
+            this._metrics_t0 = performance.now();
+        const now_sec = (performance.now() - this._metrics_t0) / 1000;
+        this._metrics_last_sec = now_sec;
+
+        let saw_any = false;
+        for (const e of events)
+        {
+            /// Thread id 0 is the per-query aggregate across all threads on a host.
+            if (e.thread_id !== '0') continue;
+            const name = e.name;
+            const value = +e.value;
+            /// Store non-zero values only, like the client.
+            if (!name || !value) continue;
+
+            let m = this._metrics.get(name);
+            if (!m)
+            {
+                /// Back-fill the sparkline history with a zero for every step taken so far, so this
+                /// late-arriving metric stays aligned with the others (same number of points).
+                m = { type: e.type, valueType: metricValueType(name), hosts: new Map(), priority: 0,
+                      maxRate: 0, history: new Array(this._metrics_ticks).fill(0) };
+                this._metrics.set(name, m);
+            }
+            let h = m.hosts.get(e.host_name);
+            if (!h)
+            {
+                h = { value: 0, t: 0, prev: { v: 0, t: 0 }, cur: { v: 0, t: 0 } };
+                m.hosts.set(e.host_name, h);
+            }
+            this._updateMetricHost(h, e.type, value, now_sec);
+            saw_any = true;
+        }
+
+        if (!saw_any) return;
+
+        /// Sample every metric's current per-second rate into its (unbounded) history, one point per
+        /// packet, and track the observed maximum - both feed the sparkline column and its scaling.
+        /// Every metric is stepped (even one with no new data this packet, whose rate is 0), so all
+        /// histories keep the same length and the sparklines stay aligned. Done here (not only at
+        /// render) so the history accrues even while the view is hidden; it widens by one pixel/packet.
+        for (const m of this._metrics.values())
+        {
+            const rate = this._metricRecentRate(m, now_sec);
+            m.maxRate = Math.max(m.maxRate || 0, rate);
+            m.history.push(rate);
+        }
+        ++this._metrics_ticks;
+
+        progressEl.showMetricsToggle();
+        if (this._view === 'metrics')
+            this.renderMetricsTable();
+    }
+
+    /// The metric's current per-second rate: the sum over hosts of the recent change over the ~1s
+    /// snapshot window, ignoring hosts that went quiet (no update in the last 0.5s).
+    _metricRecentRate(m, now_sec)
+    {
+        let recent = 0;
+        for (const h of m.hosts.values())
+            if (now_sec - h.t < 0.5 && h.cur.t > h.prev.t)
+                recent += (h.cur.v - h.prev.v) / (h.cur.t - h.prev.t);
+        return recent;
+    }
+
+    /// Fold one profile-event value into a metric's per-host snapshots, mirroring
+    /// ProgressTable::MetricInfo::updateValue: an INCREMENT adds to the running value, a GAUGE
+    /// replaces it; the previous/current snapshots (kept ~1s apart) are what the rate uses.
+    _updateMetricHost(h, type, new_value, new_time)
+    {
+        if (new_time - h.t >= 0.5 || h.t === 0)
+        {
+            h.prev = { v: h.value, t: new_time - 1.0 };
+            h.cur = { v: h.value, t: new_time - 1.0 };
+        }
+        if (type === 'gauge') h.value = new_value;
+        else h.value += new_value;
+        h.t = new_time;
+        if (h.t - h.cur.t >= 0.5)
+        {
+            h.prev = h.cur;
+            h.cur = { v: h.value, t: h.t };
+        }
+    }
+
+    /// Mark the metrics as final once the query finishes, so the rate column shows the query-average
+    /// rate (total / elapsed) and the values are the totals. Re-renders if the view is visible.
+    finalizeMetrics()
+    {
+        this._metrics_final = true;
+        if (this._view === 'metrics')
+            this.renderMetricsTable();
+    }
+
+    /// Render (rebuild) the metrics table body. Metrics are sorted like the client's progress table:
+    /// the freshest (updated within the last second) on top, then by magnitude - so rows reorder as
+    /// the query runs. The rate is the recent per-second rate while running, or the query-average
+    /// once finished. Selected (clicked) rows are pinned back to the position they had when selected.
+    renderMetricsTable()
+    {
+        /// While the user is selecting text in the table, skip the live rebuild so the selection is
+        /// not dropped; the next packet (once the selection is cleared) re-renders as usual.
+        if (this._hasMetricsSelection()) return;
+
+        const now_sec = this._metrics_last_sec;
+        const final = this._metrics_final;
+        /// Elapsed time used for the query-average rate on finish (fall back to the stored elapsed
+        /// for a restored snapshot, where the replay is instantaneous).
+        const elapsed_sec = Math.max(now_sec, this._elapsed_ns / 1e9, 1e-9);
+
+        const rows = [];
+        for (const [name, m] of this._metrics)
+        {
+            let value = 0, last_t = 0;
+            for (const h of m.hosts.values())
+            {
+                value += h.value;
+                last_t = Math.max(last_t, h.t);
+            }
+            /// Keep freshly-updated metrics towards the top and avoid flicker (see the client).
+            if (now_sec - last_t < 1)
+                ++m.priority;
+            const rate = final ? value / elapsed_sec : this._metricRecentRate(m, now_sec);
+            rows.push({
+                name, valueType: m.valueType, value, rate, priority: m.priority,
+                tier: metricRateTier(m.valueType, rate, m.maxRate), history: m.history || [], maxRate: m.maxRate || 0,
+            });
+        }
+
+        rows.sort((a, b) =>
+            (b.priority - a.priority)
+            || (Math.floor(Math.log10(1 + b.value)) - Math.floor(Math.log10(1 + a.value)))
+            || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+        /// Pinned rows hold their position while the rest reorder around them: the clicked (selected)
+        /// rows, plus the row currently under the pointer. Pull them out of the sorted order and
+        /// re-insert each at the index it was pinned at.
+        const pins = new Map(this._metrics_pinned_index);
+        if (this._metrics_hover_name && this._metrics_hover_index >= 0 && !pins.has(this._metrics_hover_name))
+            pins.set(this._metrics_hover_name, this._metrics_hover_index);
+        const pinned = [];
+        const unpinned = [];
+        for (const row of rows)
+            (pins.has(row.name) ? pinned : unpinned).push(row);
+        pinned.sort((a, b) => pins.get(a.name) - pins.get(b.name));
+        const ordered = unpinned;
+        for (const row of pinned)
+        {
+            const idx = Math.min(pins.get(row.name) ?? ordered.length, ordered.length);
+            ordered.splice(idx, 0, row);
+        }
+
+        const fragment = document.createDocumentFragment();
+        for (const row of ordered)
+        {
+            const tr = document.createElement('tr');
+            tr.dataset.metric = row.name;
+            if (this._metrics_selected.has(row.name)) tr.className = 'selected';
+
+            /// Hash-color each CamelCase word of the metric name (like the client colors log fields).
+            /// Each word is tagged (data-word) for hover-highlighting, and the row's word set is kept
+            /// on the element so the hover lookup does not re-tokenize every row.
+            const name_td = document.createElement('td');
+            const words = row.name.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|[0-9]+/g) || [row.name];
+            tr._wordSet = new Set(words);
+            for (const word of words)
+            {
+                const span = document.createElement('span');
+                span.textContent = word;
+                span.dataset.word = word;
+                span.style.color = logColor(word);
+                name_td.appendChild(span);
+            }
+
+            const value_td = document.createElement('td');
+            value_td.className = 'metric-value';
+            value_td.textContent = formatMetricValue(row.valueType, row.value);
+
+            const rate_td = document.createElement('td');
+            rate_td.className = 'metric-rate metric-c' + row.tier;
+            rate_td.textContent = row.rate > 0 ? formatMetricValue(row.valueType, row.rate) + '/s' : '';
+
+            const spark_td = document.createElement('td');
+            spark_td.className = 'metric-spark';
+            spark_td.innerHTML = this._sparklineSVG(row.history, row.valueType, row.maxRate);
+
+            tr.append(name_td, value_td, rate_td, spark_td);
+            fragment.appendChild(tr);
+        }
+        /// Replace the body in one go. Not `_clearElement`, which also hides the element (it is meant
+        /// for the result panes that disappear when empty) - the table body must stay a row group.
+        this._metricsBody.replaceChildren(fragment);
+        /// Re-apply the current hover highlight to the freshly-built rows.
+        this._applyWordHighlight();
+
+        /// Decide how an over-wide trace is shown, based on whether the natural (one-sample-per-pixel)
+        /// width exceeds the cell: while running it stays natural and scrolls (pinned right, latest
+        /// window); once finished it is compressed to fit the cell so the whole history shows. When
+        /// it still fits, neither applies and it grows left-to-right from the left edge.
+        const cell = this._metricsBody.querySelector('td.metric-spark');
+        const avail = cell ? cell.clientWidth : 0;
+        const overflow = avail > 0 && this._metrics_ticks - 1 > avail;
+        this._metricsTable.classList.toggle('scroll', overflow && !final);
+        this._metricsTable.classList.toggle('fit', overflow && final);
+    }
+
+    /// Whether the user currently has a (non-empty) text selection inside the metrics table. Used
+    /// to leave the selection alone: skip the pin-toggle click and the live re-render, which would
+    /// otherwise rebuild the rows and drop the selection.
+    _hasMetricsSelection()
+    {
+        const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.toString()) return false;
+        const node = sel.anchorNode;
+        return !!node && this._metricsBody.contains(node.nodeType === 1 ? node : node.parentNode);
+    }
+
+    /// Set the word currently hovered in a metric name (or null) and refresh the row highlight.
+    _setHoveredWord(word)
+    {
+        if (word === this._hovered_word) return;
+        this._hovered_word = word;
+        this._applyWordHighlight();
+    }
+
+    /// Highlight every row whose metric name contains the hovered word.
+    _applyWordHighlight()
+    {
+        const word = this._hovered_word;
+        for (const tr of this._metricsBody.children)
+            tr.classList.toggle('word-hover', !!(word && tr._wordSet && tr._wordSet.has(word)));
+    }
+
+    /// Remember which row the pointer is over, capturing its current position so the next render
+    /// pins it there (like a selected row); a running query's re-renders then leave it under the
+    /// cursor instead of reordering it away. No immediate re-render is needed - the pin applies on
+    /// the next natural render, and a finished table does not reorder anyway.
+    _setHoveredRow(name, tr)
+    {
+        if (name === this._metrics_hover_name) return;
+        this._metrics_hover_name = name;
+        this._metrics_hover_index = (name && tr)
+            ? Array.prototype.indexOf.call(this._metricsBody.children, tr) : -1;
+    }
+
+    /// Build an SVG sparkline of a metric's per-second rate history, scaled to its observed maximum.
+    /// At natural resolution the width attribute makes it one sample per pixel; in `fit` mode a CSS
+    /// width of 100% stretches the same viewBox to the cell (preserveAspectRatio="none"). The 1px
+    /// line is kept crisp with a non-scaling stroke. Zero samples are skipped (the line breaks over
+    /// them). Each fragment is drawn in the color tier of its own sample, so the trace changes color
+    /// with the rate over time (matching the rate column), rather than being one flat color.
+    _sparklineSVG(history, valueType, maxRate)
+    {
+        const n = history.length;
+        if (n < 2) return '';
+        const H = 16;
+        const scale = maxRate > 0 ? maxRate : Math.max(...history, 1);
+        const y = v => (H - H * Math.min(1, v / scale)).toFixed(2);
+        /// One colored <path> per run of consecutive segments sharing a tier (a segment's tier is
+        /// that of its right-hand sample); a single-sample run becomes a dot (round cap).
+        const seg = (a, b, tier) =>
+        {
+            let d = `M${a},${y(history[a])}`;
+            for (let k = a + 1; k <= b; ++k) d += `L${k},${y(history[k])}`;
+            if (a === b) d += `L${a},${y(history[a])}`;
+            return `<path vector-effect="non-scaling-stroke" style="stroke:var(--metric-c${tier})" d="${d}"/>`;
+        };
+        let out = '';
+        let i = 0;
+        while (i < n)
+        {
+            if (!(history[i] > 0)) { ++i; continue; }
+            let end = i;
+            while (end < n && history[end] > 0) ++end;   /// run is [i, end)
+            if (end - i === 1)
+            {
+                out += seg(i, i, metricRateTier(valueType, history[i], maxRate));
+            }
+            else
+            {
+                let start = i;
+                let tier = metricRateTier(valueType, history[i + 1], maxRate);
+                for (let k = i + 2; k < end; ++k)
+                {
+                    const t = metricRateTier(valueType, history[k], maxRate);
+                    if (t !== tier) { out += seg(start, k - 1, tier); start = k - 1; tier = t; }
+                }
+                out += seg(start, end - 1, tier);
+            }
+            i = end;
+        }
+        if (!out) return '';
+        return `<svg width="${n - 1}" height="${H}" viewBox="0 0 ${n - 1} ${H}" preserveAspectRatio="none">`
+            + `<g fill="none" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${out}</g></svg>`;
     }
 
     updateRaw(data)
@@ -4141,13 +4666,12 @@ resultEl.addEventListener('query-progress', (e) => {
     progressEl.updateText(resultEl.rowCount, elapsed_ns, resultEl.incompleteResult);
 });
 
-/// The Logs toggle lives in the progress line; apply its state to every result element on the page
-/// (the single result, or one per statement in multi-query mode), switching them between the query
-/// result and the streamed server logs.
-progressEl.addEventListener('toggle-logs', (e) => {
-    const view = e.detail.logs ? 'logs' : 'result';
+/// The Logs and Metrics toggles live in the progress line; apply the selected view to every result
+/// element on the page (the single result, or one per statement in multi-query mode), switching
+/// them between the query result, the streamed server logs, and the extended profile-event metrics.
+progressEl.addEventListener('set-view', (e) => {
     for (const el of document.querySelectorAll('query-result'))
-        el.showView(view);
+        el.showView(e.detail.view);
 });
 
 if (url_elem.value == '') {
@@ -5145,11 +5669,16 @@ function makeEventStreamHandler(targetResultEl, options = {})
         }
         else if (name === 'profile_events')
         {
-            if (!options.resourceMeter) return;
             const events = [];
             for (const line of dataLines)
                 if (line) events.push(JSON.parse(line));
-            if (events.length) options.resourceMeter(events);
+            if (events.length)
+            {
+                /// Feed the extended metrics table (the Metrics view) and, when running live, the
+                /// realtime resource meters in the progress line.
+                targetResultEl.updateMetrics(events);
+                if (options.resourceMeter) options.resourceMeter(events);
+            }
         }
         else if (name === 'exception')
         {
@@ -5187,6 +5716,8 @@ function renderEventStreamText(text, targetResultEl, rawText)
     const handleEvent = makeEventStreamHandler(targetResultEl, { rawText });
     for (const block of text.split('\n\n'))
         dispatchEventStreamBlock(block, handleEvent);
+    /// The whole (already-finished) stream has been replayed: show the metric totals.
+    targetResultEl.finalizeMetrics();
 }
 
 async function readEventStream(response, targetResultEl, abortController, posted_request_num, rawText, base64, imageMime)
@@ -5232,6 +5763,7 @@ async function readEventStream(response, targetResultEl, abortController, posted
             if (stop)
             {
                 abortController.abort();
+                targetResultEl.finalizeMetrics();
                 return { reply };
             }
         }
@@ -5241,6 +5773,9 @@ async function readEventStream(response, targetResultEl, abortController, posted
 
     /// Render the collected binary payload (image or raw text) once the stream is complete.
     const is_image = binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
+
+    /// The stream is complete: switch the metrics table to totals / query-average rates.
+    targetResultEl.finalizeMetrics();
 
     return { reply, is_image };
 }
@@ -7091,9 +7626,13 @@ function clear()
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
+    if (!isFinite(number)) number = 0;
     const k = 1000;
-    const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
-    const unit = units[i];
+    let i = number ? Math.floor(Math.log(Math.abs(number)) / Math.log(k)) : 0;
+    /// Clamp the unit index to the available units, so a value larger than the biggest unit is shown
+    /// in that unit rather than producing a stray "undefined" suffix (e.g. a huge per-second rate).
+    i = Math.min(Math.max(i, 0), units.length - 1);
+    const unit = units[i] || '';
     const dm = unit ? decimals : 0;
     return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
 }
@@ -7105,9 +7644,71 @@ function formatReadableBytes(bytes) {
 }
 
 function formatReadableRows(rows) {
-    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+    const units = ['', ' K', ' M', ' G', ' T', ' P'];
 
     return formatReadable(rows, 2, units);
+}
+
+/// Format a duration given in nanoseconds as ns / µs / ms / s, like clickhouse-client's
+/// formatReadableTime (used for the time-based profile-event metrics).
+function formatReadableTime(ns) {
+    if (ns < 1e3) return ns.toFixed(0) + ' ns';
+    if (ns < 1e6) return (ns / 1e3).toFixed(2) + ' µs';
+    if (ns < 1e9) return (ns / 1e6).toFixed(2) + ' ms';
+    return (ns / 1e9).toFixed(2) + ' s';
+}
+
+/// Infer a profile-event's value type from its name. The Web UI has no compiled ProfileEvents
+/// metadata (unlike clickhouse-client, which calls getValueType), so this mirrors the naming
+/// convention used by the events: a `*Bytes` suffix is bytes, `*Microseconds`/`*Milliseconds`/
+/// `*Nanoseconds` are durations, everything else is a plain count.
+function metricValueType(name) {
+    if (name.endsWith('Microseconds')) return 'us';
+    if (name.endsWith('Milliseconds')) return 'ms';
+    if (name.endsWith('Nanoseconds')) return 'ns';
+    /// `*Bytes` and `*Chars` counters and the memory trackers (MemoryTrackerUsage/PeakUsage) are
+    /// sizes (`*Chars` events, e.g. OSReadChars, count bytes of I/O).
+    if (name.endsWith('Bytes') || name.endsWith('Chars') || name.includes('Memory')) return 'bytes';
+    return 'number';
+}
+
+/// Format a metric value (or a per-second rate) according to its inferred value type.
+function formatMetricValue(valueType, value) {
+    switch (valueType) {
+        case 'bytes': return formatReadableBytes(value).trim();
+        case 'ns': return formatReadableTime(value);
+        case 'us': return formatReadableTime(value * 1e3);
+        case 'ms': return formatReadableTime(value * 1e6);
+        default: return formatReadableRows(value).trim();
+    }
+}
+
+/// Number of thresholds not greater than `value` (equivalent to C++ std::upper_bound - begin over a
+/// sorted array): used to pick a color tier from a threshold list.
+function _tierIndex(thresholds, value) {
+    let i = 0;
+    while (i < thresholds.length && thresholds[i] <= value) ++i;
+    return i;
+}
+
+/// Choose a color tier (0..6, see the --metric-cN variables) for a per-second rate, mirroring the
+/// clickhouse-client progress table's setColorFor*Progress: bytes and time metrics use absolute
+/// thresholds, plain counts are colored relative to that metric's own historical maximum rate.
+function metricRateTier(valueType, rate, maxRate) {
+    if (!(rate > 0)) return 0;
+    if (valueType === 'bytes') {
+        const MB = 1024 * 1024;
+        /// 1MB, 100MB, 1GB, 10GB, 100GB, 1TB per second -> 7 tiers.
+        return _tierIndex([MB, 100 * MB, 1000 * MB, 10000 * MB, 100000 * MB, 1000000 * MB], rate);
+    }
+    if (valueType === 'ns' || valueType === 'us' || valueType === 'ms') {
+        /// Time units in one second, so the thresholds are fractions of "1s of time per second".
+        const units = valueType === 'ms' ? 1e3 : valueType === 'us' ? 1e6 : 1e9;
+        return [0, 1, 2, 3, 5][_tierIndex([0.001 * units, 0.01 * units, 0.1 * units, 1.0 * units], rate)];
+    }
+    /// Plain counts: relative to the metric's own peak rate (no meaningful absolute scale).
+    if (!(maxRate > 0)) return 0;
+    return [0, 1, 2, 3, 5][_tierIndex([0.05, 0.20, 0.80, 0.95], rate / maxRate)];
 }
 
 /* Clicking outside data cells deactivates the selected cell */
