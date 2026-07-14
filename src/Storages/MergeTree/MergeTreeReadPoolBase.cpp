@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/ColumnsCache.h>
@@ -410,6 +411,19 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
 
     const auto budget = getContext()->getColumnsCacheWriteBudget();
     if (!budget || budget->writes_disabled.load(std::memory_order_relaxed))
+        return;
+
+    /// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`:
+    /// only wide parts of a table with a non-nil UUID that are not projection parts ever
+    /// write to the shared columns cache (compact parts use a reader that never writes to
+    /// it; projection parts and nil-UUID tables are rejected there as well). Charging the
+    /// per-query write budget for parts that can never be cached would let a large
+    /// uncacheable scan latch `writes_disabled` and suppress cache writes for later
+    /// eligible wide parts of a mixed-format or mixed-database query.
+    const auto & data_part = *part_with_ranges.data_part;
+    if (data_part.getType() != MergeTreeDataPartType::Wide
+        || data_part.isProjectionPart()
+        || data_part.storage.getStorageID().uuid == UUIDHelpers::Nil)
         return;
 
     /// Columns read from the base part: result columns plus columns required for
