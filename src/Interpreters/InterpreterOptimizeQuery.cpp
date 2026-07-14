@@ -42,7 +42,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
@@ -105,9 +105,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         merge_tree_data->optimizeDryRun(part_names, metadata_snapshot, ast.deduplicate, column_names, ast.cleanup, getContext());
         return {};
     }
-
-    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
-        snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};

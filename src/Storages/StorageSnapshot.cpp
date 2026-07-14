@@ -68,18 +68,14 @@ StorageSnapshot::StorageSnapshot(
 {
 }
 
-StorageSnapshot::StorageSnapshot(
-    std::shared_ptr<StorageSnapshot> && snapshot,
-    const TableExpressionModifiers & modifiers)
-    : storage(snapshot->storage)
-    , metadata(extendMetadataWithModifiers(snapshot->metadata, modifiers))
-    , data(std::move(snapshot->data))
-{
-}
-
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::cloneWithModifiers(const TableExpressionModifiers & modifiers) const
+{
+    return std::make_shared<StorageSnapshot>(storage, extendMetadataWithModifiers(metadata, modifiers), data);
 }
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const

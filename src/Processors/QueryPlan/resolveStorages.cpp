@@ -189,7 +189,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     if (select_query_info.table_expression_modifiers)
-        snapshot = std::make_shared<StorageSnapshot>(std::move(snapshot), *select_query_info.table_expression_modifiers);
+        snapshot = snapshot->cloneWithModifiers(*select_query_info.table_expression_modifiers);
 
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

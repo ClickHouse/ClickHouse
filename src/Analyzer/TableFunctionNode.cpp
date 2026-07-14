@@ -41,7 +41,7 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
     if (table_expression_modifiers)
-        storage_snapshot = std::make_shared<StorageSnapshot>(std::move(storage_snapshot), *table_expression_modifiers);
+        storage_snapshot = storage_snapshot->cloneWithModifiers(*table_expression_modifiers);
 }
 
 void TableFunctionNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
@@ -49,7 +49,7 @@ void TableFunctionNode::setTableExpressionModifiers(TableExpressionModifiers tab
     table_expression_modifiers = std::move(table_expression_modifiers_value);
 
     if (storage_snapshot)
-        storage_snapshot = std::make_shared<StorageSnapshot>(std::move(storage_snapshot), *table_expression_modifiers);
+        storage_snapshot = storage_snapshot->cloneWithModifiers(*table_expression_modifiers);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const
