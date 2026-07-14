@@ -51,6 +51,9 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     std::function<void()> check_cancellation_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
+    /// Keep the shared queue big enough to feed every worker with stealable work, but bounded (independent
+    /// of the listing size): the bulk of a wide walk lives on the workers' private depth-first frontiers.
+    , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
@@ -73,6 +76,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     root.use_delimiter = true;
     ranges_to_list.push_back(std::move(root));
     outstanding_ranges = 1;
+    peak_outstanding_ranges = 1;
 }
 
 ObjectStorageParallelListingIterator::~ObjectStorageParallelListingIterator()
@@ -115,17 +119,43 @@ void ObjectStorageParallelListingIterator::maybeSpawnWorkers(std::unique_lock<st
     }
 }
 
+void ObjectStorageParallelListingIterator::donateLocked(
+    std::deque<ListRange> & local_frontier, std::unique_lock<std::mutex> & lock)
+{
+    /// Hand the shallowest ranges of this worker's private frontier to the shared queue so idle workers can
+    /// steal them, keeping the shared queue populated up to (but never past) its cap. The worker keeps the
+    /// deepest ranges for itself, so the overall walk stays depth-first and the pending-range frontier stays
+    /// bounded by the active parallelism and the tree depth rather than the total directory count.
+    bool donated = false;
+    while (!local_frontier.empty() && ranges_to_list.size() < max_pending_ranges)
+    {
+        ranges_to_list.push_back(std::move(local_frontier.front()));
+        local_frontier.pop_front();
+        donated = true;
+    }
+    if (donated)
+    {
+        /// Grow the pool to match the shared fan-out (bounded by `num_threads`) before waking workers.
+        maybeSpawnWorkers(lock);
+        work_available.notify_all();
+    }
+}
+
 void ObjectStorageParallelListingIterator::enqueueLocked(
-    std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> & lock)
+    std::vector<ListRange> & new_ranges,
+    RelativePathsWithMetadata & batch,
+    std::deque<ListRange> & local_frontier,
+    std::unique_lock<std::mutex> & lock)
 {
     if (!new_ranges.empty())
     {
         outstanding_ranges += new_ranges.size();
+        peak_outstanding_ranges = std::max(peak_outstanding_ranges, outstanding_ranges);
+        /// Keep new work on this worker's private frontier by default and only donate the shallowest of it
+        /// to the shared queue: this is what bounds the shared queue and keeps the walk depth-first.
         for (auto & r : new_ranges)
-            ranges_to_list.push_back(std::move(r));
-        /// Grow the pool to match the new fan-out (bounded by `num_threads`) before waking workers.
-        maybeSpawnWorkers(lock);
-        work_available.notify_all();
+            local_frontier.push_back(std::move(r));
+        donateLocked(local_frontier, lock);
     }
     if (!batch.empty())
     {
@@ -143,21 +173,36 @@ void ObjectStorageParallelListingIterator::worker()
     /// Set the name explicitly as well: the switcher sets no name when there is no thread group (tests).
     setThreadName(ThreadName::S3_LIST_POOL);
 
+    /// This worker's private depth-first frontier. Ranges it discovers are pushed here and walked deepest
+    /// first; only the shallowest are donated to the shared queue (see `donateLocked`). This is what keeps
+    /// the pending-range frontier bounded instead of breadth-first `O(total_directories)`.
+    std::deque<ListRange> local_frontier;
+
     while (true)
     {
         ListRange range;
         {
             std::unique_lock lock(mutex);
-            ++idle_workers;
-            work_available.wait(lock, [this] { return !ranges_to_list.empty() || finished || stop; });
-            --idle_workers;
             if (stop || finished)
                 return;
-            range = std::move(ranges_to_list.front());
-            ranges_to_list.pop_front();
+            if (local_frontier.empty())
+            {
+                /// Nothing of our own left: wait for (and steal) a range from the shared queue.
+                ++idle_workers;
+                work_available.wait(lock, [this] { return !ranges_to_list.empty() || finished || stop; });
+                --idle_workers;
+                if (stop || finished)
+                    return;
+                local_frontier.push_back(std::move(ranges_to_list.back()));
+                ranges_to_list.pop_back();
+            }
+            /// Depth-first: take the deepest range we are carrying, so we descend into a subtree before
+            /// fanning out its siblings (the siblings, if any, were donated to the shared queue).
+            range = std::move(local_frontier.back());
+            local_frontier.pop_back();
         }
 
-        if (!listRange(range))
+        if (!listRange(range, local_frontier))
             return; /// An exception was stored and `finished` was set; stop the walk.
 
         std::unique_lock lock(mutex);
@@ -171,6 +216,9 @@ void ObjectStorageParallelListingIterator::worker()
             space_available.notify_all();
             return;
         }
+        /// A range finished, so the shared queue may have room now: top it back up from our private
+        /// frontier so idle workers keep finding work to steal.
+        donateLocked(local_frontier, lock);
     }
 }
 
@@ -273,7 +321,7 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
     return false;
 }
 
-bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
+bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, std::deque<ListRange> & local_frontier)
 {
     const std::string delimiter = range.use_delimiter ? "/" : "";
     std::string continuation_token;
@@ -371,7 +419,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
                 std::unique_lock lock(mutex);
                 if (stop || finished)
                     return true;
-                enqueueLocked(follow_up, batch, lock);
+                enqueueLocked(follow_up, batch, local_frontier, lock);
             }
 
             if (reached_end || !result.is_truncated || !keep_paginating)
@@ -515,6 +563,12 @@ std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::g
 size_t ObjectStorageParallelListingIterator::getAccumulatedSize() const
 {
     return accumulated_size.load(std::memory_order_relaxed);
+}
+
+size_t ObjectStorageParallelListingIterator::getPeakOutstandingRanges() const
+{
+    std::lock_guard lock(mutex);
+    return peak_outstanding_ranges;
 }
 
 }

@@ -45,6 +45,18 @@ namespace DB
 /// with the global-pool-backed `ThreadPool`, would otherwise be able to starve the server for a tiny
 /// listing); a wide tree still grows the pool up to `num_threads` as sub-directories are discovered.
 ///
+/// The walk is depth-first with a bounded frontier. Each worker keeps the sub-directories it discovers on
+/// its own private stack and descends into them, handing off only the shallowest ones to a small shared
+/// queue (capped at `max_pending_ranges`) for idle workers to steal. This bounds the number of pending
+/// ranges to `O(num_threads * tree_depth * per-level_fan-out)` rather than the breadth-first
+/// `O(total_directories)`: a wide hierarchical layout (e.g. `year=*/month=*/day=*/file.csv`) whose upper
+/// pages return only common prefixes — and so never trip the buffered-object backpressure, since they
+/// produce no leaf objects for the consumer to drain — no longer lets the frontier grow with the total
+/// directory count and burn per-query memory unrelated to `s3_list_object_keys_size`. The frontier is
+/// bounded without ever blocking a producer on it: because the pending ranges are consumed only by the
+/// same worker pool (unlike buffered objects, which an external consumer drains), blocking a producer on
+/// the frontier size could deadlock, so overflow is carried depth-first instead of waited on.
+///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
@@ -94,6 +106,12 @@ public:
     std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override;
     size_t getAccumulatedSize() const override;
 
+    /// For tests/observability: the high-water mark of the number of pending (created but not yet fully
+    /// listed) ranges. Depth-first walking keeps this bounded by the active parallelism and the tree depth
+    /// rather than the total number of directories, which is what stops a wide hierarchical layout from
+    /// growing the listing frontier — and thus per-query memory — without limit.
+    size_t getPeakOutstandingRanges() const;
+
 private:
     /// A half-open keyspace range `(start_after, end)` of keys under `prefix` left to list.
     struct ListRange
@@ -109,9 +127,11 @@ private:
     };
 
     void worker();
-    /// Lists one range completely (paginating, splitting flat sub-trees). Returns false if an exception
-    /// was stored and the walk must stop.
-    bool listRange(const ListRange & range);
+    /// Lists one range completely (paginating, splitting flat sub-trees). Sub-directories it discovers are
+    /// pushed onto this worker's private `local_frontier` (from which they are walked depth-first and, for
+    /// the shallowest of them, donated to the shared queue). Returns false if an exception was stored and
+    /// the walk must stop.
+    bool listRange(const ListRange & range, std::deque<ListRange> & local_frontier);
     /// Tiles `(last_key, range.end)` into contiguous sub-ranges using boundaries derived from the byte
     /// alphabet of `sample`. Returns empty if the range cannot be usefully split (caller paginates).
     std::vector<ListRange> splitFlatRange(const ListRange & range, const std::string & last_key, const RelativePathsWithMetadata & sample) const;
@@ -127,11 +147,23 @@ private:
     /// pool grows on demand instead of eagerly reserving `num_threads` workers up front. Requires lock.
     void maybeSpawnWorkers(std::unique_lock<std::mutex> & lock);
     void advanceLocked(std::unique_lock<std::mutex> & lock);
-    /// Enqueue ranges and emit a batch atomically; updates the outstanding-range counter. Requires lock.
-    void enqueueLocked(std::vector<ListRange> & new_ranges, RelativePathsWithMetadata & batch, std::unique_lock<std::mutex> & lock);
+    /// Account newly discovered ranges (updating the outstanding-range counter) onto `local_frontier`, emit
+    /// a batch, and donate the shallowest local ranges to the shared queue. Requires lock.
+    void enqueueLocked(
+        std::vector<ListRange> & new_ranges,
+        RelativePathsWithMetadata & batch,
+        std::deque<ListRange> & local_frontier,
+        std::unique_lock<std::mutex> & lock);
+    /// Move the shallowest ranges of a worker's `local_frontier` into the shared queue (bounded by
+    /// `max_pending_ranges`) so idle workers can steal them, keeping the walk depth-first. Requires lock.
+    void donateLocked(std::deque<ListRange> & local_frontier, std::unique_lock<std::mutex> & lock);
 
     const size_t num_threads;
     const size_t max_buffered_objects;
+    /// Cap on the shared pending-range queue. Discovered ranges beyond it stay on the discovering worker's
+    /// private frontier (walked depth-first), so the shared queue never grows without limit; it is sized to
+    /// keep every worker fed with stealable work while staying small.
+    const size_t max_pending_ranges;
     const ListLevelFunction list_level;
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;
@@ -149,8 +181,15 @@ private:
     std::condition_variable result_available;
     std::condition_variable space_available;
 
+    /// The shared, capped frontier of ranges available for any idle worker to pick up (workers also keep a
+    /// larger private depth-first frontier of their own). Bounded by `max_pending_ranges`.
     std::deque<ListRange> ranges_to_list;
+    /// Ranges created but not yet fully listed, across the shared queue, every worker's private frontier and
+    /// the ranges being listed right now. Reaches zero exactly when the whole walk is done.
     size_t outstanding_ranges = 0;
+    /// High-water mark of `outstanding_ranges`; a proxy for the peak pending-range memory. See
+    /// `getPeakOutstandingRanges`.
+    size_t peak_outstanding_ranges = 0;
 
     std::deque<RelativePathsWithMetadata> ready_batches;
     size_t buffered_objects = 0;

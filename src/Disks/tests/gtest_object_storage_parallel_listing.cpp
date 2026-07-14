@@ -385,6 +385,43 @@ TEST(ObjectStorageParallelListing, HierarchicalTree)
     assertCompleteForAllParallelism(s3, "root/", expectedUnder(s3, "root/"));
 }
 
+TEST(ObjectStorageParallelListing, PendingRangeFrontierStaysBoundedOnWideTree)
+{
+    /// Regression test: a wide, deep hierarchical layout whose interior pages return only common prefixes
+    /// (no leaf objects until the deepest level) must not let the pending-range frontier grow with the total
+    /// directory count. The buffered-object backpressure never engages on those directory-only pages (there
+    /// are no leaf objects for the consumer to drain), so a breadth-first walk would accumulate one pending
+    /// range per directory — here ~8000 — and burn per-query memory unrelated to `s3_list_object_keys_size`.
+    /// The depth-first walk keeps the frontier bounded by the active parallelism and the tree depth instead.
+    FakeS3 s3;
+    s3.page_size = 100;
+    constexpr int width = 20; /// 20 x 20 x 20 leaf directories, one file each.
+    for (int a = 0; a < width; ++a)
+        for (int b = 0; b < width; ++b)
+            for (int c = 0; c < width; ++c)
+                s3.add(fmt::format("t/a={:02}/b={:02}/c={:02}/f.dat", a, b, c));
+    s3.finalize();
+
+    /// 20 + 400 + 8000 = 8420 directories in total; a breadth-first walk would reach ~8000 pending ranges.
+    const size_t total_directories = width + (width * width) + (width * width * width);
+
+    for (size_t threads : {2, 8, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "t/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expectedUnder(s3, "t/")) << "threads=" << threads;
+
+        /// The frontier stays far below the total directory count (bounded by ~threads * depth * fan-out),
+        /// not the O(total_directories) a breadth-first walk would reach.
+        const size_t peak = iterator.getPeakOutstandingRanges();
+        EXPECT_LT(peak, total_directories / 3)
+            << "pending-range frontier grew to " << peak << " of " << total_directories
+            << " directories (threads=" << threads << ")";
+    }
+}
+
 TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)
 {
     /// A '/'-partitioned tree where each leaf directory is itself a big flat directory (needs both
