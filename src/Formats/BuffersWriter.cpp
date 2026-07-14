@@ -1,4 +1,6 @@
 #include <Formats/BuffersWriter.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Formats/NativeWriter.h>
 
 #include <IO/WriteBuffer.h>
@@ -36,7 +38,12 @@ void BuffersWriter::write(const Block & block)
     {
         const auto & column = block.safeGetByPosition(i);
 
-        SerializationPtr serialization = column.type->getDefaultSerialization();
+        /// Buffers uses the same per-column representation as Native, so the serialization must
+        /// follow the same revision-dependent choice (for example, the size-stream String layout).
+        /// Unlike Native, there is no per-column serialization kind on the wire, so only the
+        /// type-level serialization versions apply — never column-derived kinds such as Sparse.
+        SerializationPtr serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations(
+            format_settings.client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
         WriteBufferFromOwnString buffer;
 

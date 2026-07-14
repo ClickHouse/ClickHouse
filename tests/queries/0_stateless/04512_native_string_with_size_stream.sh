@@ -51,6 +51,22 @@ for version in "" "&client_protocol_version=54487"; do
         $CLICKHOUSE_CLIENT -q "SELECT count() = 100 AND groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) = (SELECT groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) FROM t_04512_rt) FROM t_04512_rt2"
     done
 done
+# The Buffers format uses the same per-column representation as Native and follows the same
+# revision-dependent encodings: per-value varints by default, the size-stream layout at a raised
+# protocol version (framing: num_columns, num_rows, per-column byte size, column bytes).
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n'
+echo
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n'
+echo
+
+for version in "" "&client_protocol_version=54487"; do
+    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Buffers" > "${CLICKHOUSE_TMP}/04512_rt.buffers"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Buffers" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.buffers"
+    $CLICKHOUSE_CLIENT -q "SELECT count() = 100 AND groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) = (SELECT groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) FROM t_04512_rt) FROM t_04512_rt2"
+done
+rm -f "${CLICKHOUSE_TMP}/04512_rt.buffers"
+
 # A corrupted size stream is reported as a regular error (INCORRECT_DATA), not as a logical error
 # that aborts debug and sanitizer builds.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+'abcdefgh'+AS+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
