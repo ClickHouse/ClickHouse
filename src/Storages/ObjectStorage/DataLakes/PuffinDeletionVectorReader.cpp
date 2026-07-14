@@ -5,6 +5,8 @@
 #include <Common/ProfileEvents.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileSize.h>
+#include <base/arithmeticOverflow.h>
 
 #include <roaring/roaring.hh>
 
@@ -161,6 +163,22 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
 
 }
 
+void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std::string_view context)
+{
+    if (offset < 0 || length < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
+
+    if (offset > static_cast<Int64>(file_size) || length > static_cast<Int64>(file_size))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
+
+    Int64 end = 0;
+    if (common::addOverflow(offset, length, end))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
+
+    if (static_cast<UInt64>(end) > file_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
+}
+
 std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes)
 {
     const std::string_view vector_bytes = extractDeletionVectorPayload(blob_bytes);
@@ -171,7 +189,9 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
 {
     ScopedPuffinFileReadProfileEvent profile_event;
 
-    if (offset < 0 || length < 0)
+    if (auto file_size = tryGetFileSizeFromReadBuffer(file))
+        validatePuffinBlobBounds(offset, length, *file_size);
+    else if (offset < 0 || length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin deletion vector offset {} or length {}", offset, length);
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&file);
