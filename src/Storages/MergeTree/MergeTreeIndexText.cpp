@@ -1541,9 +1541,13 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// Positional parts persist the positions codec (WithPositionsCodec) so the reader decodes with the format actually written.
+    /// Only pfor parts persist a codec byte (WithPositionsCodec); raw positional parts keep the older
+    /// WithPositions header so a table on the default raw layout stays readable by servers that predate the codec byte.
+    const auto positions_encoding = TextIndexPositionCodec::parseEncoding(params.positions_codec);
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositionsCodec : TextIndexHeader::Version::WithCodec);
+        !params.positions ? TextIndexHeader::Version::WithCodec
+        : positions_encoding == TextIndexPositionCodec::Encoding::Pfor ? TextIndexHeader::Version::WithPositionsCodec
+                                                                       : TextIndexHeader::Version::WithPositions);
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
@@ -1558,7 +1562,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
 
     TextIndexSerialization::serializeHeader(
         sparse_index_block, posting_list_codec_type, serialization_version, params.positions,
-        static_cast<UInt8>(TextIndexPositionCodec::parseEncoding(params.positions_codec)), index_stream->compressed_hashing);
+        static_cast<UInt8>(positions_encoding), index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)

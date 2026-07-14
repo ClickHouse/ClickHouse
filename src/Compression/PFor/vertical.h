@@ -13,6 +13,7 @@
 
 #include <Compression/PFor/common.h>
 
+#include <bit>
 #include <cstring>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -27,6 +28,30 @@ namespace DB::PFor::detail
 {
 
 using v4u32 = uint32_t __attribute__((vector_size(16)));
+
+// The packed stream is canonical little-endian (matching bitpack.h), but a vector store/load is
+// native-endian, so byte-swap each 32-bit lane on big-endian targets. On little-endian this is the
+// identity and folds back to a plain 16-byte move, leaving the fast path unchanged.
+inline ALWAYS_INLINE v4u32 bswapLanes(v4u32 v) noexcept
+{
+    return v4u32{__builtin_bswap32(v[0]), __builtin_bswap32(v[1]), __builtin_bswap32(v[2]), __builtin_bswap32(v[3])};
+}
+
+inline ALWAYS_INLINE void storeStripeLE(uint8_t * p, v4u32 v) noexcept
+{
+    if constexpr (std::endian::native == std::endian::big)
+        v = bswapLanes(v);
+    std::memcpy(p, &v, 16);
+}
+
+inline ALWAYS_INLINE v4u32 loadStripeLE(const uint8_t * p) noexcept
+{
+    v4u32 v;
+    std::memcpy(&v, p, 16);
+    if constexpr (std::endian::native == std::endian::big)
+        v = bswapLanes(v);
+    return v;
+}
 
 inline ALWAYS_INLINE void packVertical32(const uint32_t * r, unsigned b, uint8_t * out) noexcept
 {
@@ -44,7 +69,7 @@ inline ALWAYS_INLINE void packVertical32(const uint32_t * r, unsigned b, uint8_t
         const unsigned nb = bits + b;
         if (nb >= 32)
         {
-            std::memcpy(p, &acc, 16);
+            storeStripeLE(p, acc);
             p += 16;
             if (nb == 32)
             {
@@ -82,8 +107,7 @@ inline ALWAYS_INLINE void unpackVertical32(const uint8_t * in, unsigned b, uint3
         }
         else
         {
-            v4u32 w;
-            std::memcpy(&w, p, 16);
+            v4u32 w = loadStripeLE(p);
             p += 16;
             outv = (acc | (w << bits)) & mask; // low `bits` from acc, the rest from w
             acc = w >> (b - bits); // b - bits in [1,31]
@@ -146,8 +170,7 @@ inline ALWAYS_INLINE void unpackVertical32FusedDelta(
         }
         else
         {
-            v4u32 w;
-            std::memcpy(&w, p, 16);
+            v4u32 w = loadStripeLE(p);
             p += 16;
             v = (acc | (w << bits)) & mask;
             acc = w >> (b - bits);
