@@ -126,7 +126,10 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         /// nested buffer as its own, so the block is effectively clamped to this size. Size the
         /// buffer so it can hold a full `primary_key_compress_block_size` block; otherwise a
         /// NONE-coded index would be re-chunked into smaller frames, ignoring the setting (the
-        /// same pitfall that keeps the marks writers off this path). Keep a `DBMS_DEFAULT_BUFFER_SIZE`
+        /// same pitfall that keeps the marks writers off this path). The zero-copy path reserves
+        /// `COMPRESSED_BLOCK_PREFIX_SIZE` bytes for the checksum and header in front of the data,
+        /// so the buffer must be `primary_key_compress_block_size + COMPRESSED_BLOCK_PREFIX_SIZE`
+        /// to fit a full block instead of one prefix short. Keep a `DBMS_DEFAULT_BUFFER_SIZE`
         /// floor so small block sizes don't shrink the write buffer and multiply syscalls. This
         /// mirrors how the data stream sizes its file buffer from `max_compress_block_size`.
         /// Other codecs keep `DBMS_DEFAULT_BUFFER_SIZE`: `CompressedWriteBuffer` compresses into its
@@ -134,7 +137,9 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         /// (both sized to `primary_key_compress_block_size`) for no benefit.
         const bool index_uses_none_zero_copy = primary_key_compression_codec && primary_key_compression_codec->isNone();
         const size_t index_file_buffer_size = index_uses_none_zero_copy
-            ? std::max<size_t>(DBMS_DEFAULT_BUFFER_SIZE, settings.primary_key_compress_block_size)
+            ? std::max<size_t>(
+                  DBMS_DEFAULT_BUFFER_SIZE,
+                  settings.primary_key_compress_block_size + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE)
             : DBMS_DEFAULT_BUFFER_SIZE;
         index_file_stream = getDataPartStorage().writeFile(index_name, index_file_buffer_size, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <city.h>
+
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
@@ -13,6 +15,14 @@ namespace DB
 class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
+    /// Service bytes that precede the payload of every compressed block on disk: the checksum
+    /// followed by the compression header (method byte + compressed size + uncompressed size).
+    /// The zero-copy NONE path reserves this much room in front of the data inside `out`, so a
+    /// buffer that must hold a full block of `block_size` bytes has to be at least
+    /// `block_size + COMPRESSED_BLOCK_PREFIX_SIZE` bytes; otherwise the block is one prefix short.
+    static constexpr size_t COMPRESSED_BLOCK_PREFIX_SIZE
+        = sizeof(CityHash_v1_0_2::uint128) + ICompressionCodec::getHeaderSize();
+
     explicit CompressedWriteBuffer(
         WriteBuffer & out_,
         CompressionCodecPtr codec_ = nullptr,

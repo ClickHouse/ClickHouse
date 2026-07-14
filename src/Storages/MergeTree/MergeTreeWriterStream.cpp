@@ -309,7 +309,12 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     is_size_adaptive(packing.writer != nullptr && (!packing.data_name.empty() || !packing.marks_name.empty())),
-    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
+    /// The compressor below takes the zero-copy NONE path, which reserves COMPRESSED_BLOCK_PREFIX_SIZE
+    /// bytes for the checksum and header in front of the data inside this file buffer. Size the buffer
+    /// to `max_compress_block_size_ + COMPRESSED_BLOCK_PREFIX_SIZE` so the direct window can still hold
+    /// a full max_compress_block_size_ block; otherwise a NONE-coded block would flush one prefix short
+    /// of the configured size, splitting a frame that should have fit.
+    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_ + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     plain_hashing(*plain_file),
     /// This stream is the sole writer of plain_hashing, so the compressor may write NONE-coded data
     /// directly into the output buffer without copying (out_buffer_is_exclusive = true).

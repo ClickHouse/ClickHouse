@@ -19,11 +19,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/// Service bytes that precede the data of every compressed block on disk: the checksum followed
-/// by the compression header (method byte + compressed size + uncompressed size).
-static constexpr size_t COMPRESSED_BLOCK_PREFIX_SIZE
-    = sizeof(CityHash_v1_0_2::uint128) + ICompressionCodec::getHeaderSize();
-
 void CompressedWriteBuffer::setupBufferForNextBlock()
 {
     /** The NONE codec stores data verbatim, so there is no need to route it through a separate
