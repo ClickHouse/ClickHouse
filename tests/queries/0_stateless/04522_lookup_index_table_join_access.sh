@@ -50,7 +50,11 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 # otherwise make the fast path decline for an unrelated reason).
 
 client_opts="--user=${user}"
-join_settings="allow_experimental_lookup_index = 1, join_algorithm = 'direct,hash', max_rows_in_join = 0, max_bytes_in_join = 0, enable_parallel_replicas = 0, max_parallel_replicas = 1, serialize_query_plan = 0"
+# `enable_analyzer = 1` is required: the `table_join` LOOKUP INDEX fast path (and thus the
+# `DirectKeyValueJoin` plan assertion below) only exists in the analyzer, so the plan checks would
+# otherwise fail on the old-analyzer CI shard, matching the `SET enable_analyzer = 1` used by the
+# `.sql` lookup-index tests.
+join_settings="enable_analyzer = 1, allow_experimental_lookup_index = 1, join_algorithm = 'direct,hash', max_rows_in_join = 0, max_bytes_in_join = 0, enable_parallel_replicas = 0, max_parallel_replicas = 1, serialize_query_plan = 0"
 
 echo 'join of allowed columns succeeds (regular path):'
 ${CLICKHOUSE_CLIENT} ${client_opts} --query "
