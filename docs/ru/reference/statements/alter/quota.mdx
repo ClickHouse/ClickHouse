@@ -1,0 +1,45 @@
+---
+description: 'Документация по QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/alter/quota
+title: 'ALTER QUOTA'
+doc_type: 'reference'
+---
+
+Изменяет квоты.
+
+Синтаксис:
+
+```sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Ключи `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address` и `normalized_query_hash` соответствуют полям таблицы [system.quotas](/ru/reference/system-tables/quotas).
+
+Параметры `IPV4_PREFIX_BITS` и `IPV6_PREFIX_BITS` можно использовать только тогда, когда `KEYED BY` имеет значение `ip_address` или `forwarded_ip_address`. Они соответствуют полю таблицы [system.quotas](/ru/reference/system-tables/quotas).
+
+Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` соответствуют полям таблицы [system.quotas&#95;usage](/ru/reference/system-tables/quotas_usage).
+
+Предложение `ON CLUSTER` позволяет создавать квоты для кластера, см. [Distributed DDL](/ru/reference/statements/distributed-ddl).
+
+**Примеры**
+
+Ограничьте максимальное количество запросов для текущего пользователя до 123 за 15 месяцев:
+
+```sql
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+Для пользователя по умолчанию ограничьте максимальное время выполнения до половины секунды в течение 30 минут, а также максимальное количество запросов — до 321, а максимальное количество ошибок — до 10 за 5 кварталов:
+
+```sql
+ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```

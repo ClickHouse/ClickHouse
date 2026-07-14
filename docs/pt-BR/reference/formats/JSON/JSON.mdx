@@ -1,0 +1,118 @@
+---
+alias: []
+description: 'Documentação sobre o formato JSON'
+input_format: true
+keywords: ['JSON']
+output_format: true
+slug: /interfaces/formats/JSON
+title: 'JSON'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `JSON` lê e gera dados no formato JSON.
+
+O formato `JSON` retorna o seguinte:
+
+| Parâmetro                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta`                       | Nomes e tipos das colunas.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `data`                       | Tabelas de dados                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `rows`                       | O número total de linhas na saída.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `rows_before_limit_at_least` | A estimativa mínima do número de linhas que teria havido sem LIMIT. É retornado apenas se a consulta contiver LIMIT. Essa estimativa é calculada com base nos blocos de dados processados no pipeline de consulta antes da transformação LIMIT, mas eles podem acabar sendo descartados por essa transformação. Se os blocos nem sequer chegarem à transformação LIMIT no pipeline de consulta, eles não participam da estimativa. |
+| `statistics`                 | Estatísticas como `elapsed`, `rows_read`, `bytes_read`.                                                                                                                                                                                                                                                                                                                                                                            |
+| `totals`                     | Valores totais (ao usar WITH TOTALS).                                                                                                                                                                                                                                                                                                                                                                                              |
+| `extremes`                   | Valores extremos (quando `extremes` está definido como 1).                                                                                                                                                                                                                                                                                                                                                                         |
+
+O tipo `JSON` é compatível com JavaScript. Para garantir isso, alguns caracteres são escapados adicionalmente:
+
+* a barra `/` é escapada como `\/`
+* as quebras de linha alternativas `U+2028` e `U+2029`, que quebram alguns navegadores, são escapadas como `\uXXXX`.
+* caracteres de controle ASCII são escapados: backspace, avanço de página, quebra de linha, retorno de carro e tabulação horizontal são substituídos por `\b`, `\f`, `\n`, `\r`, `\t`, assim como os bytes restantes no intervalo 00-1F usando sequências `\uXXXX`.
+* sequências UTF-8 inválidas são substituídas pelo caractere de substituição � para que o texto de saída seja composto por sequências UTF-8 válidas.
+
+Para compatibilidade com JavaScript, os inteiros Int64 e UInt64 são colocados entre aspas duplas por padrão.
+Para remover as aspas, você pode definir o parâmetro de configuração [`output_format_json_quote_64bit_integers`](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers) como `0`.
+
+O ClickHouse oferece suporte a [NULL](/pt-BR/reference/syntax), que é exibido como `null` na saída JSON. Para habilitar os valores `+nan`, `-nan`, `+inf`, `-inf` na saída, defina [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats#output_format_json_quote_denormals) como `1`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Exemplo:
+
+```sql
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "num": 42,
+                        "str": "hello",
+                        "arr": [0,1]
+                },
+                {
+                        "num": 43,
+                        "str": "hello",
+                        "arr": [0,1,2]
+                },
+                {
+                        "num": 44,
+                        "str": "hello",
+                        "arr": [0,1,2,3]
+                }
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001137687,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+Para o formato de entrada JSON, se a configuração [`input_format_json_validate_types_from_metadata`](/pt-BR/reference/settings/formats#input_format_json_validate_types_from_metadata) estiver definida como `1`,
+os tipos presentes nos metadados dos dados de entrada serão comparados aos tipos das colunas correspondentes da tabela.
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* formato [JSONEachRow](/pt-BR/reference/formats/JSON/JSONEachRow)
+* configuração [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/pt-BR/reference/settings/formats#output_format_json_array_of_rows)

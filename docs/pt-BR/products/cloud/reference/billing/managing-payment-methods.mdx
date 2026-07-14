@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'Gerenciar métodos de pagamento'
+slug: /manage/manage/billing/managing-payment-methods
+title: 'Gerenciar métodos de pagamento'
+description: 'Gerencie assinaturas do marketplace e adicione um cartão de crédito de backup'
+keywords: ['cobrança']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este documento explica como gerenciar e atualizar a forma de cobrança da sua organização no ClickHouse Cloud, incluindo alternar entre cobrança por cartão de crédito e via marketplace, adicionar um cartão de crédito de backup e compartilhar uma assinatura do marketplace entre várias organizações.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você deve ter uma função Admin ou Billing na organização para atualizar as formas de pagamento.
+* As assinaturas do marketplace disponíveis para você são aquelas que estão ativas em outras organizações nas quais você tem uma função Admin ou Billing.
+* Para compartilhar uma assinatura do marketplace de outra organização, você deve ter uma função Admin ou Billing tanto na organização atual quanto na organização proprietária da assinatura do marketplace.
+* Todos os serviços da organização que você quer cobrar por meio de uma assinatura do marketplace devem estar no mesmo provedor de nuvem do marketplace (AWS, GCP ou Azure).
+
+<Note>
+  Você não pode compartilhar o cartão de crédito de outra organização.
+  Se a sua forma de pagamento atual for um cartão de crédito e você quiser atualizá-la, deverá informar os dados de um novo cartão.
+</Note>
+
+<div id="add-update-cc-payment-method">
+  ## Adicionar ou atualizar uma forma de pagamento com cartão de crédito
+</div>
+
+Se a sua organização é atualmente cobrada por cartão de crédito, você pode atualizar os dados do cartão na página Billing.
+
+<div id="steps-add-update">
+  ### Etapas para adicionar ou atualizar seu cartão de crédito
+</div>
+
+1. Acesse **Billing** no console do ClickHouse Cloud.
+2. Se quiser adicionar um cartão de crédito, no topo da página, clique no botão para **adicionar uma forma de pagamento**.
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="Adicionar uma forma de pagamento" size="lg" />
+
+3. Se quiser editar seu cartão de crédito, no topo da página, clique no botão para **editar seu cartão de crédito**.
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="Editar seu cartão de crédito" size="lg" />
+
+4. Em ambos os casos, siga as instruções para adicionar ou atualizar as informações do endereço de cobrança do seu cartão de crédito.
+
+<div id="configure-billing-to-existing-mp-sub">
+  ## Configure o faturamento de uma organização para uma assinatura existente do marketplace
+</div>
+
+Se você tiver várias organizações, poderá:
+
+* Mudar o faturamento de uma organização de cartão de crédito para uma assinatura do marketplace que já esteja ativa em uma de suas outras organizações.
+* Alterar a assinatura atual do marketplace de uma organização para outra usada por uma organização diferente.
+
+<div id="steps-switch-org-already-active">
+  ### Etapas para mudar uma organização do faturamento por cartão de crédito para uma assinatura do marketplace que já está ativa em uma de suas outras organizações
+</div>
+
+1. Acesse a página **Billing** no console do ClickHouse Cloud.
+2. Clique no ícone de edição ao lado de **forma de pagamento**.
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="Editar forma de pagamento" size="lg" />
+
+3. Na caixa de diálogo **Edit forma de pagamento**, você verá seu cartão de crédito atual listado como a forma de pagamento principal.
+4. Abaixo do cartão de crédito, são exibidas as assinaturas de marketplace elegíveis das suas outras organizações. Cada item mostra o tipo de marketplace (por exemplo, AWS Marketplace) e o nome da organização vinculada.
+5. Selecione a assinatura de marketplace para a qual deseja faturar o uso desta organização.
+6. Clique em **Update forma de pagamento** para confirmar.
+
+<div id="steps-switch-org-different-org">
+  ### Etapas para alterar a assinatura atual do marketplace de uma organização para outra usada por uma organização diferente
+</div>
+
+1. Acesse a página **Billing** no console do ClickHouse Cloud.
+2. Clique no ícone de edição ao lado de **forma de pagamento**.
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="Editar forma de pagamento" size="lg" />
+
+3. Na caixa de diálogo **Editar forma de pagamento**, você verá a assinatura atual do marketplace listada como forma de pagamento.
+4. Abaixo da assinatura atual do marketplace, são exibidas outras assinaturas de marketplace elegíveis das suas outras organizações. Cada item mostra o tipo de marketplace (por exemplo, AWS Marketplace) e o nome da organização vinculada.
+5. Selecione a nova assinatura do marketplace à qual você deseja cobrar o uso desta organização.
+6. Clique em **Atualizar forma de pagamento** para confirmar.
+
+<div id="add-backup-cc-to-marketplace-org">
+  ## Adicionando um cartão de crédito de backup a uma organização do marketplace
+</div>
+
+Se o método de pagamento principal da sua organização for uma assinatura do Marketplace, você poderá adicionar um cartão de crédito como forma de pagamento de backup. O cartão de backup será cobrado somente se não for possível cobrar o uso da assinatura do marketplace (por exemplo, se a assinatura for cancelada ou expirar).
+
+<Note>
+  O uso do ClickHouse Cloud exige que sua organização tenha pelo menos uma forma de cobrança ativa e válida configurada (seja uma assinatura do marketplace ou um cartão de crédito). Veja mais informações sobre conformidade de cobrança [aqui](/pt-BR/products/cloud/reference/billing/billing-compliance#billing-compliance).
+</Note>
+
+<div id="steps-add-backup-cc">
+  ### Etapas para adicionar um cartão de crédito de backup
+</div>
+
+1. Acesse a página **Billing** no console do ClickHouse Cloud.
+2. Na parte superior da página de billing, seu método de pagamento principal aparecerá como uma assinatura do Marketplace, e o método de pagamento de backup aparecerá como **None**.
+3. Clique no botão **add credit card** para definir um método de pagamento de backup.
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="Adicionar cartão de crédito de backup" size="lg" />
+
+4. Siga as instruções para adicionar ou atualizar os detalhes do endereço de cobrança do seu cartão de crédito. Após salvar, a página **Billing** mostrará o cartão de crédito de backup ao lado da assinatura principal do Marketplace.
+
+<Note>
+  Após configurar um cartão de crédito de backup, você também terá a opção de clicar no botão para editar seu cartão de crédito e defini-lo como método de pagamento principal.
+  No entanto, se fizer isso, seu cartão de crédito se tornará seu único método de pagamento da organização, e sua assinatura do Marketplace será removida completamente do ClickHouse Cloud.
+  Você precisará voltar à sua conta do marketplace para reconfigurá-la com base nas etapas da seção [&quot;Configure a cobrança do marketplace a partir do seu provedor de Cloud&quot;](#set-up-marketplace-billing-from-cp).
+</Note>
+
+<div id="set-up-marketplace-billing-from-cp">
+  ## Configure o faturamento do marketplace pelo seu provedor de nuvem
+</div>
+
+Você também pode configurar ou atualizar a assinatura do marketplace da sua organização diretamente no marketplace do provedor de nuvem, em vez de fazer isso pelo console do ClickHouse Cloud. Isso pode ser útil se você quiser vincular o faturamento da sua organização ClickHouse a uma nova assinatura em outra conta de faturamento do marketplace.
+
+Siga as instruções abaixo de acordo com o marketplace e o tipo de assinatura:
+
+* [AWS Marketplace PAYG](/pt-BR/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/pt-BR/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/pt-BR/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/pt-BR/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/pt-BR/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/pt-BR/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+Depois de concluir esse processo, o faturamento da organização selecionada ficará vinculado à nova assinatura do Marketplace, e a página de faturamento no console do ClickHouse Cloud refletirá essa atualização.
+
+<div id="support">
+  ## Suporte
+</div>
+
+Se você tiver qualquer problema, não hesite em [entrar em contato com nossa equipe de suporte](https://clickhouse.com/support/program).
+
+<div id="faqs">
+  ## Perguntas frequentes
+</div>
+
+<div id="what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle">
+  ### O que acontece com as minhas cobranças por uso se eu mudar o método de cobrança no meio do ciclo de faturamento?
+</div>
+
+Isso depende do sentido da mudança:
+
+Ao mudar do faturamento pelo Marketplace para faturamento com cartão de crédito: o uso desde o início do ciclo de faturamento até o momento da mudança é enviado ao Marketplace. O uso restante, do momento da mudança até o fim do ciclo de faturamento, é cobrado no cartão de crédito ao final do ciclo de faturamento.
+
+Ao mudar de cartão de crédito para faturamento pelo Marketplace: todo o uso ainda não faturado de todo o período de faturamento é enviado ao Marketplace.

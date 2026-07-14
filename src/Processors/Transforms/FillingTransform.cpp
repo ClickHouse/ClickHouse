@@ -198,13 +198,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         return false;
 
     if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_staleness.isNull())
-        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
 
     descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);

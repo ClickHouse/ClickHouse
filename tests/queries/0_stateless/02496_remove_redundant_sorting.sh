@@ -4,12 +4,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"

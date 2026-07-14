@@ -1,0 +1,239 @@
+---
+description: 'Substitui todas as linhas com a mesma chave primária (ou, mais precisamente, com
+  a mesma [chave de ordenação](/reference/engines/table-engines/mergetree-family/mergetree))
+  por uma única linha (dentro de uma única parte de dados) que armazena uma combinação
+  de estados de funções de agregação.'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'motor de tabela AggregatingMergeTree'
+doc_type: 'reference'
+---
+
+O motor herda de [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), alterando a lógica de mesclagem das partes de dados. O ClickHouse substitui todas as linhas com a mesma chave primária (ou, mais precisamente, com a mesma [chave de ordenação](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree)) por uma única linha (dentro de uma única parte de dados) que armazena uma combinação de estados de funções de agregação.
+
+Você pode usar tabelas `AggregatingMergeTree` para agregação incremental de dados, inclusive em visões materializadas agregadas.
+
+Você pode ver um exemplo de como usar o AggregatingMergeTree e funções de agregação no vídeo abaixo:
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Estados de agregação no ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+O motor processa todas as colunas com os seguintes tipos:
+
+* [`AggregateFunction`](/pt-BR/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/pt-BR/reference/data-types/simpleaggregatefunction)
+
+É apropriado usar `AggregatingMergeTree` se ele reduzir o número de linhas em várias ordens de grandeza.
+
+<div id="creating-a-table">
+  ## Criar uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+Para uma descrição dos parâmetros da requisição, consulte [descrição da requisição](/pt-BR/reference/statements/create/table).
+
+**Cláusulas da consulta**
+
+Ao criar uma tabela `AggregatingMergeTree`, são exigidas as mesmas [cláusulas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) que na criação de uma tabela `MergeTree`.
+
+<details markdown="1">
+  <summary>Método obsoleto de criação de tabela</summary>
+
+  <Note>
+    Não use este método em novos projetos e, se possível, migre os projetos antigos para o método descrito acima.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  Todos os parâmetros têm o mesmo significado que no `MergeTree`.
+</details>
+
+<div id="select-and-insert">
+  ## SELECT e INSERT
+</div>
+
+Para inserir dados, use a consulta [INSERT SELECT](/pt-BR/reference/statements/insert-into) com funções de agregação com o sufixo `-State`.
+Ao selecionar dados da tabela `AggregatingMergeTree`, use a cláusula `GROUP BY` e as mesmas funções de agregação usadas na inserção dos dados, mas com o sufixo `-Merge`.
+
+Nos resultados da consulta `SELECT`, os valores do tipo `AggregateFunction` têm uma representação binária específica da implementação em todos os formatos de saída do ClickHouse. Por exemplo, se você exportar os dados no formato `TabSeparated` com uma consulta `SELECT`, poderá carregar esse dump de volta com uma consulta `INSERT`.
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## Exemplo de visão materializada agregada
+</div>
+
+O exemplo a seguir pressupõe que você tenha um banco de dados chamado `test`. Crie-o caso ainda não exista, usando o comando abaixo:
+
+```sql
+CREATE DATABASE test;
+```
+
+Agora crie a tabela `test.visits` que contém os dados brutos:
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+Em seguida, você precisa de uma tabela `AggregatingMergeTree` que armazenará `AggregationFunction`s para controlar o número total de visitas e o número de usuários únicos.
+
+Crie uma visão materializada `AggregatingMergeTree` que monitora a tabela `test.visits` e usa o tipo [`AggregateFunction`](/pt-BR/reference/data-types/aggregatefunction):
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+Crie uma visão materializada que preenche `test.agg_visits` a partir de `test.visits`:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+Insira dados na tabela `test.visits`:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+Os dados são inseridos tanto em `test.visits` quanto em `test.agg_visits`.
+
+Para obter os dados agregados, execute uma consulta como `SELECT ... GROUP BY ...` na visão materializada `test.visits_mv`:
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+Adicione mais alguns registros em `test.visits`, mas desta vez use um timestamp diferente para um dos registros:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+Execute a consulta `SELECT` novamente, que retornará a seguinte saída:
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+Em alguns casos, pode ser interessante evitar a pré-agregação de linhas no momento da inserção para transferir o custo da agregação do momento de inserção para o momento do merge. Normalmente, é necessário incluir as colunas que não fazem parte da agregação na cláusula `GROUP BY` da definição da visão materializada para evitar um erro. No entanto, é possível utilizar a função [`initializeAggregation`](/pt-BR/reference/functions/regular-functions/other-functions#initializeAggregation) com a configuração `optimize_on_insert = 0` (habilitada por padrão) para atingir esse objetivo. Nesse caso, o uso de `GROUP BY` deixa de ser obrigatório:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  Ao usar `initializeAggregation`, um estado de agregação é criado para cada linha individual, sem agrupamento.
+  Cada linha de origem produz uma linha na visão materializada, e a agregação real acontece depois, quando o
+  `AggregatingMergeTree` mescla as partes. Isso só é verdadeiro se `optimize_on_insert = 0`.
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Agregação de elementos de Tuple
+</div>
+
+Quando a configuração `allow_tuple_element_aggregation` está habilitada, as colunas `Tuple` são achatadas recursivamente para que cada elemento folha participe da agregação de forma independente. Isso significa que as subcolunas `AggregateFunction` ou `SimpleAggregateFunction` dentro de uma `Tuple` são agregadas de acordo com suas respectivas funções, como se fossem colunas de nível superior.
+
+As subcolunas que pertencem a uma `Tuple` na chave de ordenação são excluídas da agregação. As subcolunas não agregadas são tratadas como colunas comuns (seu primeiro valor é mantido).
+
+<Note>
+  Essa configuração é imutável e deve ser especificada no momento da criação da tabela.
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits` é agregado usando `sum` (100 + 200 = 300), enquanto `unique_users` é agregado usando `max` (max(5, 8) = 8).
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

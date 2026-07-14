@@ -16,6 +16,7 @@
 -- primary_key_bytes_in_memory populated.
 
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_sparse_pk_trunc_isnull;
 DROP TABLE IF EXISTS t_full_pk_isnull;

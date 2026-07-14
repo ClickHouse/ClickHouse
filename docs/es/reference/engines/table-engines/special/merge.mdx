@@ -1,0 +1,122 @@
+---
+description: 'El motor `Merge` (no debe confundirse con `MergeTree`) no almacena
+  datos por sí mismo, sino que permite leer al mismo tiempo de cualquier número de otras tablas.'
+sidebarTitle: 'Merge'
+slug: /engines/table-engines/special/merge
+title: 'Motor de tabla Merge'
+doc_type: 'reference'
+---
+
+El motor `Merge` (no debe confundirse con `MergeTree`) no almacena datos por sí mismo, sino que permite leer al mismo tiempo de cualquier número de otras tablas.
+
+La lectura se paraleliza automáticamente. No se admite la escritura en una tabla. Al leer, se utilizan los índices de las tablas que efectivamente se están leyendo, si existen.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+```
+
+<div id="engine-parameters">
+  ## Parámetros del motor
+</div>
+
+<div id="db_name">
+  ### `db_name`
+</div>
+
+`db_name` — Valores posibles:
+
+* nombre de la base de datos,
+  * expresión constante que devuelve una cadena con el nombre de una base de datos; por ejemplo, `currentDatabase()`,
+  * `REGEXP(expression)`, donde `expression` es una expresión regular para hacer coincidir los nombres de las bases de datos.
+
+<div id="tables_regexp">
+  ### `tables_regexp`
+</div>
+
+`tables_regexp` — Una expresión regular para coincidir con los nombres de las tablas en la DB o las DB especificadas.
+
+Expresiones regulares: [re2](https://github.com/google/re2) (admite un subconjunto de PCRE), sensible a mayúsculas y minúsculas.
+Consulte las notas sobre el escape de símbolos en las expresiones regulares en la sección &quot;match&quot;.
+
+<div id="usage">
+  ## Uso
+</div>
+
+Al seleccionar tablas para leer, la propia tabla `Merge` no se selecciona, aunque coincida con la expresión regular. Esto se hace para evitar bucles.
+Es posible crear dos tablas `Merge` que intenten leer indefinidamente los datos de la otra, pero no es una buena idea.
+
+La forma habitual de usar el motor `Merge` es trabajar con una gran cantidad de tablas `TinyLog` como si fueran una sola tabla.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+**Ejemplo 1**
+
+Considere dos bases de datos: `ABC_corporate_site` y `ABC_store`. La tabla `all_visitors` contendrá los ID de las tablas `visitors` de ambas bases de datos.
+
+```sql
+CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
+```
+
+**Ejemplo 2**
+
+Supongamos que tiene una tabla antigua, `WatchLog_old`, y que decidió cambiar el esquema de particionado sin mover los datos a una tabla nueva, `WatchLog_new`, y necesita ver los datos de ambas tablas.
+
+```sql
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT * FROM WatchLog;
+```
+
+```text
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_table` — El nombre de la tabla desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
+
+  Si filtra por `_table` (por ejemplo, `WHERE _table='xyz'`), solo se leen las tablas que cumplen la condición de filtrado.
+
+* `_database` — Contiene el nombre de la base de datos desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
+
+**Vea también**
+
+* [Columnas virtuales](/es/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [merge](/es/reference/functions/table-functions/merge) table function

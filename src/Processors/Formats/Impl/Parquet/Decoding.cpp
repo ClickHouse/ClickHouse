@@ -1730,7 +1730,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
                 result_object = parseWKBFormat(in_buffer);
                 break;
             case GeoEncoding::WKT:
-                result_object = parseWKTFormat(in_buffer);
+                result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                 break;
         }
         appendObjectToGeoColumn(result_object, geo_metadata.type, col);

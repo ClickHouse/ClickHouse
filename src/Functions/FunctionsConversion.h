@@ -353,13 +353,21 @@ struct ToDate32TransformFromSecondsOrDays
             }
         }
 
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+        /// Date32 spans [1900, 2299] (unlike DateTime64, which now goes up to 9999), so it keeps its own upper bound.
+        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
+            if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+            {
+                /// Casting a huge floating-point value directly to Int64 is undefined behaviour and yields
+                /// different results across architectures (e.g. INT64_MIN on x86 vs saturation on AArch64),
+                /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
+                if constexpr (is_floating_point<FromType>)
+                    return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
+                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
+            }
 
         return static_cast<Int32>(from);
     }
@@ -515,21 +523,12 @@ struct ToTimeTransform64Signed
 /** Conversion of numeric to DateTime64
   */
 
-/// The largest whole-second timestamp a DateTime64 of the given scale can store. Normally this is the
-/// calendar maximum (`MAX_DATETIME64_TIMESTAMP`, 2299-12-31 23:59:59), but at scale 9 that second does not
-/// fit in the Int64 native storage once multiplied by the scale, so it is capped at the largest second that does.
-inline time_t maxRepresentableDateTime64WholeSecond(DateTime64::NativeType scale_multiplier)
-{
-    return std::min<DateTime64::NativeType>(
-        MAX_DATETIME64_TIMESTAMP, std::numeric_limits<DateTime64::NativeType>::max() / scale_multiplier);
-}
-
-/// The largest DateTime64 native value of the given scale: the maximum whole second scaled up plus the
-/// largest fraction representable at the scale, capped at Int64::max (relevant at scale 9, where the
-/// calendar maximum is not representable).
+/// The largest DateTime64 native value of the given scale: the maximum representable whole second
+/// (see `maxWholeSecondsForDateTime64`) scaled up plus the largest fraction representable at the scale,
+/// capped at Int64::max (relevant at scale 9, where the calendar maximum is not representable).
 inline DateTime64::NativeType maxRepresentableDateTime64Native(DateTime64::NativeType scale_multiplier)
 {
-    const time_t whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
+    const time_t whole_second = maxWholeSecondsForDateTime64(scale_multiplier);
     if (whole_second < MAX_DATETIME64_TIMESTAMP)
         return std::numeric_limits<DateTime64::NativeType>::max();
     return whole_second * scale_multiplier + (scale_multiplier - 1);
@@ -548,12 +547,13 @@ struct ToDateTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// All values of small unsigned types (UInt8, UInt16, UInt32) lie within [0, MAX_DATETIME64_TIMESTAMP],
-        /// so no bounds check is needed for them.
+        /// All values of small unsigned types (UInt8, UInt16, UInt32) lie within [0, max_whole_second]
+        /// (the scale-dependent upper bound stays above ~2262 even at scale 9), so no bounds check is
+        /// needed for them.
         if constexpr (sizeof(FromType) > sizeof(UInt32))
         {
-            /// The maximum representable whole second, capped so the scaled native value fits in Int64 at scale 9.
-            const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
+            /// The upper bound is scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+            const time_t max_whole_second = maxWholeSecondsForDateTime64(scale_multiplier);
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
                 if (from > FromType(max_whole_second)) [[unlikely]]
@@ -592,24 +592,29 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// All values of small signed types (Int8, Int16, Int32) lie within
-        /// [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP], so no bounds check is needed for them.
+        /// All values of small signed types (Int8, Int16, Int32) lie within the scale-dependent
+        /// [min_whole_second, max_whole_second] window (which spans well beyond Int32 even at scale 9),
+        /// so no bounds check is needed for them.
         if constexpr (sizeof(FromType) > sizeof(Int32))
         {
-            /// The maximum representable whole second, capped so the scaled native value fits in Int64 at scale 9.
-            const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
+            /// The bounds are scale-dependent because ticks are stored in an Int64: at scale 9 neither the
+            /// calendar maximum nor minimum fits, so clamp to the largest/smallest whole second that does
+            /// (see maxWholeSecondsForDateTime64 / minWholeSecondsForDateTime64). Clamping to the calendar
+            /// bounds and then multiplying by the scale would overflow the Int64.
+            const time_t min_whole_second = minWholeSecondsForDateTime64(scale_multiplier);
+            const time_t max_whole_second = maxWholeSecondsForDateTime64(scale_multiplier);
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from < FromType(MIN_DATETIME64_TIMESTAMP) || from > FromType(max_whole_second)) [[unlikely]]
+                if (from < FromType(min_whole_second) || from > FromType(max_whole_second)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
-            /// The calendar minimum has no sub-second part, so its native value is the same for `saturate`
-            /// and `ignore`; only the upper clamp differs (see the unsigned transform).
-            if (from < FromType(MIN_DATETIME64_TIMESTAMP))
-                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(MIN_DATETIME64_TIMESTAMP, 0, scale_multiplier);
+            /// The minimum whole second has no sub-second part, so its native value is the same for
+            /// `saturate` and `ignore`; only the upper clamp differs (see the unsigned transform).
+            if (from < FromType(min_whole_second))
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(min_whole_second, 0, scale_multiplier);
             if (from > FromType(max_whole_second))
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
@@ -640,22 +645,24 @@ struct ToDateTime64TransformFloat
         /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Decide overflow without narrowing the
         /// scaled native bound back to the (possibly 32-bit) float domain: dividing `max_native` by the scale
         /// in `FromType` rounds the bound to the wrong side and would let out-of-range values pass the `throw`
-        /// check (or clamp in-range ones). The maximum is capped at Int64::max, so scale 9 — where the
-        /// calendar maximum does not fit — saturates instead of raising DECIMAL_OVERFLOW. Saturated values
-        /// are produced directly in the native domain to avoid Float64 rounding losing the last representable
-        /// fraction.
+        /// check (or clamp in-range ones). The bounds are scale-dependent because ticks are stored in an
+        /// Int64, so at scale 9 — where neither the calendar maximum nor minimum fits — the value saturates
+        /// to the largest/smallest representable whole second instead of raising DECIMAL_OVERFLOW. Saturated
+        /// values are produced directly in the native domain to avoid Float64 rounding losing the last
+        /// representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
         const DateTime64::NativeType max_native = maxRepresentableDateTime64Native(scale_multiplier);
-        const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
-        const DateTime64::NativeType min_native = MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+        const time_t max_whole_second = maxWholeSecondsForDateTime64(scale_multiplier);
+        /// The minimum whole second has no sub-second part, so its native value is exactly the scaled second.
+        const time_t min_whole_second = minWholeSecondsForDateTime64(scale_multiplier);
+        const DateTime64::NativeType min_native = min_whole_second * scale_multiplier;
 
         const double from_seconds = static_cast<double>(from);
-        /// The calendar minimum has no sub-second part, so a plain comparison is exact.
         /// NaN has no representable timestamp; the pre-existing convertToDecimal path rejected NaN and
         /// infinities (DECIMAL_OVERFLOW) rather than letting the final static_cast<NativeType> hit
         /// undefined behavior. Route NaN through the out-of-range path here too (`-inf` already satisfies
         /// the comparison; `+inf` is caught by the `above` check below).
-        const bool below = isNaN(from) || from_seconds < static_cast<double>(MIN_DATETIME64_TIMESTAMP);
+        const bool below = isNaN(from) || from_seconds < static_cast<double>(min_whole_second);
         const double scaled = from_seconds * static_cast<double>(scale_multiplier);
         bool above = false;
         if (from_seconds > static_cast<double>(max_whole_second))
@@ -719,6 +726,13 @@ struct ToDateTime64Transform
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
+        /// Date32 reaches 2299-12-31, whose whole-seconds value (10413705600) overflows the Int64 DateTime64 ticks
+        /// at high precision (e.g. * 10^9 at scale 9 exceeds Int64::max). Clamp to the scale-dependent bounds before
+        /// multiplying, matching the numeric ToDateTime64Transform* transforms; otherwise decimalFromComponents throws
+        /// DECIMAL_OVERFLOW. The Date (UInt16, up to 2149) and DateTime (UInt32, up to 2106) source overloads stay
+        /// below these bounds at every scale, so only the Date32 overload needs the clamp.
+        dt = std::max<time_t>(dt, minWholeSecondsForDateTime64(scale_multiplier));
+        dt = std::min<time_t>(dt, maxWholeSecondsForDateTime64(scale_multiplier));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -1114,7 +1128,7 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
         else
-            readFloatTextFast(x, rb);
+            readFloatImpreciseForCompatibility(x, rb);
     }
     else
         readText(x, rb);
@@ -1186,7 +1200,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
         else
-            return tryReadFloatTextFast(x, rb);
+            return tryReadFloatImpreciseForCompatibility(x, rb);
     }
     else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
@@ -4907,10 +4921,29 @@ private:
 
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size);
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        const ColumnNullable * nullable_source,
+        size_t n,
+        size_t size,
+        size_t stride);
 
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
+
+    template <typename FloatType>
+    static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension, size_t stride);
+
+    template <typename T>
+    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
+
+    /// CAST between two QBit types. Keeps the dimension; may change the element type and/or the stride.
+    WrapperType createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const;
+
+    /// Repack a QBit into a different stride and/or between the Float32/BFloat16 pair as a pure byte operation on the
+    /// bit-plane FixedStrings, without reconstructing the vector through floats (see the definition).
+    static ColumnPtr repackQBit(
+        const ColumnQBit & src, size_t from_element_size, size_t to_element_size, size_t dimension, size_t from_stride, size_t to_stride);
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;

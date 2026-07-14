@@ -89,11 +89,11 @@ SELECT CAST(-1 AS DateTime('Europe/Amsterdam'));
 
 SELECT CAST(1e20 AS DateTime64(6, 'Europe/Amsterdam'));
 
--- A special case is DateTime64(9) - the maximum resolution, where it does not cover the usual range
--- (the calendar maximum 2299-12-31 does not fit in the 64-bit storage at nanosecond resolution).
--- Out-of-range values are saturated to the maximum representable value instead of overflowing:
+-- A special case is DateTime64(9) - the maximum resolution, where the representable range is narrower than the usual range,
+-- because the ticks are stored in an Int64 (with nanosecond precision the maximum is around 2262-04-11). Out-of-range
+-- values saturate to the representable boundary instead of overflowing, consistently with the other DateTime64 scales:
 
- SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam'));
+SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam'));
 
 -- If a number is converted to a Date data type, the value is interpreted as the number of days since the Unix epoch,
 -- but if the number is larger than the range of the data type, it is interpreted as a unix timestamp
