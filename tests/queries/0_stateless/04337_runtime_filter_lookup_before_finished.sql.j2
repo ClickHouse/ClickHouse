@@ -46,6 +46,12 @@ SET max_block_size = 8192;
 -- the reproducer is not silently disabled on randomized runs (a tiny value instead would force
 -- grace-hash spilling and raise LIMIT_EXCEEDED before find() is ever reached).
 SET max_bytes_before_external_join = 1000000000;
+-- Pin the join build/probe side. The `flaky check` harness randomizes
+-- query_plan_join_swap_table between 'auto' and 'false'; under 'auto' this ALL INNER JOIN
+-- swaps whenever the left estimate is smaller (rf_probe = 120000 < rf_build = 200000), which
+-- would build the filter from rf_probe and lose the unfinished-merge window this test stresses.
+-- Pin to 0 (false) so rf_build always stays on the build side.
+SET query_plan_join_swap_table = 0;
 
 {% for i in range(60) -%}
 SELECT count() FROM rf_probe AS l JOIN rf_build AS r ON l.k = r.k FORMAT Null;
