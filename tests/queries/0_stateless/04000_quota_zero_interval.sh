@@ -21,9 +21,12 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 0 SECOND MAX queries = 1
 # Fractional interval that rounds down to zero seconds hits the same path.
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 0.4 SECOND MAX queries = 1000 TO ${U}" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# A positive interval still works and the server keeps running.
+# A positive interval still works: run the query AS ${U} so it consumes the quota and
+# exercises the previously-crashing getEndOfInterval path, then confirm usage was accounted.
+# The query reads a table (numbers(1)) rather than a bare constant so it is charged to the quota.
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 1 HOUR MAX queries = 1000 TO ${U}"
-${CLICKHOUSE_CLIENT} -q "SELECT 'ok'"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT 'ok' FROM numbers(1)"
+${CLICKHOUSE_CLIENT} -q "SELECT queries >= 1 FROM system.quotas_usage WHERE quota_name = '${Q}'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS ${Q}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${U}"

@@ -52,6 +52,10 @@ private:
         QuotaPtr quota;
         UUID quota_id;
         const RolesOrUsersSet * roles = nullptr;
+        /// False when every limit has a non-positive interval duration (a legacy quota loaded
+        /// from disk that CREATE/ALTER would now reject). Such a quota can never be enforced, so
+        /// it is skipped entirely at consumption setup to avoid growing per-key state for it.
+        bool has_enforceable_intervals = false;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 

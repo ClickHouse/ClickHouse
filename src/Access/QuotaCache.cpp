@@ -36,6 +36,25 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     quota = quota_;
     quota_id = quota_id_;
     roles = &quota->to_roles;
+
+    /// A legacy quota persisted before CREATE/ALTER started rejecting non-positive interval
+    /// durations still loads from disk (deserialization uses validate=false). Such an interval
+    /// would divide by zero in getEndOfInterval and can never expire, so it is skipped when
+    /// building intervals (see rebuildIntervals). Warn once here at load/change time instead of
+    /// once per quota key, and remember whether any enforceable interval remains.
+    has_enforceable_intervals = false;
+    for (const auto & limits : quota->all_limits)
+    {
+        if (limits.duration <= std::chrono::seconds::zero())
+            LOG_WARNING(
+                getLogger("QuotaCache"),
+                "Ignoring quota {} interval with non-positive duration {} seconds",
+                quota->getName(),
+                limits.duration.count());
+        else
+            has_enforceable_intervals = true;
+    }
+
     rebuildAllIntervals();
 }
 
@@ -193,15 +212,9 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         /// A non-positive interval duration would divide by zero in getEndOfInterval and can never
         /// expire. CREATE/ALTER QUOTA rejects it, but a legacy quota persisted before that
         /// validation still loads from disk, so skip such intervals here instead of enforcing them.
+        /// The warning is emitted once at load time in setQuota, not per quota key.
         if (limits.duration <= std::chrono::seconds::zero())
-        {
-            LOG_WARNING(
-                getLogger("QuotaCache"),
-                "Ignoring quota {} interval with non-positive duration {} seconds",
-                quota->getName(),
-                limits.duration.count());
             continue;
-        }
 
         intervals.emplace_back(limits.duration, limits.randomize_interval, current_time);
         auto & interval = intervals.back();
@@ -407,6 +420,12 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
         if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+            continue;
+
+        /// A quota whose every interval is non-positive (a legacy on-disk quota that CREATE/ALTER
+        /// would now reject) has no enforceable interval. Skip it entirely so it never allocates a
+        /// cached Intervals per quota key nor a per-hash resolver entry: it stays fully inert.
+        if (!info.has_enforceable_intervals)
             continue;
 
         String key = info.calculateKey(enabled, throw_if_client_key_empty);
