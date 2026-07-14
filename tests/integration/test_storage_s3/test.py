@@ -3036,9 +3036,14 @@ def test_key_value_args(started_cluster):
         f"select a from s3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', structure = 'a Int32, b DateTime') where b = '2'"
     )
 
-    # Check compression_method
-    assert "inflate failed" in node.query_and_get_error(
+    # Check compression_method: reading non-gzip data as gzip must fail.
+    # libdeflate reports "Not a gzip stream"; the zlib-ng fallback build reports "inflate failed".
+    compression_error = node.query_and_get_error(
         f"select a from s3('{url}', format = TSVRaw, structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip') where b = '2'"
+    )
+    assert (
+        "Not a gzip stream" in compression_error
+        or "inflate failed" in compression_error
     )
     assert 2 == int(
         node.query(
