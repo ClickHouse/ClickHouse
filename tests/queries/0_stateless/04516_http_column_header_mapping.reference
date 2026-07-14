@@ -1,5 +1,7 @@
 --- sync: no explicit column list (body provides remaining columns)
 push	s	no-list
+--- sync: no explicit column list, body also contains a header-mapped field (header wins)
+from-header	conflict-test
 --- sync: basic header-to-column mapping
 push	sha256=abc123	hello
 --- sync: multiple rows
@@ -26,6 +28,8 @@ Cannot parse
 NOT_IMPLEMENTED
 --- async: no explicit column list (body provides remaining columns)
 push	s	no-list
+--- async: no explicit column list, body also contains a header-mapped field (header wins)
+from-header	conflict-test
 --- async: basic header-to-column mapping
 push	sha256=abc123	hello
 --- async: multiple rows
