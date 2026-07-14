@@ -524,6 +524,11 @@ private:
 
     String index_column_name;
     MergeTreeIndexTextParams params;
+    /// A stateful tokenizer (e.g. sparseGrams) is cloned so the postprocessor tokenization path
+    /// (tokenizeToArray on this member) advances a private iterator: one aggregator is created per
+    /// part from the index's single tokenizer and they run concurrently during inserts and merges.
+    /// Empty for stateless tokenizers, which stay shared via the raw pointer below.
+    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
