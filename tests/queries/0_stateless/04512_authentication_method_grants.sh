@@ -91,6 +91,18 @@ login "full_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cach
 # rather than being served the cached rows without an access check.
 login_expect_error "token_password" "ACCESS_DENIED" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
 
+echo "-- A credential-limited session does not use the query result cache, so a later REVOKE is enforced on the token"
+# The token can read t1 (SELECT ON t1 is granted to the user and listed in the token's GRANTS).
+# Because the session is credential-limited, this query must not populate the query result cache.
+login "token_password" "SELECT x FROM t1 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
+# Revoke the underlying grant from the user.
+${CLICKHOUSE_CLIENT} -q "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t1 FROM ${user}"
+# The token must now be denied. The query result cache is not access-control-aware on a hit and is not invalidated by
+# REVOKE, so had the token populated it above, this would be served the stale cached row instead of ACCESS_DENIED.
+login_expect_error "token_password" "ACCESS_DENIED" "SELECT x FROM t1 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
+# Restore the grant so the rest of the test is unaffected.
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user}"
+
 echo "-- ALTER USER ADD IDENTIFIED with the GRANTS clause adds a new token"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'second_token' GRANTS (SELECT(x) ON ${CLICKHOUSE_DATABASE}.t2)"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE USER ${user}" | sed "s/${user}/user/g; s/${CLICKHOUSE_DATABASE}/db/g"
