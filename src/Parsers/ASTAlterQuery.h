@@ -34,6 +34,7 @@ public:
         MATERIALIZE_COLUMN,
 
         MODIFY_ORDER_BY,
+        MODIFY_PROJECTION,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         REWRITE_PARTS,
@@ -134,11 +135,11 @@ public:
     */
     IAST * constraint = nullptr;
 
-    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
+    /** The ADD/MODIFY PROJECTION query stores the ProjectionDeclaration there.
      */
     IAST * projection_decl = nullptr;
 
-    /** The ADD PROJECTION query stores the name of the projection following AFTER.
+    /** The ADD/MODIFY PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
