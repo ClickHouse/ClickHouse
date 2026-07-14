@@ -1,0 +1,54 @@
+---
+sidebarTitle: 'Sous-agents'
+slug: /cloud/features/ai-ml/agents/builder/subagents
+title: 'Sous-agents'
+description: 'Délégation de tâches à des sous-agents dans ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'sous-agents', 'délégation']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Un sous-agent est un agent enfant qu’un agent parent invoque pour prendre en charge une sous-tâche autonome. L’agent enfant s’exécute avec sa propre fenêtre de contexte et ses propres outils, puis renvoie un résultat compact à l’agent parent. L’agent parent ne voit jamais les étapes intermédiaires de l’agent enfant — seulement la réponse finale.
+
+Utilisez des sous-agents pour aider l’agent parent à rester concentré. Les longues phases de recherche, l’exploration intensive avec des outils et les étapes de révision spécialisées fonctionnent mieux lorsque leur état intermédiaire, gourmand en tokens, reste hors du contexte de l’agent parent.
+
+<div id="enable-subagents">
+  ## Activer les sous-agents
+</div>
+
+Dans l’Agent Builder, ouvrez **Paramètres avancés** et activez **Sous-agents**. Deux options supplémentaires apparaissent :
+
+* **Autoriser l’auto-création** - lorsque cette option est activée, l’agent peut créer des copies de lui-même pour effectuer un travail en parallèle. Utile pour les schémas de fan-out (un parent, plusieurs workers identiques).
+* **Sous-agents supplémentaires** - sélectionnez d’autres agents précis auxquels ce parent est autorisé à déléguer. Le parent décide à l’exécution quel sous-agent (le cas échéant) appeler en fonction de la tâche.
+
+Enregistrez. Quand l’agent s’exécute, un nouvel outil est disponible pour appeler des sous-agents.
+
+<div id="when-a-subagent-helps">
+  ## Quand un sous-agent est utile
+</div>
+
+* **Sous-tâches de recherche** - l&#39;agent parent décompose une question complexe, confie une partie à un sous-agent spécialisé sur ce point, puis synthétise les réponses.
+* **Étapes très gourmandes en outils** - sessions de Code interpreter, boucles de Web search en plusieurs étapes, ou toute opération qui consommerait la fenêtre de contexte du parent avec des sorties d&#39;outils intermédiaires.
+* **Révision spécialisée** - un agent génère, un autre révise, et l&#39;intégralité du raisonnement du réviseur reste dans sa propre fenêtre de contexte.
+
+Évitez les sous-agents pour des appels triviaux. Le transfert ajoute de la latence et des tokens.
+
+<div id="subagents-vs-agent-chain">
+  ## Sous-agents vs. chaîne d’agents
+</div>
+
+Les sous-agents constituent un mécanisme de délégation à l’exécution — l’agent parent décide à la volée. Une chaîne d’agents est un graphe prédéfini d’agents qui s’exécutent dans un ordre fixe. Privilégiez les sous-agents lorsque le routage est dynamique ; privilégiez une chaîne lorsque le routage est fixe.
+
+<div id="limits">
+  ## Limites
+</div>
+
+* **10** sous-agents maximum par parent.
+* Profondeur maximale de **5** sauts à partir de l’agent racine.
+* **50** cibles de sous-agents uniques maximum chargées pour une seule exécution.
+* **100** configurations de sous-agents développées maximum par requête.
+
+Les sous-agents que vous référencez doivent être visibles par l’utilisateur qui exécute le parent. Les références qui pointent vers un agent inaccessible ou supprimé sont ignorées sans avertissement — concevez vos parents de façon à gérer correctement l’absence d’un agent enfant.

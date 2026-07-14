@@ -138,6 +138,17 @@ endif ()
 
 include (cmake/add_warning.cmake)
 
+# A compiler without zlib accepts -gz but only warns, so -Werror on that warning makes the check fail.
+include (CheckCompilerFlag)
+set (CMAKE_REQUIRED_FLAGS "-Werror=debug-compression-unavailable")
+check_compiler_flag (C   "-gz=zlib" C_COMPILER_SUPPORTS_GZ_ZLIB)
+check_compiler_flag (CXX "-gz=zlib" CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+unset (CMAKE_REQUIRED_FLAGS)
+set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
+if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+    set (COMPILER_SUPPORTS_GZ_ZLIB ON)
+endif ()
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -351,6 +362,32 @@ endif()
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
+# Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
+# computed result - `errno` is the only observable difference and ClickHouse never reads it
+# after a libm call - but it lets the compiler emit math instructions directly instead of
+# guarding each call with a branch to a libm wrapper, which also unblocks vectorization.
+# Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
+
+# `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
+# last `src/`-side references to a libm function, leaving its only references in contrib objects
+# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
+# an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
+# never extracted and the reference binds to shared glibc's newer symbol version, which the
+# compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
+# our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
+# in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
+#
+# Both the single-precision functions (new glibc version `@GLIBC_2.27`) and the double-precision
+# ones (`@GLIBC_2.29`) are pinned. The doubles matter when `ENABLE_LLVM_LIBC_MATH=OFF`: in that
+# configuration llvm-libc does not provide them, so `exp`/`log`/`pow`/`exp2`/`log2` are available
+# only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
+# bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
+# from it, so the extra `-u` requests are harmless no-ops.
+if (GLIBC_COMPATIBILITY)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
+endif ()
+
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
@@ -366,6 +403,17 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # NOTE: that clang has a bug because of it does not emit .debug_aranges
     # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
+endif ()
+
+# Compress DWARF debug sections (`.debug_*`) in object files with -gz=zlib to shrink the build dir
+# (debug info dominates it). Compile-only via add_compile_options, so binaries stay uncompressed and
+# the symbolizer is unaffected. Defaults on where the compiler supports it (probed above).
+option (COMPRESS_DEBUG_SECTIONS "Compress DWARF debug sections in object files with zlib (-gz)" ${COMPILER_SUPPORTS_GZ_ZLIB})
+
+if (COMPRESS_DEBUG_SECTIONS)
+    # Only C/C++ (and GNU-style ASM handled by clang) understand -gz; scope it away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler rejects the flag.
+    add_compile_options ($<$<COMPILE_LANGUAGE:C,CXX,ASM>:-gz=zlib>)
 endif ()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
@@ -568,12 +616,7 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
-    else ()
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
-    endif ()
+    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)

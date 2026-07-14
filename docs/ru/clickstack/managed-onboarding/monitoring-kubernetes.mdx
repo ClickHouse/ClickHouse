@@ -1,0 +1,345 @@
+---
+slug: /use-cases/observability/clickstack/monitoring-kubernetes
+title: 'Мониторинг Kubernetes с Managed ClickStack'
+description: 'Сбор журналов, метрик инфраструктуры и событий из кластера Kubernetes в Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'обсервабилити', 'журналы', 'метрики', 'события', 'daemonset', 'helm']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Это руководство поможет вам настроить сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера в Управляемый ClickStack, а затем просматривать их во встроенной панели мониторинга Kubernetes.
+
+Здесь используется стандартная для OpenTelemetry схема: два коллектора, развернутые через [Helm-чарт OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), каждый из которых пересылает данные в ваш коллектор-шлюз ClickStack по OTLP. **ДемонСет** запускается на каждом узле для сбора журналов контейнеров и метрик Кубелета. **Развертывание** с одной репликой собирает события Kubernetes и метрики всего кластера. Подробнее о роли шлюза см. в разделе [Роли коллектора](/ru/clickstack/ingesting-data/collector#collector-roles).
+
+В этом руководстве предполагается, что вы завершили [Setting up your OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) и что у вас уже запущен коллектор-шлюз ClickStack.
+
+Для рабочей нагрузки, размещенной в Kubernetes, сам коллектор-шлюз должен быть развернут **внутри того же кластера с использованием upstream Helm-чарта OpenTelemetry и образа коллектора ClickStack**. Чтобы установить его, выполните шаги для Helm из раздела [Развертывание коллектора](/ru/clickstack/ingesting-data/collector#configuring-the-collector). **Обязательно сохраните эту конечную точку OTLP**.
+
+<Steps>
+  <Step>
+    ## Подготовьте всё необходимое
+
+    Вам потребуется:
+
+    * **кластер Kubernetes** (рекомендуется v1.20+) с настроенным `kubectl`.
+    * **[Helm](https://helm.sh/) v3+**.
+    * **конечная точка OTLP** коллектора-шлюза ClickStack, доступная изнутри кластера, например `http://clickstack-otel-collector.observability.svc.cluster.local:4318`. Коллектор должен быть развернут там, откуда ваши ДемонСеты и Развертывание смогут к нему обращаться, обычно в том же кластере или через сервис типа `LoadBalancer`.
+    * Значение `OTLP_AUTH_TOKEN`, которое вы указали при развертывании коллектора-шлюза. Если коллектор не защищен, шаг с секретом ниже можно пропустить, а заголовок `authorization` удалить из манифестов.
+
+    <Info>
+      **Где запускается шлюз**
+
+      Для развертывания внутри кластера запустите коллектор-шлюз как Kubernetes `Deployment` или `StatefulSet` в том же кластере и обращайтесь к нему через DNS внутрикластерного сервиса. Если шлюз работает вне кластера, используйте его внешний URL.
+    </Info>
+  </Step>
+
+  <Step>
+    ## Создайте secret для аутентификации и ConfigMap
+
+    Выберите пространство имен, в котором должны находиться collectors, затем создайте secret с `OTLP_AUTH_TOKEN` и ConfigMap, указывающий на ваш шлюз:
+
+    ```shell
+    export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+    export OTEL_COLLECTOR_ENDPOINT="http://clickstack-otel-collector.observability.svc.cluster.local:4318"
+    export NAMESPACE=observability
+
+    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create secret generic clickstack-otlp-secret \
+      --from-literal=OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+      -n ${NAMESPACE}
+
+    kubectl create configmap otel-config-vars \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT} \
+      -n ${NAMESPACE}
+    ```
+
+    Оба коллектора ниже считывают эти значения через `extraEnvs`, поэтому для обоих повторно используются один и тот же секрет и ConfigMap.
+  </Step>
+
+  <Step>
+    ## Добавьте Helm-репозиторий OpenTelemetry
+
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ## Разверните коллектор кластера
+
+    Это Развертывание с одной репликой, которое собирает **события Kubernetes** и **метрики всего кластера** (количество узлов, фазы подов, статус развертываний и т. д.). Если запустить больше одной реплики, появятся дубликаты.
+
+    Сохраните следующее в файл `k8s_deployment.yaml`:
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # Нужен только один такой коллектор — иначе будут собираться дубликаты данных
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        # Собирает события Kubernetes через k8sobject receiver.
+        kubernetesEvents:
+          enabled: true
+        # Собирает метрики уровня кластера через k8s_cluster receiver.
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    Установите его:
+
+    ```shell
+    helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      -f k8s_deployment.yaml \
+      -n ${NAMESPACE}
+    ```
+  </Step>
+
+  <Step>
+    ## Разверните коллектор узла
+
+    Это ДемонСет, который запускается на каждом узле и собирает **журналы контейнеров**, **метрики хоста** и **метрики Кубелета** (использование CPU и памяти для каждого пода и контейнера по отношению к requests и limits).
+
+    Сохраните следующий файл как `k8s_daemonset.yaml`:
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # Необходимо для использования метрик утилизации CPU/памяти из kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Дополнительные метрики Кубелета, показывающие утилизацию относительно requests и limits.
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    Установите его:
+
+    ```shell
+    helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      -f k8s_daemonset.yaml \
+      -n ${NAMESPACE}
+    ```
+
+    Убедитесь, что оба релиза работают корректно:
+
+    ```shell
+    kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collector
+    ```
+
+    Вы должны увидеть один под Развертывания и по одному поду ДемонСета на каждом узле — все в состоянии `Running`.
+  </Step>
+
+  <Step>
+    ## Передавайте атрибуты Kubernetes в приложения (рекомендуется)
+
+    Чтобы коррелировать журналы, метрики и трассировки вашего приложения с метаданными Kubernetes (имя пода, пространство имен, узел, развертывание), передавайте эти метаданные в приложение через `OTEL_RESOURCE_ATTRIBUTES`. Затем процессор `k8sattributes` в ДемонСете будет обогащать входящую телеметрию соответствующими атрибутами пода и узла.
+
+    ```yaml
+    # my_app_deployment.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: app-deployment
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: app
+      template:
+        metadata:
+          labels:
+            app: app
+            service.name: <MY_APP_NAME>
+        spec:
+          containers:
+            - name: app-container
+              image: my-image
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: POD_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.uid
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: DEPLOYMENT_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['deployment']
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+    ```
+  </Step>
+
+  <Step>
+    ## Проверьте в интерфейсе ClickStack
+
+    Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
+
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Запуск ClickStack" border />
+
+    В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Последние 15 минут**. Журналы контейнеров со всего кластера должны появиться в течение нескольких секунд с такими атрибутами, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
+
+    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Представление ClickStack Search с журналами Kubernetes" />
+
+    Чтобы увидеть метрики и события инфраструктуры в контексте, откройте встроенную панель мониторинга **Kubernetes**, перейдя в **Dashboards** -&gt; **Kubernetes**. Данные должны появиться на всех вкладках: `Pods`, `Nodes` и `Namespaces`.
+
+    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Панель мониторинга Kubernetes в ClickStack" border />
+
+    Если ничего не отображается:
+
+    * Убедитесь, что поды ДемонСета и Развертывания находятся в состоянии `Running`, и просмотрите их журналы с помощью `kubectl logs -n ${NAMESPACE} <pod>`.
+    * Убедитесь, что `YOUR_OTEL_COLLECTOR_ENDPOINT` доступна изнутри кластера (выполните `kubectl exec` в одном из подов коллектора и сделайте к ней `curl`).
+    * Проверьте, что `OTLP_AUTH_TOKEN` в секрете совпадает со значением, заданным в коллекторе-шлюзе.
+  </Step>
+
+  <Step>
+    ## Дополнительные материалы
+
+    * [Справочник по интеграции с Kubernetes](/ru/clickstack/integration-examples/kubernetes) с полным набором приёмников, процессоров и параметров настройки.
+    * [Передача тегов resource в поды](/ru/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) с более подробной информацией об обогащении на стороне приложения.
+    * [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей ингестии с минимально необходимыми привилегиями.
+    * [Оценка ресурсов](/ru/clickstack/ingesting-data/collector#estimating-resources) для развертываний шлюза и агента при ожидаемой пропускной способности.
+    * [Выход в продакшн](/ru/clickstack/managing/production) с рекомендациями по переходу в продакшн.
+  </Step>
+</Steps>

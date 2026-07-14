@@ -24,6 +24,8 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            with_minio=True,
             stay_alive=True,
         )
         cluster.add_instance(
@@ -55,6 +57,17 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            stay_alive=True,
+        )
+        # Dedicated node: the background eviction push-fail test enables a process-global
+        # failpoint, so it must not share a node with other tests.
+        cluster.add_instance(
+            "keep_up_push_fail",
+            main_configs=[
+                "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
+            ],
             stay_alive=True,
         )
 
@@ -83,6 +96,8 @@ def non_shared_cluster():
                 "config.d/remove_filesystem_caches_path.xml",
             ],
             stay_alive=True,
+            with_zookeeper=True,
+            with_minio=True,
         )
 
         logging.info("Starting test-exclusive cluster...")
@@ -118,6 +133,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         DROP TABLE IF EXISTS test SYNC;
+        SYSTEM DROP FILESYSTEM CACHE;
 
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
@@ -144,19 +160,19 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         SELECT * FROM test FORMAT Null;
         """
     )
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     count = int(node.query("SELECT count() FROM test"))
 
     cache_count = int(
-        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
+        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test'")
     )
     cache_state = node.query(
-        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
     keys = (
         node.query(
-            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
         )
         .strip()
         .splitlines()
@@ -166,15 +182,15 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
-    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'"))
     keys_set = ",".join(["'" + x + "'" for x in keys])
     assert cache_state == node.query(
-        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
+        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
 
     assert node.contains_in_log("15 listing thread(s) and 15 loading thread(s)")
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     assert (
         int(
             node.query(
@@ -497,6 +513,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
 
+@pytest.mark.skip(reason="In private we always use cache for merges")
 def test_force_filesystem_cache_on_merges(cluster):
     def test(node, forced_read_through_cache_on_merge):
         def to_int(value):
@@ -704,7 +721,7 @@ INSERT INTO test SELECT randomString(200);
     """
     )
 
-    query_id = "test_keep_up_size_ratio_1"
+    query_id = f"test_keep_up_size_ratio_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -808,6 +825,79 @@ SETTINGS disk = disk(type = cache,
         "SELECT sum(cityHash64(a)) FROM test_parallel_eviction"
     ) == node.query(
         "SELECT sum(cityHash64(a)) FROM test_parallel_eviction SETTINGS enable_filesystem_cache = 0"
+    )
+
+
+def test_keep_up_size_ratio_push_fail(cluster):
+    node = cluster.instances["keep_up_push_fail"]
+    max_elements = 100
+    cache_name = "keep_up_size_ratio_push_fail"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_push_fail;
+
+CREATE TABLE test_push_fail (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '10Mi',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio_push_fail",
+            keep_free_space_size_ratio = 0.9,
+            keep_free_space_elements_ratio = 0.9,
+            keep_free_space_remove_batch = 2,
+            keep_free_space_eviction_threads = 3,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_keep_up_size_ratio_push_fail")
+
+    def elems():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+
+    # keep_free_space_elements_ratio = 0.9 over max_elements = 100 -> target 10.
+    expected = max_elements // 10
+
+    node.query("SYSTEM ENABLE FAILPOINT file_cache_background_eviction_push_fail")
+    try:
+        node.query(
+            "INSERT INTO test_push_fail SELECT randomString(1000) FROM numbers(500);"
+        )
+        node.query("SELECT * FROM test_push_fail FORMAT Null")
+
+        # With the failpoint on, every collected batch fails to reach the remover workers,
+        # so background keeping bails out (CANNOT_EVICT) and cannot drop below the fill level.
+        node.wait_for_log_line("Background eviction workers take too much time")
+        blocked = elems()
+        assert blocked > expected
+        time.sleep(3)
+        assert elems() == blocked
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT file_cache_background_eviction_push_fail")
+
+    # After the dropped batches are rolled back, background keeping must converge all the
+    # way to the configured target - not just make partial progress - which proves no
+    # entries were left stuck in the `Evicting` state.
+    for _ in range(60):
+        converged = elems()
+        if converged <= expected:
+            break
+        time.sleep(1)
+    assert converged <= expected
+
+    assert int(node.query("SELECT count() FROM test_push_fail")) == 500
+    assert node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail"
+    ) == node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail SETTINGS enable_filesystem_cache = 0"
     )
 
 
@@ -1581,3 +1671,75 @@ SYSTEM CLEAR FILESYSTEM CACHE;
         )
         node.query("SYSTEM RELOAD CONFIG")
         node.query("DROP TABLE IF EXISTS test_slru_fp SYNC")
+
+
+def test_reserve_granularity_reclaims_surplus_after_read(cluster):
+    # Regression test for reserve-ahead accounting: a sub-granule read must not keep a
+    # whole `reserve_granularity` charged against the cache after the read buffer is
+    # destroyed. With `reserve_granularity == boundary_alignment` the completion-time
+    # `shrinkFileSegmentToDownloadedSize` rounds the downloaded size back up to the whole
+    # range, so the reserve-ahead surplus has to be reclaimed explicitly; otherwise the
+    # cache stays charged for bytes that were never written.
+    node = cluster.instances["node"]
+
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query("DROP TABLE IF EXISTS test_reserve_granularity SYNC")
+    node.query(
+        """
+        CREATE TABLE test_reserve_granularity (key UInt64, value String)
+        Engine=MergeTree()
+        ORDER BY key
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'reserve_granularity_cache',
+            path = 'reserve_granularity_cache',
+            disk = 'hdd_blob',
+            max_size = '1Gi',
+            max_file_segment_size = '4Mi',
+            boundary_alignment = '4Mi',
+            reserve_granularity = '4Mi',
+            background_download_threads = 0,
+            cache_on_write_operations = 0),
+        index_granularity = 256,
+        min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("SYSTEM STOP MERGES test_reserve_granularity")
+
+    # cache_on_write_operations = 0, so the INSERT itself does not populate the cache.
+    # Incompressible values make the column span many 4Mi file segments.
+    node.query(
+        "INSERT INTO test_reserve_granularity SELECT number, randomString(2000) FROM numbers(50000)"
+    )
+
+    # A single point read: downloads only a small (sub-granule) part of one file segment.
+    node.query(
+        "SELECT value FROM test_reserve_granularity WHERE key = 0 SETTINGS max_read_buffer_size = 65536"
+    )
+
+    # The read buffer is destroyed and no background download is configured, so the touched
+    # segment is completed and shrunk. `size` is the (boundary-aligned) segment range, while
+    # `downloaded_size` is what was actually written; the segment must be partially downloaded
+    # for this test to exercise the reserve-ahead surplus at all.
+    range_size = int(
+        node.query(
+            "SELECT sum(size) FROM system.filesystem_cache WHERE cache_name = 'reserve_granularity_cache'"
+        )
+    )
+    downloaded = int(
+        node.query(
+            "SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = 'reserve_granularity_cache'"
+        )
+    )
+    assert downloaded > 0
+    assert range_size > downloaded, "expected at least one partially downloaded segment"
+
+    # FilesystemCacheSize tracks the space charged against the cache (sum of reserved sizes).
+    # After reclaiming the reserve-ahead surplus it must equal the actually downloaded bytes,
+    # not the rounded-up range. Without the fix it would equal `range_size`.
+    reserved = int(
+        node.query("SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'")
+    )
+    assert reserved == downloaded, f"reserved {reserved} != downloaded {downloaded} (range {range_size})"
+
+    node.query("DROP TABLE test_reserve_granularity SYNC")

@@ -1,0 +1,111 @@
+---
+description: '在 NixOS 上或使用 Nix 安装 ClickHouse'
+keywords: ['ClickHouse', '安装', 'NixOS', 'Nix', 'nixpkgs']
+sidebarTitle: 'NixOS'
+slug: /install/nixos
+title: '在 NixOS 上安装 ClickHouse'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/zh/recommendations.mdx';
+
+> ClickHouse 可在 Nixpkgs 仓库中获取，并可在 **Linux** 和 **macOS** 上使用 Nix 安装。
+
+<Steps>
+  <Step>
+    ## 查看建议
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## 使用 Nix 安装 ClickHouse
+
+    您可以使用 Nix 安装 ClickHouse，而无需将其永久添加到系统中：
+
+    ```bash
+    # 安装最新稳定版本
+    nix shell nixpkgs#clickhouse
+
+    # 或安装 LTS 版本
+    nix shell nixpkgs#clickhouse-lts
+    ```
+
+    这会让 `clickhouse` 可执行文件在您当前的 shell 会话中可用。
+
+    * `nixpkgs#clickhouse` 软件包提供最新稳定版本。
+    * `nixpkgs#clickhouse-lts` 软件包提供长期支持版本。
+    * 这两个软件包都可在 Linux 和 macOS 上使用。
+  </Step>
+
+  <Step>
+    ## 永久安装
+
+    要将 ClickHouse 永久安装到您的系统中：
+
+    **对于 NixOS 用户**，请将以下内容添加到您的 `configuration.nix` 中：
+
+    ```nix
+    environment.systemPackages = with pkgs; [
+      clickhouse
+    ];
+    ```
+
+    然后重新构建您的系统：
+
+    ```bash
+    sudo nixos-rebuild switch
+    ```
+
+    **对于非 NixOS 用户**，请使用 Nix profile 安装：
+
+    ```bash
+    # 安装最新稳定版本
+    nix profile install nixpkgs#clickhouse
+
+    # 或安装 LTS 版本
+    nix profile install nixpkgs#clickhouse-lts
+    ```
+  </Step>
+
+  <Step>
+    ## 启动 ClickHouse 服务器
+
+    安装完成后，您可以启动 ClickHouse 服务器：
+
+    ```bash
+    clickhouse-server
+    ```
+
+    默认情况下，服务器将使用基本配置启动，并监听 `localhost:9000`。
+
+    如果要在 NixOS 上用于生产环境，您可能需要将 ClickHouse 配置为系统服务。有关可用配置选项，请参阅 [NixOS 手册](https://search.nixos.org/options?query=clickhouse)。
+  </Step>
+
+  <Step>
+    ## 启动 ClickHouse 客户端
+
+    要连接到 ClickHouse 服务器，请打开一个新的终端并运行：
+
+    ```bash
+    clickhouse-client
+    ```
+  </Step>
+</Steps>
+
+<div id="about-nix-package">
+  ## 关于 Nix 包
+</div>
+
+Nixpkgs 中的 ClickHouse 包包含：
+
+* `clickhouse-server` - ClickHouse 数据库服务器
+* `clickhouse-client` - 用于连接 ClickHouse 的命令行客户端
+* `clickhouse-local` - 用于在本地文件上运行 SQL 查询的工具
+* 其他 ClickHouse 实用工具
+
+有关 Nixpkgs 中 ClickHouse 包的更多信息，请访问：
+
+* [Nixpkgs ClickHouse 包](https://search.nixos.org/packages?query=clickhouse)
+* [NixOS ClickHouse 服务选项](https://search.nixos.org/options?query=clickhouse)

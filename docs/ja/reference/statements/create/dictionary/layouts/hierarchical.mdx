@@ -1,0 +1,92 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: '階層型Dictionary'
+sidebarTitle: '階層型'
+description: '親子のキー関係を持つ階層型Dictionaryを設定します。'
+doc_type: 'reference'
+---
+
+<div id="hierarchical-dictionaries">
+  ## 階層型Dictionary
+</div>
+
+ClickHouse は、[数値キー](/ja/reference/statements/create/dictionary/attributes#numeric-key) を持つ階層型Dictionaryをサポートしています。
+
+以下の階層構造を見てください。
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+この階層は、次の Dictionary テーブルで表せます。
+
+| region&#95;id | parent&#95;region | region&#95;name          |
+| ------------- | ----------------- | ------------------------ |
+| 1             | 0                 | United States of America |
+| 2             | 1                 | California               |
+| 3             | 2                 | San Francisco            |
+| 4             | 0                 | Great Britain            |
+| 5             | 4                 | London                   |
+
+このテーブルには、各要素の直近の親のキーを格納する `parent_region` カラムがあります。
+
+ClickHouse は、外部 Dictionary 属性の階層プロパティをサポートしています。このプロパティを使うと、前述のような階層型 Dictionary を設定できます。
+
+[dictGetHierarchy](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 関数を使うと、要素の親チェーンを取得できます。
+
+この例では、Dictionary の構造は次のようになります。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

@@ -1,0 +1,64 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed-array
+title: 'tipos de disposición del diccionario hashed_array'
+sidebarTitle: 'hashed_array'
+description: 'Almacena un diccionario en memoria mediante una tabla hash con arrays de atributos.'
+doc_type: 'reference'
+---
+
+<div id="hashed_array">
+  ## hashed_array
+</div>
+
+El diccionario se almacena completamente en memoria. Cada atributo se almacena en un array. El atributo clave se almacena en forma de tabla hash, donde el valor es un índice en el array de atributos. El diccionario puede contener cualquier número de elementos con cualquier identificador. En la práctica, el número de claves puede alcanzar decenas de millones de elementos.
+
+La clave del diccionario es de tipo [UInt64](/es/reference/data-types/int-uint).
+
+Se admiten todo tipo de orígenes. Al actualizar, los datos (desde un archivo o una tabla) se leen por completo.
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <layout>
+      <hashed_array>
+      </hashed_array>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_hashed_array">
+  ## complex_key_hashed_array
+</div>
+
+Este tipo de almacenamiento se usa con [claves](/es/reference/statements/create/dictionary/attributes#composite-key) compuestas. Es similar a [hashed&#95;array](#hashed_array).
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <layout>
+      <complex_key_hashed_array />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

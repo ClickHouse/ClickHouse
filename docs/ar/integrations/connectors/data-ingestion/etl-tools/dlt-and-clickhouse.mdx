@@ -1,0 +1,265 @@
+---
+sidebarTitle: 'dlt'
+keywords: ['clickhouse', 'dlt', 'ربط', 'تكامل', 'etl', 'تكامل البيانات']
+description: 'تحميل البيانات إلى ClickHouse باستخدام تكامل dlt'
+title: 'ربط dlt بـ ClickHouse'
+slug: /integrations/data-ingestion/etl-tools/dlt-and-clickhouse
+doc_type: 'guide'
+---
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://dlthub.com/docs/intro" target="_blank">dlt</a> هي مكتبة مفتوحة المصدر يمكنك إضافتها إلى برامجك النصية بلغة بايثون لتحميل البيانات من مصادر بيانات متنوعة، وغالبًا غير منظَّمة، إلى مجموعات بيانات منظَّمة ومحدَّثة باستمرار.
+
+<div id="install-dlt-with-clickhouse">
+  ## تثبيت dlt مع ClickHouse
+</div>
+
+<div id="to-install-the-dlt-library-with-clickhouse-dependencies">
+  ### لتثبيت مكتبة `dlt` مع تبعيات ClickHouse:
+</div>
+
+```bash
+pip install "dlt[clickhouse]"
+```
+
+<div id="setup-guide">
+  ## دليل الإعداد
+</div>
+
+<Steps>
+  <Step>
+    ### تهيئة مشروع dlt
+
+    ابدأ بتهيئة مشروع `dlt` جديد كما يلي:
+
+    ```bash
+    dlt init chess clickhouse
+    ```
+
+    <Note>
+      سيُهيّئ هذا الأمر مسار البيانات لديك باستخدام chess كمصدر وClickHouse كوجهة.
+    </Note>
+
+    يُنشئ الأمر أعلاه عدة ملفات ومجلدات، بما في ذلك `.dlt/secrets.toml` وملف متطلبات خاص بـ ClickHouse. يمكنك تثبيت التبعيات اللازمة المحددة في ملف المتطلبات بتنفيذ الأمر التالي:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    أو باستخدام `pip install dlt[clickhouse]`، والذي يثبّت مكتبة `dlt` والتبعيات اللازمة للعمل مع ClickHouse كوجهة.
+  </Step>
+
+  <Step>
+    ### إعداد قاعدة بيانات ClickHouse
+
+    لتحميل البيانات إلى ClickHouse، تحتاج إلى إنشاء قاعدة بيانات ClickHouse. في ما يلي مخطط عام لما ينبغي عليك فعله:
+
+    1. يمكنك استخدام قاعدة بيانات ClickHouse موجودة أو إنشاء قاعدة بيانات جديدة.
+
+    2. لإنشاء قاعدة بيانات جديدة، اتصل بخادم ClickHouse باستخدام أداة سطر الأوامر `clickhouse-client` أو عميل SQL من اختيارك.
+
+    3. شغّل أوامر SQL التالية لإنشاء قاعدة بيانات جديدة ومستخدم جديد ومنح الأذونات اللازمة:
+
+    ```bash
+    CREATE DATABASE IF NOT EXISTS dlt;
+    CREATE USER dlt IDENTIFIED WITH sha256_password BY 'Dlt*12345789234567';
+    GRANT CREATE, ALTER, SELECT, DELETE, DROP, TRUNCATE, OPTIMIZE, SHOW, INSERT, dictGet ON dlt.* TO dlt;
+    GRANT SELECT ON INFORMATION_SCHEMA.COLUMNS TO dlt;
+    GRANT CREATE TEMPORARY TABLE, S3 ON *.* TO dlt;
+    ```
+  </Step>
+
+  <Step>
+    ### إضافة بيانات الاعتماد
+
+    بعد ذلك، أضف بيانات اعتماد ClickHouse في ملف `.dlt/secrets.toml` كما هو موضح أدناه:
+
+    ```bash
+    [destination.clickhouse.credentials]
+    database = "dlt"                         # اسم قاعدة البيانات التي أنشأتها
+    username = "dlt"                         # اسم مستخدم ClickHouse، وعادةً ما يكون الاسم الافتراضي هو "default"
+    password = "Dlt*12345789234567"          # كلمة مرور ClickHouse إن وجدت
+    host = "localhost"                       # مضيف خادم ClickHouse
+    port = 9000                              # منفذ ClickHouse، والقيمة الافتراضية هي 9000
+    http_port = 8443                         # منفذ HTTP للاتصال بواجهة HTTP الخاصة بخادم ClickHouse. القيمة الافتراضية هي 8443.
+    secure = 1                               # اضبطه على 1 عند استخدام HTTPS، وإلا فاضبطه على 0.
+
+    [destination.clickhouse]
+    dataset_table_separator = "___"          # الفاصل المستخدم في أسماء جداول مجموعة بيانات المشتقة من مجموعة بيانات.
+    ```
+
+    <Info>
+      **HTTP&#95;PORT**
+
+      تحدد المعلمة `http_port` رقم المنفذ الذي سيُستخدم عند الاتصال بواجهة HTTP الخاصة بخادم ClickHouse. وهذا يختلف عن المنفذ الافتراضي 9000، الذي يُستخدم للبروتوكول native TCP.
+
+      يجب عليك تعيين `http_port` إذا كنت لا تستخدم تخزينًا مرحليًا خارجيًا (أي إذا كنت لا تعيّن معلمة تخزين مرحلي في مسار البيانات لديك). ويعود ذلك إلى أن التخزين المرحلي المدمج للتخزين المحلي في ClickHouse يستخدم مكتبة <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse-connect</a>، التي تتواصل مع ClickHouse عبر HTTP.
+
+      تأكد من أن خادم ClickHouse لديك مُعدّ لقبول اتصالات HTTP على المنفذ المحدد بواسطة `http_port`. على سبيل المثال، إذا عيّنت `http_port = 8443`، فيجب أن يكون ClickHouse في وضع الاستماع لطلبات HTTP على المنفذ 8443. وإذا كنت تستخدم تخزينًا مرحليًا خارجيًا، يمكنك حذف المعلمة `http_port`، لأن clickhouse-connect لن يُستخدم في هذه الحالة.
+    </Info>
+
+    يمكنك تمرير connection string لقاعدة البيانات مماثلًا لذلك الذي تستخدمه مكتبة `clickhouse-driver`. ستبدو بيانات الاعتماد أعلاه كما يلي:
+
+    ```bash
+    # أبقه في أعلى ملف toml لديك، قبل بدء أي قسم.
+    destination.clickhouse.credentials="clickhouse://dlt:Dlt*12345789234567@localhost:9000/dlt?secure=1"
+    ```
+  </Step>
+</Steps>
+
+<div id="write-disposition">
+  ## آلية الكتابة
+</div>
+
+جميع [آليات الكتابة](https://dlthub.com/docs/general-usage/incremental-loading#choosing-a-write-disposition)
+مدعومة.
+
+تحدّد آليات الكتابة في مكتبة dlt كيفية كتابة البيانات إلى الوجهة. وهناك ثلاثة أنواع من آليات الكتابة:
+
+**الاستبدال**: تستبدل هذه الآلية البيانات الموجودة في الوجهة بالبيانات القادمة من المورد. فهي تحذف جميع الأصناف والكائنات، ثم تعيد إنشاء المخطط قبل تحميل البيانات. يمكنك معرفة المزيد عنها <a href="https://dlthub.com/docs/general-usage/full-loading">هنا</a>.
+
+**الدمج**: تدمج آلية الكتابة هذه البيانات القادمة من المورد مع البيانات الموجودة في الوجهة. وبالنسبة إلى آلية `merge`، ستحتاج إلى تحديد `primary_key` للمورد. يمكنك معرفة المزيد عنها <a href="https://dlthub.com/docs/general-usage/incremental-loading">هنا</a>.
+
+**الإلحاق**: هذه هي الآلية الافتراضية. ستُلحق البيانات بالبيانات الموجودة بالفعل في الوجهة، مع تجاهل الحقل `primary_key`.
+
+<div id="data-loading">
+  ## تحميل البيانات
+</div>
+
+تُحمَّل البيانات إلى ClickHouse باستخدام الطريقة الأكثر كفاءةً وفقًا لمصدر البيانات:
+
+* بالنسبة إلى الملفات المحلية، تُستخدم مكتبة `clickhouse-connect` لتحميل الملفات مباشرةً إلى جداول ClickHouse باستخدام الأمر `INSERT`.
+* بالنسبة إلى الملفات الموجودة في التخزين البعيد مثل `S3` و`Google Cloud Storage` و`Azure Blob Storage`، تُستخدم وظائف الجداول في ClickHouse مثل s3 وgcs وazureBlobStorage لقراءة الملفات وإدخال البيانات إلى الجداول.
+
+<div id="datasets">
+  ## مجموعات البيانات
+</div>
+
+لا يدعم `ClickHouse` وجود مجموعات بيانات متعددة داخل قاعدة بيانات واحدة، بينما يعتمد `dlt` على مجموعات البيانات لعدة أسباب. ولكي يعمل `ClickHouse` مع `dlt`، ستُضاف بادئة اسم مجموعة البيانات إلى أسماء الجداول التي ينشئها `dlt` في قاعدة بيانات `ClickHouse` لديك، مع فصلها باستخدام `dataset_table_separator` القابل للتهيئة. بالإضافة إلى ذلك، سيُنشأ جدول حارس خاص لا يحتوي على أي بيانات، ما يتيح لـ `dlt` التعرّف على مجموعات البيانات الافتراضية الموجودة بالفعل في وجهة `ClickHouse`.
+
+<div id="supported-file-formats">
+  ## تنسيقات الملفات المدعومة
+</div>
+
+* يُعدّ <a href="https://dlthub.com/docs/dlt-ecosystem/file-formats/jsonl">jsonl</a> التنسيق المفضّل لكلٍّ من التحميل المباشر والتخزين المرحلي.
+* يدعم <a href="https://dlthub.com/docs/dlt-ecosystem/file-formats/parquet">parquet</a> كلاً من التحميل المباشر والتخزين المرحلي.
+
+تتضمن وجهة `clickhouse` بعض الاختلافات الخاصة عن وجهات `sql` الافتراضية:
+
+1. يوفّر `ClickHouse` نوع البيانات التجريبي `object`، لكننا وجدناه غير مستقر إلى حدٍّ ما، لذلك ستقوم وجهة dlt لـ clickhouse بتحميل نوع البيانات المعقّد في عمود نصي. إذا كنت بحاجة إلى هذه الميزة، فتواصل مع مجتمعنا على Slack، وسننظر في إضافتها.
+2. لا يدعم `ClickHouse` نوع البيانات `time`. لذلك ستُحمَّل قيم الوقت في عمود `text`.
+3. لا يدعم `ClickHouse` نوع البيانات `binary`. وبدلاً من ذلك، ستُحمَّل البيانات الثنائية في عمود `text`. عند التحميل من `jsonl`، ستكون البيانات الثنائية سلسلة base64، وعند التحميل من parquet، سيُحوَّل الكائن `binary` إلى `text`.
+4. يدعم `ClickHouse` إضافة أعمدة غير قابلة لأن تكون null إلى جدول يحتوي بالفعل على بيانات.
+5. قد ينتج `ClickHouse` أخطاء تقريب في ظروف معيّنة عند استخدام نوع البيانات float أو double. إذا لم يكن بإمكانك تحمّل أخطاء التقريب، فتأكد من استخدام نوع البيانات decimal. على سبيل المثال، فإن تحميل القيمة 12.7001 إلى عمود double مع ضبط تنسيق ملف المُحمِّل على `jsonl` سيؤدي بشكل متوقّع إلى خطأ تقريب.
+
+<div id="supported-column-hints">
+  ## تلميحات الأعمدة المدعومة
+</div>
+
+يدعم ClickHouse <a href="https://dlthub.com/docs/general-usage/schema#tables-and-columns">تلميحات الأعمدة</a> التالية:
+
+* `primary_key` - يحدّد هذا العمود كجزء من المفتاح الأساسي. ويمكن أن تحمل عدة أعمدة هذا التلميح لإنشاء مفتاح أساسي مركب.
+
+<div id="table-engine">
+  ## محرك الجدول
+</div>
+
+بشكل افتراضي، تُنشأ الجداول في ClickHouse باستخدام محرك الجدول `ReplicatedMergeTree`. يمكنك تحديد محرك جدول بديل باستخدام `table_engine_type` مع المهايئ ClickHouse:
+
+```bash
+from dlt.destinations.adapters import clickhouse_adapter
+
+@dlt.resource()
+def my_resource():
+  ...
+
+clickhouse_adapter(my_resource, table_engine_type="merge_tree")
+```
+
+القيم المدعومة هي:
+
+* `merge_tree` - يُنشئ جداول باستخدام المحرك `MergeTree`
+* `replicated_merge_tree` (الافتراضي) - يُنشئ جداول باستخدام المحرك `ReplicatedMergeTree`
+
+<div id="staging-support">
+  ## دعم التخزين المرحلي
+</div>
+
+يدعم ClickHouse كلاً من Amazon S3 وGoogle Cloud Storage وAzure Blob Storage كوجهات للتخزين المرحلي للملفات.
+
+سيقوم `dlt` برفع ملفات Parquet أو jsonl إلى موقع التخزين المرحلي، ثم استخدام وظائف الجدول في ClickHouse لتحميل البيانات مباشرةً من الملفات المخزنة مرحليًا.
+
+يُرجى الرجوع إلى وثائق filesystem لمعرفة كيفية تهيئة بيانات الاعتماد لوجهات التخزين المرحلي:
+
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#aws-s3">Amazon S3</a>
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#google-storage">Google Cloud Storage</a>
+* <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/filesystem#azure-blob-storage">Azure Blob Storage</a>
+
+لتشغيل مسار بيانات مع تمكين التخزين المرحلي:
+
+```bash
+pipeline = dlt.pipeline(
+  pipeline_name='chess_pipeline',
+  destination='clickhouse',
+  staging='filesystem',  # add this to activate staging
+  dataset_name='chess_data'
+)
+```
+
+<div id="using-google-cloud-storage-as-a-staging-area">
+  ### استخدام Google Cloud Storage كتخزين مرحلي
+</div>
+
+تدعم dlt استخدام Google Cloud Storage ‏(GCS) كتخزين مرحلي عند تحميل البيانات إلى ClickHouse. ويُدار ذلك تلقائيًا بواسطة <a href="/ar/reference/functions/table-functions/gcs">دالة الجدول GCS</a> في ClickHouse، والتي تستخدمها dlt في الخلفية.
+
+لا تدعم دالة الجدول GCS في ClickHouse سوى المصادقة باستخدام مفاتيح Hash-based Message Authentication Code ‏(HMAC). ولتمكين ذلك، يوفّر GCS وضع توافق مع S3 يحاكي واجهة برمجة تطبيقات Amazon S3. ويستفيد ClickHouse من هذا لإتاحة الوصول إلى حاويات GCS عبر تكامله مع S3.
+
+لإعداد التخزين المرحلي في GCS باستخدام مصادقة HMAC في dlt:
+
+1. أنشئ مفاتيح HMAC لحساب الخدمة الخاص بك في GCS باتباع <a href="https://cloud.google.com/storage/docs/authentication/managing-hmackeys#create">دليل Google Cloud</a>.
+
+2. اضبط مفاتيح HMAC، بالإضافة إلى `client_email` و`project_id` و`private_key` الخاصة بحساب الخدمة، في إعدادات وجهة ClickHouse ضمن مشروع dlt في `config.toml`:
+
+```bash
+[destination.filesystem]
+bucket_url = "gs://dlt-ci"
+
+[destination.filesystem.credentials]
+project_id = "a-cool-project"
+client_email = "my-service-account@a-cool-project.iam.gserviceaccount.com"
+private_key = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkaslkdjflasjnkdcopauihj...wEiEx7y+mx\nNffxQBqVVej2n/D93xY99pM=\n-----END PRIVATE KEY-----\n"
+
+[destination.clickhouse.credentials]
+database = "dlt"
+username = "dlt"
+password = "Dlt*12345789234567"
+host = "localhost"
+port = 9440
+secure = 1
+gcp_access_key_id = "JFJ$$*f2058024835jFffsadf"
+gcp_secret_access_key = "DFJdwslf2hf57)%$02jaflsedjfasoi"
+```
+
+ملاحظة: بالإضافة إلى مفاتيح HMAC `bashgcp_access_key_id` و `gcp_secret_access_key`)، تحتاج الآن أيضًا إلى تقديم `client_email` و `project_id` و `private_key` الخاصة بحساب الخدمة ضمن `[destination.filesystem.credentials]`. ويرجع ذلك إلى أن دعم التخزين المرحلي لـ GCS مُنفَّذ حاليًا كحل بديل مؤقت، ولا يزال غير مُحسَّن.
+
+سيمرّر dlt بيانات الاعتماد هذه إلى ClickHouse، الذي سيتولى المصادقة والوصول إلى GCS.
+
+يجري العمل حاليًا وبشكل نشط على تبسيط إعداد التخزين المرحلي لـ GCS وتحسينه لوجهة ClickHouse dlt مستقبلًا. ويجري تتبّع دعم التخزين المرحلي الكامل لـ GCS في مشكلات GitHub التالية:
+
+* جعل وجهة filesystem <a href="https://github.com/dlt-hub/dlt/issues/1272"> تعمل</a> مع gcs في وضع التوافق مع s3
+* دعم <a href="https://github.com/dlt-hub/dlt/issues/1181">التخزين المرحلي</a> لـ Google Cloud Storage
+
+<div id="dbt-support">
+  ### دعم dbt
+</div>
+
+يكون التكامل مع <a href="https://dlthub.com/docs/dlt-ecosystem/transformations/dbt/">dbt</a> مدعومًا عمومًا عبر dbt-clickhouse.
+
+<div id="syncing-of-dlt-state">
+  ### مزامنة حالة `dlt`
+</div>
+
+تدعم هذه الوجهة بالكامل مزامنة حالة <a href="https://dlthub.com/docs/general-usage/state#syncing-state-with-destination">dlt</a>.
