@@ -41,8 +41,10 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     /// durations still loads from disk (deserialization uses validate=false). Such an interval
     /// would divide by zero in getEndOfInterval and can never expire, so it is skipped when
     /// building intervals (see rebuildIntervals). Warn once here at load/change time instead of
-    /// once per quota key, and remember whether any enforceable interval remains.
-    has_enforceable_intervals = false;
+    /// once per quota key, and mark the quota inert if it had limits but none survived: it then
+    /// caches no Intervals per key. A quota with no limits at all is a normal "track nothing"
+    /// quota and stays non-inert so it still reports an empty usage row.
+    size_t kept_limits = 0;
     for (const auto & limits : quota->all_limits)
     {
         if (limits.duration <= std::chrono::seconds::zero())
@@ -52,8 +54,9 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
                 quota->getName(),
                 limits.duration.count());
         else
-            has_enforceable_intervals = true;
+            ++kept_limits;
     }
+    is_inert = !quota->all_limits.empty() && (kept_limits == 0);
 
     rebuildAllIntervals();
 }
@@ -422,10 +425,11 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
         if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
             continue;
 
-        /// A quota whose every interval is non-positive (a legacy on-disk quota that CREATE/ALTER
-        /// would now reject) has no enforceable interval. Skip it entirely so it never allocates a
-        /// cached Intervals per quota key nor a per-hash resolver entry: it stays fully inert.
-        if (!info.has_enforceable_intervals)
+        /// A legacy on-disk quota that had limits but every one is non-positive (CREATE/ALTER would
+        /// now reject it) drops all its intervals. Skip it entirely so it never allocates a cached
+        /// Intervals per quota key nor a per-hash resolver entry: it stays fully inert. A quota with
+        /// no limits at all is not inert and is still set up (it reports an empty usage row).
+        if (info.is_inert)
             continue;
 
         String key = info.calculateKey(enabled, throw_if_client_key_empty);
