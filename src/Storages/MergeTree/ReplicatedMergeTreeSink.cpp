@@ -60,16 +60,10 @@ namespace Setting
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
-    extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
 }
 
 namespace FailPoints
@@ -135,15 +129,9 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , deduplicate(
         [&]
         {
-            /// Under new_unified_hash sync and async inserts share the unified deduplication_hashes
-            /// directory, and the sync window governs both enabling and retention, so async inserts are
-            /// gated by replicated_deduplication_window too. The *_for_async_inserts window is legacy: it
-            /// applies only to old_separate_hashes / compatible_double_hashes (the async_blocks path).
+            /// Sync and async inserts share the unified deduplication_hashes directory;
+            /// replicated_deduplication_window governs both enabling and retention.
             const auto & mt_settings = *storage.getSettings();
-            const bool unified = context_->getServerSettings()[ServerSetting::insert_deduplication_version].value
-                == InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
-            if (async_insert_ && !unified)
-                return mt_settings[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] != 0;
             return mt_settings[MergeTreeSetting::replicated_deduplication_window] != 0;
         }())
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
@@ -151,7 +139,6 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , keeper_retries_info(std::move(keeper_retries_info_))
     , is_async_insert(async_insert_)
-    , insert_deduplication_version(context->getServerSettings()[ServerSetting::insert_deduplication_version].value)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
@@ -313,8 +300,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
-    std::vector<UInt128> all_partitions_block_ids;
-
     for (auto & current_block : part_blocks)
     {
         auto thread_group = ThreadGroup::createForScope();
@@ -356,17 +341,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        auto hash = temp_part->part->getPartBlockIDHash();
-        current_deduplication_info->setPartWriterHashForPartition(hash, current_block.block->rows());
-
         LOG_DEBUG(
             log,
             "Wrote block with {} rows{} and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(), quorumLogMessage(),
             fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
-
-        all_partitions_block_ids.push_back(hash);
 
         size_t max_insert_delayed_streams_for_parallel_write = 0;
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
@@ -404,8 +384,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         total_streams += current_streams;
     }
 
-    deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
-
     finishDelayed(zookeeper);
 
     delayed_parts = std::move(current_parts);
@@ -441,9 +419,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
 
             std::set<std::string> parts_to_wait_for_quorum;
 
-            /// reset the cache version to zero for every partition write.
-            /// Version zero allows to avoid wait on first iteration
-            deduplication_async_inserts_cache_version = 0;
             size_t retry_times = 0;
             while (true)
             {
@@ -476,11 +451,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 ++retry_times;
                 // TODO: sync debuplication could use cache too
 
-                if (insert_deduplication_version != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
-                    storage.deduplication_hashes_cache.triggerCacheUpdate();
-
-                if (is_async_insert)
-                    storage.async_block_ids_cache.triggerCacheUpdate();
+                storage.deduplication_hashes_cache.triggerCacheUpdate();
 
                 {
                     ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
@@ -548,6 +519,11 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
                 /// partition.temp_part is already finalized, no need to call cancel
                 partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+                /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+                /// could become empty after merge and then no part is created.
+                if (!partition.temp_part->part)
+                    break;
             }
 
             // Do it before logging part to have correct elapsed time and profile events in PartLog
@@ -557,6 +533,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     resolveQuorum(zookeeper, part);
             }
         }
+
+        /// The part is null if the retry loop above exited on a block that became empty after merge.
+        if (!partition.temp_part->part)
+            continue;
 
         // profile_events_scope has to be destroyed in the scope above
         auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
@@ -606,21 +586,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;
     if (deduplicate && deduplicate_part)
-    {
-        switch (insert_deduplication_version)
-        {
-            case InsertDeduplicationVersions::OLD_SEPARATE_HASHES:
-                deduplication_hashes.emplace_back(DeduplicationHash::createSyncHash(part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId()));
-                break;
-            case InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES:
-                deduplication_hashes.emplace_back(DeduplicationHash::createSyncHash(part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId()));
-                deduplication_hashes.emplace_back(DeduplicationHash::createUnifiedHash(part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId()));
-                break;
-            case InsertDeduplicationVersions::NEW_UNIFIED_HASHES:
-                deduplication_hashes.emplace_back(DeduplicationHash::createUnifiedHash(part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId()));
-                break;
-        }
-    }
+        deduplication_hashes.emplace_back(DeduplicationHash::createUnifiedHash(part->checksums.getTotalChecksumUInt128(), part->info.getPartitionId()));
 
     auto deduplication_ids = getDeduplicationBlockIds(deduplication_hashes);
 
@@ -678,26 +644,13 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
-std::vector<DeduplicationHash> ReplicatedMergeTreeSink::detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes)
+std::vector<DeduplicationHash> ReplicatedMergeTreeSink::detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes)
 {
-    if (insert_deduplication_version != InsertDeduplicationVersions::NEW_UNIFIED_HASHES)
+    auto conflict_block_ids = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_version);
+    if (!conflict_block_ids.empty())
     {
-        auto conflict_block_ids = storage.async_block_ids_cache.detectConflicts(deduplication_hashes, deduplication_async_inserts_cache_version);
-        if (!conflict_block_ids.empty())
-        {
-            deduplication_async_inserts_cache_version = 0;
-            return conflict_block_ids;
-        }
-    }
-
-    if (insert_deduplication_version != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
-    {
-        auto conflict_block_ids = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_version);
-        if (!conflict_block_ids.empty())
-        {
-            deduplication_cache_version = 0;
-            return conflict_block_ids;
-        }
+        deduplication_cache_version = 0;
+        return conflict_block_ids;
     }
 
     return {};
@@ -858,7 +811,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
         if (!is_async_insert && !deduplication_hashes.empty() && deduplicate)
         {
-            chassert(deduplication_hashes.size() == 1 || insert_deduplication_version == InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES);
+            chassert(deduplication_hashes.size() == 1);
             log_entry.deduplication_block_ids = deduplication_block_ids;
         }
 
@@ -912,7 +865,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         if (is_async_insert)
         {
             /// prefilter by cache
-            auto conflicts = detectConflictsInAsyncBlockIDs(deduplication_hashes);
+            auto conflicts = detectConflictsInCache(deduplication_hashes);
             std::move(conflicts.begin(), conflicts.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
 
             if (!retry_context.conflict_deduplication_hashes.empty())

@@ -22,8 +22,6 @@ namespace zkutil
 
 namespace DB
 {
-enum class InsertDeduplicationVersions : uint8_t;
-
 
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
@@ -89,7 +87,7 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes);
+    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
@@ -141,7 +139,6 @@ protected:
     size_t max_parts_per_block;
 
     UInt64 deduplication_cache_version = 0;
-    UInt64 deduplication_async_inserts_cache_version = 0;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
@@ -157,7 +154,6 @@ protected:
     std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
-    InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 };
 
 }

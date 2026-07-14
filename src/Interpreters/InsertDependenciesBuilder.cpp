@@ -945,25 +945,11 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
     {
         auto & chain = result_chains.emplace_back(std::move(processor_list));
         chain.attachResources(std::move(resources));
-        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+        chain.setNumThreads(getViewProcessingNumThreads());
         chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
     }
 
     return result_chains;
-}
-
-
-Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
-{
-    const auto & dependent_views_ids = dependent_views.at(root_view);
-    if (dependent_views_ids.empty())
-        return {};
-
-    auto output_header = output_headers.at(root_view);
-
-    Chain chain;
-    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
-    return chain;
 }
 
 
@@ -982,7 +968,6 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
     {
-        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
     }
 
@@ -994,7 +979,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
         result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
     }
 
-    result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+    result.setNumThreads(getViewProcessingNumThreads());
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     result.addInsertDependenciesBuilder(shared_from_this());
@@ -1713,6 +1698,15 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
+}
+
+
+size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
+{
+    const auto & settings = init_context->getSettingsRef();
+    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        return static_cast<size_t>(settings[Setting::max_threads]);
+    return 1;
 }
 
 

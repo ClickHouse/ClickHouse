@@ -16,6 +16,7 @@
               "group": "Primeros pasos",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
+                "es/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -37,8 +38,7 @@
                   ],
                   "root": "es/get-started/use-cases/overview"
                 },
-                "es/get-started/about/deployment-modes",
-                "es/get-started/quickstarts/home"
+                "es/get-started/about/deployment-modes"
               ],
               "root": "es/get-started/index"
             },
@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "es/products/cloud/guides/index"
-                },
-                {
-                  "group": "Referencia de la API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
