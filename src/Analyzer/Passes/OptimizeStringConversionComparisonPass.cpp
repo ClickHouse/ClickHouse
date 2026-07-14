@@ -57,8 +57,13 @@ bool isQuotedInsideCompositeTypes(const DataTypePtr & type)
   * or its representation is not analyzed (e.g. Bool, whose representation is configurable by settings).
   * The result is a conservative over-approximation: it is only guaranteed that characters outside
   * of the set can never appear.
+  *
+  * `inside_composite` means the type is rendered as an element of a composite type (Array, Tuple, Map).
+  * The distinction matters for DateTime and DateTime64: the scalar `toString`/`CAST` conversion always renders
+  * them in the simple format `YYYY-MM-DD hh:mm:ss`, while elements of composite types are rendered through
+  * the serialization, which honors the `date_time_output_format` setting.
   */
-std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSettings::DateTimeOutputFormat date_time_output_format)
+std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSettings::DateTimeOutputFormat date_time_output_format, bool inside_composite = false)
 {
     static constexpr std::string_view digits = "0123456789";
 
@@ -101,20 +106,29 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
     else if (which.isDateTime() || which.isDateTime64())
     {
         addChars(chars, digits);
-        switch (date_time_output_format)
+        if (!inside_composite)
         {
-            case FormatSettings::DateTimeOutputFormat::Simple:
-                /// YYYY-MM-DD hh:mm:ss
-                addChars(chars, "-: ");
-                break;
-            case FormatSettings::DateTimeOutputFormat::ISO:
-                /// YYYY-MM-DDThh:mm:ssZ
-                addChars(chars, "-:TZ");
-                break;
-            case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-                /// DateTime64 timestamps can be negative (before 1970).
-                addChars(chars, "-");
-                break;
+            /// The scalar toString/CAST conversion always renders DateTime in the simple format YYYY-MM-DD hh:mm:ss,
+            /// regardless of the date_time_output_format setting.
+            addChars(chars, "-: ");
+        }
+        else
+        {
+            switch (date_time_output_format)
+            {
+                case FormatSettings::DateTimeOutputFormat::Simple:
+                    /// YYYY-MM-DD hh:mm:ss
+                    addChars(chars, "-: ");
+                    break;
+                case FormatSettings::DateTimeOutputFormat::ISO:
+                    /// YYYY-MM-DDThh:mm:ssZ
+                    addChars(chars, "-:TZ");
+                    break;
+                case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
+                    /// DateTime64 timestamps can be negative (before 1970).
+                    addChars(chars, "-");
+                    break;
+            }
         }
         if (which.isDateTime64())
             addChars(chars, ".");
@@ -135,7 +149,7 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
     else if (which.isNullable())
     {
         const auto & nested_type = typeid_cast<const DataTypeNullable &>(*unwrapped).getNestedType();
-        auto nested_chars = getPossibleChars(nested_type, date_time_output_format);
+        auto nested_chars = getPossibleChars(nested_type, date_time_output_format, inside_composite);
         if (!nested_chars)
             return std::nullopt;
         chars = *nested_chars;
@@ -144,7 +158,7 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
     else if (which.isArray())
     {
         const auto & nested_type = typeid_cast<const DataTypeArray &>(*unwrapped).getNestedType();
-        auto nested_chars = getPossibleChars(nested_type, date_time_output_format);
+        auto nested_chars = getPossibleChars(nested_type, date_time_output_format, /*inside_composite=*/ true);
         if (!nested_chars)
             return std::nullopt;
         chars = *nested_chars;
@@ -157,7 +171,7 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
         const auto & element_types = typeid_cast<const DataTypeTuple &>(*unwrapped).getElements();
         for (const auto & element_type : element_types)
         {
-            auto element_chars = getPossibleChars(element_type, date_time_output_format);
+            auto element_chars = getPossibleChars(element_type, date_time_output_format, /*inside_composite=*/ true);
             if (!element_chars)
                 return std::nullopt;
             chars |= *element_chars;
@@ -171,7 +185,7 @@ std::optional<PossibleChars> getPossibleChars(const DataTypePtr & type, FormatSe
         const auto & map_type = typeid_cast<const DataTypeMap &>(*unwrapped);
         for (const auto & nested_type : {map_type.getKeyType(), map_type.getValueType()})
         {
-            auto nested_chars = getPossibleChars(nested_type, date_time_output_format);
+            auto nested_chars = getPossibleChars(nested_type, date_time_output_format, /*inside_composite=*/ true);
             if (!nested_chars)
                 return std::nullopt;
             chars |= *nested_chars;
