@@ -1766,7 +1766,8 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                /// A credential-limited session must not read cached results (fail-close, see `sessionHasCredentialAccessLimit`).
+                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache] && !sessionHasCredentialAccessLimit(context))
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), context->getAuthenticationGrants(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);

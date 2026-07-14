@@ -222,6 +222,8 @@ Examples:
 
 Note that the limit is a property of the authentication method, captured at the moment of the login: changing the clause with `ALTER USER` affects new sessions, not the already established ones.
 
+A session authenticated with such a method does not read from or write to the [query result cache](../../../operations/query-cache.md). The query result cache is not access-control-aware on a hit (it isolates entries by user and roles but does not re-check access and is not invalidated by `GRANT`/`REVOKE`), so a limited credential bypasses it to remain fail-close: a query result must not outlive the grant it was produced under.
+
 Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported in the clause yet: the intersection compares a source filter as an opaque string and cannot narrow one filter to another, so such a grant is rejected rather than silently granting no access.
 
 The clause is supported only for authentication methods whose credentials are verified locally by the server. For methods verified against an external system (`ldap`, `kerberos`, `http`, `jwt`) the clause is rejected: when several authentication methods accept the same credential, the limit is enforced by re-checking the credential against the other methods, and an extra probe of an external system is unsafe, so another method accepting the same credential could bypass the limit.
