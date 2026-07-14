@@ -28,9 +28,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return std::make_shared<DataTypeUInt64>(); }
 
+    /// The result must not be a constant column: `connection_id` is not propagated to secondary
+    /// queries (see `ClientInfo::write`), so folding the call on the initiator of a distributed
+    /// query would ship the initiator's frontend connection id to every shard instead of letting
+    /// each shard observe its own value (same as `queryID` and `currentQueryID`).
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(input_rows_count, getContext()->getClientInfo().connection_id);
+        return result_type->createColumnConst(input_rows_count, getContext()->getClientInfo().connection_id)->convertToFullColumnIfConst();
     }
 };
 
