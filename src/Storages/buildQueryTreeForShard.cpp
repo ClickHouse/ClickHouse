@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -322,6 +323,21 @@ public:
             if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
                 return false;
             if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
+                return false;
+        }
+
+        if (auto * sort_node = parent->as<SortNode>())
+        {
+            /// Do not replace WITH FILL FROM/TO/STEP/STALENESS constants. The planner reads them
+            /// directly via `as<ConstantNode &>()` in extractWithFillValue (PlannerSorting.cpp),
+            /// so a `__getScalar` FunctionNode there would cause a bad cast during planning.
+            if (sort_node->hasFillFrom() && sort_node->getFillFrom() == child)
+                return false;
+            if (sort_node->hasFillTo() && sort_node->getFillTo() == child)
+                return false;
+            if (sort_node->hasFillStep() && sort_node->getFillStep() == child)
+                return false;
+            if (sort_node->hasFillStaleness() && sort_node->getFillStaleness() == child)
                 return false;
         }
 
@@ -880,7 +896,12 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
     {
-        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
+        /// Table/table-function argument lists are not expression scopes whose names need translating, and they may
+        /// contain unresolved identifiers (e.g. the `key = value` named-collection overrides of `s3`/`oss`/`url`) that
+        /// `calculateActionNodeName` cannot name. Skip them, like the nested QUERY/UNION scopes above.
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
     }
 
 private:

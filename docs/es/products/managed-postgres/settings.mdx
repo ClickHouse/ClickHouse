@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: 'Configuración'
+title: 'Configuración'
+description: 'Configura los parámetros de PostgreSQL y PgBouncer y administra la configuración de la instancia de Managed Postgres'
+keywords: ['configuración de Postgres', 'configuración de PostgreSQL', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+Puedes modificar los parámetros de configuración y gestionar la configuración de tu instancia de Managed Postgres desde la pestaña **Configuración** de la barra lateral.
+
+<div id="service-actions">
+  ## Service actions y escalado
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Service actions y escalado" size="md" border />
+
+La barra de herramientas **Service actions** proporciona controles para administrar tu instancia de Managed Postgres:
+
+* **Reset password**: Actualiza la contraseña del superusuario (solo cuando la instancia está en estado `Running`)
+* **Restart**: Reinicia la instancia de base de datos (solo cuando la instancia está en estado `Running`)
+* **Delete**: Elimina la instancia
+
+La sección **Scaling** te permite cambiar los tipos de instancia de tu instancia primaria y tus instancias en espera para aumentar o reducir los recursos de cómputo y la capacidad de almacenamiento.
+Consulta la [página de escalado](/es/products/managed-postgres/scaling) para obtener más detalles.
+
+<div id="changing-configuration">
+  ## Cambiar parámetros de configuración
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Configuración de parámetros de Postgres" size="md" border />
+
+Para modificar un parámetro, selecciona el botón **Edit parameters**. Selecciona los parámetros que quieras modificar y cambia sus valores según corresponda. Cuando hayas terminado, pulsa el botón **Save Changes**.
+
+Todos los cambios realizados en los parámetros de configuración suelen persistirse en la instancia en un plazo de un minuto. Algunos parámetros requieren reiniciar la base de datos para que surtan efecto. Estos cambios se aplicarán después del siguiente reinicio, que puedes activar manualmente desde la barra de herramientas **Service actions**.
+
+Consulta la [documentación](https://www.postgresql.org/docs/current/runtime-config.html) oficial sobre los parámetros de configuración. La lista de parámetros disponibles para configurar se ampliará pronto. Mientras tanto, ponte en contacto con [soporte](https://clickhouse.com/support/program) para solicitar un parámetro que actualmente no esté admitido.

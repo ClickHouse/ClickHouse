@@ -1,0 +1,66 @@
+---
+description: 'Documentation du format RawBLOB'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Les formats `RawBLOB` lisent toutes les données d’entrée comme une seule valeur. Il n’est possible d’analyser qu’une table avec un seul champ de type [`String`](/fr/reference/data-types/string) ou similaire.
+Le résultat est renvoyé au format binaire, sans délimiteurs ni caractères d’échappement. Si plus d’une valeur est renvoyée, le format devient ambigu et il sera impossible de relire les données.
+
+<div id="raw-formats-comparison">
+  ### Comparaison des formats bruts
+</div>
+
+Vous trouverez ci-dessous une comparaison des formats `RawBLOB` et [`TabSeparatedRaw`](/fr/reference/formats/TabSeparated/TabSeparatedRaw).
+
+`RawBLOB` :
+
+* les données sont renvoyées au format binaire, sans échappement ;
+* il n’y a pas de délimiteurs entre les valeurs ;
+* aucun retour à la ligne à la fin de chaque valeur.
+
+`TabSeparatedRaw` :
+
+* les données sont renvoyées sans échappement ;
+* les lignes contiennent des valeurs séparées par des tabulations ;
+* un saut de ligne suit la dernière valeur de chaque ligne.
+
+Voici également une comparaison des formats `RawBLOB` et [RowBinary](/fr/reference/formats/RowBinary/RowBinary).
+
+`RawBLOB` :
+
+* les champs de type String sont renvoyés sans préfixe de longueur.
+
+`RowBinary` :
+
+* les champs de type String sont représentés par leur longueur au format varint (non signé [LEB128] (https://en.wikipedia.org/wiki/LEB128)), suivie des octets de la chaîne.
+
+Lorsque des données vides sont transmises à l’entrée `RawBLOB`, ClickHouse lève une exception :
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>

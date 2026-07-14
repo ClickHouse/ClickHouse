@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'トレースサンプリング'
+sidebarTitle: 'トレースサンプリング'
+description: 'ClickStackで、サンプリングされたトレースデータに対するサンプルレートに基づく重み付き集計を設定します。'
+doc_type: 'guide'
+keywords: ['clickstack', 'トレースサンプリング', 'テイルサンプリング', 'サンプルレート', '重み付き集計', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+高スループットのサービスでは、1 秒あたり数百万ものスパンが生成されることがあります。すべてのスパンを保存するのはコストが高いため、通常、チームは OpenTelemetry Collector の [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) を実行し、N 個に 1 個のスパンだけを保持します。保持された各スパンには、N を記録する `SampleRate` 属性が付与されます。
+
+ひとたびデータがサンプリングされると、単純な集計では正しい結果になりません。`count()` は実際に発生したイベント数より N 倍少ない値を返し、`sum()` や `avg()` には偏りが生じ、パーセンタイルもずれます。その結果、ダッシュボードにはリクエスト数、スループット、エラー率が実際より低く表示され、誤解を招きます。
+
+ClickStack は、サンプリングを考慮したクエリエンジンでこれを解決します。トレースソースでサンプルレート式を設定すると、クエリビルダーが SQL の集計を書き換え、ダッシュボード、アラート、アドホック検索全体で各スパンをそのサンプルレートに基づいて重み付けします。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+トレースソースに `sampleRateExpression` が設定されている場合、ClickStack はこれを次のようにラップします:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+`SampleRate` 属性がないスパンは重みがデフォルトで 1 になるため、サンプリングされていないデータでは元のクエリと同じ結果になります。
+
+次に、クエリビルダーが集計を書き換えます。
+
+| 集計                 | 変更前                | 変更後 (サンプル補正後)                             |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + 条件         | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | 変更なし               | 変更なし                                      |
+| count&#95;distinct | 変更なし               | 変更なし                                      |
+
+<Note>
+  サンプリング時のパーセンタイルには、近似的な T-Digest スケッチである `quantileTDigestWeighted` を使用します。結果は元の値に近くなりますが、厳密に一致するわけではありません。
+</Note>
+
+<div id="configuring">
+  ## サンプルレート式の設定
+</div>
+
+トレースソースの **ソース設定** を開き、各スパンごとのサンプルレートを返す ClickHouse 式を **サンプルレート式** フィールドに入力します。
+
+たとえば、OpenTelemetry tail-sampling processor がそのレートを `SpanAttributes['SampleRate']` に書き込む場合:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="ClickStack のソース設定にあるサンプルレート式フィールド" size="lg" />
+
+設定すると、すべてのチャート、ダッシュボード、アラート、サービスダッシュボードのパネルで、サンプルレートで重み付けされた集計が自動的に適用されます。個々のクエリを変更する必要はありません。
