@@ -312,3 +312,66 @@ TEST(ConvertFieldToTypeStrictness, Float64ToFloat32)
     EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull());
     EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ true).isNull());
 }
+
+/// A temporal type (Date/Date32/DateTime/Time) is integer-backed, so an inexact float literal like 0.1
+/// must be rejected for exact-target callers (strict, or convert_inexact_floats=false) rather than
+/// truncated to 0. Only value-materialization paths (VALUES/INSERT, convert_inexact_floats=true) opt
+/// into the lossy CAST-like truncation. This holds in every date_time_overflow_behavior mode.
+///
+/// The saturate/throw overflow-aware coerce path cannot be reached from SQL with an exact-target caller:
+/// getPartitionIDFromQuery and the strict IN coercion (SetUtils::convertFieldToTypeCheckEnum) both call
+/// with default FormatSettings (ignore mode), while VALUES opts into convert_inexact_floats=true. This
+/// test drives the helper directly with non-ignore FormatSettings so the exact-contract guard on the
+/// saturate/throw branch stays covered even though no SQL caller threads the setting there today.
+TEST(ConvertFieldToTypeStrictness, TemporalExactContractAllOverflowModes)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from_type = type_factory.get("Float64");
+
+    const Field inexact{0.1};   /// not integral: must be rejected by the exact contract
+    const Field integral{100.0}; /// exactly representable integer value: accepted
+
+    const std::initializer_list<const char *> temporal_types{"Date", "Date32", "DateTime", "Time"};
+
+    for (const auto overflow : {FormatSettings::DateTimeOverflowBehavior::Ignore,
+                                FormatSettings::DateTimeOverflowBehavior::Throw,
+                                FormatSettings::DateTimeOverflowBehavior::Saturate})
+    {
+        FormatSettings format_settings;
+        format_settings.date_time_overflow_behavior = overflow;
+
+        const bool coerce_helper_path = overflow != FormatSettings::DateTimeOverflowBehavior::Ignore;
+
+        for (const auto * type_name : temporal_types)
+        {
+            const auto to_type = type_factory.get(type_name);
+
+            /// Exact-target caller (convert_inexact_floats=false): an inexact float is rejected (Null) in
+            /// every mode. This is the guard the bot asked for: without threading the contract into the
+            /// saturate/throw coerce helpers, this returned Field(0) instead of Null.
+            EXPECT_TRUE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
+                                           /*strict=*/ false, /*convert_inexact_floats=*/ false).isNull())
+                << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
+
+            /// Strict caller (the IN operator): same exact rejection.
+            EXPECT_TRUE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
+                                           /*strict=*/ true).isNull())
+                << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
+
+            /// An integral float is exactly representable, so an exact-target caller accepts it.
+            EXPECT_FALSE(convertFieldToType(integral, *to_type, from_type.get(), format_settings,
+                                            /*strict=*/ false, /*convert_inexact_floats=*/ false).isNull())
+                << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
+
+            /// Value-materialization path (convert_inexact_floats=true) on the overflow-aware coerce helper
+            /// (saturate/throw): the lossy CAST-like truncation is still allowed, so an inexact float is
+            /// accepted (truncated), not rejected. In ignore mode Date/Date32/Time instead route through the
+            /// exact convertNumericType<integer> storage-range check, which returns Null for a non-integral
+            /// float regardless of convert_inexact_floats -- that legacy path is covered by the 04401 SQL test.
+            if (coerce_helper_path)
+                EXPECT_FALSE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
+                                                /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull())
+                    << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
+        }
+    }
+}
