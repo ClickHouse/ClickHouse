@@ -17,6 +17,12 @@ set (VERSION_FULL "${VERSION_NAME} ${VERSION_STRING}")
 set (VERSION_SO "${VERSION_STRING}")
 set (VERSION_STRING_SHORT "${VERSION_MAJOR}.${VERSION_MINOR}")
 
+# VERSION_STRING may carry a non-numeric flavour suffix (e.g. ".altinityantalya"), sometimes a purely numeric variant is needed.
+if (NOT VERSION_STRING MATCHES "^([0-9]+(\\.[0-9]+)?(\\.[0-9]+)?(\\.[0-9]+)?)(\\.|$)")
+    message (FATAL_ERROR "Cannot extract a numeric version from VERSION_STRING '${VERSION_STRING}'")
+endif ()
+set (VERSION_STRING_WITHOUT_FLAVOUR "${CMAKE_MATCH_1}")
+
 math (EXPR VERSION_INTEGER "${VERSION_PATCH} + ${VERSION_MINOR}*1000 + ${VERSION_MAJOR}*1000000")
 
 if(CLICKHOUSE_OFFICIAL_BUILD)
