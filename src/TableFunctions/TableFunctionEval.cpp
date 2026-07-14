@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
@@ -161,6 +162,20 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
     }
+
+    /// The generated query does not go through `executeQuery`, so materialize the query-construction
+    /// settings (`limit` / `offset` / `page` / `select` / `filter` / `order` / `sort`) it carries in
+    /// its own `SETTINGS` clause here, same as `executeQueryImpl` does for a usual query. Without this
+    /// they would be silently dropped: `QueryTreeBuilder` removes `limit` / `offset` from a query's
+    /// `SETTINGS` clause (expecting them already materialized into an outer `LIMIT` / `OFFSET`), so
+    /// e.g. `eval('SELECT number FROM numbers(3) SETTINGS limit = 1')` would ignore the limit. Only the
+    /// generated query's own `SETTINGS` clause is applied (its scope) — the session/user construction
+    /// settings shape the outer query that reads from `eval`, not the generated query.
+    wrapNestedConstructionSettings(
+        query,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 
     create.set(create.select, query);
 }
