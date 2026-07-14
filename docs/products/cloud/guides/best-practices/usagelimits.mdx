@@ -11,7 +11,7 @@ While ClickHouse is known for its speed and reliability, optimal performance is
 achieved within certain operating parameters. For example, having too many tables,
 databases, or parts can negatively impact performance. To prevent this, ClickHouse
 Cloud enforces limits across several operational dimensions. 
-The details of these guardrails are listed below.
+The details of these guardrails are listed below, which show default values. 
 
 <Tip>
 If you've run up against one of these guardrails, it's possible that you're 
@@ -41,3 +41,13 @@ For Single Replica Services, the maximum number of databases is restricted to
 100, and the maximum number of tables is restricted to 500. In addition, storage
 for Basic Tier Services is limited to 1 TB.
 </Note>
+<Note>
+For services already exceeding the above usage limits, table/database limits are set at the service's current table/database count plus 25%.
+</Note>
+
+Your service's specific warn and throw limits can be verified by querying system.server_settings. For example,
+```
+SELECT * 
+FROM system.server_settings 
+WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw')
+```
