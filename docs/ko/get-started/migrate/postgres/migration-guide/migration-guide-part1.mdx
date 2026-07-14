@@ -18,9 +18,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 Postgres에서 ClickHouse로의 일반적인 마이그레이션을 보여주는 예시 데이터셋으로, [여기](/ko/get-started/sample-datasets/stackoverflow)에 문서화된 Stack Overflow 데이터셋을 사용합니다. 이 데이터셋에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 `post`, `vote`, `user`, `comment`, `badge`가 포함되어 있습니다. 이 데이터에 대한 PostgreSQL 스키마(스키마)는 아래와 같습니다.
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow 스키마" />
-
-*PostgreSQL에서 테이블을 생성하는 DDL 명령은 [여기](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)에서 확인할 수 있습니다.*
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow 스키마" caption="PostgreSQL에서 테이블을 생성하는 DDL 명령은 [여기](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)에서 확인할 수 있습니다." />
 
 이 스키마는 반드시 가장 최적화된 형태는 아니지만, 프라이머리 키, 외래 키, 파티셔닝, 인덱스 등 널리 사용되는 여러 PostgreSQL 기능을 활용합니다.
 

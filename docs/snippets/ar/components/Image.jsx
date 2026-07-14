@@ -1,6 +1,6 @@
-export const Image = ({ img, alt, size }) => {
+export const Image = ({ img, alt, size, caption }) => {
   return (
-    <Frame>
+    <Frame caption={caption}>
       <img src={img} alt={alt} />
     </Frame>
   );

@@ -31,13 +31,9 @@ Los niveles **Scale** y **Enterprise** también admiten servicios con una sola r
 
 Para escalar horizontalmente un clúster, envíe una solicitud `PATCH` a través de la API para ajustar el número de réplicas. Las capturas de pantalla a continuación muestran una llamada a la API para ampliar un clúster de `3` réplicas a `6` réplicas, y la respuesta correspondiente.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Solicitud PATCH de escalado" border />
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Solicitud PATCH de escalado" border caption="Solicitud `PATCH` para actualizar `numReplicas`" />
 
-*Solicitud `PATCH` para actualizar `numReplicas`*
-
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Respuesta PATCH de escalado" border />
-
-*Respuesta a la solicitud `PATCH`*
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Respuesta PATCH de escalado" border caption="Respuesta a la solicitud `PATCH`" />
 
 Si envía una nueva solicitud de escalado, o varias solicitudes seguidas, mientras ya hay una en curso, el servicio de escalado ignorará los estados intermedios y convergerá al número final de réplicas.
 
@@ -47,9 +43,7 @@ Si envía una nueva solicitud de escalado, o varias solicitudes seguidas, mientr
 
 Para escalar un servicio horizontalmente desde la UI, puedes ajustar el número de réplicas del servicio en la página **Settings**.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Configuración del escalado" border />
-
-*Configuración de escalado del servicio desde la consola de ClickHouse Cloud*
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Configuración del escalado" border caption="Configuración de escalado del servicio desde la consola de ClickHouse Cloud" />
 
 Una vez que el servicio se haya escalado, el dashboard de métricas en la consola de ClickHouse Cloud debería mostrar la asignación correcta del servicio. La captura de pantalla siguiente muestra el cluster escalado hasta una memoria total de `96 GiB`, es decir, `6` réplicas, cada una con una asignación de memoria de `16 GiB`.
 

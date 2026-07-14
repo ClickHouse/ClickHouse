@@ -27,13 +27,9 @@ Services can scale horizontally to a maximum of 20 replicas. If you need additio
 
 To horizontally scale a cluster, issue a `PATCH` request via the API to adjust the number of replicas. The screenshots below show an API call to scale out a `3` replica cluster to `6` replicas, and the corresponding response.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Scaling PATCH request" border/>
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Scaling PATCH request" border caption="`PATCH` request to update `numReplicas`"/>
 
-*`PATCH` request to update `numReplicas`*
-
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Scaling PATCH response" border/>
-
-*Response from `PATCH` request*
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Scaling PATCH response" border caption="Response from `PATCH` request"/>
 
 If you issue a new scaling request or multiple requests in succession, while one is already in progress, the scaling service will ignore the intermediate states and converge on the final replica count.
 
@@ -41,9 +37,7 @@ If you issue a new scaling request or multiple requests in succession, while one
 
 To scale a service horizontally from the UI, you can adjust the number of replicas for the service on the **Settings** page.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Scaling configuration settings" border/>
-
-*Service scaling settings from the ClickHouse Cloud console*
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Scaling configuration settings" border caption="Service scaling settings from the ClickHouse Cloud console"/>
 
 Once the service has scaled, the metrics dashboard in the cloud console should show the correct allocation to the service. The screenshot below shows the cluster having scaled to total memory of `96 GiB`, which is `6` replicas, each with `16 GiB` memory allocation.
 

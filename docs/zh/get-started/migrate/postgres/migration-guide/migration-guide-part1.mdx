@@ -18,9 +18,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 作为用于展示从 Postgres 迁移到 ClickHouse 典型流程的示例数据集，我们使用[此处](/zh/get-started/sample-datasets/stackoverflow)记录的 Stack Overflow 数据集。该数据集包含 Stack Overflow 从 2008 年到 2024 年 4 月期间产生的所有 `post`、`vote`、`user`、`comment` 和 `badge`。该数据的 PostgreSQL schema 如下所示：
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow schema" />
-
-*用于在 PostgreSQL 中创建这些表的 DDL 命令可在[此处](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)获取。*
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow schema" caption="用于在 PostgreSQL 中创建这些表的 DDL 命令可在[此处](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)获取。" />
 
 该 schema 虽然未必是最优的，但用到了多种常见的 PostgreSQL 特性，包括主键、外键、分区和索引。
 

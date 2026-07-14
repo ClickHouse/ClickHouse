@@ -18,9 +18,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 Postgres から ClickHouse への典型的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow)で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で発生したすべての `post`、`vote`、`user`、`comment`、`badge` が含まれています。このデータの PostgreSQL スキーマを以下に示します。
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow スキーマ" />
-
-*PostgreSQL でテーブルを作成するための DDL コマンドは、[こちら](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)から入手できます。*
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow スキーマ" caption="PostgreSQL でテーブルを作成するための DDL コマンドは、[こちら](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)から入手できます。" />
 
 このスキーマは、必ずしも最適ではないものの、主キー、外部キー、パーティション化、索引など、PostgreSQL で広く使われている機能をいくつも活用しています。
 
