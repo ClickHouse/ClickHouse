@@ -15,6 +15,8 @@ struct SettingFieldOptionalBool
     explicit SettingFieldOptionalBool(const Field & field);
 
     explicit operator Field() const;
+
+    String toString() const;
 };
 
 }

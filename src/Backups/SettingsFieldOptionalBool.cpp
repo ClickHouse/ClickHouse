@@ -60,4 +60,14 @@ SettingFieldOptionalBool::SettingFieldOptionalBool(const Field & field)
     throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot get bool from {}", field);
 }
 
+String SettingFieldOptionalBool::toString() const
+{
+    /// An unset value serializes to an empty string, matching how the parsing constructor treats an
+    /// empty string as "unset". A set value uses the canonical `1`/`0` form of `SettingFieldBool`, so
+    /// the representation stays consistent with regular boolean settings in `system.backup_log`.
+    if (!value.has_value())
+        return {};
+    return *value ? "1" : "0";
+}
+
 }
