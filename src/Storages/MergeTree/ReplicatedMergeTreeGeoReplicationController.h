@@ -51,7 +51,11 @@ public:
     ~ReplicatedMergeTreeGeoReplicationController() { resetPreviousTerm(); }
 
 
-    bool isValid() const { return !region.empty() && initialized; }
+    /// Whether geo replication control is configured for this table. Region locality is enforced whenever the
+    /// feature is configured - it must not depend on whether this replica's controller has finished its first
+    /// election, otherwise a recovering replica would fetch cross-region before entering a term (see `isLeader`,
+    /// which reports leadership separately and stays false until a term is actually won).
+    bool isConfigured() const { return !region.empty(); }
 
     const String & getRegion() const { return region; }
 
@@ -72,7 +76,6 @@ private:
     zkutil::EphemeralNodeHolderPtr leader_lease_holder;
     zkutil::EphemeralNodeHolderPtr region_holder;
     std::atomic_bool shutdown = false;
-    std::atomic_bool initialized = false;
     /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
     /// Exposing an atomic role flag - instead of letting worker threads read the `current_zookeeper` and
     /// `leader_lease_holder` shared_ptr members that those threads mutate - avoids a data race on the pointer

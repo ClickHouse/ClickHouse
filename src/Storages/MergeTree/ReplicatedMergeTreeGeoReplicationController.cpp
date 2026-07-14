@@ -72,14 +72,12 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
             /// worker threads do not keep seeing this replica as a leader across a handoff.
             is_leader = false;
             leader_lease_holder.reset();
-            initialized = true;
         },
         [this]()
         {
             if (shutdown)
                 return;
             onLeader();
-            initialized = true;
         },
         "",
         (*storage.getSettings())[MergeTreeSetting::geo_replication_control_leader_election_period_ms]);
@@ -94,13 +92,13 @@ void ReplicatedMergeTreeGeoReplicationController::stop()
     /// Release them explicitly, otherwise this replica keeps publishing its region membership and holding the
     /// leader lease while its replication queues are stopped, preventing another replica from becoming leader.
     resetPreviousTerm();
-    initialized = false;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::start()
 {
     /// Clear `shutdown` before scheduling: otherwise a task scheduled below can run before we reset the flag
-    /// and observe a stale `shutdown == true`, returning early without ever setting `initialized`.
+    /// and observe a stale `shutdown == true`, returning early without ever creating the region node or
+    /// entering leader election.
     shutdown = false;
     if (task)
         task->activateAndSchedule();

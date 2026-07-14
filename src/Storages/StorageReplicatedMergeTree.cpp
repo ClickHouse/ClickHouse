@@ -2629,13 +2629,13 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
-    /// Only enforce region constraints if region controller is valid
+    /// Only enforce region constraints if geo replication control is configured for this table.
     /// Some callers may not be aware of this.
-    only_fetch_within_region = only_fetch_within_region && geo_replication_controller.isValid();
+    only_fetch_within_region = only_fetch_within_region && geo_replication_controller.isConfigured();
     auto zookeeper = getZooKeeper();
     const auto & storage_settings_ptr = getSettings();
     bool fetch_cover_part_from_same_region
-        = geo_replication_controller.isValid() && (*storage_settings_ptr)[MergeTreeSetting::fetch_covered_part_within_region_only];
+        = geo_replication_controller.isConfigured() && (*storage_settings_ptr)[MergeTreeSetting::fetch_covered_part_within_region_only];
 
     auto get_result = getAllReplicasInPath(getZooKeeperPath());
 
@@ -8217,7 +8217,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         Strings replicas = zookeeper->getChildren(fs::path(from) / "replicas");
         std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
-        if (geo_replication_controller.isValid() && from_zookeeper_name == getZooKeeperName())
+        if (geo_replication_controller.isConfigured() && from_zookeeper_name == getZooKeeperName())
         {
             /// We're attaching from the same ZooKeeper as the current table, so we can leverage the region information to reduce
             /// fetching cost if possible by favoring replicas in the same region.
@@ -8295,7 +8295,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (active_replicas.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No active replicas for shard {}", from_);
 
-        if (geo_replication_controller.isValid() && from_zookeeper_name == getZooKeeperName())
+        if (geo_replication_controller.isConfigured() && from_zookeeper_name == getZooKeeperName())
         {
             /// We're attach from same as zookeeper current table, can leverage the region information to reduce
             /// fetching cost if possible by favoring replicas in same region
@@ -11986,7 +11986,7 @@ StorageReplicatedMergeTree::GetReplicasResult StorageReplicatedMergeTree::getAll
     res.all_replicas = zookeeper->getChildren(fs::path(zk_path) / "replicas");
     std::shuffle(res.all_replicas.begin(), res.all_replicas.end(), thread_local_rng);
     auto it = res.all_replicas.end();
-    if (geo_replication_controller.isValid())
+    if (geo_replication_controller.isConfigured())
     {
         /// Prefer fetching from node in same region
         it = std::partition(res.all_replicas.begin(), res.all_replicas.end(), [&](const auto & replica)
