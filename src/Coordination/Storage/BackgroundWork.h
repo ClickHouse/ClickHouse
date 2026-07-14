@@ -55,7 +55,7 @@ private:
     void flushThread();
     void mergeThread();
 
-    bool pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock);
+    bool pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock) const;
 };
 
 }

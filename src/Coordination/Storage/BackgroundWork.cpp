@@ -447,7 +447,7 @@ void BackgroundWork::mergeThread()
     }
 }
 
-bool BackgroundWork::pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock)
+bool BackgroundWork::pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock) const
 {
     const auto & runs = storage->sorted_runs;
 
