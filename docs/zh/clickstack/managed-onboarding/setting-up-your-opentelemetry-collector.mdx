@@ -1,0 +1,440 @@
+---
+slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
+title: '设置 OpenTelemetry Collector'
+description: '为托管 ClickStack 设置 OpenTelemetry Collector'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import GatherCredentials from '/snippets/zh/clickstack/_gather_credentials.mdx';
+import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.mdx';
+import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
+
+本指南将指导你针对现有的托管 ClickStack 服务部署 OpenTelemetry collector，或调整你现有的 collector 配置，然后验证数据是否已开始流转。
+
+<AgentPrompt
+  prompt="使用 curl 下载、阅读并按照此文操作：https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  description="你的智能体会为你设置 ClickStack OpenTelemetry collector。适用于 Claude Code、Cursor、Codex 及其他编程智能体。"
+  outline={[
+"如果尚未安装 clickhousectl，请先安装并完成身份验证（会提示你提供 ClickHouse Cloud API key——可直接粘贴到聊天中，或自行运行登录命令）。",
+"询问目标 ClickHouse Cloud 服务的 ID 或名称，然后拉取其 HTTPS 端点。",
+"在该服务上创建一个 hyperdx_ingest SQL 用户（生成一个高强度密码，或使用你提供的密码）。",
+"在本地 Docker 中运行 ClickStack OpenTelemetry collector，并将其指向你的服务。",
+"通过 collector 发送一小批模拟的 logs、traces 和 metrics，以验证管道工作正常。",
+"确认数据已写入 otel 数据库，并将可查看这些数据的 ClickStack UI URL 提供给你。"
+]}
+/>
+
+该 collector 以 **gateway** 角色运行：提供一个统一的 OTLP 端点，供应用程序、SDK 以及 agent collector 将数据发送到这里。gateway 会将事件整理成批次，应用你已配置的处理逻辑，并通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将其写入 ClickHouse。这样可以将采集逻辑从应用程序代码中解耦出来，并让你能够独立于产生数据的 workloads 单独扩展摄取能力。有关 gateway 与 agent 角色的更多背景信息，请参阅 [Collector roles](/zh/clickstack/ingesting-data/collector#collector-roles)。
+
+<Info>
+  **现有 collector**
+
+  如果你使用的是现有 OpenTelemetry collector，我们假定它已经配置为 **gateway** 角色。我们不建议使用此流程重新配置承担 **agent** 角色的 collector。
+</Info>
+
+请选择与你当前情况对应的选项卡：
+
+<Tabs>
+  <Tab title="我还没有 collector">
+    <Steps>
+      <Step>
+        ## 准备您的凭据
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## 创建一个摄取用户
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## 部署 collector
+
+        部署**ClickStack 版 OpenTelemetry Collector**，它已预先针对托管 ClickStack 完成配置。在下面的示例中，为了简化操作，我们在本地运行 collector，并在同一台机器上生成人工遥测数据。
+
+        <Note>
+          在生产环境中，通常会将 collector 部署在 Kubernetes 集群中，或部署在你的 OpenTelemetry SDKs、agent 以及其他 collector 可访问的虚拟机上。这样就可以集中收集整个环境中的遥测数据，并将其转发到 ClickStack。
+        </Note>
+
+        选择一个共享密钥，用于验证向 collector 发送数据的客户端，然后将它与你的连接信息以及为 `hyperdx_ingest` 用户选择的密码一并导出：
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=hyperdx_ingest
+        export CLICKHOUSE_PASSWORD=ClickH0u3eRocks123!
+        export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+        ```
+
+        启动 ClickStack OTel collector：
+
+        ```shell
+        docker run -d \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        collector 现已在 `4317` 端口提供 OTLP gRPC，在 `4318` 端口提供 OTLP HTTP。应用程序、SDKs 和 agent collectors 应将数据发送到这些端口，并在请求头中包含 `authorization: $OTLP_AUTH_TOKEN`。
+
+        <Info>
+          **生产部署**
+
+          在生产环境中，我们建议为 OTLP 端点启用 TLS。请参阅[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+        </Info>
+      </Step>
+
+      <Step>
+        ## 验证端点
+
+        向 collector 发送一些合成流量，以验证完整管道是否正常运行。我们使用 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)——OpenTelemetry Collector Contrib 提供的数据生成工具，它能够发送 OTLP 日志、链路追踪和指标，并提供多个命令行选项，用于控制数据在服务、严重级别、span 状态和指标类型等维度上的形态。
+
+        通过其 Docker image 运行 (无需安装) 。定义一个简单的 wrapper，使下方命令更易读；`--add-host` 允许容器访问监听在宿主机上的 collector：
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        或者使用 Go 安装该二进制文件，并将目标地址改为 `localhost`：
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+
+        <Info>
+          **预期情况**
+
+          每次 `tg` 运行大约持续 20 秒 (由 `--duration 20s` 设置) ，并会在整个过程中持续输出详细日志，这属于正常现象；每次运行在 20 秒结束后都会自行返回。下面这些日志足以用来确认管道是否正常；可选的更完整配置会额外增加几次运行，并需要几分钟。
+        </Info>
+
+        定义一个小型 `tg` 辅助函数，让每条命令只需指定变化的部分 (service、severity、status、attributes) ：
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        向各服务发送严重性级别分布真实的日志，以信息级别为主，同时包含警告和错误，而非单一统一的错误 stream：
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        仅凭日志即可确认端点正常工作。如需更丰富的演示数据集、多服务服务地图以及各类指标图表，请展开并运行以下命令。这些命令复用了 `tg` 辅助工具，请在同一 shell 中执行。
+
+        <Accordion title="生成更丰富的遥测数据（可选）">
+          从多个健康服务以及一个故障依赖项发送包含多个 span 的链路追踪。这样，服务地图会呈现更贴近实际的形态：大多数服务健康，只有一个服务报错，同时仍会填充错误视图：
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          发送这三种常见类型的指标，这样图表中就会包含计数器、Gauge 和分布：
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          为了让内容更加丰富，再添加两个服务和一个指数直方图：
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
+      </Step>
+
+      <Step>
+        ## 在 ClickStack UI 中确认
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="我有一个采集器">
+    <Steps>
+      <Step>
+        ## 准备凭证
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## 创建用于摄取的用户
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## 调整 collector 配置
+
+        扩展现有的 collector 配置，使其通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将数据写入托管 ClickStack。
+
+        <Info>
+          **需要 ClickHouse exporter**
+
+          如果你使用自己的发行版，请确保其中包含 ClickHouse exporter。上游的 [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib) 已默认包含该 exporter。
+        </Info>
+
+        下面是一个示例配置，它使用 ClickHouse exporter，并包含 ClickStack UI 所需的 receivers、processors 和 pipelines。其行为与 ClickStack 发行版保持一致，包括会话回放 (`rrweb`) 的路由路径。请将 `<clickhouse_cloud_endpoint>` 和 `<your_password_here>` 替换为上文创建的 `hyperdx_ingest` 用户的凭据：
+
+        ```yaml
+        receivers:
+          otlp/hyperdx:
+            protocols:
+              grpc:
+                include_metadata: true
+                endpoint: "0.0.0.0:4317"
+              http:
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+                include_metadata: true
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch:
+          memory_limiter:
+            # 80% of maximum memory up to 2G, adjust for low memory environments
+            limit_mib: 1500
+            # 25% of limit up to 2G, adjust for low memory environments
+            spike_limit_mib: 512
+            check_interval: 5s
+
+        connectors:
+          routing/logs:
+            default_pipelines: [logs/out-default]
+            error_mode: ignore
+            table:
+              - context: log
+                statement: route() where IsMatch(attributes["rr-web.event"], ".*")
+                pipelines: [logs/out-rrweb]
+
+        exporters:
+          clickhouse:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+          clickhouse/rrweb:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            logs_table_name: hyperdx_sessions
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            metrics:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/in:
+              receivers: [otlp/hyperdx]
+              exporters: [routing/logs]
+            logs/out-default:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/out-rrweb:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse/rrweb]
+        ```
+
+        有几点需要注意：
+
+        * `otlp/hyperdx` receiver 同时监听 gRPC (`4317`) 和 HTTP (`4318`)；应用程序和 agent 应连接到 collector 主机上的这些端口。
+        * `clickhouse` exporter 会将日志、链路追踪和指标写入 `otel` database，以匹配 ClickStack UI 预期的布局。`clickhouse/rrweb` exporter 会处理由 `routing/logs` connector 路由到 `otel.hyperdx_sessions` 的 Session Replay 事件。
+        * OTLP receivers 的身份验证由你现有的设置负责。如果你需要强制要求摄取 token，请通过 collector 的 [extensions](https://opentelemetry.io/docs/collector/configuration/#extensions) (例如 `bearertokenauth`) 或由 TLS 保护的 reverse proxy 进行配置。
+
+        使用新配置重新加载 collector。之后，应用程序、SDK 和 agent collector 应将数据发送到 collector 暴露的 OTLP 端点，并携带你的配置所要求的身份验证请求头。
+
+        有关针对托管 ClickStack 配置 OpenTelemetry collectors 的更多详细信息，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+      </Step>
+
+      <Step>
+        ## 验证端点
+
+        向您的 collector 发送一些合成流量，以验证完整的管道是否正常运行。我们使用 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)——OpenTelemetry Collector Contrib 提供的数据生成工具，它能够发送 OTLP 日志、链路追踪和指标，并提供多个 flag，用于控制跨服务、严重级别、span 状态和指标类型的数据形态。
+
+        通过其 Docker image 运行 (无需安装) 。将 `<your-collector-host>` 替换为您的 collector 监听的 host，并将 `authorization` 请求头 (或其他身份验证方式) 设置为您的 collector 所需的值：
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=<your-collector-host>:4317
+        export OTLP_AUTH_TOKEN=<your-auth-token>
+        ```
+
+        或使用 Go 安装二进制文件：
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        ```
+
+        <Info>
+          **预期结果**
+
+          每次 `tg` 运行大约持续 20 秒 (由 `--duration 20s` 设置) ，并且在整个过程中都会持续输出详细日志，这属于正常现象；20 秒结束后，每次运行都会自行返回。下面这些日志已足以确认管道正常；可选的更完整方案会额外增加几次运行，因此需要几分钟。
+        </Info>
+
+        定义一个小型 `tg` 辅助函数，让每条命令只需指定变化的部分 (service、severity、status、attributes) ：
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        向各服务发送严重性级别分布真实的日志，以信息级别为主，同时包含警告和错误，而非单一统一的错误 stream：
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        仅凭日志即可确认端点正常工作。如需更丰富的演示数据集、多服务服务地图以及各类指标图表，请展开并运行以下命令。这些命令复用了 `tg` 辅助工具，请在同一 shell 中执行。
+
+        <Accordion title="生成更详尽的遥测数据（可选）">
+          从多个健康服务以及一个故障依赖发送包含多个 span 的链路追踪。这样，服务地图会呈现更真实的形态：大部分服务健康，只有一个服务报错，同时也会填充错误视图：
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          发送涵盖这三种常见类型的指标，这样图表中就会有 counter、gauge 和 distribution：
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          为了让内容更加丰富，再添加两个服务和一个指数直方图：
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
+      </Step>
+
+      <Step>
+        ## 在 ClickStack UI 中确认
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## 后续步骤：发送你自己的数据
+</div>
+
+上面的模拟突发流量只能证明这条管道可以正常工作。要开始发送真实的遥测数据，请使用 [ClickStack SDKs](/zh/clickstack/ingesting-data/sdks/index) 为你自己的服务添加监测埋点。它们为 Node.js、Python、Go、Java 以及其他语言提供 instrumentation，并将 OTLP 导出到你刚刚验证过的 collector 端点。完整的实操作示例请参见 [为应用程序添加监测埋点](/zh/clickstack/managed-onboarding/instrument-application)。
+
+如果要采集基础设施数据而不是应用程序代码中的数据：
+
+* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
+* [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+本指南介绍了最简单形式的单个 collector 实例。[OpenTelemetry collector 参考](/zh/clickstack/ingesting-data/collector)介绍了接下来可以做什么：
+
+* 使用上游 OpenTelemetry Helm 图表和 ClickStack collector 镜像，[在 Kubernetes 中部署 collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector)。
+* 通过在 OTLP 端点上启用 TLS，并使用遵循最小权限原则的摄取用户，[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+* 在 gateway 处对事件进行[处理、过滤和富化](/zh/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)。
+* 使用自定义 receivers、处理器和管道，[扩展 collector 配置](/zh/clickstack/ingesting-data/collector#extending-collector-config)。
+* 根据预期吞吐量，为 gateway 和 agent 部署[估算资源](/zh/clickstack/ingesting-data/collector#estimating-resources)。
+* [投入生产环境](/zh/clickstack/managing/production)

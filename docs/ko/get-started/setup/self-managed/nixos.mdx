@@ -1,0 +1,111 @@
+---
+description: 'NixOS 및 Nix에서 ClickHouse를 설치합니다'
+keywords: ['ClickHouse', '설치', 'NixOS', 'Nix', 'nixpkgs']
+sidebarTitle: 'NixOS'
+slug: /install/nixos
+title: 'NixOS에서 ClickHouse 설치'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ko/recommendations.mdx';
+
+> ClickHouse는 Nixpkgs 리포지토리에서 제공되며, **Linux** 및 **macOS**에서 Nix를 사용해 설치할 수 있습니다.
+
+<Steps>
+  <Step>
+    ## 권장 사항 검토
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## Nix를 사용해 ClickHouse 설치
+
+    Nix를 사용하면 시스템에 영구적으로 추가하지 않고도 ClickHouse를 설치할 수 있습니다.
+
+    ```bash
+    # 최신 안정 버전 설치
+    nix shell nixpkgs#clickhouse
+
+    # 또는 LTS 버전 설치
+    nix shell nixpkgs#clickhouse-lts
+    ```
+
+    그러면 현재 셸 세션에서 `clickhouse` 실행 파일을 사용할 수 있습니다.
+
+    * `nixpkgs#clickhouse` 패키지는 최신 안정 버전을 제공합니다.
+    * `nixpkgs#clickhouse-lts` 패키지는 장기 지원 버전을 제공합니다.
+    * 두 패키지 모두 Linux와 macOS에서 작동합니다.
+  </Step>
+
+  <Step>
+    ## 영구 설치
+
+    시스템에 ClickHouse를 영구적으로 설치하려면 다음과 같이 하십시오.
+
+    **NixOS 사용자**는 `configuration.nix`에 다음을 추가하십시오.
+
+    ```nix
+    environment.systemPackages = with pkgs; [
+      clickhouse
+    ];
+    ```
+
+    그런 다음 시스템을 다시 빌드하십시오.
+
+    ```bash
+    sudo nixos-rebuild switch
+    ```
+
+    **NixOS가 아닌 사용자**는 Nix profile을 사용해 설치하십시오.
+
+    ```bash
+    # 최신 안정 버전 설치
+    nix profile install nixpkgs#clickhouse
+
+    # 또는 LTS 버전 설치
+    nix profile install nixpkgs#clickhouse-lts
+    ```
+  </Step>
+
+  <Step>
+    ## ClickHouse 서버 시작
+
+    설치 후 ClickHouse 서버를 시작할 수 있습니다.
+
+    ```bash
+    clickhouse-server
+    ```
+
+    기본적으로 서버는 기본 구성으로 시작되며 `localhost:9000`에서 요청을 수신합니다.
+
+    NixOS에서 production 용도로 사용하는 경우에는 ClickHouse를 시스템 서비스로 구성하는 것이 좋습니다. 사용 가능한 구성 옵션은 [NixOS manual](https://search.nixos.org/options?query=clickhouse)을 참조하십시오.
+  </Step>
+
+  <Step>
+    ## ClickHouse client 시작
+
+    ClickHouse 서버에 연결하려면 새 터미널을 열고 다음을 실행하십시오.
+
+    ```bash
+    clickhouse-client
+    ```
+  </Step>
+</Steps>
+
+<div id="about-nix-package">
+  ## Nix 패키지 정보
+</div>
+
+Nixpkgs의 ClickHouse 패키지에는 다음이 포함됩니다:
+
+* `clickhouse-server` - ClickHouse 데이터베이스 서버
+* `clickhouse-client` - ClickHouse에 연결하는 command-line client
+* `clickhouse-local` - 로컬 파일에서 SQL 쿼리를 실행하는 도구
+* 기타 ClickHouse 유틸리티
+
+Nixpkgs의 ClickHouse 패키지에 대한 자세한 내용은 다음을 참조하십시오:
+
+* [Nixpkgs ClickHouse package](https://search.nixos.org/packages?query=clickhouse)
+* [NixOS ClickHouse 서비스 옵션](https://search.nixos.org/options?query=clickhouse)

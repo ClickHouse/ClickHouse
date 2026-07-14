@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: 'Metabase é uma ferramenta de UI open source, fácil de usar, para fazer perguntas sobre seus dados.'
+title: 'Conectando o Metabase ao ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase é uma ferramenta de UI open source fácil de usar para fazer perguntas sobre seus dados. O Metabase é um aplicativo Java que pode ser executado simplesmente <a href="https://www.metabase.com/start/oss/jar" target="_blank">baixando o arquivo JAR</a> e executando-o com `java -jar metabase.jar`. O Metabase se conecta ao ClickHouse usando um JDBC driver que você baixa e coloca na pasta `plugins`:
+
+<div id="goal">
+  ## Objetivo
+</div>
+
+Neste guia, você fará algumas consultas aos seus dados no ClickHouse usando o Metabase e visualizará os resultados. Um dos resultados terá esta aparência:
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualização de gráfico de pizza no Metabase mostrando dados do ClickHouse" border />
+
+<p />
+
+<Tip>
+  **Adicione alguns dados**
+
+  Se você não tiver um conjunto de dados para usar, poderá adicionar um dos exemplos disponíveis. Este guia usa o conjunto de dados [UK Price Paid](/pt-BR/get-started/sample-datasets/uk-price-paid), então essa pode ser uma boa opção. Há vários outros para consultar na mesma categoria da documentação.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Reúna suas informações de conexão
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2.  Baixe o plugin do ClickHouse para o Metabase
+</div>
+
+1. Se você não tiver uma pasta `plugins`, crie uma como subpasta no local em que o `metabase.jar` está salvo.
+
+2. O plugin é um arquivo JAR chamado `clickhouse.metabase-driver.jar`. Baixe a versão mais recente do arquivo JAR em <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+
+3. Salve `clickhouse.metabase-driver.jar` na pasta `plugins`.
+
+4. Inicie (ou reinicie) o Metabase para que o driver seja carregado corretamente.
+
+5. Acesse o Metabase em <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. Na primeira inicialização, você verá uma tela de boas-vindas e terá que responder a uma série de perguntas. Se for solicitado a selecionar um banco de dados, selecione &quot;**Vou adicionar meus dados depois**&quot;:
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  Conecte o Metabase ao ClickHouse
+</div>
+
+1. Clique no ícone de engrenagem no canto superior direito e selecione **Configurações de administrador** para acessar sua <a href="http://localhost:3000/admin/settings/setup" target="_blank">página de administração do Metabase</a>.
+
+2. Clique em **Adicionar um banco de dados**. Como alternativa, você pode clicar na guia **Bancos de dados** e selecionar o botão **Adicionar banco de dados**.
+
+3. Se a instalação do driver tiver funcionado, você verá **ClickHouse** no menu suspenso de **Tipo de banco de dados**:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Seleção de banco de dados no Metabase mostrando ClickHouse como uma opção" border />
+
+4. Dê ao seu banco de dados um **Nome de exibição**, que é uma configuração do Metabase — portanto, use o nome que preferir.
+
+5. Insira os detalhes de conexão do seu banco de dados ClickHouse. Ative uma conexão segura se o servidor ClickHouse estiver configurado para usar SSL. Por exemplo:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Formulário de detalhes de conexão do Metabase para banco de dados ClickHouse" border />
+
+6. Clique no botão **Salvar** e o Metabase fará uma varredura no seu banco de dados em busca de tabelas.
+
+<div id="4-run-a-sql-query">
+  ## 4. Execute uma consulta SQL
+</div>
+
+1. Saia das **Configurações de administrador** clicando no botão **Sair do admin** no canto superior direito.
+
+2. No canto superior direito, clique no menu **+ Novo** e observe que você pode fazer perguntas, executar consultas SQL e criar um dashboard:
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Menu Novo do Metabase mostrando opções para criar perguntas, consultas SQL e dashboards" border />
+
+3. Por exemplo, aqui está uma consulta SQL executada em uma tabela chamada `uk_price_paid`, que retorna o preço médio pago por ano de 1995 a 2022:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="SQL Editor do Metabase mostrando uma consulta sobre dados de preços pagos no Reino Unido" border />
+
+<div id="5-ask-a-question">
+  ## 5. Faça uma pergunta
+</div>
+
+1. Clique em **+ Novo** e selecione **Question**. Observe que é possível criar uma pergunta começando por um banco de dados e uma tabela. Por exemplo, a pergunta a seguir é feita à tabela `uk_price_paid` no banco de dados `default`. Aqui está uma pergunta simples que calcula o preço médio por cidade no condado de Greater Manchester:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Interface do criador de perguntas do Metabase com dados de preços do Reino Unido" border />
+
+2. Clique no botão **Visualize** para ver os resultados em formato de tabela.
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Visualização do Metabase mostrando resultados em tabela dos preços médios por cidade" border />
+
+3. Abaixo dos resultados, clique no botão **Visualization** para mudar a visualização para um gráfico de barras (ou qualquer uma das outras opções disponíveis):
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualização de gráfico de pizza no Metabase com os preços médios por cidade em Greater Manchester" border />
+
+<div id="learn-more">
+  ## Saiba mais
+</div>
+
+Encontre mais informações sobre o Metabase e sobre como criar dashboards <a href="https://www.metabase.com/docs/latest/" target="_blank">na documentação do Metabase</a>.

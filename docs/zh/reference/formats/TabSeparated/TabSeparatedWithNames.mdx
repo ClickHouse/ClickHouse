@@ -1,0 +1,104 @@
+---
+alias: ['TSVWithNames']
+description: '关于 TabSeparatedWithNames 格式的文档'
+input_format: true
+keywords: ['TabSeparatedWithNames']
+output_format: true
+slug: /interfaces/formats/TabSeparatedWithNames
+title: 'TabSeparatedWithNames'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名             |
+| -- | -- | -------------- |
+| ✔  | ✔  | `TSVWithNames` |
+
+<div id="description">
+  ## 说明
+</div>
+
+与 [`TabSeparated`](/zh/reference/formats/TabSeparated/TabSeparated) 格式不同的是，该格式会在第一行写入列名。
+
+解析时，第一行应包含列名。你可以通过列名确定其位置，并检查其正确性。
+
+<Note>
+  如果将设置 [`input_format_with_names_use_header`](/zh/reference/settings/formats#input_format_with_names_use_header) 设为 `1`，
+  输入数据中的列会按名称映射到表中的列；如果将设置 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设为 `1`，则会跳过名称未知的列。
+  否则，第一行会被跳过。
+</Note>
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+<div id="inserting-data">
+  ### 插入数据
+</div>
+
+使用下面这个名为 `football.tsv` 的 TSV 文件：
+
+```tsv
+date    season  home_team       away_team       home_team_goals away_team_goals
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+插入数据：
+
+```sql
+INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedWithNames;
+```
+
+<div id="reading-data">
+  ### 读取数据
+</div>
+
+使用 `TabSeparatedWithNames` 格式来读取数据：
+
+```sql
+SELECT *
+FROM football
+FORMAT TabSeparatedWithNames
+```
+
+输出将采用制表符分隔格式：
+
+```tsv
+date    season  home_team       away_team       home_team_goals away_team_goals
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>

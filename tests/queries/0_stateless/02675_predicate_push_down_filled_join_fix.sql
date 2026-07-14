@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 SET optimize_move_to_prewhere = 0;
