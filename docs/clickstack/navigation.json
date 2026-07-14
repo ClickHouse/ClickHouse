@@ -9,7 +9,7 @@
       "pages": [
         {
           "expanded": true,
-          "group": "Getting started",
+          "group": "Quickstarts",
           "pages": [
             "clickstack/getting-started/managed",
             "clickstack/getting-started/oss"
@@ -104,6 +104,7 @@
             {
               "group": "2026",
               "pages": [
+                "clickstack/demo-days/2026/2026-07-02",
                 "clickstack/demo-days/2026/2026-06-12",
                 "clickstack/demo-days/2026/2026-06-05",
                 "clickstack/demo-days/2026/2026-05-29",

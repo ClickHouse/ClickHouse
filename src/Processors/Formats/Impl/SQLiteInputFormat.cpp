@@ -92,7 +92,7 @@ public:
             initialize();
 
         bool finished = false;
-        auto chunk = statement_reader.readChunk(sqlite_db.get(), statement.get(), max_block_size, finished);
+        auto chunk = statement_reader.readChunk(sqlite_db.get(), statement.get(), max_block_size, finished, [this] { return isCancelled(); });
         if (finished)
         {
             statement.reset();

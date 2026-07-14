@@ -13,6 +13,7 @@
 
 #include <sqlite3.h>
 
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -32,7 +33,9 @@ public:
 
     SQLiteStatementReader(const Block & sample_block_, const FormatSettings & format_settings_, ValueReadMode value_read_mode_);
 
-    Chunk readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished);
+    /// Reads up to max_block_size rows. `is_cancelled` bounds how long the read waits for a locked
+    /// database (SQLITE_BUSY): the wait is aborted and the read reports `finished` when it returns true.
+    Chunk readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished, const std::function<bool()> & is_cancelled);
 
 private:
     using ValueType = ExternalResultDescription::ValueType;

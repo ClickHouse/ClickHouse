@@ -2,6 +2,7 @@
 
 #if USE_SQLITE
 
+#include <base/sleep.h>
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -30,6 +31,10 @@ namespace ErrorCodes
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int SQLITE_ENGINE_ERROR;
 }
+
+/// How long to sleep between sqlite3_step retries when the database is locked (SQLITE_BUSY).
+/// Bounds how quickly the read reacts to cancellation while waiting for the lock.
+static constexpr UInt64 sqlite_busy_retry_ms = 10;
 
 namespace
 {
@@ -136,7 +141,7 @@ SQLiteStatementReader::SQLiteStatementReader(
     }
 }
 
-Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished)
+Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished, const std::function<bool()> & is_cancelled)
 {
     finished = false;
 
@@ -154,11 +159,17 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
         }
 
         if (status == SQLITE_BUSY)
-            throw Exception(
-                ErrorCodes::SQLITE_ENGINE_ERROR,
-                "SQLite database is busy. Error: {}, Message: {}",
-                sqlite3_errstr(status),
-                sqlite3_errmsg(db));
+        {
+            /// The database is locked by another connection. Without this, the loop retries with no
+            /// delay and busy-spins a full CPU core. Bail out on cancellation and back off before retrying.
+            if (is_cancelled())
+            {
+                finished = true;
+                break;
+            }
+            sleepForMilliseconds(sqlite_busy_retry_ms);
+            continue;
+        }
 
         if (status != SQLITE_ROW)
         {

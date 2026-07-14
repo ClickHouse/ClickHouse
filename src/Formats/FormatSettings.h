@@ -357,7 +357,6 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
-        size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
