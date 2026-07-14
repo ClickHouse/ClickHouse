@@ -870,57 +870,87 @@ private:
 
         /// recursive_step was already incremented above — `>1` means we are
         /// executing the recursive query (the seed query is step `1`).
-        if (recursive_step > 1)
-            injectFiltersIntoRecursiveQuery();
+        const bool filters_injected = recursive_step > 1 && injectFiltersIntoRecursiveQuery();
 
         try
         {
-            auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
-            auto pipeline_builder = interpreter->buildQueryPipeline();
-
-            pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
-            {
-                return std::make_shared<MaterializingTransform>(in_header);
-            });
-
-            auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline_builder.getHeader().getColumnsWithTypeAndName(),
-                header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Position,
-                interpreter->getContext());
-            auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
-            pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
-            {
-                return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
-            });
-
-            /// TODO: Support squashing transform
-
-            const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
-            auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
-                {},
-                metadata_snapshot,
-                recursive_query_context,
-                false /*async_insert*/);
-
-            pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
-
-            pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-            pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
-            pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
-
-            executor.emplace(pipeline);
+            buildAndCapturePipeline(query_to_execute, interpreter_context, select_query_options);
         }
         catch (...)
         {
+            /// The injected `IN` filters are only an optimization and must never
+            /// turn a query the unoptimized scan would have run into a failure.
+            /// `generatedInSetIsSafeToInject` builds a probe set to reject filters
+            /// that would not fit, but it runs before `buildQueryPipeline`, and the
+            /// real `FutureSetFromTuple` set is materialized here during pipeline
+            /// construction, after further planner allocations have already been
+            /// charged to the same memory tracker. A query sitting near
+            /// `max_memory_usage` can therefore pass the probe and still raise
+            /// `MEMORY_LIMIT_EXCEEDED` when the real set is built. Fail closed:
+            /// restore the pristine clauses and retry the step once as a plain
+            /// scan — exactly the pipeline the optimization-disabled path would
+            /// have run. If the plain scan also fails, that failure is genuine
+            /// (the query would have failed anyway) and propagates.
+            if (!filters_injected)
+            {
+                restoreOriginalClauses();
+                throw;
+            }
+
             restoreOriginalClauses();
-            throw;
+            buildAndCapturePipeline(query_to_execute, interpreter_context, select_query_options);
         }
 
         /// The pipeline was built and captured the (filter-injected) state of
         /// the query tree. The tree itself is reused across steps, so restore
         /// the original clauses now to leave it pristine for the next step.
         restoreOriginalClauses();
+    }
+
+    /// Build the pipeline for `query_to_execute` and capture it into `pipeline` /
+    /// `executor`. Factored out of `buildStepExecutor` so the recursive step can
+    /// be retried once as a plain scan (with the injected filters removed) when
+    /// the first, filter-injected build fails — see the caller.
+    void buildAndCapturePipeline(
+        const QueryTreeNodePtr & query_to_execute,
+        const ContextMutablePtr & interpreter_context,
+        const SelectQueryOptions & select_query_options)
+    {
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
+        auto pipeline_builder = interpreter->buildQueryPipeline();
+
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        {
+            return std::make_shared<MaterializingTransform>(in_header);
+        });
+
+        auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
+            pipeline_builder.getHeader().getColumnsWithTypeAndName(),
+            header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            interpreter->getContext());
+        auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
+        {
+            return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
+        });
+
+        /// TODO: Support squashing transform
+
+        const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
+        auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
+            {},
+            metadata_snapshot,
+            recursive_query_context,
+            false /*async_insert*/);
+
+        pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
+
+        pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+        pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
+        pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
+
+        executor.emplace(pipeline);
     }
 
     void truncateTemporaryTable(StoragePtr & temporary_table)
