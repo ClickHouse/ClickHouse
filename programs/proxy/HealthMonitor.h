@@ -54,7 +54,12 @@ private:
     std::atomic<bool> stopped {false};
 
     /// Last time each backend's resource usage was polled. Touched only by the supervisor fiber.
-    std::map<String, std::chrono::steady_clock::time_point> last_resource_poll;
+    /// Keyed by the `Backend` object identity rather than its name: backend names are unique only
+    /// within a single pool, so two backends in different pools can share a name and would otherwise
+    /// clobber each other's throttle entry. Backends are never destroyed while the monitor runs
+    /// (the registry is append-only and `HealthMonitor` is torn down before the `Router`), so the
+    /// raw pointer is a stable, collision-free key.
+    std::map<Backend *, std::chrono::steady_clock::time_point> last_resource_poll;
 
     std::unique_ptr<silk::FiberFuture> supervisor_future;
 

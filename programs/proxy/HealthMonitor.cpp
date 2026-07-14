@@ -200,7 +200,7 @@ void HealthMonitor::superviseLoop()
             bool poll_resources = false;
             if (!backend->config().monitor_user.empty())
             {
-                auto & last = last_resource_poll[backend->name()];
+                auto & last = last_resource_poll[backend.get()];
                 if (last == std::chrono::steady_clock::time_point{} || now - last >= resource_poll_interval)
                 {
                     poll_resources = true;
