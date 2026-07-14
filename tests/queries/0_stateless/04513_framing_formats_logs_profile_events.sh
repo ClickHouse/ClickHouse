@@ -14,6 +14,7 @@ URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&outp
 WAIT_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=1&output_format_parallel_formatting=0"
 
 result_file="${CLICKHOUSE_TMP}/framing_packets_$$.ndjson"
+header_file="${CLICKHOUSE_TMP}/framing_headers_$$.txt"
 
 echo '--- profile events packets'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
@@ -98,4 +99,51 @@ echo '--- the query SETTINGS clause can disable logs enabled by the URL while fr
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
     -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 SETTINGS send_logs_level='none' FORMAT Null" > "$result_file"
 [ "$(grep -c '"packet":"log"' "$result_file")" -eq 0 ] && echo 'query SETTINGS send_logs_level none drops log packets: OK'
+rm "$result_file"
+
+# A framing format is also applied to queries that produce no result stream (a successful `INSERT`, a
+# DDL query). This matches the native protocol, which streams progress, logs and profile events for such
+# queries too. Without framing for these queries, `framing_output_format` would be a silent no-op: the
+# response would not switch to the framing content type, no packets would be written, and the logs /
+# profile-events queues would accumulate unread until query teardown.
+echo '--- a successful INSERT is framed: content type, no data packets, log / profile-events packets'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
+    -d "INSERT INTO framing_no_result_04513 SELECT number FROM numbers(1000000)" > "$result_file"
+grep -qi '^content-type: *application/x-ndjson' "$header_file" && echo 'INSERT content type: OK'
+[ "$(grep -c '"packet":"data"' "$result_file")" -eq 0 ] && echo 'INSERT no data packets: OK'
+[ "$(grep -c '"packet":"profile_events"' "$result_file")" -ge 1 ] && echo 'INSERT profile_events packets: OK'
+[ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'INSERT log packets: OK'
+[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM framing_no_result_04513")" = "1000000" ] && echo 'INSERT rows written: OK'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE framing_no_result_04513"
+rm "$result_file" "$header_file"
+
+# A DDL query has no result stream either; it must still switch the response to the framing content type.
+echo '--- a DDL query switches the response to the framing content type'
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=EventStream" \
+    -d "CREATE TABLE IF NOT EXISTS framing_no_result_04513 (x UInt64) ENGINE = Memory" > "$result_file"
+grep -qi '^content-type: *text/event-stream' "$header_file" && echo 'DDL content type: OK'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+rm "$result_file" "$header_file"
+
+# The inverse override applies to no-result queries too: a query that disables framing in its own
+# SETTINGS clause must produce a plain response and must not leave queues that nobody drains.
+echo '--- the query SETTINGS clause can disable framing on a no-result INSERT'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "INSERT INTO framing_no_result_04513 SETTINGS framing_output_format='None' SELECT number FROM numbers(10)" > "$result_file"
+[ "$(grep -c '"packet":' "$result_file")" -eq 0 ] && echo 'no-result query SETTINGS framing None disables framing: OK'
+[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM framing_no_result_04513")" = "10" ] && echo 'no-result query SETTINGS framing None rows written: OK'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE framing_no_result_04513"
+rm "$result_file"
+
+# A no-result query that fails must be delivered as a framed exception packet (no data packet), the same
+# as a failing query with a result stream.
+echo '--- a failing INSERT is delivered as a framed exception'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
+    -d "INSERT INTO table_that_does_not_exist_04513 VALUES (1)" > "$result_file"
+[ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'failing INSERT exception packet: OK'
+[ "$(grep -c '"packet":"data"' "$result_file")" -eq 0 ] && echo 'failing INSERT no data packets: OK'
 rm "$result_file"

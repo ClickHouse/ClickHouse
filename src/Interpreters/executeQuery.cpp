@@ -2474,7 +2474,7 @@ FramingFormatPtr createFramingFormatIfApplicable(
     WriteBuffer & ostr,
     const String & format_name,
     const std::optional<FormatSettings> & output_format_settings,
-    bool for_exception = false)
+    bool carries_no_payload = false)
 {
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
         return nullptr;
@@ -2510,10 +2510,12 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// the payloads (see `binary_payload`), but `JSONEachPacketString` puts the bytes into a JSON
     /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
     ///
-    /// When framing only an exception (`for_exception`), the stream carries a single `exception`
-    /// packet, which is always JSON regardless of the output format, so this compatibility check is
-    /// skipped: the exception is framed even for output formats that cannot be embedded as text.
-    if (!for_exception && framing->requiresTextPayload() && binary_payload)
+    /// When the stream carries no output payload (`carries_no_payload`), the output format
+    /// contributes no bytes, so this compatibility check is skipped and the framing is used
+    /// regardless of the output format. This is the case for a framed exception (a single `exception`
+    /// packet, always JSON) and for a successful query without a result stream (`INSERT`, DDL: only
+    /// the `progress` / `log` / `profile_events` packets are written).
+    if (!carries_no_payload && framing->requiresTextPayload() && binary_payload)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The framing format {} embeds the output as text and is not compatible with the output format {}, "
@@ -2753,7 +2755,7 @@ void executeQuery(
                 /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
                 /// attached before the query are wired in as well, so any `log` / `profile_events` packets
                 /// accumulated during parsing and planning are still drained on `finalize`.
-                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*for_exception=*/ true);
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*carries_no_payload=*/ true);
                 if (framing)
                 {
                     /// With a framing format, the exception packet is written by the framing itself and
@@ -2865,12 +2867,52 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
+    /// A framing format also multiplexes the auxiliary packets (progress, logs, profile events) for
+    /// HTTP queries that produce no result stream - a successful `INSERT`, a DDL query, or any other
+    /// query without output. This matches the native protocol, which streams progress, logs and
+    /// profile events for such queries too, and keeps `framing_output_format` consistent: without it
+    /// the setting would be a silent no-op for these queries - the response would not switch to the
+    /// framing content type, no packets would be written, and the logs / profile-events queues
+    /// attached by `syncFramingQueuesWithSettings` would accumulate unread until query teardown.
+    ///
+    /// The payload carrier is a `Null` output format, because there is no data to format; only the
+    /// framing's own packets are written. Returns whether a framing format was set up. Applies to the
+    /// HTTP protocol only, and is a no-op unless `framing_output_format` is enabled.
+    auto setup_framing_for_no_result_query = [&]() -> bool
+    {
+        /// The output format is irrelevant here (no payload is produced), so the payload-compatibility
+        /// check is skipped (`carries_no_payload`).
+        auto framing = createFramingFormatIfApplicable(
+            context, ostr, context->getDefaultFormat(), output_format_settings, /*carries_no_payload=*/ true);
+        if (!framing)
+            return false;
+
+        output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+        output_format->setFraming(framing);
+        setFramingQueues(*framing, context, framing_queues);
+
+        /// Route progress to the framing format so `progress` packets are emitted during execution
+        /// (relevant for a long-running `INSERT`); the logs and profile events accumulated in the
+        /// queues are drained when the framing format is finalized after the query-finish logging.
+        auto previous_progress_callback = context->getProgressCallback();
+        pipeline.setProgressCallback([captured_output_format = output_format, previous_progress_callback] (const Progress & progress)
+        {
+            if (previous_progress_callback)
+                previous_progress_callback(progress);
+            captured_output_format->onProgress(progress);
+        });
+
+        result_details.content_type = framing->getContentType();
+        return true;
+    };
+
     try
     {
         if (pipeline.pushing())
         {
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
+            setup_framing_for_no_result_query();
         }
         else if (pipeline.pulling())
         {
@@ -2939,7 +2981,8 @@ void executeQuery(
         }
         else
         {
-            pipeline.setProgressCallback(context->getProgressCallback());
+            if (!setup_framing_for_no_result_query())
+                pipeline.setProgressCallback(context->getProgressCallback());
         }
 
         /// input stream might be consumed into some source proceccors/format readers
