@@ -269,6 +269,8 @@ add_contrib (clickstack-cmake clickstack)
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
+add_contrib (sz3-cmake sz3)
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
