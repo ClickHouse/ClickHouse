@@ -18,8 +18,8 @@ struct PlanSchedule
 {
     enum class Purpose : uint8_t
     {
-        User,      /// inside the schedule request (in production: the plan span itself)
-        FillOnly,  /// alignment slack a lower tier needs but the request does not cover
+        User,      /// inside the plan span - the only bytes readNextWindow returns
+        FillOnly,  /// cell slack outside the span - fetched/filled, never served
     };
 
     enum class Source : uint8_t
@@ -93,17 +93,12 @@ struct PlanSchedule
     VectorWithMemoryTracking<ServeRun> serve_runs;
 };
 
-/// Describe the work of the plan `geometry` for the half-open request
-/// `request_extent` (physical coords here; the caller adds the encryption-header
-/// shift). In PRODUCTION the request is always the plan's own span
-/// `[plan_start, plan_end)` - the plan is extent-independent - so the request
-/// clamp is a no-op and `Purpose::User` means "inside the span"; a narrower
-/// request exists for the schedule's unit grid. Pure function of the geometry;
+/// Describe the work of the plan `geometry` over its own span
+/// `[plan_start, plan_end)` (physical coords). Pure function of the geometry;
 /// `min_bytes_for_seek` shapes the bridge threshold (the streaming footprint);
 /// the serve sizes (pressure-scaled by the caller) become each run's `serve_bound`.
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
-    ByteRange request_extent,
     size_t min_bytes_for_seek,
     size_t serve_window_bytes,
     size_t serve_block_bytes);

@@ -28,9 +28,9 @@ CoverageMap geometry(size_t plan_start, size_t plan_end, std::vector<GeometryEnt
     return g;
 }
 
-PlanSchedule describe(const CoverageMap & g, ByteRange request)
+PlanSchedule describe(const CoverageMap & g)
 {
-    return buildSchedule(g, request, /*min_bytes_for_seek=*/2, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
+    return buildSchedule(g, /*min_bytes_for_seek=*/2, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
 }
 
 struct Seg { size_t off; size_t size; PlanSchedule::Purpose purpose; bool resident; };
@@ -61,9 +61,9 @@ void expectSteps(const PlanSchedule & s, const std::vector<ByteRange> & want)
 constexpr auto User = PlanSchedule::Purpose::User;
 constexpr auto Fill = PlanSchedule::Purpose::FillOnly;
 
-PlanSchedule describeSeek(const CoverageMap & g, ByteRange request, size_t min_bytes_for_seek)
+PlanSchedule describeSeek(const CoverageMap & g, size_t min_bytes_for_seek)
 {
-    return buildSchedule(g, request, min_bytes_for_seek, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
+    return buildSchedule(g, min_bytes_for_seek, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
 }
 
 bool intoHas(const PlanSchedule::Retrieve & r, size_t entry, ByteRange cell)
@@ -84,7 +84,7 @@ bool rangeContains(ByteRange outer, ByteRange inner)
 TEST(PlanScheduleSteps, ColdAllGap)
 {
     auto g = geometry(0, 8, {tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}})});
-    auto s = describe(g, {0, 8});
+    auto s = describe(g);
     expectRanges(s, {{0, 8, User, false}});
     expectSteps(s, {{0, 8}});
 }
@@ -92,7 +92,7 @@ TEST(PlanScheduleSteps, ColdAllGap)
 TEST(PlanScheduleSteps, AllResident)
 {
     auto g = geometry(0, 8, {tierEntry(CacheTier::PageCache, {{0, 8}}, {})});
-    auto s = describe(g, {0, 8});
+    auto s = describe(g);
     expectRanges(s, {{0, 8, User, true}});
     expectSteps(s, {{0, 8}});
 }
@@ -101,13 +101,13 @@ TEST(PlanScheduleSteps, AllResident)
 /// the whole [0,6) and [6,8) segments.
 TEST(PlanScheduleSteps, DesignWorkedExample)
 {
-    auto g = geometry(0, 8, {
+    auto g = geometry(4, 8, {
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{5, 3}}),         // resident [3,5), miss [5,8)
-        // fs cells [0,6) and [6,8): the request's head falls inside the [0,6)
+        // fs cells [0,6) and [6,8): the span's head falls inside the [0,6)
         // cell, so the cell closure demands the before-slack [0,4).
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}),
     });
-    auto s = describe(g, {4, 4});  // request [4,8)
+    auto s = describe(g);  // span [4,8), cursor mid-cell
 
     /// fill_region = [0,8); slack [0,4).
     expectRanges(s, {
@@ -123,20 +123,25 @@ TEST(PlanScheduleSteps, DesignWorkedExample)
 /// Request fully resident -> no fill closure beyond the request, no slack.
 TEST(PlanScheduleSteps, ResidentRequestNoSlack)
 {
-    auto g = geometry(0, 16, {
+    auto g = geometry(4, 12, {
         tierEntry(CacheTier::PageCache, {{4, 8}}, {}),              // resident [4,12)
-        tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {12, 4}}), // misses outside request
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {12, 4}}), // misses outside the span
     });
-    auto s = describe(g, {4, 8});  // request [4,12), fully page-resident
+    auto s = describe(g);  // span [4,12), fully page-resident
     expectRanges(s, {{4, 8, User, true}});
     expectSteps(s, {{4, 8}});
 }
 
-/// Request clamps to the plan end.
-TEST(PlanScheduleSteps, RequestClampedToPlanEnd)
+/// A span starting mid-cell: the cell's head becomes before-slack, the serve
+/// starts at the span.
+TEST(PlanScheduleSteps, MidCellSpanEmitsBeforeSlack)
 {
-    auto g = geometry(0, 8, {tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}})});
-    auto s = describe(g, {4, 100});  // request [4,104) clamps to [4,8)
+    auto g = geometry(4, 8, {tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}})});
+    auto s = describe(g);  // span [4,8) inside the cold cell [0,8)
+    expectRanges(s, {
+        {0, 4, Fill, false},  // the cell head below the span: fetched, not served
+        {4, 4, User, false},
+    });
     expectSteps(s, {{4, 4}});
 }
 
@@ -147,7 +152,7 @@ TEST(PlanScheduleSteps, ResidentIslandSplitsSteps)
         tierEntry(CacheTier::PageCache, {{4, 2}}, {}),                  // resident [4,6)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 6}}),    // misses [0,6),[6,12)
     });
-    auto s = describe(g, {0, 12});
+    auto s = describe(g);
     /// [0,4) gap, [4,6) page hit, [6,12) gap.
     expectSteps(s, {{0, 4}, {4, 2}, {6, 6}});
     expectRanges(s, {
@@ -166,20 +171,20 @@ TEST(PlanScheduleSteps, AdjacentCrossTierResidentMergesIntoOneStep)
         tierEntry(CacheTier::PageCache, {{0, 4}}, {}),         // resident [0,4)
         tierEntry(CacheTier::FilesystemCache, {{4, 4}}, {}),   // resident [4,8), adjacent
     });
-    auto s = describe(g, {0, 8});
+    auto s = describe(g);
     expectSteps(s, {{0, 8}});  // one merged hit step, not [0,4)+[4,8)
 }
 
 /// Stage 2: the worked example's one Remote retrieve and its routing.
 TEST(PlanScheduleRetrieves, DesignWorkedExample)
 {
-    auto g = geometry(0, 8, {
+    auto g = geometry(4, 8, {
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{5, 3}}),  // whole-block
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}),     // incremental
     });
     // min_bytes_for_seek=4 so the 2-wide page hit [3,5) is bridged (over-read on the open GET),
     // NOT filled down - one Remote retrieve covers the whole fetch.
-    auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
+    auto s = describeSeek(g, /*min_bytes_for_seek=*/4);  // span [4,8)
 
     ASSERT_EQ(s.retrieves.size(), 2u);  // the Remote fetch + the serve-front promote of the user gap
     const auto & r = s.retrieves[0];
@@ -217,7 +222,7 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
 TEST(PlanScheduleRetrieves, FetchRunsSplitAtEmbeddedResident)
 {
     /// The worked example: the merged range [0,8) spans the embedded page hit [3,5).
-    auto g = geometry(0, 8, {
+    auto g = geometry(4, 8, {
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{5, 3}}),
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}),
     });
@@ -225,7 +230,7 @@ TEST(PlanScheduleRetrieves, FetchRunsSplitAtEmbeddedResident)
     /// The seek bound shapes bridging (a connection decision) - NOT the fetch runs.
     for (size_t min_bytes_for_seek : {2u, 4u})
     {
-        auto s = describeSeek(g, {4, 4}, min_bytes_for_seek);  // request [4,8)
+        auto s = describeSeek(g, min_bytes_for_seek);  // span [4,8)
         ASSERT_FALSE(s.retrieves.empty());
         const auto & r = s.retrieves[0];
         ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
@@ -248,7 +253,7 @@ TEST(PlanScheduleRetrieves, FetchRunsColdGapIsOneRunAcrossPlanEnd)
     auto g = geometry(0, 8, {
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),
     });
-    auto s = describe(g, {0, 8});
+    auto s = describe(g);
 
     ASSERT_EQ(s.retrieves.size(), 1u);
     const auto & r = s.retrieves[0];
@@ -263,13 +268,13 @@ TEST(PlanScheduleRetrieves, FetchRunsColdGapIsOneRunAcrossPlanEnd)
 /// into a faster tier that also misses it.
 TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
 {
-    auto g = geometry(0, 8, {
+    auto g = geometry(4, 8, {
         // page misses a slice of the before-slack [0,1) AND the user tail [5,8).
         tierEntry(CacheTier::PageCache, {{3, 2}}, {{0, 1}, {5, 3}}),
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}),
     });
     // min_bytes_for_seek=4 so the 2-wide page hit [3,5) is bridged (over-read), one Remote retrieve.
-    auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
+    auto s = describeSeek(g, /*min_bytes_for_seek=*/4);  // span [4,8)
 
     ASSERT_EQ(s.retrieves.size(), 2u);  // the Remote fetch + the user-tail promote
     const auto & r = s.retrieves[0];
@@ -297,7 +302,7 @@ TEST(PlanScheduleRetrieves, BypassTierGetsNoWriteTargets)
         tierEntry(CacheTier::PageCache, {}, {{4, 4}}),          // populating: one cell [4,8)
         tierEntry(CacheTier::FilesystemCache, {{0, 4}}, {}),    // bypass-mode: resident, NO cells
     });
-    auto s = describe(g, {0, 8});
+    auto s = describe(g);
 
     ASSERT_FALSE(s.retrieves.empty());
     const auto & r = s.retrieves[0];
@@ -322,7 +327,7 @@ TEST(PlanScheduleRetrieves, PromoteNeverCrossesSameTier)
             tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // fast fs layer, cold
             tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // slow fs layer, cold
         });
-        auto s = describe(g, {0, 8});
+        auto s = describe(g);
         ASSERT_EQ(s.retrieves.size(), 2u);
         const auto & r = s.retrieves[0];
         ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
@@ -341,7 +346,7 @@ TEST(PlanScheduleRetrieves, PromoteNeverCrossesSameTier)
             tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // fast fs layer, cold
             tierEntry(CacheTier::FilesystemCache, {{0, 8}}, {}),   // slow fs layer, resident
         });
-        auto s = describe(g, {0, 8});
+        auto s = describe(g);
         ASSERT_EQ(s.retrieves.size(), 1u);   // no gap, no Remote - just the promote
         const auto & promote = s.retrieves[0];
         ASSERT_EQ(promote.source, PlanSchedule::Source::HandedChain);
@@ -365,7 +370,7 @@ TEST(PlanScheduleRetrieves, PerGapRetrievesNotGrouped)
     // The resident hole [4,8) is 4 wide; narrow bound or wide, the schedule emits one per gap.
     for (size_t min_bytes_for_seek : {2u, 4u, 8u})
     {
-        auto s = describeSeek(g, {0, 12}, min_bytes_for_seek);
+        auto s = describeSeek(g, min_bytes_for_seek);
         ASSERT_EQ(s.retrieves.size(), 2u)
             << "one Remote retrieve per gap, never grouped (min_bytes_for_seek=" << min_bytes_for_seek << ")";
         EXPECT_EQ(s.retrieves[0].range.offset, 0u);
@@ -385,7 +390,7 @@ TEST(PlanScheduleRetrieves, SpanningSegmentIsOneJobWithSplitRuns)
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // ONE segment [0,12), incremental
     });
-    auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);  // hole wide enough to split
+    auto s = describeSeek(g, /*min_bytes_for_seek=*/2);  // hole wide enough to split
     std::vector<size_t> remotes;
     for (size_t i = 0; i < s.retrieves.size(); ++i)
         if (s.retrieves[i].source == PlanSchedule::Source::Remote)
@@ -413,7 +418,7 @@ TEST(PlanScheduleRetrieves, UpperCacheReadForSplitEmbeddedHit)
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // ONE segment [0,12)
     });
-    auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);  // split at [4,8)
+    auto s = describeSeek(g, /*min_bytes_for_seek=*/2);  // split at [4,8)
 
     size_t upper = s.retrieves.size();
     for (size_t i = 0; i < s.retrieves.size(); ++i)
@@ -433,7 +438,7 @@ TEST(PlanScheduleRetrieves, BridgedEmbeddedHitStaysRemoteOverRead)
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),
     });
-    auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/8);  // hole 4 <= 8 -> bridged
+    auto s = describeSeek(g, /*min_bytes_for_seek=*/8);  // hole 4 <= 8 -> bridged
     for (const auto & r : s.retrieves)
         EXPECT_NE(r.source, PlanSchedule::Source::UpperCacheRead)
             << "a bridged hole is over-read from remote, not UpperCacheRead";
@@ -447,7 +452,7 @@ TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
         tierEntry(CacheTier::PageCache, {}, {{0, 8}}),  // page misses all
         tierEntry(CacheTier::FilesystemCache, {{0, 8}}, {}),                  // fs resident [0,8)
     });
-    auto s = describe(g, {0, 8});  // request [0,8), served from fs, promoted to page
+    auto s = describe(g);  // request [0,8), served from fs, promoted to page
 
     // No remote retrieve (fully resident in fs); one HandedChain promote into page.
     size_t promotes = 0;
@@ -471,7 +476,7 @@ TEST(PlanScheduleRetrieves, StraddlingCellBeyondPlan)
     auto g = geometry(64, 100, {  // plan [64,100)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 256}}),
     });
-    auto s = describe(g, {64, 36});  // request [64,100)
+    auto s = describe(g);  // request [64,100)
     ASSERT_EQ(s.retrieves.size(), 1u);
     EXPECT_EQ(s.retrieves[0].range.offset, 0u) << "extends below plan_start to the segment start";
     EXPECT_EQ(s.retrieves[0].range.size, 256u) << "and past plan_end to the segment end";
@@ -486,13 +491,13 @@ TEST(PlanScheduleRetrieves, SeveralGapsEachWiredToOwnRetrieve)
         tierEntry(CacheTier::PageCache, {{4, 2}, {12, 2}}, {{0, 4}, {6, 6}, {14, 6}}),
     });
     // resident islands [4,6) and [12,14) -> gaps [0,4), [6,12), [14,20)
-    auto s = describe(g, {0, 20});
+    auto s = describe(g);
 
     expectSteps(s, {{0, 4}, {4, 2}, {6, 6}, {12, 2}, {14, 6}});
 
     /// Three Remote retrieves, one per gap (holes are resident runs of size 2,
     /// but min_bytes_for_seek=2 would bridge - use a fresh describe with mbs 0).
-    auto split = describeSeek(g, {0, 20}, /*min_bytes_for_seek=*/0);
+    auto split = describeSeek(g, /*min_bytes_for_seek=*/0);
     size_t remotes = 0;
     for (const auto & r : split.retrieves)
         if (r.source == PlanSchedule::Source::Remote)
@@ -530,7 +535,7 @@ TEST(PlanScheduleServeRuns, ServeBoundPerRunKind)
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // one segment [0,12)
     });
-    auto s = buildSchedule(g, {0, 12}, /*min_bytes_for_seek=*/2,
+    auto s = buildSchedule(g, /*min_bytes_for_seek=*/2,
         /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
     bool saw_hit = false;
     bool saw_job = false;

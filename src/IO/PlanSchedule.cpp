@@ -18,7 +18,7 @@ bool contains(ByteRange outer, ByteRange inner)
     return inner.offset >= outer.offset && inner.end() <= outer.end();
 }
 
-VectorWithMemoryTracking<ByteRange> mergeSorted(VectorWithMemoryTracking<ByteRange> parts)
+VectorWithMemoryTracking<ByteRange> sortAndMerge(VectorWithMemoryTracking<ByteRange> parts)
 {
     std::sort(parts.begin(), parts.end(),
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
@@ -38,23 +38,22 @@ VectorWithMemoryTracking<ByteRange> mergeSorted(VectorWithMemoryTracking<ByteRan
     return merged;
 }
 
-/// The fill closure: GAP-driven. Walk the request; each gap (a range no tier
+/// The fill closure: GAP-driven. Walk the span; each gap (a range no tier
 /// holds) is aligned out to the cache cells it must fill via `fetchWindowAt` -
 /// the same window the executor fetches - which pulls in the before/after
-/// alignment slack. A request byte resident in a faster tier induces NO fetch
-/// and NO slack (it is served from that tier, not fetched). Merged + clamped to
-/// the plan.
-VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange request)
+/// alignment slack. A span byte resident in a faster tier induces NO fetch
+/// and NO slack (it is served from that tier, not fetched).
+VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange span)
 {
     VectorWithMemoryTracking<ByteRange> parts;
-    size_t pos = request.offset;
-    const size_t end = request.offset + request.size;
+    size_t pos = span.offset;
+    const size_t end = span.offset + span.size;
     while (pos < end)
     {
         const auto res = g.residentAt(pos);
         if (res.resident())
         {
-            pos = std::min(res.run_end, end);  /// resident request bytes: served, not fetched
+            pos = std::min(res.run_end, end);  /// resident span bytes: served, not fetched
             continue;
         }
         const size_t gap_end = std::min(g.gapEnd(pos), end);
@@ -68,7 +67,7 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange 
             parts.push_back(fetch);
         pos = gap_end;
     }
-    return mergeSorted(std::move(parts));
+    return sortAndMerge(std::move(parts));
 }
 
 /// The source-fetch runs of one fill part: `part` minus every plan-resident region (a resident
@@ -108,7 +107,7 @@ VectorWithMemoryTracking<ByteRange> fetchRunsFor(const CoverageMap & g, ByteRang
 /// tier missing it, the one whose segment alignment created the slack - never
 /// promoted into a faster tier.
 VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
-    const CoverageMap & g, ByteRange conn, ByteRange request)
+    const CoverageMap & g, ByteRange conn, ByteRange span)
 {
     VectorWithMemoryTracking<PlanSchedule::WriteTarget> targets;
     for (size_t ei = 0; ei < g.entries.size(); ++ei)
@@ -123,7 +122,7 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
             if (whole_block ? !contains(conn, m) : !overlaps(conn, m))
                 continue;
 
-            const bool holds_user = request.size && overlaps(m, request);
+            const bool holds_user = overlaps(m, span);
             if (holds_user)
             {
                 /// The fetch fills the BOTTOM tier only; the faster tiers are filled by
@@ -175,7 +174,6 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
 
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
-    ByteRange request_extent,
     size_t min_bytes_for_seek,
     size_t serve_window_bytes,
     size_t serve_block_bytes)
@@ -184,25 +182,23 @@ PlanSchedule buildSchedule(
     if (geometry.plan_end <= geometry.plan_start)
         return sched;
 
-    /// Clamp the request to the plan span.
-    const size_t req_lo = std::max(request_extent.offset, geometry.plan_start);
-    const size_t req_hi = std::min(request_extent.end(), geometry.plan_end);
-    const ByteRange request = (req_hi > req_lo) ? ByteRange{req_lo, req_hi - req_lo} : ByteRange{req_lo, 0};
+    /// The span IS the request: everything within it is read by the scan (User);
+    /// only the cell slack around it is FillOnly.
+    const ByteRange span{geometry.plan_start, geometry.plan_end - geometry.plan_start};
 
-    const auto fill = fillRegion(geometry, request);
+    const auto fill = fillRegion(geometry, span);
 
-    /// --- ranges: typed decomposition of request ∪ fill closure ---
-    /// Decompose request ∪ fill, breaking at every residency boundary (the
-    /// granularity `Display::read` serves at) and at the request boundaries
-    /// (where purpose flips between FillOnly and User).
+    /// --- ranges: typed decomposition of span ∪ fill closure ---
+    /// Decompose span ∪ fill (the span plus the cells' overhang), breaking at
+    /// every residency boundary (the granularity `Display::read` serves at) and
+    /// at the span edges (where purpose flips between FillOnly and User).
     {
         VectorWithMemoryTracking<ByteRange> walk_parts;
-        if (request.size)
-            walk_parts.push_back(request);
+        walk_parts.push_back(span);
         for (const auto & f : fill)
             walk_parts.push_back(f);
 
-        for (const auto & piece : mergeSorted(std::move(walk_parts)))
+        for (const auto & piece : sortAndMerge(std::move(walk_parts)))
         {
             size_t pos = piece.offset;
             while (pos < piece.end())
@@ -218,15 +214,12 @@ PlanSchedule buildSchedule(
                 if (seg_end <= pos)
                     seg_end = piece.end();
 
-                if (request.size)
-                {
-                    if (pos < request.offset)
-                        seg_end = std::min(seg_end, request.offset);
-                    else if (pos < request.end())
-                        seg_end = std::min(seg_end, request.end());
-                }
+                if (pos < span.offset)
+                    seg_end = std::min(seg_end, span.offset);
+                else if (pos < span.end())
+                    seg_end = std::min(seg_end, span.end());
 
-                const bool is_user = request.size && pos >= request.offset && pos < request.end();
+                const bool is_user = pos >= span.offset && pos < span.end();
                 sched.ranges.push_back(PlanSchedule::TypedRange{
                     .range = ByteRange{pos, seg_end - pos},
                     .purpose = is_user ? PlanSchedule::Purpose::User : PlanSchedule::Purpose::FillOnly,
@@ -251,7 +244,7 @@ PlanSchedule buildSchedule(
         PlanSchedule::Retrieve r;
         r.range = f;
         r.source = PlanSchedule::Source::Remote;
-        r.into = writeTargetsFor(geometry, f, request);
+        r.into = writeTargetsFor(geometry, f, span);
         r.fetch_runs = fetchRunsFor(geometry, f);
         r.ahead_eligible = true;   /// a source fill depends on nothing but the source
         sched.retrieves.push_back(std::move(r));
@@ -371,9 +364,9 @@ PlanSchedule buildSchedule(
         }
 
     /// --- steps: what each readNextWindow returns, wired to its retrieve ---
-    size_t cursor = request.offset;
-    const size_t request_end = request.offset + request.size;
-    while (cursor < request_end)
+    size_t cursor = span.offset;
+    const size_t span_end = span.offset + span.size;
+    while (cursor < span_end)
     {
         const auto res = geometry.residentAt(cursor);
         /// A resident step spans the maximal CONTIGUOUS resident region across ALL tiers
@@ -382,7 +375,7 @@ PlanSchedule buildSchedule(
         /// stops at the tier-run boundary and would split one served window into
         /// several steps.
         size_t out_end = res.resident() ? geometry.nextGapStart(cursor) : geometry.gapEnd(cursor);
-        out_end = std::min(out_end, request_end);
+        out_end = std::min(out_end, span_end);
         const ByteRange out{cursor, out_end - cursor};
 
         std::optional<size_t> require;

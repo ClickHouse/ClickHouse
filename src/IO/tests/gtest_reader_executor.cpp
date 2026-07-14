@@ -5443,7 +5443,7 @@ void validateScheduleMatchesReality(
     /// The oracle must predict with the HARNESS executor's serve sizes (window/block span the
     /// file, so runs are never chunked) - mismatched constants would silently diverge if this
     /// oracle ever predicts per-call windows.
-    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, min_bytes_for_seek,
+    auto sched = buildSchedule(*geom, min_bytes_for_seek,
         /*serve_window_bytes=*/file_size * 2 + 1, /*serve_block_bytes=*/file_size * 2 + 1);
 
     ASSERT_EQ(outputs.size(), sched.serve_runs.size()) << "serve-run count vs live windows";
@@ -5785,7 +5785,9 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     }
     ASSERT_NE(geom, nullptr);
 
-    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, 0,
+    /// The oracle schedules over the geometry's own span - the live plan was built
+    /// at the post-seek cursor, so `plan_start == 32 KiB` already.
+    auto sched = buildSchedule(*geom, 0,
         /*serve_window_bytes=*/file * 2, /*serve_block_bytes=*/file * 2);
     auto k = predictKpi(sched);
 

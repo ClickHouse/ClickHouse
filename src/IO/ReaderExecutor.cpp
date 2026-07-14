@@ -2562,19 +2562,13 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     plan.geometry_snapshot = std::move(geom);
     read_plan = std::move(plan);
 
-    /// Describe the plan's work once, here. The request for fill purposes is the
-    /// whole plan span from the cursor: everything from `plan_start` forward is
-    /// read by the scan (User), so only the alignment slack around it is
-    /// FillOnly. `schedule.retrieves[*].into` then drives `runPutStep` so a
-    /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
-    /// The User range is the whole extended span: the scan reads through the folded hit
-    /// tail as the cursor advances, so the schedule must emit serve steps across
-    /// `[plan_start, plan_end)`. The fold is all resident, so this adds no fetch -- the
-    /// gaps to fetch still lie only within the base request.
-    const ByteRange schedule_request{plan_range.offset, read_plan.geometry()->plan_end - plan_range.offset};
+    /// Describe the plan's work once, here - over the plan's own span (the schedule
+    /// derives it from the geometry): everything within it is read by the scan
+    /// (User), only the cell slack around it is FillOnly.
+    /// `schedule.retrieves[*].into` then drives `runPutStep` so a faster tier never
+    /// receives slack bytes (see `ReadPlan::schedule`).
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
-        schedule_request,
         min_bytes_for_seek,
         effectiveWindowSize(read_plan.geometry()->pressure_level),
         effectiveBlockSize(read_plan.geometry()->pressure_level));
