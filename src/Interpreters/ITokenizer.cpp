@@ -823,6 +823,8 @@ UBreakIterator * getThreadLocalIcuWordIterator(const String & locale)
     auto it = iterators.find(locale);
     if (it == iterators.end())
     {
+        /// Coarse bound: the locale comes from user SQL, so cap per-thread state. Cleared entries are
+        /// lazily re-created on their next use.
         if (iterators.size() >= max_cached_iterators)
             iterators.clear();
 
