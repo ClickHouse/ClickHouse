@@ -1,4 +1,5 @@
 #include <Databases/DDLDependencyVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -314,6 +315,11 @@ namespace
                 /// dictHas('dict_name', id_expr)
                 /// joinGet(join_storage_table_name, `value_column`, join_keys)
                 addQualifiedNameFromArgument(function, 0);
+                /// a dotted joinGet name may also resolve as a table path in the current
+                /// database (see FunctionJoinGet); record both candidates - a dependency
+                /// on a table that doesn't exist is simply ignored
+                if (functionIsJoinGet(function.name))
+                    addTablePathCandidatesFromArgument(function, 0);
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
@@ -499,6 +505,26 @@ namespace
         {
             if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// A dotted name may resolve at run time either as database.table or as a table
+        /// path in the current database. When the qualifier is an existing database it wins,
+        /// like at run time; otherwise record the table-path interpretation too - a dependency
+        /// on a table that doesn't exist is simply ignored, and the database may load later.
+        void addTablePathCandidatesFromArgument(const ASTFunction & function, size_t arg_idx)
+        {
+            auto name = tryGetStringFromArgument(function, arg_idx);
+            if (!name || name->empty())
+                return;
+            const auto first_dot = name->find('.');
+            if (first_dot == String::npos || first_dot == 0 || name->back() == '.')
+                return;
+            if (DatabaseCatalog::instance().isDatabaseExist(name->substr(0, first_dot)))
+                return;
+            dependencies.emplace(QualifiedTableName{current_database, *name});
+            /// multipart form db.ns.jt: {db, ns.jt}
+            if (name->find('.', first_dot + 1) != String::npos)
+                dependencies.emplace(QualifiedTableName{name->substr(0, first_dot), name->substr(first_dot + 1)});
         }
 
         /// Like addQualifiedNameFromArgument, but uses the database of the table being created

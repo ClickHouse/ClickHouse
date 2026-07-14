@@ -18,7 +18,6 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr from1;
     ASTPtr from2;
 
-    String from2_str;
 
     auto query = make_intrusive<ASTShowColumnsQuery>();
 
@@ -51,6 +50,10 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = parts[0];
         /// Fold namespace parts into the table name (DataLakeCatalog databases):
         /// catalog.ns1.ns2.table -> table `ns1.ns2.table`
+        /// a quoted component with a literal dot would alias another path - reject it
+        for (size_t i = 1; i < parts.size(); ++i)
+            if (parts.size() > 2 && parts[i].find('.') != String::npos)
+                return false;
         query->table = parts[1];
         for (size_t i = 2; i < parts.size(); ++i)
             query->table += "." + parts[i];
@@ -59,10 +62,14 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         query->table = table_id->shortName();
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from2, expected))
+            if (!ParserCompoundIdentifier().parse(pos, from2, expected))
                 return false;
-        tryGetIdentifierNameInto(from2, from2_str);
-        query->database = from2_str;
+        if (from2)
+        {
+            /// keep the operand as one (possibly dotted) database name;
+            /// runtime resolution decides between a real database and a namespace
+            tryGetIdentifierNameInto(from2, query->database);
+        }
     }
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))

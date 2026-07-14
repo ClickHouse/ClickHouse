@@ -1,0 +1,25 @@
+-- SHOW TABLES under a namespace: relative names, direct children only
+alpha
+beta
+-- LIKE applies to the relative name
+alpha
+-- WHERE applies to the relative name, same as LIKE
+alpha
+-- WHERE can still use other table columns
+alpha
+beta
+-- SHOW TABLES FROM database.namespace
+alpha
+beta
+-- nested namespace
+gamma
+-- FROM with a missing namespace is rejected like USE
+1
+-- dictionaries have no namespaces
+1
+-- without a namespace the full names are shown
+ns.alpha
+ns.beta
+ns.sub.gamma
+other.delta
+plain

@@ -6,6 +6,8 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
+#include <base/find_symbols.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/executeQuery.h>
@@ -14,6 +16,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 
 
@@ -23,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -162,26 +166,46 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    /// FROM may carry a namespace suffix: SHOW TABLES FROM catalog.namespace
+    const auto database_info = getContext()->resolveDatabaseInfo(query.getFrom());
+    const String & database = database_info.database;
+    const String & table_namespace = database_info.table_prefix;
     DatabaseCatalog::instance().assertDatabaseExists(database);
+
+    /// dictionaries have no namespaces; don't silently target the parent database
+    if (query.dictionaries && !table_namespace.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "There is no database {} to show dictionaries from",
+            backQuoteIfNeed(query.getFrom()));
+
+    /// an explicit FROM names the namespace anew, so validate it like USE does;
+    /// the session prefix was already validated when it was selected
+    if (!query.getFrom().empty() && !table_namespace.empty())
+    {
+        Names namespace_parts;
+        splitInto<'.'>(namespace_parts, table_namespace);
+        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(namespace_parts, getContext());
+    }
 
     WriteBufferFromOwnString rewritten_query;
 
+    /// inside a namespace show names relative to it, and only direct children;
+    /// the projection is a subquery so LIKE and WHERE both see the relative name
+    const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
+
     if (query.full)
-    {
-        rewritten_query << "SELECT name, engine FROM system.";
-    }
+        rewritten_query << (scoped ? "SELECT relative_name AS name, engine FROM " : "SELECT name, engine FROM ");
     else
-    {
-        rewritten_query << "SELECT name FROM system.";
-    }
+        rewritten_query << (scoped ? "SELECT relative_name AS name FROM " : "SELECT name FROM ");
 
-    if (query.dictionaries)
-        rewritten_query << "dictionaries ";
+    if (scoped)
+        rewritten_query << "(SELECT * EXCEPT (name), substring(system.tables.name, " << (table_namespace.size() + 2)
+                        << ") AS relative_name FROM system.tables";
+    else if (query.dictionaries)
+        rewritten_query << "system.dictionaries";
     else
-        rewritten_query << "tables ";
+        rewritten_query << "system.tables";
 
-    rewritten_query << "WHERE ";
+    rewritten_query << " WHERE ";
 
     if (query.temporary)
     {
@@ -192,23 +216,31 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
     {
         rewritten_query << "database = " << DB::quote << database;
-        /// Under `USE db.namespace` (DataLakeCatalog) list only the selected namespace.
-        if (query.getFrom().empty())
+        if (scoped)
         {
-            const auto current_db_info = getContext()->getCurrentDatabaseInfo();
-            if (!current_db_info.table_prefix.empty())
-                rewritten_query << " AND startsWith(name, " << DB::quote << (current_db_info.table_prefix + ".") << ")";
+            /// escape LIKE metacharacters in the namespace itself
+            String escaped_prefix;
+            for (char c : table_namespace + ".")
+            {
+                if (c == '%' || c == '_' || c == '\\')
+                    escaped_prefix += '\\';
+                escaped_prefix += c;
+            }
+            /// the LIKE/NOT LIKE pair means "direct children of the namespace"; the catalog
+            /// pushdown recognizes this exact shape (see extractTableNameFilter and ICatalog::getTables)
+            rewritten_query << " AND system.tables.name LIKE " << DB::quote << (escaped_prefix + "%")
+                            << " AND system.tables.name NOT LIKE " << DB::quote << (escaped_prefix + "%.%") << ")";
         }
     }
 
     if (!query.like.empty())
         rewritten_query
-            << " AND name "
+            << (scoped ? " WHERE name " : " AND name ")
             << (query.not_like ? "NOT " : "")
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << query.like;
     else if (query.where_expression)
-        rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
+        rewritten_query << (scoped ? " WHERE (" : " AND (") << query.where_expression->formatWithSecretsOneLine() << ")";
 
     /// (*)
     rewritten_query << " ORDER BY name ";
@@ -240,7 +272,7 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database = getContext()->resolveDatabaseInfo(query.getFrom()).database;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

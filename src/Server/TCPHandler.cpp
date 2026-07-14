@@ -418,7 +418,7 @@ void TCPHandler::runImpl()
             /// "db.namespace" selects a namespace inside a DataLakeCatalog database
             /// (clients persist such a default database after `USE db.namespace`).
             const auto & catalog = DatabaseCatalog::instance();
-            catalog.assertDatabaseExists(catalog.splitTablePrefixFromDatabaseName(default_database).first);
+            catalog.assertDatabaseExists(catalog.splitTablePrefixFromDatabaseName(default_database).database);
         }
 
         /// In interserver mode queries are executed without a session context.

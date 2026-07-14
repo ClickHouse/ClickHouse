@@ -918,7 +918,7 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
     return databases.contains(database_name);
 }
 
-std::pair<String, String> DatabaseCatalog::splitTablePrefixFromDatabaseName(const String & name) const
+CurrentDatabaseInfo DatabaseCatalog::splitTablePrefixFromDatabaseName(const String & name) const
 {
     if (name.empty() || isDatabaseExist(name))
         return {name, ""};
@@ -935,10 +935,34 @@ std::pair<String, String> DatabaseCatalog::splitTablePrefixFromDatabaseName(cons
     return {database_name, name.substr(dot_pos + 1)};
 }
 
+StorageID DatabaseCatalog::applyNamespaceScope(StorageID storage_id, const CurrentDatabaseInfo & scope) const
+{
+    if (storage_id.database_name.empty() && !scope.table_prefix.empty())
+    {
+        storage_id.database_name = scope.database;
+        storage_id.table_name = scope.table_prefix + "." + storage_id.table_name;
+    }
+    /// a qualified name is kept as written: the initiator's catalog is not
+    /// authoritative for what the qualifier means on remote hosts
+    return storage_id;
+}
+
 StorageID DatabaseCatalog::applyNamespaceQualifier(StorageID storage_id, const String & current_database) const
 {
-    if (storage_id.hasUUID() || storage_id.database_name.empty() || current_database.empty()
+    if (storage_id.hasUUID() || storage_id.database_name.empty()
         || storage_id.database_name == current_database || isDatabaseExist(storage_id.database_name))
+        return storage_id;
+
+    /// a dotted database operand may itself carry a namespace: ("catalog.ns", "t"),
+    /// e.g. a logical currentDatabase() value passed back through a string API
+    if (const auto info = splitTablePrefixFromDatabaseName(storage_id.database_name); !info.table_prefix.empty())
+    {
+        storage_id.database_name = info.database;
+        storage_id.table_name = info.table_prefix + "." + storage_id.table_name;
+        return storage_id;
+    }
+
+    if (current_database.empty())
         return storage_id;
 
     auto current = tryGetDatabase(current_database);

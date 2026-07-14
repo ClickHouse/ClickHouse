@@ -9,4 +9,4 @@ SET param_db='some_db_name';
 DROP TABLE {db:Identifier}.{table:Identifier}; -- {serverError BAD_QUERY_PARAMETER}
 
 SET param_table='table';
-DROP TABLE {db:Identifier}.{table:Identifier}; -- {serverError UNKNOWN_DATABASE}
+DROP TABLE {db:Identifier}.{table:Identifier}; -- {serverError UNKNOWN_DATABASE, UNKNOWN_TABLE}

@@ -314,6 +314,12 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+bool ICatalog::existsNamespace(const std::string & namespace_name) const
+{
+    const auto namespaces = getNamespaces();
+    return std::find(namespaces.begin(), namespaces.end(), namespace_name) != namespaces.end();
+}
+
 DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)
@@ -323,11 +329,16 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 
         case TableNameFilter::Kind::Equals:
         {
-            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
+            /// `name = 'ns.table'` -> list namespace `ns` and keep the exact name only, so
+            /// downstream metadata fetches don't touch sibling tables.
             const auto pos = filter.value.rfind('.');
             if (pos == std::string::npos)
                 return getTables();
-            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+            DB::Names result;
+            for (auto & table : listTablesInNamespaceDirect(filter.value.substr(0, pos)))
+                if (table == filter.value)
+                    result.push_back(std::move(table));
+            return result;
         }
 
         case TableNameFilter::Kind::Like:
@@ -342,6 +353,12 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
             /// `system.tables` row is dropped; a looser match only costs an extra
             /// table listing.
             const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
+
+            /// `LIKE 'ns.%' AND NOT LIKE 'ns.%.%'` is the scoped SHOW TABLES shape:
+            /// only the direct children of `ns`, so descendant namespaces need not be listed.
+            if (!filter.exclude.empty() && filter.exclude == filter.value + ".%"
+                && !fixed_prefix.empty() && fixed_prefix.back() == '.')
+                return listTablesInNamespaceDirect(fixed_prefix.substr(0, fixed_prefix.size() - 1));
 
             /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
             /// Calling getTables() is better as its parallel.

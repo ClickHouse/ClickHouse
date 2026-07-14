@@ -1454,6 +1454,18 @@ String Context::resolveDatabase(const String & database_name) const
     return res;
 }
 
+CurrentDatabaseInfo Context::resolveDatabaseInfo(const String & database_name) const
+{
+    if (database_name.empty())
+    {
+        auto info = getCurrentDatabaseInfo();
+        if (info.database.empty())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+        return info;
+    }
+    return DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database_name);
+}
+
 String Context::getPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1806,7 +1818,7 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-void Context::setFilesystemCacheUser(const String & user)
+void Context::setFilesystemCacheUser(const String & user) const
 {
     std::lock_guard lock(shared->mutex);
     shared->filesystem_cache_user = user;
@@ -2095,6 +2107,23 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+namespace
+{
+
+/// every entry point that selects a namespace (USE, protocol handshakes, DEFAULT DATABASE)
+/// must agree with USE on whether it exists; may reach a remote catalog, so never call
+/// this under the Context mutex
+void validateTableNamespacePrefix(const String & database_name, const String & table_prefix, ContextPtr context)
+{
+    if (table_prefix.empty())
+        return;
+    Names parts;
+    splitInto<'.'>(parts, table_prefix);
+    DatabaseCatalog::instance().getDatabase(database_name)->validateTableNamespace(parts, context);
+}
+
+}
+
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
@@ -2109,6 +2138,15 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
+    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
+    /// "db.namespace" selects a namespace inside a database; validate before taking the mutex.
+    CurrentDatabaseInfo default_database_info;
+    if (!database.empty())
+    {
+        default_database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
+        validateTableNamespacePrefix(default_database_info.database, default_database_info.table_prefix, shared_from_this());
+    }
+
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
@@ -2121,13 +2159,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
-    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
-    /// "db.namespace" selects a namespace inside a DataLakeCatalog database.
     if (!database.empty())
-    {
-        const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
-        setCurrentDatabaseWithLock(database_name, table_prefix, lock);
-    }
+        setCurrentDatabaseWithLock(default_database_info.database, default_database_info.table_prefix, lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -2961,7 +2994,7 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
+    String database_name;
     String table_name = function->name;
 
     if (function->isCompoundName())
@@ -2969,12 +3002,24 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         std::vector<std::string> parts;
         splitInto<'.'>(parts, function->name);
 
-        if (parts.size() == 2)
+        if (parts.size() >= 2)
         {
             database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
+            table_name = parts[1];
+            for (size_t i = 2; i < parts.size(); ++i)
+                table_name += "." + parts[i];
         }
     }
+
+    /// resolve like an ordinary written table name, so a namespace scope or a
+    /// non-database qualifier finds the right (parameterized view) table
+    if (auto resolved = tryResolveStorageIDFromQuery(StorageID(database_name, table_name), StorageNamespace::ResolveOrdinary))
+    {
+        database_name = resolved.database_name;
+        table_name = resolved.table_name;
+    }
+    else if (database_name.empty())
+        database_name = getCurrentDatabase();
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -3538,7 +3583,13 @@ void Context::setCurrentDatabase(const String & name, const String & table_prefi
     /// A dotted name may select a namespace inside a DataLakeCatalog database ("db.namespace"),
     /// e.g. a client default database persisted after `USE db.namespace` and sent on reconnect.
     if (database_table_prefix.empty() && !name.empty())
-        std::tie(database_name, database_table_prefix) = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
+    {
+        const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
+        database_name = info.database;
+        database_table_prefix = info.table_prefix;
+    }
+
+    validateTableNamespacePrefix(database_name, database_table_prefix, shared_from_this());
 
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(database_name, database_table_prefix, lock);

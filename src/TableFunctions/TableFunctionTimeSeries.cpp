@@ -68,7 +68,8 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
     if (time_series_storage_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
-    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// a query-written name: a namespace scope or a non-database qualifier must apply
+    time_series_storage_id = context->resolveStorageIDFromQuery(time_series_storage_id);
     target_table_type_name = getTargetTable(context)->getName();
 }
 

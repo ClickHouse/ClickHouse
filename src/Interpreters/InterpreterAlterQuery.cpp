@@ -409,13 +409,51 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    auto table_id = getContext()->tryResolveStorageIDFromQuery(alter);
     StoragePtr table;
+
+    if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    {
+        /// the shipped query bypasses local name resolution: qualify only genuinely
+        /// unqualified names and preserve explicit qualifiers - the initiator's
+        /// catalog is not authoritative for remote hosts
+        const auto database_info = getContext()->getCurrentDatabaseInfo();
+        auto & alter_query = query_ptr->as<ASTAlterQuery &>();
+        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
+            StorageID(alter.getDatabase(), alter.getTable()), database_info);
+        if (!scoped.database_name.empty())
+            alter_query.setDatabase(scoped.database_name);
+        alter_query.setTable(scoped.table_name);
+        if (alter.command_list)
+        {
+            for (const auto & child : alter.command_list->children)
+            {
+                auto * command_ast = child->as<ASTAlterCommand>();
+                if (!command_ast->from_table.empty() && command_ast->from_database.empty() && !database_info.table_prefix.empty())
+                    command_ast->from_table = database_info.table_prefix + "." + command_ast->from_table;
+                if (!command_ast->to_table.empty() && command_ast->to_database.empty() && !database_info.table_prefix.empty())
+                    command_ast->to_table = database_info.table_prefix + "." + command_ast->to_table;
+            }
+        }
+
+        /// look up the local table by the written name only (no namespace fold), so the
+        /// checks below match exactly the AST being shipped
+        table = DatabaseCatalog::instance().tryGetTable(
+            StorageID(scoped.database_name.empty() ? getContext()->getCurrentDatabase() : scoped.database_name, scoped.table_name),
+            getContext());
+        if (table && table->as<StorageKeeperMap>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
+
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess(table);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
+    auto table_id = getContext()->tryResolveStorageIDFromQuery(alter);
 
     if (table_id)
     {
         /// The resolver may namespace-qualify the table (DataLakeCatalog); keep the AST in
-        /// sync so access checks and ON CLUSTER serialization target the executed table.
+        /// sync so access checks target the executed table.
         auto & alter_query = query_ptr->as<ASTAlterQuery &>();
         alter_query.setDatabase(table_id.database_name);
         /// A temporary table resolves to its internal global name — keep the user-visible one.
@@ -456,16 +494,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 }
             }
         }
-    }
-
-    if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
-    {
-        if (table && table->as<StorageKeeperMap>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
-
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(table);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess(table));

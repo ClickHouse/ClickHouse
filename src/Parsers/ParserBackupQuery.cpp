@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 namespace
 {
     using Kind = ASTBackupQuery::Kind;
@@ -90,13 +85,8 @@ namespace
                 if (database_name && table_name.first.empty())
                     table_name.first = *database_name;
 
-                if (database_name && table_name.first != *database_name)
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR,
-                        "Database name in EXCEPT TABLES clause doesn't match the database name in DATABASE clause: {} != {}",
-                        table_name.first,
-                        *database_name
-                    );
+                /// a qualifier not matching the DATABASE clause is resolved later:
+                /// an existing database is an error, anything else is a table path
 
                 result.emplace(std::move(table_name));
                 return true;

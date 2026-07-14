@@ -83,6 +83,16 @@ BlockIO InterpreterUpdateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
+    /// a shipped ON CLUSTER query bypasses local name resolution, so canonicalize the name here
+    if (!update_query.cluster.empty())
+    {
+        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
+            StorageID(update_query.getDatabase(), update_query.getTable()), getContext()->getCurrentDatabaseInfo());
+        if (!scoped.database_name.empty())
+            update_query.setDatabase(scoped.database_name);
+        update_query.setTable(scoped.table_name);
+    }
+
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
     /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
     /// ALTER DELETE. Any other assignment - including `_row_exists = <expr>` that edits the deletion

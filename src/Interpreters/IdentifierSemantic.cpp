@@ -151,21 +151,11 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
 
 String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table)
 {
-    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
-    size_t to_strip = 0;
-    switch (match)
-    {
-        case IdentifierSemantic::ColumnMatch::TableName:
-        case IdentifierSemantic::ColumnMatch::AliasedTableName:
-        case IdentifierSemantic::ColumnMatch::TableAlias:
-            to_strip = 1;
-            break;
-        case IdentifierSemantic::ColumnMatch::DBAndTable:
-            to_strip = 2;
-            break;
-        default:
-            break;
-    }
+    size_t to_strip = doesIdentifierBelongTo(identifier, table.database, table.table);
+    if (!to_strip)
+        to_strip = doesIdentifierBelongTo(identifier, table.alias);
+    if (!to_strip)
+        to_strip = doesIdentifierBelongTo(identifier, table.table);
     String res;
     for (size_t i = to_strip, sz = identifier.name_parts.size(); i < sz; ++i)
     {
@@ -176,21 +166,55 @@ String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, c
     return res;
 }
 
-bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
+namespace
 {
-    size_t num_components = identifier.name_parts.size();
-    if (num_components >= 3)
-        return identifier.name_parts[0] == database &&
-               identifier.name_parts[1] == table;
-    return false;
+
+/// how many identifier parts a (possibly dotted) name consumes starting at `start`; 0 if no match.
+/// a dotted name matches either as a single back-quoted part or component by component.
+size_t numberOfPartsMatchingName(const ASTIdentifier & identifier, size_t start, const String & name)
+{
+    const auto & parts = identifier.name_parts;
+    if (name.empty() || start >= parts.size())
+        return 0;
+    if (parts[start] == name)
+        return 1;
+    if (name.find('.') == String::npos)
+        return 0;
+
+    size_t part = start;
+    size_t pos = 0;
+    while (true)
+    {
+        auto dot = name.find('.', pos);
+        std::string_view component(name.data() + pos, (dot == String::npos ? name.size() : dot) - pos);
+        if (part >= parts.size() || parts[part] != component)
+            return 0;
+        ++part;
+        if (dot == String::npos)
+            break;
+        pos = dot + 1;
+    }
+    return part - start;
 }
 
-bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
+}
+
+size_t IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
-    size_t num_components = identifier.name_parts.size();
-    if (num_components >= 2)
-        return identifier.name_parts[0] == table;
-    return false;
+    if (identifier.name_parts.empty() || identifier.name_parts[0] != database || database.empty())
+        return 0;
+    size_t consumed = numberOfPartsMatchingName(identifier, 1, table);
+    if (consumed && 1 + consumed < identifier.name_parts.size())
+        return 1 + consumed;
+    return 0;
+}
+
+size_t IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
+{
+    size_t consumed = numberOfPartsMatchingName(identifier, 0, table);
+    if (consumed && consumed < identifier.name_parts.size())
+        return consumed;
+    return 0;
 }
 
 IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
@@ -225,21 +249,11 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 /// Example: 'database.table.name' -> 'name'.
 void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
-    auto match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
-    size_t to_strip = 0;
-    switch (match)
-    {
-        case ColumnMatch::TableName:
-        case ColumnMatch::AliasedTableName:
-        case ColumnMatch::TableAlias:
-            to_strip = 1;
-            break;
-        case ColumnMatch::DBAndTable:
-            to_strip = 2;
-            break;
-        default:
-            break;
-    }
+    size_t to_strip = doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table);
+    if (!to_strip)
+        to_strip = doesIdentifierBelongTo(identifier, db_and_table.alias);
+    if (!to_strip)
+        to_strip = doesIdentifierBelongTo(identifier, db_and_table.table);
 
     if (!to_strip)
         return;

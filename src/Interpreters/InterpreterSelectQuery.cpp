@@ -50,6 +50,7 @@
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/additionalTableFilterMatches.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -453,7 +454,8 @@ void checkAccessRightsForSelect(
 
 ASTPtr parseAdditionalFilterConditionForTable(
     const Map & additional_table_filters,
-    const DatabaseAndTableWithAlias & target,
+    const String & table_expression_alias,
+    const StorageID & storage_id,
     const Context & context)
 {
     for (const auto & additional_filter : additional_table_filters)
@@ -462,9 +464,8 @@ ASTPtr parseAdditionalFilterConditionForTable(
         const auto & table = tuple.at(0).safeGet<String>();
         const auto & filter = tuple.at(1).safeGet<String>();
 
-        if (table == target.alias ||
-            (table == target.table && context.getCurrentDatabase() == target.database) ||
-            (table == target.database + '.' + target.table))
+        /// shared with the new analyzer so both match the same tables
+        if (additionalTableFilterMatches(table, table_expression_alias, storage_id, context))
         {
             /// Try to parse expression
             ParserExpression parser;
@@ -773,7 +774,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
-            settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
+            settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table.alias, table_id, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
     if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())
@@ -3404,6 +3405,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
@@ -3413,7 +3416,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
@@ -3423,6 +3429,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             query_plan.addStep(std::move(offsets_step));
 
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             query_plan.addStep(std::move(limit));
         }
         else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
@@ -3432,6 +3440,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }

@@ -88,7 +88,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         }
     }
 
-    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// a query-written name: a namespace scope or a non-database qualifier must apply
+    time_series_storage_id = context->resolveStorageIDFromQuery(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);

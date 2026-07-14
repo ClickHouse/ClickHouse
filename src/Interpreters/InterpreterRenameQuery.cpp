@@ -36,7 +36,36 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterRenameQuery::execute()
 {
-    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    auto & rename = query_ptr->as<ASTRenameQuery &>();
+
+    const auto database_info = getContext()->getCurrentDatabaseInfo();
+    if (!rename.database)
+    {
+        if (!database_info.table_prefix.empty())
+            rename.qualifyUnqualifiedNames(database_info.database, database_info.table_prefix);
+
+        /// a source qualifier that isn't a database selects a table path in the current database.
+        /// destinations stay strict: a misspelled database must fail, not create a dotted table.
+        /// local only: the initiator's catalog is not authoritative for remote hosts
+        if (rename.cluster.empty())
+        {
+            for (auto & elem : rename.getElements())
+            {
+                auto reinterpret = [&](ASTRenameQuery::Table & ref)
+                {
+                    if (!ref.database)
+                        return;
+                    auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(
+                        StorageID(ref.getDatabase(), ref.getTable()), database_info.database);
+                    if (folded.table_name != ref.getTable())
+                        rename.resetTableName(ref, folded.database_name, folded.table_name);
+                };
+                reinterpret(elem.from);
+                if (rename.exchange)
+                    reinterpret(elem.to);
+            }
+        }
+    }
 
     if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {

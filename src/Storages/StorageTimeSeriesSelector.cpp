@@ -106,7 +106,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
         }
     }
 
-    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    time_series_storage_id = context->resolveStorageIDFromQuery(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);

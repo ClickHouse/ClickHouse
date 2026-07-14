@@ -35,7 +35,7 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, ContextPtr context)
 {
-    auto table_id = context->tryResolveStorageID(database_and_table);
+    auto table_id = context->tryResolveStorageIDFromQuery(StorageID(database_and_table), Context::StorageNamespace::ResolveOrdinary);
     if (!table_id)
         return {};
     return DatabaseCatalog::instance().tryGetTable(table_id, context);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -71,11 +72,15 @@ public:
         std::set<String> except_databases;
 
         void setCurrentDatabase(const String & current_database);
+        /// namespace-aware: unqualified table names also get the scope's table prefix
+        void setCurrentDatabase(const CurrentDatabaseInfo & current_database);
     };
 
     using Elements = std::vector<Element>;
     static void setCurrentDatabase(Elements & elements, const String & current_database);
+    static void setCurrentDatabase(Elements & elements, const CurrentDatabaseInfo & current_database);
     void setCurrentDatabase(const String & current_database) { setCurrentDatabase(elements, current_database); }
+    void setCurrentDatabase(const CurrentDatabaseInfo & current_database) { setCurrentDatabase(elements, current_database); }
 
     static ASTPtr fromSnapshotQuery(const ASTSnapshotQuery & query);
 

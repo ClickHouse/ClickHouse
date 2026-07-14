@@ -267,6 +267,37 @@ ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
     return res;
 };
 
+void ASTBackupQuery::Element::setCurrentDatabase(const CurrentDatabaseInfo & current_database)
+{
+    if (!current_database.table_prefix.empty())
+    {
+        if (type == ASTBackupQuery::TABLE)
+        {
+            if (database_name.empty() && !table_name.empty())
+                table_name = current_database.table_prefix + "." + table_name;
+            if (new_database_name.empty() && !new_table_name.empty())
+                new_table_name = current_database.table_prefix + "." + new_table_name;
+        }
+        else if (type == ASTBackupQuery::ALL)
+        {
+            std::set<DatabaseAndTableName> prefixed_except_tables;
+            for (const auto & except_table : except_tables)
+                if (except_table.first.empty())
+                    prefixed_except_tables.emplace(DatabaseAndTableName{"", current_database.table_prefix + "." + except_table.second});
+                else
+                    prefixed_except_tables.emplace(except_table);
+            except_tables = std::move(prefixed_except_tables);
+        }
+    }
+    setCurrentDatabase(current_database.database);
+}
+
+void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const CurrentDatabaseInfo & current_database)
+{
+    for (auto & element : elements)
+        element.setCurrentDatabase(current_database);
+}
+
 void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const String & current_database)
 {
     for (auto & element : elements)

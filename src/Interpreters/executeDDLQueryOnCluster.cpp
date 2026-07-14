@@ -171,13 +171,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
                 {
                     access_to_check.insert(access_to_check.begin() + i + 1, host_default_databases.size() - 1, element);
                     for (size_t j = 0; j != host_default_databases.size(); ++j)
-                    {
-                        /// A host default database "db.namespace" selects a namespace inside a
-                        /// DataLakeCatalog database (best-effort, judged by the local catalog).
-                        const auto [host_database, host_prefix]
-                            = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(host_default_databases[j]);
-                        access_to_check[i + j].replaceEmptyDatabase(CurrentDatabaseInfo{host_database, host_prefix});
-                    }
+                        access_to_check[i + j].replaceEmptyDatabase(host_default_databases[j]);
                     i += host_default_databases.size();
                 }
                 else

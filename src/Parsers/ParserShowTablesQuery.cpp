@@ -4,6 +4,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -173,8 +174,42 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
+        {
             if (!name_p.parse(pos, database, expected))
                 return false;
+
+            ParserToken dot(TokenType::Dot);
+            std::vector<String> parts;
+            ASTs params;
+            auto append_part = [&](const ASTPtr & part_node)
+            {
+                parts.push_back(getIdentifierName(part_node));
+                if (parts.back().empty())
+                    params.push_back(part_node->as<ASTIdentifier>()->getParam());
+            };
+            bool folded = false;
+            while (dot.ignore(pos, expected))
+            {
+                if (!folded)
+                {
+                    /// a quoted component with a literal dot would alias another path - reject it
+                    if (getIdentifierName(database).find('.') != String::npos)
+                        return false;
+                    append_part(database);
+                }
+                ASTPtr part;
+                if (!name_p.parse(pos, part, expected))
+                    return false;
+                /// a quoted component with a literal dot would alias another path - reject it
+                if (getIdentifierName(part).find('.') != String::npos)
+                    return false;
+                append_part(part);
+                folded = true;
+            }
+            /// a compound identifier keeps parameter children; substitution fills them later
+            if (folded)
+                database = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
+        }
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;

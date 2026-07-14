@@ -1,6 +1,7 @@
 #include <optional>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
+#include <Storages/System/extractTableNameFilter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -452,6 +453,10 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     Pipes pipes;
     auto header = getOutputHeader();
 
+    /// an exact or prefix `table` predicate lets external catalogs skip unrelated tables
+    const auto tables_filter = extractTableNameFilter(
+        virtual_columns_filter ? virtual_columns_filter->getOutputs().at(0) : nullptr, "table");
+
     {
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -510,7 +515,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIteratorWithHint(context, {}, false, tables_filter); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

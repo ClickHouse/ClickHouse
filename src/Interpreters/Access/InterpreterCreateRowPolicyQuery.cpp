@@ -55,23 +55,26 @@ namespace
 
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
+    {
+        /// fold on the original query so getRequiredAccess sees the stored names
+        auto & original = query_ptr->as<ASTCreateRowPolicyQuery &>();
+
+        /// Row policies have no namespace-scoped wildcard, so `ON *` under `USE db.namespace`
+        /// would silently target the whole catalog instead of the selected namespace.
+        const auto current_db_info = getContext()->getCurrentDatabaseInfo();
+        if (!current_db_info.table_prefix.empty())
+            for (const auto & full_name : original.names->full_names)
+                if (full_name.database.empty() && full_name.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "CREATE ROW POLICY ON * is not supported while a namespace is selected "
+                        "(the policy would apply to the whole database {}); specify a table "
+                        "or use the database without a namespace", backQuoteIfNeed(current_db_info.database));
+
+        original.replaceEmptyDatabase(current_db_info);
+    }
+
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
-
-    /// Row policies have no namespace-scoped wildcard, so `ON *` under `USE db.namespace`
-    /// would silently target the whole catalog instead of the selected namespace.
-    const auto current_db_info = getContext()->getCurrentDatabaseInfo();
-    if (!current_db_info.table_prefix.empty())
-        for (const auto & full_name : query.names->full_names)
-            if (full_name.database.empty() && full_name.table_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "CREATE ROW POLICY ON * is not supported while a namespace is selected "
-                    "(the policy would apply to the whole database {}); specify a table "
-                    "or use the database without a namespace", backQuoteIfNeed(current_db_info.database));
-
-    /// Fold the namespace prefix before authorization and ON CLUSTER shipping, so both
-    /// target the policy names that will actually be stored.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
     /// Reject invalid filters on user-facing CREATE/ALTER only. Deserialization of persisted
     /// policies (ATTACH/replicated/restored) must not fail here; the query-time guard in

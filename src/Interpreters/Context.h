@@ -826,7 +826,7 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
-    void setFilesystemCacheUser(const String & user);
+    void setFilesystemCacheUser(const String & user) const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -999,6 +999,8 @@ public:
     };
 
     String resolveDatabase(const String & database_name) const;
+    /// Same, but a dotted name may select a namespace: "db.ns" -> {db, ns}.
+    CurrentDatabaseInfo resolveDatabaseInfo(const String & database_name) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
 

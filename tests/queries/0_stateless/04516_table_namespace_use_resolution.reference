@@ -1,0 +1,27 @@
+-- unqualified name resolves under the selected namespace
+3
+-- a dotted relative name resolves under the namespace too
+0
+-- EXISTS under the namespace
+1
+-- two-part name with a non-database qualifier resolves inside the current database
+3
+-- an existing database always wins over the namespace interpretation
+42
+-- USE of a namespace with no tables is rejected
+1
+-- the protocol default database validates the namespace the same way
+1
+-- CREATE under the namespace lands inside it
+1
+-- CREATE with a two-part name and unknown database must fail, not create a dotted table
+1
+-- CREATE AS resolves its source under the namespace
+0
+-- materialized view target with a namespace path
+7
+-- a quoted component with a literal dot cannot be part of a longer path
+1
+1
+-- temporary table takes precedence over the namespace
+temp

@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/parseAccessEntityName.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <fmt/format.h>
@@ -7,6 +8,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTShowAccessEntitiesQuery::getKeyword() const
 {
@@ -61,6 +67,12 @@ void ASTShowAccessEntitiesQuery::replaceEmptyDatabase(const CurrentDatabaseInfo 
         String & table = database_and_table_name->second;
         if (database.empty())
         {
+            /// there is no namespace-scoped wildcard: ON * would widen to the whole database
+            if (!current_database.table_prefix.empty() && table.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ON * is not supported while a namespace is selected "
+                    "(it would target the whole database {}); specify a table "
+                    "or use the database without a namespace", backQuoteIfNeed(current_database.database));
             database = current_database.database;
             /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
             if (!current_database.table_prefix.empty() && !table.empty())

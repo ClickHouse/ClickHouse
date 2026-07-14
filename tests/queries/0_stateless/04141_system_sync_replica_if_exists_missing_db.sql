@@ -26,4 +26,4 @@ SELECT 'check_no_if_exists_missing_table';
 SYSTEM SYNC REPLICA missing_table_04141; -- { serverError UNKNOWN_TABLE }
 
 SELECT 'check_no_if_exists_missing_db';
-SYSTEM SYNC REPLICA missing_db_04141.missing_table_04141; -- { serverError UNKNOWN_DATABASE }
+SYSTEM SYNC REPLICA missing_db_04141.missing_table_04141; -- { serverError UNKNOWN_DATABASE, UNKNOWN_TABLE }

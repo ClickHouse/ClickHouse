@@ -101,9 +101,23 @@ USE catalog_name.namespace;
 SELECT * FROM table;
 ```
 
-The namespace prefix is only applied when the current database is a
-`DataLakeCatalog` database, and it is cleared as soon as you switch to another
-database with `USE`. Selecting the catalog without a namespace still lets you
+`USE catalog_name.namespace` validates that the namespace exists in the
+catalog and fails otherwise. While a namespace is selected, `currentDatabase`
+still returns the physical database (`catalog_name`), and `SHOW TABLES` lists
+only the direct children of the namespace, by their names relative to it.
+The prefix is cleared as soon as you switch to another database with `USE`.
+
+A namespace component cannot contain a literal dot: a back-quoted component
+like `` catalog_name.`a.b`.table `` is rejected, because after parsing it would
+be indistinguishable from `catalog_name.a.b.table`. Address such a table by
+quoting the whole path: `` catalog_name.`a.b.table` ``.
+
+The same mechanism works for regular databases (`Atomic`, `Memory`), where a
+dot inside a table name lexically defines a namespace: a table named
+`ns.table` in database `db` can be addressed as `db.ns.table` or through
+`USE db.ns`.
+
+Selecting the catalog without a namespace still lets you
 reference tables by their namespace-qualified name:
 
 ```sql
@@ -121,6 +135,10 @@ name:
 USE catalog_name;
 SELECT * FROM `namespace.table`;
 ```
+
+While a namespace is selected, `GRANT ... ON *` applies to that namespace
+recursively - to its tables and to the tables of all nested namespaces, but not
+to anything outside it.
 
 Access-control statements (`GRANT`, row policies) always interpret a two-part name
 `a.b` as `database.table` and do not fall back to namespaces, because grants may

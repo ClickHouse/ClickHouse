@@ -70,8 +70,9 @@ struct IdentifierSemantic
     getIdentsMembership(ASTPtr ast, const std::vector<TableWithColumnNamesAndTypes> & tables, const Aliases & aliases);
 
 private:
-    static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
-    static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
+    /// number of leading identifier parts consumed by the qualifier, 0 if no match
+    static size_t doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
+    static size_t doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
 };
 
 

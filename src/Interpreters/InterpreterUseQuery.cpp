@@ -18,14 +18,7 @@ BlockIO InterpreterUseQuery::execute()
     const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(new_database);
     getContext()->checkAccess(AccessType::SHOW_DATABASES, database_name);
 
-    if (!table_prefix.empty())
-    {
-        /// authorize above first; then one authoritative existence check for the namespace
-        Names parts;
-        splitInto<'.'>(parts, table_prefix);
-        DatabaseCatalog::instance().getDatabase(database_name)->validateTableNamespace(parts, getContext());
-    }
-
+    /// setCurrentDatabase validates that the namespace exists
     getContext()->getSessionContext()->setCurrentDatabase(database_name, table_prefix);
     return {};
 }

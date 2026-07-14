@@ -72,6 +72,10 @@ struct TablesFilter
 
     /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
     String pattern;
+
+    /// A `name NOT LIKE '…'` conjunct, if any. With `pattern` = `ns.%` and
+    /// `exclude_pattern` = `ns.%.%` this is the scoped SHOW TABLES shape (direct children of `ns`).
+    String exclude_pattern;
 };
 
 class IDatabaseTablesIterator

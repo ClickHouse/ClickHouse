@@ -52,12 +52,18 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// A query-parameter database identifier extracts as an empty name and cannot be folded.
         if (!tryGetIdentifierNameInto(database, database_name) || database_name.empty())
             return false;
+        /// a quoted component with a literal dot would alias another path - reject it
+        if (database_name.find('.') != String::npos)
+            return false;
 
         ParserIdentifier part_p;
         do
         {
             ASTPtr part;
             if (!part_p.parse(pos, part, expected))
+                return false;
+            /// a quoted component with a literal dot would alias another path - reject it
+            if (getIdentifierName(part).find('.') != String::npos)
                 return false;
             database_name += "." + getIdentifierName(part);
         } while (s_dot.ignore(pos, expected));

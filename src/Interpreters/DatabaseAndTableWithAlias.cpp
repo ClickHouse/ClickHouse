@@ -34,10 +34,18 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 {
     alias = identifier.tryGetAlias();
 
-    if (identifier.name_parts.size() == 2)
-        std::tie(database, table) = std::tie(identifier.name_parts[0], identifier.name_parts[1]);
-    else if (identifier.name_parts.size() == 1)
+    if (identifier.name_parts.size() == 1)
+    {
         table = identifier.name_parts[0];
+    }
+    else if (!identifier.name_parts.empty())
+    {
+        /// extra parts are a table path inside the database: db.ns1.ns2.table
+        database = identifier.name_parts[0];
+        table = identifier.name_parts[1];
+        for (size_t i = 2; i < identifier.name_parts.size(); ++i)
+            table += "." + identifier.name_parts[i];
+    }
     else
         throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
 
@@ -88,7 +96,12 @@ bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_t
             return (alias == db_table.alias) || (table_may_be_an_alias && table == db_table.alias);
     }
 
-    return database == db_table.database && table == db_table.table;
+    if (database == db_table.database && table == db_table.table)
+        return true;
+
+    /// a qualifier without the database may denote a dotted table path: ns.t.* matches table "ns.t"
+    return !database.empty() && db_table.table.find('.') != String::npos
+        && db_table.table == database + "." + table;
 }
 
 String DatabaseAndTableWithAlias::getQualifiedNamePrefix(bool with_dot) const

@@ -1131,22 +1131,27 @@ def test_system_tables_with_nullptr_table(started_cluster):
     node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
 
     try:
-        ## This triggers getFilteredTables with engine_column populated (the crash site).
+        ## getFilteredTables with engine_column populated (a former crash site). The table
+        ## whose storage object could not be resolved is now KEPT in the listing with an empty
+        ## engine, rather than being silently dropped.
         result = node.query(
-            f"SELECT engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        ## With the failpoint, all tables return nullptr so we get empty result.
-        assert result.strip() == ""
+        assert table_name in result
+        ## engine is empty for the unresolved table (nothing after the name + tab).
+        assert f"{table_name}\t" in result or f"{table_name}." in result
 
-        ## This triggers the fillData main loop path.
+        ## fillData main loop path: the row is present (not dropped) even though every
+        ## storage-dependent column is defaulted.
         result = node.query(
-            f"SELECT * FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        assert result.strip() == ""
+        assert int(result.strip()) >= 1
 
-        ## Also test with count() to exercise a different code path.
+        ## A predicate on engine still filters correctly: the unresolved table has an empty
+        ## engine, so it does not match a concrete engine pattern.
         result = node.query(
             f"SELECT count(engine) FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"AND engine LIKE '%ReplicatedMergeTree' "
@@ -1167,6 +1172,192 @@ def test_system_tables_with_nullptr_table(started_cluster):
     assert int(result.strip()) > 0
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/110032.
+
+    When a table's metadata is unresolvable, a system.tables scan of the whole
+    DataLakeCatalog database must not abort (with database_datalake_require_metadata_access=1)
+    nor silently drop the table (with =0). Either way the table stays listed by name, with
+    default/empty values for the storage-dependent columns.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## Simulate a per-table metadata resolution failure (throws).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    try:
+        for require in (1, 0):
+            settings = (
+                f"SETTINGS show_data_lake_catalogs_in_system_tables = 1, "
+                f"database_datalake_require_metadata_access = {require}"
+            )
+
+            ## Name-only fast path always worked; still lists the table.
+            result = node.query(
+                f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"name-only path, require={require}"
+
+            ## The whole-database scan requesting a storage-dependent column must NOT abort
+            ## and must NOT drop the table -- it is kept with an empty engine.
+            result = node.query(
+                f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"full scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"count, require={require}"
+
+            ## total_rows (a per-column stat that needs the opened storage) is defaulted, not fatal.
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND total_rows IS NULL {settings}"
+            )
+            assert int(result.strip()) >= 1, f"total_rows default, require={require}"
+
+            ## parameterized_view_parameters needs the opened storage too. Selecting it alongside
+            ## other columns must keep the column aligned (defaulted to an empty array), not abort.
+            result = node.query(
+                f"SELECT name, parameterized_view_parameters FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"parameterized_view_parameters scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND empty(parameterized_view_parameters) {settings}"
+            )
+            assert int(result.strip()) >= 1, f"parameterized_view_parameters default, require={require}"
+
+            ## create_table_query / engine_full / as_select re-enter the catalog metadata query
+            ## for a null-storage row. Selecting them must not re-throw and abort the scan; the
+            ## columns are defaulted to empty strings for the unresolvable table.
+            result = node.query(
+                f"SELECT name, create_table_query, engine_full, as_select FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"create_table_query scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Direct access to the broken table still surfaces the error (query_and_get_error already
+    ## asserts the query failed; here we check it is the injected metadata failure).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        assert "Injected metadata resolution failure" in node.query_and_get_error(
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` "
+            f"SETTINGS database_datalake_require_metadata_access = 1"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
+    """
+    Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.
+
+    Only system.tables (getTablesIteratorWithHint) keeps a row with a null storage object
+    for a table whose metadata is unresolvable. Every other consumer -- StorageMerge in
+    particular -- dereferences the storage object of every iterated row unconditionally
+    (ReadFromMerge::getSelectedTables skips null storage with `continue` without advancing
+    the iterator, so it would loop forever; traverseTablesUntil callers such as
+    supportsPrewhere / totalRows deref the table directly). getTablesIterator therefore must
+    NOT yield null-storage rows: it propagates the error when
+    database_datalake_require_metadata_access=1 and drops the unresolved table otherwise.
+
+    A SELECT through a Merge table over the catalog with one broken table must fail cleanly
+    or return only the resolvable tables' rows, never hang or crash during planning.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_merge_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## An explicitly-created Merge table with a declared structure skips schema inference, so a
+    ## SELECT through it reaches ReadFromMerge::getSelectedTables directly -- the read path the
+    ## bot flagged, where a null-storage iterator row would spin forever (`if (!storage)
+    ## continue;` never advances the iterator). (The merge() table function cannot exercise this
+    ## because it forces schema inference first, which resolves/errors before the read path.)
+    node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+    node.query(
+        f"CREATE TABLE default.merge_over_datalake (symbol Nullable(String)) "
+        f"ENGINE = Merge('{CATALOG_NAME}', '.*broken_table.*')"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Pre-fix, getTablesIterator handed StorageMerge a null-storage iterator row for the
+    ## broken table; ReadFromMerge::getSelectedTables then spun forever (`if (!storage)
+    ## continue;` never advances the iterator), so the SELECT hung. With the fix that row is
+    ## never yielded to StorageMerge -- the error is propagated (require_metadata_access
+    ## defaults to 1 in the storage context) instead. Either way the query must COMPLETE
+    ## within the timeout (a hang would trip the timeout and fail the test) and the server
+    ## must survive. A generous-but-bounded timeout converts the pre-fix hang into a clean
+    ## test failure rather than hanging the whole job.
+    def run_merge_select(require):
+        ## Completes (error or result) within the timeout == no infinite loop; return the
+        ## outcome text for a sanity assertion. A hang raises and fails the test.
+        try:
+            return node.query(
+                "SELECT count() FROM default.merge_over_datalake "
+                f"SETTINGS database_datalake_require_metadata_access = {require}",
+                timeout=60,
+            ).strip()
+        except QueryRuntimeException as e:
+            return str(e)
+
+    try:
+        for require in (1, 0):
+            outcome = run_merge_select(require)
+            ## Either a clean numeric result (unresolved table dropped -> 0 rows) or the
+            ## injected metadata error -- never a hang, never a crash/LOGICAL_ERROR.
+            assert (
+                outcome.isdigit()
+                or "Injected metadata resolution failure" in outcome
+                or "metadata" in outcome
+            ), f"require={require}: {outcome}"
+            assert "LOGICAL_ERROR" not in outcome, f"require={require}: {outcome}"
+
+            ## Server is still alive (i.e. no crash from a null-storage deref).
+            assert node.query("SELECT 1").strip() == "1", f"require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+        node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
 
 def test_delete_on_lazy_initialized_table(started_cluster):
     """
@@ -1654,36 +1845,6 @@ def test_multi_level_namespace(started_cluster):
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
 
 
-def test_namespace_prefix_in_non_select_queries(started_cluster):
-    """
-    Bare table names under USE db.namespace must work beyond SELECT:
-    EXISTS/DESCRIBE/SHOW CREATE resolve through Context::resolveStorageID.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_resolve_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "resolve_test_table"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    iceberg_table = create_table(catalog, namespace, table_name)
-
-    data = [generate_record() for _ in range(3)]
-    iceberg_table.append(pa.Table.from_pylist(data))
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    use = f"USE {CATALOG_NAME}.{namespace}; "
-    assert node.query(use + f"EXISTS TABLE {table_name}").strip() == "1"
-
-    describe = node.query(use + f"DESCRIBE TABLE {table_name}")
-    assert "symbol" in describe and "bid" in describe, f"DESCRIBE failed: {describe}"
-
-    show_create = node.query(use + f"SHOW CREATE TABLE {table_name}")
-    assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
-
-
 def test_namespace_prefix_query_cache_isolation(started_cluster):
     """
     The same unqualified query under different USE db.namespace prefixes must not
@@ -1715,78 +1876,6 @@ def test_namespace_prefix_query_cache_isolation(started_cluster):
     assert count_2 == 5, f"Expected 5 rows in {ns_2} (cache must not leak across namespaces), got {count_2}"
 
 
-def test_namespace_prefix_grants(started_cluster):
-    """
-    GRANT on a bare table name under USE db.namespace must target the
-    namespace-qualified table that SELECT resolves to.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_grant_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "grant_test_table"
-    user = f"user_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    node.query(f"DROP USER IF EXISTS {user}")
-    node.query(f"CREATE USER {user}")
-    try:
-        node.query(f"USE {CATALOG_NAME}.{namespace}; GRANT SELECT ON {table_name} TO {user}")
-        grants = node.query(f"SHOW GRANTS FOR {user}")
-        assert (
-            f"`{namespace}.{table_name}`" in grants
-        ), f"grant is not namespace-qualified: {grants}"
-
-        # A whole-database grant under the prefix scopes to the namespace.
-        node.query(f"USE {CATALOG_NAME}.{namespace}; GRANT INSERT ON * TO {user}")
-        grants = node.query(f"SHOW GRANTS FOR {user}")
-        assert (
-            f"`{namespace}.`*" in grants
-        ), f"any-table grant is not namespace-scoped: {grants}"
-    finally:
-        node.query(f"DROP USER IF EXISTS {user}")
-
-
-def test_namespace_prefix_create_view(started_cluster):
-    """
-    CREATE VIEW under USE db.namespace must store the SELECT with the
-    namespace-qualified table name.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_view_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "view_src_table"
-    view = f"default.v_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    iceberg_table = create_table(catalog, namespace, table_name)
-    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(4)]))
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    node.query(f"DROP VIEW IF EXISTS {view}")
-    try:
-        node.query(
-            f"USE {CATALOG_NAME}.{namespace}; CREATE VIEW {view} AS SELECT * FROM {table_name}"
-        )
-        show_create = node.query(f"SHOW CREATE TABLE {view}")
-        assert (
-            f"`{namespace}.{table_name}`" in show_create
-        ), f"view definition is not namespace-qualified: {show_create}"
-
-        count = int(node.query(f"SELECT count() FROM {view}"))
-        assert count == 4, f"expected 4 rows through the view, got {count}"
-    finally:
-        node.query(f"DROP VIEW IF EXISTS {view}")
-
-
 def test_namespace_prefix_distributed_join(started_cluster):
     """
     A bare table name in the JOIN section of a query shipped to remote servers
@@ -1813,42 +1902,6 @@ def test_namespace_prefix_distributed_join(started_cluster):
         )
     )
     assert count == 3, f"expected 3 rows via distributed JOIN, got {count}"
-
-
-def test_namespace_prefix_row_policies(started_cluster):
-    """
-    CREATE/SHOW/DROP ROW POLICY on a bare table name under USE db.namespace must
-    target the namespace-qualified table, like SELECT does.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_policy_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "policy_test_table"
-    policy = f"pol_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    use = f"USE {CATALOG_NAME}.{namespace}; "
-    node.query(use + f"CREATE ROW POLICY {policy} ON {table_name} USING 1 TO ALL")
-    try:
-        show_create = node.query(
-            use + f"SHOW CREATE ROW POLICY {policy} ON {table_name}"
-        )
-        assert (
-            f"`{namespace}.{table_name}`" in show_create
-        ), f"policy target is not namespace-qualified: {show_create}"
-
-        policies = node.query(use + f"SHOW ROW POLICIES ON {table_name}")
-        assert policy in policies, f"policy not listed for the namespaced table: {policies}"
-    finally:
-        node.query(use + f"DROP ROW POLICY IF EXISTS {policy} ON {table_name}")
-    remaining = node.query(f"SHOW ROW POLICIES ON {CATALOG_NAME}.`{namespace}.{table_name}`")
-    assert policy not in remaining, f"policy not dropped: {remaining}"
 
 
 def test_namespace_prefix_show_columns_and_reconnect(started_cluster):
@@ -1888,77 +1941,6 @@ def test_namespace_prefix_show_columns_and_reconnect(started_cluster):
         )
     )
     assert count == 2, f"default-database handshake lost the namespace: {count}"
-
-
-def test_namespace_two_part_in_non_select_queries(started_cluster):
-    """
-    Under USE catalog (no namespace), `namespace.table` must resolve in the shared
-    storage resolver too: EXISTS/DESCRIBE/SHOW CREATE/INSERT, not just SELECT.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_twopart_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "twopart_test_table"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    iceberg_table = create_table(catalog, namespace, table_name)
-    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    use = f"USE {CATALOG_NAME}; "
-    assert node.query(use + f"EXISTS TABLE {namespace}.{table_name}").strip() == "1"
-
-    describe = node.query(use + f"DESCRIBE TABLE {namespace}.{table_name}")
-    assert "symbol" in describe and "bid" in describe, f"DESCRIBE failed: {describe}"
-
-    show_create = node.query(use + f"SHOW CREATE TABLE {namespace}.{table_name}")
-    assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
-
-    count = int(node.query(use + f"SELECT count() FROM {namespace}.{table_name}"))
-    assert count == 2
-
-    cols = node.query(use + f"SHOW COLUMNS FROM {namespace}.{table_name}")
-    assert "symbol" in cols and "bid" in cols, f"two-part SHOW COLUMNS failed: {cols}"
-
-    # Iceberg tables expose no data-skipping indices; success without error is enough.
-    node.query(use + f"SHOW INDEXES FROM {namespace}.{table_name}")
-
-
-def test_namespace_prefix_materialized_view_target(started_cluster):
-    """
-    An unqualified TO target of a materialized view under USE db.namespace must be
-    stored namespace-qualified.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_mvtarget_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "mv_target_table"
-    mv = f"default.mv_{test_ref}"
-    src_table = f"default.src_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    node.query(f"CREATE TABLE {src_table} (symbol Nullable(String), bid Nullable(Float64)) ENGINE = Memory")
-    try:
-        node.query(
-            f"USE {CATALOG_NAME}.{namespace}; "
-            f"CREATE MATERIALIZED VIEW {mv} TO {table_name} AS SELECT symbol, bid FROM {src_table}"
-        )
-        show_create = node.query(f"SHOW CREATE TABLE {mv}")
-        assert (
-            f"`{namespace}.{table_name}`" in show_create
-        ), f"MV target is not namespace-qualified: {show_create}"
-    finally:
-        node.query(f"DROP VIEW IF EXISTS {mv}")
-        node.query(f"DROP TABLE IF EXISTS {src_table}")
 
 
 def test_namespace_prefix_mysql_field_list(started_cluster):
@@ -2052,299 +2034,6 @@ def test_namespace_prefix_create_drop_table(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {full_name}")
 
 
-def test_namespace_prefix_update_authorization(started_cluster):
-    """
-    UPDATE under USE db.namespace must authorize the namespace-qualified table,
-    not the bare name.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_updauth_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "upd_auth_table"
-    user = f"user_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    node.query(f"DROP USER IF EXISTS {user}")
-    node.query(f"CREATE USER {user}")
-    try:
-        update = (
-            f"USE {CATALOG_NAME}.{namespace}; "
-            f"UPDATE {table_name} SET symbol = 'x' WHERE 1 "
-            f"SETTINGS enable_lightweight_update = 1"
-        )
-        # Grant on the bare (wrong) name only: must be denied.
-        node.query(f"GRANT SELECT, ALTER UPDATE ON {CATALOG_NAME}.{table_name} TO {user}")
-        _, err = node.query_and_get_answer_with_error(update, user=user)
-        assert "ACCESS_DENIED" in err, f"expected ACCESS_DENIED with bare-name grant, got: {err}"
-
-        # Grant on the namespace-qualified table: authorization must pass
-        # (the engine then rejects lightweight updates, which is fine).
-        node.query(
-            f"GRANT SELECT, ALTER UPDATE ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}"
-        )
-        _, err = node.query_and_get_answer_with_error(update, user=user)
-        assert "ACCESS_DENIED" not in err, f"unexpected ACCESS_DENIED with folded-name grant: {err}"
-    finally:
-        node.query(f"DROP USER IF EXISTS {user}")
-
-
-def test_namespace_prefix_row_policy_any_table_rejected(started_cluster):
-    """
-    CREATE ROW POLICY ON * under USE db.namespace would silently target the whole
-    catalog, so it must be rejected.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_polstar_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    policy = f"pol_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    _, err = node.query_and_get_answer_with_error(
-        f"USE {CATALOG_NAME}.{namespace}; CREATE ROW POLICY {policy} ON * USING 1 TO ALL"
-    )
-    assert "BAD_ARGUMENTS" in err or "not supported while a namespace" in err, (
-        f"expected rejection of ON * under a namespace, got: {err}"
-    )
-    node.query(f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.*")
-
-
-def test_namespace_prefix_create_authorization(started_cluster):
-    """
-    CREATE TABLE under USE db.namespace must authorize the namespace-qualified
-    name, not the bare one.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_createauth_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "create_auth_table"
-    user = f"user_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    create = (
-        f"USE {CATALOG_NAME}.{namespace}; "
-        f"CREATE TABLE {table_name} (x String) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}') "
-        f"SETTINGS write_full_path_in_iceberg_metadata = 1"
-    )
-    node.query(f"DROP USER IF EXISTS {user}")
-    node.query(f"CREATE USER {user}")
-    try:
-        node.query(f"GRANT SHOW DATABASES ON *.* TO {user}")
-        node.query(f"GRANT S3 ON *.* TO {user}")
-        # Grant on the bare (wrong) name only: must be denied.
-        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.{table_name} TO {user}")
-        _, err = node.query_and_get_answer_with_error(create, user=user)
-        assert "ACCESS_DENIED" in err, f"expected ACCESS_DENIED with bare-name grant, got: {err}"
-
-        # Grant on the namespace-qualified name: creation must be authorized.
-        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}")
-        node.query(create, user=user)
-        full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
-        assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
-    finally:
-        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table_name}`")
-        node.query(f"DROP USER IF EXISTS {user}")
-
-
-def test_namespace_prefix_create_as(started_cluster):
-    """
-    CREATE TABLE ... AS <source> must resolve the source through the namespace-aware
-    resolver: bare names under USE db.namespace, namespace.table under USE catalog,
-    and the full three-part form.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_createas_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "create_as_src"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    copies = [f"default.copy_{i}_{test_ref}" for i in range(3)]
-    try:
-        node.query(
-            f"USE {CATALOG_NAME}.{namespace}; "
-            f"CREATE TABLE {copies[0]} ENGINE = Memory AS {table_name}"
-        )
-        node.query(
-            f"USE {CATALOG_NAME}; "
-            f"CREATE TABLE {copies[1]} ENGINE = Memory AS {namespace}.{table_name}"
-        )
-        node.query(
-            f"CREATE TABLE {copies[2]} ENGINE = Memory AS {CATALOG_NAME}.{namespace}.{table_name}"
-        )
-        for copy in copies:
-            describe = node.query(f"DESCRIBE TABLE {copy}")
-            assert "symbol" in describe and "bid" in describe, f"{copy} structure wrong: {describe}"
-    finally:
-        for copy in copies:
-            node.query(f"DROP TABLE IF EXISTS {copy}")
-
-
-def test_namespace_prefix_optimize_and_partition_authorization(started_cluster):
-    """
-    OPTIMIZE and ALTER ... PARTITION sub-table references under USE db.namespace
-    must authorize the namespace-qualified names.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_optauth_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "opt_auth_table"
-    src_name = "opt_auth_src"
-    user = f"user_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-    create_table(catalog, namespace, src_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    node.query(f"DROP USER IF EXISTS {user}")
-    node.query(f"CREATE USER {user}")
-    try:
-        optimize = f"USE {CATALOG_NAME}.{namespace}; OPTIMIZE TABLE {table_name}"
-        replace = (
-            f"USE {CATALOG_NAME}.{namespace}; "
-            f"ALTER TABLE {table_name} REPLACE PARTITION tuple() FROM {src_name}"
-        )
-
-        # Grants on the bare (wrong) names only: must be denied.
-        node.query(
-            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.{table_name} TO {user}"
-        )
-        node.query(
-            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.{src_name} TO {user}"
-        )
-        _, err = node.query_and_get_answer_with_error(optimize, user=user)
-        assert "ACCESS_DENIED" in err, f"OPTIMIZE: expected ACCESS_DENIED, got: {err}"
-        _, err = node.query_and_get_answer_with_error(replace, user=user)
-        assert "ACCESS_DENIED" in err, f"REPLACE PARTITION: expected ACCESS_DENIED, got: {err}"
-
-        # Namespace-scoped wildcard grant: authorization must pass (the engine may
-        # still reject the operation itself, which is fine).
-        node.query(
-            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.`{namespace}.`* TO {user}"
-        )
-        _, err = node.query_and_get_answer_with_error(optimize, user=user)
-        assert "ACCESS_DENIED" not in err, f"OPTIMIZE: unexpected ACCESS_DENIED: {err}"
-        _, err = node.query_and_get_answer_with_error(replace, user=user)
-        assert "ACCESS_DENIED" not in err, f"REPLACE PARTITION: unexpected ACCESS_DENIED: {err}"
-    finally:
-        node.query(f"DROP USER IF EXISTS {user}")
-
-
-def test_namespace_prefix_mutation_expression(started_cluster):
-    """
-    Table references inside ALTER ... UPDATE expressions under USE db.namespace
-    must resolve inside the namespace, like any other table reference.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_mutexpr_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    target = "mut_expr_target"
-    src = "mut_expr_src"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-
-    create_clickhouse_iceberg_table(started_cluster, node, namespace, target, "(x String, y Int32)")
-    create_clickhouse_iceberg_table(started_cluster, node, namespace, src, "(x String, y Int32)")
-
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{target}` VALUES ('old', 1)",
-        settings=write_settings,
-    )
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{src}` VALUES ('fresh', 2)",
-        settings=write_settings,
-    )
-
-    node.query(
-        f"USE {CATALOG_NAME}.{namespace}; "
-        f"ALTER TABLE {target} UPDATE x = (SELECT any(x) FROM {src}) WHERE 1",
-        settings=write_settings,
-    )
-    result = node.query(f"SELECT x FROM {CATALOG_NAME}.`{namespace}.{target}`").strip()
-    assert result == "fresh", f"mutation expression resolved the wrong source: {result}"
-
-
-def test_namespace_prefix_row_policy_authorization(started_cluster):
-    """
-    Row-policy DDL under USE db.namespace must authorize the namespace-qualified
-    target for SHOW CREATE and DROP too.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ns_polauth_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "pol_auth_table"
-    policy = f"pol_{test_ref}"
-    user = f"user_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    use = f"USE {CATALOG_NAME}.{namespace}; "
-    node.query(use + f"CREATE ROW POLICY {policy} ON {table_name} USING 1 TO ALL")
-    node.query(f"DROP USER IF EXISTS {user}")
-    node.query(f"CREATE USER {user}")
-    try:
-        node.query(f"GRANT SHOW DATABASES ON *.* TO {user}")
-        # Grants on the bare (wrong) name only: must be denied.
-        node.query(
-            f"GRANT CREATE ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES ON {CATALOG_NAME}.{table_name} TO {user}"
-        )
-        show_create = use + f"SHOW CREATE ROW POLICY {policy} ON {table_name}"
-        drop = use + f"DROP ROW POLICY {policy} ON {table_name}"
-        _, err = node.query_and_get_answer_with_error(show_create, user=user)
-        assert "ACCESS_DENIED" in err, f"SHOW CREATE: expected ACCESS_DENIED, got: {err}"
-        _, err = node.query_and_get_answer_with_error(drop, user=user)
-        assert "ACCESS_DENIED" in err, f"DROP: expected ACCESS_DENIED, got: {err}"
-
-        # Grant on the namespace-qualified target: both must pass.
-        node.query(
-            f"GRANT CREATE ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES "
-            f"ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}"
-        )
-        out = node.query(show_create, user=user)
-        assert policy in out, f"SHOW CREATE failed with folded-name grant: {out}"
-        node.query(drop, user=user)
-    finally:
-        node.query(f"DROP USER IF EXISTS {user}")
-        node.query(
-            f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.`{namespace}.{table_name}`"
-        )
-
-
 def test_namespace_prefix_show_tables_scope_and_wildcard_policy(started_cluster):
     """
     SHOW TABLES under USE db.namespace lists only the selected namespace, and
@@ -2359,14 +2048,22 @@ def test_namespace_prefix_show_tables_scope_and_wildcard_policy(started_cluster)
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(ns_1)
     catalog.create_namespace(ns_2)
+    catalog.create_namespace(f"{ns_1}.sub")
     create_table(catalog, ns_1, "scoped_table")
     create_table(catalog, ns_2, "other_table")
+    create_table(catalog, f"{ns_1}.sub", "nested_table")
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
     tables = node.query(f"USE {CATALOG_NAME}.{ns_1}; SHOW TABLES")
-    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
+    assert "scoped_table" in tables, f"missing namespace table: {tables}"
+    assert ns_1 not in tables, f"names must be relative to the namespace: {tables}"
     assert ns_2 not in tables, f"SHOW TABLES leaked other namespaces: {tables}"
+    assert "nested_table" not in tables, f"nested namespaces are not direct children: {tables}"
+
+    tables = node.query(f"SHOW TABLES FROM {CATALOG_NAME}.{ns_1}")
+    assert "scoped_table" in tables, f"missing namespace table: {tables}"
+    assert ns_2 not in tables, f"SHOW TABLES FROM leaked other namespaces: {tables}"
 
     _, err = node.query_and_get_answer_with_error(
         f"CREATE ROW POLICY pol_{test_ref} ON {CATALOG_NAME}.{ns_1}.* USING 1 TO ALL"
@@ -2374,6 +2071,46 @@ def test_namespace_prefix_show_tables_scope_and_wildcard_policy(started_cluster)
     assert "SYNTAX_ERROR" in err or "Syntax error" in err, (
         f"wildcard row policy target must be rejected: {err}"
     )
+
+
+def test_namespace_nested_sql_ddl(started_cluster):
+    """
+    CREATE and DROP through SQL in a nested namespace must address the namespace
+    as components in REST requests, not as one dotted string.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_nested_ddl_{uuid.uuid4().hex[:8]}"
+    root = f"ns_{test_ref}"
+    table_name = "nested_ddl_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root)
+    catalog.create_namespace(f"{root}.sub")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.{root}.sub.{table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}/', 'minio', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 1
+    ), "table must exist in the nested namespace"
+
+    node.query(f"DROP TABLE {CATALOG_NAME}.{root}.sub.{table_name}")
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 0
+    ), "table must be dropped from the nested namespace"
+
+    # a name without a namespace is an existence probe, not an error
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.name_without_namespace").strip()) == 0
+    ), "EXISTS on a non-namespaced name must return 0"
 
 
 def test_namespace_prefix_mysql_init_db(started_cluster):

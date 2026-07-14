@@ -100,6 +100,13 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
+        /// the shipped query bypasses local name resolution, so canonicalize the name here
+        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
+            StorageID(drop.getDatabase(), drop.getTable()), getContext()->getCurrentDatabaseInfo());
+        if (!scoped.database_name.empty())
+            drop.setDatabase(scoped.database_name);
+        drop.setTable(scoped.table_name);
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
@@ -542,6 +549,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
+                    /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog
+                    /// metadata); nothing to drop/truncate for it here.
+                    if (!table_ptr)
+                        continue;
 
                     /// Skip tables that don't support truncation (e.g. views)
                     /// when doing TRUNCATE ALL TABLES.
@@ -691,6 +702,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
+            /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
+            if (!table_ptr)
+                continue;
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())

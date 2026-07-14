@@ -26,6 +26,9 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
+    /// fold on the original query so getRequiredAccess sees the dropped names
+    query_ptr->as<ASTDropAccessEntityQuery &>().replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
 
@@ -35,10 +38,6 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     /// a confusing `UNKNOWN_MASKING_POLICY` error from the always-empty open-source access storage.
     if (query.type == AccessEntityType::MASKING_POLICY)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
-
-    /// Fold the namespace prefix before authorization and ON CLUSTER shipping, so both
-    /// target the policy names that will actually be dropped.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());

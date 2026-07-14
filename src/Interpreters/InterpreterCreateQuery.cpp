@@ -2716,16 +2716,30 @@ BlockIO InterpreterCreateQuery::execute()
         if (!database_info.table_prefix.empty())
         {
             if (!create.database)
+            {
                 create.setTable(database_info.table_prefix + "." + create.getTable());
+                /// pin the database too: the distributed-DDL access fold prefixes
+                /// empty-database elements and must not re-prefix this one
+                create.setDatabase(database_info.database);
+            }
             if (create.targets)
                 create.targets->setCurrentDatabase(database_info);
         }
+
+        /// a target qualifier that isn't a database selects a table path in the
+        /// current database: CREATE MATERIALIZED VIEW ... TO ns.t under USE db.
+        /// local only: the initiator's catalog is not authoritative for remote hosts
+        if (create.targets && create.cluster.empty())
+            for (auto & target : create.targets->targets)
+                if (!target.table_id.database_name.empty())
+                    target.table_id = DatabaseCatalog::instance().applyNamespaceQualifier(target.table_id, database_info.database);
     }
 
     /// Normalize the `AS <table>` source through the shared resolver so DataLakeCatalog
-    /// namespaces are honored, before access checks and ON CLUSTER shipping. On resolution
-    /// failure the names are kept and downstream code reports the error after authorization.
-    if (!create.as_table.empty())
+    /// namespaces are honored, before access checks. On resolution failure the names are
+    /// kept and downstream code reports the error after authorization.
+    /// local only: the initiator's catalog is not authoritative for remote hosts
+    if (!create.as_table.empty() && create.cluster.empty())
     {
         if (auto as_table_id = getContext()->tryResolveStorageIDFromQuery({create.as_database, create.as_table}, Context::ResolveOrdinary);
             as_table_id && as_table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)

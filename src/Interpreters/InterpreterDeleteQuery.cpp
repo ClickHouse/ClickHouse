@@ -71,6 +71,7 @@ BlockIO InterpreterDeleteQuery::execute()
     const auto & settings = getContext()->getSettingsRef();
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
+    query_ptr->as<ASTDeleteQuery &>().setTable(table_id.table_name);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
