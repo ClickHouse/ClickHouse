@@ -56,4 +56,4 @@ DROP TABLE t_arr_cmp;
 SELECT (tuple(-1::Int64) < tuple(1::UInt64)) = ([-1]::Array(Int64) < [1]::Array(UInt64));
 
 -- Incomparable element types still throw
-SELECT ['a']::Array(String) < [1]::Array(Int64); -- { serverError NO_COMMON_TYPE }
+SELECT ['a']::Array(String) < [1]::Array(Int64); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}

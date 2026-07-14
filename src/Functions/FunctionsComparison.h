@@ -1473,19 +1473,24 @@ public:
                 const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
                 if (left_array && right_array)
                 {
+                    auto left_nested_type = left_array->getNestedType();
+                    auto right_nested_type = right_array->getNestedType();
+
                     auto element_comparison = std::make_shared<FunctionToOverloadResolverAdaptor>(
                         std::make_shared<FunctionComparison<Op, Name>>(params));
                     ColumnsWithTypeAndName element_args{
-                        {nullptr, left_array->getNestedType(), ""},
-                        {nullptr, right_array->getNestedType(), ""}};
+                        {nullptr, left_nested_type, ""},
+                        {nullptr, right_nested_type, ""}};
                     /// Throws NO_COMMON_TYPE if the element types are not comparable.
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
 
                     /// Supported only when the element comparison produces a non-Nullable result
                     /// (covers the mixed signed/unsigned integer case). Nullable/Nothing element
                     /// results keep the previous behavior (throw below), as before this change.
+                    /// the same apply for String/FixedString types
+                    bool has_string_type = WhichDataType(left_nested_type).isStringOrFixedString() || WhichDataType(right_nested_type).isStringOrFixedString();
                     if (!element_result_type->isNullable() && !element_result_type->onlyNull()
-                        && !isNothing(element_result_type))
+                        && !isNothing(element_result_type) && !has_string_type)
                         return std::make_shared<DataTypeUInt8>();
                 }
 
