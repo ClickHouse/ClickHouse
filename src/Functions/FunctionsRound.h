@@ -705,7 +705,7 @@ public:
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        /// Validate constant scale.
+        /// Validate constant scale; canThrow relies on this build-time check.
         if (arguments.size() > 1)
         {
             if (const auto * scale_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))

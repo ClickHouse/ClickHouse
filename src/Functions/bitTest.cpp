@@ -20,6 +20,7 @@ struct BitTestImpl
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = true;
 
     template <typename Result = ResultType>
     static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

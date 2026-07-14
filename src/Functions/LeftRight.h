@@ -67,7 +67,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
                     arguments[1].type->getName(), getName());
 
-        /// right(s, INT64_MIN) overflows when negated.
+        /// right(s, INT64_MIN) overflows when negated; canThrow relies on this build-time check.
         if constexpr (direction == SubstringDirection::Right)
         {
             if (const auto * col_length_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))

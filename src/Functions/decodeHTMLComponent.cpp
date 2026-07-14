@@ -25,6 +25,8 @@ namespace
     class FunctionDecodeHTMLComponentImpl
     {
     public:
+        static constexpr bool can_throw = false;
+
         static void vector(
             const ColumnString::Chars & data,
             const ColumnString::Offsets & offsets,

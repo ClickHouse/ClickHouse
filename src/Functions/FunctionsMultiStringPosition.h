@@ -55,7 +55,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}", arguments[1].type->getName(), getName());
 
-        /// Validate the constant needles array size.
+        /// Validate the constant needles array size; canThrow relies on this build-time check.
         if (const auto * col_needles_const = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get()))
         {
             const Array needles_arr = col_needles_const->getValue<Array>();

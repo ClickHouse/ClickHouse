@@ -19,6 +19,7 @@ template <bool keep_names>
 struct Impl
 {
     static constexpr auto name = keep_names ? "normalizeQueryKeepNames" : "normalizeQuery";
+    static constexpr bool can_throw = false;
 
     static void vector(
         const ColumnString::Chars & data,

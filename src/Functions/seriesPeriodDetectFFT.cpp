@@ -52,21 +52,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    static bool isSupportedArray(const IDataType & type)
     {
-        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(&type);
         if (!array_type)
-            return true;
+            return false;
 
         WhichDataType which(*array_type->getNestedType());
-        return !(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()
-            || which.isInt8() || which.isInt16() || which.isInt32() || which.isInt64()
-            || which.isFloat32() || which.isFloat64());
+        return which.isNativeInteger() || which.isFloat32() || which.isFloat64();
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        /// Reject unsupported array types; canThrow relies on this build-time check.
+        FunctionArgumentDescriptors args{
+            {"time_series",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isSupportedArray),
+             nullptr,
+             "Array((U)Int8/16/32/64) or Array(Float32/64)"}};
         validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();

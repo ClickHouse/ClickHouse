@@ -23,6 +23,8 @@ namespace
   */
 struct ReverseUTF8Impl
 {
+    static constexpr bool can_throw = false;
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,

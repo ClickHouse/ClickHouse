@@ -35,6 +35,8 @@ inline std::string_view getURLScheme(const char * data, size_t size)
 
 struct ExtractProtocol
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement()
     {
         return strlen("https") + 1;

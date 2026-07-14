@@ -9,6 +9,8 @@ namespace DB
 template <bool without_www, bool conform_rfc>
 struct CutToFirstSignificantSubdomain
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 15; }
 
     static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size)

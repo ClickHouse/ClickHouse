@@ -14,6 +14,7 @@ struct DivideFloatingImpl
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

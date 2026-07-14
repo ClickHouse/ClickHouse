@@ -122,6 +122,7 @@ struct DivideIntegralImpl
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = true;
     /// No mainstream ISA (x86 SSE/AVX/AVX-512, ARM NEON/SVE/SVE2) has SIMD
     /// integer division. Auto-vectorization wraps each scalar div in
     /// extract/insert making the loop ~3x larger and slower.
@@ -182,6 +183,7 @@ template <typename A, typename B>
 struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+    static const constexpr bool can_throw = false;
 
     template<typename Result = ResultType>
     static Result apply(A a, B b)
@@ -200,6 +202,7 @@ struct ModuloImpl
     using IntegerAType = typename NumberTraits::ToInteger<A>::Type;
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
+    static const constexpr bool can_throw = true;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
     /// Integer modulo uses the same `div` instruction as integer division — no
@@ -264,6 +267,7 @@ template <typename A, typename B>
 struct ModuloOrNullImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
@@ -325,6 +329,7 @@ template <typename A, typename B>
 struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

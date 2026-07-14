@@ -8,6 +8,8 @@ namespace DB
 template<bool conform_rfc>
 struct ExtractTopLevelDomain
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 5; }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)

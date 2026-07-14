@@ -77,6 +77,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
 
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
+        /// Validate the constant probability; canThrow relies on this build-time check.
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "Second argument of function {} must be from `0.0` to `1.0`", getName());

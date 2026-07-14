@@ -263,6 +263,8 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 template <bool without_www, bool conform_rfc>
 struct ExtractDomain
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 15; }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)

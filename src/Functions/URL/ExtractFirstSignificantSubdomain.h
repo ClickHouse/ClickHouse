@@ -19,6 +19,8 @@ struct FirstSignificantSubdomainDefaultLookup
 template <bool without_www, bool conform_rfc>
 struct ExtractFirstSignificantSubdomain
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 10; }
 
     static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)

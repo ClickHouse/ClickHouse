@@ -30,6 +30,8 @@ extern const int LOGICAL_ERROR;
 template <char not_case_lower_bound, char not_case_upper_bound, bool upper>
 struct LowerUpperUTF8Impl
 {
+    static constexpr bool can_throw = true;
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,

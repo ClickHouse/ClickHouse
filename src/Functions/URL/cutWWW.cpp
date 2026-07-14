@@ -10,6 +10,8 @@ namespace DB
 /// With dot at the end.
 struct ExtractWWW
 {
+    static constexpr bool can_throw = false;
+
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
         res_data = data;

@@ -17,6 +17,6 @@ SELECT seriesPeriodDetectFFT([1,2,3]);
 SELECT seriesPeriodDetectFFT(a) FROM tb1;
 DROP TABLE IF EXISTS tb1;
 SELECT seriesPeriodDetectFFT(); --{ serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
-SELECT seriesPeriodDetectFFT([]); -- { serverError ILLEGAL_COLUMN}
-SELECT seriesPeriodDetectFFT([NULL, NULL, NULL]); -- { serverError ILLEGAL_COLUMN}
-SELECT seriesPeriodDetectFFT([10, 20, 30, 10, 202, 30, NULL]); -- { serverError ILLEGAL_COLUMN }
+SELECT seriesPeriodDetectFFT([]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT seriesPeriodDetectFFT([NULL, NULL, NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT seriesPeriodDetectFFT([10, 20, 30, 10, 202, 30, NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

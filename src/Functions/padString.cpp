@@ -179,7 +179,7 @@ namespace
 
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-            /// Validate constant length.
+            /// Validate constant length; canThrow relies on this build-time check.
             if (const auto * col_length_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
             {
                 const Int64 new_length = col_length_const->getInt(0);

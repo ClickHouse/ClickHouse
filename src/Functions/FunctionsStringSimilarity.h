@@ -55,6 +55,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                 arguments[1].type->getName(), getName());
 
+        /// Validate constant argument sizes; canThrow relies on this build-time check.
         if constexpr (has_max_string_size<Impl>)
         {
             if (const auto * col_haystack_const = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))

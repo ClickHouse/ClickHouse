@@ -39,6 +39,8 @@ enum class ErrorHandling : uint8_t
 template <ErrorHandling error_handling>
 struct IdnaEncode
 {
+    static constexpr bool can_throw = error_handling == ErrorHandling::Throw;
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -93,6 +95,8 @@ struct IdnaEncode
 /// Translates an ASII-encoded IDNA string back to its UTF-8 representation.
 struct IdnaDecode
 {
+    static constexpr bool can_throw = false;
+
     /// As per the specification, invalid inputs are returned as is, i.e. there is no special error handling.
     static void vector(
         const ColumnString::Chars & data,

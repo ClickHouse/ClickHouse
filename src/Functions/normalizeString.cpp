@@ -95,6 +95,8 @@ struct NormalizeNFKCCasefoldImpl
 template<typename NormalizeImpl>
 struct NormalizeUTF8Impl
 {
+    static constexpr bool can_throw = true;
+
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
