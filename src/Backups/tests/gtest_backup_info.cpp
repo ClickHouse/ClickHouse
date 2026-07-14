@@ -122,12 +122,12 @@ namespace
         return context;
     }
 
-    ContextMutablePtr makeContextWithBackupAllowedDisks()
+    ContextMutablePtr makeContextWithBackupAllowedDisk(const String & disk_name)
     {
         auto context = Context::createCopy(getContext().context);
 
         Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
-        config->setString("backups.allowed_disk", "other_disk");
+        config->setString("backups.allowed_disk", disk_name);
         context->setConfig(config);
 
         return context;
@@ -466,15 +466,16 @@ TEST(BackupInfo, NormalizedStringValidatesS3ExtraCredentials)
 
 TEST(BackupInfo, NormalizedStringCanonicalizesDiskPath)
 {
-    auto first = BackupInfo::fromString("Disk('backups', 'dir/../backup/')");
-    auto second = BackupInfo::fromString("Disk('backups', 'backup')");
+    auto context = makeContextWithBackupAllowedDisk("default");
+    auto first = BackupInfo::fromString("Disk('default', 'dir/../backup/')");
+    auto second = BackupInfo::fromString("Disk('default', 'backup')");
 
-    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
 }
 
 TEST(BackupInfo, NormalizedStringRejectsDisallowedDiskWithContext)
 {
-    auto context = makeContextWithBackupAllowedDisks();
+    auto context = makeContextWithBackupAllowedDisk("other_disk");
     auto info = BackupInfo::fromString("Disk('default', 'backup')");
 
     EXPECT_THROW((void)info.toNormalizedString(context), Exception);
@@ -482,18 +483,31 @@ TEST(BackupInfo, NormalizedStringRejectsDisallowedDiskWithContext)
 
 TEST(BackupInfo, NormalizedStringCanonicalizesFilePath)
 {
+    auto context = makeContextWithBackupAllowedPaths();
     auto first = BackupInfo::fromString("File('dir/../backup/')");
     auto second = BackupInfo::fromString("File('backup')");
 
-    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
 }
 
 TEST(BackupInfo, NormalizedStringPreservesArchiveDirectoryPath)
 {
+    auto context = makeContextWithBackupAllowedPaths();
     auto archive_file = BackupInfo::fromString("File('backup.zip')");
     auto archive_directory = BackupInfo::fromString("File('backup.zip/')");
 
-    EXPECT_NE(archive_file.toNormalizedString(), archive_directory.toNormalizedString());
+    EXPECT_NE(archive_file.toNormalizedString(context), archive_directory.toNormalizedString(context));
+}
+
+TEST(BackupInfo, NormalizedStringRequiresContextForFileAndDisk)
+{
+    auto file = BackupInfo::fromString("File('backup')");
+    auto disk = BackupInfo::fromString("Disk('backups', 'backup')");
+
+    EXPECT_THROW((void)file.toNormalizedString(), Exception);
+    EXPECT_THROW((void)file.toNormalizedString(ContextPtr{}), Exception);
+    EXPECT_THROW((void)disk.toNormalizedString(), Exception);
+    EXPECT_THROW((void)disk.toNormalizedString(ContextPtr{}), Exception);
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonStringPath)

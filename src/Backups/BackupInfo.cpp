@@ -425,7 +425,7 @@ namespace
             (void)getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
     }
 
-    void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, [[maybe_unused]] const ContextPtr & context)
+    void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, const ContextPtr & context)
     {
         const bool has_named_collection = !info.id_arg.empty();
 
@@ -493,6 +493,8 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
 
             validateStringArgsForNormalizedIdentity(info);
+            if (!context)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to normalize `File` backup identity");
             return;
         }
 
@@ -504,6 +506,8 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
 
             validateStringArgsForNormalizedIdentity(info);
+            if (!context)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to normalize `Disk` backup identity");
             return;
         }
 
