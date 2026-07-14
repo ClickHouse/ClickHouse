@@ -493,3 +493,40 @@ OPTIMIZE TABLE ttl_l1 FINAL;
 SELECT max(payload) = toUInt64(toYear(max(tup.1))) AS payload_matches_stored, any(tup.2) AS sib_survived FROM ttl_l1;
 
 DROP TABLE ttl_l1;
+
+SELECT '--- M1';
+
+-- M1 (round 11, later COLUMN TTL): the chain-fire / pre-refresh handling applied to later GROUP BY
+-- TTLs must also cover a later COLUMN TTL. payload has a column TTL on ts2 + 1d; an earlier
+-- TTL1 (ts1 old, fires) GROUP BY k SET ts2 = min(ts2) - 20y moves ts2 from the future into the past.
+-- The bug: TTLColumnAlgorithm trusts its precomputed min (over the pre-SET future ts2), says
+-- "won't fire", and skips the column, so payload keeps its value. The fix detects the earlier SET
+-- can move ts2 into the past, bypasses the stale-min shortcut, and recomputes expiry per row on the
+-- post-SET ts2 -> payload is reset to its default (0). ts2 = now + 1y (future pre-SET, so the column
+-- TTL would not fire), post-SET ts2 - 20y = now - 19y (past, so it fires).
+CREATE TABLE ttl_m1 (k UInt32, ts1 DateTime, ts2 DateTime, payload UInt64 DEFAULT 0 TTL ts2 + toIntervalDay(1))
+ENGINE = MergeTree ORDER BY k
+TTL ts1 + toIntervalDay(1) GROUP BY k SET ts2 = min(ts2) - toIntervalYear(20)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_m1 (k, ts1, ts2, payload) SELECT 1, toDateTime('2020-01-01 00:00:00'), now() + toIntervalYear(1), 111 FROM numbers(8);
+OPTIMIZE TABLE ttl_m1 FINAL;
+SELECT max(payload) AS payload_after_column_ttl FROM ttl_m1;
+
+DROP TABLE ttl_m1;
+
+SELECT '--- M2';
+
+-- M2 (round 11, later COLUMN TTL on a MATERIALIZED expiry input): same as M1 but the column TTL
+-- expires on d MATERIALIZED toDate(ts2). Besides bypassing the stale min, the earlier SET's affected
+-- MATERIALIZED column d must be refreshed from the post-SET ts2 before the column algorithm runs,
+-- otherwise it reads the stale in-stream d (still future) and skips. The fix rebuilds d first, so the
+-- column TTL fires and payload resets to default (0).
+CREATE TABLE ttl_m2 (k UInt32, ts1 DateTime, ts2 DateTime, d Date MATERIALIZED toDate(ts2), payload UInt64 DEFAULT 0 TTL d + toIntervalDay(1))
+ENGINE = MergeTree ORDER BY k
+TTL ts1 + toIntervalDay(1) GROUP BY k SET ts2 = min(ts2) - toIntervalYear(20)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_m2 (k, ts1, ts2, payload) SELECT 1, toDateTime('2020-01-01 00:00:00'), now() + toIntervalYear(1), 111 FROM numbers(8);
+OPTIMIZE TABLE ttl_m2 FINAL;
+SELECT max(payload) AS payload_after_column_ttl FROM ttl_m2;
+
+DROP TABLE ttl_m2;

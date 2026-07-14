@@ -215,6 +215,27 @@ TTLTransform::TTLTransform(
             if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
+
+                /// An earlier firing `GROUP BY ... SET` can move a LATER column TTL from future to expired
+                /// in the same block by rewriting a column its expiry reads -- directly, through a
+                /// MATERIALIZED column (e.g. `d MATERIALIZED toDate(ts2)`, `payload TTL d + 1d`, earlier
+                /// `SET ts2`), or through a pre-extracted subcolumn (e.g. `payload TTL tup.ts + 1d`, earlier
+                /// `SET tup`). `TTLColumnAlgorithm` would otherwise trust its precomputed `min` and skip the
+                /// column, and even when it runs it would read the stale derived expiry input. Detect the
+                /// interaction with the SAME expiry check used for GROUP BY TTLs (it inspects the TTL's
+                /// expiry columns; a column TTL has no group_by keys / WHERE), tell the algorithm to
+                /// recompute expiry per row, and refresh the stale derived expiry inputs before it runs.
+                const bool expiry_affected_by_earlier_set = groupByTTLExpiryAffectedByEarlierSet(
+                    description, earlier_group_by_set_targets, metadata_snapshot_, context);
+
+                ExpressionActionsPtr expiry_refresh_actions;
+                if (expiry_affected_by_earlier_set)
+                {
+                    if (auto refresh_dag = buildRefreshGroupByKeysDAG(
+                            getInputPort().getHeader(), metadata_snapshot_, description, context))
+                        expiry_refresh_actions = std::make_shared<ExpressionActions>(std::move(*refresh_dag));
+                }
+
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
@@ -224,7 +245,10 @@ TTLTransform::TTLTransform(
                     name,
                     default_expression,
                     default_column_name,
-                    isCompactPart(data_part)));
+                    isCompactPart(data_part),
+                    /*earlier_set_can_expire=*/expiry_affected_by_earlier_set));
+                algorithm_key_refresh_actions.resize(algorithms.size());
+                algorithm_key_refresh_actions.back() = std::move(expiry_refresh_actions);
             }
         }
     }
