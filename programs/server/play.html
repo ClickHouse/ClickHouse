@@ -2434,6 +2434,8 @@ class QueryResultElement extends HTMLElement
 
         meta.forEach(elem => {
             let th = document.createElement('th');
+            /// Full name and type in the tooltip, so a truncated header can be read in full on hover.
+            th.title = `${elem.name}\n${elem.type}`;
             const name = document.createTextNode(elem.name);
             const nameSpan = document.createElement('span');
             nameSpan.className = 'name';
@@ -4073,6 +4075,57 @@ let load_tables_request_nums = new WeakMap();
 /// `a` and then `b` before `a` finishes loading, the highlight must end up on `b` regardless
 /// of which load's query returns first - otherwise a slower earlier open would steal it back.
 let current_selection_num = 0;
+
+/// Wire up a click-like activation on a table row or its addendum. Besides an ordinary left
+/// click, we also honor the gestures that conventionally open a link in a new tab: a middle
+/// click (which fires `auxclick`, not `click`), a Shift+click, or the platform's new-tab
+/// modifier click - Cmd on macOS, Ctrl elsewhere (on macOS `Ctrl+Click` is the secondary
+/// context-menu click, so it is not a new-tab gesture). The handler inspects the event to
+/// decide between replacing the current query and opening a new Web UI tab.
+///
+/// There is no browser-level test harness for `play.html`, so this gesture-routing and its
+/// paste guard are verified by hand. The committed manual matrix below is the behavior
+/// contract; re-run it when touching `set_query_or_run`, `openQueryInNewTab`/`activateTab`,
+/// or the `suppress_middleclick_paste` guard. Every case applies to a databases-panel table
+/// row and its bytes/rows/engine addenda alike, since they all route through the same
+/// `set_query_or_run` (below):
+///
+///   1. Plain left click on a not-yet-loaded query -> replaces the current tab's query
+///      (`query_area.value = value`); no new tab is created.
+///   2. Click the same row again while its query is already in the editor -> runs it
+///      (`postOne`), no new tab - and likewise for a second middle/modifier click, since
+///      opening an identical tab would be pointless.
+///   3. Middle click (button 1) -> opens the query in a new Web UI tab; on Linux/X11 the
+///      synthetic PRIMARY paste into the freshly focused editor is swallowed (the guard is
+///      armed around `query_area.focus()` in `activateTab`).
+///   4. Shift+click -> opens a new tab on every platform.
+///   5. Ctrl+click on Linux/Windows, or Cmd+click on macOS -> opens a new tab.
+///   6. Ctrl+click on macOS (the secondary/context-menu click) -> a no-op for query activation:
+///      it neither opens a new tab, replaces the editor, nor runs the query (not even the
+///      second-click `postOne`). The gesture is left entirely to the browser so the native
+///      context menu can appear. (Cmd+click is the macOS new-tab gesture; see case 5.)
+///   7. A real keyboard paste (Ctrl+V, Cmd+V, or Shift+Insert) into the editor immediately
+///      after a middle-click new-tab open -> the pasted text is kept: the paste-shortcut
+///      `keydown` disarms the guard before its `paste` fires, so only the mouse-driven
+///      PRIMARY paste (which carries no keystroke) is ever swallowed.
+///   8. Two middle clicks in quick succession (open table A, then table B within the guard's
+///      fallback window) -> B's PRIMARY paste is still swallowed: re-arming cancels A's pending
+///      fallback timer (`middleclick_paste_timeout`), so A's stale timeout cannot clear B's guard.
+function onTableActivate(elem, handler) {
+    elem.addEventListener('click', handler);
+    elem.addEventListener('auxclick', e => {
+        if (e.button !== 1) return;
+        /// Cancel the middle click's native paste at the click site. The X11 PRIMARY paste that
+        /// would otherwise land in the query editor is guarded separately, around the actual
+        /// `query_area.focus()` in the new-tab path (see `activateTab`), so the guard cannot
+        /// expire before a slow activation focuses the editor.
+        e.preventDefault();
+        handler(e);
+    });
+    /// Suppress the browser's middle-click autoscroll so the gesture only opens a new tab.
+    elem.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+}
+
 async function loadTables(server_address, user, password, database, container, set_current = true, is_current = null) {
     const request_num = (load_tables_request_nums.get(container) || 0) + 1;
     load_tables_request_nums.set(container, request_num);
@@ -4153,9 +4206,26 @@ async function loadTables(server_address, user, password, database, container, s
         table_addendum.className = 'table-addendum';
 
         const set_query_or_run = (e, value) => {
+            if (isMac && e.button !== 1 && e.ctrlKey) {
+                /// On macOS `Ctrl+Click` is the secondary (context-menu) click, not a query
+                /// activation or new-tab gesture. Leave it entirely to the browser (so the native
+                /// context menu can appear) and never activate, replace, or run the query - not
+                /// even the second-click `postOne` path below. The macOS new-tab modifier is Cmd
+                /// (`metaKey`), handled in the new-tab branch. A middle click (button 1) is a
+                /// genuine new-tab gesture even with Ctrl held, so it is excluded here.
+                return;
+            }
             if (query_area.value == value) {
-                /// Double click will run the query.
+                /// A second click on an already-loaded query runs it - regardless of whether it
+                /// was a plain, middle, or modifier click (opening yet another identical tab
+                /// would be pointless).
                 postOne();
+            } else if (e.button === 1 || e.shiftKey || (isMac ? e.metaKey : e.ctrlKey)) {
+                /// Middle click, Shift+click, or the platform's new-tab modifier click (Cmd on
+                /// macOS, Ctrl elsewhere) - the gestures that open a link in a new tab - open the
+                /// query in a new Web UI tab instead of replacing the current one. Only a genuine
+                /// middle click (button 1) needs the X11 PRIMARY paste guard.
+                openQueryInNewTab(value, e.button === 1);
             } else {
                 query_area.value = value;
                 query_area.dispatchEvent(new Event('input'));
@@ -4171,20 +4241,20 @@ async function loadTables(server_address, user, password, database, container, s
             let bytes_elem = document.createElement('span');
             bytes_elem.className = 'table-addendum-elem';
             bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
-            bytes_elem.addEventListener('click', show_table_properties);
+            onTableActivate(bytes_elem, show_table_properties);
             table_addendum.append(bytes_elem);
         }
         if (+elem.total_rows) {
             let rows_elem = document.createElement('span');
             rows_elem.className = 'table-addendum-elem';
             rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
-            rows_elem.addEventListener('click', show_table_properties);
+            onTableActivate(rows_elem, show_table_properties);
             table_addendum.append(rows_elem);
         }
         let engine_elem = document.createElement('span');
         engine_elem.textContent = elem.engine;
         engine_elem.className = 'table-addendum-elem';
-        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        onTableActivate(engine_elem, e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
         /// Make the balloon links reachable from the keyboard (Right arrow from the row).
@@ -4198,7 +4268,7 @@ async function loadTables(server_address, user, password, database, container, s
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
         table_link.appendChild(table_addendum);
         table.appendChild(table_link);
-        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        onTableActivate(table, e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
         tables_elem.appendChild(table);
     }
 
@@ -5221,6 +5291,45 @@ async function restoreFromHistory(state, token) {
 
 let query_area = document.getElementById('query');
 
+/// Opening a table in a new tab via a middle click focuses the query editor. On Linux/X11 the
+/// middle button additionally pastes the PRIMARY selection into the freshly-focused editor,
+/// appending clipboard junk after the query we just set. The new-tab activation (`activateTab`
+/// with `guard_paste`) arms this flag right around that `query_area.focus()`, so we swallow
+/// exactly that one paste.
+///
+/// The guard must never eat a real keyboard paste. The X11 PRIMARY paste is mouse-driven and
+/// carries no keystroke, whereas a real keyboard paste - Ctrl+V / Cmd+V, or Shift+Insert on
+/// Linux/Windows - is always preceded by its own paste-shortcut `keydown`; disarming on that
+/// `keydown` (which fires before the resulting `paste`) keeps the discrimination independent of
+/// timing. So even if the user middle-clicks and immediately presses a paste shortcut on a platform
+/// where no PRIMARY paste ever arrives, their paste is preserved; the short post-focus fallback in
+/// `activateTab` only bounds how long a never-consumed guard can linger.
+///
+/// The guard is a single shared bit, so we keep the handle of its one fallback timer and cancel
+/// it whenever the guard is re-armed or consumed. Otherwise two overlapping middle-click opens
+/// (open A, then open B within the fallback window) would share the bit but leave two pending
+/// timeouts: A's stale timeout could clear the bit that B re-armed, before B's PRIMARY paste
+/// arrives, letting that paste land in the editor. Cancelling the previous timer on re-arm means
+/// an older open's timeout can never clear a newer open's guard.
+let suppress_middleclick_paste = false;
+let middleclick_paste_timeout = null;
+function disarmMiddleclickPaste() {
+    suppress_middleclick_paste = false;
+    clearTimeout(middleclick_paste_timeout);
+    middleclick_paste_timeout = null;
+}
+query_area.addEventListener('keydown', e => {
+    const keyboard_paste = ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V'))
+        || (e.shiftKey && e.key === 'Insert');
+    if (keyboard_paste) disarmMiddleclickPaste();
+});
+query_area.addEventListener('paste', e => {
+    if (suppress_middleclick_paste) {
+        e.preventDefault();
+        disarmMiddleclickPaste();
+    }
+});
+
 appendTextareaResizer();
 
 /// ===== Tabs =====================================================================
@@ -5428,7 +5537,7 @@ function invalidateInFlight() {
 /// Load a tab's content into the editor and re-render its stored result.
 /// Routed through `restoreFromHistory` so the syntax backdrop, params and run
 /// buttons resync (it dispatches an 'input' event), exactly like history navigation.
-async function activateTab(id) {
+async function activateTab(id, guard_paste = false) {
     const tab = tabs.find(t => t.id === id);
     if (!tab) return;
     activeTabId = id;
@@ -5443,7 +5552,20 @@ async function activateTab(id) {
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
     renderTabBar();
+    /// A middle-click new-tab open arms the X11 PRIMARY paste guard right around this focus, so
+    /// the paste Linux delivers to the freshly-focused editor is swallowed - and only that one.
+    /// Anchoring the guard here, rather than at the original `auxclick`, means a slow activation
+    /// can never let it expire before focus. It is cleared by the swallowed paste, by a real
+    /// paste-shortcut keydown (which must never be eaten - see `suppress_middleclick_paste`), or by
+    /// the short fallback below in case no paste fires at all (non-Linux, empty selection), so the
+    /// flag can never linger. Re-arming here cancels any previous open's pending fallback timer, so
+    /// an overlapping middle-click open cannot have its guard cleared by an earlier open's timeout.
+    if (guard_paste) {
+        clearTimeout(middleclick_paste_timeout);
+        suppress_middleclick_paste = true;
+    }
     query_area.focus();
+    if (guard_paste) middleclick_paste_timeout = setTimeout(disarmMiddleclickPaste, 250);
 }
 
 /// Switch tabs in response to a user click: capture the current tab, activate the
@@ -5468,6 +5590,21 @@ function addTab() {
     activeTabId = tab.id;
     /// A brand new tab has no result; clear the editor and result area.
     activateTab(tab.id).then(syncHistory);
+    scheduleSave();
+}
+
+/// Like `addTab`, but the new tab starts pre-filled with `query` and becomes active.
+/// Used by the databases panel when a table is opened with a new-tab gesture (middle
+/// click or Shift/Ctrl/Cmd click). `guard_paste` is set for a genuine middle click, so
+/// the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+function openQueryInNewTab(query, guard_paste = false) {
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+    const tab = makeTab(undefined, query);
+    tabs.push(tab);
+    activeTabId = tab.id;
+    activateTab(tab.id, guard_paste).then(syncHistory);
     scheduleSave();
 }
 
@@ -5500,6 +5637,8 @@ function startTitleEdit(tab, titleEl) {
     titleEl.contentEditable = 'true';
     titleEl.spellcheck = false;
     titleEl.classList.add('editing');
+    /// Drop the hover tooltip while typing so it does not linger with the old title.
+    titleEl.removeAttribute('title');
     /// Mark the tab so it drops its max-width and flexes to fit the title being typed.
     titleEl.closest('.tab').classList.add('editing');
 
@@ -5557,6 +5696,8 @@ function renderTabBar() {
         const titleEl = document.createElement('span');
         titleEl.className = 'tab-title';
         titleEl.textContent = tab.title;
+        /// Native tooltip so a title truncated by the width cap can still be read in full on hover.
+        titleEl.title = tab.title;
         el.appendChild(titleEl);
 
         const closeEl = document.createElement('span');
