@@ -1,0 +1,299 @@
+---
+description: 's3 테이블 함수와 비슷하게, 파일에서 SELECT하거나 파일에 INSERT할 수 있도록 테이블처럼 사용할 수 있는 인터페이스를 제공하는 테이블 엔진입니다. 로컬 파일로 작업할 때는 `file`을 사용하고, S3, GCS 또는 MinIO와 같은 객체 스토리지의 버킷으로 작업할 때는 `s3`를 사용하십시오.'
+sidebarTitle: 'file'
+slug: /sql-reference/table-functions/file
+title: 'file'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="file-table-function">
+  # file 테이블 함수
+</div>
+
+[s3](/ko/reference/functions/table-functions/s3) 테이블 함수와 비슷하게, 파일에서 SELECT하거나 파일에 INSERT할 수 있도록 테이블처럼 사용할 수 있는 인터페이스를 제공하는 테이블 엔진입니다. 로컬 파일로 작업할 때는 `file`을 사용하고, S3, GCS 또는 MinIO와 같은 객체 스토리지의 버킷으로 작업할 때는 `s3`를 사용하십시오.
+
+`file` 함수는 파일을 읽거나 파일에 쓰기 위해 `SELECT` 및 `INSERT` 쿼리에서 사용할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+file([path_to_archive ::] path [,format] [,structure] [,compression])
+```
+
+`SELECT` 쿼리에서는 `path`가 `Array(String)`을 반환하는 표현식일 수도 있습니다:
+
+```sql
+file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| Parameter         | Description                                                                                                                                                                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings#user_files_path)를 기준으로 한 파일의 상대 경로이거나, `SELECT` 쿼리에서는 경로의 `Array(String)`입니다. 읽기 전용 모드에서는 다음 [글롭 패턴](#globs-in-path)을 지원합니다: `*`, `?`, `{abc,def}` (`'abc'`와 `'def'`는 문자열) 및 `{N..M}` (`N`과 `M`은 숫자). |
+| `path_to_archive` | zip/tar/7z 아카이브의 상대 경로입니다. `path`와 동일한 글롭 패턴을 지원합니다.                                                                                                                                                                                                                         |
+| `format`          | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                       |
+| `structure`       | 테이블 구조입니다. 포맷: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                |
+| `compression`     | `SELECT` 쿼리에서 사용하면 기존 압축 유형을, `INSERT` 쿼리에서 사용하면 원하는 압축 유형을 의미합니다. 지원되는 압축 유형은 `gz`, `br`, `xz`, `zst`, `lz4`, `bz2`입니다.                                                                                                                                                     |
+
+<Tip>
+  `structure` 인수를 생략하면 ClickHouse가 포맷 자체에서 스키마를 추론합니다.
+  포맷에 따라 기본 컬럼 이름과 타입이 달라집니다.
+  특정 포맷의 스키마를 확인하려면 [`format`](/ko/reference/functions/table-functions/format) 테이블 함수와 함께 [`DESC`](/ko/reference/statements/describe-table)를 사용하십시오.
+
+  예시:
+
+  ```sql
+  DESC format(LineAsString, 'Hello\nWorld')
+  ```
+
+  ```response
+  ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+  │ line │ String │              │                    │         │                  │                │
+  └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+  ```
+</Tip>
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+파일의 데이터를 읽거나 파일에 데이터를 쓰는 테이블입니다.
+
+<div id="examples-for-writing-to-a-file">
+  ## 파일에 쓰는 예시
+</div>
+
+<div id="write-to-a-tsv-file">
+  ### TSV 파일에 쓰기
+</div>
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+그 결과, 데이터가 `test.tsv` 파일에 기록됩니다:
+
+```bash
+# cat /var/lib/clickhouse/user_files/test.tsv
+1    2    3
+3    2    1
+1    3    2
+```
+
+<div id="partitioned-write-to-multiple-tsv-files">
+  ### 여러 TSV 파일로 파티션별 쓰기
+</div>
+
+`file` 유형의 테이블 함수에 데이터를 삽입할 때 `PARTITION BY` 표현식을 지정하면 각 파티션별로 별도의 파일이 생성됩니다. 데이터를 여러 파일로 나누면 읽기 작업의 성능을 높이는 데 도움이 됩니다.
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test_{_partition_id}.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+PARTITION BY column3
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+그 결과, 데이터는 `test_1.tsv`, `test_2.tsv`, `test_3.tsv`의 세 개 파일에 저장됩니다.
+
+```bash
+# cat /var/lib/clickhouse/user_files/test_1.tsv
+3    2    1
+
+# cat /var/lib/clickhouse/user_files/test_2.tsv
+1    3    2
+
+# cat /var/lib/clickhouse/user_files/test_3.tsv
+1    2    3
+```
+
+<div id="examples-for-reading-from-a-file">
+  ## 파일에서 읽어오는 예시
+</div>
+
+<div id="select-from-a-csv-file">
+  ### CSV 파일에서 SELECT
+</div>
+
+먼저 서버 구성에서 `user_files_path`를 설정하고 `test.csv` 파일을 준비합니다:
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+$ cat /var/lib/clickhouse/user_files/test.csv
+    1,2,3
+    3,2,1
+    78,43,45
+```
+
+그런 다음, `test.csv`의 데이터를 테이블에 읽어 들인 후 처음 두 행을 선택합니다:
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2;
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="inserting-data-from-a-file-into-a-table">
+  ### 파일의 데이터를 테이블에 삽입하기
+</div>
+
+```sql
+INSERT INTO FUNCTION
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1);
+```
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+`archive1.zip` 또는 `archive2.zip`(또는 둘 다)에 있는 `table.csv`에서 데이터를 읽습니다:
+
+```sql
+SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
+```
+
+<div id="globs-in-path">
+  ## 경로의 글롭 패턴
+</div>
+
+경로에는 글로빙을 사용할 수 있습니다. 파일은 접미사나 접두사뿐만 아니라 전체 경로 패턴과 일치해야 합니다. 다만 한 가지 예외가 있습니다. 경로가 기존
+디렉터리를 가리키고 글롭 패턴을 사용하지 않는 경우, `*`가 경로에 암묵적으로 추가되어
+디렉터리 안의 모든 파일이 선택됩니다.
+
+* `*` — 빈 문자열을 포함하되 `/`를 제외한 임의 개수의 문자를 나타냅니다.
+* `?` — 임의의 단일 문자를 나타냅니다.
+* `{some_string,another_string,yet_another_one}` — `'some_string'`, `'another_string'`, `'yet_another_one'` 문자열 중 하나로 대체됩니다. 이 문자열에는 `/` 기호를 포함할 수 있습니다.
+* `{N..M}` — `>= N` 이고 `<= M` 인 임의의 숫자를 나타냅니다.
+* `**` - 폴더 내부의 모든 파일을 재귀적으로 나타냅니다.
+
+`{}`를 사용하는 구문은 [remote](/ko/reference/functions/table-functions/remote) 및 [hdfs](/ko/reference/functions/table-functions/hdfs) 테이블 함수와 유사합니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+**예시**
+
+다음과 같은 상대 경로를 가진 파일이 있다고 가정합니다:
+
+* `some_dir/some_file_1`
+* `some_dir/some_file_2`
+* `some_dir/some_file_3`
+* `another_dir/some_file_1`
+* `another_dir/some_file_2`
+* `another_dir/some_file_3`
+
+모든 파일의 총 행 수를 조회합니다:
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
+```
+
+같은 결과를 내는 대체 경로 표현식:
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
+```
+
+묵시적 `*`를 사용해 `some_dir`의 전체 행 수를 조회합니다:
+
+```sql
+SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
+```
+
+<Note>
+  파일 목록에 앞자리가 0인 숫자 범위가 포함된 경우, 각 자리수를 개별적으로 중괄호로 지정하는 구문을 사용하거나 `?`를 사용하십시오.
+</Note>
+
+**예시**
+
+`file000`, `file001`, ... , `file999`라는 이름의 파일에 있는 전체 행 수를 조회합니다:
+
+```sql
+SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
+```
+
+**예시**
+
+디렉터리 `big_dir/` 내부의 모든 파일에서 하위 디렉터리까지 포함해 행의 총개수를 쿼리합니다:
+
+```sql
+SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
+```
+
+**예시**
+
+디렉터리 `big_dir/` 아래의 모든 폴더에 있는 `file002` 파일을 재귀적으로 탐색하여 총 행 수를 쿼리합니다:
+
+```sql
+SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
+```
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — 파일의 경로. 유형: `LowCardinality(String)`.
+* `_file` — 파일 이름. 유형: `LowCardinality(String)`.
+* `_size` — 파일 크기(바이트). 유형: `Nullable(UInt64)`. 파일 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 마지막 수정 시각. 유형: `Nullable(DateTime)`. 시간을 알 수 없으면 값은 `NULL`입니다.
+
+<div id="hive-style-partitioning">
+  ## use_hive_partitioning 설정
+</div>
+
+`use_hive_partitioning` 설정을 1로 지정하면 ClickHouse가 경로(`/name=value/`)에서 Hive 스타일 파티셔닝을 감지하고, 쿼리에서 파티션 컬럼을 가상 컬럼(virtual columns)으로 사용할 수 있습니다. 이러한 가상 컬럼은 파티셔닝된 경로의 이름과 동일한 이름을 가집니다.
+
+**예시**
+
+Hive 스타일 파티셔닝으로 생성된 가상 컬럼 사용
+
+```sql
+SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="settings">
+  ## 설정
+</div>
+
+| Setting                                                                                                                                     | Description                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ko/reference/settings/session-settings#engine_file_empty_if_not_exists)                 | 존재하지 않는 파일에서 빈 결과를 선택할 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.                                                                                               |
+| [engine&#95;file&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings#engine_file_truncate_on_insert)                       | 파일에 삽입하기 전에 파일 내용을 비울 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.                                                                                                |
+| [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/ko/reference/settings/session-settings#engine_file_allow_create_multiple_files) | 포맷에 접미사가 있는 경우, 각 삽입 시 새 파일을 생성할 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.                                                                                     |
+| [engine&#95;file&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings#engine_file_skip_empty_files)                           | 읽는 중에 빈 파일을 건너뛸 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.                                                                                                      |
+| [storage&#95;file&#95;read&#95;method](/ko/reference/settings/session-settings#engine_file_empty_if_not_exists)                                | 스토리지 파일에서 데이터를 읽는 메서드로, 다음 중 하나입니다: read, pread, mmap(clickhouse-local에서만 지원). 기본값은 clickhouse-server의 경우 `pread`, clickhouse-local의 경우 `mmap`입니다. |
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [가상 컬럼](/ko/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [처리 후 파일 이름 변경](/ko/reference/settings/session-settings#rename_files_after_processing)

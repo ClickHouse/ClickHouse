@@ -117,6 +117,28 @@ namespace
         return result;
     }
 
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close).
+    ///
+    /// The object identifier already uses the full path, so files that share a base name in
+    /// different directories do not collide. For general (non-data-lake) remote objects the path
+    /// alone is not a stable identity - an object can be overwritten in place under the same path -
+    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
+    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
+    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
+    /// lakes whose object metadata does not carry an ETag).
+    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+    {
+        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+        if (is_data_lake)
+            return identifier;
+        const auto & metadata = object_info.getObjectMetadata();
+        if (!metadata || metadata->etag.empty())
+            return std::nullopt;
+        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+    }
+
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
     {
         const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
@@ -666,7 +688,7 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -700,12 +722,12 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty())
+                        if (!unmatched_ranges.empty() && query_condition_cache_key)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
                                 storage_id.uuid,
-                                query_condition_cache_key,
+                                *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
@@ -830,9 +852,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-            auto matching_marks = query_condition_cache->read(
-                storage_id.uuid, query_condition_cache_key, *format_filter_info->condition_hash);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            if (query_condition_cache_key)
+                matching_marks = query_condition_cache->read(
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -1384,10 +1408,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-            /// No cache stage is added in this case, so clear the flag: downstream decisions
-            /// (e.g. whether to issue the initial small-object prefetch) must reflect that the
-            /// read is a plain remote read, not a cached one.
-            use_filesystem_cache = false;
         }
         else
         {
@@ -1447,6 +1467,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.getPath(), object_size, use_prefetch ? "with" : "without",
         pipeline.describe());
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential windows
+    /// for direct object-storage reads (s3()/azureBlobStorage() and the object-storage engines),
+    /// mirroring the wiring in DiskObjectStorage::prepareRead for the disk-based path.
+    if (modified_read_settings.reader_executor.enabled && modified_read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
+
     auto impl = pipeline.build();
 
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
@@ -1456,9 +1482,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
     /// small file) and otherwise drops the prefetch and falls back to a positioned read.
     ///
-    /// Skip it when the filesystem cache is in use: the cache manages its own read-ahead and segment
-    /// ranges, so an extra initial prefetch over it is redundant and interferes with that handling.
-    if (use_prefetch && impl && !use_filesystem_cache)
+    /// The prefetch is issued also when the read goes through the filesystem cache: the cache does
+    /// no read-ahead of its own, and files read via object storage engines (e.g. fresh `S3Queue`
+    /// files) are typically cache misses, so without the prefetch the first read of each small file
+    /// is a synchronous, latency-bound round trip to object storage. The prefetch runs the cache
+    /// miss (and the cache fill) in the background instead.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);

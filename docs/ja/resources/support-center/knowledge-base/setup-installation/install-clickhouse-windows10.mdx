@@ -1,0 +1,161 @@
+---
+title: Windows 10 に ClickHouse をインストールするにはどうすればよいですか？
+description: "WSL 2 を使用して Windows 10 に ClickHouse をインストールし、テストする方法を紹介します。セットアップ、トラブルシューティング、テスト環境の実行についても含まれます。"
+date: 2023-04-24
+tags: ['ツールとユーティリティ']
+keywords: ['Windows 10']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-install-and-test-clickhouse-on-microsoft-windows">
+  ## Microsoft Windows に ClickHouse をインストールしてテストする方法
+</div>
+
+Windows 10 に ClickHouse をインストールする際、データの挿入時にエラーが発生することがあります。たとえば、次のようなエラーです。
+
+```
+DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in rename: Permission denied ["./store/711/71144174-d098-4056-8976-6ad1204205ec/tmp_insert_all_1_1_0/"] ["./store/711/71144174-d098-4056-8976-6ad1204205ec/all_1_1_0/"]. Stack trace:
+```
+
+Windows 10 では、WSL を WSL 2 にアップグレードする必要があります。
+
+* PowerShell アイコンを右クリックし、&quot;管理者として実行&quot;を選択して、PowerShell を開きます。
+
+* Microsoft の手順に従って、WSL 2 にアップグレードします。詳細はこちら:
+  https://learn.microsoft.com/en-us/windows/wsl/install
+
+* アップグレードが完了したら、PowerShell から WSL を起動します。
+
+```
+wsl
+```
+
+* テストするには以下の手順に従ってください。すると、同様の出力が得られるはずです:
+  これはテスト用のため、権限の問題を避けるために root でログインしました:
+
+```
+sudo -i
+```
+
+* ClickHouse ディレクトリを作成します:
+
+```
+root@marspc2:~# mkdir /clickhouse
+```
+
+* 新しいディレクトリから、ClickHouse をダウンロードします:
+
+```
+root@marspc2:/# cd clickhouse
+
+root@marspc2:/clickhouse# curl https://clickhouse.com | sh
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2739    0  2739    0     0   5515      0 --:--:-- --:--:-- --:--:--  5511
+
+Will download https://builds.clickhouse.com/master/amd64/clickhouse into clickhouse
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  530M  100  530M    0     0  8859k      0  0:01:01  0:01:01 --:--:-- 8549k
+
+Successfully downloaded the ClickHouse binary, you can run it as:
+    ./clickhouse
+
+You can also install it:
+    sudo ./clickhouse install
+```
+
+* ClickHouseサーバーを起動します:
+
+```
+root@marspc2:/clickhouse# ./clickhouse server
+Processing configuration file 'config.xml'.
+There is no file 'config.xml', will use embedded config.
+Cannot set max size of core file to 1073741824
+2023.04.17 19:19:23.155323 [ 500 ] {} <Information> SentryWriter: Sending crash reports is disabled
+2023.04.17 19:19:23.165447 [ 500 ] {} <Trace> Pipe: Pipe capacity is 1.00 MiB
+2023.04.17 19:19:23.271147 [ 500 ] {} <Information> Application: Starting ClickHouse 23.4.1.1222 (revision: 54473, git hash: 3993aef8e281815ac4269d44e27bb1dcdcff21cb, build id: AF16AA59B689841860F39ACDBED30AC8F9AB70FA), PID 500
+2023.04.17 19:19:23.271208 [ 500 ] {} <Information> Application: starting up
+2023.04.17 19:19:23.271237 [ 500 ] {} <Information> Application: OS name: Linux, version: 5.15.90.1-microsoft-standard-WSL2, architecture: x86_64
+...
+```
+
+* 別のWSLウィンドウで、クライアントを起動します。
+
+```
+root@marspc2:/clickhouse# ./clickhouse client
+ClickHouse client version 23.4.1.1222 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 23.4.1 revision 54462.
+
+Warnings:
+ * Linux transparent hugepages are set to "always". Check /sys/kernel/mm/transparent_hugepage/enabled
+
+marspc2. :)
+```
+
+* データベースとテーブルを作成します:
+
+```
+marspc2. :) create database db1;
+
+CREATE DATABASE db1
+
+Query id: 688f79e2-8132-44ed-98d6-0581abe9903a
+
+Ok.
+
+0 rows in set. Elapsed: 0.007 sec.
+
+marspc2. :) create table db1.table1 (id Int64, string_column String) engine = MergeTree() order by id;
+
+CREATE TABLE db1.table1
+(
+    `id` Int64,
+    `string_column` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: d91a93b4-e13f-4e17-8201-f329223287d0
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+* サンプル行を挿入します:
+
+```
+marspc2. :) insert into db1.table1 (id, string_column) values (1, 'a'), (2,'b');
+
+INSERT INTO db1.table1 (id, string_column) FORMAT Values
+
+Query id: 2b274eef-09af-434b-88e0-c25799649910
+
+Ok.
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+* 行を表示します:
+
+```
+marspc2. :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 74c76bf1-d944-4b21-a384-cc0b5e6aa579
+
+┌─id─┬─string_column─┐
+│  1 │ a             │
+│  2 │ b             │
+└────┴───────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```

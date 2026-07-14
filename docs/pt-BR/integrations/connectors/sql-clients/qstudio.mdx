@@ -1,0 +1,80 @@
+---
+slug: /integrations/qstudio
+sidebarTitle: 'QStudio'
+description: 'QStudio é uma ferramenta SQL gratuita.'
+title: 'Conectar o QStudio ao ClickHouse'
+doc_type: 'guide'
+keywords: ['qstudio', 'cliente SQL', 'ferramenta de banco de dados', 'ferramenta de consulta', 'ide']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+QStudio é uma interface gráfica SQL gratuita que permite executar scripts SQL, navegar facilmente pelas tabelas, criar gráficos e exportar resultados. Funciona em qualquer sistema operacional e com qualquer banco de dados.
+
+O QStudio se conecta ao ClickHouse usando JDBC.
+
+<div id="1-gather-your-clickhouse-details">
+  ## 1. Reúna as informações do seu ClickHouse
+</div>
+
+O QStudio usa JDBC via HTTP(S) para se conectar ao ClickHouse; você precisará de:
+
+* endpoint
+* número da porta
+* nome de usuário
+* senha
+
+<ConnectionDetails />
+
+<div id="2-download-qstudio">
+  ## 2. Baixe o QStudio
+</div>
+
+O QStudio está disponível em https://www.timestored.com/qstudio/download/
+
+<div id="3-add-a-database">
+  ## 3. Adicione um banco de dados
+</div>
+
+* Ao abrir o QStudio pela primeira vez, clique nas opções do menu **Server-&gt;Add Server** ou no botão de adicionar servidor na barra de ferramentas.
+* Em seguida, preencha os detalhes:
+
+<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Tela de configuração da conexão com o banco de dados no QStudio mostrando as configurações de conexão do ClickHouse" />
+
+1. Tipo de servidor: Clickhouse.com
+2. Observação: em Host, você DEVE incluir https://
+   Host: https://abc.def.clickhouse.cloud
+   Porta: 8443
+3. Nome de usuário: default
+   Senha: `XXXXXXXXXXX`
+4. Clique em Add
+
+Se o QStudio detectar que você não tem o ClickHouse JDBC driver instalado, ele oferecerá fazer o download para você:
+
+<div id="4-query-clickhouse">
+  ## 4. Consultar o ClickHouse
+</div>
+
+* Abra um editor de consultas e execute uma consulta. Você pode executar consultas usando:
+
+* Ctrl + e - Executa o texto selecionado
+
+* Ctrl + Enter - Executa a linha atual
+
+* Um exemplo de consulta:
+
+<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface do QStudio mostrando a execução de uma consulta SQL de exemplo no banco de dados ClickHouse" />
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Consulte o [QStudio](https://www.timestored.com/qstudio) para conhecer os recursos do QStudio e a [documentação do ClickHouse](/pt-BR/) para conhecer os recursos do ClickHouse.

@@ -1,0 +1,61 @@
+---
+description: 'يتيح ClickHouse Playground للمستخدمين تجربة ClickHouse عبر تشغيل الاستعلامات فورًا، من دون إعداد الخادم أو العنقود الخاص بهم.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebarTitle: 'ClickHouse Playground'
+slug: /getting-started/playground
+title: 'ClickHouse Playground'
+doc_type: 'guide'
+---
+
+يتيح [ClickHouse Playground](https://sql.clickhouse.com) للمستخدمين تجربة ClickHouse عبر تشغيل الاستعلامات فورًا، من دون إعداد الخادم أو العنقود الخاص بهم.
+تتوفر عدة مجموعات بيانات تجريبية في Playground.
+
+يمكنك إرسال استعلامات إلى Playground باستخدام أي عميل HTTP، مثل [curl](https://curl.haxx.se) أو [wget](https://www.gnu.org/software/wget/)، أو إعداد اتصال باستخدام برامج تشغيل [JDBC](/ar/concepts/features/interfaces/jdbc) أو [ODBC](/ar/concepts/features/interfaces/odbc). تتوفر [هنا](/ar/integrations/home) مزيد من المعلومات حول المنتجات البرمجية التي تدعم ClickHouse.
+
+<div id="credentials">
+  ## بيانات الاعتماد
+</div>
+
+| المعلمة                | القيمة                             |
+| :--------------------- | :--------------------------------- |
+| نقطة نهاية HTTPS       | `https://play.clickhouse.com:443/` |
+| نقطة نهاية TCP الأصلية | `play.clickhouse.com:9440`         |
+| المستخدم               | `explorer` أو `play`               |
+| كلمة المرور            | (فارغة)                            |
+
+<div id="limitations">
+  ## القيود
+</div>
+
+تُنفَّذ الاستعلامات باستخدام مستخدم بصلاحية القراءة فقط، وهذا يفرض بعض القيود:
+
+* استعلامات DDL غير مسموح بها
+* استعلامات INSERT غير مسموح بها
+
+وتُطبَّق أيضًا quotas على استخدام الخدمة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+مثال على نقطة نهاية HTTPS باستخدام `curl`:
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+مثال على نقطة نهاية TCP باستخدام [CLI](/ar/concepts/features/interfaces/cli):
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## مواصفات ClickHouse Playground
+</div>
+
+يعمل ClickHouse Playground لدينا بالمواصفات التالية:
+
+* مستضاف على Google Cloud ‏(GCE) في منطقة US Central ‏(US-Central-1)
+* إعداد يتكوّن من 3 نُسخ متماثلة
+* سعة تخزين تبلغ 256 GiB و59 وحدة CPU افتراضية لكل نسخة.
