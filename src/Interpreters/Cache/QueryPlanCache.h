@@ -192,6 +192,11 @@ private:
     /// O(1): reads the cached per-user byte count rather than scanning the cache.
     bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const;
 
+    /// Serializes compound `CacheBase` + accounting mutations. Do not hold
+    /// `per_user_mutex` while calling into `CacheBase`: eviction callbacks enter
+    /// `onEntryRemoval` and need to lock `per_user_mutex`.
+    mutable std::mutex operation_mutex;
+
     mutable std::mutex per_user_mutex;
     std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
 

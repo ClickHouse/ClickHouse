@@ -5,6 +5,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/ContextAccess.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -27,6 +28,11 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
+}
+
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace
@@ -76,16 +82,22 @@ ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
 
 std::map<String, Int64> getTableMetadataVersionsForQueryPlanCache(
     const StorageID & storage_id,
-    const StoragePtr & storage,
-    const ContextPtr & context)
+    const StorageMetadataPtr & metadata)
 {
-    auto metadata = storage->getInMemoryMetadataPtr(context, false);
     std::map<String, Int64> table_metadata_versions;
     Int64 schema_version = metadata->getMetadataVersion();
     if (schema_version == 0)
         schema_version = computeSchemaHash(*metadata);
     table_metadata_versions[storage_id.getFullTableName()] = schema_version;
     return table_metadata_versions;
+}
+
+std::map<String, Int64> getTableMetadataVersionsForQueryPlanCache(
+    const StorageID & storage_id,
+    const StoragePtr & storage,
+    const ContextPtr & context)
+{
+    return getTableMetadataVersionsForQueryPlanCache(storage_id, storage->getInMemoryMetadataPtr(context, false));
 }
 
 IASTHash getRowPolicyHashForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id)
@@ -232,34 +244,76 @@ QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
     return fingerprint;
 }
 
-bool validateQueryPlanCacheEntry(
+static QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
+    const QueryPlanCacheLookupContext & lookup_context,
+    const ContextPtr & context,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & selected_columns)
+{
+    QueryPlanCacheDependencyFingerprint fingerprint;
+    fingerprint.storage_id = lookup_context.storage_id;
+    fingerprint.table_metadata_versions = getTableMetadataVersionsForQueryPlanCache(lookup_context.storage_id, metadata_snapshot);
+    fingerprint.row_policy_hash = getRowPolicyHashForQueryPlanCache(context, lookup_context.storage_id);
+    fingerprint.row_policy_names_hash = getRowPolicyNamesHashForQueryPlanCache(context, lookup_context.storage_id);
+    fingerprint.semantic_settings_hash = lookup_context.key.semantic_settings_hash;
+    fingerprint.selected_columns = selected_columns;
+    return fingerprint;
+}
+
+std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildSnapshot(
     const QueryPlanCacheLookupContext & lookup_context,
     const ContextPtr & context,
     const QueryPlanCacheEntry & entry)
 {
-    if (entry.selected_columns != entry.dependencies.selected_columns)
-        return false;
-
-    return entry.dependencies == buildQueryPlanCacheDependencyFingerprint(
-        lookup_context,
-        context,
-        entry.dependencies.selected_columns);
-}
-
-void checkAccessForQueryPlanCacheHit(const ContextPtr & context, const StorageID & storage_id, const Names & selected_columns)
-{
-    auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    auto storage = DatabaseCatalog::instance().tryGetTable(lookup_context.storage_id, context);
     if (!storage)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} no longer exists (stale query plan cache entry)",
-            storage_id.getFullTableName());
+            lookup_context.storage_id.getFullTableName());
 
-    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    auto table_lock = storage->lockForShare(
+        context->getInitialQueryId(),
+        context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    if (selected_columns.empty() && metadata && !metadata->getColumns().empty())
+    storage->updateExternalDynamicMetadataIfExists(context);
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    if (entry.selected_columns != entry.dependencies.selected_columns)
+        return {};
+
+    auto fingerprint = buildQueryPlanCacheDependencyFingerprint(
+        lookup_context,
+        context,
+        metadata_snapshot,
+        entry.dependencies.selected_columns);
+
+    if (!(entry.dependencies == fingerprint))
+        return {};
+
+    ValidatedQueryPlanCacheEntry result;
+    result.storage_id = lookup_context.storage_id;
+    result.selected_columns = entry.selected_columns;
+    result.metadata_snapshot = metadata_snapshot;
+    result.storage_bindings.push_back(QueryPlanStorageBinding{
+        .table_name = lookup_context.storage_id.getFullTableName(),
+        .storage = std::move(storage),
+        .snapshot = std::move(storage_snapshot),
+        .table_lock = std::move(table_lock),
+    });
+    return result;
+}
+
+void checkAccessForQueryPlanCacheHit(
+    const ContextPtr & context,
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & selected_columns)
+{
+    if (selected_columns.empty() && metadata_snapshot && !metadata_snapshot->getColumns().empty())
     {
         auto access = context->getAccess();
-        for (const auto & column : metadata->getColumns())
+        for (const auto & column : metadata_snapshot->getColumns())
         {
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
                 return;

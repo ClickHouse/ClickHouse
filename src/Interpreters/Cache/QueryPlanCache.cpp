@@ -119,12 +119,19 @@ QueryPlanCache::QueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
 
 void QueryPlanCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries)
 {
-    setMaxSizeInBytes(max_size_in_bytes);
-    setMaxCount(max_entries);
+    std::lock_guard operation_lock(operation_mutex);
+
+    Base::setMaxSizeInBytes(max_size_in_bytes);
+    Base::setMaxCount(max_entries);
     /// max_count=0 means "unlimited" in LRUCachePolicy, but for query plan cache
     /// we treat 0 as "disabled" -- clear all existing entries.
     if (max_size_in_bytes == 0 || max_entries == 0)
-        clear();
+    {
+        Base::clear();
+        std::lock_guard lock(per_user_mutex);
+        per_user_bytes.clear();
+        entry_weights.clear();
+    }
 }
 
 QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
@@ -135,7 +142,11 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
         /// Reject entries with incompatible format version.
         if (result->format_version != QUERY_PLAN_CACHE_FORMAT_VERSION)
         {
-            Base::remove(key);
+            std::lock_guard operation_lock(operation_mutex);
+            Base::remove([&](const QueryPlanCacheKey & candidate_key, const MappedPtr & candidate)
+            {
+                return candidate_key == key && candidate.get() == result.get();
+            });
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheMisses);
             return nullptr;
         }
@@ -150,9 +161,11 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
 
 void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user)
 {
+    std::lock_guard operation_lock(operation_mutex);
+
     /// CacheBase treats max_count=0 as "unlimited", but for query plan cache
     /// we treat 0 as "disabled". Guard against inserting into a disabled cache.
-    if (maxSizeInBytes() == 0 || maxCount() == 0)
+    if (Base::maxSizeInBytes() == 0 || Base::maxCount() == 0)
         return;
 
     if (!canStoreForUser(key, entry, max_size_in_bytes_for_user))
@@ -169,7 +182,7 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     /// `removeOverflow` would evict them synchronously. The eviction callback
     /// runs before we add the new weight to `per_user_bytes`, so a ghost charge
     /// would be left behind that future inserts could not amortize.
-    if (entry_weight > maxSizeInBytes())
+    if (entry_weight > Base::maxSizeInBytes())
         return;
 
     /// Same-key replacement is silent in `LRU/SLRUCachePolicy::set`: it overwrites
@@ -207,6 +220,8 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
 
 void QueryPlanCache::clear()
 {
+    std::lock_guard operation_lock(operation_mutex);
+
     Base::clear();
     std::lock_guard lock(per_user_mutex);
     per_user_bytes.clear();
@@ -239,9 +254,11 @@ bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryP
     if (new_entry_size > max_size_in_bytes_for_user)
         return false;
 
-    /// O(1) admission: read the cached per-user byte count maintained by `set` and
-    /// `onEntryRemoval`. The check is best-effort — concurrent inserts may race past
-    /// it, just like in `QueryResultCache`.
+    /// O(1) admission: read the cached per-user byte count maintained by `set`
+    /// and `onEntryRemoval`. `set` serializes this check with cache mutations via
+    /// `operation_mutex`, but the quota is still a per-query admission setting, not
+    /// persisted cache state or a correctness/security boundary. The global
+    /// `CacheBase` limit remains authoritative.
     std::lock_guard lock(per_user_mutex);
     auto it = per_user_bytes.find(*key.user_id);
     const size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;

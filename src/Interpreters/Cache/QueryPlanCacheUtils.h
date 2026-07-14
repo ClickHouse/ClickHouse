@@ -4,7 +4,9 @@
 #include <Interpreters/Cache/QueryPlanCache.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Planner/Planner.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <optional>
 
@@ -23,11 +25,23 @@ QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
     const ContextPtr & context,
     const Names & selected_columns);
 
-bool validateQueryPlanCacheEntry(
+struct ValidatedQueryPlanCacheEntry
+{
+    StorageID storage_id = StorageID::createEmpty();
+    Names selected_columns;
+    StorageMetadataPtr metadata_snapshot;
+    std::vector<QueryPlanStorageBinding> storage_bindings;
+};
+
+std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildSnapshot(
     const QueryPlanCacheLookupContext & lookup_context,
     const ContextPtr & context,
     const QueryPlanCacheEntry & entry);
 
-void checkAccessForQueryPlanCacheHit(const ContextPtr & context, const StorageID & storage_id, const Names & selected_columns);
+void checkAccessForQueryPlanCacheHit(
+    const ContextPtr & context,
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & selected_columns);
 
 }

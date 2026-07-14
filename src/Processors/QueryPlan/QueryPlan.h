@@ -6,6 +6,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/TableLockHolder.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #endif
@@ -49,6 +52,14 @@ struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
 class SettingsChanges;
+
+struct QueryPlanStorageBinding
+{
+    String table_name;
+    StoragePtr storage;
+    StorageSnapshotPtr snapshot;
+    TableLockHolder table_lock;
+};
 
 /// Options from EXPLAIN PLAN query.
 struct ExplainPlanOptions
@@ -123,6 +134,7 @@ public:
     bool isSerialized() const;
 
     void resolveStorages(const ContextPtr & context);
+    void resolveStorages(const ContextPtr & context, std::vector<QueryPlanStorageBinding> storage_bindings);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 #if CLICKHOUSE_CLOUD

@@ -13,8 +13,8 @@ namespace DB
 ///   1. QueryPlan::deserialize() — reconstructs the plan skeleton from binary bytes.
 ///      Leaf nodes are `ReadFromTableStep` (storage-agnostic).
 ///   2. QueryPlan::makeSets() — builds `PreparedSet` objects for IN (...) subquery expressions.
-///   3. QueryPlan::resolveStorages() — replaces each `ReadFromTableStep` with fresh storage-specific
-///      read steps by calling `storage->read` against the current data snapshot.
+///   3. QueryPlan::resolveStorages() — replaces each `ReadFromTableStep` with storage-specific
+///      read steps by calling `storage->read` against the validated data snapshot.
 ///
 /// The materialized plan is in pre-optimization state. Expression analysis and aggregation
 /// planning are not re-run — those are encoded in the cached plan structure.
@@ -26,7 +26,9 @@ namespace DB
 ///
 /// Throws if deserialization fails (e.g. format version mismatch, unknown step type).
 /// Callers should check the entry's format_version before calling.
-QueryPlan materializePlan(std::string_view serialized_bytes, const ContextPtr & context);
+QueryPlan materializePlan(
+    std::string_view serialized_bytes,
+    const ContextPtr & context,
+    std::vector<QueryPlanStorageBinding> storage_bindings = {});
 
 }
-

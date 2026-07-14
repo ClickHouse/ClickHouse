@@ -124,7 +124,25 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanStorageBinding * findStorageBinding(
+    const String & table_name,
+    std::vector<QueryPlanStorageBinding> * storage_bindings)
+{
+    if (!storage_bindings)
+        return nullptr;
+
+    for (auto & binding : *storage_bindings)
+        if (binding.table_name == table_name)
+            return &binding;
+
+    return nullptr;
+}
+
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const ContextPtr & context,
+    std::vector<QueryPlanStorageBinding> * storage_bindings)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -141,11 +159,24 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     if (reading_from_table)
     {
-        Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
-        auto table_node = resolveTable(identifier, context);
+        if (auto * binding = findStorageBinding(reading_from_table->getTable(), storage_bindings))
+        {
+            storage = binding->storage;
+            snapshot = binding->snapshot;
+        }
+        else if (storage_bindings && !storage_bindings->empty())
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cached query plan references unexpected table {}", reading_from_table->getTable());
+        }
+        else
+        {
+            Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
+            auto table_node = resolveTable(identifier, context);
 
-        storage = table_node->getStorage();
-        snapshot = table_node->getStorageSnapshot();
+            storage = table_node->getStorage();
+            snapshot = table_node->getStorageSnapshot();
+        }
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
         select_query_info.prewhere_info = reading_from_table->getPrewhereInfo();
         select_query_info.row_level_filter = reading_from_table->getRowLevelFilter();
@@ -193,7 +224,15 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
-    auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    TableLockHolder table_lock;
+    if (reading_from_table)
+    {
+        if (auto * binding = findStorageBinding(reading_from_table->getTable(), storage_bindings))
+            table_lock = std::move(binding->table_lock);
+    }
+
+    if (!table_lock)
+        table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
@@ -288,6 +327,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
+    resolveStorages(context, {});
+}
+
+void QueryPlan::resolveStorages(const ContextPtr & context, std::vector<QueryPlanStorageBinding> storage_bindings)
+{
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
@@ -305,7 +349,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context, &storage_bindings));
     }
 }
 

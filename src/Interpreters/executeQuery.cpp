@@ -1816,14 +1816,16 @@ static BlockIO executeQueryImpl(
                     {
                         try
                         {
-                            if (validateQueryPlanCacheEntry(*query_plan_cache_lookup_context, context, *cached_entry))
+                            if (auto validated_cache_entry = validateQueryPlanCacheEntryAndBuildSnapshot(
+                                    *query_plan_cache_lookup_context, context, *cached_entry))
                             {
                                 /// Revalidate access rights: permissions may have been revoked after the plan
                                 /// was cached. checkAccess throws ACCESS_DENIED on failure, which propagates
                                 /// to the user without falling through to normal planning.
                                 checkAccessForQueryPlanCacheHit(
                                     context,
-                                    query_plan_cache_lookup_context->storage_id,
+                                    validated_cache_entry->storage_id,
+                                    validated_cache_entry->metadata_snapshot,
                                     cached_entry->selected_columns);
 
                                 if (context->getCurrentTransaction()
@@ -1832,7 +1834,10 @@ static BlockIO executeQueryImpl(
                                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                         "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
 
-                                auto plan = materializePlan(cached_entry->serialized_plan, context);
+                                auto plan = materializePlan(
+                                    cached_entry->serialized_plan,
+                                    context,
+                                    std::move(validated_cache_entry->storage_bindings));
 
                                 /// The normal planner records query access info via Context::addQueryAccessInfo
                                 /// in PlannerJoinTree. On a cache hit the analyzer is skipped, so we restore it
@@ -1842,7 +1847,7 @@ static BlockIO executeQueryImpl(
                                 if (!internal && context->hasQueryContext())
                                 {
                                     context->getQueryContext()->addQueryAccessInfo(
-                                        query_plan_cache_lookup_context->storage_id,
+                                        validated_cache_entry->storage_id,
                                         cached_entry->selected_columns);
                                     for (const auto & row_policy : cached_entry->used_row_policies)
                                         context->getQueryContext()->addUsedRowPolicy(row_policy);
