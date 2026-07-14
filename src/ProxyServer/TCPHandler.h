@@ -53,10 +53,15 @@ private:
     bool parse_proxy_protocol = false;
     LoggerPtr log;
 
-    [[maybe_unused]] String forwarded_for;
+    /// Real client address parsed from the PROXY-protocol header (when `parse_proxy_protocol`),
+    /// used to evaluate `<host>` routing rules instead of the immediate (balancer) peer address.
+    String forwarded_for;
 
     Poco::Timespan send_timeout = Poco::Timespan(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
     Poco::Timespan receive_timeout = Poco::Timespan(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
+    /// Upper bound on how long the optional PROXY header and the client `Hello` may take to arrive,
+    /// so a peer that trickles bytes slowly cannot pin a handler thread for the full receive timeout.
+    Poco::Timespan handshake_timeout = Poco::Timespan(DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0);
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<DB::ReadBufferFromPocoSocketChunked> in;

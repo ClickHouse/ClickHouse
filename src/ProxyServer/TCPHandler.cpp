@@ -69,7 +69,9 @@ void TCPHandler::runImpl()
 {
     DB::setThreadName(DB::ThreadName::TCP_HANDLER);
 
-    socket().setReceiveTimeout(receive_timeout);
+    /// Read the optional PROXY header and the client `Hello` under the shorter handshake timeout;
+    /// `doRedirection` restores the regular receive timeout once the session is established.
+    socket().setReceiveTimeout(handshake_timeout);
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
@@ -155,6 +157,22 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     // TODO: add hint using http port when supported
 
     return result;
+}
+
+/// `Poco::Net::StreamSocket::sendBytes` may accept fewer bytes than requested, so a single call can
+/// silently drop the unwritten suffix of a packet or result block under backpressure and corrupt the
+/// relayed native stream. Keep writing until the whole buffer is flushed; a non-positive result means
+/// the peer has gone away, which the relay's error handling turns into a clean shutdown of the session.
+void sendAll(Poco::Net::StreamSocket & socket, const char * data, int size)
+{
+    int sent_total = 0;
+    while (sent_total < size)
+    {
+        const int sent = socket.sendBytes(data + sent_total, size - sent_total);
+        if (sent <= 0)
+            throw Poco::Net::NetException("Connection closed while relaying data");
+        sent_total += sent;
+    }
 }
 
 }
@@ -378,8 +396,14 @@ void TCPHandler::receiveHello()
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : ""));
 
-    /// Source address of the client, used to evaluate `<host>` routing conditions.
-    hostname = socket().peerAddress().host().toString();
+    /// Source address of the client, used to evaluate `<host>` routing conditions. When the proxy
+    /// sits behind an L4 balancer that speaks the PROXY protocol, the real client is the address
+    /// parsed from the PROXY header (`forwarded_for`, formatted as `host:port` / `[ipv6]:port`),
+    /// not the immediate peer, which would always be the balancer.
+    if (parse_proxy_protocol && !forwarded_for.empty())
+        hostname = Poco::Net::SocketAddress(forwarded_for).host().toString();
+    else
+        hostname = socket().peerAddress().host().toString();
 
     action = router->route(user, hostname, default_database);
 
@@ -451,7 +475,12 @@ void TCPHandler::connect()
     const auto & target = action->getTarget().value();
 
     auto addresses = DB::DNSResolver::instance().resolveAddressList(target.host, target.tcp_port);
-    const auto connection_timeout = DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC; // TODO: move to config
+
+    /// `Poco::Net::StreamSocket::connect` and `set{Send,Receive}Timeout` take a `Poco::Timespan`,
+    /// whose scalar constructor interprets the argument as microseconds. Build the timeouts
+    /// explicitly from seconds, otherwise the upstream path would get a few microseconds of slack
+    /// (`DBMS_DEFAULT_CONNECT_TIMEOUT_SEC` becomes 10 us, not 10 s) and fail on any real network hop.
+    const Poco::Timespan connection_timeout(DB::DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0); // TODO: move to config
 
     for (auto it = addresses.begin(); it != addresses.end();)
     {
@@ -482,8 +511,8 @@ void TCPHandler::connect()
         }
     }
 
-    target_socket->setReceiveTimeout(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC); // TODO: move to config
-    target_socket->setSendTimeout(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC); // TODO: move to config
+    target_socket->setReceiveTimeout(Poco::Timespan(DB::DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0)); // TODO: move to config
+    target_socket->setSendTimeout(Poco::Timespan(DB::DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0)); // TODO: move to config
     target_socket->setNoDelay(true);
 
     // TODO: keepalive ?
@@ -507,20 +536,24 @@ void TCPHandler::doRedirection()
 
     LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, assigned_server.tcp_port);
 
-    /// While parsing the Hello packet we read from `in`, which may have prefetched more bytes from
-    /// the socket into its internal buffer than the Hello itself occupies (for example a pipelined
-    /// Addendum packet, or interserver salt / SSH challenge data sent together with the Hello). The
-    /// raw `receiveBytes` relay below only sees bytes still in the kernel socket, so forward the
-    /// already-buffered tail to the upstream before switching to raw byte forwarding.
-    if (in->available() > 0)
-    {
-        const size_t buffered = in->available();
-        target_socket->sendBytes(in->position(), static_cast<int>(buffered));
-        in->ignore(buffered);
-    }
+    /// The handshake phase ran under the shorter `handshake_timeout` to bound slow clients; the
+    /// established session is long-lived, so restore the regular receive timeout for the relay.
+    socket().setReceiveTimeout(receive_timeout);
 
     try
     {
+        /// While parsing the Hello packet we read from `in`, which may have prefetched more bytes from
+        /// the socket into its internal buffer than the Hello itself occupies (for example a pipelined
+        /// Addendum packet, or interserver salt / SSH challenge data sent together with the Hello). The
+        /// raw `receiveBytes` relay below only sees bytes still in the kernel socket, so forward the
+        /// already-buffered tail to the upstream before switching to raw byte forwarding.
+        if (in->available() > 0)
+        {
+            const size_t buffered = in->available();
+            sendAll(*target_socket, in->position(), static_cast<int>(buffered));
+            in->ignore(buffered);
+        }
+
         /// The loop also observes proxy shutdown so that idle native sessions do not keep the
         /// handler thread and the upstream socket alive after the listener has been stopped.
         while (client_active && server_active && !server.isCancelled() && tcp_server.isOpen())
@@ -540,7 +573,7 @@ void TCPHandler::doRedirection()
                     int bytes_read = socket().receiveBytes(buffer, buffer_size);
                     if (bytes_read > 0)
                     {
-                        target_socket->sendBytes(buffer, bytes_read);
+                        sendAll(*target_socket, buffer, bytes_read);
                     }
                     else if (bytes_read == 0)
                     {
@@ -565,7 +598,7 @@ void TCPHandler::doRedirection()
                     int bytes_read = target_socket->receiveBytes(buffer, buffer_size);
                     if (bytes_read > 0)
                     {
-                        socket().sendBytes(buffer, bytes_read);
+                        sendAll(socket(), buffer, bytes_read);
                     }
                     else if (bytes_read == 0)
                     {
