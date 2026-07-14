@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -38,6 +40,10 @@ public:
     size_t getMinMarksPerRequest() const { return min_marks_per_request; }
 
 private:
+    /// Cut or request the next coordinator-assigned ranges under `mutex`. Refinement and
+    /// reader creation happen in `getTask` after this method releases the mutex.
+    std::optional<MarkRanges> getTaskRanges(size_t task_idx, MergeTreeReadTask * previous_task);
+
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
     const CoordinationMode mode;

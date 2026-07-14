@@ -152,108 +152,131 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
 {
-    std::lock_guard lock(mutex);
-
-    if (no_more_tasks_available)
-        return nullptr;
-
-    /// The following unfortunate scenario is possible:
-    /// 1. Thread T1 found no `buffered_ranges` left to read and initiated a read request to the coordinator.
-    /// 2. Thread T2 called `getTask` too and now waits for the mutex.
-    /// 3. The coordinator handled the request from T1 and sent a response.
-    ///    In this response it indicated that there are no more tasks left to read (`finish = true`).
-    /// 4. While receiving the response we got an exception (e.g. network timeout).
-    /// 5. Exception is propagated from `sendReadRequest` up the stack, but once T1 leaves `getTask`, T2 is able to grab the mutex.
-    ///    T2 also finds no `buffered_ranges` and repeat the request to the coordinator.
-    ///    Coordinator throws logical error: "Got request from replica N after ranges assignment has been completed for the replica."
-    ///    To prevent this we set `failed_to_get_task` flag once we catch an exception from `sendReadRequest`.
-    if (failed_to_get_task)
-        return nullptr;
-
-    if (buffered_ranges.empty())
+    /// A coordinator cut may be fully dropped by the refiner. In that case request or cut
+    /// another assignment. Coordinator state stays under the mutex; refinement and reader
+    /// creation happen after releasing it because the first refinement for a part may block.
+    MergeTreeReadRangesRefinementSessionPtr refinement;
+    std::optional<size_t> refinement_part_idx;
+    while (true)
     {
-        std::optional<ParallelReadResponse> response;
-        try
+        size_t part_idx = 0;
+        MarkRanges ranges_to_read;
+
         {
-            response = extension.sendReadRequest(coordination_mode, min_marks_per_request);
-        }
-        catch (...)
-        {
-            failed_to_get_task = true;
-            throw;
-        }
+            std::lock_guard lock(mutex);
 
-        if (response)
-        {
-            LOG_DEBUG(log, "Got response: {}", response->describe());
-            if (response->description.empty() || response->finish)
-                no_more_tasks_available = true;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Got no response");
-            no_more_tasks_available = true;
-        }
-        if (no_more_tasks_available)
-            return nullptr;
+            if (no_more_tasks_available)
+                return nullptr;
 
-        buffered_ranges = std::move(response->description);
-    }
+            /// The following unfortunate scenario is possible:
+            /// 1. Thread T1 found no `buffered_ranges` left to read and initiated a read request to the coordinator.
+            /// 2. Thread T2 called `getTask` too and now waits for the mutex.
+            /// 3. The coordinator handled the request from T1 and sent a response.
+            ///    In this response it indicated that there are no more tasks left to read (`finish = true`).
+            /// 4. While receiving the response we got an exception (e.g. network timeout).
+            /// 5. Exception is propagated from `sendReadRequest` up the stack, but once T1 leaves `getTask`, T2 is able to grab the mutex.
+            ///    T2 also finds no `buffered_ranges` and repeat the request to the coordinator.
+            ///    Coordinator throws logical error: "Got request from replica N after ranges assignment has been completed for the replica."
+            ///    To prevent this we set `failed_to_get_task` flag once we catch an exception from `sendReadRequest`.
+            if (failed_to_get_task)
+                return nullptr;
 
-    if (buffered_ranges.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No tasks to read. This is a bug");
-
-    auto & current_task = buffered_ranges.front();
-
-    auto part_it
-        = std::ranges::find_if(
-            per_part_infos,
-            [&current_task](const auto & part)
+            if (buffered_ranges.empty())
             {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
+                std::optional<ParallelReadResponse> response;
+                try
+                {
+                    response = extension.sendReadRequest(coordination_mode, min_marks_per_request);
+                }
+                catch (...)
+                {
+                    failed_to_get_task = true;
+                    throw;
+                }
 
-                chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
-            });
-    if (part_it == per_part_infos.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
-    const size_t part_idx = std::distance(per_part_infos.begin(), part_it);
+                if (response)
+                {
+                    LOG_DEBUG(log, "Got response: {}", response->describe());
+                    if (response->description.empty() || response->finish)
+                        no_more_tasks_available = true;
+                }
+                else
+                {
+                    LOG_DEBUG(log, "Got no response");
+                    no_more_tasks_available = true;
+                }
+                if (no_more_tasks_available)
+                    return nullptr;
 
-    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK, the coordinator propagates per-part
-    /// `min_marks_per_task` computed by the initiator after primary key analysis.
-    /// Fall back to locally computed value for old initiators.
-    const size_t effective_min_marks_per_task
-        = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+                buffered_ranges = std::move(response->description);
+            }
 
-    MarkRanges ranges_to_read;
-    size_t current_sum_marks = 0;
-    while (current_sum_marks < effective_min_marks_per_task && !current_task.ranges.empty())
-    {
-        auto diff = effective_min_marks_per_task - current_sum_marks;
-        auto range = current_task.ranges.front();
-        if (range.getNumberOfMarks() > diff)
-        {
-            auto new_range = range;
-            new_range.end = range.begin + diff;
-            range.begin += diff;
+            if (buffered_ranges.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No tasks to read. This is a bug");
 
-            current_task.ranges.front() = range;
-            ranges_to_read.push_back(new_range);
-            current_sum_marks += new_range.getNumberOfMarks();
-            continue;
+            auto & current_task = buffered_ranges.front();
+            auto part_it = std::ranges::find_if(
+                per_part_infos,
+                [&current_task](const auto & part)
+                {
+                    if (!part->data_part->isProjectionPart())
+                        return part->data_part->info == current_task.info;
+
+                    chassert(part->parent_part && !current_task.projection_name.empty());
+                    return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
+                });
+            if (part_it == per_part_infos.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
+            part_idx = std::distance(per_part_infos.begin(), part_it);
+
+            /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK, the coordinator propagates per-part
+            /// `min_marks_per_task` computed by the initiator after primary key analysis.
+            /// Fall back to locally computed value for old initiators.
+            const size_t effective_min_marks_per_task
+                = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+
+            size_t current_sum_marks = 0;
+            while (current_sum_marks < effective_min_marks_per_task && !current_task.ranges.empty())
+            {
+                auto diff = effective_min_marks_per_task - current_sum_marks;
+                auto range = current_task.ranges.front();
+                if (range.getNumberOfMarks() > diff)
+                {
+                    auto new_range = range;
+                    new_range.end = range.begin + diff;
+                    range.begin += diff;
+
+                    current_task.ranges.front() = range;
+                    ranges_to_read.push_back(new_range);
+                    current_sum_marks += new_range.getNumberOfMarks();
+                    continue;
+                }
+
+                ranges_to_read.push_back(range);
+                current_sum_marks += range.getNumberOfMarks();
+                current_task.ranges.pop_front();
+            }
+
+            if (current_task.ranges.empty())
+                buffered_ranges.pop_front();
         }
 
-        ranges_to_read.push_back(range);
-        current_sum_marks += range.getNumberOfMarks();
-        current_task.ranges.pop_front();
+        if (refinement_part_idx != part_idx)
+        {
+            refinement = createReadRangesRefinement(*per_part_infos[part_idx], MergeTreeReadRangesRefinementDirection::Forward);
+            refinement_part_idx = part_idx;
+        }
+
+        if (refinement)
+            ranges_to_read = refineReadRanges(*per_part_infos[part_idx], *refinement, std::move(ranges_to_read));
+
+        if (ranges_to_read.empty())
+            continue;
+
+        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, ranges_to_read.getNumberOfMarks());
+        return createTask(per_part_infos[part_idx], std::move(ranges_to_read), previous_task);
     }
-
-    if (current_task.ranges.empty())
-        buffered_ranges.pop_front();
-
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, current_sum_marks);
-    return createTask(per_part_infos[part_idx], std::move(ranges_to_read), previous_task);
 }
 
 }

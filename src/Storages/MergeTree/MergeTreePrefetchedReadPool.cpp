@@ -96,27 +96,31 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// the prefetch thread pool. Ranges dropped by the refiner are never prefetched.
     /// Both the task and the pool outlive this job: the task owns this object through
     /// readers_future and waits for the job in its destructor.
-    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
-    {
-        task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
-        if (task.ranges.empty())
+    prefetch_runner.enqueueAndKeepTrack(
+        [this, &task, &read_prefetch]
         {
-            task.pruned_by_refiner = true;
-            return;
-        }
+            auto refinement = read_prefetch.createReadRangesRefinement(*task.read_info, MergeTreeReadRangesRefinementDirection::Forward);
+            if (refinement)
+                task.ranges = read_prefetch.refineReadRanges(*task.read_info, *refinement, std::move(task.ranges));
 
-        task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
-            task.read_info->data_part, task.read_info->patch_parts, task.ranges);
+            if (task.ranges.empty())
+            {
+                task.pruned_by_refiner = true;
+                return;
+            }
 
-        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+            task.patches_ranges
+                = read_prefetch.ranges_in_patch_parts.getRanges(task.read_info->data_part, task.read_info->patch_parts, task.ranges);
 
-        /// This is already a prefetch thread, so initiate the prefetches inline.
-        read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
-        for (const auto & reader : readers.prewhere)
-            read_prefetch.createPrefetchedTask(reader.get(), task.priority)();
-        for (const auto & patch_reader : readers.patches)
-            read_prefetch.createPrefetchedTask(patch_reader->getReader(), task.priority)();
-    });
+            readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+
+            /// This is already a prefetch thread, so initiate the prefetches inline.
+            read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
+            for (const auto & reader : readers.prewhere)
+                read_prefetch.createPrefetchedTask(reader.get(), task.priority)();
+            for (const auto & patch_reader : readers.patches)
+                read_prefetch.createPrefetchedTask(patch_reader->getReader(), task.priority)();
+        });
 }
 
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
@@ -295,7 +299,10 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         }
         else if (ranges_refiner)
         {
-            thread_task->ranges = refineReadRanges(*thread_task->read_info, std::move(thread_task->ranges));
+            auto refinement = createReadRangesRefinement(*thread_task->read_info, MergeTreeReadRangesRefinementDirection::Forward);
+            if (refinement)
+                thread_task->ranges = refineReadRanges(*thread_task->read_info, *refinement, std::move(thread_task->ranges));
+
             if (thread_task->ranges.empty())
                 continue;
 

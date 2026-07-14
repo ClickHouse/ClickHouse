@@ -449,6 +449,12 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
     };
 }
 
+MergeTreeReadRangesRefinementSessionPtr MergeTreeReadPoolBase::createReadRangesRefinement(
+    const MergeTreeReadTaskInfo & info, MergeTreeReadRangesRefinementDirection direction) const
+{
+    return ranges_refiner ? ranges_refiner->createSession(info, direction) : nullptr;
+}
+
 MarkRanges MergeTreeReadPoolBase::refineReadRanges(
     const MergeTreeReadTaskInfo & info, IMergeTreeReadRangesRefinementSession & refinement, MarkRanges ranges) const
 {

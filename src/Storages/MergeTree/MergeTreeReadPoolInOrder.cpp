@@ -63,7 +63,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
 
     auto direction = read_type == MergeTreeReadType::InReverseOrder ? MergeTreeReadRangesRefinementDirection::Reverse
                                                                     : MergeTreeReadRangesRefinementDirection::Forward;
-    auto refinement = ranges_refiner ? ranges_refiner->createSession(*per_part_infos[task_idx], direction) : nullptr;
+    auto refinement = createReadRangesRefinement(*per_part_infos[task_idx], direction);
 
     /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
     /// Reuse the same direction-aware session while walking consecutive ranges of the part.

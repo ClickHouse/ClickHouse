@@ -78,6 +78,33 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    auto direction = mode == CoordinationMode::ReverseOrder ? MergeTreeReadRangesRefinementDirection::Reverse
+                                                            : MergeTreeReadRangesRefinementDirection::Forward;
+
+    MergeTreeReadRangesRefinementSessionPtr refinement;
+    bool refinement_initialized = false;
+    while (auto ranges = getTaskRanges(task_idx, previous_task))
+    {
+        if (!refinement_initialized)
+        {
+            refinement = createReadRangesRefinement(*per_part_infos[task_idx], direction);
+            refinement_initialized = true;
+        }
+
+        if (refinement)
+            *ranges = refineReadRanges(*per_part_infos[task_idx], *refinement, std::move(*ranges));
+
+        if (ranges->empty())
+            continue;
+
+        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, ranges->getNumberOfMarks());
+        return createTask(per_part_infos[task_idx], std::move(*ranges), previous_task);
+    }
+    return nullptr;
+}
+
+std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::getTaskRanges(size_t task_idx, MergeTreeReadTask * previous_task)
+{
     std::lock_guard lock(mutex);
 
     if (task_idx >= per_part_infos.size())
@@ -108,7 +135,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
-                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -134,7 +160,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                         }
 
                         chassert(result.size() == 1);
-                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -152,7 +177,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     }
                     chassert(!result.empty());
                     desc.ranges = MarkRanges{};
-                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
                 else
@@ -173,7 +197,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     }
 
                     chassert(result.size() == 1);
-                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
             }
@@ -182,13 +205,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     };
 
     if (auto result = get_from_buffer())
-        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
+        return result;
 
     if (no_more_tasks)
-        return nullptr;
+        return std::nullopt;
 
     if (failed_to_get_task)
-        return nullptr;
+        return std::nullopt;
 
     std::optional<ParallelReadResponse> response;
     try
@@ -213,7 +236,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     }
 
     if (no_more_tasks)
-        return nullptr;
+        return std::nullopt;
 
     /// Fill the buffer — match response parts to buffered_tasks by part info,
     /// not by position, because the coordinator may return parts in a different order.
@@ -238,9 +261,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     }
 
     if (auto result = get_from_buffer())
-        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
+        return result;
 
-    return nullptr;
+    return std::nullopt;
 }
 
 }

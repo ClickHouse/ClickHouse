@@ -83,9 +83,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges))
             return nullptr;
 
-        auto refinement = ranges_refiner
-            ? ranges_refiner->createSession(*per_part_infos[part_idx], MergeTreeReadRangesRefinementDirection::Forward)
-            : nullptr;
+        auto refinement = createReadRangesRefinement(*per_part_infos[part_idx], MergeTreeReadRangesRefinementDirection::Forward);
 
         MarkRanges task_ranges;
         if (!refinement)
