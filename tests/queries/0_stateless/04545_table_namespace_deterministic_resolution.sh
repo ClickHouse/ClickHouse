@@ -63,9 +63,13 @@ EXISTS TABLE nope;
 $CH -m -q "USE $DB.ns; DESCRIBE TABLE t" | cut -f1,2
 $CH -m -q "USE $DB.ns; SHOW CREATE TABLE t" | grep -m1 -c "ns.t"
 
-echo "-- explicit paths in EXISTS and SHOW CREATE"
+echo "-- explicit paths in EXISTS, SHOW CREATE and INSERT"
 $CH -q "EXISTS TABLE $DB.ns.t"
 $CH -q "SHOW CREATE TABLE $DB.ns.t" | grep -m1 -c "ns.t"
+$CH -m -q "
+INSERT INTO $DB.ns.t VALUES (10);
+SELECT count() FROM $DB.\`ns.t\`;
+"
 
 echo "-- qualified column references over a table path"
 $CH -q "SELECT $DB.ns.t.x FROM $DB.ns.t ORDER BY x"
@@ -74,11 +78,8 @@ $CH -q "SELECT a.x FROM $DB.ns.t AS a ORDER BY x"
 
 echo "-- the scope cannot be escaped by changing the setting"
 $CH -m -q "USE $DB.ns; SET allow_experimental_table_namespaces = 0" 2>&1 | grep -m1 -c "SUPPORT_IS_DISABLED"
-$CH -m -q "
-USE $DB.ns;
-INSERT INTO t SETTINGS allow_experimental_table_namespaces = 0 VALUES (3);
-SELECT count() FROM t;
-"
+$CH -m -q "USE $DB.ns; SELECT count() FROM t SETTINGS allow_experimental_table_namespaces = 0" 2>&1 | grep -m1 -c "SUPPORT_IS_DISABLED"
+$CH -m -q "USE $DB.ns; SELECT count() FROM t"
 $CH -q "SELECT count() FROM $DB.t"
 
 echo "-- a dotted unqualified name cannot be silently prefixed into a deeper path"

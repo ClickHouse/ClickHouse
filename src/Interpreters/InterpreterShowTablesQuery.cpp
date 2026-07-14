@@ -222,11 +222,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// the projection is a subquery so LIKE and WHERE both see the relative name
     const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
 
-    /// a user WHERE may contain subqueries, which would run outside the scope
-    if (scoped && query.where_expression)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "SHOW TABLES with a WHERE clause is not supported over a table namespace; use LIKE");
-
     if (query.full)
         rewritten_query << (scoped ? "SELECT relative_name AS name, engine FROM " : "SELECT name, engine FROM ");
     else
@@ -311,10 +306,6 @@ BlockIO InterpreterShowTablesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    /// the rewritten query is fully qualified; drop the namespace prefix so the
-    /// inner SELECT is not subject to scope restrictions
-    if (const auto info = query_context->getCurrentDatabaseInfo(); !info.table_prefix.empty())
-        query_context->setCurrentDatabase(info.database);
 
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
     {

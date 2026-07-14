@@ -66,8 +66,9 @@ The following settings are supported:
 :::note
 Table namespaces are an experimental feature, disabled by default. Enable them
 with `SET allow_experimental_table_namespaces = 1`. While the setting is off,
-everything below is unavailable and multipart paths are syntax errors; the
-quoted form `` catalog_name.`namespace.table` `` always works.
+everything below is unavailable and multipart paths are rejected (`SHOW COLUMNS`
+and `SHOW INDEXES` keep their historical interpretation of a multipart operand);
+the quoted form `` catalog_name.`namespace.table` `` always works.
 :::
 
 Data lake catalogs organize tables into namespaces, which can be nested to
@@ -126,8 +127,7 @@ scoping - DDL (`CREATE`, `DROP`, `ALTER`, `RENAME`, `OPTIMIZE`, `TRUNCATE`),
 `ON CLUSTER` queries, `BACKUP`/`RESTORE`, access-control statements, `SYSTEM`
 commands, and similar - fail with an error instead of silently targeting the
 database without the namespace. The same applies to unqualified parameterized
-views, the one-argument `merge` table function, `SHOW` statements with a
-`WHERE` clause (use `LIKE`), and to disabling
+views, the one-argument `merge` table function, and to disabling
 `allow_experimental_table_namespaces` itself. Switch to the plain database with
 `USE catalog_name` and use quoted canonical names for those operations. The
 selected scope also requires the analyzer (`enable_analyzer`, on by default).

@@ -37,6 +37,20 @@ Block InterpreterExistsQuery::getSampleBlock()
 }
 
 
+/// Central resolution fills the namespace prefix under `USE db.namespace` for
+/// unqualified names, but validates that an explicit database exists; EXISTS must
+/// answer on a missing database instead of throwing, so an explicit qualifier is
+/// kept as written when resolution fails (the probe then finds nothing).
+StorageID InterpreterExistsQuery::resolveExistsTarget(const ASTQueryWithTableAndOutput & query) const
+{
+    StorageID storage_id{query.getDatabase(), query.getTable()};
+    if (storage_id.database_name.empty())
+        return getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
+    if (auto resolved = getContext()->tryResolveStorageID(storage_id, Context::ResolveOrdinary))
+        return resolved;
+    return storage_id;
+}
+
 QueryPipeline InterpreterExistsQuery::executeImpl()
 {
     ASTQueryWithTableAndOutput * exists_query = nullptr;
@@ -51,8 +65,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         }
         else
         {
-            /// central resolution fills the namespace prefix under `USE db.namespace`
-            const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
+            const auto storage_id = resolveExistsTarget(*exists_query);
             const String & database = storage_id.database_name;
             const String & table = storage_id.table_name;
             /// A dictionary created by a DDL query is also registered among tables, so a plain `EXISTS <name>`
@@ -96,8 +109,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         }
         else
         {
-            /// central resolution fills the namespace prefix under `USE db.namespace`
-            const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
+            const auto storage_id = resolveExistsTarget(*exists_query);
             getContext()->checkAccess(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name);
             auto table = DatabaseCatalog::instance().tryGetTable(storage_id, getContext());
             result = table && table->isView();
@@ -113,8 +125,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     {
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
-        /// central resolution fills the namespace prefix under `USE db.namespace`
-        const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
+        const auto storage_id = resolveExistsTarget(*exists_query);
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, storage_id.database_name, storage_id.table_name);
         result = DatabaseCatalog::instance().isDictionaryExist(storage_id);
     }

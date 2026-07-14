@@ -27,7 +27,7 @@ reject "TRUNCATE TABLE t"
 reject "OPTIMIZE TABLE t"
 reject "CREATE VIEW v AS SELECT * FROM t"
 reject "GRANT SELECT ON *.* TO CURRENT_USER"
-reject "SYSTEM FLUSH LOGS"
+reject "SYSTEM DROP DNS CACHE"
 reject "CHECK TABLE t"
 reject "CREATE TABLE oops ON CLUSTER default (x Int32) ENGINE = Memory"
 reject "BACKUP TABLE t TO Null"
@@ -49,8 +49,22 @@ $CH -m -q "USE $DB.ns; SELECT sum(x) FROM (SELECT * FROM loop(t) LIMIT 2)"
 reject "SELECT * FROM merge('^t\$')"
 $CH -q "CREATE VIEW $DB.\`ns.v\` AS SELECT {p:Int32} AS p"
 reject "SELECT * FROM v(p = 1)"
-reject "SHOW TABLES WHERE name = 't'"
 $CH -q "DROP VIEW $DB.\`ns.v\`"
+
+echo "-- SHOW subqueries resolve under the scope, never against the parent"
+$CH -m -q "
+CREATE TABLE $DB.probe (x Int32) ENGINE = Memory;
+CREATE TABLE $DB.\`ns.probe\` (x Int32) ENGINE = Memory;
+INSERT INTO $DB.\`ns.probe\` VALUES (1);
+"
+$CH -m -q "USE $DB.ns; SHOW TABLES WHERE name = 'probe' AND exists(SELECT * FROM probe)"
+$CH -m -q "USE $DB.ns; SHOW TABLES FROM $DB WHERE name = 'probe' AND exists(SELECT * FROM probe)"
+$CH -m -q "USE $DB.ns; SHOW TABLES LIMIT (SELECT count() FROM probe)"
+$CH -m -q "USE $DB.ns; SHOW COLUMNS FROM t LIMIT (SELECT count() FROM probe)" | cut -f1,2
+$CH -m -q "
+DROP TABLE $DB.probe;
+DROP TABLE $DB.\`ns.probe\`;
+"
 
 echo "-- outside the scope, DDL over an explicit path works and is deterministic"
 $CH -m -q "

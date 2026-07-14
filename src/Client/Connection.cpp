@@ -850,6 +850,26 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+bool Connection::needsJwtReconnect()
+{
+#if USE_JWT_CPP && USE_SSL
+    if (jwt_provider && !jwt.empty())
+    {
+        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
+        {
+            String new_jwt = jwt_provider->getJWT();
+            if (!new_jwt.empty())
+            {
+                jwt = new_jwt;
+                /// the current connection still uses the old token; reconnect with the new one
+                return true;
+            }
+        }
+    }
+#endif
+    return false;
+}
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -878,22 +898,11 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-#if USE_JWT_CPP && USE_SSL
-    if (jwt_provider && !jwt.empty())
-    {
-        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
-        {
-            String new_jwt = jwt_provider->getJWT();
-            if (!new_jwt.empty())
-            {
-                jwt = new_jwt;
-                // We have a new token, so we need to reconnect.
-                // The current connection is still using the old token.
-                disconnect();
-            }
-        }
-    }
-#endif
+    /// An imminent JWT refresh disconnects here as a fallback; ClientBase normally
+    /// sees it in checkConnected (needsJwtReconnect) so that session state such as a
+    /// selected table namespace is restored before the query is sent.
+    if (needsJwtReconnect())
+        disconnect();
 
     if (!connected)
         connect(timeouts);

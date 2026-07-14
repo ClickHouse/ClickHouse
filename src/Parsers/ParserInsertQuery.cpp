@@ -10,6 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
@@ -130,6 +131,28 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             database = table;
             if (!name_p.parse(pos, table, expected))
                 return false;
+
+            /// hierarchical table path (experimental): db.ns1.ns2.table -> (db, `ns1.ns2.table`).
+            /// no query parameters inside a path, and no quoted components with a literal dot:
+            /// a substituted or quoted dot would alias another path
+            if (pos.allow_multipart_table_paths && s_dot.checkWithoutMoving(pos, expected))
+            {
+                String table_path = getIdentifierName(table);
+                if (getIdentifierName(database).find('.') != String::npos
+                    || table_path.empty() || table_path.find('.') != String::npos)
+                    return false;
+                while (s_dot.ignore(pos, expected))
+                {
+                    ASTPtr part;
+                    if (!name_p.parse(pos, part, expected))
+                        return false;
+                    const String part_name = getIdentifierName(part);
+                    if (part_name.empty() || part_name.find('.') != String::npos)
+                        return false;
+                    table_path += "." + part_name;
+                }
+                table = make_intrusive<ASTIdentifier>(table_path);
+            }
         }
     }
 

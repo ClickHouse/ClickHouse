@@ -460,8 +460,15 @@ void ClientBase::restoreTableNamespaceScopeAfterReconnect()
     if (default_database_table_namespace.empty())
         return;
 
-    const String use_query = fmt::format("USE {}.{}",
-        backQuoteIfNeed(default_database), backQuoteIfNeed(default_database_table_namespace));
+    /// quote every path component separately: the components cannot contain dots,
+    /// so splitting the stored prefix is faithful, and a single back-quoted string
+    /// with dots would be rejected by the parser
+    String use_query = fmt::format("USE {}", backQuoteIfNeed(default_database));
+    Names namespace_parts;
+    splitInto<'.'>(namespace_parts, default_database_table_namespace);
+    for (const auto & part : namespace_parts)
+        use_query += "." + backQuoteIfNeed(part);
+
     try
     {
         connection->sendQuery(connection_parameters.timeouts, use_query, {} /*query_parameters*/, "" /*query_id*/,
@@ -479,6 +486,9 @@ void ClientBase::restoreTableNamespaceScopeAfterReconnect()
     }
     catch (Exception & e)
     {
+        /// never leave a connection usable without the scope: an unqualified name
+        /// would silently resolve in the parent database
+        connection->disconnect();
         e.addMessage("while restoring the table namespace scope ({}) after a reconnect; "
             "run the USE statement again or select another database", use_query);
         throw;

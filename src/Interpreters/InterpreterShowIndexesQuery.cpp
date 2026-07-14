@@ -14,10 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 
 InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -30,13 +26,15 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    /// central resolution fills the namespace prefix under `USE db.namespace`
-    auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    /// central resolution fills the namespace prefix under `USE db.namespace` for
+    /// unqualified names; an explicit database that does not exist is kept as written
+    /// so the rewritten query returns an empty result instead of throwing
+    StorageID storage_id{query.database, query.table};
+    if (storage_id.database_name.empty())
+        storage_id = getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
+    else if (auto resolved = getContext()->tryResolveStorageID(storage_id, Context::ResolveOrdinary))
+        storage_id = resolved;
 
-    /// a user WHERE may contain subqueries, which would run outside the scope
-    if (query.where_expression && !getContext()->getCurrentDatabaseInfo().table_prefix.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "SHOW INDEXES with a WHERE clause is not supported while a table namespace is selected; use LIKE");
     String table = escapeString(storage_id.table_name);
     String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
@@ -136,14 +134,12 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
+    String database = query.database;
+    if (database.empty())
+        database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    /// the rewritten query is fully qualified; drop the namespace prefix so the
-    /// inner SELECT is not subject to scope restrictions
-    if (const auto info = query_context->getCurrentDatabaseInfo(); !info.table_prefix.empty())
-        query_context->setCurrentDatabase(info.database);
 
     /// Explicit introspection of a data lake catalog should see its tables in system tables.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
