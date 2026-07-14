@@ -34,6 +34,8 @@
 
 #include <base/wide_integer_to_string.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -288,12 +290,25 @@ Field coerceNumericValueToDateTimeOrTime(
     return signed_target ? Field(in_range) : Field(static_cast<UInt64>(in_range));
 }
 
+/// A temporal type is backed by an integer (day number or seconds), so a fractional float source is not
+/// exactly representable. Exact-target callers (`convert_inexact_floats = false`, e.g. the DROP PARTITION
+/// path via `convertFieldToTypeOrThrow`, and strict `IN`) must reject such a value the same way
+/// `convertNumericType<integer>` does, rather than truncating `0.1` to `0`. Only value-materialization
+/// paths (`convert_inexact_floats = true`) opt into the lossy CAST-like truncation. A non-finite float
+/// (NaN/Inf) is never exactly representable either. Integral floats pass through and are then handled by
+/// `date_time_overflow_behavior` for range.
+bool floatRejectedByExactContract(Float64 value, bool exact)
+{
+    return exact && (!isFinite(value) || value != std::trunc(value));
+}
+
 /// Dispatch a numeric Field to coerceNumericValueToDateTimeOrTime for the concrete Field type, covering
 /// the integer, float and wide-integer sources evaluateConstantExpression can produce so the VALUES/IN
 /// coercion path respects date_time_overflow_behavior consistently with numeric CAST for all of them.
+/// `exact` threads the strict/convert_inexact_floats contract: an inexact float is rejected (Null).
 Field coerceNumericFieldToDateTimeOrTime(
     const Field & src, Int64 min_bound, Int64 max_bound,
-    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name, bool exact)
 {
     /// A signed target (Time, min_bound < 0) is backed by Int32; an unsigned one (DateTime) by UInt32.
     const bool signed_target = min_bound < 0;
@@ -306,7 +321,13 @@ Field coerceNumericFieldToDateTimeOrTime(
     {
         case Field::Types::UInt64: return run(src.safeGet<UInt64>());
         case Field::Types::Int64:  return run(src.safeGet<Int64>());
-        case Field::Types::Float64: return run(src.safeGet<Float64>());
+        case Field::Types::Float64:
+        {
+            const Float64 value = src.safeGet<Float64>();
+            if (floatRejectedByExactContract(value, exact))
+                return {};
+            return run(value);
+        }
         case Field::Types::UInt128: return run(src.safeGet<UInt128>());
         case Field::Types::Int128:  return run(src.safeGet<Int128>());
         case Field::Types::UInt256: return run(src.safeGet<UInt256>());
@@ -389,7 +410,8 @@ Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone,
 /// Dispatch a numeric Field to coerceNumericToDate/coerceNumericToDate32 for the concrete Field type.
 /// Handles the integer, float and wide-integer sources evaluateConstantExpression can produce so the
 /// VALUES/IN coercion path respects date_time_overflow_behavior consistently with numeric CAST.
-Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, FormatSettings::DateTimeOverflowBehavior overflow)
+/// `exact` threads the strict/convert_inexact_floats contract: an inexact float is rejected (Null).
+Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, FormatSettings::DateTimeOverflowBehavior overflow, bool exact)
 {
     const auto & time_zone = DateLUT::instance();
     auto run = [&](const auto & value) -> Field
@@ -402,7 +424,13 @@ Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, Format
     {
         case Field::Types::UInt64: return run(src.safeGet<UInt64>());
         case Field::Types::Int64:  return run(src.safeGet<Int64>());
-        case Field::Types::Float64: return run(src.safeGet<Float64>());
+        case Field::Types::Float64:
+        {
+            const Float64 value = src.safeGet<Float64>();
+            if (floatRejectedByExactContract(value, exact))
+                return {};
+            return run(value);
+        }
         case Field::Types::UInt128: return run(src.safeGet<UInt128>());
         case Field::Types::Int128:  return run(src.safeGet<Int128>());
         case Field::Types::UInt256: return run(src.safeGet<UInt256>());
@@ -581,6 +609,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         const bool overflow_ignore = format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
 
+        /// Exact-target callers (strict IN, or convert_inexact_floats=false: KeyCondition, sharding-key,
+        /// DROP/OPTIMIZE PARTITION via convertFieldToTypeOrThrow) require the source to be exactly
+        /// representable; only value-materialization paths (VALUES/INSERT) opt into truncating floats.
+        /// A temporal type is integer-backed, so the coerce helpers reject a non-integral float when exact.
+        const bool exact = strict || !convert_inexact_floats;
+
         if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
         {
             /// In saturate/throw modes coerce overflow-awarely (day-number vs unix-timestamp interpretation),
@@ -590,7 +624,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// ARGUMENT_OUT_OF_BOUND rather than silently reinterpreting/clamping a bogus partition id.
             if (overflow_ignore)
                 return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
-            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/false, format_settings.date_time_overflow_behavior);
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/false, format_settings.date_time_overflow_behavior, exact);
         }
 
         if (which_type.isDateTime() && isNumericFieldForTemporalCoercion(src))
@@ -599,7 +633,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// date_time_overflow_behavior so the VALUES/INSERT path matches numeric CAST/toDateTime
             /// instead of storing a wrapped value.
             return coerceNumericFieldToDateTimeOrTime(
-                src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime");
+                src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime", exact);
         }
 
         if (which_type.isTime() && isNumericFieldForTemporalCoercion(src))
@@ -615,10 +649,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 if (time_field.isNull())
                     return time_field;
                 return coerceNumericFieldToDateTimeOrTime(
-                    time_field, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time");
+                    time_field, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time", exact);
             }
             return coerceNumericFieldToDateTimeOrTime(
-                src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time");
+                src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time", exact);
         }
 
         if (which_type.isDate32() && isNumericFieldForTemporalCoercion(src))
@@ -629,7 +663,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// in the partition path) instead of being narrowed to a bogus day number by the serializer.
             if (overflow_ignore)
                 return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
-            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior);
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior, exact);
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)

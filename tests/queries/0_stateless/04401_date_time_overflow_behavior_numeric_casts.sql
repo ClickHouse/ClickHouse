@@ -249,3 +249,54 @@ INSERT INTO t_part_time SELECT number, 0 FROM numbers(3);
 OPTIMIZE TABLE t_part_time PARTITION -2147483649 FINAL; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT count() FROM t_part_time;
 DROP TABLE t_part_time;
+
+-- Exact-conversion contract: temporal types are integer-backed, so an inexact float literal like 0.1
+-- must be rejected for exact-target callers (strict IN, and convert_inexact_floats=false: the
+-- DROP/OPTIMIZE PARTITION path via convertFieldToTypeOrThrow), instead of being truncated to 0. Only
+-- value-materialization paths (VALUES/INSERT) opt into the lossy CAST-like truncation.
+SELECT '-- exact contract: inexact float partition literal must be rejected for every temporal target (ignore)';
+SET date_time_overflow_behavior = 'ignore';
+DROP TABLE IF EXISTS t_part_ex_dt;
+CREATE TABLE t_part_ex_dt (d DateTime, x UInt32) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_part_ex_dt VALUES (toDateTime(0), 1), (toDateTime(100), 2);
+ALTER TABLE t_part_ex_dt DROP PARTITION 0.1; -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE t_part_ex_dt DROP PARTITION 100.0; -- integral float is exactly representable, drops the 100s partition
+SELECT count() FROM t_part_ex_dt;
+DROP TABLE t_part_ex_dt;
+
+DROP TABLE IF EXISTS t_part_ex_d;
+CREATE TABLE t_part_ex_d (d Date, x UInt32) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_part_ex_d VALUES (toDate(0), 1);
+ALTER TABLE t_part_ex_d DROP PARTITION 0.1; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT count() FROM t_part_ex_d;
+DROP TABLE t_part_ex_d;
+
+-- The same exact-target rejection must also hold in saturate/throw modes (the overflow-aware coerce path).
+SELECT '-- exact contract: inexact float partition literal rejected in saturate mode too';
+SET date_time_overflow_behavior = 'saturate';
+DROP TABLE IF EXISTS t_part_ex_sat;
+CREATE TABLE t_part_ex_sat (d DateTime, x UInt32) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_part_ex_sat VALUES (toDateTime(0), 1);
+ALTER TABLE t_part_ex_sat DROP PARTITION 0.1; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT count() FROM t_part_ex_sat;
+DROP TABLE t_part_ex_sat;
+
+-- Strict IN: an inexact float must not match a temporal value (like =), while an exactly representable
+-- integral float still matches. Checked in ignore and saturate modes for every temporal target.
+SELECT '-- exact contract: strict IN with inexact float does not match; integral float does (ignore)';
+SET date_time_overflow_behavior = 'ignore';
+SELECT toDateTime(0) IN (0.1), toDate(0) IN (0.1), toDate32(0) IN (0.1), toTime(0) IN (0.1);
+SELECT toDateTime(100) IN (100.0), toDateTime(100) IN (100.5);
+SELECT '-- exact contract: strict IN with inexact float does not match (saturate)';
+SET date_time_overflow_behavior = 'saturate';
+SELECT toDateTime(0) IN (0.1), toDate(0) IN (0.1), toDate32(0) IN (0.1), toTime(0) IN (0.1);
+
+-- Value-materialization (VALUES) still truncates an inexact float like CAST (convert_inexact_floats=true).
+SELECT '-- value materialization: VALUES still truncates inexact float like CAST';
+SET date_time_overflow_behavior = 'ignore';
+DROP TABLE IF EXISTS t_val_ex;
+CREATE TABLE t_val_ex (d DateTime) ENGINE = Memory;
+INSERT INTO t_val_ex VALUES (0.1);
+SELECT toString(d) FROM t_val_ex;
+SELECT toString(CAST(0.1 AS DateTime));
+DROP TABLE t_val_ex;
