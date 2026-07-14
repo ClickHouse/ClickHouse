@@ -156,12 +156,15 @@ using CacheWriterPtr = std::unique_ptr<CacheWriter>;
 
 /// One resident range + its held read buffer.
 struct HitEntry { ByteRange range; CacheReaderPtr reader; };
-/// One miss range (cache-aligned) + its held write buffer (null on read-only/bypass).
+/// One miss CELL. The writer carries the entry's lifecycle: null as probed
+/// (`planResidencyView` observes only), opened by `openWriteBuffers` for the
+/// misses that survive the plan's prune (null on a read-only/bypass tier).
 struct MissEntry { ByteRange range; CacheWriterPtr writer; };
 
-/// Decomposed lookup result, held by the plan across windows. Its destructor
-/// is the SINGLE place the deferred LRU bump runs, after every owned write
-/// buffer is finalized.
+/// Decomposed lookup result, held by the plan across windows - the tier's
+/// plan-state object: hit readers, miss cells, and (after the prune/upgrade)
+/// the write handles. Its destructor is the SINGLE place the deferred LRU
+/// bump runs, after every owned write buffer is finalized.
 class CacheView
 {
 public:
@@ -175,8 +178,13 @@ public:
     bool allHit() const { return miss_entries.empty(); }
     bool allMiss() const { return hit_entries.empty(); }
 
+    /// PRUNE step: drop the miss at `index` (a cell the plan will not fill in
+    /// this tier - e.g. fully covered by a faster tier). Runs between the probe
+    /// and `openWriteBuffers`, so no write handle is ever opened for it.
+    void dropMiss(size_t index) { miss_entries.erase(miss_entries.begin() + index); }
+
     /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
-    /// object end). Miss ranges are cache-ALIGNED. The builders (`planResidencyView`)
+    /// object end). EACH MISS RANGE IS ONE CELL. The builders (`planResidencyView`)
     /// write these directly.
     VectorWithMemoryTracking<HitEntry> hit_entries;
     VectorWithMemoryTracking<MissEntry> miss_entries;
@@ -214,11 +222,12 @@ public:
     virtual CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) = 0;
 
-    /// Open ONLY the write buffers for already-known cache-aligned miss
-    /// ranges, without re-probing residency. Empty when `!populatesOnMiss()`.
-    virtual VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset,
-        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) = 0;
+    /// UPGRADE step: open a write buffer into each of the view's surviving miss
+    /// entries (the plan's `dropMiss` prune already ran), without re-probing
+    /// residency. A no-op when `!populatesOnMiss()` - the writers stay null and
+    /// every fill site skips null-writer entries.
+    virtual void openWriteBuffers(
+        const StoredObject & object, size_t object_file_offset, CacheView & view) = 0;
 };
 
 }

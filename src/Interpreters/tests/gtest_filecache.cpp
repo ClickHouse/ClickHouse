@@ -2730,10 +2730,9 @@ namespace
                 std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});
             return view;
         }
-        VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-            const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> &) override
+        void openWriteBuffers(const StoredObject &, size_t, CacheView &) override
         {
-            return {};  /// the configured range is fully resident
+            /// The configured range is fully resident - nothing to upgrade.
         }
         String name() const override { return "Recording"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }

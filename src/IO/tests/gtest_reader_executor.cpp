@@ -587,15 +587,10 @@ public:
         return view;
     }
 
-    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
+    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
     {
-        VectorWithMemoryTracking<MissEntry> result;
-        result.reserve(aligned_miss_ranges.size());
-        for (const auto & aligned : aligned_miss_ranges)
-            result.push_back(MissEntry{
-                aligned, std::make_unique<MockCacheWriter>(aligned, storage, block_size)});
-        return result;
+        for (auto & entry : view.miss_entries)
+            entry.writer = std::make_unique<MockCacheWriter>(entry.range, storage, block_size);
     }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index) > 0; }
@@ -1839,8 +1834,7 @@ public:
 
     /// One held write buffer per aligned (segment) miss range; each appends into its
     /// segment append-only (mirroring the old `put`) and pins it via `pin`.
-    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
+    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override;
 
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
@@ -2085,21 +2079,17 @@ inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
     return view;
 }
 
-inline VectorWithMemoryTracking<MissEntry> EvictableSegmentMockCache::openWriteBuffers(
-    const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
+inline void EvictableSegmentMockCache::openWriteBuffers(
+    const StoredObject &, size_t, CacheView & view)
 {
-    VectorWithMemoryTracking<MissEntry> result;
-    result.reserve(aligned_miss_ranges.size());
-    for (const auto & aligned : aligned_miss_ranges)
+    for (auto & entry : view.miss_entries)
     {
-        /// Each aligned miss lies within a single segment (one miss entry per segment
+        /// Each miss cell lies within a single segment (one miss entry per segment
         /// in `planResidencyView`); derive its index from the offset.
-        const size_t seg_idx = aligned.offset / segment_size;
+        const size_t seg_idx = entry.range.offset / segment_size;
         ++open_count[seg_idx];
-        result.push_back(MissEntry{
-            aligned, std::make_unique<EvictableSegmentWriteBuffer>(aligned, seg_idx, *this)});
+        entry.writer = std::make_unique<EvictableSegmentWriteBuffer>(entry.range, seg_idx, *this);
     }
-    return result;
 }
 
 } // anonymous namespace
@@ -3146,15 +3136,10 @@ public:
         return view;
     }
 
-    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
+    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
     {
-        VectorWithMemoryTracking<MissEntry> result;
-        result.reserve(aligned_miss_ranges.size());
-        for (const auto & aligned : aligned_miss_ranges)
-            result.push_back(MissEntry{
-                aligned, std::make_unique<WideGranularityWriteBuffer>(aligned, storage, put_log, block_size)});
-        return result;
+        for (auto & entry : view.miss_entries)
+            entry.writer = std::make_unique<WideGranularityWriteBuffer>(entry.range, storage, put_log, block_size);
     }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
@@ -3511,14 +3496,10 @@ namespace
             return view;
         }
 
-        VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-            const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override
+        void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
         {
-            VectorWithMemoryTracking<MissEntry> result;
-            result.reserve(aligned_miss_ranges.size());
-            for (const auto & aligned : aligned_miss_ranges)
-                result.push_back(MissEntry{aligned, std::make_unique<TrackingWriteBuffer>(aligned)});
-            return result;
+            for (auto & entry : view.miss_entries)
+                entry.writer = std::make_unique<TrackingWriteBuffer>(entry.range);
         }
 
         std::vector<TrackedLookup> log;

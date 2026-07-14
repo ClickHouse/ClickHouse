@@ -46,8 +46,8 @@ public:
         return ex.launchProgress(i) - ex.read_plan.schedule.retrieves[i].range.offset;
     }
 
-    /// The continuity estimator's predicted reach after the last plan feed.
-    size_t predictedEnd() const { return ex.continuity_tracker.predictedEnd(); }
+    /// The fetch tracker's predicted reach after the last plan feed.
+    size_t predictedEnd() const { return ex.fetch_tracker.predictedEnd(); }
 
     /// Bank injection / inspection (the display's overflow cell). `bankBytes` constructs the
     /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose

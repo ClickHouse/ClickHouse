@@ -152,6 +152,19 @@ struct DiskCacheBuffers : public ::testing::Test
     }
 };
 
+
+/// Test twin of the plan's prune+open step: build a probe-shaped view over
+/// explicit miss cells and let the provider upgrade it in place.
+CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
+                         size_t object_file_offset, std::vector<ByteRange> cells)
+{
+    auto view = std::make_unique<CacheView>();
+    for (auto c : cells)
+        view->miss_entries.push_back(MissEntry{c, nullptr});
+    provider.openWriteBuffers(object, object_file_offset, *view);
+    return view;
+}
+
 StoredObject makeObject(const String & name, size_t size)
 {
     return StoredObject{name, name, size};
@@ -171,7 +184,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     const size_t object_size = kSegmentSize;        // single segment
     auto object = makeObject("obj_a", object_size);
 
-    auto misses = provider->openWriteBuffers(object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -205,7 +218,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     }
 
     // Drop the writer so the segment finalizes (holder reset → DOWNLOADED on full fill).
-    misses.clear();
+    view_misses->miss_entries.clear();
 
     // planResidencyView now reports the whole range as a hit.
     auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, kSegmentSize});
@@ -232,7 +245,7 @@ TEST_F(DiskCacheBuffers, IdempotentReWriteReturnsZero)
     auto provider = makeProvider();
     auto object = makeObject("obj_b", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -258,7 +271,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     auto provider = makeProvider();
     auto object = makeObject("obj_c", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -308,7 +321,7 @@ TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
 
     // Read-only: a subsequent openWriteBuffers over the same aligned range sees a
     // fresh EMPTY segment (the probe did not create or fill anything).
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
     EXPECT_FALSE(writer.complete());
@@ -328,8 +341,10 @@ TEST_F(DiskCacheBuffers, BypassNoWriters)
     auto provider = makeProvider(/*bypass=*/true);
     auto object = makeObject("obj_e", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
-    EXPECT_TRUE(misses.empty());
+    /// The bypass upgrade is a no-op: the miss cells remain, the writers stay null.
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
+    ASSERT_EQ(misses.size(), 1u);
+    EXPECT_EQ(misses[0].writer, nullptr);
 
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
     EXPECT_TRUE(view->allMiss());
@@ -347,7 +362,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
     auto provider = makeProvider();
     auto object = makeObject("obj_f", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -379,13 +394,13 @@ TEST_F(DiskCacheBuffers, PinFrontier)
     pin_mid.reset();
 
     // Finalize the buffer → segment becomes DOWNLOADED; pin then returns nullptr.
-    misses.clear();
+    view_misses->miss_entries.clear();
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
     ASSERT_TRUE(view->allHit());
 
     // Re-open a writer over the now-resident range: there is nothing to download,
     // so a pin returns nullptr (segment fully downloaded, not PARTIAL).
-    auto misses2 = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses2 = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses2 = view_misses2->misses();
     ASSERT_EQ(misses2.size(), 1u);
     EXPECT_EQ(misses2[0].writer->pin(0), nullptr);
 }
@@ -398,7 +413,7 @@ TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
     auto provider = makeProvider();
     auto object = makeObject("obj_g", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -437,7 +452,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     auto object = makeObject("obj_h", object_size);
 
     // One aligned miss range covering both segments → one held holder, one writer.
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, 2 * kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, 2 * kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -459,7 +474,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
 
     // Finalize → both segments DOWNLOADED.
-    misses.clear();
+    view_misses->miss_entries.clear();
 
     // Both segments are hits and the bytes round-trip per segment.
     auto view = provider->planResidencyView(object, 0, ByteRange{0, 2 * kSegmentSize});
@@ -494,8 +509,8 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     const size_t object_file_offset = kSegmentSize;
     auto object = makeObject("obj_i", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(
-        object, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}});
+    auto view_misses = openWriters(*provider, 
+        object, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -508,7 +523,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
 
-    misses.clear();
+    view_misses->miss_entries.clear();
 
     // planResidencyView returns a hit whose range is the file-level segment.
     auto view = provider->planResidencyView(
@@ -529,12 +544,12 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     // second is a miss whose range is file-level and cache-aligned in FILE space
     // relative to the offset.
     auto object2 = makeObject("obj_i2", 2 * kSegmentSize);
-    auto misses2 = provider->openWriteBuffers(
-        object2, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}});
+    auto view_misses2 = openWriters(*provider, 
+        object2, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses2 = view_misses2->misses();
     ASSERT_EQ(misses2.size(), 1u);
     ASSERT_NE(misses2[0].writer, nullptr);
     ASSERT_EQ(claimedWrite(*misses2[0].writer, makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
-    misses2.clear();
+    view_misses2->miss_entries.clear();
 
     auto view2 = provider->planResidencyView(
         object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
@@ -559,7 +574,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     auto provider = makeProvider();
     auto object = makeObject("obj_j", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -569,7 +584,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
 
     // Drop the writer → the held holder finalizes the partial segment as the last
     // owner; only the downloaded prefix (half) is committed/resident.
-    misses.clear();
+    view_misses->miss_entries.clear();
 
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
 
@@ -603,7 +618,7 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
 
     // Fully fill the segment so a later view sees a hit to read + bump.
     {
-        auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
+        auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
         ASSERT_EQ(misses.size(), 1u);
         ASSERT_EQ(claimedWrite(*misses[0].writer, makeChain(0, kSegmentSize, 'K')), kSegmentSize);
     }
@@ -639,7 +654,7 @@ TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
     auto provider = makeProvider();
     auto object = makeObject("obj_elect", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
 
@@ -654,7 +669,7 @@ TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
 
     /// Tear down on THIS (foreign) thread. The segment was reset by the worker's claim,
     /// so the holder dtor finalizes it cleanly instead of aborting on `chassert(!is_last_holder)`.
-    misses.clear();
+    view_misses->miss_entries.clear();
     SUCCEED();
 }
 
@@ -668,7 +683,7 @@ TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
     auto provider = makeProvider();
     auto object = makeObject("obj_nested", kSegmentSize);
 
-    auto misses = provider->openWriteBuffers(object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}});
+    auto view_misses = openWriters(*provider, object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -713,14 +728,11 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
         EXPECT_EQ(view->misses()[i].range.size, kSegmentSize);
     }
 
-    /// One writer per tile; each writer's range is its own cell.
-    VectorWithMemoryTracking<ByteRange> ranges;
-    for (const auto & m : view->misses())
-        ranges.push_back(m.range);
-    auto writers = provider->openWriteBuffers(object, /*object_file_offset=*/0, ranges);
-    ASSERT_EQ(writers.size(), 3u);
+    /// Upgrade in place: one writer per tile; each writer's range is its own cell.
+    provider->openWriteBuffers(object, /*object_file_offset=*/0, *view);
+    ASSERT_EQ(view->misses().size(), 3u);
     for (size_t i = 0; i < 3; ++i)
-        EXPECT_EQ(writers[i].writer->range().offset, i * kSegmentSize);
+        EXPECT_EQ(view->misses()[i].writer->range().offset, i * kSegmentSize);
 }
 
 /// A tile cut must never fall INSIDE an existing segment - two writers would

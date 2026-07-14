@@ -239,33 +239,25 @@ CacheViewPtr PageCacheProvider::planResidencyView(
     return buildView(range_in_file);
 }
 
-VectorWithMemoryTracking<MissEntry> PageCacheProvider::openWriteBuffers(
+void PageCacheProvider::openWriteBuffers(
     const StoredObject & /*object*/,
     size_t /*object_file_offset*/,
-    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
+    CacheView & view)
 {
     if (!populatesOnMiss())
-        return {};
-
-    VectorWithMemoryTracking<MissEntry> result;
-    result.reserve(aligned_miss_ranges.size());
+        return;
 
     /// PageCache is file-level - `object` / `object_file_offset` are ignored.
     /// Cells are created lazily on the first `write` of each block.
-    for (const auto & aligned_file : aligned_miss_ranges)
-    {
-        auto writer = std::make_unique<PageCacheWriter>(
+    for (auto & entry : view.miss_entries)
+        entry.writer = std::make_unique<PageCacheWriter>(
             cache,
             file,
             block_size,
             file_size_in_bytes,
             inject_eviction,
             bypass_if_missing,
-            aligned_file);
-        result.push_back(MissEntry{aligned_file, std::move(writer)});
-    }
-
-    return result;
+            entry.range);
 }
 
 CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)

@@ -187,10 +187,9 @@ public:
     CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
 
-    /// One `getOrSet` per range; the held holder is owned by each writer.
-    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset,
-        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
+    /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
+    void openWriteBuffers(
+        const StoredObject & object, size_t object_file_offset, CacheView & view) override;
 
 private:
     /// The cache boundary grid: the quantum of segment starts/extents (as

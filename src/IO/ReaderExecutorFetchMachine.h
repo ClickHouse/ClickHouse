@@ -14,9 +14,9 @@
 namespace DB
 {
 
-/// A NON-OWNING reference to one held write buffer in `read_plan.bufs`
+/// A NON-OWNING reference to one held write buffer in `read_plan.tiers`
 /// (`writer` is owned there by a `unique_ptr`). A put step records these
-/// instead of moving the writers out, so the shared `bufs` are written in
+/// instead of moving the writers out, so the shared `tiers` are written in
 /// place. The raw pointer stays valid while `read_plan` is not rebuilt - and
 /// every rebuild path drains the put lane first - so a put never outlives its
 /// views. `range` is the cell's miss range (the lane-overlap key).
@@ -37,10 +37,10 @@ struct ReaderExecutorFetchMachine : MachineBase
     /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
     ReaderExecutorFetchMachine();
 
-    /// The PHYSICAL cache-aligned window the fetch step reads (cut by the
-    /// schedule's fetch grids at launch), committing cells per tile as it
-    /// goes. The LOGICAL requested range (the space `position` works in) is
-    /// this shifted down by `data_start_offset`.
+    /// The PHYSICAL cache-aligned window the fetch step reads (cut at cell
+    /// edges at launch), committing cells per tile as it goes. The LOGICAL
+    /// requested range (the space `position` works in) is this shifted down
+    /// by `data_start_offset`.
     ByteRange physical_window;
     /// The plan's memory-pressure level, snapshotted at launch - the only
     /// geometry field the worker reads (sizes the fetch block / suppresses
@@ -80,7 +80,7 @@ struct ReaderExecutorFetchMachine : MachineBase
     size_t fetched_end = 0;
     /// The fill step's targets: NON-OWNING views of the writers this fill writes
     /// (the schedule's fill targets overlapping the window). The writers stay in the
-    /// shared `read_plan.bufs`; the fill runs inline on the read thread, so referencing
+    /// shared `read_plan.tiers`; the fill runs inline on the read thread, so referencing
     /// them in place is race-free.
     VectorWithMemoryTracking<ReaderExecutorWriterView> writer_views;
     /// Set by the worker when a SIBLING is downloading some segment (this worker lost the

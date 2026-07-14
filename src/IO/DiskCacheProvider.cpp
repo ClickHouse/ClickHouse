@@ -883,22 +883,20 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     return view;
 }
 
-VectorWithMemoryTracking<MissEntry> DiskCacheProvider::openWriteBuffers(
+void DiskCacheProvider::openWriteBuffers(
     const StoredObject & object,
     size_t object_file_offset,
-    const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges)
+    CacheView & view)
 {
     if (!populatesOnMiss())
-        return {};
+        return;
 
     auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-    VectorWithMemoryTracking<MissEntry> result;
-    result.reserve(aligned_miss_ranges.size());
-
-    for (const auto & aligned_file : aligned_miss_ranges)
+    for (auto & entry : view.miss_entries)
     {
+        const ByteRange aligned_file = entry.range;
         chassert(aligned_file.offset >= object_file_offset);
         const size_t obj_offset = aligned_file.offset - object_file_offset;
 
@@ -912,17 +910,13 @@ VectorWithMemoryTracking<MissEntry> DiskCacheProvider::openWriteBuffers(
             resolved_origin,
             cache_settings.boundary_alignment);
 
-        auto writer = std::make_unique<DiskCacheWriter>(
+        entry.writer = std::make_unique<DiskCacheWriter>(
             cache,
             object_file_offset,
             cache_settings,
             std::move(holder),
             aligned_file);
-
-        result.push_back(MissEntry{aligned_file, std::move(writer)});
     }
-
-    return result;
 }
 
 }

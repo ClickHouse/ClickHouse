@@ -259,11 +259,13 @@ private:
     /// `writers` opened over the aligned miss ranges. 1:1 POSITIONAL with
     /// `CoverageMap::entries`, provider-grouped fastest-first. A worker
     /// never indexes this, so the buffers are never shared across threads.
-    struct BufEntry
+    struct PlanTier
     {
         ICacheProvider * provider = nullptr;
+        /// The tier's plan-state object: hit readers (pinning resident segments)
+        /// and miss cells, upgraded in place with write buffers for the cells the
+        /// plan fills (`extractMissesAndOpenWriters`).
         CacheViewPtr view;
-        VectorWithMemoryTracking<MissEntry> writers;
     };
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
@@ -275,7 +277,7 @@ private:
         const std::shared_ptr<const CoverageMap> & geometry() const { return geometry_snapshot; }
 
 
-        VectorWithMemoryTracking<BufEntry> bufs;
+        VectorWithMemoryTracking<PlanTier> tiers;
 
         /// The explicit work of this plan (`buildSchedule`), computed once at
         /// build. Its `retrieves[*].into` are the authoritative fill targets:
@@ -478,7 +480,7 @@ private:
 
     // ─── Deferred puts / promotes ────────────────────────────────────────
 
-    /// Record the window's fill-target writers (NON-OWNING views into `read_plan.bufs`) on the
+    /// Record the window's fill-target writers (NON-OWNING views into `read_plan.tiers`) on the
     /// machine at LAUNCH, so the worker can write its led segments inline during the fetch.
     void collectFillTargets(FetchMachine & m);
 
@@ -650,12 +652,12 @@ private:
     bool clampAllowsAhead(size_t ri) const;
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
-    /// retrieves, in offset order) into `continuity_tracker`; the tracker skips
+    /// retrieves, in offset order) into `fetch_tracker`; the tracker skips
     /// spans an earlier overlapping plan already fed. A Remote retrieve's range
     /// already spans bridged holes (<= `min_bytes_for_seek`) as over-read, and
     /// `bridgeable_gap == min_bytes_for_seek`, so feeding the range as one read counts
     /// that over-read exactly as a read-through would.
-    void feedScheduleToContinuity(const PlanSchedule & schedule);
+    void feedScheduleToFetchTracker(const PlanSchedule & schedule);
 
     /// TRIM phase of the plan: the look-ahead span starting at
     /// `physical_start`, clamped to the physical file end ONLY - the plan is
@@ -676,16 +678,17 @@ private:
     bool planReachesEnd() const;
 
     /// Translate ONE tier's `planResidencyView` into its 1:1
-    /// `GeometryEntry`/`BufEntry`. `extractResidentRuns` records the tier's
-    /// hits (clamped to the plan span). `extractMissesAndOpenWriters` records
-    /// its cache-aligned misses and opens the write buffers (populatable
-    /// tiers only), PRUNING any miss cell fully covered by `upper_hits` (the
-    /// union of faster tiers' hits) - that range already lives upstream.
+    /// `GeometryEntry`/`PlanTier`. `extractResidentRuns` records the tier's
+    /// hits (clamped to the plan span). `extractMissesAndOpenWriters` PRUNES
+    /// miss cells fully covered by `upper_hits` (the union of faster tiers'
+    /// hits - that range already lives upstream) via `CacheView::dropMiss`,
+    /// records the survivors in the geometry, and has the provider UPGRADE
+    /// them with write buffers in place (populatable tiers only).
     static void extractResidentRuns(const CacheView & view, ByteRange plan_range, size_t resident_clip_end, GeometryEntry & geom_entry);
     static void extractMissesAndOpenWriters(
-        ICacheProvider & cache, const CacheView & view,
+        ICacheProvider & cache, CacheView & view,
         const StoredObject & object, size_t object_file_offset,
-        const IntervalSet & upper_hits, GeometryEntry & geom_entry, BufEntry & buf_entry);
+        const IntervalSet & upper_hits, GeometryEntry & geom_entry);
 
     /// Pin the partial segment under `frontier` from the first held write
     /// buffer whose `range` contains it and whose `pin` is non-null. Empty
@@ -850,12 +853,12 @@ private:
     /// `reader_executor_use_long_connections` setting).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
 
-    /// Continuous-read pattern estimator, fed each plan's predicted source reads
-    /// and every seek. Constructed with `bridgeable_gap == min_bytes_for_seek` so a
-    /// bridged gap counts identically whether modeled as a read-through or a seek.
+    /// FETCH-trajectory estimator, fed each plan's predicted source reads and every
+    /// seek. Constructed with `bridgeable_gap == min_bytes_for_seek` so a bridged gap
+    /// counts identically whether modeled as a read-through or a seek.
     /// `predictedEnd` sizes the long source connection (see `longConnectionBound`).
-    ReadContinuityTracker continuity_tracker;
-    /// CONSUMPTION-pattern estimator: unlike `continuity_tracker` (planned source reads,
+    ReadContinuityTracker fetch_tracker;
+    /// CONSUMPTION-pattern estimator: unlike `fetch_tracker` (planned source reads,
     /// sizes connections), it is fed every SERVED window and every seek, so it predicts
     /// how far the consumer will actually go. `fetchAllowance` keys past-extent prefetch
     /// off it.

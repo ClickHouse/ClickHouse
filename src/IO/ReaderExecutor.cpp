@@ -131,7 +131,7 @@ ReaderExecutor::ReaderExecutor(
     /// bound, so a bridged gap feeds the same whether modeled as a read or a seek.
     ReadContinuityTracker::Options continuity_options;
     continuity_options.bridgeable_gap = min_bytes_for_seek;
-    continuity_tracker = ReadContinuityTracker(continuity_options);
+    fetch_tracker = ReadContinuityTracker(continuity_options);
     consume_tracker = ReadContinuityTracker(continuity_options);
 }
 
@@ -353,7 +353,7 @@ void ReaderExecutor::seek(size_t new_position)
     cancelMachine(/*cancelled=*/true);
     /// Feed the seek to both estimators; it resets their frontier, so the post-seek
     /// plan's predicted reads feed from here.
-    continuity_tracker.recordSeek(new_physical);
+    fetch_tracker.recordSeek(new_physical);
     consume_tracker.recordSeek(new_physical);
 
     /// A seek away from the current frontier strands the in-flight fill segment;
@@ -588,10 +588,8 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & [cache, view] : populate_views)
         {
-            VectorWithMemoryTracking<ByteRange> miss_ranges;
+            cache->openWriteBuffers(pieces.front().object, /*object_file_offset=*/0, *view);
             for (const auto & m : view->misses())
-                miss_ranges.push_back(m.range);
-            for (auto & m : cache->openWriteBuffers(pieces.front().object, /*object_file_offset=*/0, miss_ranges))
             {
                 if (!m.writer)
                     continue;
@@ -1228,13 +1226,13 @@ void ReaderExecutor::Display::recreditCommittedPrefixes(
     /// plan's own write) has grown since plan-build, serving it from the held write buffer's
     /// own `read`. Held write buffers are in tier-priority order, so the `covered` guard
     /// serves each byte from the fastest tier under the SAME shared `covered`.
-    for (const auto & buf : plan.bufs)
+    for (const auto & buf : plan.tiers)
     {
         if (!buf.provider)
             continue;
         const bool is_page = buf.provider->tier() == CacheTier::PageCache;
         const Stats::Counter tier_counter = is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache;
-        for (const auto & w : buf.writers)
+        for (const auto & w : buf.view->misses())
         {
             if (!w.writer)
                 continue;
@@ -1429,7 +1427,7 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
     /// extend past the look-ahead. This is the SINGLE reach source shared by the open trigger
     /// (`shouldOpenLongConnection`) and the channel bound (`longConnectionBound`), so the two can never
     /// disagree on how far the channel reaches. Reads only the tracker scalar + plan geometry.
-    size_t reach = clampReach(continuity_tracker.predictedEnd(), phys_off);
+    size_t reach = clampReach(fetch_tracker.predictedEnd(), phys_off);
     const auto & geom = read_plan.geometry();
     if (geom)
     {
@@ -1614,16 +1612,16 @@ void ReaderExecutor::releaseLongAtBound(std::optional<LongConnection> & conn) co
 void ReaderExecutor::collectFillTargets(FetchMachine & m)
 {
     /// Record NON-OWNING views of the window's fill-target writers in the shared
-    /// `read_plan.bufs`: the machine's own retrieve's `into` cells overlapping this window
+    /// `read_plan.tiers`: the machine's own retrieve's `into` cells overlapping this window
     /// (`buildSchedule` already designated them - the bottom tier and same-tier slower
     /// layers; the faster tiers fill by handed jobs on the serve front). Done at launch so
     /// the worker can write the led segments inline during its fetch; the writers stay in
-    /// `read_plan.bufs` (the plan is stable while a machine is in flight).
+    /// `read_plan.tiers` (the plan is stable while a machine is in flight).
     for (const auto & t : read_plan.schedule.retrieves[m.retrieve_index].into)
     {
         if (!(t.cell.offset < m.physical_window.end() && m.physical_window.offset < t.cell.end()))
             continue;
-        for (auto & w : read_plan.bufs[t.entry].writers)
+        for (const auto & w : read_plan.tiers[t.entry].view->misses())
             if (w.writer && w.range.offset == t.cell.offset && w.range.size == t.cell.size)
                 m.writer_views.push_back({w.writer.get(), w.range});
     }
@@ -1632,7 +1630,7 @@ void ReaderExecutor::collectFillTargets(FetchMachine & m)
 void ReaderExecutor::runPutStep(const FetchMachine & m, const ChainedBuffers & assembled)
 {
     /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
-    /// window's fill-target writers in the shared `read_plan.bufs`, written in place on THIS
+    /// window's fill-target writers in the shared `read_plan.tiers`, written in place on THIS
     /// read thread, inline at collect - the machine's own counters were already folded there,
     /// so the fill accounts straight into the executor `stats`. Runs AFTER the collect pinned
     /// at the fetch frontier. A failed fill is logged, never thrown: a read must not fail
@@ -1690,9 +1688,9 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
             continue;
         for (const auto & wt : r.into)
         {
-            if (wt.entry >= read_plan.bufs.size() || !read_plan.bufs[wt.entry].provider)
+            if (wt.entry >= read_plan.tiers.size() || !read_plan.tiers[wt.entry].provider)
                 continue;
-            for (auto & w : read_plan.bufs[wt.entry].writers)
+            for (const auto & w : read_plan.tiers[wt.entry].view->misses())
             {
                 if (!w.writer || on_loan(w.writer.get()))
                     continue;
@@ -2175,8 +2173,8 @@ IntervalSet ReaderExecutor::Display::committedCoverage(ByteRange window_phys) co
     /// Mirrors the committed-range computation in `recreditCommittedPrefixes` but only
     /// accumulates coverage - no `read`, no stats - so the serve can poll the fill front.
     IntervalSet covered;
-    for (const auto & buf : plan.bufs)
-        for (const auto & w : buf.writers)
+    for (const auto & buf : plan.tiers)
+        for (const auto & w : buf.view->misses())
             if (w.writer)
                 for (const auto & part : committedPartsIn(*w.writer, window_phys))
                     covered.add(part);
@@ -2233,7 +2231,7 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
     if (const auto & geom = plan.geometry())
         for (size_t i = 0; i < geom->entries.size(); ++i)
         {
-            if (i >= plan.bufs.size() || !plan.bufs[i].view)
+            if (i >= plan.tiers.size() || !plan.tiers[i].view)
                 continue;
             for (const auto & res : geom->entries[i].resident)
             {
@@ -2281,11 +2279,11 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
         for (size_t pos = window_phys.offset; pos < window_phys.end();)
         {
             auto run = geom->residentAt(pos);
-            if (!run.resident() || run.entry >= plan.bufs.size()
-                || !plan.bufs[run.entry].view)
+            if (!run.resident() || run.entry >= plan.tiers.size()
+                || !plan.tiers[run.entry].view)
                 break;
             const size_t serve_end = std::min(run.run_end, window_phys.end());
-            ChainedBuffers chunk = readHitFromView(*plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
+            ChainedBuffers chunk = readHitFromView(*plan.tiers[run.entry].view, ByteRange{pos, serve_end - pos});
             const size_t got = chunk.range().size;
             if (got == 0)
                 break;
@@ -2350,13 +2348,13 @@ void ReaderExecutor::Display::wait(ByteRange window_phys, ChainedBuffers & out, 
 {
     /// No cache-read credit here: the caller banks the sibling bytes and credits them once
     /// (its own committed bytes are dropped - the serve reads and counts them from the cells).
-    for (const auto & buf : plan.bufs)
+    for (const auto & buf : plan.tiers)
     {
         /// A page cell is filled by promotion at the serve, not downloaded - no downloader,
         /// a wait on it would never wake.
         if (!buf.provider || buf.provider->tier() == CacheTier::PageCache)
             continue;
-        for (const auto & w : buf.writers)
+        for (const auto & w : buf.view->misses())
         {
             if (!w.writer)
                 continue;
@@ -2571,9 +2569,9 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     ReadPlan plan;
 
     /// One read-only residency probe (`planResidencyView`) per cache tier per object-piece,
-    /// each translated by the two extract helpers into a 1:1 `GeometryEntry`/`BufEntry` pair
-    /// (pushed BOTH-or-NEITHER, so `geometry()->entries` and `bufs` stay positionally
-    /// aligned — `residentAt`'s entry index maps into `bufs`). `caches` is fastest-first, so
+    /// each translated by the two extract helpers into a 1:1 `GeometryEntry`/`PlanTier` pair
+    /// (pushed BOTH-or-NEITHER, so `geometry()->entries` and `tiers` stay positionally
+    /// aligned — `residentAt`'s entry index maps into `tiers`). `caches` is fastest-first, so
     /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
     /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
     /// guard in the serve path re-establishes the same priority when serving.
@@ -2606,11 +2604,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         GeometryEntry geom_entry;
         geom_entry.tier = cache->tier();
         geom_entry.whole_cell = cache->fillsWholeCell();
-        BufEntry buf_entry;
+        PlanTier buf_entry;
         buf_entry.provider = cache.get();
 
         extractResidentRuns(*view, probe_range, resident_clip_end, geom_entry);
-        extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry, buf_entry);
+        extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry);
 
         /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
         /// against them. Read BEFORE the move below. Same-tier hits/misses are disjoint,
@@ -2625,11 +2623,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         {
             buf_entry.view = std::move(view);
             geom->entries.push_back(std::move(geom_entry));
-            plan.bufs.push_back(std::move(buf_entry));
+            plan.tiers.push_back(std::move(buf_entry));
         }
     }
 
-    chassert(geom->entries.size() == plan.bufs.size());
+    chassert(geom->entries.size() == plan.tiers.size());
 
     /// The cross-cache expansion already pulled the touched MISS segments inside
     /// `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment straddling the
@@ -2643,7 +2641,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         geom->plan_end = hit_end;
     }
 
-    /// Publish atomically: `geometry()` and `bufs` are one object (`read_plan`), so a
+    /// Publish atomically: `geometry()` and `tiers` are one object (`read_plan`), so a
     /// reader can never see new geometry against a stale buffer vector. Assigning
     /// `read_plan` finalizes the previous plan's write buffers and runs its deferred
     /// LRU bumps.
@@ -2667,9 +2665,9 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         effectiveWindowSize(read_plan.geometry()->pressure_level),
         effectiveBlockSize(read_plan.geometry()->pressure_level));
 
-    /// Feed this plan's predicted source reads into the continuity estimator so its
+    /// Feed this plan's predicted source reads into the fetch tracker so its
     /// reach prediction (which sizes long source connections) stays current.
-    feedScheduleToContinuity(read_plan.schedule);
+    feedScheduleToFetchTracker(read_plan.schedule);
 
     /// A plan with no `Source::Remote` retrieve is served entirely from cache; the
     /// prefetch look-ahead has nothing to launch.
@@ -2682,7 +2680,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
 }
 
-void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
+void ReaderExecutor::feedScheduleToFetchTracker(const PlanSchedule & schedule)
 {
     /// The predicted SOURCE reads are the `Source::Remote` retrieves; upper-tier
     /// reads and promotes open no source connection, so a wide upper hit between
@@ -2697,7 +2695,7 @@ void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
     for (const auto & range : source_reads)
-        continuity_tracker.recordReadRange(range.offset, range.size);
+        fetch_tracker.recordReadRange(range.offset, range.size);
 }
 
 bool ReaderExecutor::planReachesEnd() const
@@ -2735,9 +2733,10 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// The plan TARGET the iterative windowed probe grows toward. Independent of
         /// `read_extent_end` (which only clamps the serve), so the plan survives
         /// mark-range advances and is reused. An UNKNOWN-SIZE source is not planned past
-        /// one window: the probe would tile cache segments beyond the real EOF only for
-        /// the first short read to invalidate them.
-        want = offset_map.hasUnknownSize() ? std::min(window_size, ceiling) : ceiling;
+        /// one window: with no file end to clamp the span, the probe would tile cache
+        /// segments beyond the real EOF only for the first short read (the EOF marker)
+        /// to invalidate them.
+        want = offset_map.hasUnknownSize() ? window_size : ceiling;
     }
     /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
     /// ceiling caps the result; the file end is the only natural bound below it.
@@ -2768,37 +2767,34 @@ void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_
 }
 
 void ReaderExecutor::extractMissesAndOpenWriters(
-    ICacheProvider & cache, const CacheView & view,
+    ICacheProvider & cache, CacheView & view,
     const StoredObject & object, size_t object_file_offset,
-    const IntervalSet & upper_hits, GeometryEntry & geom_entry, BufEntry & buf_entry)
+    const IntervalSet & upper_hits, GeometryEntry & geom_entry)
 {
     /// A bypass tier is never written, so it has no fetch/write target.
     if (!cache.populatesOnMiss())
         return;
 
-    /// The cache-aligned gaps this tier lacks, UNCLAMPED to the plan span (only
-    /// object-end-clamped inside the provider), so the aligned extent drives both the
-    /// fetch and the over-read bound. PRUNE any cell fully covered by a
-    /// faster tier (`upper_hits`): the data already lives upstream, so this tier needs no
-    /// writer for it. Open the held write buffers over the survivors now
-    /// (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life, so
-    /// promotion/backfill only ever write into already-open buffers.
-    VectorWithMemoryTracking<ByteRange> aligned_miss;
+    /// PRUNE any miss cell fully covered by a faster tier (`upper_hits`): the data
+    /// already lives upstream, so this tier needs no writer for it. Then UPGRADE the
+    /// survivors in place (`[CF-plan-rebuild]`): one `getOrSet` per cell, owned by
+    /// the view for the plan's life, so promotion/backfill only ever write into
+    /// already-open buffers. Cell ranges stay UNCLAMPED to the plan span (only
+    /// object-end-clamped inside the provider), so the cell extent drives both the
+    /// fetch and the over-read bound.
+    for (size_t i = view.misses().size(); i > 0; --i)
+        if (upper_hits.subtract(view.misses()[i - 1].range).empty())
+            view.dropMiss(i - 1);  /// fully covered by a faster tier
     for (const auto & miss : view.misses())
-    {
-        if (upper_hits.subtract(miss.range).empty())
-            continue;  /// fully covered by a faster tier - prune
         geom_entry.aligned_miss.push_back(miss.range);
-        aligned_miss.push_back(miss.range);
-    }
-    if (!aligned_miss.empty())
-        buf_entry.writers = cache.openWriteBuffers(object, object_file_offset, aligned_miss);
+    if (!view.misses().empty())
+        cache.openWriteBuffers(object, object_file_offset, view);
 }
 
 CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const
 {
-    for (const auto & buf : read_plan.bufs)
-        for (const auto & w : buf.writers)
+    for (const auto & buf : read_plan.tiers)
+        for (const auto & w : buf.view->misses())
             if (auto pin = pinIfCovering(w.writer.get(), frontier))
                 return pin;
     return {};
@@ -2838,7 +2834,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     else
     {
         /// Already running: interrupt it, then JOIN it before tearing anything down. The worker
-        /// writes the shared `read_plan.bufs` writers (its led segments) on the pool thread, so
+        /// writes the shared `read_plan.tiers` writers (its led segments) on the pool thread, so
         /// the foreground must NOT free the plan (the caller re-plans / drops the extent / seeks
         /// right after this) until the worker has finished and completed every elected segment -
         /// else the writer dtor aborts on a leaked DOWNLOADING segment

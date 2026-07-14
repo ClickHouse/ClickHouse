@@ -133,9 +133,8 @@ public:
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
 
     /// Cells are created lazily on the first `write` of each block.
-    VectorWithMemoryTracking<MissEntry> openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset,
-        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
+    void openWriteBuffers(
+        const StoredObject & object, size_t object_file_offset, CacheView & view) override;
 
 private:
     /// Read-only block-by-block residency probe, coalescing adjacent

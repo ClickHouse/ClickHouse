@@ -41,7 +41,7 @@ struct PlanSchedule
     };
 
     /// One aligned-miss cell to populate, identified by its tier-entry index
-    /// (into `CoverageMap::entries` / `ReadPlan::bufs`) and the cell range.
+    /// (into `CoverageMap::entries` / `ReadPlan::tiers`) and the cell range.
     struct WriteTarget
     {
         size_t entry = 0;

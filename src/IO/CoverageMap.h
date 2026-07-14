@@ -11,7 +11,7 @@ namespace DB
 /// One cache tier's RESIDENT geometry over the look-ahead window, for one
 /// object-piece: the file-level ranges this tier holds resident plus the
 /// cache-ALIGNED miss ranges (the gap-fetch + write targets). Holds NO cache
-/// buffer - those live in the same plan's `ReaderExecutor::ReadPlan::bufs`.
+/// buffer - those live in the same plan's `ReaderExecutor::ReadPlan::tiers`.
 /// `aligned_miss` is clamped only to the object end (it may extend past the
 /// plan span so a touched cell is fully populated).
 struct GeometryEntry
@@ -32,7 +32,7 @@ struct GeometryEntry
 /// queried positionally (RESIDENT run vs GAP). Built once by
 /// `ReaderExecutor::observeAndSchedule`, never mutated after publish, exposed
 /// as a `shared_ptr<const>` snapshot. `entries` is in cache-tier priority
-/// order, 1:1 POSITIONAL with `ReadPlan::bufs`. Empty / `plan_end == plan_start`
+/// order, 1:1 POSITIONAL with `ReadPlan::tiers`. Empty / `plan_end == plan_start`
 /// means no valid plan.
 struct CoverageMap
 {
