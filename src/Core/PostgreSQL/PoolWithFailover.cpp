@@ -57,8 +57,16 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
             }
             catch (const pqxx::broken_connection & pqxx_error)
             {
-                if (interval_milliseconds >= 1000)
-                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
+                /// Same classification as the foreground `get()` path: a transient transport failure
+                /// is throttled at Warning, a permanent one stays at Error even during background
+                /// reconnect so a misconfiguration remains visible.
+                if (isTransientConnectionError(pqxx_error.what()))
+                {
+                    if (interval_milliseconds >= 1000)
+                        LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
+                }
+                else
+                    LOG_ERROR(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
@@ -192,8 +200,14 @@ ConnectionHolderPtr PoolWithFailover::get()
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
-                    /// The failure is propagated to the caller, who decides how severe it is.
-                    LOG_WARNING(log, "Connection error: {}", pqxx_error.what());
+                    /// A transient transport failure (server unreachable / not responding) is logged
+                    /// at Warning and left for the caller to tolerate; anything else (a server-side
+                    /// rejection or unrecognized failure) stays at Error so a permanent misconfiguration
+                    /// remains visible. See `isTransientConnectionError`.
+                    if (isTransientConnectionError(pqxx_error.what()))
+                        LOG_WARNING(log, "Connection error: {}", pqxx_error.what());
+                    else
+                        LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
                     error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",
                         try_idx + 1, DB::backQuote(replica->connection_info.host_port), pqxx_error.what());

@@ -35,6 +35,31 @@ String formatNameForLogs(const String & postgres_database_name, const String & p
     return postgres_database_name + '.' + postgres_table_name;
 }
 
+bool isTransientConnectionError(std::string_view message)
+{
+    /// libpq frames connect failures as `connection to server at "host", port N failed: <reason>`,
+    /// where `<reason>` for a transport failure is the OS `strerror`. Match those; a server-side
+    /// rejection (`FATAL: password authentication failed`, `database "x" does not exist`, no
+    /// `pg_hba.conf` entry) reaches the server and is not listed here, so it stays non-transient.
+    static constexpr std::string_view transient_markers[] = {
+        "Connection refused",
+        "Connection timed out",
+        "timeout expired",
+        "No route to host",
+        "Network is unreachable",
+        "Connection reset by peer",
+        "could not connect to server",
+        "could not translate host name",
+        "Name or service not known",
+        "Temporary failure in name resolution",
+    };
+
+    for (const auto marker : transient_markers)
+        if (message.find(marker) != std::string_view::npos)
+            return true;
+    return false;
+}
+
 }
 
 #endif
