@@ -10,7 +10,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -157,9 +156,7 @@ namespace
 {
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss);
-    return removeEscapedSlashes(oss.str());
+    return stringifyJSON(metadata_object);
 }
 }
 
@@ -1244,8 +1241,12 @@ void IcebergMetadata::addDeleteTransformers(
             {
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
-                block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
-                equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
+                size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
+                /// Take the type from the delete file header rather than from the table schema:
+                /// the nullability of a column in the delete file may differ from its nullability
+                /// in the table schema, and the columns read below have exactly the header's types.
+                block_for_set.insert(ColumnWithTypeAndName(delete_file_header.getByPosition(position_in_delete_file).type, name_and_type.name));
+                equality_indexes_delete_file.push_back(position_in_delete_file);
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
