@@ -5,12 +5,33 @@ description: 'Overview page of Performance and Optimizations'
 title: 'Performance and Optimizations'
 keywords: ['performance optimization', 'best practices', 'optimization guide', 'ClickHouse performance', 'database optimization']
 doc_type: 'reference'
+mode: wide
 ---
-
-import TableOfContents from '/snippets/_performance_optimizations_table_of_contents.mdx';
 
 This section contains tips and best practices for improving performance with ClickHouse. 
 We recommend users read [Core Concepts](/concepts/core-concepts/parts) as a precursor to this section, 
 which covers the main concepts required to improve performance.
 
-<TableOfContents/>
+<CardGroup cols={2}>
+  <Card title="PREWHERE optimization" icon="filter" href="/concepts/features/performance/prewhere">
+    How `PREWHERE` reduces I/O by filtering data before reading unnecessary columns, and how to monitor its effectiveness.
+  </Card>
+  <Card title="Allocation profiling" icon="memory" href="/concepts/features/performance/allocation-profiling">
+    Profile memory allocations with jemalloc.
+  </Card>
+  <Card title="Allocation profiling for versions before 25.9" icon="clock-rotate-left" href="/concepts/features/performance/allocation-profiling-old">
+    Allocation profiling for ClickHouse versions before 25.9.
+  </Card>
+  <Card title="Caches" icon="hard-drive" href="/concepts/features/performance/caches/caches">
+    Cache types, including the query cache, query condition cache, and userspace page cache.
+  </Card>
+  <Card title="Data skipping indexes" icon="forward" href="/concepts/features/performance/skip-indexes/skipping-indexes">
+    Understanding data skipping indexes, with examples.
+  </Card>
+  <Card title="Lazy materialization" icon="hourglass-half" href="/concepts/features/performance/lazy-materialization">
+    Defer reading column data until it is actually needed.
+  </Card>
+  <Card title="Troubleshooting" icon="bug" href="/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    Debugging memory issues, testing your hardware, and the sampling query profiler.
+  </Card>
+</CardGroup>

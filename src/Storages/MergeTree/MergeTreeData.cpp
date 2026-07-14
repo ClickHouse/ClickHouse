@@ -11,6 +11,7 @@
 
 #include <Access/AccessControl.h>
 #if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
 #include <Access/EnabledMaskingPolicies.h>
 #include <Access/MaskingPolicy.h>
 #endif
@@ -297,6 +298,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 part_moves_between_shards_enable;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
@@ -341,6 +343,11 @@ namespace ServerSetting
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
+}
+
+namespace FailPoints
+{
+    extern const char create_empty_part_inject_stale_dir[];
 }
 
 namespace ErrorCodes
@@ -6250,6 +6257,136 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
+{
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
+    if (query_context->getCurrentTransaction())
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    if (!mutations_snapshot)
+        return ColumnDefaultnessStatsUnavailableReason::None;
+
+    if (mutations_snapshot->hasPatchParts())
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+    if (mutations_snapshot->hasDataMutations())
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
+    if (mutations_snapshot->hasAlterMutations())
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
+{
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
+    if (query_context->getCurrentTransaction())
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    /// Patch parts apply updates/deletes at read time and don't update the base part's
+    /// `serialization.json`, so the recorded `num_defaults` would be stale.
+    if (!getPatchPartsVectorForInternalUsage().empty())
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+
+    auto mutation_counters = getMutationCounters();
+
+    /// Pending data mutations can change values read on the fly, so the stat can
+    /// mismatch the post-mutation default semantics.
+    if (mutation_counters.num_data > 0)
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
+
+    /// Pending alter mutations (e.g. `MODIFY COLUMN` with on-the-fly conversion) leave
+    /// `serialization.json` describing source-type defaults while reads return the new
+    /// type. The stat would mismatch the post-conversion default semantics.
+    if (mutation_counters.num_alter > 0)
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    /// Masking policies rewrite values at read time without touching `serialization.json`,
+    /// so the recorded `num_defaults` does not describe what the masked user reads.
+    if (hasEnabledMaskingPolicies(query_context))
+        return ColumnDefaultnessStatsUnavailableReason::MaskingPolicy;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+bool MergeTreeData::hasEnabledMaskingPolicies(const ContextPtr & query_context) const
+{
+#if CLICKHOUSE_CLOUD
+    auto storage_id = getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    auto masking_policies = query_context->getAccess()->getEnabledMaskingPolicies();
+    return masking_policies && masking_policies->hasPolicies(storage_id.getDatabaseName(), storage_id.getTableName());
+#else
+    /// Masking policies only exist in the Cloud build.
+    (void)query_context;
+    return false;
+#endif
+}
+
+const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason)
+{
+    switch (reason)
+    {
+        case ColumnDefaultnessStatsUnavailableReason::None: return "available";
+        case ColumnDefaultnessStatsUnavailableReason::ActiveTransaction: return "active transaction";
+        case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
+        case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
+        case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+        case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
+    }
+    UNREACHABLE();
+}
+
+std::optional<IStorage::ColumnDefaultnessStats>
+MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+{
+    auto unavailable_reason = getColumnDefaultnessStatsUnavailableReason(query_context);
+    if (unavailable_reason != ColumnDefaultnessStatsUnavailableReason::None)
+    {
+        LOG_DEBUG(
+            log,
+            "No defaultness stats for column {}: {}",
+            column_name,
+            columnDefaultnessStatsUnavailableReasonToString(unavailable_reason));
+        return std::nullopt;
+    }
+
+    ColumnDefaultnessStats aggregate;
+    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
+    {
+        if (part->isEmpty())
+            continue;
+
+        const auto & infos = part->getSerializationInfos();
+        auto it = infos.find(column_name);
+        if (it == infos.end())
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: not present in serialization info of part {}", column_name, part->name);
+            return std::nullopt;
+        }
+
+        /// Pre-flag parts have a sampled `num_defaults` that can't be trusted.
+        const auto & info_data = it->second->getData();
+        if (!info_data.exact_num_defaults)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} was written without the exact_num_defaults flag", column_name, part->name);
+            return std::nullopt;
+        }
+
+        aggregate.num_rows += part->rows_count;
+        aggregate.num_defaults += info_data.num_defaults;
+    }
+    return aggregate;
+}
+
+MergeTreeData::DataPartsVector
+MergeTreeData::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+{
+    return getVisibleDataPartsVector(query_context);
+}
+
 size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load();
@@ -7217,13 +7354,7 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
-    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
-    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
-    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
-    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
-    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    /// A read-only table must reject explicit partition mutations as well.
     if ((*getSettings())[MergeTreeSetting::table_readonly])
     {
         for (const PartitionCommand & command : commands)
@@ -7382,6 +7513,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const BackupSettings & backup_settings,
     const ContextPtr & local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::backupParts");
     MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
@@ -9655,6 +9787,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
@@ -10338,14 +10471,6 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
-    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
-    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
-    /// the automatic background moves. The setting is sampled here, immediately before move selection and
-    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
-    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
-    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         return false;
 
@@ -11137,6 +11262,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     {
         static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
@@ -11400,6 +11526,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     {
         static_cast<double>((*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        (*settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
         (*settings)[MergeTreeSetting::nullable_serialization_version],
@@ -11421,21 +11548,32 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
+
+    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
+    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
+    {
+        new_data_part_storage->createDirectories();
+    });
+
+    /// The directory may already exist as a stale leftover: a previous covering operation
+    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted
+    /// after the directory is created but before the part is renamed to its persistent name
+    /// (e.g. a rolled-back transaction with a deferred rename, or a crash). The in-memory
+    /// `tmp_dir_holder` acquired above guarantees no concurrent operation owns this name right
+    /// now (getTemporaryPartDirectoryHolder throws otherwise), so an existing directory can only
+    /// be such a leftover and is safe to remove. This mirrors the regular INSERT path in
+    /// MergeTreeDataWriter, which reclaims a stale temporary directory instead of failing. Done
+    /// before beginTransaction() so the removal is not staged in the part's own (not yet started)
+    /// write transaction.
+    if (new_data_part_storage->exists())
+    {
+        LOG_WARNING(log, "Removing old temporary directory {}", new_data_part_storage->getFullPath());
+        new_data_part_storage->removeRecursive();
+    }
+
     new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;
-
-    /// The name could be non-unique in case of stale files from previous runs.
-    if (new_data_part_storage->exists())
-    {
-        /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
-        /// New part have to capture its name, therefore there is no concurrentcy in directory creation
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to materialize but the directory already exist"
-                        ", new part {}"
-                        ", directory {}",
-                        new_part_name, new_data_part_storage->getFullPath());
-    }
 
     new_data_part_storage->createDirectories();
 
@@ -11625,6 +11763,19 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
+}
+
+bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key)
+{
+    /// getName(), not IDataType::equals(): equals() ignores the SimpleAggregateFunction wrapper.
+    if (old_sorting_key.column_names != new_sorting_key.column_names)
+        return true;
+    if (old_sorting_key.data_types.size() != new_sorting_key.data_types.size())
+        return true;
+    for (size_t i = 0; i < old_sorting_key.data_types.size(); ++i)
+        if (old_sorting_key.data_types[i]->getName() != new_sorting_key.data_types[i]->getName())
+            return true;
+    return false;
 }
 
 size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept

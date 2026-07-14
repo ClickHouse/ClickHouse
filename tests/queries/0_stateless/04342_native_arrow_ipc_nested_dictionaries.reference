@@ -1,0 +1,9 @@
+OK   ArrowStream: native == library
+OK   Arrow: native == library
+--- inferred schema of native-written nested dictionaries (native reader) ---
+lc	LowCardinality(String)					
+arr_lc	Array(String)					
+--- values (native) ---
+0	['0']
+1	['1']
+2	['2']

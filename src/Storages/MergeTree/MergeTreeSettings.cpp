@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -199,6 +200,15 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+)", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -687,9 +697,9 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -2598,6 +2608,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
+    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

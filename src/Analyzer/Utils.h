@@ -220,4 +220,15 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
+/// Returns true if the subquery's projection matches the storage schema (column count and
+/// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise
+/// returns false.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch);
+
 }
