@@ -144,7 +144,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
                 if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                         "Static HTTP handler `file://` source is not supported "
-                        "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                        "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                         disk->getName());
             }
         }

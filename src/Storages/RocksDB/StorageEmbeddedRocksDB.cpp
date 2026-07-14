@@ -276,7 +276,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
                     if (!isPlainLocalDisk(*disk))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "EmbeddedRocksDB engine is not supported "
-                                        "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                        "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                         disk->getName());
                 }
             }

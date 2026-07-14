@@ -1896,7 +1896,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
             if (!isPlainLocalDisk(*disk))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`rename_files_after_processing` is not supported "
-                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                     disk->getName());
         }
     }

@@ -86,7 +86,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
             if (!isPlainLocalDisk(*disk))
             {
                 processSQLiteError(fmt::format("SQLite is not supported "
-                                               "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                               "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                                disk->getName()),
                                    throw_on_error);
                 return nullptr;

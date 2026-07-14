@@ -208,7 +208,7 @@ StorageFileLog::StorageFileLog(
             if (!isPlainLocalDisk(*user_files_disk))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Engine FileLog is not supported with non-local `user_files_policy` disks "
+                    "Engine FileLog is not supported with non-plain-local `user_files_policy` disks "
                     "(disk `{}` is not a plain local filesystem disk)",
                     user_files_disk->getName());
         }

@@ -243,7 +243,7 @@ DictionaryPtr createCacheDictionaryLayout(
                     if (!isPlainLocalDisk(*disk))
                         throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                             "SSD cache dictionary storage is not supported "
-                            "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                            "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                             disk->getName());
                 }
             }

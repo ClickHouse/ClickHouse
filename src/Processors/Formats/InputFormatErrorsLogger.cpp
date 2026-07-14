@@ -58,7 +58,7 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
                 if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                     "input_format_record_errors_file_path is not supported "
-                                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                     disk->getName());
             }
         }

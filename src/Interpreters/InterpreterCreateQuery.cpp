@@ -1803,7 +1803,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "ATTACH TABLE ... FROM is not supported "
-                                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                     disk->getName());
             }
         }
