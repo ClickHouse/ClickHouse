@@ -12,12 +12,34 @@ GlobalConnectionsCounter::GlobalConnectionsCounter() = default;
 
 void GlobalConnectionsCounter::updateConnectionCount(const ServerConfig & server, int64_t diff)
 {
+    std::lock_guard lock(mutex);
     auto [iter, inserted] = counter.emplace(server, 0);
     iter->second += diff;
     if (iter->second == 0)
     {
         counter.erase(iter);
     }
+}
+
+std::optional<std::string> GlobalConnectionsCounter::getLeastLoaded(const std::vector<ServerConfig> & candidates) const
+{
+    std::lock_guard lock(mutex);
+
+    const ServerConfig * best = nullptr;
+    size_t best_count = 0;
+    for (const auto & server : candidates)
+    {
+        const auto iter = counter.find(server);
+        /// Servers drop out of the map when their count reaches zero, so an absent entry means idle.
+        const size_t count = iter == counter.end() ? 0 : iter->second;
+        if (best == nullptr || count < best_count || (count == best_count && server.key < best->key))
+        {
+            best = &server;
+            best_count = count;
+        }
+    }
+
+    return best == nullptr ? std::nullopt : std::optional(best->key);
 }
 
 bool ConnectionsCounter::Entry::operator<(const Entry & other) const
@@ -88,6 +110,12 @@ void ConnectionsCounter::removeConnection(const ServerConfig & server)
 
 std::optional<std::string> ConnectionsCounter::getLeastLoaded() const
 {
+    /// When a global counter is present it is the authoritative source of per-replica load across
+    /// every rule and cluster that shares a replica, so `least_connections` must consult it rather
+    /// than the per-instance counts, which only reflect connections routed through this exact rule.
+    if (global_counter)
+        return global_counter->getLeastLoaded(servers);
+
     std::lock_guard lock(mutex);
     auto it = least_loaded_servers.begin();
     return it == least_loaded_servers.end() ? std::nullopt : std::optional(it->server.key);

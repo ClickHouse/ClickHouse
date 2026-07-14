@@ -20,8 +20,17 @@ public:
 
     void updateConnectionCount(const ServerConfig & server, int64_t diff);
 
+    /// Returns the key of the least-loaded server among `candidates`, using the connection counts
+    /// shared across every rule and cluster, with a deterministic tie-break by server key. This is
+    /// the authoritative view of per-replica load: two rules routing to a shared replica see each
+    /// other's connections here, unlike the per-rule `ConnectionsCounter` bookkeeping.
+    std::optional<std::string> getLeastLoaded(const std::vector<ServerConfig> & candidates) const;
+
 private:
     std::unordered_map<ServerConfig, size_t> counter;
+    /// `updateConnectionCount` runs on connection threads outside any single `ConnectionsCounter`
+    /// lock (each has its own `mutex`), so this shared map needs its own synchronization.
+    mutable std::mutex mutex;
 };
 
 class ConnectionsCounter
