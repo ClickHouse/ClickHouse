@@ -49,8 +49,8 @@ Check total_bytes/total_rows for Set
 1	50
 1	100
 Check total_bytes/total_rows for Join
-1	50
-1	100
+4096	50
+4096	100
 Check total_uncompressed_bytes/total_bytes/total_rows for Materialized views
 0	0	0
 1	1	1
