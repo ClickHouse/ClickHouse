@@ -17,10 +17,12 @@ import PartnerBadge from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
 
-## 1. Gather your connection details {#1-gather-your-connection-details}
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
 <ConnectionDetails />
 
-## 2. Create a ClickHouse resource {#2-create-a-clickhouse-resource}
+</Step>
+<Step title="Create a ClickHouse resource" id="2-create-a-clickhouse-resource">
 
 Login to your Retool account and navigate to the _Resources_ tab. Choose "Create New" -> "Resource":
 
@@ -49,3 +51,5 @@ After that, test your connection:
 <br/>
 
 Now, you should be able to proceed to your app using your ClickHouse resource.
+</Step>
+</Steps>

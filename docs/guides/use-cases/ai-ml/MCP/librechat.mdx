@@ -14,8 +14,7 @@ import { Image } from "/snippets/components/Image.jsx";
 > and connect it to the ClickHouse example datasets.
 
 <Steps>
-<Step>
-## Install docker {#install-docker}
+<Step title="Install docker" id="install-docker">
 
 You will need Docker to run LibreChat and the MCP server. To get Docker:
 1. Visit [docker.com](https://www.docker.com/products/docker-desktop)
@@ -25,8 +24,7 @@ You will need Docker to run LibreChat and the MCP server. To get Docker:
 <br/>
 For more information, see the [Docker documentation](https://docs.docker.com/get-docker/).
 </Step>
-<Step>
-## Clone the LibreChat repository {#clone-librechat-repo}
+<Step title="Clone the LibreChat repository" id="clone-librechat-repo">
 
 Open a terminal (command prompt, terminal or PowerShell) and clone the 
 LibreChat repository using the following command:
@@ -36,8 +34,7 @@ git clone https://github.com/danny-avila/LibreChat.git
 cd LibreChat
 ```
 </Step>
-<Step>
-## Create and edit the .env file {#create-and-edit-env-file}
+<Step title="Create and edit the .env file" id="create-and-edit-env-file">
 
 Copy the example configuration file from `.env.example` to `.env`:
 
@@ -68,8 +65,7 @@ to do this later in step ["Install Ollama"](#add-local-llm-using-ollama). For no
 don't modify the .env file and continue with the next steps.
 </Info>
 </Step>
-<Step>
-## Create a librechat.yaml file {#create-librechat-yaml-file}
+<Step title="Create a librechat.yaml file" id="create-librechat-yaml-file">
 
 Run the following command to create a new `librechat.yaml` file:
 
@@ -79,8 +75,7 @@ cp librechat.example.yaml librechat.yaml
 
 This creates the main [configuration file](https://www.librechat.ai/docs/configuration/librechat_yaml) for LibreChat.
 </Step>
-<Step>
-## Add ClickHouse MCP server to Docker compose {#add-clickhouse-mcp-server-to-docker-compose}
+<Step title="Add ClickHouse MCP server to Docker compose" id="add-clickhouse-mcp-server-to-docker-compose">
 
 Next we'll add the ClickHouse MCP server to the LibreChat Docker compose file 
 so that the LLM can interact with the 
@@ -116,8 +111,7 @@ of your own ClickHouse Cloud service.
   If you don't have a Cloud account yet, get started with ClickHouse Cloud today and receive $300 in credits. At the end of your 30-day free trial, continue with a pay-as-you-go plan, or contact us to learn more about our volume-based discounts. Visit our pricing page for details.
 </Card>
 </Step>
-<Step>
-## Configure MCP server in librechat.yaml {#configure-mcp-server-in-librechat-yaml}
+<Step title="Configure MCP server in librechat.yaml" id="configure-mcp-server-in-librechat-yaml">
 
 Open `librechat.yaml` and place the following configuration at the end of the file:
 
@@ -142,8 +136,7 @@ For simplicity, we will remove the need to authenticate for now:
 socialLogins: []
 ```
 </Step>
-<Step>
-## Add a local LLM using Ollama (optional) {#add-local-llm-using-ollama}
+<Step title="Add a local LLM using Ollama (optional)" id="add-local-llm-using-ollama">
 
 ### Install Ollama {#install-ollama}
 
@@ -182,8 +175,7 @@ custom:
     modelDisplayLabel: "Ollama"
 ```
 </Step>
-<Step>
-## Start all services {#start-all-services}
+<Step title="Start all services" id="start-all-services">
 
 From the root of the LibreChat project folder, run the following command to start the services:
 
@@ -193,8 +185,7 @@ docker compose up
 
 Wait until all services are fully running.
 </Step>
-<Step>
-## Open LibreChat in your browser {#open-librechat-in-browser}
+<Step title="Open LibreChat in your browser" id="open-librechat-in-browser">
 
 Once all services are up and running, open your browser and go to `http://localhost:3080/`
 
