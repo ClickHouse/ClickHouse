@@ -117,6 +117,231 @@ body[data-scroll-locked] {
     margin-right: 0 !important;
 }
 
+/* Agent-assisted setup callout, ported from the Docusaurus AgentPrompt
+   component. The `ch-` prefix keeps these rules isolated from Mintlify. */
+.ch-agent-prompt-wrapper {
+    --agent-accent: #FBFF46;
+    --agent-accent-bg: #FFFFE8;
+    --agent-text: #161517;
+    --agent-text-muted: #696E79;
+    --agent-prompt-bg: #FFFFFF;
+    --agent-prompt-border: #FCFF74;
+    --agent-button-bg: #FBFF46;
+    --agent-button-bg-hover: #EEF400;
+    --agent-button-text: #161517;
+
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 1.25rem 0 1.75rem;
+    padding: 14px 16px;
+    border: 1px solid var(--agent-accent);
+    border-radius: 8px;
+    background: var(--agent-accent-bg);
+}
+
+.ch-agent-prompt-main-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+}
+
+.ch-agent-prompt-left,
+.ch-agent-prompt-copy-button {
+    flex-shrink: 0;
+}
+
+.ch-agent-prompt-title {
+    color: var(--agent-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ch-agent-prompt-prompt-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 6px 10px;
+    border: 1px solid var(--agent-prompt-border);
+    border-radius: 6px;
+    background: var(--agent-prompt-bg);
+    scrollbar-width: thin;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar {
+    height: 6px;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: #FCFF74;
+}
+
+.prose .ch-agent-prompt-prompt-text,
+.ch-agent-prompt-prompt-text {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--agent-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.ch-agent-prompt-copy-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border: 1px solid var(--agent-accent);
+    border-radius: 6px;
+    background: var(--agent-button-bg);
+    color: var(--agent-button-text);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    transition: background-color 120ms ease, transform 80ms ease;
+}
+
+.ch-agent-prompt-copy-button:hover {
+    background: var(--agent-button-bg-hover);
+}
+
+.ch-agent-prompt-copy-button:active {
+    transform: translateY(1px);
+}
+
+.ch-agent-prompt-copy-button:focus-visible,
+.ch-agent-prompt-outline-summary:focus-visible {
+    outline: 2px solid #135BE6;
+    outline-offset: 2px;
+}
+
+.ch-agent-prompt-sub-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-left: 2px;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.ch-agent-prompt-description {
+    color: var(--agent-text-muted);
+}
+
+.prose a.ch-agent-prompt-repository-link,
+.ch-agent-prompt-repository-link {
+    color: #135BE6 !important;
+    font-weight: 600;
+}
+
+.ch-agent-prompt-outline {
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--agent-prompt-border);
+}
+
+.ch-agent-prompt-outline-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    border-radius: 3px;
+    color: var(--agent-text);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    list-style: none;
+    user-select: none;
+}
+
+.ch-agent-prompt-outline-summary::-webkit-details-marker {
+    display: none;
+}
+
+.ch-agent-prompt-outline-summary:hover {
+    opacity: 0.85;
+}
+
+.ch-agent-prompt-outline-chevron {
+    flex-shrink: 0;
+    transition: transform 150ms ease;
+}
+
+.ch-agent-prompt-outline[open] > .ch-agent-prompt-outline-summary > .ch-agent-prompt-outline-chevron {
+    transform: rotate(90deg);
+}
+
+.prose .ch-agent-prompt-outline-list,
+.ch-agent-prompt-outline-list {
+    margin: 8px 0 2px;
+    padding-left: 1.4rem;
+    color: var(--agent-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+.prose .ch-agent-prompt-outline-list li,
+.ch-agent-prompt-outline-list li {
+    margin: 2px 0;
+    padding-left: 2px;
+}
+
+.ch-agent-prompt-outline-list li::marker {
+    color: var(--agent-text);
+    font-weight: 600;
+}
+
+html.dark .ch-agent-prompt-wrapper,
+:is(.dark) .ch-agent-prompt-wrapper {
+    --agent-accent: #FCFF74;
+    --agent-accent-bg: rgba(251, 255, 70, 0.06);
+    --agent-text: #FFFFFF;
+    --agent-text-muted: #DFDFDF;
+    --agent-prompt-bg: #1D1D1D;
+    --agent-prompt-border: rgba(251, 255, 70, 0.35);
+    --agent-button-bg: #FCFF74;
+    --agent-button-bg-hover: #FBFF46;
+    --agent-button-text: #151515;
+}
+
+html.dark .prose a.ch-agent-prompt-repository-link,
+:is(.dark) .prose a.ch-agent-prompt-repository-link {
+    color: #FCFF74 !important;
+}
+
+@media (max-width: 768px) {
+    .ch-agent-prompt-main-row {
+        flex-wrap: wrap;
+    }
+
+    .ch-agent-prompt-prompt-area {
+        order: 3;
+        width: 100%;
+        flex-basis: 100%;
+    }
+
+    .ch-agent-prompt-copy-button {
+        margin-left: auto;
+    }
+
+    .ch-agent-prompt-prompt-text {
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .ch-agent-prompt-sub-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+}
+
 /* The secondary navbar (`#navbar-transition-maple`) and the fixed sidebar
    (`#sidebar`) both reserve 40px above themselves for the announcement
    banner (Tailwind `lg:mt-10` / `top-10`). The banner is `position: fixed`
@@ -613,9 +838,13 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Small breathing room so the first nav item isn't flush against the
-       pinned search row, and so scrolled content doesn't butt the top edge. */
-    padding-top: 0.5rem;
+    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
+       scroll container's scrollbar track spans its whole padding box, so
+       padding-top would leave the scrollbar flush against — visually touching —
+       the search/Ask AI buttons. A margin pushes the scroll box itself (and
+       therefore the top of its scrollbar) down below that row, so the scrollbar
+       no longer exceeds the first nav item. */
+    margin-top: 0.5rem;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -1023,6 +1252,14 @@ html.dark .dark\:hover\:text-primary-light:hover {
 }
 html.dark .dark\:hover\:bg-primary-light\/10:hover {
     background-color: rgba(253, 255, 117, 0.1) !important;
+}
+
+/* Card CTAs use a group-hover dark variant. Keep that CTA readable when the
+   card body is hovered instead of allowing the dark theme token to resolve
+   to a near-black color. */
+html.dark .card:hover [data-component-part="card-cta"] button,
+:is(.dark) .card:hover [data-component-part="card-cta"] button {
+    color: #FDFF75 !important;
 }
 
 /* ============================================
@@ -2031,6 +2268,15 @@ h5#sidebar-title {
     /* 768px */
 }
 
+/* Custom explorers should use the full available width while the sidebar is
+   hidden at intermediate tablet sizes; otherwise the 768px prose cap leaves a
+   large unused area on the right. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    html[data-page-mode="custom"] #content-area {
+        max-width: none !important;
+    }
+}
+
 /* Reduce outer container padding */
 #content-container {
     border-radius: 15px;
@@ -2628,33 +2874,47 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
    Banner Styling
    ============================================ */
 
-/* Light mode: black background, white text, yellow link */
-html:not(.dark) #banner {
-    background-color: #1a1a1a !important;
-    color: #ffffff !important;
-}
+/* Mintlify paints the banner text via `[&_*]:text-white/95!`, an `!important`
+   utility that lives in Tailwind's `@layer utilities`. For `!important`
+   declarations the cascade reverses layer order and treats un-layered styles
+   as the lowest-priority (implicit final) layer, so an un-layered override —
+   however specific — always loses to that utility and the text stays white.
+   Declaring these rules inside `@layer components` (ordered before `utilities`)
+   makes our `!important` win, so the banner text takes the colors below. */
+@layer components {
+    /* Light mode: black background, white text, yellow link */
+    html:not(.dark) #banner {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
 
-html:not(.dark) #banner a {
-    color: #FAFF69 !important;
-    font-weight: 700 !important;
-}
+    html:not(.dark) #banner *,
+    html:not(.dark) #banner p {
+        color: #ffffff !important;
+    }
 
-/* Dark mode: yellow background, black text, white link */
-html.dark #banner,
-:is(.dark) #banner {
-    background-color: #FAFF69 !important;
-    color: #1a1a1a !important;
-}
+    html:not(.dark) #banner a {
+        color: #FAFF69 !important;
+        font-weight: 700 !important;
+    }
 
-html.dark #banner *,
-:is(.dark) #banner * {
-    color: #1a1a1a !important;
-}
+    /* Dark mode: yellow background, black text, black link */
+    html.dark #banner,
+    :is(.dark) #banner {
+        background-color: #FAFF69 !important;
+        color: #1a1a1a !important;
+    }
 
-html.dark #banner a,
-:is(.dark) #banner a {
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
+    html.dark #banner *,
+    :is(.dark) #banner * {
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner a,
+    :is(.dark) #banner a {
+        color: #1a1a1a !important;
+        font-weight: 700 !important;
+    }
 }
 
 /* ============================================
@@ -2896,4 +3156,98 @@ a[role="menuitem"][href$="/products/clickhouse-private"] {
 a.mobile-nav-tabs-item[href$="/products/clickhouse-private"],
 a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     display: none !important;
+}
+
+/* ============================================
+   Sidebar maturity badges before the entry text
+   ============================================ */
+
+/* API reference sidebar entries carry maturity pills — `tag` frontmatter
+   (Beta / Private preview, rendered as .nav-tag-pill) and `deprecated`
+   frontmatter (a plain pill div). Both are div wrappers that follow the
+   title <span> inside the entry's flex-wrap container; the title is the
+   only non-div child there, so ordering div children first moves every
+   pill in front of the text without touching the METHOD pill (which
+   lives outside this container, as a direct child of the <a>). */
+#sidebar a .flex-wrap > div {
+    order: -1;
+}
+
+/* Cross out the sidebar entry text of deprecated endpoints (matching the
+   Swagger convention). The deprecated pill rendered from `deprecated: true`
+   frontmatter carries no semantic class or data attribute — the only stable
+   hook is Mintlify's hard-coded pill background utility (light `bg-[#FDEAD8]`,
+   always present in the class list even in dark mode). The title is the
+   .break-words span; the METHOD pill spans carry no .break-words. */
+#sidebar a:has(div[class*="bg-[#FDEAD8]"]) span.break-words {
+    text-decoration: line-through;
+}
+
+/* ============================================
+   Endpoint maturity pill next to the page title
+   ============================================ */
+
+/* Generated Cloud API reference pages carry their maturity badge as body
+   content (`[data-endpoint-badge]`, written by
+   `ci/jobs/scripts/docs/generate_cloud_api_reference.py`). Mintlify shows
+   the `deprecated` pill next to the page title but has nothing equivalent
+   for `tag` badges, so a pseudo-element paints the pill in that slot from
+   pure CSS — present at first paint, no hydration shift (a custom-JS clone
+   was tried and popped in visibly). The in-body badge is hidden here; it
+   stays in the MDX for contexts without this stylesheet (markdown exports). */
+#content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: #2563EB;
+    background-color: rgba(37, 99, 235, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    color: #60A5FA;
+    background-color: rgba(96, 165, 250, 0.14);
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Beta"]) #page-title::after {
+    content: "Beta";
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    content: "Private preview";
+    color: #9333EA;
+    background-color: rgba(147, 51, 234, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    color: #C084FC;
+    background-color: rgba(192, 132, 252, 0.14);
+}
+.mdx-content [data-endpoint-badge] {
+    display: none;
+}
+
+/* ============================================
+   Compact integration table logos
+   ============================================ */
+
+.integration-table-logo {
+    display: inline-block;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    max-width: 1.5rem !important;
+    margin: 0 0.5rem 0 0 !important;
+    padding: 0.2rem;
+    vertical-align: middle;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.375rem;
+    box-sizing: border-box;
+}
+
+td:has(> .integration-table-logo) {
+    white-space: nowrap;
 }
