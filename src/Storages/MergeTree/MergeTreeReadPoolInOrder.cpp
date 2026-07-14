@@ -82,6 +82,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         else
         {
             mark_ranges_for_task = std::move(all_mark_ranges);
+            /// Reinitialize explicitly: the loop condition reads it on the next iteration.
+            all_mark_ranges = MarkRanges{};
         }
 
         mark_ranges_for_task = refineReadRanges(*per_part_infos[task_idx], std::move(mark_ranges_for_task));
