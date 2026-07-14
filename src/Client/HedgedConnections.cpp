@@ -250,7 +250,13 @@ void HedgedConnections::disconnect()
             if (replica.connection)
                 finishProcessReplica(replica, true);
 
-    stopFactory();
+    if (hedged_connections_factory.hasEventsInProcess())
+    {
+        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+            epoll.remove(hedged_connections_factory.getFileDescriptor());
+
+        hedged_connections_factory.stopChoosingReplicas();
+    }
 }
 
 std::string HedgedConnections::dumpAddresses() const
@@ -290,7 +296,13 @@ void HedgedConnections::sendCancel()
     /// had been created differs from the thread where the dtor of
     /// QueryPipeline will be called and the initial thread could be already
     /// destroyed (especially when the system is under pressure).
-    stopFactory();
+    if (hedged_connections_factory.hasEventsInProcess())
+    {
+        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+            epoll.remove(hedged_connections_factory.getFileDescriptor());
+
+        hedged_connections_factory.stopChoosingReplicas();
+    }
 
     cancelled = true;
 
@@ -527,8 +539,12 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
     }
 
     /// If we disabled changing replica with all offsets, we need to stop choosing new replicas.
-    if (offsets_with_disabled_changing_replica == offset_states.size())
-        stopFactory();
+    if (hedged_connections_factory.hasEventsInProcess() && offsets_with_disabled_changing_replica == offset_states.size())
+    {
+        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+            epoll.remove(hedged_connections_factory.getFileDescriptor());
+        hedged_connections_factory.stopChoosingReplicas();
+    }
 }
 
 void HedgedConnections::startNewReplica()
@@ -550,8 +566,8 @@ void HedgedConnections::startNewReplica()
     HedgedConnectionsFactory::State state = hedged_connections_factory.startNewConnection(connection);
 
     /// Check if we need to add hedged_connections_factory file descriptor to epoll.
-    if (state == HedgedConnectionsFactory::State::NOT_READY)
-        registerFactoryFd();
+    if (state == HedgedConnectionsFactory::State::NOT_READY && hedged_connections_factory.numberOfProcessingReplicas() == 1)
+        epoll.add(hedged_connections_factory.getFileDescriptor());
 
     processNewReplicaState(state, connection);
 }
@@ -573,36 +589,8 @@ void HedgedConnections::checkNewReplica()
     processNewReplicaState(state, connection);
 
     /// Check if we don't need to listen hedged_connections_factory file descriptor in epoll anymore.
-    if (!hedged_connections_factory.hasEventsInProcess())
-        unregisterFactoryFd();
-}
-
-void HedgedConnections::registerFactoryFd()
-{
-    if (factory_fd_registered)
-        return;
-
-    epoll.add(hedged_connections_factory.getFileDescriptor());
-    factory_fd_registered = true;
-}
-
-void HedgedConnections::unregisterFactoryFd()
-{
-    if (!factory_fd_registered)
-        return;
-
-    epoll.remove(hedged_connections_factory.getFileDescriptor());
-    factory_fd_registered = false;
-}
-
-void HedgedConnections::stopFactory()
-{
-    if (!hedged_connections_factory.hasEventsInProcess())
-        return;
-
-    /// Unregister the factory's descriptor from the outer epoll before stopping the factory.
-    unregisterFactoryFd();
-    hedged_connections_factory.stopChoosingReplicas();
+    if (hedged_connections_factory.numberOfProcessingReplicas() == 0)
+        epoll.remove(hedged_connections_factory.getFileDescriptor());
 }
 
 void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State state, Connection * connection)
