@@ -186,6 +186,35 @@ def test_valid_for_interval_overflow(started_cluster):
     node.query("DROP USER IF EXISTS user_valid_for_overflow")
 
 
+def test_valid_for_interval_negative_overflow(started_cluster):
+    node.query("DROP USER IF EXISTS user_valid_for_neg_overflow")
+
+    # An absurdly low (negative) interval must not wrap around into the future: the deadline is
+    # computed in DateTime64 and saturates at its lower bound (year 1900) instead. The credential
+    # is therefore already expired, so login must fail.
+    node.query(
+        "CREATE USER user_valid_for_neg_overflow VALID FOR INTERVAL -1000000 YEAR"
+    )
+
+    error = "Authentication failed"
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_valid_for_neg_overflow"
+    )
+
+    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold the pre-1970
+    # (negative) deadline; the value is clamped to 1 (`1970-01-01 00:00:01`) instead of a plain
+    # `static_cast<UInt32>` wrapping the negative `time_t` into a far-future timestamp. It stays
+    # distinct from 0, which means "no expiration".
+    assert (
+        node.query(
+            "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_neg_overflow'"
+        )
+        == "1\n"
+    )
+
+    node.query("DROP USER IF EXISTS user_valid_for_neg_overflow")
+
+
 def test_multiple_authentication_methods(started_cluster):
     node.query("DROP USER IF EXISTS user_basic")
 
