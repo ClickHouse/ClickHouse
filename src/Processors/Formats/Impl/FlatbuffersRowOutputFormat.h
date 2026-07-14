@@ -33,8 +33,21 @@ private:
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     void serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num);
 
+    /// flexbuffers::Builder::String reads one byte past the given length (it copies a trailing '\0'
+    /// so that C-string readers work), so the source must have an initialized byte at [size].
+    /// ColumnString guarantees a trailing '\0', but FixedString and the UUID text buffer do not,
+    /// so route every string value through a NUL-terminated scratch buffer.
+    void serializeString(std::string_view value);
+
+    /// Serialize a wide numeric value (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) as a
+    /// little-endian byte sequence, so the produced blob is identical on every architecture (the raw
+    /// in-memory bytes would be native-endian and differ on big-endian systems such as s390x).
+    template <typename ColumnType>
+    void serializeWideNumberAsBlob(const IColumn & column, size_t row_num);
+
     flexbuffers::Builder builder;
     size_t root_start = 0;
+    std::string string_scratch;
 };
 
 }

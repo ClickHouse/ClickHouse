@@ -6,8 +6,11 @@
 
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/transformEndianness.h>
 
 #include <Core/UUID.h>
+
+#include <bit>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -64,6 +67,28 @@ void FlatbuffersRowOutputFormat::write(const Columns & columns, size_t row_num)
     builder.EndVector(row_start, /*typed=*/false, /*fixed=*/false);
 }
 
+void FlatbuffersRowOutputFormat::serializeString(std::string_view value)
+{
+    /// flexbuffers::Builder::String reads one byte past the given length (it copies a trailing '\0'
+    /// so that C-string readers work), so the source must have an initialized byte at [size]. Copy
+    /// into a NUL-terminated buffer first: the std::string overload passes c_str(), which always has
+    /// a '\0' at [size]. This is required for FixedString and the UUID text buffer, whose backing
+    /// storage does not guarantee a readable byte after the value. The buffer is fully consumed by
+    /// builder.String before serializeField recurses, so a single reused member is safe.
+    string_scratch.assign(value.data(), value.size());
+    builder.String(string_scratch);
+}
+
+template <typename ColumnType>
+void FlatbuffersRowOutputFormat::serializeWideNumberAsBlob(const IColumn & column, size_t row_num)
+{
+    auto value = assert_cast<const ColumnType &>(column).getElement(row_num);
+    /// Serialize as little-endian so the blob is byte-identical on every architecture (a no-op on
+    /// little-endian hosts, a byte swap on big-endian ones such as s390x).
+    transformEndianness<std::endian::little>(value);
+    builder.Blob(&value, sizeof(value));
+}
+
 void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num)
 {
     switch (data_type->getTypeId())
@@ -109,11 +134,14 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnIPv4 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::UInt128: [[fallthrough]];
+        case TypeIndex::UInt128:
+        {
+            serializeWideNumberAsBlob<ColumnUInt128>(column, row_num);
+            return;
+        }
         case TypeIndex::UInt256:
         {
-            std::string_view data = column.getDataAt(row_num);
-            builder.Blob(data.data(), data.size());
+            serializeWideNumberAsBlob<ColumnUInt256>(column, row_num);
             return;
         }
         case TypeIndex::Enum8: [[fallthrough]];
@@ -139,11 +167,14 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt64 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Int128: [[fallthrough]];
+        case TypeIndex::Int128:
+        {
+            serializeWideNumberAsBlob<ColumnInt128>(column, row_num);
+            return;
+        }
         case TypeIndex::Int256:
         {
-            std::string_view data = column.getDataAt(row_num);
-            builder.Blob(data.data(), data.size());
+            serializeWideNumberAsBlob<ColumnInt256>(column, row_num);
             return;
         }
         case TypeIndex::Float32:
@@ -171,37 +202,39 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnDecimal<Decimal64> &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Decimal128: [[fallthrough]];
+        case TypeIndex::Decimal128:
+        {
+            serializeWideNumberAsBlob<ColumnDecimal<Decimal128>>(column, row_num);
+            return;
+        }
         case TypeIndex::Decimal256:
         {
-            std::string_view data = column.getDataAt(row_num);
-            builder.Blob(data.data(), data.size());
+            serializeWideNumberAsBlob<ColumnDecimal<Decimal256>>(column, row_num);
             return;
         }
         case TypeIndex::IPv6:
         {
+            /// IPv6 is stored as a fixed 16-byte value in network byte order, which is already a
+            /// well-defined, architecture-independent byte sequence, so it is written verbatim.
             std::string_view data = column.getDataAt(row_num);
             builder.Blob(data.data(), data.size());
             return;
         }
         case TypeIndex::String:
         {
-            std::string_view str = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-            builder.String(str.data(), str.size());
+            serializeString(assert_cast<const ColumnString &>(column).getDataAt(row_num));
             return;
         }
         case TypeIndex::FixedString:
         {
-            std::string_view str = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
-            builder.String(str.data(), str.size());
+            serializeString(assert_cast<const ColumnFixedString &>(column).getDataAt(row_num));
             return;
         }
         case TypeIndex::UUID:
         {
             WriteBufferFromOwnString buf;
             writeText(assert_cast<const ColumnUUID &>(column).getElement(row_num), buf);
-            std::string_view uuid_text = buf.stringView();
-            builder.String(uuid_text.data(), uuid_text.size());
+            serializeString(buf.stringView());
             return;
         }
         case TypeIndex::Array:
@@ -302,6 +335,10 @@ This format is only available when ClickHouse is built with the `flatbuffers` co
 
 A `Nullable` value that is not `NULL` is serialized as its underlying value. Other types (for
 example `Map`) are not supported and raise an exception.
+
+The wide numeric types serialized as `Blob` (`(U)Int128`, `(U)Int256`, `Decimal128`, `Decimal256`)
+are written as little-endian byte sequences, so the output is identical on every architecture.
+`IPv6` is written as its 16-byte network-order representation.
 
 ## Example usage {#example-usage}
 
