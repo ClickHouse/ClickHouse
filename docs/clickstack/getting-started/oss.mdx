@@ -26,8 +26,7 @@ The simplest option is a **single-image distribution** that includes all core co
 This all-in-one image allows you to launch the full stack with a single command, making it ideal for testing, experimentation, or quick local deployments.
 
 <Steps>
-<Step>
-## Deploy the stack with docker {#deploy-stack-with-docker}
+<Step title="Deploy the stack with docker" id="deploy-stack-with-docker">
 
 The following will run an OpenTelemetry collector (on port 4317 and 4318), the HyperDX UI (on port 8080) and ClickHouse (8123).
 
@@ -63,8 +62,7 @@ docker run \
 ```
 </Tip>
 </Step>
-<Step>
-## Navigate to the ClickStack UI {#navigate-to-hyperdx-ui}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-hyperdx-ui">
 
 Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI (HyperDX).
 
@@ -74,8 +72,7 @@ Create a user, providing a username and password that meets the complexity requi
 
 HyperDX will automatically connect to the local cluster and create data sources for the logs, traces, metrics, and sessions - allowing you to explore the product immediately.
 </Step>
-<Step>
-## Explore the product {#explore-the-product}
+<Step title="Explore the product" id="explore-the-product">
 
 With the stack deployed, try one of our same datasets.
 
@@ -110,8 +107,7 @@ You can use a hosted version of ClickStack in local mode available at [play-clic
 ### Self-hosted version {#self-hosted-version}
 
 <Steps>
-<Step>
-### Run with docker {#run-local-with-docker}
+<Step title="Run with docker" id="run-local-with-docker">
 
 The self-hosted local mode image comes with an OpenTelemetry collector, the ClickStack UI and a ClickHouse server pre-configured as well. This makes it easy to consume telemetry data from your applications and visualize it with minimal external setup. To get started with the self-hosted version, simply run the Docker container with the appropriate ports forwarded:
 
@@ -121,8 +117,7 @@ docker run -p 8080:8080 clickhouse/clickstack-local:latest
 
 Unlike the "All in one" image, you will not be prompted to create a user as **local mode does not include authentication**.
 </Step>
-<Step>
-### Complete connection credentials {#complete-connection-credentials}
+<Step title="Complete connection credentials" id="complete-connection-credentials">
 
 To connect to your own **external ClickHouse cluster**, you can manually enter your connection credentials.
 
