@@ -50,3 +50,9 @@ SELECT LpNormalize([1, 2]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT LpNormalize([1, 2], -3.4); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNormalize([1, 2], 'aa'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT LpNormalize([1, 2], materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+
+-- `p` must be within `[1, inf)`, so non-finite `p` is rejected instead of silently producing `NaN`s.
+SELECT LpNormalize([1, 2], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNormalize([1, 2], inf); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- The `LpNorm` array sibling shares the same validation, so it rejects non-finite `p` too.
+SELECT LpNorm([1, 2], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }

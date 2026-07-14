@@ -306,6 +306,19 @@ private:
     typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
+/// Validate the `p` argument shared by the `LpNorm` and `LpNormalize` array paths.
+/// A naive `p < 1 || p >= HUGE_VAL` check lets `NaN` through, because both comparisons are
+/// false for `NaN`, so we reject non-finite `p` explicitly to keep it within the documented
+/// `[1, inf)` range.
+inline void checkLpNormPArgument(Float64 p, const String & function_name)
+{
+    if (!std::isfinite(p) || p < 1)
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Second argument for function {} must be a finite number not less than one",
+            function_name);
+}
+
 template <>
 size_t FunctionArrayNorm<LpNorm>::getNumberOfArguments() const { return 2; }
 
@@ -334,11 +347,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     getName());
 
     Float64 p = arguments[1].column->getFloat64(0);
-    if (p < 1 || p >= HUGE_VAL)
-        throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Second argument for function {} must be not less than one and not be an infinity",
-                    getName());
+    checkLpNormPArgument(p, getName());
 
     return LpNorm::ConstParams{p, 1 / p};
 }
@@ -518,11 +527,7 @@ LpNorm::ConstParams FunctionArrayNormalize<LpNorm>::initConstParams(const Column
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
     Float64 p = arguments[1].column->getFloat64(0);
-    if (p < 1 || p >= HUGE_VAL)
-        throw Exception(
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-            "Second argument for function {} must be not less than one and not be an infinity",
-            getName());
+    checkLpNormPArgument(p, getName());
 
     return LpNorm::ConstParams{p, 1 / p};
 }
