@@ -5673,10 +5673,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// The case when the column is wrapped in a chain of possibly monotonic functions.
                 if (!element.monotonic_functions_chain.empty())
                 {
+                    /// The chain was built in `extractAtomFromTree` against a `LowCardinality`-stripped
+                    /// key type; the runtime type must match. `sparse_data_types` keeps the raw key type,
+                    /// which can be `LowCardinality` (e.g. a Merge table over a source whose key column is
+                    /// `LowCardinality`, analysed as a partition-minmax constant coordinate). This mirrors
+                    /// the dense `checkInHyperrectangle` caller above.
                     std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                         key_range,
                         element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
+                        recursiveRemoveLowCardinality(sparse_data_types[sparse_pos]),
                         single_point);
 
                     if (!new_range)
