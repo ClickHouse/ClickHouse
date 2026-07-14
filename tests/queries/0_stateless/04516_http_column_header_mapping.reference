@@ -10,35 +10,66 @@ release	sha256=def456	row3
 issues	case-test
 --- sync: missing header produces empty string
 	no-header
+--- sync: positional format (TSV) - body-only columns, header injected separately
+tsv-push	hello-tsv
+--- sync: filtered header (Authorization) produces empty string
+	filtered
+--- sync: empty header name is ignored (no mapping applied)
+body-value	empty-hdr
+--- sync: empty column name is ignored (no mapping applied)
+body-value2	empty-col
+--- sync: duplicate http_column_* to same column, first wins
+first	dup
+--- sync: type parse error surfaces immediately
+Cannot parse
+--- sync: INSERT ... SELECT rejected
+NOT_IMPLEMENTED
 --- async: no explicit column list (body provides remaining columns)
-push	s	no-list-async
+push	s	no-list
+--- async: basic header-to-column mapping
+push	sha256=abc123	hello
+--- async: multiple rows
+release	sha256=def456	row1
+release	sha256=def456	row2
+release	sha256=def456	row3
+--- async: case-insensitive header name
+issues	case-test
+--- async: missing header produces empty string
+	no-header
+--- async: positional format (TSV) - body-only columns, header injected separately
+tsv-push	hello-tsv
+--- async: filtered header (Authorization) produces empty string
+	filtered
+--- async: empty header name is ignored (no mapping applied)
+body-value	empty-hdr
+--- async: empty column name is ignored (no mapping applied)
+body-value2	empty-col
+--- async: duplicate http_column_* to same column, first wins
+first	dup
+--- async: type parse error surfaces immediately
+Cannot parse
+--- async: INSERT ... SELECT rejected
+NOT_IMPLEMENTED
 --- async: different header values per request coalesce into one batch
-push	sig1	async1
-release	sig2	async2
---- async: multiple rows per entry
-star	multi1
-star	multi2
+push	sig1	batch1
+release	sig2	batch2
 --- error: column listed in both INSERT list and http_column_*
 DUPLICATE_COLUMN
 --- error: non-existent column
 NO_SUCH_COLUMN_IN_TABLE
---- error: MATERIALIZED column (sync)
+--- error: MATERIALIZED column
 NO_SUCH_COLUMN_IN_TABLE
---- error: ALIAS column (sync)
-NO_SUCH_COLUMN_IN_TABLE
---- error: MATERIALIZED column (async)
-NO_SUCH_COLUMN_IN_TABLE
---- error: ALIAS column (async)
+--- error: ALIAS column
 NO_SUCH_COLUMN_IN_TABLE
 --- sync: non-String column types
-42	['important','urgent']	3.14	typed-test
+42	['a','b']	3.14	typed
 --- async: non-String column types
-100	['async']	2.72	async-typed
+42	['a','b']	3.14	typed
 --- sync: INSERT INTO FUNCTION remote()
-push	remote-sync
+remote-event	remote
 --- async: INSERT INTO FUNCTION remote()
-release	remote-async
+remote-event	remote
 --- sync: DEFAULT expression referencing injected column
-5	6	sync-default
+5	6	default-test
 --- async: DEFAULT expression referencing injected column
-10	11	async-default
+5	6	default-test
