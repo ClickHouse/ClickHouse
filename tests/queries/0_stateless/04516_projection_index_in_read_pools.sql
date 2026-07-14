@@ -4,8 +4,8 @@
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET use_projection_index_in_read_pools = 1;
--- Parallel replicas pools do not apply the refiner; pin the plain pools by default
--- (the prefetched pool is enabled explicitly in a dedicated query below).
+-- Pin the plain pools by default. Prefetched and parallel-replica pools are exercised
+-- explicitly below and in 04539_projection_index_refiner_parallel_replicas.
 SET enable_parallel_replicas = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 
