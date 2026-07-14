@@ -113,13 +113,12 @@ std::pair<String, String> makeServiceAccountAssertion(const String & service_acc
 
 }
 
-BigQueryTokenProvider::BigQueryTokenProvider(const BigQueryConfiguration & configuration_, ContextPtr context_)
-    : configuration(configuration_)
-    , context(std::move(context_))
+BigQueryTokenProvider::BigQueryTokenProvider(BigQueryConfiguration configuration_)
+    : configuration(std::move(configuration_))
 {
 }
 
-std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration() const
+std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const ContextPtr & context) const
 {
     const auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 
@@ -140,31 +139,26 @@ std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration() const
         }
         case BigQueryConfiguration::CredentialsKind::RefreshToken:
         {
-            GCPOAuthToken token;
-            if (configuration.token_url.empty())
-            {
-                token = fetchGCPOAuthToken(configuration.client_id, configuration.client_secret, configuration.refresh_token, timeouts);
-            }
-            else
-            {
-                context->getRemoteHostFilter().checkURL(Poco::URI(configuration.token_url));
-                token = fetchGCPOAuthToken(
-                    configuration.client_id, configuration.client_secret, configuration.refresh_token,
-                    timeouts, HTTPConnectionGroupType::HTTP, configuration.token_url);
-            }
+            /// Validate the token endpoint - the default Google one or a user override - against the
+            /// allowed hosts, so this auth path cannot bypass the admin host allowlist either.
+            const String token_endpoint = configuration.token_url.empty() ? GOOGLE_OAUTH2_TOKEN_ENDPOINT : configuration.token_url;
+            context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+            auto token = fetchGCPOAuthToken(
+                configuration.client_id, configuration.client_secret, configuration.refresh_token,
+                timeouts, HTTPConnectionGroupType::HTTP, token_endpoint);
             return {std::move(token.access_token), token.expires_in};
         }
     }
 }
 
-String BigQueryTokenProvider::getToken(bool force_refresh)
+String BigQueryTokenProvider::getToken(const ContextPtr & context, bool force_refresh)
 {
     std::lock_guard lock(mutex);
 
     if (!cached_token.empty() && !force_refresh && std::chrono::system_clock::now() < expires_at)
         return cached_token;
 
-    auto [token, expires_in] = fetchTokenWithExpiration();
+    auto [token, expires_in] = fetchTokenWithExpiration(context);
     if (token.empty())
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Received an empty BigQuery access token");
 
@@ -180,7 +174,16 @@ String BigQueryTokenProvider::getToken(bool force_refresh)
 BigQueryClient::BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_)
     : configuration(configuration_)
     , context(std::move(context_))
-    , token_provider(configuration, context)
+    , token_provider(std::make_shared<BigQueryTokenProvider>(configuration))
+    , log(getLogger("BigQueryClient"))
+{
+}
+
+BigQueryClient::BigQueryClient(
+    const BigQueryConfiguration & configuration_, ContextPtr context_, std::shared_ptr<BigQueryTokenProvider> token_provider_)
+    : configuration(configuration_)
+    , context(std::move(context_))
+    , token_provider(std::move(token_provider_))
     , log(getLogger("BigQueryClient"))
 {
 }
@@ -206,7 +209,7 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
     auto do_request = [&](bool force_new_token)
     {
         HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + token_provider.getToken(force_new_token));
+        headers.emplace_back("Authorization", "Bearer " + token_provider->getToken(context, force_new_token));
         if (!configuration.billing_project.empty())
             headers.emplace_back("X-Goog-User-Project", configuration.billing_project);
 
@@ -243,7 +246,7 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
     {
         const auto status = e.getHTTPStatus();
         bool auth_error = status == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED || status == Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
-        if (!auth_error || !token_provider.canRefresh())
+        if (!auth_error || !token_provider->canRefresh())
             throw;
         /// The cached token could have expired, retry once with a fresh one.
         LOG_DEBUG(log, "Retrying BigQuery request with a fresh token after HTTP status {}", static_cast<int>(status));

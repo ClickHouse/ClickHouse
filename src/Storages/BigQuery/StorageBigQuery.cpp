@@ -171,13 +171,12 @@ private:
     Poco::JSON::Array::Ptr pending_rows;
 };
 
-/// A BigQuery NULLABLE RECORD is inferred as a plain `Tuple`, because `Nullable(Tuple)` is gated
-/// behind the `enable_nullable_tuple_type` setting which is off by default. A user who enables that
-/// setting can declare a column as `Nullable(Tuple(...))` (or `Array(Nullable(Tuple(...)))`) to read
-/// and write NULL `RECORD` values losslessly - the read and write paths already honor `Nullable`
-/// columns. To let a user opt in, treat a declared type that differs from the inferred type only by
-/// `Nullable` wrappers placed directly around a `Tuple` as an accepted match: this function removes
-/// exactly those wrappers so the result can be compared with the inferred type.
+/// A BigQuery NULLABLE RECORD is inferred as `Nullable(Tuple(...))` so NULL records round-trip
+/// losslessly. When declaring columns explicitly, a user may still prefer a plain `Tuple(...)` (which
+/// coerces a whole-record NULL to a default tuple and avoids the `enable_nullable_tuple_type` setting),
+/// or the exact `Nullable(Tuple(...))`. To accept both, treat a declared type that differs from the
+/// inferred type only by `Nullable` wrappers placed directly around a `Tuple` as a match: this function
+/// removes exactly those wrappers, and it is applied to both types before they are compared.
 DataTypePtr stripNullableAroundTuple(const DataTypePtr & type)
 {
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
@@ -211,8 +210,10 @@ void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFiel
             column.name,
             fmt::join(std::ranges::views::transform(fields, [](const auto & f) { return f.name; }), ", "));
 
-    /// Accept the exact inferred type, or a `Nullable(Tuple)` opt-in of it (see stripNullableAroundTuple).
-    if (!column.type->equals(*field->data_type) && !stripNullableAroundTuple(column.type)->equals(*field->data_type))
+    /// Accept the exact inferred type, or one that differs only by Nullable-around-Tuple wrappers
+    /// (see stripNullableAroundTuple) - e.g. a plain `Tuple` declared for an inferred `Nullable(Tuple)`.
+    if (!column.type->equals(*field->data_type)
+        && !stripNullableAroundTuple(column.type)->equals(*stripNullableAroundTuple(field->data_type)))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Column '{}' is declared as {}, but the BigQuery table schema maps it to {}. "
@@ -231,13 +232,14 @@ StorageBigQuery::StorageBigQuery(
     ContextPtr context_)
     : IStorage(table_id_)
     , configuration(std::move(configuration_))
+    , token_provider(std::make_shared<BigQueryTokenProvider>(configuration))
     , log(getLogger("StorageBigQuery (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
         /// CREATE TABLE without a column list: infer the structure right away.
-        auto schema = fetchTableSchema(configuration, context_);
+        auto schema = fetchTableSchema(configuration, context_, token_provider);
         storage_metadata.setColumns(columnsDescriptionFromBigQuerySchema(schema));
         {
             std::lock_guard lock(fields_mutex);
@@ -253,16 +255,21 @@ StorageBigQuery::StorageBigQuery(
     setInMemoryMetadata(storage_metadata);
 }
 
-BigQueryFields StorageBigQuery::fetchTableSchema(const BigQueryConfiguration & configuration, ContextPtr context)
+BigQueryFields StorageBigQuery::fetchTableSchema(
+    const BigQueryConfiguration & configuration,
+    ContextPtr context,
+    const std::shared_ptr<BigQueryTokenProvider> & token_provider)
 {
-    BigQueryClient client(configuration, context);
-    auto table_object = client.getTable();
+    auto table_object = token_provider
+        ? BigQueryClient(configuration, context, token_provider).getTable()
+        : BigQueryClient(configuration, context).getTable();
 
-    /// tabledata.list works only for tables that have their own storage.
+    /// tabledata.list works only for tables that have their own storage, not for views,
+    /// materialized views or external tables.
     if (table_object->has("type"))
     {
         const auto type = table_object->getValue<String>("type");
-        if (type == "VIEW" || type == "EXTERNAL")
+        if (type == "VIEW" || type == "MATERIALIZED_VIEW" || type == "EXTERNAL")
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "BigQuery table '{}.{}' has type {} which cannot be read directly, only native tables are supported",
@@ -276,7 +283,7 @@ const BigQueryFields & StorageBigQuery::getFields(ContextPtr query_context) cons
 {
     std::lock_guard lock(fields_mutex);
     if (!fields)
-        fields = fetchTableSchema(configuration, query_context);
+        fields = fetchTableSchema(configuration, query_context, token_provider);
     return *fields;
 }
 
@@ -323,7 +330,7 @@ Pipe StorageBigQuery::read(
         selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
     }
 
-    auto client = std::make_shared<BigQueryClient>(configuration, context);
+    auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return Pipe(std::make_shared<BigQuerySource>(
         std::move(client),
         std::move(selected),
@@ -348,7 +355,7 @@ SinkToStoragePtr StorageBigQuery::write(
         sink_fields.push_back(*findBigQueryField(all_fields, column.name));
     }
 
-    auto client = std::make_shared<BigQueryClient>(configuration, context);
+    auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return std::make_shared<BigQuerySink>(std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block));
 }
 

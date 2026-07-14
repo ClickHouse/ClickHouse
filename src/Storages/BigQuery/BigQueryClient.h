@@ -10,26 +10,28 @@
 #include <Poco/URI.h>
 
 #include <chrono>
+#include <memory>
 #include <mutex>
 
 namespace DB
 {
 
 /// Produces OAuth 2.0 bearer tokens for the configured credential method, with caching until expiry.
+/// The context is supplied per call (not stored) so that a single provider can be shared across
+/// queries - each query fetches or refreshes the token using its own context.
 class BigQueryTokenProvider
 {
 public:
-    BigQueryTokenProvider(const BigQueryConfiguration & configuration_, ContextPtr context_);
+    explicit BigQueryTokenProvider(BigQueryConfiguration configuration_);
 
-    String getToken(bool force_refresh);
+    String getToken(const ContextPtr & context, bool force_refresh);
     /// Whether requesting a fresh token can produce a different one (false for a static access token).
     bool canRefresh() const { return configuration.credentials_kind != BigQueryConfiguration::CredentialsKind::AccessToken; }
 
 private:
-    std::pair<String, Int64> fetchTokenWithExpiration() const;
+    std::pair<String, Int64> fetchTokenWithExpiration(const ContextPtr & context) const;
 
-    const BigQueryConfiguration & configuration;
-    ContextPtr context;
+    const BigQueryConfiguration configuration;
 
     std::mutex mutex;
     String cached_token;
@@ -40,7 +42,11 @@ private:
 class BigQueryClient
 {
 public:
+    /// Creates a client with its own short-lived token provider (for a one-off request).
     BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_);
+    /// Creates a client that reuses a longer-lived token provider, so an access token minted by one
+    /// query survives for the next one instead of being re-requested from the token endpoint.
+    BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_, std::shared_ptr<BigQueryTokenProvider> token_provider_);
 
     /// tables.get: the full table resource (schema, numRows, type).
     Poco::JSON::Object::Ptr getTable() const;
@@ -70,7 +76,7 @@ private:
 
     BigQueryConfiguration configuration;
     ContextPtr context;
-    mutable BigQueryTokenProvider token_provider;
+    std::shared_ptr<BigQueryTokenProvider> token_provider;
     Poco::Net::HTTPBasicCredentials credentials;    /// empty, required by the HTTP buffer API
     LoggerPtr log;
 };

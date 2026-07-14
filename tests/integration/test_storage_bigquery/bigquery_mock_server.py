@@ -203,6 +203,11 @@ def reset_tables():
         },
         "writable": {"type": "TABLE", "schema": WRITABLE_SCHEMA, "rows": []},
         "a_view": {"type": "VIEW", "schema": PAGING_SCHEMA, "rows": []},
+        "a_matview": {
+            "type": "MATERIALIZED_VIEW",
+            "schema": PAGING_SCHEMA,
+            "rows": [],
+        },
         "test_arr_nulls": {
             "type": "TABLE",
             "schema": ARR_NULLS_SCHEMA,

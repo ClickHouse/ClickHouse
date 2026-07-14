@@ -140,17 +140,17 @@ DataTypePtr computeClickHouseType(const BigQueryField & field)
     {
         /// A BigQuery array can contain NULL elements, and `tabledata.list` returns them as
         /// `{"v": null}`. Use a Nullable element type so such values are preserved losslessly
-        /// instead of being coerced to a default. A RECORD element cannot be made Nullable
-        /// (Nullable(Tuple) is gated behind the `enable_nullable_tuple_type` setting which is
-        /// off by default, and `DataTypeTuple::canBeInsideNullable` reports true regardless),
-        /// so repeated RECORD fields keep a plain Tuple element.
-        if (field.type != BigQueryField::Type::Record && base->canBeInsideNullable())
+        /// instead of being coerced to a default. A RECORD element becomes `Nullable(Tuple(...))`
+        /// as well, so a NULL struct element round-trips as NULL rather than a default tuple.
+        if (base->canBeInsideNullable())
             base = std::make_shared<DataTypeNullable>(base);
         return std::make_shared<DataTypeArray>(base);
     }
-    /// A NULL of a NULLABLE RECORD becomes a Tuple of default values:
-    /// Nullable(Tuple) is gated behind the `enable_nullable_tuple_type` setting which is off by default.
-    if (!field.required && field.type != BigQueryField::Type::Record && base->canBeInsideNullable())
+    /// A NULLABLE field is mapped to a Nullable type so a remote NULL is preserved instead of
+    /// collapsing to a default. A NULLABLE RECORD becomes `Nullable(Tuple(...))`; persisting such a
+    /// column with the `BigQuery` engine requires the `enable_nullable_tuple_type` setting, as for
+    /// any `Nullable(Tuple)` column.
+    if (!field.required && base->canBeInsideNullable())
         return std::make_shared<DataTypeNullable>(base);
     return base;
 }

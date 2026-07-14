@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Storages/BigQuery/BigQueryClient.h>
 #include <Storages/BigQuery/BigQueryConfiguration.h>
 #include <Storages/BigQuery/BigQuerySchema.h>
 #include <Storages/IStorage.h>
 #include <Common/logger_useful.h>
 
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -45,8 +47,12 @@ public:
 
     static BigQueryConfiguration getConfiguration(ASTs & engine_args, ContextPtr context);
 
-    /// Fetches the table schema from BigQuery (`tables.get`).
-    static BigQueryFields fetchTableSchema(const BigQueryConfiguration & configuration, ContextPtr context);
+    /// Fetches the table schema from BigQuery (`tables.get`). An optional token provider lets the
+    /// caller reuse a cached access token across requests.
+    static BigQueryFields fetchTableSchema(
+        const BigQueryConfiguration & configuration,
+        ContextPtr context,
+        const std::shared_ptr<BigQueryTokenProvider> & token_provider = nullptr);
 
 private:
     /// The BigQuery schema is fetched lazily on the first read or write (not at server startup),
@@ -54,6 +60,9 @@ private:
     const BigQueryFields & getFields(ContextPtr query_context) const;
 
     BigQueryConfiguration configuration;
+    /// Shared across queries so that an OAuth access token is minted once and reused until it expires,
+    /// instead of on every read and write (which each construct their own `BigQueryClient`).
+    std::shared_ptr<BigQueryTokenProvider> token_provider;
 
     mutable std::mutex fields_mutex;
     mutable std::optional<BigQueryFields> fields;

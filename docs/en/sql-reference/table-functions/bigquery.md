@@ -71,15 +71,15 @@ Store credentials in a [named collection](/operations/named-collections) to avoi
 | `GEOGRAPHY`              | [String](../../sql-reference/data-types/string.md) (WKT) |
 | `JSON`                   | [String](../../sql-reference/data-types/string.md) |
 | `INTERVAL`, `RANGE`      | [String](../../sql-reference/data-types/string.md) |
-| `RECORD` / `STRUCT`      | [Tuple](../../sql-reference/data-types/tuple.md) |
-| `REPEATED` mode          | [Array](../../sql-reference/data-types/array.md) of the element type (with a [Nullable](../../sql-reference/data-types/nullable.md) element, except for `RECORD`) |
+| `RECORD` / `STRUCT`      | [Tuple](../../sql-reference/data-types/tuple.md), or [Nullable](../../sql-reference/data-types/nullable.md)(`Tuple`) in `NULLABLE` mode |
+| `REPEATED` mode          | [Array](../../sql-reference/data-types/array.md) of the element type, with a [Nullable](../../sql-reference/data-types/nullable.md) element (including `Nullable(Tuple(...))` for a `RECORD` element) |
 | `NULLABLE` mode          | [Nullable](../../sql-reference/data-types/nullable.md) |
 
 Notes:
 
 - BigQuery `DATETIME` has no time zone; it is mapped to `DateTime64(6, 'UTC')` so that the displayed value does not depend on the server time zone.
-- A `NULL` value of a `RECORD` becomes a `Tuple` of default values, and a `NULL` (or empty) array becomes an empty array, because `Tuple` and `Array` cannot be inside `Nullable` in ClickHouse by default. The elements of a `REPEATED` field are mapped to a `Nullable` type (except for `RECORD` elements, which cannot be `Nullable` by default), so a `NULL` array element is preserved rather than coerced to a default.
-- To read and write `NULL` `RECORD` values losslessly, enable the `enable_nullable_tuple_type` setting and declare the column with the `BigQuery` table engine as `Nullable(Tuple(...))` (or `Array(Nullable(Tuple(...)))` for a `REPEATED RECORD`). The engine accepts a declared type that differs from the inferred type only by such `Nullable` wrappers around a `Tuple`, and then a `NULL` record is read as `NULL` and written as a JSON `null` instead of being coerced to a default tuple.
+- A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))`, so a whole-record `NULL` is preserved as `NULL` instead of collapsing to a `Tuple` of default values. A `NULL` (or empty) array becomes an empty array, because `Array` cannot be inside `Nullable` in ClickHouse. The elements of a `REPEATED` field use a `Nullable` element type (including `Nullable(Tuple(...))` for `RECORD` elements), so a `NULL` array element is preserved rather than coerced to a default.
+- Reading and writing `Nullable(Tuple(...))` columns through the `bigquery` table function works without extra settings. Creating a persistent `BigQuery`-engine table that contains such a column (whether the structure is inferred or declared explicitly) requires the `enable_nullable_tuple_type` setting, as for any `Nullable(Tuple)` column. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)` to avoid the setting, at the cost of coercing a whole-record `NULL` to a default tuple; the engine accepts a declared type that differs from the inferred type only by `Nullable` wrappers placed directly around a `Tuple`.
 - `BIGNUMERIC` values with more than 38 digits in the integer part do not fit into `Decimal(76, 38)` and produce an error.
 - `TIMESTAMP` and `DATE` values outside of the range of `DateTime64`/`Date32` (years 1900-2299) are not supported.
 

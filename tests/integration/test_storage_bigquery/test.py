@@ -123,8 +123,8 @@ def test_schema_inference():
         "geo": "Nullable(String)",
         "j": "Nullable(String)",
         "arr": "Array(Nullable(Int64))",
-        "rec": "Tuple(\\n    x Nullable(Int64),\\n    y String,\\n    tags Array(Nullable(String)))",
-        "recs": "Array(Tuple(\\n    k Int64,\\n    val Nullable(String)))",
+        "rec": "Nullable(Tuple(x Nullable(Int64), y String, tags Array(Nullable(String))))",
+        "recs": "Array(Nullable(Tuple(k Int64, val Nullable(String))))",
     }
 
 
@@ -151,7 +151,7 @@ def test_select_all_types():
         '1234567890.12345678901234567890123456789012345678\t12345678.99\tPOINT(1 2)\t{"a":1}\t'
         "[1,2,3]\t(7,'seven',['t1','t2'])\t[(1,'one'),(2,NULL)]\n"
         "2\tinf\t\t\\N\tfalse\t\\N\t\\N\t\\N\t\\N\t-0.000000001\t\\N\t\\N\t\\N\t\\N\t"
-        "[]\t(NULL,'',[])\t[]\n"
+        "[]\t\\N\t[]\n"
         "3\tnan\t\\N\tпривет\t\\N\t1970-01-01\t23:59:59.000000\t2299-12-31 23:59:59.000000\t"
         "1970-01-01 00:00:00.000000\t\\N\t"
         "-99999999999999999999999999999999999999.99999999999999999999999999999999999999\t0.01\t\\N\t"
@@ -161,11 +161,11 @@ def test_select_all_types():
 
 
 def test_nullable_record_opt_in():
-    # A BigQuery NULLABLE RECORD is inferred as a plain Tuple, so a whole-record NULL collapses into
-    # a tuple of defaults (see test_select_all_types, where `rec` for i=2 comes back as (NULL,'',[])).
-    # A user who enables `enable_nullable_tuple_type` can declare the column as Nullable(Tuple(...))
-    # (or Array(Nullable(Tuple(...)))) to read and write such NULLs losslessly; the engine must
-    # accept that opt-in type even though default inference maps the field to a plain Tuple.
+    # A BigQuery NULLABLE RECORD is inferred as Nullable(Tuple(...)) so whole-record NULLs round-trip
+    # (see test_select_all_types, where `rec` for i=2 comes back as NULL). Declaring such a column
+    # with the BigQuery table engine persists a Nullable(Tuple) column, which requires the
+    # enable_nullable_tuple_type setting, as for any Nullable(Tuple) column. The engine accepts either
+    # the exact Nullable(Tuple(...)) (or Array(Nullable(Tuple(...)))) or a plain Tuple(...).
     settings = {"enable_nullable_tuple_type": 1}
 
     # Reading a NULL RECORD losslessly.
@@ -397,12 +397,14 @@ def test_table_engine():
     assert "declared as Int32" in error and "maps it to Int64" in error
     node.query("DROP TABLE bq_engine")
 
-    # Writing through the engine.
+    # Writing through the engine. The `writable` table has a NULLABLE RECORD (`meta`), inferred as
+    # Nullable(Tuple(...)), so creating the table with an inferred structure needs the setting.
     mock_reset()
     node.query("DROP TABLE IF EXISTS bq_writable")
     node.query(
         f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings={"enable_nullable_tuple_type": 1},
     )
     node.query("INSERT INTO bq_writable (id, name) VALUES (42, 'x')")
     assert node.query("SELECT id, name FROM bq_writable") == "42\tx\n"
@@ -422,6 +424,15 @@ def test_secret_masking_in_query_log():
     assert logged != ""
     assert ACCESS_TOKEN not in logged
     assert "[HIDDEN]" in logged
+
+
+def test_unsupported_table_types():
+    # Only native tables can be read; views, materialized views and external tables are rejected
+    # up front with a clear error, matching the documented contract.
+    for table, type_ in [("a_view", "VIEW"), ("a_matview", "MATERIALIZED_VIEW")]:
+        error = node.query_and_get_error(f"SELECT * FROM {bq(table)}")
+        assert "cannot be read directly" in error
+        assert type_ in error
 
 
 def test_errors():
