@@ -229,8 +229,14 @@ Chunk DistributedQueryStatusSource::generate()
                     /// Ask for the finished nodes' data in the same listing when the subclass needs it and the
                     /// Keeper supports it, so a finished node's status is read atomically with the listing instead
                     /// of a separate get that could race the cleaner. Otherwise keep the plain listing.
-                    const bool with_data
-                        = wantsFinishedNodeData() && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
+                    /// with_data needs all three flags: MULTI_READ keeps tryGetChildren on the atomic direct multi
+                    /// path (otherwise it falls back to per-path asyncTryGetChildren), and ZooKeeperImpl::list
+                    /// rejects with_data unless both LIST_WITH_STAT_AND_DATA and FILTERED_LIST are enabled. Keeper
+                    /// feature flags are independently configurable, so require all three or keep the plain listing.
+                    const bool with_data = wantsFinishedNodeData()
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA)
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::FILTERED_LIST)
+                        && zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
                     auto res = zookeeper->tryGetChildren(
                         paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ with_data);
                     for (size_t i = 0; i < res.size(); ++i)
