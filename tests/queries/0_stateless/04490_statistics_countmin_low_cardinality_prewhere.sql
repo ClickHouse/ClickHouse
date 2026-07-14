@@ -9,6 +9,7 @@ SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based prewhere ordering
 SET move_all_conditions_to_prewhere = 1;
+SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_countmin_lc_numeric_fixture;
 
