@@ -201,6 +201,12 @@
 1
 -- A bare backslash is a literal when a custom escape character is used
 1
+-- ESCAPE is inert inside a bracket expression (POSIX/PostgreSQL)
+1
+1
+0
+1
+-- A trailing escape character is an error
 -- NOT SIMILAR TO with ESCAPE
 0
 1

@@ -460,15 +460,26 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
         }
     };
 
+    /// Nothing to rewrite when the custom escape is already the standard backslash escape.
+    if (escape_char == '\\')
+        return String(pattern);
+
     String res;
     res.reserve(pattern.size() * 2);
 
     const char * pos = pattern.data();
     const char * const end = pattern.data() + pattern.size();
 
+    /// Bracket state, tracked exactly as in `similarToPatternToRegexp`. The escape character is only
+    /// special *outside* a bracket expression (POSIX / PostgreSQL do not recognize escapes inside
+    /// `[...]`), so within a bracket every character — including the escape character and a bare
+    /// backslash — is passed through verbatim and `similarToPatternToRegexp` applies the bracket rules.
+    bool in_bracket = false;
+    bool maybe_in_class = false;
+
     while (pos < end)
     {
-        if (*pos == escape_char)
+        if (!in_bracket && !maybe_in_class && *pos == escape_char)
         {
             ++pos;
             if (pos == end)
@@ -480,16 +491,65 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
             if (needs_backslash_to_be_literal(*pos))
                 res += '\\';
             res += *pos;
+            ++pos;
+            continue;
         }
-        else if (*pos == '\\' && escape_char != '\\')
+        if (!in_bracket && !maybe_in_class && *pos == '\\')
         {
             /// When a custom escape character is used, a bare backslash is a literal (backslash is no
             /// longer the escape). Emit `\\` so `similarToPatternToRegexp` keeps it as a literal backslash.
             res += "\\\\";
+            ++pos;
+            continue;
         }
-        else
+
+        /// Not an escape: update bracket state and emit the character verbatim.
+        switch (*pos)
         {
-            res += *pos;
+            case '[':
+                res += *pos;
+                if (in_bracket)
+                {
+                    /// A `[:` inside a bracket may start a POSIX class such as `[:digit:]`.
+                    if (pos + 1 < end && pos[1] == ':')
+                        maybe_in_class = true;
+                }
+                else
+                {
+                    in_bracket = true;
+                    /// A `]` immediately after `[` or `[^` is a literal member, not the terminator.
+                    /// Emit it verbatim and keep the bracket open (the translator re-quotes it for re2).
+                    size_t lookahead = 1;
+                    if (pos + lookahead < end && pos[lookahead] == '^')
+                    {
+                        res += '^';
+                        ++lookahead;
+                    }
+                    if (pos + lookahead < end && pos[lookahead] == ']')
+                    {
+                        res += ']';
+                        pos += lookahead;
+                    }
+                }
+                break;
+            case ']':
+                if (maybe_in_class && pos - 1 > pattern.data())
+                {
+                    if (*(pos - 1) == ':')
+                        maybe_in_class = false;
+                    else
+                    {
+                        maybe_in_class = false;
+                        in_bracket = false;
+                    }
+                }
+                else
+                    in_bracket = false;
+                res += *pos;
+                break;
+            default:
+                res += *pos;
+                break;
         }
         ++pos;
     }
