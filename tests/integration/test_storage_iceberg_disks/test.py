@@ -260,6 +260,15 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
             f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
         )
 
+    if storage_type == "local":
+        assert instance.query(
+            f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        ) == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+        # The disk-type mismatch check must still fire for the S3-flavoured function.
+        assert "Disk type doesn't match" in instance.query_and_get_error(
+            f"SELECT * FROM icebergS3(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
+        )
+
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_iceberg_trivial_count_optimization(started_cluster, storage_type):

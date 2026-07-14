@@ -587,14 +587,28 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         break;
         case PredOp::BinaryExpr: {
-            const bool limited = rg.nextBool();
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
-            std::uniform_int_distribution<uint32_t> op_range(
-                limited ? static_cast<uint32_t>(BinaryOperator::BINOP_AND) : 1,
-                static_cast<uint32_t>(limited ? BinaryOperator::BINOP_OR : BinaryOperator_MAX));
 
-            bexpr->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Deliberately emit a comparison predicate against an arbitrary right-hand
+                /// expression. The contiguous range `BINOP_LE` .. `BINOP_IS_NOT_DISTINCT_FROM`
+                /// covers every comparison operator, including `IS [NOT] DISTINCT FROM`.
+                bexpr->set_op(
+                    static_cast<BinaryOperator>(rg.randomInt<uint32_t>(
+                        static_cast<uint32_t>(BinaryOperator::BINOP_LE),
+                        static_cast<uint32_t>(BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM))));
+            }
+            else
+            {
+                const bool limited = rg.nextBool();
+                std::uniform_int_distribution<uint32_t> op_range(
+                    limited ? static_cast<uint32_t>(BinaryOperator::BINOP_AND) : 1,
+                    static_cast<uint32_t>(limited ? BinaryOperator::BINOP_OR : BinaryOperator_MAX));
+
+                bexpr->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
+            }
             this->depth++;
             this->generateExpression(rg, bexpr->mutable_lhs());
             this->width++;
