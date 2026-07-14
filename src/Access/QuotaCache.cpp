@@ -459,6 +459,12 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
                 auto it = all_quotas.find(found_quota_id);
                 if (it == all_quotas.end())
                     return nullptr;
+                /// An in-flight query can keep an old SingleQuota (and this resolver) alive after
+                /// the quota flipped inert. Bail out instead of calling getOrBuildIntervals, which
+                /// would re-insert an empty Intervals into key_to_intervals for a new hash and
+                /// resurface stale NULL rows in system.quotas_usage.
+                if (it->second.is_inert)
+                    return nullptr;
                 return it->second.getOrBuildIntervals(hash_key);
             };
         }
