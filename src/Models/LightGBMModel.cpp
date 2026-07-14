@@ -1,8 +1,8 @@
-#include "LightGBMModel.h"
+#include <Models/LightGBMModel.h>
+
+#if USE_LIGHTGBM
 
 #include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
-#include <sstream>
 #include <algorithm>
 
 #include <LightGBM/c_api.h>
@@ -28,7 +28,7 @@ void throwOnError(int status, const char * where)
             LGBM_GetLastError());
 }
 
-} // namespace
+}
 
 // TODO: add num_iterations parsing
 LightGBMModel::LightGBMModel()
@@ -46,22 +46,22 @@ LightGBMModel::~LightGBMModel()
         LGBM_DatasetFree(dataset);
 }
 
-void LightGBMModel::setHyperParameters(const HyperParameters& hyperparameters)
+void LightGBMModel::setHyperParameters(const HyperParameters & hyperparameters)
 {
     if (booster || dataset)
         throw Exception(
             ErrorCodes::LIGHTGBM_ERROR,
             "setHyperParameters must be called before training starts");
 
-    for (const auto& [key, value]: hyperparameters) {
-        if (!hps_str.empty()) {
+    for (const auto & [key, value] : hyperparameters)
+    {
+        if (!hps_str.empty())
             hps_str += ' ';
-        }
         hps_str += fmt::format("{}={}", key, value);
     }
 }
 
-void LightGBMModel::fit(const FeatureMatrix& batch, const Targets& targets)
+void LightGBMModel::fit(const FeatureMatrix & batch, const Targets & targets)
 {
     if (batch.empty() || batch[0].empty())
         throw Exception(
@@ -71,7 +71,7 @@ void LightGBMModel::fit(const FeatureMatrix& batch, const Targets& targets)
     if (batch.size() != targets.size())
         throw Exception(
             ErrorCodes::LIGHTGBM_ERROR,
-            "fit: Invalid dimensions. Feature dimension ({}) ≠ Target dimension ({})",
+            "fit: Invalid dimensions. Feature dimension ({}) does not match target dimension ({})",
             batch.size(),
             targets.size());
 
@@ -86,19 +86,20 @@ void LightGBMModel::fit(const FeatureMatrix& batch, const Targets& targets)
                 "LGBM_BoosterUpdateOneIter");
 }
 
-void LightGBMModel::fit(const Features& features, const Target& target)
+void LightGBMModel::fit(const Features & features, const Target & target)
 {
     fit(FeatureMatrix{features}, Targets{target});
 }
 
-Targets LightGBMModel::predict(const FeatureMatrix& features)
+Targets LightGBMModel::predict(const FeatureMatrix & features)
 {
     if (!booster)
         throw Exception(
             ErrorCodes::LIGHTGBM_ERROR,
             "predict: model has not been trained yet");
 
-    if (features.empty()) return {};
+    if (features.empty())
+        return {};
 
     if (features[0].size() != n_features)
         throw Exception(
@@ -124,15 +125,13 @@ Targets LightGBMModel::predict(const FeatureMatrix& features)
             -1,
             hps_str.c_str(),
             &out_len,
-            predictions.data()
-        ),
+            predictions.data()),
         "LGBM_BoosterPredictForMat");
 
     return predictions;
 }
 
-
-std::vector<double> LightGBMModel::flatten(const FeatureMatrix& m)
+std::vector<double> LightGBMModel::flatten(const FeatureMatrix & m)
 {
     std::size_t rows = m.size();
     std::size_t cols = m[0].size();
@@ -156,8 +155,7 @@ void LightGBMModel::initFeatureDim(std::size_t d)
             d);
 }
 
-void LightGBMModel::initDataset(const std::vector<double>& flat,
-                                const Targets& y)
+void LightGBMModel::initDataset(const std::vector<double> & flat, const Targets & y)
 {
     throwOnError(
         LGBM_DatasetCreateFromMat(
@@ -174,8 +172,8 @@ void LightGBMModel::initDataset(const std::vector<double>& flat,
     throwOnError(
         LGBM_DatasetSetField(
             dataset,
-            "init_score",
-            const_cast<double*>(y.data()),
+            "label",
+            y.data(),
             static_cast<int32_t>(y.size()),
             C_API_DTYPE_FLOAT64),
         "LGBM_DatasetSetField(label)");
@@ -189,3 +187,5 @@ void LightGBMModel::initDataset(const std::vector<double>& flat,
 }
 
 }
+
+#endif

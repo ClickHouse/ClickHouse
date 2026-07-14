@@ -1,6 +1,11 @@
 #include <Models/XGBoostModel.h>
 
+#if USE_XGBOOST
+
 #include <Common/Exception.h>
+
+#include <algorithm>
+#include <limits>
 
 #include <xgboost/c_api.h>
 
@@ -25,7 +30,7 @@ void throwOnError(int status, const char * where)
             XGBGetLastError());
 }
 
-} // namespace
+}
 
 XGBoostModel::XGBoostModel() = default;
 
@@ -37,7 +42,7 @@ XGBoostModel::~XGBoostModel()
         XGDMatrixFree(dtrain);
 }
 
-void XGBoostModel::fit(const FeatureMatrix& batch, const Targets& targets)
+void XGBoostModel::fit(const FeatureMatrix & batch, const Targets & targets)
 {
     if (batch.empty())
         throw Exception(
@@ -47,7 +52,7 @@ void XGBoostModel::fit(const FeatureMatrix& batch, const Targets& targets)
     if (batch.size() != targets.size())
         throw Exception(
             ErrorCodes::XGBOOST_ERROR,
-            "Features Dimension ({}) ≠ Target Dimension ({})",
+            "Feature dimension ({}) does not match target dimension ({})",
             batch.size(),
             targets.size());
 
@@ -79,18 +84,57 @@ void XGBoostModel::fit(const FeatureMatrix& batch, const Targets& targets)
             "XGBoosterUpdateOneIter");
 }
 
-void XGBoostModel::fit(const Features& features, const Target& target)
+void XGBoostModel::fit(const Features & features, const Target & target)
 {
     fit(FeatureMatrix{features}, Targets{target});
 }
 
-Targets XGBoostModel::predict(const FeatureMatrix&)
+Targets XGBoostModel::predict(const FeatureMatrix & features)
 {
+    if (!booster)
+        throw Exception(
+            ErrorCodes::XGBOOST_ERROR,
+            "predict: model has not been trained yet");
 
-    return Targets{};
+    if (features.empty())
+        return {};
+
+    if (features[0].size() != n_features)
+        throw Exception(
+            ErrorCodes::XGBOOST_ERROR,
+            "predict: feature dimension mismatch (expected {}, got {})",
+            n_features,
+            features[0].size());
+
+    std::vector<float> flat = flatten(features);
+
+    DMatrixHandle dpredict = nullptr;
+    throwOnError(XGDMatrixCreateFromMat(
+                     flat.data(),
+                     static_cast<bst_ulong>(features.size()),
+                     static_cast<bst_ulong>(n_features),
+                     std::numeric_limits<float>::quiet_NaN(),
+                     &dpredict),
+                 "XGDMatrixCreateFromMat(predict)");
+
+    bst_ulong out_len = 0;
+    const float * out_result = nullptr;
+    const int status = XGBoosterPredict(booster, dpredict, 0, 0, 0, &out_len, &out_result);
+    if (status != 0)
+    {
+        XGDMatrixFree(dpredict);
+        throw Exception(
+            ErrorCodes::XGBOOST_ERROR,
+            "XGBoosterPredict failed: {}",
+            XGBGetLastError());
+    }
+
+    Targets result(out_result, out_result + out_len);
+    XGDMatrixFree(dpredict);
+    return result;
 }
 
-void XGBoostModel::setHyperParameters(const HyperParameters& hyperparameters)
+void XGBoostModel::setHyperParameters(const HyperParameters & hyperparameters)
 {
     if (booster || dtrain)
         throw Exception(
@@ -99,7 +143,7 @@ void XGBoostModel::setHyperParameters(const HyperParameters& hyperparameters)
     hps = hyperparameters;
 }
 
-std::vector<float> XGBoostModel::flatten(const FeatureMatrix& m)
+std::vector<float> XGBoostModel::flatten(const FeatureMatrix & m)
 {
     const std::size_t rows = m.size();
     const std::size_t cols = m[0].size();
@@ -126,7 +170,7 @@ void XGBoostModel::initFeatureDim(std::size_t d)
             d);
 }
 
-void XGBoostModel::buildDMatrix(const FeatureMatrix& X, const Targets& y)
+void XGBoostModel::buildDMatrix(const FeatureMatrix & X, const Targets & y)
 {
     train_storage = flatten(X);
 
@@ -147,3 +191,5 @@ void XGBoostModel::buildDMatrix(const FeatureMatrix& X, const Targets& y)
 }
 
 }
+
+#endif

@@ -12,8 +12,7 @@ set(DMLC_CORE_INCLUDE_DIR "${DMLC_CORE_LIB}/include")
 
 # dmlc-core
 #
-# Build-time CMake checks (check_symbol_exists, check_include_file_cxx,
-# test_big_endian, check_cxx_compiler_flag, check_library_exists, ...) are
+# Build-time compiler probes (symbol/header/flag/library detection) are
 # forbidden in ClickHouse because the compiler and toolchain are fixed. The
 # probes below are therefore resolved statically from the known target.
 

@@ -5,7 +5,8 @@
 namespace DB
 {
 
-class IModel {
+class IModel
+{
 public:
     virtual ~IModel() = default;
 

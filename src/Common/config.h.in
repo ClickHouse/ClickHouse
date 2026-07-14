@@ -93,5 +93,7 @@
 #cmakedefine01 USE_WASMTIME
 #cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_LIBPNG
+#cmakedefine01 USE_XGBOOST
+#cmakedefine01 USE_LIGHTGBM
 #cmakedefine01 WITH_COVERAGE
 

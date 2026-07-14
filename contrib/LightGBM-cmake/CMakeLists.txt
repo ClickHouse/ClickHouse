@@ -52,9 +52,9 @@ set(LIGHTGBM_COMPILE_DEFENITIONS
     -DUSE_SOCKET
 )
 
-# Build-time CMake checks are forbidden in ClickHouse (the toolchain is fixed),
-# so the original `check_cxx_source_compiles` probes are replaced with static
-# decisions based on the known target architecture.
+# Build-time compiler probes are forbidden in ClickHouse (the toolchain is fixed),
+# so the original upstream probes are replaced with static decisions based on the
+# known target architecture.
 #
 # `_mm_prefetch` is provided through <xmmintrin.h>, which is x86-only.
 if (ARCH_AMD64)

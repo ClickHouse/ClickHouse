@@ -6,7 +6,8 @@ namespace DB
 {
 
 /// Null model. Does nothing.
-class NullModel : public IModel {
+class NullModel : public IModel
+{
 public:
     ~NullModel() override;
 
