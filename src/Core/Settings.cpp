@@ -4845,7 +4845,7 @@ When set to `true`, a `SELECT` query will be converted to conjuctive normal form
 For example, notice how the following `SELECT` query is not modified (the default behavior):
 
 ```sql
-EXPLAIN SYNTAX
+EXPLAIN SYNTAX oneline = 0
 SELECT *
 FROM
 (
@@ -4875,7 +4875,7 @@ The result is:
 Let's set `convert_query_to_cnf` to `true` and see what changes:
 
 ```sql
-EXPLAIN SYNTAX
+EXPLAIN SYNTAX oneline = 0
 SELECT *
 FROM
 (
@@ -5423,7 +5423,7 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX oneline = 0, run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSVRaw;
 ```
 
 Result:
