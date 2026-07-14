@@ -2,6 +2,7 @@
 import logging
 import os
 import random
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -54,9 +55,25 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
 # such prefix, so this signature keeps only genuine server-survived limits.
 SERVER_MLE_SIGNATURE = r"Received from.*MEMORY_LIMIT_EXCEEDED"
 
+# Only the LAST queries the fuzzer ran can explain its exit code. The AST fuzzer
+# swallows query-side server MEMORY_LIMIT_EXCEEDED and keeps going (see
+# Client::processASTFuzzerStep in programs/client/FuzzLoop.cpp), so a 30-minute
+# fuzzer.log accumulates many recovered "Received from ... (MEMORY_LIMIT_
+# EXCEEDED)" lines that did NOT terminate the run. The exit-241 is set by the
+# terminal exception the swallow does not cover (e.g. the TCPHandler::receiveHello
+# handshake path). Scan only the tail so a benign 241 is attributed to its actual
+# terminal cause, not a stale earlier limit.
+SERVER_MLE_TAIL_LINES = 50
+
+
+def _fuzzer_log_tail_has_server_mle(fuzzer_log: Path) -> bool:
+    """True when a server-origin MEMORY_LIMIT_EXCEEDED appears in the log tail."""
+    tail = _log_tail(fuzzer_log, max_lines=SERVER_MLE_TAIL_LINES)
+    return re.search(SERVER_MLE_SIGNATURE, tail) is not None
+
 
 def _is_benign_memory_limit(
-    server_died: bool, fuzzer_exit_code: int, fuzzer_log_has_server_mle: bool
+    server_died: bool, fuzzer_exit_code: int, tail_has_server_mle: bool
 ) -> bool:
     """True when the fuzzer exited only because the SERVER hit its memory cap.
 
@@ -68,16 +85,17 @@ def _is_benign_memory_limit(
     working as intended, not a crash or a finding -- run-fuzzer.sh's liveness
     loop already treats a 241 as "alive, busy".
 
-    The evidence must be server-origin (SERVER_MLE_SIGNATURE). clickhouse-client
-    itself can raise 241 under --max_memory_usage_in_client (a client-side cap;
-    see tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
+    The evidence must be server-origin (SERVER_MLE_SIGNATURE) AND come from the
+    fuzzer's last queries (log tail). clickhouse-client itself can raise 241
+    under --max_memory_usage_in_client (a client-side cap; see
+    tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
     mainEntryClickHouseClient returns that code verbatim -- such a client/harness
-    241 has no "Received from" prefix and must NOT be swallowed, or a real
-    client/harness regression would be masked.
+    241 has no "Received from" prefix. And because the fuzzer swallows earlier
+    server limits and keeps running, only a server MLE in the tail actually
+    explains the exit; a stale earlier one must not swallow a terminal
+    client/harness 241, or a real regression would be masked.
     """
-    return (
-        not server_died and fuzzer_exit_code == 241 and fuzzer_log_has_server_mle
-    )
+    return not server_died and fuzzer_exit_code == 241 and tail_has_server_mle
 
 
 def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
@@ -370,7 +388,7 @@ def run_fuzz_job(check_name: str):
     elif _is_benign_memory_limit(
         server_died,
         fuzzer_exit_code,
-        Shell.check(f"rg --text -q '{SERVER_MLE_SIGNATURE}' {fuzzer_log}"),
+        _fuzzer_log_tail_has_server_mle(fuzzer_log),
     ):
         # Server hit its memory cap on a fuzzed query but stayed alive; see
         # _is_benign_memory_limit. Not a crash or a finding.
