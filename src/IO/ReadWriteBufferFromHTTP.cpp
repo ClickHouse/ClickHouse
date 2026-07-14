@@ -837,8 +837,12 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & b
     /// precedence and the Basic credentials are not applied. The buffer keeps a
     /// reference to the credentials, hence the immutable static for the empty case.
     static const Poco::Net::HTTPBasicCredentials no_credentials;
+
+    /// Append the bearer header to a local copy so `create` does not mutate the builder:
+    /// the same builder can be reused without carrying over a stale `Authorization` header.
+    HTTPHeaderEntries header_entries = http_header_entries;
     if (!bearer_token_.empty())
-        http_header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
+        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
@@ -856,7 +860,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & b
         out_stream_callback,
         use_external_buffer,
         http_skip_not_found_url,
-        http_header_entries,
+        header_entries,
         redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
