@@ -5600,6 +5600,20 @@ let elapsed_ns = 0;
 
 const default_format = 'JSONStringsEachRowWithProgress';
 
+/// The default format for framed (`EventStream`) requests. With framing, progress arrives as
+/// separate `progress` packets, so the server rejects the in-band-progress `default_format` above
+/// (`*WithProgress` formats write progress as rows of their own output, which framing would break).
+/// A compact format with a names line and a types line carries the same information; its lines are
+/// reassembled into the shapes the table renderer consumes in `makeEventStreamHandler`.
+const framed_default_format = 'JSONCompactStringsEachRowWithNamesAndTypes';
+
+/// Whether the format is one of the two default result formats (the plain one or the framed one),
+/// which are rendered as a table rather than as raw text.
+function isDefaultFormat(format)
+{
+    return format === default_format || format === framed_default_format;
+}
+
 let controller = null;
 
 /// Color helpers for the logs view, mirroring how `clickhouse-client` colors streamed server logs
@@ -5705,6 +5719,14 @@ function renderBinaryPayload(targetResultEl, chunks, imageMime)
 /// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes.
 function makeEventStreamHandler(targetResultEl, options = {})
 {
+    /// State for reassembling the compact framed default format (see `framed_default_format`): the
+    /// first two array lines of the stream carry the column names and the types; an extremes packet
+    /// carries the min row first, then the max row.
+    let compact_names = null;
+    let compact_types = null;
+    let compact_extremes_rows = 0;
+    const zipCompactRow = (values) => Object.fromEntries(compact_names.map((n, i) => [n, values[i]]));
+
     return (name, dataLines) =>
     {
         if (name === 'data' || name === 'totals' || name === 'extremes')
@@ -5731,7 +5753,34 @@ function makeEventStreamHandler(targetResultEl, options = {})
             for (const line of payload.split('\n'))
             {
                 if (line === '') continue;
-                cont = targetResultEl.update(JSON.parse(line), fragment);
+                let json = JSON.parse(line);
+                /// An array line is a row of the compact framed default format (see
+                /// `framed_default_format`): the first two array lines of the stream are the column
+                /// names and the types (they precede everything in the format's own output, whichever
+                /// packet carries them), and the packet name tells the data, the totals, and the
+                /// extremes rows apart. Reassemble the object shapes that `update` consumes. Object
+                /// lines (the in-band-progress default format of the plain path and of older saved
+                /// snapshots) pass through unchanged.
+                if (Array.isArray(json))
+                {
+                    if (compact_names === null)
+                    {
+                        compact_names = json;
+                        continue;
+                    }
+                    if (compact_types === null)
+                    {
+                        compact_types = json;
+                        json = { meta: compact_names.map((n, i) => ({ name: n, type: compact_types[i] })) };
+                    }
+                    else if (name === 'totals')
+                        json = { totals: zipCompactRow(json) };
+                    else if (name === 'extremes')
+                        json = (compact_extremes_rows++ === 0) ? { min: zipCompactRow(json) } : { max: zipCompactRow(json) };
+                    else
+                        json = { row: zipCompactRow(json) };
+                }
+                cont = targetResultEl.update(json, fragment);
                 if (!cont) break;
             }
             targetResultEl.flushFragment(fragment);
@@ -5890,7 +5939,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         'add_http_cors_header=1';
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&default_format=' + default_format + '&enable_http_compression=1';
+    url += '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
@@ -5914,7 +5963,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// retry without framing (see below). `JSONCompactColumns` is excluded because charts are
     /// rendered from the full response, not streamed. See `docs/en/interfaces/framing-formats.md`.
     let use_framing = !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
-    const framing_url = url + '&framing_output_format=EventStream&send_logs_level=trace';
+    /// The framed and the plain request ask for different default formats: the server rejects the
+    /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
+    /// packets instead), so the framed request uses `framed_default_format` and the table renderer
+    /// reassembles its compact rows (see `makeEventStreamHandler`).
+    const framing_url = url + '&default_format=' + framed_default_format + '&framing_output_format=EventStream&send_logs_level=trace';
+    url += '&default_format=' + default_format;
 
     targetResultEl.queryText = query;
 
@@ -5973,7 +6027,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             is_error = true;
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, !base64 && format !== default_format, base64, image_mime);
+            const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, !base64 && !isDefaultFormat(format), base64, image_mime);
             if (res.cancelled) { return { cancelled: true }; }
             reply = res.reply;
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
@@ -6021,7 +6075,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// is decoded and rendered as an image or raw text.
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            const raw_text = !base64 && format !== default_format;
+            const raw_text = !base64 && !isDefaultFormat(format);
             const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, raw_text, base64, image_mime);
             if (res.cancelled) { return { cancelled: true }; }
             if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
@@ -6393,7 +6447,7 @@ async function renderSnapshotIntoElement(el, snap, token) {
     /// image or raw text, mirroring the live path; it is never a table.
     if (snap.data.startsWith('event:')) {
         const base64 = !!snap.base64;
-        const raw_text = !base64 && format !== default_format;
+        const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
         renderEventStreamText(snap.data, el, raw_text, base64, imageMimeForFormat(format));
         if (el.isExplainGraph) {
@@ -6634,7 +6688,7 @@ async function restoreFromHistory(state, token) {
         /// text; a `base64` format (binary or raw output) is decoded and rendered as an image or raw
         /// text (mirroring the live path in `postImpl`). Fall through to the shared finish on success.
         const base64 = !!result.base64;
-        const raw_text = !base64 && format !== default_format;
+        const raw_text = !base64 && !isDefaultFormat(format);
         resultEl.enableViews();
         const rendered_image = renderEventStreamText(result.data, resultEl, raw_text, base64, imageMimeForFormat(format));
         if (base64) { if (!rendered_image) is_raw = true; }
