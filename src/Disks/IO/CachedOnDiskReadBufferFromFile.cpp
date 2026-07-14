@@ -47,7 +47,25 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int TEMPORARY_DATA_NOT_IN_CACHE;
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+
+/// For `temp_cache_only` reads: a miss is a clean, retriable error, never a remote-FS bypass.
+[[noreturn]] void throwTemporaryDataNotInCache(size_t offset, size_t end_offset, const FileCacheKey & key)
+{
+    throw Exception(
+        ErrorCodes::TEMPORARY_DATA_NOT_IN_CACHE,
+        "Temporary data is no longer present in the cache "
+        "(cache-only read of [{}, {}) for key {}): the data was removed "
+        "(eviction, expiry, writer failure or server restart). "
+        "The query has to be retried",
+        offset, end_offset, key);
+}
+
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -208,6 +226,19 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     size_t size = getRemainingSizeToRead();
     if (!size)
         return false;
+
+    if (info.cache_settings.temp_cache_only)
+    {
+        info.file_segments = cache->getDownloadedContiguousOrEmpty(
+            info.cache_key, file_offset_of_buffer_end, size, origin.user_id);
+
+        /// Throw, not `return false`: an empty batch is LOGICAL_ERROR in initialize()
+        /// and silent EOF in the mid-read refills.
+        if (info.file_segments->empty())
+            throwTemporaryDataNotInCache(file_offset_of_buffer_end, file_offset_of_buffer_end + size, info.cache_key);
+
+        return true;
+    }
 
     if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
@@ -457,6 +488,19 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
     };
 
     auto download_state = file_segment.state();
+    if (info_.cache_settings.temp_cache_only)
+    {
+        /// Unreachable (the helper returns only readable segments, kept alive by the holder);
+        /// turns any regression into the clear error instead of a remote read that cannot exist.
+        if (download_state == FileSegment::State::DETACHED || !canStartFromCache(offset, file_segment))
+        {
+            chassert(false);
+            throwTemporaryDataNotInCache(offset, file_segment.range().right + 1, file_segment.key());
+        }
+
+        return create(ReadType::CACHED);
+    }
+
     if (info_.cache_settings.read_if_exists_otherwise_bypass)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
@@ -1562,7 +1606,18 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
         /* read_until_position */range_begin + n, info.local_throttler);
 
-    if (info.cache_settings.read_if_exists_otherwise_bypass)
+    if (info.cache_settings.temp_cache_only)
+    {
+        current_info.file_segments = cache->getDownloadedContiguousOrEmpty(
+            info.cache_key,
+            /* offset */range_begin,
+            /* size */n,
+            origin.user_id);
+
+        if (current_info.file_segments->empty())
+            throwTemporaryDataNotInCache(range_begin, range_begin + n, info.cache_key);
+    }
+    else if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
         current_info.file_segments = cache->get(
             info.cache_key,
