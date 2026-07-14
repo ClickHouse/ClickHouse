@@ -2167,7 +2167,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
 
     /// The NULL key of the single-key nullable methods lives in a dedicated slot outside the cells,
     /// so partition 0's worker merges it.
-    auto merge_null_slot = [&](auto & src_table)
+    auto merge_null_slot = [&]([[maybe_unused]] auto & src_table)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         {
