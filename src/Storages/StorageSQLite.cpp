@@ -434,7 +434,12 @@ void registerStorageSQLite(StorageFactory & factory)
             ? TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query)
             : TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
+        /// Only a genuine `CREATE` may materialize a missing database file. An `ATTACH` (or a server restart
+        /// replaying the stored definition) must not create it as a side effect: the table has to come up with
+        /// the connection left unopened, so that a later read fails closed while the file is unavailable
+        /// (see `openConnectionIfNeeded`) instead of silently querying a fabricated empty database.
+        const bool is_create = args.mode <= LoadingStrictnessLevel::CREATE;
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, /* allow_create */ is_create);
 
         ColumnsDescription columns = args.columns;
         /// Re-apply the generated-column classification from the remote schema for an explicitly declared

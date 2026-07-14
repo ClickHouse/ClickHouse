@@ -24,7 +24,9 @@ sqlite3 "${DB_PATH}" 'CREATE TABLE source(id INTEGER); INSERT INTO source VALUES
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04538 ENGINE = SQLite('${DB_PATH}', query('SELECT id FROM source'))"
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_04538"
 rm -f "${DB_PATH}"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_04538"
+# The re-attach probes the missing file without creating it and logs the failure; the log line is
+# forwarded to the client by `send_logs_level`, so keep it out of the test output.
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_04538" 2>/dev/null
 
 # A query-backed `SQLite` storage is read-only. Its first read after `ATTACH` must fail closed while the
 # database is unavailable instead of creating an empty database as a side effect.
