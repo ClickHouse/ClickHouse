@@ -24,3 +24,17 @@ query SETTINGS framing None disables framing: OK
 {"x":1}
 --- the query SETTINGS clause can disable logs enabled by the URL while framing stays on
 query SETTINGS send_logs_level none drops log packets: OK
+--- a successful INSERT is framed: content type, no data packets, log / profile-events packets
+INSERT content type: OK
+INSERT no data packets: OK
+INSERT profile_events packets: OK
+INSERT log packets: OK
+INSERT rows written: OK
+--- a DDL query switches the response to the framing content type
+DDL content type: OK
+--- the query SETTINGS clause can disable framing on a no-result INSERT
+no-result query SETTINGS framing None disables framing: OK
+no-result query SETTINGS framing None rows written: OK
+--- a failing INSERT is delivered as a framed exception
+failing INSERT exception packet: OK
+failing INSERT no data packets: OK

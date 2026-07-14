@@ -19,6 +19,8 @@ Server logs are included as packets if the `send_logs_level` setting is set. Pro
 
 If an exception happens during query execution, it is sent as an `exception` packet (the last packet of the stream), regardless of the `http_write_exception_in_output_format` setting, so the client can always parse the response as a stream of packets.
 
+A framing format is applied to queries that produce no result stream as well - a successful `INSERT`, a DDL query, or any other query without output. Such a response carries no `data` packets, but still switches the response `Content-Type` to the framing format and streams the `progress`, `log`, and `profile_events` packets, matching the native protocol.
+
 ## Available framing formats {#available-framing-formats}
 
 | Name                                              | Description                                                                            |
