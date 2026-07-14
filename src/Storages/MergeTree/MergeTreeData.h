@@ -480,7 +480,6 @@ public:
                 && is_deleted_column == rhs.is_deleted_column
                 && columns_to_sum == rhs.columns_to_sum
                 && version_column == rhs.version_column
-                && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
                 && graphite_params == rhs.graphite_params;
         }
     };
