@@ -5,10 +5,16 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 bool ReplaceAliasByExpressionMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
@@ -45,7 +51,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTFunction & function, ASTPtr
 
 void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr & ast, Data & data)
 {
-    const auto & column_name = column.name();
+    const String & column_name = column.name();
 
     if (data.private_aliases.contains(column_name))
         return;
@@ -55,6 +61,22 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
         /// Alias expr is saved in default expr.
         if (auto col_default = data.columns.getDefault(column_name))
         {
+            auto check_alias_not_captured_by_lambda = [&column_name](this auto && self, const ASTPtr & sub_ast, const NameSet & names) -> void
+            {
+                if (const auto * identifier = sub_ast->as<ASTIdentifier>(); identifier && names.contains(identifier->name()))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "ALIAS column '{}' cannot be expanded inside a lambda: its expression references '{}', "
+                        "which is bound by a lambda parameter of the same name", column_name, identifier->name());
+
+                for (const auto & child : sub_ast->children)
+                    self(child, names);
+            };
+
+            /// Reject inlining an ALIAS whose expression references a column shadowed by an enclosing
+            /// lambda parameter, which would silently rebind it to the parameter.
+            if (!data.private_aliases.empty())
+                check_alias_not_captured_by_lambda(col_default->expression, data.private_aliases);
+
             ast = col_default->expression->clone();
         }
     }

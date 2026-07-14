@@ -223,5 +223,6 @@ Baz	3
 1
 1
 0
+-- Preprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected
 -- Preprocessor on an ALIAS column with the sparseGrams tokenizer
 3

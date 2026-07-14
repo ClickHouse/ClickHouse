@@ -333,3 +333,14 @@ SELECT count() FROM tab WHERE hasToken(val, 'bar');
 SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is not the ALIAS `x`
 
 DROP TABLE IF EXISTS tab;
+
+SELECT 'Postprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected.';
+-- `a` expands to `x`, which is shadowed by the lambda parameter `x`, so the reference is inaccessible.
+CREATE TABLE tab
+(
+    s String,
+    x String,
+    a String ALIAS x,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayStringConcat(arrayMap(x -> lower(a), [s]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
