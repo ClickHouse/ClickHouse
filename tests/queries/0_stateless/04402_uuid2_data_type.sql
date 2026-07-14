@@ -143,6 +143,21 @@ SELECT
     sumMap(m)[s2::UUID2]
 FROM (SELECT map(s1::UUID2, 1::UInt64, s2::UUID2, 10::UInt64) AS m FROM numbers(3));
 
+SELECT '-- uniq* parity: UUID2 takes the same fixed-width path as UUID';
+-- `UUID2` shares `ColumnVector<UUID>` with `UUID`, so the single-argument `uniq*` factories route it through the
+-- fixed-width fast path instead of the generic variadic hash. The exact variants (`uniqExact`, `uniqUpTo`) match
+-- `UUID` exactly because the layout change is a bijection; `uniq` and `uniqCombined` are exact at this cardinality
+-- and match too. `uniqHLL12` is a pure HyperLogLog estimate over the physical bytes, so it is only checked to agree
+-- with the `UUID` estimate within its error bound.
+SELECT
+    uniqExact(u::UUID2) = uniqExact(u::UUID),
+    uniq(u::UUID2) = uniq(u::UUID),
+    uniqCombined(u::UUID2) = uniqCombined(u::UUID),
+    uniqUpTo(100)(u::UUID2) = uniqUpTo(100)(u::UUID),
+    uniqExact(u::UUID2) = 100,
+    abs(toInt64(uniqHLL12(u::UUID2)) - toInt64(uniqHLL12(u::UUID))) <= 5
+FROM (SELECT reinterpretAsUUID(toUInt128(number)) AS u FROM numbers(100));
+
 SELECT '-- generateRandom produces UUID2';
 SELECT count() FROM (SELECT * FROM generateRandom('x UUID2', 1, 1, 1) LIMIT 5);
 

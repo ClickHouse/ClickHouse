@@ -64,6 +64,8 @@ e	Nullable(UUID2)
 Map(UUID2, UInt64)	3	3
 -- -Map aggregate combinator on Map(UUID2, ...) keys
 Map(UUID2, UInt64)	3	30
+-- uniq* parity: UUID2 takes the same fixed-width path as UUID
+1	1	1	1	1	1
 -- generateRandom produces UUID2
 5
 -- bloom_filter skip index on UUID2

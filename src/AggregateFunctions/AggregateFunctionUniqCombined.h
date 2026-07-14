@@ -414,6 +414,11 @@ AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_typ
         if (which.isUUID())
             return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(
                 argument_types, params);
+        /// `UUID2` shares the physical representation with `UUID` (both use `ColumnVector<UUID>`), so it takes the same
+        /// fixed-width fast path instead of falling back to the generic variadic hash.
+        if (which.isUUID2())
+            return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(
+                argument_types, params);
         if (which.isIPv4())
             return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(
                 argument_types, params);

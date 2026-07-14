@@ -334,6 +334,10 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             return std::make_shared<AggregateFunctionUniqUpTo<String>>(threshold, argument_types, params);
         if (which.isUUID())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeUUID::FieldType>>(threshold, argument_types, params);
+        /// `UUID2` shares the physical representation with `UUID` (both use `ColumnVector<UUID>`), so it takes the same
+        /// fixed-width fast path instead of falling back to the generic variadic hash.
+        if (which.isUUID2())
+            return std::make_shared<AggregateFunctionUniqUpTo<DataTypeUUID::FieldType>>(threshold, argument_types, params);
         if (which.isTuple())
         {
             if (use_exact_hash_function)
