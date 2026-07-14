@@ -93,6 +93,13 @@ public:
         return roaring_bitmap->cardinality();
     }
 
+    UInt64 getAllocatedBytes() const
+    {
+        if (isSmall())
+            return sizeof(small);
+        return roaring_bitmap->getSizeInBytes();
+    }
+
     void merge(const RoaringBitmapWithSmallSet & r1)
     {
         if (r1.isLarge())

@@ -52,7 +52,7 @@ UInt64 PuffinFilesCacheCell::calculateMemorySize(const DataLakeObjectMetadata::E
     if (!excluded_rows_)
         return 0;
 
-    return static_cast<UInt64>(excluded_rows_->size()) * sizeof(size_t);
+    return excluded_rows_->getAllocatedBytes();
 }
 
 PuffinFilesCacheCell::PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_)
