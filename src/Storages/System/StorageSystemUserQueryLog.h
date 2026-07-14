@@ -10,6 +10,11 @@ namespace DB
   * `query_log.table` server settings (`system.query_log` by default) under an internal full-access
   * context, filtered by the initiating user: rows where `if(initial_user != '', initial_user, user)`
   * is equal to `currentUser()`.
+  *
+  * A vetted subset of the outer query's predicate (comparisons of the partition / point-lookup
+  * columns with constants) is pushed down into the internal query, so ordinary lookups keep
+  * partition pruning and index analysis on the backing table instead of scanning the whole
+  * retained log. See `ReadFromUserQueryLog` in the implementation file.
   */
 class StorageSystemUserQueryLog final : public IStorage
 {

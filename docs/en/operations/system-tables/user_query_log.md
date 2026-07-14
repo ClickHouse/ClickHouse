@@ -20,6 +20,11 @@ inspect their own queries without being given access to the queries of others.
 The table can be disabled with the `query_log.enable_user_query_log` server setting. If the query log
 is not configured, or its table has not been created yet, `system.user_query_log` is empty.
 
+Conditions on the partition and key columns of the query log (`event_date`, `event_time`,
+`query_start_time`, `query_id`, `type`, and similar scalar columns) compared with constants are
+pushed down to the backing query log table, so ordinary lookups such as the example below keep
+partition pruning and do not scan the whole retained log.
+
 :::warning Upgrade compatibility
 If a table named `system.user_query_log` was created before upgrading to a ClickHouse version that
 provides this table, the server will not start until the existing table is renamed or dropped, or

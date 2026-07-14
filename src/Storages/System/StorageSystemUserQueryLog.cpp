@@ -1,20 +1,29 @@
 #include <Storages/System/StorageSystemUserQueryLog.h>
 
+#include <Columns/ColumnConst.h>
 #include <Common/quoteString.h>
 #include <Common/SettingsChanges.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryLogElement.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
@@ -24,8 +33,289 @@
 
 #include <fmt/format.h>
 
+#include <unordered_set>
+
 namespace DB
 {
+
+namespace
+{
+
+/// Predicates of the outer query can be pushed down into the internal query only when they cannot
+/// observe anything about other users' rows. A pushed-down predicate is evaluated on rows of all
+/// users before the user filter hides the foreign ones, so it must be limited to expressions that
+/// are deterministic (in the scope of a query), have no side effects, and cannot fail depending on
+/// the value of a cell: a function like `throwIf`, or arithmetic that may overflow, would act as an
+/// error-based oracle on other users' rows.
+
+/// The columns that may appear in a pushed-down predicate: the partition / point-lookup columns
+/// (this is what makes the pushdown useful: `event_date` and the times prune partitions and ranges
+/// of the backing table) and the scalar identity columns. Comparing any of them with a constant
+/// cannot fail per row.
+const std::unordered_set<std::string_view> pushable_columns
+{
+    "type",
+    "event_date",
+    "event_time",
+    "event_time_microseconds",
+    "query_start_time",
+    "query_start_time_microseconds",
+    "query_id",
+    "initial_query_id",
+    "query_kind",
+    "is_initial_query",
+    "user",
+    "initial_user",
+    "current_database",
+};
+
+/// The functions that may appear in a pushed-down predicate: logical connectives and comparisons.
+/// They never throw depending on the value of an argument row.
+const std::unordered_set<std::string_view> pushable_functions
+{
+    "and",
+    "or",
+    "not",
+    "equals",
+    "notEquals",
+    "less",
+    "greater",
+    "lessOrEqual",
+    "greaterOrEqual",
+    "like",
+    "notLike",
+    "ilike",
+    "notILike",
+};
+
+/// The pattern argument of the LIKE family is compiled once only when it is constant. A pattern
+/// coming from a cell would be compiled per row, and a malformed pattern (e.g. a trailing escape)
+/// throws, which would make it an error-based oracle on other users' rows.
+const std::unordered_set<std::string_view> functions_with_constant_second_argument
+{
+    "like",
+    "notLike",
+    "ilike",
+    "notILike",
+};
+
+bool isPushableConstantType(const DataTypePtr & type)
+{
+    DataTypePtr unwrapped = removeNullable(removeLowCardinality(type));
+    return isNumber(unwrapped) || isStringOrFixedString(unwrapped) || isDateOrDate32(unwrapped) || isDateTime(unwrapped)
+        || isDateTime64(unwrapped) || isEnum(unwrapped) || isUUID(unwrapped) || isNothing(unwrapped);
+}
+
+bool isConstantNode(const ActionsDAG::Node & node)
+{
+    return node.column && isColumnConst(*node.column);
+}
+
+/// Returns the AST of a predicate subtree if the whole subtree is safe to evaluate on other users'
+/// rows inside the internal query, nullptr otherwise.
+ASTPtr tryBuildPushableAST(const ActionsDAG::Node & node)
+{
+    /// A folded constant, e.g. a literal or `today()`. Its value has already been computed by the
+    /// outer query, so no function is re-executed (with full access) inside the internal query; the
+    /// value is inlined as a literal with an explicit cast to its type.
+    if (isConstantNode(node))
+    {
+        if (!isPushableConstantType(node.result_type))
+            return nullptr;
+
+        Field value;
+        node.column->get(0, value);
+        return addTypeConversionToAST(make_intrusive<ASTLiteral>(std::move(value)), node.result_type->getName());
+    }
+
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        {
+            if (!pushable_columns.contains(node.result_name))
+                return nullptr;
+            return make_intrusive<ASTIdentifier>(node.result_name);
+        }
+        case ActionsDAG::ActionType::ALIAS:
+        {
+            return tryBuildPushableAST(*node.children.front());
+        }
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            const String & function_name = node.function_base->getName();
+            if (!pushable_functions.contains(function_name))
+                return nullptr;
+
+            if (functions_with_constant_second_argument.contains(function_name)
+                && !(node.children.size() == 2 && isConstantNode(*node.children[1])))
+                return nullptr;
+
+            auto function = makeASTFunction(function_name);
+            for (const auto * child : node.children)
+            {
+                ASTPtr child_ast = tryBuildPushableAST(*child);
+                if (!child_ast)
+                    return nullptr;
+                function->arguments->children.push_back(std::move(child_ast));
+            }
+            return function;
+        }
+        default:
+            return nullptr;
+    }
+}
+
+}
+
+/** The internal query is built and executed when the pipeline is initialized, so that the plan
+  * optimization pass has already offered the outer filter to this step (`SourceStepWithFilter`):
+  * the safe subset of its conjuncts is embedded into the internal query, where it restores
+  * partition pruning and index lookups on the backing query log table. The step itself stays an
+  * opaque source: the outer `FilterStep` remains in the plan and re-applies the full predicate,
+  * so the pushdown only reduces the read, it does not replace the outer filtering, and no outer
+  * expression is ever moved below the user filter unvetted.
+  */
+class ReadFromUserQueryLog final : public SourceStepWithFilter
+{
+public:
+    ReadFromUserQueryLog(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        SharedHeader header_,
+        StorageID log_table_id_)
+        : SourceStepWithFilter(std::move(header_), column_names_, query_info_, storage_snapshot_, context_)
+        , log_table_id(std::move(log_table_id_))
+    {
+        setStepDescription("Read the query log records of the current user");
+    }
+
+    String getName() const override { return "ReadFromUserQueryLog"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+private:
+    String buildPushedDownConditions() const;
+
+    StorageID log_table_id;
+};
+
+String ReadFromUserQueryLog::buildPushedDownConditions() const
+{
+    if (!filter_actions_dag || filter_actions_dag->getOutputs().empty())
+        return {};
+
+    ASTs pushable;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().front()))
+    {
+        /// A conjunct that folded into a constant cannot reduce the read.
+        if (isConstantNode(*atom))
+            continue;
+
+        if (ASTPtr ast = tryBuildPushableAST(*atom))
+            pushable.push_back(std::move(ast));
+    }
+
+    if (pushable.empty())
+        return {};
+
+    ASTPtr condition;
+    if (pushable.size() == 1)
+    {
+        condition = std::move(pushable.front());
+    }
+    else
+    {
+        auto function = makeASTFunction("and");
+        function->arguments->children = std::move(pushable);
+        condition = function;
+    }
+
+    return condition->formatWithSecretsOneLine();
+}
+
+void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    ContextPtr outer_context = getContext();
+
+    /// The internal query runs with full access under a fresh context (a copy of the global context,
+    /// which has no bound user), so the user does not need access to the query log table itself. It is
+    /// not a bare global context, though: the caller's identity, normalized query hash, and execution
+    /// settings are replayed the same way `StorageInMemoryMetadata::getSQLSecurityOverriddenContext`
+    /// does, so that quotas keep bucketing per user and per `NORMALIZED_QUERY_HASH` (a fresh context
+    /// starts with hash 0) and the backing query log scan honors the caller's profile
+    /// (e.g. `max_threads`) instead of the server defaults.
+    auto inner_context = Context::createCopy(outer_context->getGlobalContext());
+    inner_context->makeQueryContext();
+    inner_context->setClientInfo(outer_context->getClientInfo());
+    inner_context->setProgressCallback(outer_context->getProgressCallback());
+    inner_context->setProcessListElement(outer_context->getProcessListElement());
+    inner_context->setNormalizedQueryHash(outer_context->getNormalizedQueryHash());
+
+    /// Replay the caller's settings, except the expression-injection ones: `additional_table_filters`
+    /// and `additional_result_filter` add expressions that would be evaluated on other users' rows before
+    /// the user filter below hides them, which could leak their contents. They keep their default (empty)
+    /// value from the global context because they are dropped from the applied changes rather than reset.
+    SettingsChanges settings_changes = outer_context->getSettingsRef().changes();
+    settings_changes.removeSetting("additional_table_filters");
+    settings_changes.removeSetting("additional_result_filter");
+    inner_context->applySettingsChanges(settings_changes);
+
+    String select_columns;
+    for (const auto & name : requiredSourceColumns())
+    {
+        if (!select_columns.empty())
+            select_columns += ", ";
+        select_columns += backQuoteIfNeed(name);
+    }
+
+    /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
+    /// recorded in `initial_user`, while `user` may be the interserver connection user. `currentUser()`
+    /// is `ClientInfo::initial_user` as well, so both sides of the comparison use the initiating user.
+    String select_query = fmt::format(
+        "SELECT {} FROM {} WHERE (if(initial_user != '', initial_user, user) = {})",
+        select_columns,
+        log_table_id.getFullTableName(),
+        quoteString(outer_context->getClientInfo().initial_user));
+
+    if (String pushed_conditions = buildPushedDownConditions(); !pushed_conditions.empty())
+        select_query += fmt::format(" AND ({})", pushed_conditions);
+
+    /// The limit is set by the plan optimization only when nothing between the source and the `LIMIT`
+    /// changes the number of rows, with the exception of `FilterStep`s, which it walks through. When a
+    /// filter is present, applying the limit inside (where the possibly unpushed part of the predicate
+    /// has not been applied yet) would return too few rows, so it is only used without a filter; the
+    /// user filter is not a concern because the internal query applies it before its `LIMIT`.
+    if (limit && !filter_actions_dag)
+        select_query += fmt::format(" LIMIT {}", *limit);
+
+    ParserSelectWithUnionQuery parser;
+    ASTPtr select_ast = parseQuery(
+        parser,
+        select_query.data(),
+        select_query.data() + select_query.size(),
+        "user query log query",
+        0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    InterpreterSelectQueryAnalyzer interpreter(select_ast, inner_context, SelectQueryOptions(QueryProcessingStage::Complete));
+    interpreter.addStorageLimits(*getQueryInfo().storage_limits);
+    auto builder = interpreter.buildQueryPipeline();
+
+    /// Convert to the exposed structure. This also casts LowCardinality columns to full ones.
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+        builder.getHeader().getColumnsWithTypeAndName(),
+        getOutputHeader()->getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        outer_context, false, false, nullptr, nullptr, false);
+    auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), ExpressionActionsSettings(outer_context));
+    builder.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
+
+    builder.addContext(inner_context);
+    pipeline = std::move(builder);
+}
 
 ColumnsDescription StorageSystemUserQueryLog::getColumnsDescription()
 {
@@ -81,78 +371,14 @@ void StorageSystemUserQueryLog::read(
         return;
     }
 
-    /// The inner query runs with full access under a fresh context (a copy of the global context, which
-    /// has no bound user), so the user does not need access to the query log table itself. It is not a
-    /// bare global context, though: the caller's identity, normalized query hash, and execution settings
-    /// are replayed the same way `StorageInMemoryMetadata::getSQLSecurityOverriddenContext` does, so that
-    /// quotas keep bucketing per user and per `NORMALIZED_QUERY_HASH` (a fresh context starts with hash 0)
-    /// and the backing query log scan honors the caller's profile (e.g. `max_threads`) instead of the
-    /// server defaults.
-    auto inner_context = Context::createCopy(context->getGlobalContext());
-    inner_context->makeQueryContext();
-    inner_context->setClientInfo(context->getClientInfo());
-    inner_context->setProgressCallback(context->getProgressCallback());
-    inner_context->setProcessListElement(context->getProcessListElement());
-    inner_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
-
-    /// Replay the caller's settings, except the expression-injection ones: `additional_table_filters`
-    /// and `additional_result_filter` add expressions that would be evaluated on other users' rows before
-    /// the user filter below hides them, which could leak their contents. They keep their default (empty)
-    /// value from the global context because they are dropped from the applied changes rather than reset.
-    SettingsChanges settings_changes = context->getSettingsRef().changes();
-    settings_changes.removeSetting("additional_table_filters");
-    settings_changes.removeSetting("additional_result_filter");
-    inner_context->applySettingsChanges(settings_changes);
-
-    String select_columns;
-    for (const auto & name : column_names)
-    {
-        if (!select_columns.empty())
-            select_columns += ", ";
-        select_columns += backQuoteIfNeed(name);
-    }
-
-    /// For queries received from an initiator (e.g. from a distributed query), the initiating user is
-    /// recorded in `initial_user`, while `user` may be the interserver connection user. `currentUser()`
-    /// is `ClientInfo::initial_user` as well, so both sides of the comparison use the initiating user.
-    String select_query = fmt::format(
-        "SELECT {} FROM {} WHERE if(initial_user != '', initial_user, user) = {}",
-        select_columns,
-        query_log->getTableID().getFullTableName(),
-        quoteString(context->getClientInfo().initial_user));
-
-    ParserSelectWithUnionQuery parser;
-    ASTPtr select_ast = parseQuery(
-        parser,
-        select_query.data(),
-        select_query.data() + select_query.size(),
-        "user query log query",
-        0,
-        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    InterpreterSelectQueryAnalyzer interpreter(select_ast, inner_context, SelectQueryOptions(QueryProcessingStage::Complete));
-    interpreter.addStorageLimits(*query_info.storage_limits);
-    auto builder = interpreter.buildQueryPipeline();
-
-    /// Convert to the exposed structure. This also casts LowCardinality columns to full ones.
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-        builder.getHeader().getColumnsWithTypeAndName(),
-        expected_header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context, false, false, nullptr, nullptr, false);
-    auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), ExpressionActionsSettings(context));
-    builder.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
-
-    /// The pipeline is added to the plan as an opaque source: plan-level optimizations of the outer
-    /// query (e.g. filter push-down and filter merging) must not move any expression of the outer
-    /// query below the user filter, where it would observe other users' rows.
-    QueryPlanResourceHolder resources;
-    auto read_step = std::make_unique<ReadFromPreparedSource>(QueryPipelineBuilder::getPipe(std::move(builder), resources));
-    read_step->setStepDescription("Read the query log records of the current user");
-    query_plan.addStep(std::move(read_step));
-    query_plan.addResources(std::move(resources));
-    query_plan.addInterpreterContext(inner_context);
+    /// The pipeline over the query log table is built inside an opaque source step: plan-level
+    /// optimizations of the outer query (e.g. filter push-down and filter merging) must not move any
+    /// expression of the outer query below the user filter, where it would observe other users' rows.
+    /// Only the vetted subset of the outer predicate is pushed into the internal query (see
+    /// `ReadFromUserQueryLog`), keeping efficient partition pruning and point lookups on the backing
+    /// table.
+    query_plan.addStep(std::make_unique<ReadFromUserQueryLog>(
+        column_names, query_info, storage_snapshot, context, std::move(expected_header), query_log->getTableID()));
 }
 
 }
