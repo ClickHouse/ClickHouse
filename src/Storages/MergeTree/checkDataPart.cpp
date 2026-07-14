@@ -187,7 +187,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
-        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
+        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();
