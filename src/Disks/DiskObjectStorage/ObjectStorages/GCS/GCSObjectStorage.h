@@ -9,6 +9,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/logger_useful.h>
 
@@ -113,6 +114,12 @@ private:
         std::lock_guard lock(client_mutex);
         return client;
     }
+
+    /// Deletes one object (tolerating "not found") and records a Delete event in `system.blob_storage_log`.
+    void removeObjectImpl(
+        const StoredObject & object,
+        google::cloud::storage::Client & client_ref,
+        const BlobStorageLogWriterPtr & blob_storage_log);
 
     const String bucket;
     const String key_prefix;

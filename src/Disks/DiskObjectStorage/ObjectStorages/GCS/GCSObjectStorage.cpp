@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/ReadBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/WriteBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/object_metadata.h>
@@ -134,23 +135,46 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
-void GCSObjectStorage::removeObjectIfExists(const StoredObject & object)
+void GCSObjectStorage::removeObjectImpl(
+    const StoredObject & object,
+    gcs::Client & client_ref,
+    const BlobStorageLogWriterPtr & blob_storage_log)
 {
-    auto status = getClient()->DeleteObject(bucket, object.remote_path);
+    Stopwatch watch;
+    auto status = client_ref.DeleteObject(bucket, object.remote_path);
+    auto elapsed = watch.elapsedMicroseconds();
+
+    /// Record the delete in `system.blob_storage_log` (like the S3 and Azure backends do),
+    /// including tolerated "not found" outcomes, which keep their error code and message.
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            bucket,
+            object.remote_path,
+            object.local_path,
+            object.bytes_size,
+            elapsed,
+            status.ok() ? 0 : static_cast<Int32>(status.code()),
+            status.ok() ? "" : status.message());
+
     if (!status.ok() && !isGCSNotFoundError(status))
         throwFromGCSStatus(status, fmt::format("while removing '{}' in bucket '{}'", object.remote_path, bucket));
+}
+
+void GCSObjectStorage::removeObjectIfExists(const StoredObject & object)
+{
+    auto client_ptr = getClient();
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    removeObjectImpl(object, *client_ptr, blob_storage_log);
 }
 
 void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     /// GCS has no batch-delete API (see https://issuetracker.google.com/issues/162653700), delete one by one.
     auto client_ptr = getClient();
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     for (const auto & object : objects)
-    {
-        auto status = client_ptr->DeleteObject(bucket, object.remote_path);
-        if (!status.ok() && !isGCSNotFoundError(status))
-            throwFromGCSStatus(status, fmt::format("while removing '{}' in bucket '{}'", object.remote_path, bucket));
-    }
+        removeObjectImpl(object, *client_ptr, blob_storage_log);
 }
 
 ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, bool /*with_tags*/) const
