@@ -18,6 +18,16 @@ SET allow_deprecated_error_prone_window_functions = 1;
 SET group_by_two_level_threshold = 0;
 SET group_by_two_level_threshold_bytes = 0;
 
+-- `runningAccumulate` resets its state per block and accumulates across rows within a block
+-- in the order it receives them. Stateful functions are now kept below a same-level `ORDER BY`
+-- (they observe the rows in pre-sort order), so the result depends on the input stream layout.
+-- To make the running sums deterministic regardless of the harness's randomized settings, run
+-- single-threaded (a single stream) with a block large enough to hold every row (a single block).
+-- This does not weaken the use-after-free coverage below: the fault triggers when the result
+-- column is destroyed, independent of the thread count.
+SET max_threads = 1;
+SET max_block_size = 65536;
+
 -- The exact AST-fuzzer query that originally triggered the
 -- use-after-free. It must now run cleanly and produce non-empty output.
 SELECT count()
@@ -95,7 +105,11 @@ ORDER BY number;
 -- per-element state into the inner column via the nested
 -- `insertMergeResultInto`, which keeps the per-row states independent of
 -- the stack-local accumulator.
-SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(s))))
+-- `arrayJoin` expands each row's two-element array into two rows that tie on `number`, and the
+-- `ORDER BY number` alone does not pin their relative order (previously the sort-lifting optimization
+-- masked this by applying `arrayJoin` after the sort). Order by the accumulated value too so the
+-- output is deterministic.
+SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(s)))) AS v
 FROM
 (
     SELECT number, sumStateOrDefaultStateForEachState([number, number + 1]) AS s
@@ -103,7 +117,7 @@ FROM
     GROUP BY number
     ORDER BY number
 )
-ORDER BY number;
+ORDER BY number, v;
 
 -- A column with type `AggregateFunction(sumStateMerge, ...)` keeps the
 -- `Merge` wrapper visible through `ColumnAggregateFunction::getAggregateFunction`,
