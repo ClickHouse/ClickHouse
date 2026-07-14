@@ -22,6 +22,14 @@ star	multi2
 DUPLICATE_COLUMN
 --- error: non-existent column
 NO_SUCH_COLUMN_IN_TABLE
+--- error: MATERIALIZED column (sync)
+NO_SUCH_COLUMN_IN_TABLE
+--- error: ALIAS column (sync)
+NO_SUCH_COLUMN_IN_TABLE
+--- error: MATERIALIZED column (async)
+NO_SUCH_COLUMN_IN_TABLE
+--- error: ALIAS column (async)
+NO_SUCH_COLUMN_IN_TABLE
 --- sync: non-String column types
 42	['important','urgent']	3.14	typed-test
 --- async: non-String column types

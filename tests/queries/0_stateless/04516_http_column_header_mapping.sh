@@ -118,6 +118,42 @@ ${CLICKHOUSE_CURL} -sS \
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns"
 
+# MATERIALIZED and ALIAS columns are not insertable and must be rejected.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS test_http_columns_non_insertable;
+    CREATE TABLE test_http_columns_non_insertable (
+        payload   String,
+        mat_col   UInt64 MATERIALIZED length(payload),
+        alias_col String ALIAS payload
+    ) ENGINE = MergeTree ORDER BY tuple();
+"
+
+echo "--- error: MATERIALIZED column (sync)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Val: 42' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns_non_insertable+(payload)+FORMAT+JSONEachRow&http_column_X-Val=mat_col" \
+    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+
+echo "--- error: ALIAS column (sync)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Val: hello' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns_non_insertable+(payload)+FORMAT+JSONEachRow&http_column_X-Val=alias_col" \
+    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+
+echo "--- error: MATERIALIZED column (async)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Val: 42' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns_non_insertable+(payload)+FORMAT+JSONEachRow&http_column_X-Val=mat_col" \
+    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+
+echo "--- error: ALIAS column (async)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Val: hello' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns_non_insertable+(payload)+FORMAT+JSONEachRow&http_column_X-Val=alias_col" \
+    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_non_insertable"
+
 # Test non-String column types: values are deserialized through the column type's
 # text serialization, so UInt64, Array, Date, etc. should parse correctly.
 ${CLICKHOUSE_CLIENT} -q "

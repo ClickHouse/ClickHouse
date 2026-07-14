@@ -176,10 +176,12 @@ private:
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
-            /// Pre-parsed single-row columns from http_column_* URL params.
-            /// Parsed at push time so type errors surface immediately to the client.
-            /// At flush time the values are just replicated for each entry's row count.
-            std::vector<std::pair<String, ColumnPtr>> parsed_http_header_columns;
+            /// HTTP header values from http_column_* URL params, stored as raw strings
+            /// in sorted column-name order. Validated (parsed + discarded) at push time
+            /// so type errors surface immediately. Re-parsed at flush time against the
+            /// live table schema so that ALTER TABLE ... MODIFY COLUMN during buffering
+            /// does not break the batch.
+            std::vector<std::pair<String, String>> http_header_column_values;
 
             Entry(
                 DataChunk && chunk_,

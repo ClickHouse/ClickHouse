@@ -432,14 +432,15 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     const auto & http_header_columns = query_context->getHTTPHeaderColumns();
     if (!http_header_columns.empty())
     {
-        const auto & table_columns = metadata_snapshot->getColumns();
+        const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
 
         for (const auto & [col_name, _] : http_header_columns)
         {
-            if (!table_columns.has(col_name))
+            if (!insertable_sample.has(col_name))
                 throw Exception(
                     ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "http_column mapping references column '{}' which does not exist in table '{}'",
+                    "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
+                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
                     col_name, insert_query.table_id.getFullTableName());
         }
 
@@ -619,12 +620,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto table = interpreter_for_table.getTable(insert_query);
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         const auto format_settings = getFormatSettings(query_context);
+        const Block insertable_block = metadata->getSampleBlockInsertable();
 
-        /// Collect and sort column names so that parsed_http_header_columns has a
-        /// deterministic order across all entries in a batch. This is required because
-        /// the flush loop indexes entries by position (entry_parsed_idx), and unordered
-        /// iteration of http_header_columns (std::unordered_map) could produce different
-        /// orderings for different requests, causing cross-column value swaps.
+        /// Collect and sort column names for deterministic order across all entries
+        /// in a batch. The flush loop indexes by position (entry_parsed_idx), so
+        /// unordered NameToNameMap iteration would cause cross-column value swaps.
         http_col_names.reserve(http_header_columns.size());
         for (const auto & [col_name, _] : http_header_columns)
             http_col_names.push_back(col_name);
@@ -632,12 +632,26 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         for (const auto & col_name : http_col_names)
         {
+            if (!insertable_block.has(col_name))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "http_column mapping references column '{}' which is not insertable in table '{}'. "
+                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
+                    col_name, insert_query.table_id.getFullTableName());
+
             const auto & str_value = http_header_columns.at(col_name);
-            const auto & col_type = metadata->getColumns().get(col_name).type;
-            auto parsed = col_type->createColumn();
-            ReadBufferFromString buf(str_value);
-            col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
-            entry->parsed_http_header_columns.emplace_back(col_name, std::move(parsed));
+            const auto & col_type = insertable_block.getByName(col_name).type;
+
+            /// Validate that the string value parses correctly against the current
+            /// column type. The parsed result is discarded; only the raw string is
+            /// stored so that a later ALTER TABLE ... MODIFY COLUMN does not break
+            /// the batch (flush time re-parses from the string using the live type).
+            {
+                auto tmp_col = col_type->createColumn();
+                ReadBufferFromString buf(str_value);
+                col_type->getDefaultSerialization()->deserializeWholeText(*tmp_col, buf, format_settings);
+            }
+            entry->http_header_column_values.emplace_back(col_name, str_value);
         }
     }
 
@@ -1400,26 +1414,27 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// The injected columns are appended after the executor loop.
     struct InjectedColumnInfo
     {
-        size_t header_col_idx;   /// Position in the full pipeline header.
-        size_t entry_parsed_idx; /// Position in entry->parsed_http_header_columns.
+        size_t header_col_idx = 0;   /// Position in the full pipeline header.
+        size_t entry_parsed_idx = 0; /// Position in entry->http_header_column_values.
         DataTypePtr type;
     };
     std::vector<InjectedColumnInfo> injected_column_infos;
     Block format_header;  /// Body-only block passed to the format and AddingDefaultsTransform.
-    if (!data->entries.empty() && !data->entries.front()->parsed_http_header_columns.empty())
+    if (!data->entries.empty() && !data->entries.front()->http_header_column_values.empty())
     {
-        const auto & first_parsed = data->entries.front()->parsed_http_header_columns;
+        const auto & first_values = data->entries.front()->http_header_column_values;
 
-        /// Collect injected column names for fast lookup.
-        std::unordered_map<String, size_t> injected_name_to_parsed_idx;
-        for (size_t i = 0; i < first_parsed.size(); ++i)
-            injected_name_to_parsed_idx.emplace(first_parsed[i].first, i);
+        /// Build column-name → position map for the first entry (all entries in a
+        /// batch have the same names in the same order, enforced by the batching key).
+        std::unordered_map<String, size_t> injected_name_to_idx;
+        for (size_t i = 0; i < first_values.size(); ++i)
+            injected_name_to_idx.emplace(first_values[i].first, i);
 
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & col_name = header.getByPosition(i).name;
-            auto it = injected_name_to_parsed_idx.find(col_name);
-            if (it != injected_name_to_parsed_idx.end())
+            auto it = injected_name_to_idx.find(col_name);
+            if (it != injected_name_to_idx.end())
                 injected_column_infos.push_back({i, it->second, header.getByPosition(i).type});
             else
                 format_header.insert(header.getByPosition(i));
@@ -1510,16 +1525,23 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         {
             if (inj_idx < injected_column_infos.size() && injected_column_infos[inj_idx].header_col_idx == col_idx)
             {
-                /// Injected column: replicate per-entry pre-parsed value.
+                /// Injected column: parse each entry's raw string against the live
+                /// flush-time column type. This survives ALTER TABLE ... MODIFY COLUMN
+                /// on a mapped column while requests are buffered.
                 const auto & info = injected_column_infos[inj_idx++];
+                const auto & serialization = info.type->getDefaultSerialization();
+                const FormatSettings fmt_settings = getFormatSettings(insert_context);
                 auto new_col = info.type->createColumn();
                 new_col->reserve(total_rows);
                 size_t ei = 0;
                 for (const auto & entry : data->entries)
                 {
-                    const auto & parsed_col = entry->parsed_http_header_columns[info.entry_parsed_idx].second;
+                    const auto & raw_value = entry->http_header_column_values[info.entry_parsed_idx].second;
+                    auto tmp_col = info.type->createColumn();
+                    ReadBufferFromString buf(raw_value);
+                    serialization->deserializeWholeText(*tmp_col, buf, fmt_settings);
                     for (size_t row = 0; row < entry_num_rows[ei++]; ++row)
-                        new_col->insertFrom(*parsed_col, 0);
+                        new_col->insertFrom(*tmp_col, 0);
                 }
                 result_columns.push_back(std::move(new_col));
             }

@@ -1087,14 +1087,15 @@ BlockIO InterpreterInsertQuery::execute()
                 "http_column_* URL parameters are not supported with INSERT ... SELECT. "
                 "Use getClientHTTPHeader() in the SELECT clause instead");
 
-        const auto & table_columns = metadata_snapshot->getColumns();
+        const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
 
         for (const auto & [col_name, _] : http_header_columns)
         {
-            if (!table_columns.has(col_name))
+            if (!insertable_sample.has(col_name))
                 throw Exception(
                     ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "http_column mapping references column '{}' which does not exist in table '{}'",
+                    "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
+                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
                     col_name, query.table_id.getFullTableName());
         }
 
