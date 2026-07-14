@@ -120,8 +120,41 @@ FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_
 SELECT *
 FROM 03271_parametrized_v_expl(upper_bound = 3);
 
+-- Schema exposure is decided by the setting value at CREATE/ATTACH/reload time, not at
+-- query time (a deliberate backward-compatibility choice).
+SET enable_analyzer = 1;
+SET use_declared_schema_for_parameterized_views = 1;
+CREATE OR REPLACE VIEW 03271_parametrized_v_toggle (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SET use_declared_schema_for_parameterized_views = 0;
+-- Created while the setting was on: turning it off later must not hide the declared schema.
+SHOW COLUMNS IN 03271_parametrized_v_toggle;
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v_toggle' AND database = currentDatabase();
+CREATE OR REPLACE VIEW 03271_parametrized_v_off (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SET use_declared_schema_for_parameterized_views = 1;
+-- Created while the setting was off: turning it on later must not retroactively expose it.
+SHOW COLUMNS IN 03271_parametrized_v_off;
+CREATE OR REPLACE VIEW 03271_parametrized_v_reload (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SET use_declared_schema_for_parameterized_views = 0;
+DETACH TABLE 03271_parametrized_v_reload;
+ATTACH TABLE 03271_parametrized_v_reload;
+SET use_declared_schema_for_parameterized_views = 1;
+-- Reloaded under a default-off load context: the declared schema is dropped and re-enabling
+-- the setting afterwards does not restore it.
+SHOW COLUMNS IN 03271_parametrized_v_reload;
+
 -- { echoOff }
 
 DROP VIEW 03271_parametrized_v;
 DROP VIEW 03271_parametrized_v_expl;
 DROP VIEW 03271_parametrized_v_expl_mismatch;
+DROP VIEW 03271_parametrized_v_toggle;
+DROP VIEW 03271_parametrized_v_off;
+DROP VIEW 03271_parametrized_v_reload;
