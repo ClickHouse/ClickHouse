@@ -58,6 +58,18 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     }
     is_inert = !quota->all_limits.empty() && (kept_limits == 0);
 
+    if (is_inert)
+    {
+        /// An inert quota enforces nothing and must expose no usage rows. Drop any per-key
+        /// intervals an earlier enforceable version of this quota cached, so getAllQuotasUsage
+        /// stops reporting stale empty rows. This covers the warm path where an ALTER (or a
+        /// rolling upgrade sending FOR INTERVAL 0 SECOND) turns an active quota inert after it
+        /// already accumulated keys; nothing repopulates key_to_intervals while inert, since
+        /// chooseQuotaToConsumeFor skips the quota before calling getOrBuildIntervals.
+        key_to_intervals.clear();
+        return;
+    }
+
     rebuildAllIntervals();
 }
 
