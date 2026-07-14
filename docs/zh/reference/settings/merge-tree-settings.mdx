@@ -1,0 +1,4230 @@
+---
+description: '`system.merge_tree_settings` 中的 MergeTree 相关设置'
+slug: /operations/settings/merge-tree-settings
+title: 'MergeTree 表设置'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
+
+系统表 `system.merge_tree_settings` 显示全局设置的 MergeTree 设置。
+
+MergeTree 设置可以在服务器配置文件的 `merge_tree` 部分中进行设置，也可以针对每个 `MergeTree` 表，在 `CREATE TABLE` 语句的 `SETTINGS` 子句中单独指定。
+
+自定义设置 `max_suspicious_broken_parts` 的示例：
+
+在服务器配置文件中为所有 `MergeTree` 表配置默认值：
+
+```text
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+针对特定表的设置：
+
+```sql
+CREATE TABLE tab
+(
+    `A` Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS max_suspicious_broken_parts = 500;
+```
+
+使用 `ALTER TABLE ... MODIFY SETTING` 更改特定表的 Settings：
+
+```sql
+ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
+
+-- 重置为全局默认值（取自 system.merge_tree_settings）
+ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
+```
+
+<div id="mergetree-settings">
+  ## MergeTree 设置
+</div>
+
+{/* 以下设置由以下脚本自动生成：
+  https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
+  */}
+
+<div id="adaptive_write_buffer_initial_size">
+  ## adaptive_write_buffer_initial_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
+
+自适应写缓冲区的初始大小
+
+<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
+  ## add_implicit_sign_column_constraint_for_collapsing_engine
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果为 true，则会为 CollapsingMergeTree
+或 VersionedCollapsingMergeTree 表中的 `sign` 列添加隐式约束，
+只允许使用有效值 (`1` 和 `-1`) 。
+
+<div id="add_minmax_index_for_block_number_column">
+  ## add_minmax_index_for_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新设置。"}]}]} />
+
+启用后，会为持久化虚拟列 `_block_number` 添加一个隐式 min-max (跳过) 索引。
+需要设置 `enable_block_number_column = 1` 才能生效。该索引仅在合并期间构建，
+不会在插入期间构建：在写入时，块编号还是临时的，因此只会为一个常量建立索引。
+
+<div id="add_minmax_index_for_block_offset_column">
+  ## add_minmax_index_for_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+启用后，会为持久化虚拟列 `_block_offset` 添加隐式的最小-最大 (跳过) 索引。
+需要将 `enable_block_offset_column = 1` 才会生效。该索引仅在合并期间构建，
+不会在插入期间构建。
+
+<div id="add_minmax_index_for_numeric_columns">
+  ## add_minmax_index_for_numeric_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用后，会为表中的所有数值列添加 min-max (数据跳过) 索引。
+
+<div id="add_minmax_index_for_string_columns">
+  ## add_minmax_index_for_string_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用后，将为表中的所有字符串列添加 min-max (跳过) 索引。
+
+<div id="add_minmax_index_for_temporal_columns">
+  ## add_minmax_index_for_temporal_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用后，会为表中所有 Date、Date32、Time、Time64、DateTime 和 DateTime64 列添加 min-max (跳过) 索引
+
+<div id="allow_coalescing_columns_in_partition_or_order_key">
+  ## allow_coalescing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "新增设置，允许在分区键或排序键中使用合并列。"}]}]} />
+
+启用后，允许在 CoalescingMergeTree 表中将合并列用于
+分区键或排序键。
+
+<div id="allow_commit_order_projection">
+  ## allow_commit_order_projection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用按提交顺序的投影，用于存储 `_block_number` 和 `_block_offset` 虚拟列，并在 merges 过程中保留原始插入顺序。
+要求同时启用 `enable_block_number_column` 和 `enable_block_offset_column`。
+
+<div id="allow_experimental_replacing_merge_with_cleanup">
+  ## allow_experimental_replacing_merge_with_cleanup
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+允许对带有 `is_deleted`
+列的 ReplacingMergeTree 使用实验性的 CLEANUP 合并。启用后，可使用 `OPTIMIZE ... FINAL CLEANUP` 手动将一个分区中的所有 parts
+合并为单个 part，并删除所有
+已删除的行。
+
+还允许通过设置 `min_age_to_force_merge_seconds`、
+`min_age_to_force_merge_on_partition_only` 和
+`enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`，
+使此类合并在后台自动执行。
+
+<div id="allow_experimental_reverse_key">
+  ## allow_experimental_reverse_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新设置"}]}]} />
+
+已废弃，不起作用。
+
+<div id="allow_floating_point_partition_key">
+  ## allow_floating_point_partition_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+启用后可允许将浮点数作为分区键。
+
+可能的值：
+
+* `0` — 不允许使用浮点分区键。
+* `1` — 允许使用浮点分区键。
+
+<div id="allow_nullable_key">
+  ## allow_nullable_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+允许将 Nullable 类型作为主键。
+
+<div id="allow_part_offset_column_in_projections">
+  ## allow_part_offset_column_in_projections
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "现在投影可以使用 _part_offset 列。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新增设置，在该功能稳定之前，防止创建包含父分片偏移列的投影。"}]}]} />
+
+允许在投影的 SELECT 查询中使用 &#39;&#95;part&#95;offset&#39; 列。
+
+<div id="allow_reduce_blocking_parts_task">
+  ## allow_reduce_blocking_parts_task
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "SMT 现在默认会从 ZooKeeper 中移除过期的阻塞 parts"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+用于减少 shared merge tree 表中阻塞 parts 的后台任务。
+仅适用于 ClickHouse Cloud
+
+<div id="allow_remote_fs_zero_copy_replication">
+  ## allow_remote_fs_zero_copy_replication
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+请勿在生产环境中使用此设置，因为它尚未成熟。
+
+<div id="allow_summing_columns_in_partition_or_order_key">
+  ## allow_summing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "允许将求和列用作分区键或排序键的新设置"}]}]} />
+
+启用后，允许在 SummingMergeTree 表中将求和列用于
+分区键或排序键。
+
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+拒绝表达式相同的主索引/二级索引和排序键
+
+<div id="allow_tuple_element_aggregation">
+  ## allow_tuple_element_aggregation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用后，Tuple 列中的各个元素会在 SummingMergeTree、AggregatingMergeTree 和
+CoalescingMergeTree 的合并过程中参与聚合。嵌套的 Tuple 会被递归展开，使所有
+叶子元素都能独立聚合。此设置不可更改，
+必须在创建表时指定。
+
+<div id="allow_vertical_merges_from_compact_to_wide_parts">
+  ## allow_vertical_merges_from_compact_to_wide_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+允许将 compact parts 垂直合并为 wide parts。此设置在所有副本上
+必须具有相同的值。
+
+<div id="alter_column_secondary_index_mode">
+  ## alter_column_secondary_index_mode
+</div>
+
+<SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "rebuild"},{"label": "调整行为，在存在依赖的次级索引时也允许对 `column` 执行 ALTER"}]}]} />
+
+配置是否允许对受次级索引覆盖的列执行修改操作的 `ALTER` 命令，以及在允许时应采取的处理方式。默认情况下，此类 `ALTER` 命令是允许的，并且会重建这些索引。
+
+可能的值：
+
+* `rebuild` (默认) ：重建 `ALTER` 命令中受该列影响的所有次级索引。
+* `throw`：通过抛出异常，阻止对受**显式**次级索引覆盖的列执行任何 `ALTER`。隐式索引不受此限制影响，仍会被重建。
+* `drop`：删除依赖的次级索引。新的 parts 将不再包含这些索引，因此需要使用 `MATERIALIZE INDEX` 重新创建。
+* `compatibility`：与原始行为保持一致：对 `ALTER ... MODIFY COLUMN` 使用 `throw`，对 `ALTER ... UPDATE/DELETE` 使用 `rebuild`。
+* `ignore`：仅供高级用户使用。它会使索引保持不一致状态，可能导致错误的查询结果。
+
+<div id="always_fetch_merged_part">
+  ## always_fetch_merged_part
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果为 true，此副本将永远不会合并 parts，而会始终从其他副本下载已合并的 parts。
+
+可能的值：
+
+* true, false
+
+<div id="always_use_copy_instead_of_hardlinks">
+  ## always_use_copy_instead_of_hardlinks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+在执行变更、replace、detach 等操作时，始终复制数据，而不是创建硬链接。
+
+<div id="apply_patches_on_merge">
+  ## apply_patches_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+如果为 true，则在合并时应用补丁分区片段
+
+<div id="assign_part_uuids">
+  ## assign_part_uuids
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+启用后，会为每个新的 part 分配一个唯一的 part 标识符。
+启用前，请检查所有副本都支持 UUID v4。
+
+<div id="async_block_ids_cache_update_wait_ms">
+  ## async_block_ids_cache_update_wait_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="100" />
+
+每次 insert 迭代等待 async&#95;block&#95;ids&#95;cache 更新的时间
+
+<div id="async_insert">
+  ## async_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果为 true，来自 INSERT 查询的数据会存储在队列中，随后在后台刷新到
+表。
+
+<div id="auto_statistics_types">
+  ## auto_statistics_types
+</div>
+
+<SettingsInfoBlock type="String" default_value="minmax, uniq" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "默认启用自动统计"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": ""},{"label": "新增设置"}]}]} />
+
+以逗号分隔的统计信息类型列表，会在所有适用列上自动计算。
+支持的统计信息类型：basic、tdigest、countmin、minmax、uniq。
+
+<div id="background_task_preferred_step_execution_time_ms">
+  ## background_task_preferred_step_execution_time_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="50" />
+
+执行一次 merge 或 mutation 中单个 step 的目标耗时。如果单个 step 耗时更长，
+则可能会超过该时间
+
+<div id="cache_populated_by_fetch">
+  ## cache_populated_by_fetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<Note>
+  此设置仅适用于 ClickHouse Cloud。
+</Note>
+
+当 `cache_populated_by_fetch` 被禁用时 (默认设置) ，新的数据 parts
+只有在运行查询且该查询需要这些 parts 时，才会加载到文件系统缓存中。
+
+如果启用，`cache_populated_by_fetch` 则会使所有节点将新的数据 parts
+从存储加载到各自的文件系统缓存中，而无需由查询
+来触发此操作。
+
+**另请参阅**
+
+* [ignore&#95;cold&#95;parts&#95;seconds](/zh/reference/settings/session-settings#ignore_cold_parts_seconds)
+* [prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds](/zh/reference/settings/session-settings#prefer_warmed_unmerged_parts_seconds)
+* [cache&#95;warmer&#95;threads](/zh/reference/settings/session-settings#cache_warmer_threads)
+
+<div id="cache_populated_by_fetch_filename_regexp">
+  ## cache_populated_by_fetch_filename_regexp
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "新设置"}]}]} />
+
+<Note>
+  此设置仅适用于 ClickHouse Cloud。
+</Note>
+
+如果该值非空，则仅在拉取后将与此正则表达式匹配的文件预热到缓存中 (前提是已启用 `cache_populated_by_fetch`) 。
+
+<div id="check_delay_period">
+  ## check_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+已废弃，没有任何作用。
+
+<div id="check_sample_column_is_correct">
+  ## check_sample_column_is_correct
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+启用在创建表时检查用于采样的列或采样表达式的数据类型是否正确。该数据类型必须是以下无符号
+[整数类型](/zh/reference/data-types/int-uint)之一：`UInt8`、`UInt16`、
+`UInt32`、`UInt64`。
+
+可能的值：
+
+* `true`  — 启用该检查。
+* `false` — 在创建表时禁用该检查。
+
+默认值：`true`。
+
+默认情况下，ClickHouse server 会在创建表时检查用于采样的列或采样表达式的数据类型。如果你已经有使用了错误采样表达式的表，并且不希望服务器在启动期间引发异常，请将 `check_sample_column_is_correct` 设置为 `false`。
+
+<div id="clean_deleted_rows">
+  ## clean_deleted_rows
+</div>
+
+<SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
+
+已废弃，不起任何作用。
+
+<div id="cleanup_delay_period">
+  ## cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+清理旧队列日志、块哈希和 parts 的最短周期。
+
+<div id="cleanup_delay_period_random_add">
+  ## cleanup_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+向 cleanup&#95;delay&#95;period 额外添加一个从 0 到 x 秒均匀分布的值，
+以避免在表数量非常庞大时出现惊群效应，并进而导致 ZooKeeper 遭受 DoS。
+
+<div id="cleanup_thread_preferred_points_per_iteration">
+  ## cleanup_thread_preferred_points_per_iteration
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="150" />
+
+后台清理的建议批次大小 (点为抽象单位，但 1 个点
+大致相当于 1 个已插入块) 。
+
+<div id="cleanup_threads">
+  ## cleanup_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+已废弃，不起任何作用。
+
+<div id="clone_replica_zookeeper_create_get_part_batch_size">
+  ## clone_replica_zookeeper_create_get_part_batch_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "100"},{"label": "新增设置"}]}]} />
+
+克隆副本时，ZooKeeper multi-create get-part 请求的批次大小。
+
+<div id="columns_and_secondary_indices_sizes_lazy_calculation">
+  ## columns_and_secondary_indices_sizes_lazy_calculation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新增设置：延迟计算列和次级索引的大小"}]}]} />
+
+在首次请求时才延迟计算列和次级索引的大小，
+而不是在表初始化时计算。
+
+<div id="columns_to_prewarm_mark_cache">
+  ## columns_to_prewarm_mark_cache
+</div>
+
+要预热标记缓存的列列表 (启用时) 。留空表示所有列
+
+<div id="compact_parts_max_bytes_to_buffer">
+  ## compact_parts_max_bytes_to_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+仅在 ClickHouse Cloud 中可用。compact parts 中单个
+stripe 可写入的最大字节数
+
+<div id="compact_parts_max_granules_to_buffer">
+  ## compact_parts_max_granules_to_buffer
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="128" />
+
+仅在 ClickHouse Cloud 中可用。compact parts 中单个 stripe 内可写入的最大粒度数
+
+<div id="compact_parts_merge_max_bytes_to_prefetch_part">
+  ## compact_parts_merge_max_bytes_to_prefetch_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16777216" />
+
+仅在 ClickHouse Cloud 中可用。合并时可整体读入内存的 compact part 的最大大小。
+
+<div id="compatibility_allow_sampling_expression_not_in_primary_key">
+  ## compatibility_allow_sampling_expression_not_in_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+允许创建 采样表达式 不在 主键 中的表。此设置仅用于在向后兼容场景下，临时允许运行包含错误表的 server。
+
+<div id="compress_marks">
+  ## compress_marks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+标记支持压缩，这样既可减小标记文件大小，也能加快网络传输。
+
+<div id="compress_per_column_in_compact_parts">
+  ## compress_per_column_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+控制 Compact parts 的物理布局。如果为 true (默认值) ，粒度中的每一列
+都会从一个新的压缩块开始，这样 ClickHouse 就可以跳过从磁盘读取不必要的列。
+如果为 false，则一个粒度内的所有列都会打包到同一个压缩块中，
+从而提高压缩率，但读取时需要解压更多数据。
+这对于始终读取所有列的工作负载 (例如投影) 很有帮助。
+
+<div id="compress_primary_key">
+  ## compress_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+支持对主键进行压缩，以减小主键文件大小并加快网络传输。
+
+<div id="concurrent_part_removal_threshold">
+  ## concurrent_part_removal_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+仅当非活动数据 parts 的数量至少达到该值时，
+才会启用并发移除 parts (参见 `max_part_removal_threads`) 。
+
+<div id="concurrent_part_removal_threshold_for_remote_disk">
+  ## concurrent_part_removal_threshold_for_remote_disk
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "16"},{"label": "新设置。当被移除的任一 part 位于远程磁盘上时，用于进入并发 part 移除路径的阈值会降低，因为每次移除通常都需要一次网络往返。旧值 (100) 与旧版 `concurrent_part_removal_threshold` 的默认值一致，因此较旧的 `compatibility` 模式会保留之前的行为。"}]}]} />
+
+与 `concurrent_part_removal_threshold` 相同，但用于至少有一个
+被移除的 part 存储在远程磁盘上的情况。默认值之所以更低，
+是因为在远程存储上移除每个 part 通常都需要一次网络
+往返 (例如，在对象存储上，每个 part 都需要一次 HTTP `DELETE`) ，因此
+即使串行移除 100 个 part，也可能让 `DROP TABLE` 卡住数十秒。
+
+<div id="deduplicate_merge_projection_mode">
+  ## deduplicate_merge_projection_mode
+</div>
+
+<SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "throw"},{"label": "不允许创建不一致的投影"}]}]} />
+
+是否允许为使用非经典 MergeTree (即不属于 (Replicated, Shared) MergeTree) 的表创建投影。
+`ignore` 选项纯粹是出于兼容性考虑，可能会导致结果不正确。否则，如果允许，
+则该设置决定在合并投影时执行的操作，即 `drop` 或 `rebuild`。因此，经典
+MergeTree 会忽略此设置。它也控制 `OPTIMIZE DEDUPLICATE`，
+但对所有 MergeTree 家族成员都生效。与
+选项 `lightweight_mutation_projection_mode` 类似，它也是 part 级别的。
+
+可能的值：
+
+* `ignore`
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="default_compression_codec">
+  ## default_compression_codec
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "新设置"}]}]} />
+
+指定当表声明中未为特定列定义压缩编解码器时，所使用的默认压缩编解码器。
+列的压缩编解码器选择顺序如下：
+
+1. 在表声明中为该列定义的压缩编解码器
+2. 在 `default_compression_codec` 中定义的压缩编解码器 (此设置)
+3. 在 `compression` 设置中定义的默认压缩编解码器
+   默认值：空字符串 (未定义) 。
+
+<div id="detach_not_byte_identical_parts">
+  ## detach_not_byte_identical_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+启用或禁用以下行为：在执行合并或变更后，如果某个副本上的数据 parts 与其他副本上的数据 parts 在字节级别上不完全一致，则将其分离。如果禁用，则会移除该数据 parts。如果你希望稍后分析此类 parts，请启用此设置。
+
+此设置适用于已启用
+[数据复制](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)
+的 `MergeTree` 表。
+
+可能的值：
+
+* `0` — 数据 parts 会被移除。
+* `1` — 数据 parts 会被分离。
+
+<div id="detach_old_local_parts_when_cloning_replica">
+  ## detach_old_local_parts_when_cloning_replica
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+修复丢失的副本时，不要移除旧的本地 parts。
+
+可能的值：
+
+* `true`
+* `false`
+
+<div id="disable_detach_partition_for_zero_copy_replication">
+  ## disable_detach_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+禁用零拷贝复制中的 DETACH PARTITION 查询。
+
+<div id="disable_fetch_partition_for_zero_copy_replication">
+  ## disable_fetch_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+禁用零拷贝复制的 FETCH PARTITION 查询。
+
+<div id="disable_freeze_partition_for_zero_copy_replication">
+  ## disable_freeze_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+禁用零拷贝复制中的 FREEZE PARTITION 查询。
+
+<div id="disk">
+  ## disk
+</div>
+
+存储磁盘的名称。也可以指定此项来代替存储策略。
+
+<div id="distributed_index_analysis_min_indexes_bytes_to_activate">
+  ## distributed_index_analysis_min_indexes_bytes_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1073741824"},{"label": "新设置"}]}]} />
+
+激活分布式索引分析所需的最小索引大小 (磁盘上、按未压缩数据计；包括数据跳过索引和主键)
+
+<div id="distributed_index_analysis_min_parts_to_activate">
+  ## distributed_index_analysis_min_parts_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "10"},{"label": "新增设置"}]}]} />
+
+激活分布式索引分析所需的最少 parts 数量
+
+<div id="dynamic_serialization_version">
+  ## dynamic_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "新增用于控制 Dynamic 序列化版本的设置"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "默认对 Dynamic 启用 v3 序列化版本，以改进序列化/反序列化"}]}]} />
+
+Dynamic 数据类型的序列化版本。用于兼容性。
+
+可选值：
+
+* `v1`
+* `v2`
+* `v3`
+
+<div id="enable_block_number_column">
+  ## enable_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+启用为每一行持久保存 &#95;block&#95;number 列。
+
+<div id="enable_block_offset_column">
+  ## enable_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+在合并过程中持久化虚拟列 `_block_offset`。
+
+<div id="enable_index_granularity_compression">
+  ## enable_index_granularity_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+如果可以，则压缩内存中的索引粒度值
+
+<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
+  ## enable_max_bytes_limit_for_min_age_to_force_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "即使设置了 min_age_to_force_merge_seconds，默认也会限制 part 的大小"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "新设置"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "新增设置，用于限制 min_age_to_force_merge 的最大字节数。"}]}]} />
+
+控制设置 `min_age_to_force_merge_seconds` 和
+`min_age_to_force_merge_on_partition_only` 是否遵循设置
+`max_bytes_to_merge_at_max_space_in_pool`。
+
+可能的值：
+
+* `true`
+* `false`
+
+<div id="enable_mixed_granularity_parts">
+  ## enable_mixed_granularity_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+启用或禁用切换为通过 `index_granularity_bytes` 设置控制粒度大小。
+在 19.11 版本之前，只有 `index_granularity` 设置可用于限制粒度大小。
+`index_granularity_bytes` 设置可在从包含大行 (数十到数百 MB) 的表中选择数据时提升 ClickHouse 性能。
+如果您的表包含大行，可以为这些表启用此设置，以提高 `SELECT` 查询的效率。
+
+<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
+  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "允许 ReplacingMergeTree 自动执行清理合并的新设置"}]}]} />
+
+在将分区合并为单个 part 时，是否对 ReplacingMergeTree 使用 CLEANUP 合并。
+要求启用 `allow_experimental_replacing_merge_with_cleanup`、
+`min_age_to_force_merge_seconds` 和 `min_age_to_force_merge_on_partition_only`。
+
+可能的值：
+
+* `true`
+* `false`
+
+<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
+  ## enable_the_endpoint_id_with_zookeeper_name_prefix
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+为 Replicated MergeTree 表启用带 ZooKeeper 名称前缀的端点 ID。
+
+<div id="enable_vertical_merge_algorithm">
+  ## enable_vertical_merge_algorithm
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+启用垂直合并算法。
+
+<div id="enforce_index_structure_match_on_partition_manipulation">
+  ## enforce_index_structure_match_on_partition_manipulation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+如果为分区操作查询 (`ATTACH/MOVE/REPLACE PARTITION`) 的目标表启用此设置，则源表与目标表的索引和投影必须完全一致。否则，目标表可以包含源表索引和投影的超集。
+
+<div id="escape_index_filenames">
+  ## escape_index_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "对为索引创建的文件名中的非 ASCII 字符进行转义"}]}]} />
+
+在 26.1 之前，我们不会对为次级索引创建的文件名中的特殊符号进行转义，这可能导致某些
+索引名称中的字符生成损坏的 parts。添加此项纯粹是出于兼容性考虑。除非你
+正在读取名称中包含非 ASCII 字符索引的旧 parts，否则不应更改它。
+
+<div id="escape_variant_subcolumn_filenames">
+  ## escape_variant_subcolumn_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "对在 Wide parts 中为 Variant 类型子列创建的文件名中的特殊符号进行转义"}]}]} />
+
+对 MergeTree 表的 Wide parts 中为 Variant 数据类型子列创建的文件名中的特殊符号进行转义。此设置用于兼容性。
+
+<div id="exclude_deleted_rows_for_part_size_in_merge">
+  ## exclude_deleted_rows_for_part_size_in_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果启用，在选择要合并的 parts 时，将按数据 parts 的预估实际大小 (即不包括通过 `DELETE FROM` 删除的那些行) 进行判断。请注意，此行为只会对在启用此设置后执行 `DELETE FROM` 所影响的数据 parts 生效。
+
+可能的值：
+
+* `true`
+* `false`
+
+**另请参见**
+
+* [load&#95;existing&#95;rows&#95;count&#95;for&#95;old&#95;parts](#load_existing_rows_count_for_old_parts)
+  设置
+
+<div id="exclude_materialize_skip_indexes_on_merge">
+  ## exclude_materialize_skip_indexes_on_merge
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新设置。"}]}]} />
+
+将提供的以逗号分隔的跳过索引列表排除在合并期间的构建和存储之外。如果
+[materialize&#95;skip&#95;indexes&#95;on&#95;merge](#materialize_skip_indexes_on_merge) 为 false，则此设置不起作用。
+
+被排除的跳过索引仍会通过显式
+[MATERIALIZE INDEX](/zh/reference/statements/alter/skipping-index#materialize-index) 查询构建并存储，或者根据
+[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings#materialize_skip_indexes_on_insert)
+会话设置，在 INSERT 期间构建并存储。
+
+示例：
+
+```sql
+CREATE TABLE tab
+(
+a UInt64,
+b UInt64,
+INDEX idx_a a TYPE minmax,
+INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- 该设置对 INSERT 操作无效
+
+-- idx_a 将在后台合并或通过 OPTIMIZE TABLE FINAL 显式合并时被排除在更新之外
+
+-- 可通过提供列表来排除多个索引
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+
+-- 默认设置，合并期间不排除任何索引的更新
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+```
+
+<div id="execute_merges_on_single_replica_time_threshold">
+  ## execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="秒" default_value="0" />
+
+当此设置的值大于 0 时，只有一个副本会立即开始合并，其他副本则最多等待这么长时间以下载合并结果，而不是在本地执行合并。如果所选副本未能在这段时间内完成合并，则会回退到标准行为。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="fault_probability_after_part_commit">
+  ## fault_probability_after_part_commit
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+仅用于测试。请勿更改。
+
+<div id="fault_probability_before_part_commit">
+  ## 提交 part 前的故障概率
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+用于测试。请勿更改。
+
+<div id="finished_mutations_to_keep">
+  ## finished_mutations_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+要保留多少条已完成的变更记录。如果为零，则保留
+所有记录。
+
+<div id="force_read_through_cache_for_merges">
+  ## force_read_through_cache_for_merges
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+强制在合并过程中通过文件系统缓存读取
+
+<div id="fsync_after_insert">
+  ## fsync_after_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+对每个已插入的 part 执行 fsync。会显著降低
+insert 的性能，不建议与 wide parts 一起使用。
+
+<div id="fsync_part_directory">
+  ## fsync_part_directory
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+在所有 part 操作 (写入、重命名等) 完成后，对 part 目录执行 fsync。
+
+<div id="in_memory_parts_enable_wal">
+  ## in_memory_parts_enable_wal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+已废弃，无任何作用。
+
+<div id="in_memory_parts_insert_sync">
+  ## in_memory_parts_insert_sync
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+已废弃，不起任何作用。
+
+<div id="inactive_parts_to_delay_insert">
+  ## inactive_parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+如果表中单个分区里的非活动 parts 数量超过
+`inactive_parts_to_delay_insert` 的值，则会人为降低
+`INSERT` 的速度。
+
+<Tip>
+  当 server 无法足够快地清理 parts 时，此设置很有用。
+</Tip>
+
+可能的值：
+
+* 任意正整数。
+
+<div id="inactive_parts_to_throw_insert">
+  ## inactive_parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+如果单个分区中的非活跃 parts 数量超过
+`inactive_parts_to_throw_insert` 的值，`INSERT` 将被中断，并抛出
+以下错误：
+
+> &quot;非活跃 parts 过多 (N) 。parts 清理速度明显
+> 慢于插入操作&quot; 异常。&quot;
+
+可能的值：
+
+* 任意正整数。
+
+<div id="index_granularity">
+  ## index_granularity
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8192" />
+
+索引标记之间的最大数据行数。也就是说，一个主键值对应多少行数据。
+
+<div id="index_granularity_bytes">
+  ## index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+数据粒度的最大字节大小。
+
+如果仅想按行数限制粒度大小，请将其设置为 `0` (不推荐) 。
+
+<div id="initialization_retry_period">
+  ## initialization_retry_period
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="60" />
+
+表初始化的重试周期 (以秒为单位) 。
+
+<div id="kill_delay_period">
+  ## kill_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+已废弃设置，无实际作用。
+
+<div id="kill_delay_period_random_add">
+  ## kill_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+已废弃设置，不起任何作用。
+
+<div id="kill_threads">
+  ## kill_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+已废弃设置，不起任何作用。
+
+<div id="lightweight_mutation_projection_mode">
+  ## lightweight_mutation_projection_mode
+</div>
+
+<SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
+
+默认情况下，轻量级删除 `DELETE` 不适用于带有
+projection 的表。这是因为 projection 中的行可能会受到
+`DELETE` 操作的影响。因此，默认值为 `throw`。不过，这个
+选项可以改变这种行为。当取值为 `drop` 或 `rebuild` 时，
+删除操作将可与 projection 一起使用。`drop` 会删除 projection，因此在当前查询中
+可能会更快，因为 projection 会被删除；但在后续查询中可能会变慢，
+因为不再附加 projection。`rebuild` 会重建
+projection，这可能会影响当前查询的性能，但
+可能会加快后续查询。好的一点是，这些选项
+只会在 part 级别生效，这意味着未被触及的分片中的 projection
+将保持不变，而不会触发诸如
+drop 或 rebuild 之类的任何操作。
+
+可能的值：
+
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="load_existing_rows_count_for_old_parts">
+  ## load_existing_rows_count_for_old_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果与 [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge) 一同启用，
+系统会在表启动时计算现有数据 parts 中已删除的行数。
+请注意，这可能会减慢表启动时的加载速度。
+
+可能的值：
+
+* `true`
+* `false`
+
+**另请参见**
+
+* [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge) 设置
+
+<div id="lock_acquire_timeout_for_background_operations">
+  ## lock_acquire_timeout_for_background_operations
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="120" />
+
+对于合并、变更等后台操作，在获取表锁失败之前会等待多少秒。
+
+<div id="map_buckets_coefficient">
+  ## map_buckets_coefficient
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "新增一个设置，用于控制在 `sqrt` 和 `linear` 策略中，为 `with_buckets` Map serialization 计算桶数量时所使用的系数"}]}]} />
+
+在 `sqrt` 和 `linear` [map&#95;buckets&#95;strategy](#map_buckets_strategy) 中，用于根据平均 map 大小计算桶数量的系数。
+对于 `sqrt` 策略：`round(map_buckets_coefficient * sqrt(avg_map_size))`。
+对于 `linear` 策略：`round(map_buckets_coefficient * avg_map_size)`。
+当 `map_buckets_strategy` 为 `constant` 时，此设置会被忽略。
+
+<div id="map_buckets_min_avg_size">
+  ## map_buckets_min_avg_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "新增一个设置，用于控制应用 `with_buckets` 序列化所需的最小平均 Map 大小（每行的键数）"}]}]} />
+
+应用 `with_buckets` 序列化所需的最小平均 Map 大小 (每行的键数) 。
+如果平均 Map 大小小于该值，则无论其他桶设置如何，都只使用单个桶。
+值为 `0` 时将禁用该阈值，并始终应用分桶策略。
+此设置可用于避免对较小的 Map 使用分桶序列化所带来的额外开销，因为这种情况下收益微乎其微。
+
+<div id="map_buckets_strategy">
+  ## map_buckets_strategy
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapBucketsStrategy" default_value="sqrt" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "sqrt"},{"label": "新增了一个设置，用于控制在 `with_buckets` `Map` 序列化中根据平均 map 大小选择桶数量的策略"}]}]} />
+
+控制在 `with_buckets` `Map` 序列化中，基于平均 map 大小选择桶数量的策略。
+
+可能的值：
+
+* constant — 始终使用 [max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) 作为桶数量，而不考虑平均 map 大小。
+* sqrt — 使用 `round(map_buckets_coefficient * sqrt(avg_map_size))` 作为桶数量，并将其限制在 `[1, max_buckets_in_map]` 范围内。
+* linear — 使用 `round(map_buckets_coefficient * avg_map_size)` 作为桶数量，并将其限制在 `[1, max_buckets_in_map]` 范围内。
+
+<div id="map_serialization_version">
+  ## map_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "新增用于控制 Map 序列化版本的设置"}]}]} />
+
+控制 `Map` 列使用的序列化方法。
+
+可能的值：
+
+* basic — 对 `Map` 使用标准序列化。
+* with&#95;buckets — 在序列化时将键拆分到多个桶中。使用桶可提升从 Map 中读取单个键的效率。
+
+`with_buckets` serialization 中的桶数量由 [max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) 和 [map&#95;buckets&#95;strategy](#map_buckets_strategy) 决定。
+
+<div id="map_serialization_version_for_zero_level_parts">
+  ## map_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "新增了一个设置，用于控制零级 parts 的 Map 序列化版本"}]}]} />
+
+此设置允许为插入时创建的零级 parts 中的
+`Map` 列指定不同的序列化版本。
+在零级 parts 中保留 `basic` 序列化有助于避免
+插入期间性能下降，同时对合并后的 parts 使用 `with_buckets`。
+
+<div id="marks_compress_block_size">
+  ## marks_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+标记压缩块大小，即压缩时块的实际大小。
+
+<div id="marks_compression_codec">
+  ## marks_compression_codec
+</div>
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+标记 使用的压缩编码。标记 体积很小且会被缓存，因此
+默认使用 ZSTD(3) 压缩。
+
+<div id="materialize_projections_on_insert">
+  ## materialize_projections_on_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "新设置"}]}]} />
+
+启用后，INSERT 会创建包含PROJECTION的新 parts。
+否则，可以通过显式执行 [MATERIALIZE PROJECTION](/zh/reference/statements/alter/projection#materialize-projection)
+或在 [materialize&#95;projections&#95;on&#95;merge](/zh/reference/settings/merge-tree-settings#materialize_projections_on_merge) 合并期间创建。
+
+<div id="materialize_projections_on_merge">
+  ## materialize_projections_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用后，如果某次合并的所有源 parts 都缺少某个PROJECTION (例如因为它们是在 `materialize_projections_on_insert = 0` 的情况下插入的) ，合并时就会重建该PROJECTION，从而使合并后的 part 具备该PROJECTION。
+
+不过，合并操作仍然只会合并具有相同PROJECTION集合的 parts。要将某个PROJECTION回填到所有现有 parts，请显式使用 [MATERIALIZE PROJECTION](/zh/reference/statements/alter/projection#materialize-projection)。执行 INSERT 时，也会通过 [materialize&#95;projections&#95;on&#95;insert](/zh/reference/settings/merge-tree-settings#materialize_projections_on_insert) 创建PROJECTION。
+
+<div id="materialize_skip_indexes_on_merge">
+  ## materialize_skip_indexes_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+启用时，合并操作会为新的 parts 构建并存储数据跳过索引。
+否则，它们可以通过显式执行 [MATERIALIZE INDEX](/zh/reference/statements/alter/skipping-index#materialize-index)
+或 [在 INSERT 时](/zh/reference/settings/session-settings#materialize_skip_indexes_on_insert) 创建/存储。
+
+另请参见 [exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;merge](#exclude_materialize_skip_indexes_on_merge)，以进行更细粒度的控制。
+
+<div id="materialize_statistics_on_merge">
+  ## materialize_statistics_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "新设置"}]}]} />
+
+启用后，merge 会为新的 parts 构建并存储统计信息。
+否则，可通过显式执行 [MATERIALIZE STATISTICS](/zh/reference/statements/alter/statistics)
+或[在 INSERT 时](/zh/reference/settings/session-settings#materialize_statistics_on_insert)创建/存储这些统计信息
+
+<div id="materialize_ttl_recalculate_only">
+  ## materialize_ttl_recalculate_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+仅在执行 MATERIALIZE 生存时间 (TTL) 时重新计算 生存时间 (TTL) 信息
+
+<div id="max_avg_part_size_for_too_many_parts">
+  ## max_avg_part_size_for_too_many_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+根据 &#39;parts&#95;to&#95;delay&#95;insert&#39; 和
+&#39;parts&#95;to&#95;throw&#95;insert&#39; 进行的“parts 过多”检查，
+仅会在平均 part 大小 (在相关
+分区中) 不大于指定阈值时生效。如果它
+大于指定阈值，则 INSERT 既不会被延迟，也不会
+被拒绝。这样一来，如果 parts 能成功合并为更大的 parts，就可以在
+单台 server 上的单个表中存储数百 TB 的数据。这
+不会影响非活跃 parts 或总 parts 数量的阈值。
+
+<div id="max_buckets_in_map">
+  ## max_buckets_in_map
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "新增一个设置，用于控制 `with_buckets` `Map` 序列化的最大桶数"}]}]} />
+
+`Map` 序列化的最大桶数。与 `with_buckets` `Map` 序列化配合使用。
+实际桶数由 [map&#95;buckets&#95;strategy](#map_buckets_strategy) 决定。
+允许的最大值为 256。
+
+<div id="max_bytes_to_merge_at_max_space_in_pool">
+  ## max_bytes_to_merge_at_max_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="161061273600" />
+
+在有足够可用资源的情况下，可合并为一个 part 的源 parts 总大小上限 (以字节为单位) 。它大致对应自动后台合并所能生成的最大 part 大小。 (0 表示禁用 merges)
+
+可能的值：
+
+* 任意非负整数。
+
+合并调度器会定期分析各个分区中 parts 的大小和数量；如果池中有足够的空闲资源，就会启动后台合并。合并会持续进行，直到源 parts 的总大小超过 `max_bytes_to_merge_at_max_space_in_pool`。
+
+由 [OPTIMIZE FINAL](/zh/reference/statements/optimize) 发起的合并会忽略 `max_bytes_to_merge_at_max_space_in_pool` (只考虑可用磁盘空间) 。
+
+<div id="max_bytes_to_merge_at_min_space_in_pool">
+  ## max_bytes_to_merge_at_min_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+在后台池可用资源最少时，可合并为一个 part 的最大总大小 (以字节为单位) 。
+
+可选值：
+
+* 任意正整数。
+
+`max_bytes_to_merge_at_min_space_in_pool` 定义了即使在可用磁盘空间不足 (在池中) 的情况下，仍可进行合并的
+parts 的最大总大小。这对于减少小 part 的数量以及降低出现
+`Too many parts` 错误的概率是必要的。
+合并会按被合并 parts 总大小的两倍预留磁盘空间。
+因此，当磁盘剩余空间较少时，可能会出现这样的情况：虽然仍有空闲空间，但这些空间已经被正在进行的大型合并预留，
+导致其他合并无法启动，而小 part 的数量会随着每次 insert 持续增长。
+
+<div id="max_cleanup_delay_period">
+  ## max_cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+清理旧队列日志、块哈希值和 parts 的最长周期。
+
+<div id="max_compress_block_size">
+  ## max_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+写入表之前，对未压缩数据块进行压缩前的最大大小。你也可以在全局设置中指定此设置 (参见 [max&#95;compress&#95;block&#95;size](/zh/reference/settings/merge-tree-settings#max_compress_block_size) 设置) 。创建表时指定的值会覆盖此设置的全局值。
+
+<div id="max_concurrent_queries">
+  ## max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+与 MergeTree 表相关、可同时执行的查询的最大数量。
+查询仍会受到其他 `max_concurrent_queries` 设置的限制。
+
+可能的值：
+
+* 正整数。
+* `0` — 不限制。
+
+默认值：`0` (不限制) 。
+
+**示例**
+
+```xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+
+<div id="max_delay_to_insert">
+  ## max_delay_to_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+该值以秒为单位：如果单个分区中的活动 parts 数量超过
+[parts&#95;to&#95;delay&#95;insert](#parts_to_delay_insert) 的值，
+则用它来计算 `INSERT` 延迟。
+
+可能的值：
+
+* 任意正整数。
+
+`INSERT` 延迟 (以毫秒为单位) 按以下公式计算：
+
+```code
+max_k = parts_to_throw_insert - parts_to_delay_insert
+k = 1 + parts_count_in_partition - parts_to_delay_insert
+delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
+```
+
+例如，如果某个分区有 299 个活动 parts，且 parts&#95;to&#95;throw&#95;insert
+= 300，parts&#95;to&#95;delay&#95;insert = 150，max&#95;delay&#95;to&#95;insert = 1，则 `INSERT`
+会延迟 `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000`
+毫秒。
+
+从 23.1 版本开始，公式改为：
+
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000)
+* parts_over_threshold / allowed_parts_over_threshold)
+```
+
+例如，如果某个分区有 224 个活跃 parts，且 parts&#95;to&#95;throw&#95;insert
+= 300、parts&#95;to&#95;delay&#95;insert = 150、max&#95;delay&#95;to&#95;insert = 1，
+min&#95;delay&#95;to&#95;insert&#95;ms = 10，则 `INSERT` 会延迟 `max( 10, 1 * 1000 *
+(224 - 150 + 1) / (300 - 150) ) = 500` 毫秒。
+
+<div id="max_delay_to_mutate_ms">
+  ## max_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+当存在大量未完成变更时，MergeTree 表执行变更的最大延迟时间 (以毫秒为单位)
+
+<div id="max_digestion_size_per_segment">
+  ## max_digestion_size_per_segment
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "268435456"},{"label": "已废弃"}]}]} />
+
+已废弃，不起作用。
+
+<div id="max_file_name_length">
+  ## max_file_name_length
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="127" />
+
+文件名在不进行哈希处理时可保持原样的最大长度。
+仅在启用设置 `replace_long_file_name_to_hash` 时生效。
+此设置的值不包含文件扩展名的长度。因此，
+建议将其设置为略低于文件系统允许的最大文件名长度 (通常为 255
+字节) ，并预留一定余量，以避免文件系统错误。
+
+<div id="max_files_to_modify_in_alter_columns">
+  ## max_files_to_modify_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="75" />
+
+如果需要修改 (删除、新增) 的文件数量
+大于此设置值，则不执行 ALTER。
+
+可能的值：
+
+* 任意正整数。
+
+默认值：75
+
+<div id="max_files_to_remove_in_alter_columns">
+  ## max_files_to_remove_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+如果待删除的文件数量超过此设置值，则不执行 ALTER。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="max_merge_delayed_streams_for_parallel_write">
+  ## max_merge_delayed_streams_for_parallel_write
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="40" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "40"},{"label": "新增设置"}]}]} />
+
+可并行刷新的流 (列) 的最大数量
+(对于 merge，相当于 max&#95;insert&#95;delayed&#95;streams&#95;for&#95;parallel&#95;write) 。仅
+对垂直合并生效。
+
+<div id="max_merge_selecting_sleep_ms">
+  ## max_merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+在未选中任何可供 merge 的 parts 后，再次尝试选择 parts 进行 merge 前的最长等待时间。将此设置调低，会更频繁地在
+background&#95;schedule&#95;pool 中触发选择 task，这会在大规模 cluster 中产生大量对
+ZooKeeper 的请求
+
+<div id="max_number_of_merges_with_ttl_in_pool">
+  ## max_number_of_merges_with_ttl_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+当池中带有生存时间 (TTL) 条目的 merge 数量超过指定值时，不再分配新的带有生存时间 (TTL) 的 merge。这是为了给常规 merge 留出空闲线程，并避免出现 &quot;parts 过多&quot;
+
+<div id="max_number_of_mutations_for_replica">
+  ## max_number_of_mutations_for_replica
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+将每个副本的 part mutation 数量限制为指定值。
+零表示每个副本的变更数量不受限制 (执行
+仍可能受到其他设置的约束) 。
+
+<div id="max_part_loading_threads">
+  ## max_part_loading_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+已废弃设置，无任何作用。
+
+<div id="max_part_removal_threads">
+  ## max_part_removal_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+已废弃设置，无任何作用。
+
+<div id="max_partitions_to_read">
+  ## max_partitions_to_read
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+限制单次查询可访问的最大分区数。
+
+创建表时指定的设置值可通过
+查询级设置覆盖。
+
+可能的值：
+
+* 任意正整数。
+
+你也可以在查询 / 会话 / profile 级别指定查询复杂度设置 [max&#95;partitions&#95;to&#95;read](/zh/reference/settings/session-settings#max_partitions_to_read)。
+
+<div id="max_parts_in_total">
+  ## max_parts_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+如果一个表所有分区中的活动 parts 总数超过
+`max_parts_in_total` 的值，`INSERT` 将被中断，并抛出 `parts 过多
+(N)` 异常。
+
+可能的值：
+
+* 任意正整数。
+
+表中的 parts 数量过多会降低 ClickHouse 查询性能，
+并增加 ClickHouse 启动时间。大多数情况下，这是设计不当造成的后果 (例如选择分区策略时出错——分区过小) 。
+
+<div id="max_parts_to_merge_at_once">
+  ## max_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+一次最多可合并的 parts 数量 (0 表示禁用) 。不影响
+OPTIMIZE FINAL 查询。
+
+<div id="max_postpone_time_for_failed_mutations_ms">
+  ## max_postpone_time_for_failed_mutations_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+失败的变更操作允许延迟的最长时间。
+
+<div id="max_postpone_time_for_failed_replicated_fetches_ms">
+  ## max_postpone_time_for_failed_replicated_fetches_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "新增设置，用于推迟复制队列中的拉取任务。"}]}]} />
+
+失败的复制拉取任务的最大推迟时间。
+
+<div id="max_postpone_time_for_failed_replicated_merges_ms">
+  ## max_postpone_time_for_failed_replicated_merges_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "新增设置，用于延后复制队列中的失败合并任务。"}]}]} />
+
+失败的复制合并任务的最大延后时间。
+
+<div id="max_postpone_time_for_failed_replicated_tasks_ms">
+  ## max_postpone_time_for_failed_replicated_tasks_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "300000"},{"label": "新增设置，用于支持延后复制队列中的任务。"}]}]} />
+
+失败的复制任务可延后的最长时间。若任务不是拉取、合并或变更操作，则使用该值。
+
+<div id="max_projections">
+  ## max_projections
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+MergeTree 投影的最大数量。
+
+<div id="max_replicated_fetches_network_bandwidth">
+  ## max_replicated_fetches_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+限制[复制](/zh/reference/engines/table-engines/mergetree-family/replication)
+拉取操作通过网络进行数据交换的最大速度，单位为每秒字节数。与应用于
+服务器的
+[`max_replicated_fetches_network_bandwidth_for_server`](/zh/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+设置不同，此设置适用于特定表。
+
+你可以同时限制服务器网络和特定表的网络，但在这种情况下，
+表级设置的值应小于服务器级设置的值。否则，服务器只会采用
+`max_replicated_fetches_network_bandwidth_for_server` 设置。
+
+该设置无法做到绝对精确。
+
+可能的值：
+
+* 正整数。
+* `0` — 不限。
+
+默认值：`0`。
+
+**用法**
+
+可用于在复制数据以新增或替换节点时限制速度。
+
+<div id="max_replicated_logs_to_keep">
+  ## max_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+如果存在不活跃的副本，ClickHouse Keeper 日志中最多可包含多少条记录。超过此数量时，不活跃的副本将被视为丢失。
+
+Possible values:
+
+* 任意正整数。
+
+<div id="max_replicated_merges_in_queue">
+  ## max_replicated_merges_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+ReplicatedMergeTree 队列中允许同时进行的 parts 合并和变异任务数量。
+
+<div id="max_replicated_merges_with_ttl_in_queue">
+  ## max_replicated_merges_with_ttl_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+在 ReplicatedMergeTree 队列中，允许同时执行多少个带有生存时间 (TTL) 的 parts 合并任务。
+
+<div id="max_replicated_mutations_in_queue">
+  ## max_replicated_mutations_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+ReplicatedMergeTree 队列中允许同时处理的 mutating parts 任务数。
+
+<div id="max_replicated_sends_network_bandwidth">
+  ## max_replicated_sends_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+限制 [replicated](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)
+发送操作的最大网络数据交换速率，单位为每秒字节数。与应用于
+服务器的
+[`max_replicated_sends_network_bandwidth_for_server`](/zh/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+设置不同，此设置作用于特定表。
+
+你可以同时限制服务器网络和特定表的网络，但在这种情况下，
+表级设置的值应小于服务器级设置的值。否则，服务器只会采用
+`max_replicated_sends_network_bandwidth_for_server` 设置。
+
+该设置无法做到完全精确。
+
+可能的值：
+
+* 正整数。
+* `0` — 不限。
+
+**用法**
+
+可用于在复制数据以添加新节点或替换现有节点时进行限速。
+
+<div id="max_suspicious_broken_parts">
+  ## max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+如果单个分区中的损坏 parts 数量超过
+`max_suspicious_broken_parts` 的值，则不允许自动删除。
+
+可能值：
+
+* 任意正整数。
+
+<div id="max_suspicious_broken_parts_bytes">
+  ## max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+所有损坏 parts 的总大小上限，超过该值将禁止自动删除。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="max_uncompressed_bytes_in_patches">
+  ## max_uncompressed_bytes_in_patches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32212254720" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32212254720"},{"label": "新增设置"}]}]} />
+
+所有补丁 parts 中数据的最大未压缩大小，单位为字节。
+如果所有补丁 parts 中的数据量超过此值，将拒绝轻量级更新。
+0 - 无限制。
+
+<div id="merge_max_block_size">
+  ## merge_max_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
+
+从已合并的 parts 读入内存的行数。
+
+可能的值：
+
+* 任意正整数。
+
+合并操作会以每块 `merge_max_block_size` 行的块从 parts 中读取行，然后
+进行合并，并将结果写入新的 part。读取的块会放入 RAM 中，
+因此 `merge_max_block_size` 会影响合并所需的 RAM 大小。
+因此，对于行非常宽的表，merges 可能会消耗大量 RAM
+(如果平均每行大小为 100kb，那么在合并 10 个 parts 时，
+(100kb * 10 * 8192) = ~ 8GB RAM) 。通过减小 `merge_max_block_size`，
+你可以减少一次合并所需的 RAM 量，但会降低合并速度。
+
+<div id="merge_max_block_size_bytes">
+  ## merge_max_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+合并操作中生成的块应包含的字节数。默认情况下，
+其值与 `index_granularity_bytes` 相同。
+
+<div id="merge_max_bytes_to_prewarm_cache">
+  ## merge_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1073741824"},{"label": "Cloud sync"}]}]} />
+
+仅在 ClickHouse Cloud 中可用。表示在 merge 期间用于预热缓存的 part (compact 或 packed) 的最大大小。
+
+<div id="merge_max_dynamic_subcolumns_in_compact_part">
+  ## merge_max_dynamic_subcolumns_in_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "auto"},{"label": "新增一个设置，用于在合并后限制 Compact part 中的动态子列数量，而不受数据类型中指定参数的影响"}]}]} />
+
+合并后，每一列在 Compact 数据 part 中可创建的动态子列最大数量。
+该设置可用于控制 Compact 数据 part 中的动态子列数量，而不受数据类型中指定的动态参数影响。
+
+例如，如果表中有一列的类型为 JSON(max&#95;dynamic&#95;paths=1024)，并且设置 merge&#95;max&#95;dynamic&#95;subcolumns&#95;in&#95;compact&#95;part 为 128，
+那么在合并为 Compact 数据 part 后，该 part 中的动态路径数量将减少到 128，并且只有 128 条路径会作为动态子列写入。
+
+<div id="merge_max_dynamic_subcolumns_in_wide_part">
+  ## merge_max_dynamic_subcolumns_in_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "auto"},{"label": "新增一个设置，用于限制合并后 Wide 数据 part 中动态子列的数量，不受数据类型中指定参数的影响"}]}]} />
+
+合并后，每个列在 Wide 数据 part 中可创建的动态子列最大数量。
+无论数据类型中指定了怎样的动态参数，它都可以减少 Wide 数据 part 中生成的文件数量。
+
+例如，如果表中有一列的类型为 JSON(max&#95;dynamic&#95;paths=1024)，并且 merge&#95;max&#95;dynamic&#95;subcolumns&#95;in&#95;wide&#95;part 设置为 128，
+那么合并到 Wide 数据 part 后，该 part 中的动态路径数量将减少到 128，并且只有 128 条路径会作为动态子列写入。
+
+<div id="merge_selecting_sleep_ms">
+  ## merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+在未选中任何用于合并的 parts 后，再次尝试选择待合并 parts 之前的最短等待时间。较低的设置会更频繁地在
+background&#95;schedule&#95;pool 中触发选择任务，从而在大规模集群中导致大量发往
+ZooKeeper 的请求
+
+<div id="merge_selecting_sleep_slowdown_factor">
+  ## merge_selecting_sleep_slowdown_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.2" />
+
+当没有可合并的内容时，合并选择任务的休眠时间会乘以该因子；
+当已分配合并任务时，则会除以该因子
+
+<div id="merge_selector_algorithm">
+  ## merge_selector_algorithm
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="MergeSelectorAlgorithm" default_value="Simple" />
+
+用于选择分配给合并操作的 parts 的算法
+
+<div id="merge_selector_base">
+  ## merge_selector_base
+</div>
+
+<SettingsInfoBlock type="Float" default_value="5" />
+
+影响已指定合并任务的写入放大 (专家级设置；如果不了解其作用，请勿更改) 。
+适用于 Simple 和 StochasticSimple 合并选择器
+
+<div id="merge_selector_blurry_base_scale_factor">
+  ## merge_selector_blurry_base_scale_factor
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+控制该逻辑根据分区中 parts 的数量在何时触发。因子越大，触发反应越滞后。
+
+<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
+  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0"},{"label": "新设置"}]}]} />
+
+为简单合并选择器启用一种启发式策略，以降低单次可选合并的最大数量上限。
+这样会增加并发合并的数量，有助于缓解 TOO&#95;MANY&#95;PARTS
+错误，但同时也会提高写入放大。
+
+<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
+  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+启用用于选择合并 parts 的启发式策略：如果范围右侧的分片大小小于 `sum_size` 的指定比例 (0.01) ，则将其移除。
+适用于 Simple 和 StochasticSimple 合并选择器
+
+<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
+  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "5"},{"label": "新设置"}]}]} />
+
+控制用于构建下降曲线公式的指数值。降低该指数会
+减小合并宽度，从而增加写放大。反过来也成立。
+
+<div id="merge_selector_window_size">
+  ## merge_selector_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+一次要检查多少个 parts。
+
+<div id="merge_total_max_bytes_to_prewarm_cache">
+  ## merge_total_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16106127360" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "16106127360"},{"label": "Cloud sync"}]}]} />
+
+仅在 ClickHouse Cloud 中可用。合并期间用于预热缓存的 parts 总大小上限。
+
+<div id="merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds">
+  ## merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2592000" />
+
+已废弃，无实际作用。
+
+<div id="merge_tree_clear_old_parts_interval_seconds">
+  ## merge_tree_clear_old_parts_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+设置 ClickHouse 执行旧
+parts、WAL 和变更清理操作的间隔秒数。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="merge_tree_clear_old_temporary_directories_interval_seconds">
+  ## merge_tree_clear_old_temporary_directories_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+设置 ClickHouse 清理旧临时目录的执行间隔，单位为秒。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="merge_tree_enable_clear_old_broken_detached">
+  ## merge_tree_enable_clear_old_broken_detached
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃设置，无任何作用。
+
+<div id="merge_with_recompression_ttl_timeout">
+  ## merge_with_recompression_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+再次执行带有重新压缩生存时间 (TTL) 的合并前的最小延迟 (秒) 。
+
+<div id="merge_with_ttl_timeout">
+  ## merge_with_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+重复执行带有删除 生存时间 (TTL) 的合并操作前的最小延迟 (秒) 。
+
+<div id="merge_workload">
+  ## merge_workload
+</div>
+
+用于控制资源在合并与其他工作负载之间的使用和共享方式。指定的值将作为该表后台合并的 `workload` 设置值使用。如果未指定 (空字符串) ，则改用服务器设置 `merge_workload`。
+
+**另请参见**
+
+* [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="min_absolute_delay_to_close">
+  ## min_absolute_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+触发关闭、停止处理请求，以及在 status 检查期间不
+返回 Ok 的最小绝对延迟。
+
+<div id="min_age_to_force_merge_on_partition_only">
+  ## min_age_to_force_merge_on_partition_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+`min_age_to_force_merge_seconds` 是否仅应作用于整个分区，
+而不作用于其子集。
+
+默认情况下，会忽略设置 `max_bytes_to_merge_at_max_space_in_pool` (请参见
+`enable_max_bytes_limit_for_min_age_to_force_merge`) 。
+
+可能的值：
+
+* true, false
+
+<div id="min_age_to_force_merge_seconds">
+  ## min_age_to_force_merge_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+如果范围内的每个 part 的生命周期都超过
+`min_age_to_force_merge_seconds`
+的值，则合并这些 parts。
+
+默认情况下，会忽略设置 `max_bytes_to_merge_at_max_space_in_pool`
+(参见 `enable_max_bytes_limit_for_min_age_to_force_merge`) 。
+
+可能的值：
+
+* 正整数。
+
+<div id="min_bytes_for_compact_part">
+  ## min_bytes_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃设置，没有任何作用。
+
+<div id="min_bytes_for_full_part_storage">
+  ## min_bytes_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+仅在 ClickHouse Cloud 中可用。使用 full 类型存储而非 packed 所需的数据 part 最小未压缩字节数。
+
+<div id="min_bytes_for_wide_part">
+  ## min_bytes_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+可按 `Wide`
+格式存储的数据分区片段的最小字节数/行数。你可以只设置其中一个，也可以两个都设置，或者都不设置。
+
+<div id="min_bytes_to_prewarm_caches">
+  ## min_bytes_to_prewarm_caches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+用于为新 parts 预热标记缓存和主索引缓存的最小大小 (按未压缩字节数计)
+
+<div id="min_bytes_to_rebalance_partition_over_jbod">
+  ## min_bytes_to_rebalance_partition_over_jbod
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+设置在将新的大型
+parts 分布到卷磁盘 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 上时，
+启用均衡所需的最小字节数。
+
+可能的值：
+
+* 正整数。
+* `0` — 禁用均衡。
+
+**用法**
+
+`min_bytes_to_rebalance_partition_over_jbod` 设置的值
+不应小于
+[max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
+/ 1024 的值。否则，ClickHouse 会抛出异常。
+
+<div id="min_columns_to_activate_adaptive_write_buffer">
+  ## min_columns_to_activate_adaptive_write_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "500"},{"label": "新增设置"}]}]} />
+
+通过使用自适应写入缓冲区，可降低包含大量列的表的内存占用。
+
+可能的值：
+
+* 0 - 不受限制
+* 1 - 始终启用
+
+<div id="min_compress_block_size">
+  ## min_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+写入下一个标记时，未压缩数据块在进行压缩前所需达到的最小大小。您也可以在全局设置中指定此设置
+(参见 [min&#95;compress&#95;block&#95;size](/zh/reference/settings/merge-tree-settings#min_compress_block_size)
+设置) 。创建表时指定的值会覆盖此设置的全局值。
+
+<div id="min_compressed_bytes_to_fsync_after_fetch">
+  ## min_compressed_bytes_to_fsync_after_fetch
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+拉取后对分片执行 `fsync` 所需的最小压缩字节数 (0 表示禁用)
+
+<div id="min_compressed_bytes_to_fsync_after_merge">
+  ## min_compressed_bytes_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+合并后对分片执行 fsync 的最小压缩字节数 (0 表示禁用)
+
+<div id="min_delay_to_insert_ms">
+  ## min_delay_to_insert_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+当单个分区中存在大量未合并的 parts 时，将数据插入 MergeTree 表的最小延迟 (以毫秒为单位) 。
+
+<div id="min_delay_to_mutate_ms">
+  ## min_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+当存在大量未完成的变更时，对 MergeTree 表执行变更的最小延迟 (以毫秒为单位)
+
+<div id="min_free_disk_bytes_to_perform_insert">
+  ## min_free_disk_bytes_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+执行数据插入所需的最小磁盘空闲字节数。如果可用空闲字节数小于
+`min_free_disk_bytes_to_perform_insert`，则会抛出异常，并且
+不会执行插入。请注意，此设置：
+
+* 会将 `keep_free_space_bytes` 设置考虑在内。
+* 不会考虑
+  `INSERT` 操作即将写入的数据量。
+* 仅在指定了正数 (非零) 字节数时才会进行检查
+
+可能的值：
+
+* 任意正整数。
+
+<Note>
+  如果同时指定了 `min_free_disk_bytes_to_perform_insert` 和 `min_free_disk_ratio_to_perform_insert`，
+  ClickHouse 将采用允许在更多磁盘空闲空间下执行
+  插入的那个值。
+</Note>
+
+<div id="min_free_disk_ratio_to_perform_insert">
+  ## min_free_disk_ratio_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+执行 `INSERT` 所需的最小空闲磁盘空间占总磁盘空间的比例。必须是一个
+介于 0 和 1 之间的浮点值。请注意，此设置：
+
+* 会将 `keep_free_space_bytes` 设置考虑在内。
+* 不会考虑 `INSERT` 操作将要写入的数据量。
+* 仅在指定了正数 (非零) 比例时才会进行检查
+
+可能的值：
+
+* Float，0.0 - 1.0
+
+请注意，如果同时指定了 `min_free_disk_ratio_to_perform_insert` 和
+`min_free_disk_bytes_to_perform_insert`，ClickHouse 将采用允许在更多空闲
+磁盘空间下执行插入操作的那个值。
+
+<div id="min_index_granularity_bytes">
+  ## min_index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+数据粒度允许的最小字节大小。
+
+用于防止因误操作创建 `index_granularity_bytes` 过低的表。
+
+<div id="min_level_for_full_part_storage">
+  ## min_level_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+仅在 ClickHouse Cloud 中可用。数据分区片段使用完整存储类型而非 packed
+所需的最小 part 级别
+
+<div id="min_level_for_wide_part">
+  ## min_level_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+将数据分区片段创建为 `Wide` 格式而非 `Compact` 格式所需的最小 part 级别。
+
+<div id="min_marks_to_honor_max_concurrent_queries">
+  ## min_marks_to_honor_max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+查询至少读取多少个标记时，才会应用 [max&#95;concurrent&#95;queries](#max_concurrent_queries) 设置。
+
+<Note>
+  查询仍会受到其他 `max_concurrent_queries` 设置的限制。
+</Note>
+
+可能的值：
+
+* 正整数。
+* `0` — 已禁用 (`max_concurrent_queries` 限制不适用于任何查询) 。
+
+**示例**
+
+```xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
+
+<div id="min_merge_bytes_to_use_direct_io">
+  ## min_merge_bytes_to_use_direct_io
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+执行 合并 操作时，使用直接
+I/O 访问存储磁盘所需的最小数据量。合并数据分区片段时，ClickHouse 会计算
+所有待合并数据的总存储量。如果该总量超过
+`min_merge_bytes_to_use_direct_io` 字节，ClickHouse 将通过直接 I/O 接口 (`O_DIRECT` 选项)
+从存储磁盘读取和写入
+数据。如果 `min_merge_bytes_to_use_direct_io = 0`，则禁用直接 I/O。
+
+<div id="min_parts_to_merge_at_once">
+  ## min_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+合并选择器一次可选中进行合并的最少数据分区片段数
+(专家级设置，如果不了解其作用，请勿更改) 。
+0 - 已禁用。适用于 Simple 和 StochasticSimple 合并选择器。
+
+<div id="min_relative_delay_to_close">
+  ## min_relative_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+与其他副本相比的最小延迟；达到该延迟后，将关闭、停止处理请求，并在 status check 期间不返回 Ok。
+
+<div id="min_relative_delay_to_measure">
+  ## min_relative_delay_to_measure
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+仅当绝对延迟不小于此值时，才计算副本的相对延迟。
+
+<div id="min_relative_delay_to_yield_leadership">
+  ## min_relative_delay_to_yield_leadership
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+已废弃，无任何作用。
+
+<div id="min_replicated_logs_to_keep">
+  ## min_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+即使这些记录已过时，也会在 ZooKeeper 日志中保留大约这么多条最新记录。它不会影响表的运行，仅用于在清理前诊断 ZooKeeper 日志。
+
+可能的值：
+
+* 任何正整数。
+
+<div id="min_rows_for_compact_part">
+  ## min_rows_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃，无任何作用。
+
+<div id="min_rows_for_full_part_storage">
+  ## min_rows_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+仅在 ClickHouse Cloud 中可用。使用完整存储类型而非 packed 来存储数据分区片段时所需的最小行数
+
+<div id="min_rows_for_wide_part">
+  ## min_rows_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+创建 `Wide` 格式而不是 `Compact` 格式的数据分区片段所需的最少行数。
+
+<div id="min_rows_to_fsync_after_merge">
+  ## min_rows_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+合并后对分片执行 fsync 所需的最小行数 (0 表示禁用)
+
+<div id="mutation_workload">
+  ## mutation_workload
+</div>
+
+用于调节变更与其他工作负载之间的资源使用和共享方式。指定的值将作为此表后台变更的 `workload` 设置值使用。若未指定 (空字符串) ，则改用服务器设置 `mutation_workload`。
+
+**另请参见**
+
+* [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="non_replicated_deduplication_window">
+  ## non_replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+在非复制的
+[MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)表中，
+用于存储最近插入的块的哈希值以进行重复检查的数量。
+
+Possible values:
+
+* 任意正整数。
+* `0` (禁用去重) 。
+
+这里使用了与复制表类似的去重机制 (请参见
+[replicated&#95;deduplication&#95;window](#replicated_deduplication_window) 设置) 。
+创建出的 parts 的哈希值会写入磁盘上的本地文件。
+
+<div id="notify_newest_block_number">
+  ## notify_newest_block_number
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+向 SharedJoin 或 SharedSet 通知最新块编号。仅在 ClickHouse Cloud 中可用。
+
+<div id="nullable_serialization_version">
+  ## nullable_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "basic"},{"label": "新增设置"}]}]} />
+
+控制 `Nullable(T)` 列所使用的序列化方法。
+
+可选值：
+
+* basic — 使用 `Nullable(T)` 的标准序列化方式。
+
+* allow&#95;sparse — 允许 `Nullable(T)` 使用稀疏编码。
+
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+当池中的空闲条目数少于指定数量时，不执行 part mutations。这样可以为常规合并保留空闲线程，并避免出现“parts 过多”错误。
+
+可选值：
+
+* 任意正整数。
+
+**用法**
+
+`number_of_free_entries_in_pool_to_execute_mutation` 设置的值
+应小于 [background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_pool_size) 的值
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio)。
+  否则，ClickHouse 将抛出异常。
+
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+当池中的空闲槽位数少于指定值时，不要
+在后台执行针对整个分区的优化操作 (当设置
+`min_age_to_force_merge_seconds` 并启用
+`min_age_to_force_merge_on_partition_only` 时，会生成
+此任务) 。这样可以为常规合并
+保留空闲线程，并避免出现“parts 过多”。
+
+可能的值：
+
+* 正整数。
+
+`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+设置的值应小于
+[background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_pool_size)
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) 的值。
+  否则，ClickHouse 会抛出异常。
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+当池中 (或副本队列中) 的空闲条目数少于指定数量时，开始降低可处理的合并的最大大小
+(或可放入队列的合并的最大大小) 。
+这样可以让小型合并优先得到处理，避免长时间运行的合并
+占满整个池。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+如果表中至少有
+这么多尚未完成的变更，则会人为降低该表变更的执行速度。
+设置为 0 时禁用
+
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+如果表中至少有这么多未完成的变更，则抛出“Too many mutations”异常。
+设置为 0 时禁用
+
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+仅在 ClickHouse Cloud 中可用。最多考虑前 N 个
+分区进行合并。分区会按加权随机方式选取，权重
+为该分区中可合并的数据分区片段数量。
+
+<div id="object_serialization_version">
+  ## object_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "新增了一个用于控制 JSON 序列化版本的设置"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "默认对 JSON 启用 v3 序列化版本，以使用高级共享数据序列化"}]}]} />
+
+JSON 数据类型的序列化版本。出于兼容性考虑需要设置。
+
+可能的值：
+
+* `v1`
+* `v2`
+* `v3`
+
+只有 `v3` 版本支持更改共享数据序列化版本。
+
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "新增设置，用于控制 compact parts 中 JSON 共享数据 序列化的桶数量"}]}]} />
+
+compact parts 中 JSON 共享数据 序列化的桶数量。与 `map_with_buckets` 和 `advanced` 共享数据 序列化配合使用。
+允许的最大值为 256。
+
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "新增一个设置，用于控制 Wide parts 中 JSON 共享数据序列化的桶数量"}]}]} />
+
+用于指定 Wide parts 中 JSON 共享数据序列化的桶数量。与 `map_with_buckets` 和 `advanced` 共享数据序列化配合使用。
+允许的最大值为 256。
+
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "新增用于控制 JSON 序列化版本的设置"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "advanced"},{"label": "默认启用高级共享数据序列化版本"}]}]} />
+
+JSON 数据类型中共享数据的序列化版本。
+
+可能的值：
+
+* `map` - 将共享数据存储为 `Map(String, String)`
+* `map_with_buckets` - 将共享数据存储为多个独立的 `Map(String, String)` 列。使用桶可以提升从共享数据中读取单个路径的性能。
+* `advanced` - 一种专为显著提升从共享数据中读取单个路径性能而设计的特殊共享数据序列化方式。
+  请注意，这种序列化会增加磁盘上共享数据的存储大小，因为它会存储大量额外信息。
+
+`map_with_buckets` 和 `advanced` 序列化的桶数量由以下设置决定：
+[object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](#object_shared_data_buckets_for_wide_part)。
+
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "新增了一个用于控制零级 parts 的 JSON 序列化版本的设置"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "默认对零级 parts 启用 map_with_buckets 共享数据序列化版本"}]}]} />
+
+此设置允许为插入期间创建的零级 parts 中
+JSON 类型内部的共享数据指定不同的序列化版本。
+建议不要对零级 parts 使用 `advanced` 共享数据序列化，因为这可能会显著增加
+插入时间。
+
+<div id="old_parts_lifetime">
+  ## old_parts_lifetime
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="480" />
+
+存储非活动 parts 的时长 (以秒为单位) ，用于防止服务器意外重启时发生数据丢失。
+
+可能的值：
+
+* 任意正整数。
+
+将多个 parts 合并成一个新的 part 后，ClickHouse 会将原始 parts 标记为非活动，并且仅在 `old_parts_lifetime` 秒后才删除它们。若非活动 parts 未被当前查询使用，即 part 的 `refcount` 为 1，则会被移除。
+
+不会对新的 parts 调用 `fsync`，因此在一段时间内，新 parts 仅存在于服务器的 RAM (操作系统缓存) 中。如果服务器意外重启，新 parts 可能会丢失或损坏。为保护数据，非活动 parts 不会被立即删除。
+
+启动期间，ClickHouse 会检查这些 parts 的完整性。如果 merged part 已损坏，ClickHouse 会将非活动 parts 恢复到活动列表中，之后再重新合并。随后，损坏的 part 会被重命名 (添加 `broken_` 前缀) 并移至 `detached` 文件夹中。如果 merged part 未损坏，则原始的非活动 parts 会被重命名 (添加 `ignored_` 前缀) 并移至 `detached` 文件夹中。
+
+默认的 `dirty_expire_centisecs` 值 (Linux 内核设置) 为 30 秒 (写入数据仅保存在 RAM 中的最长时间) ，但在磁盘系统负载较高时，数据写入的时间可能会明显更晚。根据实验，`old_parts_lifetime` 取值为 480 秒，在这段时间内可确保新 part 被写入磁盘。
+
+<div id="optimize_row_order">
+  ## optimize_row_order
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+控制是否在插入期间优化行顺序，以提升新插入表 parts 的
+压缩效果。
+
+仅对普通的 MergeTree-engine 表生效。对于专用的 MergeTree 引擎表
+(例如 CollapsingMergeTree) 则不起作用。
+
+MergeTree 表会 (可选地) 使用[压缩编解码器](/zh/reference/statements/create/table#column_compression_codec)进行压缩。
+LZ4 和 ZSTD 等通用压缩编解码器在数据呈现出某种模式时，能够获得最高的压缩率。
+相同值的长连续序列通常具有很好的压缩效果。
+
+如果启用此设置，ClickHouse 会尝试以一种行顺序来存储新插入
+parts 中的数据，从而尽量减少新表 part 各列中相同值连续段的数量。
+换句话说，相同值连续段越少，通常意味着单个连续段越长，
+压缩效果也越好。
+
+寻找最优行顺序在计算上是不可行的 (NP-hard) 。
+因此，ClickHouse 使用一种启发式方法来快速找到一种行顺序，
+即使不是最优，也仍能比原始行顺序获得更好的压缩率。
+
+<details markdown="1">
+  <summary>用于寻找行顺序的启发式方法</summary>
+
+  通常可以自由打乱表 (或表 part) 中的行，
+  因为在 SQL 看来，行顺序不同但内容相同的表 (表 part) 是等价的。
+
+  当为表定义了主键时，这种自由打乱行的能力会受到限制。
+  在 ClickHouse 中，主键 `C1, C2, ..., CN` 要求
+  表中的行按列 `C1`, `C2`, ... `Cn` 排序 ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)) 。
+  因此，行只能在“等价类”内部进行重排，
+  也就是主键列值相同的那些行。
+  直观来看，高基数主键 (例如包含 `DateTime64` 时间戳列的主键)
+  会产生许多很小的等价类。相应地，低基数主键的表则会产生少量但
+  较大的等价类。没有主键的表则是一个极端情况，
+  即只有一个覆盖所有行的等价类。
+
+  等价类越少且越大，重新打乱行时的自由度就越高。
+
+  用于在每个等价类中寻找最佳行顺序的启发式方法，由 D. Lemire 和 O. Kaser 在
+  [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)
+  中提出，其核心是在每个等价类内
+  按非主键列基数的升序对行进行排序。
+
+  它分为三个步骤：
+
+  1. 根据主键列中的行值找出所有等价类。
+  2. 对于每个等价类，计算 (通常是估算)
+     非主键列的基数。
+  3. 对于每个等价类，按非主键列基数升序
+     对行进行排序。
+</details>
+
+如果启用，插入操作会带来额外的 CPU 开销，用于分析并
+优化新数据的行顺序。根据数据特征不同，预计 INSERT 的耗时会增加 30-50%。
+LZ4 或 ZSTD 的压缩率平均可提升 20-40%。
+
+此设置最适用于没有主键或主键基数较低的表，
+即仅包含少量不同主键值的表。
+对于高基数主键，例如包含 `DateTime64` 类型
+时间戳列的主键，通常无法从该设置中获益。
+
+<div id="packed_skip_index_max_bytes">
+  ## packed_skip_index_max_bytes
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新设置。将任一序列化后磁盘大小不超过该字节数的跳过索引子流，为每个分片打包到单个 skp_idx.packed 归档中；更大的子流则保留独立的 skp_idx_<name>.idx2 / .mrk2 布局。该决定会在写入时针对每个子流分别作出。"}]}]} />
+
+低于此阈值的跳过索引子流 (按序列化后的磁盘字节数计算，即经过子流压缩和哈希
+链之后) 会为每个分片打包到单个 `skp_idx.packed`
+归档中，而不是写成单独的 `skp_idx_<name>.idx2` / `.mrk2`
+文件。大于此值的子流会保留旧版的按文件布局。该决定会在写入时针对每个子流
+独立作出，因此单个分片可以同时包含已打包的小型索引
+(例如 `minmax`) 以及按文件存储的大型索引 (例如较重的 `bloom_filter`) 。设为 0
+可完全禁用打包 (默认值) 。
+
+每个跳过索引子流实际上都由一个数据文件和一个标记文件组成；在作出是否落盘
+的决定之前，这两个文件都会先在内存中缓冲到该阈值。因此，写入期间的峰值内存占用
+会随 `2 * packed_skip_index_max_bytes * (number of substreams that stay
+below the threshold)` 增长。
+
+全文索引不支持此设置，且永远不会被打包。
+
+当一个表上定义了许多跳过索引时，打包可减轻 inode 压力 (例如
+使用 `add_minmax_index_for_numeric_columns` 时) 。
+
+磁盘格式是自描述的：读取器会检测 `skp_idx.packed`，并透明地从中读取已打包的
+子流。更改此设置只会影响新写入的分片；
+现有分片会保留其写入时的布局。
+
+已知限制：`system.data_skipping_indices.data_uncompressed_bytes` 和
+`system.parts.secondary_indices_uncompressed_bytes` 对于已打包的
+子流会报告压缩后的大小 (因为归档索引不存储未压缩大小) 。这在
+监控中只是显示层面的问题，但有一个功能性后果：
+`distributed_index_analysis_min_indexes_bytes_to_activate` 会与
+`data_uncompressed` 比较，因此一个压缩效果很好的已打包索引 (`set` 或针对
+String 的 `bloom_filter`) 即使其真实的未压缩大小本应超过激活阈值，也可能不会触发激活。
+回退方式是使用正常的查询计划，不会产生错误结果。
+
+<div id="part_minmax_index_columns">
+  ## part_minmax_index_columns
+</div>
+
+<SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "partition_key_only"},{"label": "新增设置。"}]}]} />
+
+选择每个 part 的 min-max 索引覆盖哪些列。每个值都会在前一个值的基础上额外启用一组列。
+
+可选值：
+
+* `partition_key_only` — 仅跟踪分区键列。
+* `with_block_number_offset` — 分区键列，以及持久化的 `_block_number` 和 `_block_offset` 虚拟列。支持按这些列进行 part 级裁剪。
+
+<div id="part_moves_between_shards_delay_seconds">
+  ## part_moves_between_shards_delay_seconds
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+在分片之间移动 parts 前后等待的时间。
+
+<div id="part_moves_between_shards_enable">
+  ## part_moves_between_shards_enable
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+用于在分片之间移动 parts 的 Experimental/未完成功能。不考虑
+分片表达式。
+
+<div id="parts_to_delay_insert">
+  ## parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+如果单个分区中的活动 parts 数量超过
+`parts_to_delay_insert` 的值，`INSERT` 将被人为放慢。
+
+可能的值：
+
+* 任意正整数。
+
+ClickHouse 会人为延长 `INSERT` 的执行时间 (添加“sleep”) ，以便
+后台 合并 进程能够以快于新增 parts 的速度完成合并。
+
+<div id="parts_to_throw_insert">
+  ## parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3000" />
+
+如果单个分区中的活动 parts 数量超过
+`parts_to_throw_insert` 的值，`INSERT` 会被中断，并抛出 `Too many
+parts (N). Merges are processing significantly slower than inserts`
+异常。
+
+可能的值：
+
+* 任意正整数。
+
+为了获得 `SELECT` 查询的最佳性能，必须尽可能减少需要处理的 parts 数量，参见 [Merge Tree](/zh/resources/develop-contribute/introduction/architecture#merge-tree)。
+
+在 23.6 版本之前，此设置的值为 300。你可以将其设置为更高的值，这会降低出现 `Too many parts`
+错误的概率，但与此同时，`SELECT` 性能也可能会下降。另外，如果出现 合并 问题 (例如磁盘空间不足) ，相比使用原始值 300，你会更晚察觉到这个问题。
+
+<div id="prefer_fetch_merged_part_size_threshold">
+  ## prefer_fetch_merged_part_size_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+如果 parts 的大小总和超过此阈值，并且自复制日志条目创建以来经过的时间大于
+`prefer_fetch_merged_part_time_threshold`，则优先从某个副本拉取已合并的分片，
+而不是在本地执行合并。这样可以加快耗时很长的合并操作。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="prefer_fetch_merged_part_time_threshold">
+  ## prefer_fetch_merged_part_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="3600" />
+
+如果自复制日志 (ClickHouse Keeper 或 ZooKeeper) 条目创建以来经过的时间超过此阈值，且 parts 的总大小大于 `prefer_fetch_merged_part_size_threshold`，则优先从副本拉取合并后的分片，而不是在本地执行合并。这样可以加快耗时很长的合并。
+
+Possible values:
+
+* 任意正整数。
+
+<div id="prewarm_mark_cache">
+  ## prewarm_mark_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+如果为 true，则会在 insert、合并、拉取期间以及
+server 启动时，通过在这些操作中将标记保存到标记缓存来预热标记缓存
+
+<div id="prewarm_primary_key_cache">
+  ## prewarm_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新设置"}]}]} />
+
+如果为 true，则会在插入、合并、拉取以及服务器启动时，通过将标记保存到标记缓存中来预热主索引缓存
+
+<div id="primary_key_compress_block_size">
+  ## primary_key_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+主键压缩块大小，即待压缩数据块的实际大小。
+
+<div id="primary_key_compression_codec">
+  ## primary_key_compression_codec
+</div>
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+主键使用的压缩编码。由于主键本身足够小且会被缓存，
+因此默认使用 ZSTD(3) 压缩。
+
+<div id="primary_key_lazy_load">
+  ## primary_key_lazy_load
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+首次使用时才将主键加载到内存中，
+而不是在表初始化时加载。存在大量表时，
+这可以节省内存。
+
+<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
+  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9" />
+
+如果parts中主键某一列的值发生变化的次数至少达到这一比例，则跳过将后续列加载到内存中。这样可以避免加载主键中无用的列，从而节省内存使用。
+
+<div id="propagate_types_serialization_versions_to_nested_types">
+  ## propagate_types_serialization_versions_to_nested_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "默认将数据类型的序列化版本传递到嵌套类型"}]}]} />
+
+如果为 true，则像 `string_serialization_version` 这样的序列化版本会传递到 Array/Map/Nullable/JSON 等嵌套类型内部。如果禁用，则序列化版本只会对该类型的顶层列和 Tuple el 生效
+
+<div id="ratio_of_defaults_for_sparse_serialization">
+  ## ratio_of_defaults_for_sparse_serialization
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9375" />
+
+列中 *默认* 值数量占 *全部* 值数量的最小比例。
+设置该值后，该列会使用稀疏序列化存储。
+
+如果某列是稀疏的 (即大多数值为零) ，ClickHouse 可以将其编码为
+稀疏格式，并自动优化计算——查询期间，数据无需
+完全解压。要启用这种稀疏
+序列化，请将 `ratio_of_defaults_for_sparse_serialization`
+设置为小于 1.0 的值。如果该值大于或等于 1.0，
+则这些列始终会使用普通的完整序列化写入。
+
+可能的值：
+
+* 介于 `0` 和 `1` 之间的 Float，可启用稀疏序列化
+* 如果不想使用稀疏序列化，则设为 `1.0` (或更大)
+
+**示例**
+
+请注意，下表中的 `s` 列在 95% 的
+行中都是空字符串。在 `my_regular_table` 中，我们不使用稀疏序列化；而在
+`my_sparse_table` 中，我们将 `ratio_of_defaults_for_sparse_serialization` 设置为
+0.95：
+
+```sql
+CREATE TABLE my_regular_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_regular_table
+SELECT
+number AS id,
+number % 20 = 0 ? toString(number): '' AS s
+FROM
+numbers(10000000);
+
+CREATE TABLE my_sparse_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.95;
+
+INSERT INTO my_sparse_table
+SELECT
+number,
+number % 20 = 0 ? toString(number): ''
+FROM
+numbers(10000000);
+```
+
+请注意，`my_sparse_table` 中的 `s` 列在磁盘上占用的存储空间更小：
+
+```sql
+SELECT table, name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
+WHERE table LIKE 'my_%_table';
+```
+
+```response
+┌─table────────────┬─name─┬─data_compressed_bytes─┬─data_uncompressed_bytes─┐
+│ my_regular_table │ id   │              37790741 │                75488328 │
+│ my_regular_table │ s    │               2451377 │                12683106 │
+│ my_sparse_table  │ id   │              37790741 │                75488328 │
+│ my_sparse_table  │ s    │               2283454 │                 9855751 │
+└──────────────────┴──────┴───────────────────────┴─────────────────────────┘
+```
+
+你可以通过查看 `system.parts_columns` 表中的 `serialization_kind` 列，
+确认某列是否使用了稀疏编码：
+
+```sql
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE table LIKE 'my_sparse_table';
+```
+
+你可以查看 `s` 的哪些部分采用了稀疏序列化存储：
+
+```response
+┌─column─┬─serialization_kind─┐
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+└────────┴────────────────────┘
+```
+
+<div id="reduce_blocking_parts_sleep_ms">
+  ## reduce_blocking_parts_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5000"},{"label": "Cloud sync"}]}]} />
+
+仅在 ClickHouse Cloud 中可用。在未丢弃/替换任何范围后，再次尝试减少 blocking parts 之前的最短等待时间。较低的设置会更频繁地触发 background&#95;schedule&#95;pool 中的任务，从而在大规模集群中向 ZooKeeper 发出大量请求
+
+<div id="refresh_parts_interval">
+  ## refresh_parts_interval
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+如果该值大于零，则会从底层文件系统刷新parts列表，以检查数据是否被底层更新。
+只有当该表位于只读磁盘上时才能设置此项 (这意味着这是一个只读副本，而数据由另一个副本写入) 。
+
+<div id="refresh_statistics_interval">
+  ## refresh_statistics_interval
+</div>
+
+<SettingsInfoBlock type="秒" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "300"},{"label": "启用统计信息缓存"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+统计信息缓存的刷新时间间隔 (以秒为单位) 。如果设置为 0，则会禁用刷新。
+
+<div id="remote_fs_execute_merges_on_single_replica_time_threshold">
+  ## remote_fs_execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="10800" />
+
+当此设置的值大于零时，如果共享存储上存在已合并分片，则只有一个副本会立即开始
+合并。
+
+<Note>
+  零拷贝复制尚未准备好用于生产环境。
+  在 ClickHouse 22.8 及更高版本中，零拷贝复制默认处于禁用状态。
+
+  不建议在生产环境中使用此功能。
+</Note>
+
+可能的值：
+
+* 任意正整数。
+
+<div id="remote_fs_zero_copy_path_compatible_mode">
+  ## remote_fs_zero_copy_path_compatible_mode
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+在转换过程中，以兼容模式运行 零拷贝。
+
+<div id="remote_fs_zero_copy_zookeeper_path">
+  ## remote_fs_zero_copy_zookeeper_path
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="/clickhouse/zero_copy" />
+
+用于存放零拷贝表级无关信息的 ZooKeeper 路径。
+
+<div id="remove_empty_parts">
+  ## remove_empty_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+在通过生存时间 (TTL)、变更或 collapsing
+合并算法清理后，删除空的 parts。
+
+<div id="remove_rolled_back_parts_immediately">
+  ## remove_rolled_back_parts_immediately
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+这是一个用于尚未完成的 Experimental 功能的设置。
+
+<div id="remove_unused_patch_parts">
+  ## remove_unused_patch_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+在后台移除已应用到所有活动 parts 的补丁分区片段。
+
+<div id="replace_long_file_name_to_hash">
+  ## replace_long_file_name_to_hash
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+如果列文件名过长 (超过 &#39;max&#95;file&#95;name&#95;length&#39;
+字节) ，则将其替换为 SipHash128 哈希值
+
+<div id="replicated_can_become_leader">
+  ## replicated_can_become_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+如果为 true，此节点上的复制表副本将尝试成为
+leader。
+
+可能的值：
+
+* `true`
+* `false`
+
+<div id="replicated_deduplication_window">
+  ## replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "10000"},{"label": "提高默认值"}]}]} />
+
+ClickHouse Keeper 为最近插入的这些块保存哈希和，
+以检查重复项；该设置指定这类块的数量。
+
+可能的值：
+
+* 任意正整数。
+* 0 (禁用去重)
+
+`Insert` 命令会创建一个或多个块 (parts) 。对于
+[插入去重](/zh/reference/engines/table-engines/mergetree-family/replication)，
+在向复制表写入时，ClickHouse 会将所创建
+parts 的哈希和写入 ClickHouse Keeper。哈希和只会为最近的
+`replicated_deduplication_window` 个块保存。最旧的哈希和会
+从 ClickHouse Keeper 中移除。
+
+较大的 `replicated_deduplication_window` 值会减慢 `Inserts`
+速度，因为需要比较更多条目。哈希和是根据
+字段名称与类型的组合，以及已插入
+分片 中的数据 (字节流) 计算得出的。
+
+<div id="replicated_deduplication_window_for_async_inserts">
+  ## replicated_deduplication_window_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+ClickHouse Keeper 为检查重复项而存储哈希和时，所保留的最近异步插入块数量。
+
+可能的值：
+
+* 任意正整数。
+* 0 (禁用 async&#95;inserts 的去重)
+
+[异步插入](/zh/reference/settings/session-settings#async_insert) 命令会被缓存为一个或多个块 (parts) 。对于[插入去重](/zh/reference/engines/table-engines/mergetree-family/replication)，在写入复制表时，ClickHouse 会将每次插入的哈希和写入 ClickHouse Keeper。哈希和只会为最近的 `replicated_deduplication_window_for_async_inserts` 个块保存，最旧的哈希和会从 ClickHouse Keeper 中移除。
+`replicated_deduplication_window_for_async_inserts` 的值越大，`Async Inserts` 就会越慢，因为需要比较更多条目。
+哈希和是根据字段名称与类型的组合以及插入的数据 (字节流) 计算得出的。
+
+<div id="replicated_deduplication_window_seconds">
+  ## replicated_deduplication_window_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3600"},{"label": "默认值降低"}]}]} />
+
+插入块的哈希值会在经过多少秒后
+从 ClickHouse Keeper 中移除。
+
+可能的值：
+
+* 任意正整数。
+
+与 [replicated&#95;deduplication&#95;window](#replicated_deduplication_window)
+类似，`replicated_deduplication_window_seconds` 指定用于插入去重的块哈希值
+应保留多长时间。早于
+`replicated_deduplication_window_seconds` 的哈希值会从 ClickHouse Keeper 中移除，
+即使它们的数量少于 ` replicated_deduplication_window`。
+
+这里的时间是相对于最新一条记录的时间，而不是相对于实际时钟
+时间。如果这是唯一的一条记录，它将永久保留。
+
+<div id="replicated_deduplication_window_seconds_for_async_inserts">
+  ## replicated_deduplication_window_seconds_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="604800" />
+
+异步插入的哈希和在多少秒后会从
+ClickHouse Keeper 中移除。
+
+Possible values:
+
+* 任意正整数。
+
+与 [replicated&#95;deduplication&#95;window&#95;for&#95;async&#95;inserts](#replicated_deduplication_window_for_async_inserts) 类似，
+`replicated_deduplication_window_seconds_for_async_inserts` 指定用于异步插入去重的块哈希和
+应保留多长时间。早于 `replicated_deduplication_window_seconds_for_async_inserts` 的哈希和
+会从 ClickHouse Keeper 中移除，即使其数量少于
+`replicated_deduplication_window_for_async_inserts`。
+
+这里的时间是相对于最近一条记录的时间，而不是相对于实际时钟
+时间。如果这是唯一的一条记录，则会永久保留。
+
+<div id="replicated_fetches_http_connection_timeout">
+  ## replicated_fetches_http_connection_timeout
+</div>
+
+<SettingsInfoBlock type="秒" default_value="0" />
+
+已废弃，已无作用。
+
+<div id="replicated_fetches_http_receive_timeout">
+  ## replicated_fetches_http_receive_timeout
+</div>
+
+<SettingsInfoBlock type="秒" default_value="0" />
+
+已废弃，不起任何作用。
+
+<div id="replicated_fetches_http_send_timeout">
+  ## replicated_fetches_http_send_timeout
+</div>
+
+<SettingsInfoBlock type="秒" default_value="0" />
+
+已废弃，不起任何作用。
+
+<div id="replicated_fetches_min_part_level">
+  ## replicated_fetches_min_part_level
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+从其他副本拉取的最低 分片 级别。低于此阈值的 分片s 会被延后处理
+(保留在复制队列中，并在每个调度周期重新评估，而不是被永久跳过) 。
+将其设为 1 可延后拉取 0 级 (未合并) 的 分片s，从而在高强度摄取期间降低复制开销。
+默认值：0 (无论级别如何，都会拉取所有 分片s) 。
+
+<div id="replicated_fetches_min_part_level_timeout_seconds">
+  ## replicated_fetches_min_part_level_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "300"},{"label": "新设置"}]}]} />
+
+级别低于 `replicated_fetches_min_part_level` 的 分片 在超过该秒数后仍会被强制拉取。
+使用 0 可禁用该超时 (低于最小级别的 分片s 将被无限期延后，直到被合并) 。
+默认值：300 (5 分钟后强制拉取) 。
+
+<div id="replicated_max_mutations_in_one_entry">
+  ## replicated_max_mutations_in_one_entry
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+可合并并在一个 MUTATE&#95;PART 条目中执行的变更命令最大数量
+(0 表示不受限制)
+
+<div id="replicated_max_parallel_fetches">
+  ## replicated_max_parallel_fetches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃，无任何作用。
+
+<div id="replicated_max_parallel_fetches_for_host">
+  ## replicated_max_parallel_fetches_for_host
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="15" />
+
+已废弃，不起任何作用。
+
+<div id="replicated_max_parallel_fetches_for_table">
+  ## replicated_max_parallel_fetches_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃，无任何作用。
+
+<div id="replicated_max_parallel_sends">
+  ## replicated_max_parallel_sends
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃，无任何作用。
+
+<div id="replicated_max_parallel_sends_for_table">
+  ## replicated_max_parallel_sends_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+已废弃，没有任何作用。
+
+<div id="replicated_max_ratio_of_wrong_parts">
+  ## replicated_max_ratio_of_wrong_parts
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+如果错误 parts 与 parts 总数的比率低于该值，
+则允许启动。
+
+可能的值：
+
+* Float，0.0 - 1.0
+
+<div id="search_orphaned_parts_disks">
+  ## search_orphaned_parts_disks
+</div>
+
+<SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "any"},{"label": "新设置"}]}]} />
+
+ClickHouse 会在执行任何 ATTACH 或 CREATE 表操作时扫描所有磁盘上的孤立parts，
+以避免遗漏位于未定义 (即未包含在策略中) 磁盘上的parts。
+孤立parts可能源于潜在不安全的存储重新配置，例如某个磁盘被从存储策略中排除。
+此设置会根据磁盘特征限制搜索的磁盘范围。
+
+可能的值：
+
+* any - 不限制范围。
+* local - 范围仅限本地磁盘。
+* none - 空范围，不搜索
+
+<div id="serialization_info_version">
+  ## serialization_info_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_types"},{"label": "更改为支持自定义字符串序列化的较新格式"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "basic"},{"label": "新设置"}]}]} />
+
+写入 `serialization.json` 时使用的序列化信息版本。
+此设置用于在集群升级期间保持兼容性。
+
+可能的值：
+
+* `basic` - 基础格式。
+* `with_types` - 包含额外 `types_serialization_versions` 字段的格式，支持按类型指定序列化版本。
+  这会使 `string_serialization_version` 等设置生效。
+
+在滚动升级期间，请将此项设置为 `basic`，这样新服务器生成的
+数据分区片段可兼容旧服务器。升级完成后，
+切换为 `WITH_TYPES` 以启用按类型的序列化版本。
+
+<div id="share_nested_offsets">
+  ## share_nested_offsets
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "设为 false 时，名称中带点且共享相同前缀的 Array 列会被视为彼此独立的列，而不会再按照旧版 Nested 语义共享偏移量文件"}]}]} />
+
+启用时 (默认) ，名称中带点且共享相同前缀的 Array 列 (例如 `n.a` 和 `n.b`)
+会被视为 Nested 结构的一部分：它们在磁盘上共享同一个 offsets 文件 (例如 `n.size0`) ，
+并且在 INSERT 时会校验它们的数组大小是否一致。
+禁用后，每个 Array 列都会拥有各自独立的 offset 文件，名称中的点不再具有特殊
+语义，同时标量列也可以与共享相同前缀的点分 Array 列共存
+(例如 `n UInt32` 与 `n.a Array(String)` 可同时存在) 。该设置在表创建后不可更改。
+
+<div id="shared_merge_tree_activate_coordinated_merges_tasks">
+  ## shared_merge_tree_activate_coordinated_merges_tasks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-3","items": [{"label": "25.7"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-4","items": [{"label": "25.6"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-5","items": [{"label": "25.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用对协调合并任务的重新调度。即使在
+shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0 时，这也可能很有用，因为它会填充合并协调器的
+统计信息，并有助于冷启动。
+
+<div id="shared_merge_tree_create_per_replica_metadata_nodes">
+  ## shared_merge_tree_create_per_replica_metadata_nodes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "减少 Keeper 中的元数据量。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+启用在 ZooKeeper 中为每个副本创建 /metadata 和 /columns 节点。
+仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
+  ## shared_merge_tree_disable_merges_and_mutations_assignment
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+停止为 shared merge tree 分配合并和变更任务。仅在 ClickHouse
+Cloud 中可用
+
+<div id="shared_merge_tree_empty_partition_lifetime">
+  ## shared_merge_tree_empty_partition_lifetime
+</div>
+
+<SettingsInfoBlock type="秒" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "86400"},{"label": "新设置"}]}]} />
+
+分区在不包含任何 parts 时，会在 Keeper 中保留多少秒。
+
+<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
+  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "默认启用"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用对空分区对应的 Keeper 条目的清理。
+
+<div id="shared_merge_tree_enable_coordinated_merges">
+  ## shared_merge_tree_enable_coordinated_merges
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用协调合并策略
+
+<div id="shared_merge_tree_enable_keeper_parts_extra_data">
+  ## shared_merge_tree_enable_keeper_parts_extra_data
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用在 Keeper 中向虚拟 parts 写入属性并提交块
+
+<div id="shared_merge_tree_enable_outdated_parts_check">
+  ## shared_merge_tree_enable_outdated_parts_check
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+启用过期parts检查。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_idle_parts_update_seconds">
+  ## shared_merge_tree_idle_parts_update_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "3600"},{"label": "Cloud sync"}]}]} />
+
+shared merge tree 中在未由 ZooKeeper watch 触发的情况下进行 parts 更新的时间间隔 (秒) 。仅在 ClickHouse Cloud
+中可用
+
+<div id="shared_merge_tree_initial_parts_update_backoff_ms">
+  ## shared_merge_tree_initial_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "新设置"}]}]} />
+
+parts 更新的初始退避时间。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
+  ## shared_merge_tree_interserver_http_connection_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "100"},{"label": "新增设置"}]}]} />
+
+服务器间 HTTP 连接的超时时间。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_interserver_http_timeout_ms">
+  ## shared_merge_tree_interserver_http_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10000"},{"label": "Cloud sync"}]}]} />
+
+用于服务器间 HTTP 通信的超时时间。仅在 ClickHouse
+Cloud 中可用
+
+<div id="shared_merge_tree_leader_update_period_random_add_seconds">
+  ## shared_merge_tree_leader_update_period_random_add_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+为避免惊群效应，向
+shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period 额外添加一个从 0 到 x 秒均匀分布的值。仅在 ClickHouse Cloud
+中可用
+
+<div id="shared_merge_tree_leader_update_period_seconds">
+  ## shared_merge_tree_leader_update_period_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "30"},{"label": "Cloud sync"}]}]} />
+
+重新检查 parts 更新 leader 状态的最大周期。仅在
+ClickHouse Cloud
+中可用
+
+<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
+  ## shared_merge_tree_max_outdated_parts_to_process_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Cloud sync"}]}]} />
+
+leader 在一次 HTTP 请求中尝试确认可删除的过期分区片段的最大数量。仅在 ClickHouse Cloud 中可用。
+
+<div id="shared_merge_tree_max_parts_update_backoff_ms">
+  ## shared_merge_tree_max_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "新设置"}]}]} />
+
+parts 更新的最大退避时间。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_max_parts_update_leaders_in_total">
+  ## shared_merge_tree_max_parts_update_leaders_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="6" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]} />
+
+parts 更新 leader 的最大数量。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_max_parts_update_leaders_per_az">
+  ## shared_merge_tree_max_parts_update_leaders_per_az
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]} />
+
+parts 更新 leader 的数量上限。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_max_replicas_for_parts_deletion">
+  ## shared_merge_tree_max_replicas_for_parts_deletion
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+参与删除 parts (killer 线程) 的最大副本数。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
+  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "Cloud sync"}]}]} />
+
+尝试分配可能存在冲突的合并任务的最大副本数 (可
+避免在合并任务分配中产生冗余冲突) 。0 表示禁用。仅
+在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_max_suspicious_broken_parts">
+  ## shared_merge_tree_max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "SMT 的损坏 parts 最大数量；若超过该值，则禁止自动 detach"}]}]} />
+
+SMT 的损坏 parts 最大数量；若超过该值，则禁止自动 detach。
+
+<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
+  ## shared_merge_tree_max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "SMT 中所有损坏 parts 的最大总大小；若超过该值，将禁止自动 detach"}]}]} />
+
+SMT 中所有损坏 parts 的最大总大小；若超过该值，将禁止自动 detach。
+
+<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
+  ## shared_merge_tree_memo_ids_remove_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1800"},{"label": "Cloud sync"}]}]} />
+
+为避免在 insert 重试期间执行错误操作，insert memoization ID 会保留多长时间。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
+  ## shared_merge_tree_merge_coordinator_election_check_period_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "30000"},{"label": "新设置"}]}]} />
+
+合并协调器 选举线程的运行间隔时间
+
+<div id="shared_merge_tree_merge_coordinator_factor">
+  ## shared_merge_tree_merge_coordinator_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1.100000023841858"},{"label": "新设置"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "1.100000023841858"},{"label": "负载后降低协调器的休眠时间"}]}]} />
+
+协调器线程延迟的时间调整系数
+
+<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
+  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新增设置"}]}]} />
+
+合并协调器 与 ZooKeeper 同步以获取最新元数据的频率
+
+<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
+  ## shared_merge_tree_merge_coordinator_max_merge_request_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "20"},{"label": "新设置"}]}]} />
+
+协调器一次可向 MergerMutator 请求的合并数量
+
+<div id="shared_merge_tree_merge_coordinator_max_period_ms">
+  ## shared_merge_tree_merge_coordinator_max_period_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新增设置"}]}]} />
+
+合并协调器线程两次运行之间的最大时间间隔
+
+<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
+  ## shared_merge_tree_merge_coordinator_merges_prepare_count
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "auto"},{"label": "将该设置设为 auto：每个副本的最大 merge 任务数 * 活跃副本数"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100"},{"label": "新设置"}]}]} />
+
+合并协调器应准备并分发给各个工作线程的 merge 条目数量。
+设置为 &#39;auto&#39; 时，该值等于单个副本允许的最大 merge 任务数乘以活跃副本数。
+
+<div id="shared_merge_tree_merge_coordinator_min_period_ms">
+  ## shared_merge_tree_merge_coordinator_min_period_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新设置"}]}]} />
+
+merge coordinator 线程两次运行的最小间隔时间
+
+<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
+  ## shared_merge_tree_merge_worker_fast_timeout_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100"},{"label": "新设置"}]}]} />
+
+合并工作线程在立即操作后如需更新其状态时使用的超时时间
+
+<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
+  ## shared_merge_tree_merge_worker_regular_timeout_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新增设置"}]}]} />
+
+合并工作线程两次运行之间的间隔时间
+
+<div id="shared_merge_tree_outdated_parts_group_size">
+  ## shared_merge_tree_outdated_parts_group_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "2"},{"label": "新增设置"}]}]} />
+
+指定在清理过期 parts 时，同一 rendezvous 哈希组中包含的副本数量。
+仅在 ClickHouse Cloud 中可用。
+
+<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
+  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+当 `<candidate
+partitions for mutations only (partitions that cannot be merged)>/<candidate
+partitions for mutations>` 的比率高于该设置值时，会在 merge/mutate 选择任务中重新加载 merge 谓词。仅在 ClickHouse Cloud
+中可用
+
+<div id="shared_merge_tree_parts_load_batch_size">
+  ## shared_merge_tree_parts_load_batch_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+一次调度的拉取 parts 元数据作业数量。仅在
+ClickHouse Cloud
+中可用
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+在不启动包含此 part 的新合并的情况下，保留本地已合并 part 的时间。
+这会让其他副本有机会拉取该 part，并开始这次合并。
+仅在 ClickHouse Cloud 中可用。
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000000"},{"label": "Cloud sync"}]}]} />
+
+本地合并完成后，若 part 的大小 (按行数计) 达到此最小值，则会推迟为其分配下一次合并。仅在 ClickHouse Cloud 中可用。
+
+<div id="shared_merge_tree_range_for_merge_window_size">
+  ## shared_merge_tree_range_for_merge_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+在不启动包含该分片的新 merge 的情况下，本地已合并分片的保留时间。
+这让其他副本有机会拉取该分片并启动这次 merge。
+仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_read_virtual_parts_from_leader">
+  ## shared_merge_tree_read_virtual_parts_from_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+在可能的情况下，从 leader 读取 virtual parts。仅在 ClickHouse
+Cloud 中可用
+
+<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
+  ## shared_merge_tree_replica_set_max_lifetime_seconds
+</div>
+
+<SettingsInfoBlock type="秒" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1800"},{"label": "将副本集后台更新的默认间隔增加到 30 分钟"}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "300"},{"label": "新设置"}]}]} />
+
+副本在后台尝试更新副本集的频率。下一次运行的时间会在 [0, value] 秒范围内按均匀分布随机抖动。例外情况：value = 0 不遵循这一约定；实现中会强制使用最小 200 毫秒，因此下一次运行的时间会在 [0, 200] 毫秒范围内随机抖动。
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新增设置：从其他副本拉取 parts 数据"}]}]} />
+
+如果启用，所有副本都会尝试从其他已存在这些数据的副本拉取 part 的内存数据 (如主键、分区信息等) 。
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "允许 SMT 在启动时从副本而非 S3 下载 parts 数据的新设置"}]}]} />
+
+启用后，所有副本都会在启动时尝试从其他已具有这些数据的副本拉取 part 的内存中数据 (如主键、分区信息等) 。
+
+<div id="shared_merge_tree_update_replica_flags_delay_ms">
+  ## shared_merge_tree_update_replica_flags_delay_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "30000"},{"label": "新设置"}]}]} />
+
+副本按后台调度尝试重新加载其标志的频率。
+
+<div id="shared_merge_tree_use_metadata_hints_cache">
+  ## shared_merge_tree_use_metadata_hints_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+启用从其他副本的内存缓存中请求 FS 缓存提示。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_use_outdated_parts_compact_format">
+  ## shared_merge_tree_use_outdated_parts_compact_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "默认启用过期parts v3"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+对过期parts使用紧凑格式：可降低 Keeper 负载，并改进
+过期parts的处理。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
+  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+如果启用，parts 过多计数器将基于 Keeper 中的共享数据，而不是
+本地副本状态。仅在 ClickHouse Cloud 中可用
+
+<div id="shared_merge_tree_use_zookeeper_connection_pool">
+  ## shared_merge_tree_use_zookeeper_connection_pool
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+如果启用，SharedMergeTree 将使用服务器级连接池中的一个 ZooKeeper 会话。
+
+<div id="shared_merge_tree_virtual_parts_discovery_batch">
+  ## shared_merge_tree_virtual_parts_discovery_batch
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "新设置"}]}]} />
+
+每个批次应打包多少个分区发现
+
+<div id="simultaneous_parts_removal_limit">
+  ## simultaneous_parts_removal_limit
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+如果存在大量过期分区片段，清理线程会在一次迭代中尝试最多删除
+`simultaneous_parts_removal_limit` 个 parts。
+将 `simultaneous_parts_removal_limit` 设置为 `0` 表示不受限制。
+
+<div id="sleep_before_commit_local_part_in_replicated_table_ms">
+  ## sleep_before_commit_local_part_in_replicated_table_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="0" />
+
+仅用于测试。请勿更改。
+
+<div id="sleep_before_loading_outdated_parts_ms">
+  ## sleep_before_loading_outdated_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+仅用于测试。请勿更改。
+
+<div id="storage_policy">
+  ## storage_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="default" />
+
+存储磁盘策略的名称
+
+<div id="string_serialization_version">
+  ## string_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_size_stream"},{"label": "改为使用带独立大小流的较新格式"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "single_stream"},{"label": "新设置"}]}]} />
+
+控制顶层 `String` 列的序列化格式。
+
+此设置仅在 `serialization_info_version` 设为 &quot;with&#95;types&quot; 时生效。
+设为 `with_size_stream` 时，顶层 `String` 列会通过单独的
+`.size` 子列存储字符串长度，而不是内联存储。这样可以提供真正的 `.size`
+子列，并提高压缩效率。
+
+嵌套的 `String` 类型 (例如在 `Nullable`、`LowCardinality`、`Array` 或 `Map` 内部)
+不受影响，但出现在 `Tuple` 中时除外。
+
+可选值：
+
+* `single_stream` — 使用内联大小信息的标准序列化格式。
+* `with_size_stream` — 对顶层 `String` 列使用单独的大小流。
+
+<div id="table_disk">
+  ## table_disk
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+这是表级磁盘，path/endpoint 应指向表数据，而不是
+数据库数据。只能用于 s3&#95;plain/s3&#95;plain&#95;rewritable/web。
+
+<div id="table_readonly">
+  ## table_readonly
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "用于将表标记为只读的新设置，防止插入和修改"}]}]} />
+
+如果设置为 true，则该表处于只读模式。任何插入数据或修改表的尝试都会失败。
+
+<div id="temporary_directories_lifetime">
+  ## temporary_directories_lifetime
+</div>
+
+<SettingsInfoBlock type="秒" default_value="86400" />
+
+tmp&#95; 目录应保留多少秒。你不应调低该值，
+因为如果此设置的值过低，merge 和 mutation 操作可能无法正常进行。
+
+<div id="text_index_dictionary_block_frontcoding_compression">
+  ## text_index_dictionary_block_frontcoding_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "新设置"}]}]} />
+
+文本索引字典块默认使用的前缀编码压缩方式。
+可由显式指定的 `dictionary_block_frontcoding_compression` 索引参数覆盖。
+
+<div id="text_index_dictionary_block_size">
+  ## text_index_dictionary_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新设置"}]}]} />
+
+文本索引的默认字典块大小。
+可通过显式指定的 `dictionary_block_size` 索引参数覆盖。
+
+<div id="text_index_posting_list_block_size">
+  ## text_index_posting_list_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1048576"},{"label": "新设置"}]}]} />
+
+文本索引的默认倒排列表块大小 (行数) 。
+可由显式指定的索引参数 `posting_list_block_size` 覆盖。
+
+<div id="text_index_posting_list_codec">
+  ## text_index_posting_list_codec
+</div>
+
+<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "新增设置"}]}]} />
+
+文本索引的默认倒排列表编解码器。
+可由显式指定的 `posting_list_codec` 索引参数覆盖。
+
+<div id="try_fetch_recompressed_part_timeout">
+  ## try_fetch_recompressed_part_timeout
+</div>
+
+<SettingsInfoBlock type="秒" default_value="7200" />
+
+开始执行重压缩合并前的超时时间 (以秒为单位) 。在这段时间内，
+ClickHouse 会尝试从被分配执行此次重压缩合并的副本中拉取
+重压缩后的分片。
+
+在大多数情况下，重压缩速度较慢，因此在超时到达之前，我们不会开始
+重压缩合并，而是尝试从被分配执行此次重压缩合并的
+副本中拉取重压缩后的分片。
+
+可能的值：
+
+* 任意正整数。
+
+<div id="ttl_only_drop_parts">
+  ## ttl_only_drop_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+控制在 MergeTree 表中，当某个数据 part 中的所有
+行都根据其 `TTL` 设置过期时，是否直接删除整个数据 part。
+
+当 `ttl_only_drop_parts` 被禁用时 (默认) ，只会删除
+那些根据其 `TTL` 设置已过期的行。
+
+当 `ttl_only_drop_parts` 被启用时，如果某个数据 part 中的所有
+行都根据其 `TTL` 设置过期，则会删除整个数据 part。
+
+<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
+  ## use_adaptive_write_buffer_for_dynamic_subcolumns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+允许在写入动态子列时使用自适应写入缓冲区，以降低内存占用
+
+<div id="use_async_block_ids_cache">
+  ## use_async_block_ids_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+如果为 `true`，则会缓存异步插入的哈希和。
+
+可能的值：
+
+* `true`
+* `false`
+
+一个包含多个异步插入的块会生成多个哈希和。
+当其中部分插入重复时，Keeper 在一次 RPC 中只会返回一个
+重复的哈希和，这会导致不必要的 RPC 重试。
+此缓存会监听 Keeper 中的哈希和路径。如果在
+Keeper 中监听到更新，缓存会尽快更新，以便我们能够在
+内存中过滤掉重复的插入。
+
+<div id="use_compact_variant_discriminators_serialization">
+  ## use_compact_variant_discriminators_serialization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+为 Variant
+数据类型中判别符的二进制序列化启用紧凑模式。
+当大多数情况下仅有一种变体，或存在大量 NULL 值时，
+此模式可显著减少在 parts 中存储判别符所需的内存。
+
+<div id="use_const_adaptive_granularity">
+  ## use_const_adaptive_granularity
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+始终对整个分片使用固定粒度。这样可以在内存中压缩索引粒度值。在表较窄的超大规模工作负载中，这会很有帮助。
+
+<div id="use_metadata_cache">
+  ## use_metadata_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+已废弃设置，不起任何作用。
+
+<div id="use_minimalistic_checksums_in_zookeeper">
+  ## use_minimalistic_checksums_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+在 ZooKeeper 中，对分片校验和使用更小的格式 (数十字节) ，而不是
+常规格式 (数十 KB) 。启用前，请先确认所有副本都支持
+新格式。
+
+<div id="use_minimalistic_part_header_in_zookeeper">
+  ## use_minimalistic_part_header_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ZooKeeper 中数据分区片段头的存储方式。启用后，ZooKeeper
+存储的数据量会更少。详情请参见[此处](/zh/reference/settings/server-settings/settings#use_minimalistic_part_header_in_zookeeper)。
+
+<div id="use_primary_key_cache">
+  ## use_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新设置"}]}]} />
+
+使用主索引缓存，
+而不是将所有索引都保存在内存中。对非常大的表很有用
+
+<div id="vertical_merge_algorithm_min_bytes_to_activate">
+  ## vertical_merge_algorithm_min_bytes_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+在 merging 的 parts 中，用于激活垂直 merge 算法的最小 (近似) 未压缩大小 (以字节为单位) 。
+
+<div id="vertical_merge_algorithm_min_columns_to_activate">
+  ## vertical_merge_algorithm_min_columns_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="11" />
+
+启用 Vertical merge 算法所需的非主键列最小数量。
+
+<div id="vertical_merge_algorithm_min_rows_to_activate">
+  ## vertical_merge_algorithm_min_rows_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="131072" />
+
+用于激活 Vertical merge algorithm 的合并 parts 的最小行数总和 (近似值) 。
+
+<div id="vertical_merge_optimize_lightweight_delete">
+  ## vertical_merge_optimize_lightweight_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+如果为 true，则在垂直合并时会对轻量级删除进行优化。
+
+<div id="vertical_merge_optimize_ttl_delete">
+  ## vertical_merge_optimize_ttl_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "允许对需要删除因生存时间 (TTL) 过期行的合并使用垂直合并算法"}]}]} />
+
+如果为 true，则会在垂直合并期间优化基于行的 TTL 删除。无需强制使用水平合并，
+而是对 TTL 过滤器进行计算，并将其传递给合并算法，由后者在行源中设置跳过标志。
+
+<div id="vertical_merge_remote_filesystem_prefetch">
+  ## vertical_merge_remote_filesystem_prefetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+如果为 true，则在合并期间会为下一列预拉取远程文件系统中的数据
+
+<div id="wait_for_unique_parts_send_before_shutdown_ms">
+  ## wait_for_unique_parts_send_before_shutdown_ms
+</div>
+
+<SettingsInfoBlock type="毫秒" default_value="0" />
+
+关闭前，表会等待指定时间，以便其他副本拉取仅存在于当前副本上的唯一 parts
+(0 表示
+禁用) 。
+
+<div id="write_ahead_log_bytes_to_fsync">
+  ## write_ahead_log_bytes_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="104857600" />
+
+已废弃设置，无任何作用。
+
+<div id="write_ahead_log_interval_ms_to_fsync">
+  ## write_ahead_log_interval_ms_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+已废弃，无任何作用。
+
+<div id="write_ahead_log_max_bytes">
+  ## write_ahead_log_max_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+已废弃，无任何作用。
+
+<div id="write_final_mark">
+  ## write_final_mark
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+已废弃，不起任何作用。
+
+<div id="write_marks_for_substreams_in_compact_parts">
+  ## write_marks_for_substreams_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "默认启用在 compact parts 中为子流写入标记"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新设置"}]}]} />
+
+启用后，在 Compact parts 中会按每个子流而不是按每列写入标记。
+这样可以高效地从数据分区片段中读取单独的子列。
+
+例如，列 `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` 会被序列化为以下子流：
+
+* `t.a`：元组元素 `a` 的 String 数据
+* `t.b`：元组元素 `b` 的 UInt32 数据
+* `t.c.size0`：元组元素 `c` 的数组大小
+* `t.c.null`：元组元素 `c` 中嵌套数组元素的 null map
+* `t.c`：元组元素 `c` 中嵌套数组元素的 UInt32 数据
+
+启用此设置后，我们会为这 5 个子流分别写入一个标记。这意味着在需要时，我们可以从粒度中分别读取每个子流的数据。例如，如果要读取子列 `t.c`，则只会读取
+子流 `t.c.size0`、`t.c.null` 和 `t.c` 的数据，而不会读取子流 `t.a` 和 `t.b` 的数据。禁用此设置时，
+只会为顶层列 `t` 写入一个标记，这意味着即使只需要某些子流的数据，也始终会从粒度中读取整列数据。
+
+<div id="zero_copy_concurrent_part_removal_max_postpone_ratio">
+  ## zero_copy_concurrent_part_removal_max_postpone_ratio
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.05" />
+
+为了获得更小的独立 ranges，可延后删除的顶层 parts 的最大百分比。
+建议不要更改。
+
+<div id="zero_copy_concurrent_part_removal_max_split_times">
+  ## zero_copy_concurrent_part_removal_max_split_times
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+将相互独立的过期分区片段范围拆分为
+更小子范围时的最大递归深度。建议不要修改。
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+如果启用了零拷贝复制，则在尝试加锁前，会根据用于合并或变更的 parts 大小随机休眠一段时间
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "新设置"}]}]} />
+
+如果启用了 zero copy replication，则在尝试为 merge 或变更操作加锁之前，
+会先随机休眠一段时间，最长可达 500ms。
+
+<div id="zookeeper_session_expiration_check_period">
+  ## zookeeper_session_expiration_check_period
+</div>
+
+<SettingsInfoBlock type="秒" default_value="60" />
+
+ZooKeeper 会话过期检查周期 (以秒为单位) 。
+
+可能的值：
+
+* 任意正整数。

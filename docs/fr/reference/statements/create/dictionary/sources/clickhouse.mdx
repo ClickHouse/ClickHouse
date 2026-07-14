@@ -1,0 +1,66 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/clickhouse
+title: 'Source de dictionnaire ClickHouse'
+sidebarTitle: 'ClickHouse'
+description: 'Configurer une table ClickHouse comme source de dictionnaire.'
+doc_type: 'reference'
+---
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CLICKHOUSE(
+        host 'example01-01-1'
+        port 9000
+        user 'default'
+        password ''
+        db 'default'
+        table 'ids'
+        where 'id=10'
+        secure 1
+        query 'SELECT id, value_1, value_2 FROM default.ids'
+    ));
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <clickhouse>
+            <host>example01-01-1</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>default</db>
+            <table>ids</table>
+            <where>id=10</where>
+            <secure>1</secure>
+            <query>SELECT id, value_1, value_2 FROM default.ids</query>
+        </clickhouse>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Champs des paramètres :
+
+| Paramètre          | Description                                                                                                                                                                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`             | L’hôte ClickHouse. S’il s’agit d’un hôte local, la requête est traitée sans aucune activité réseau. Pour améliorer la tolérance aux pannes, vous pouvez créer une table [Distributed](/fr/reference/engines/table-engines/special/distributed) et la renseigner dans les configurations suivantes. |
+| `port`             | Le port du serveur ClickHouse.                                                                                                                                                                                                                                                                  |
+| `user`             | Nom de l’utilisateur ClickHouse.                                                                                                                                                                                                                                                                |
+| `password`         | Mot de passe de l’utilisateur ClickHouse.                                                                                                                                                                                                                                                       |
+| `db`               | Nom de la base de données.                                                                                                                                                                                                                                                                      |
+| `table`            | Nom de la table.                                                                                                                                                                                                                                                                                |
+| `where`            | Critère de sélection. Facultatif.                                                                                                                                                                                                                                                               |
+| `invalidate_query` | Requête permettant de vérifier l’état du dictionnaire. Facultatif. Pour en savoir plus, consultez la section [Actualisation des données du dictionnaire avec LIFETIME](/fr/reference/statements/create/dictionary/lifetime).                                                                       |
+| `secure`           | Utiliser SSL pour la connexion.                                                                                                                                                                                                                                                                 |
+| `query`            | Requête personnalisée. Facultatif.                                                                                                                                                                                                                                                              |
+
+<Note>
+  Les champs `table` et `where` ne peuvent pas être utilisés avec le champ `query`. L’un des champs `table` ou `query` doit être déclaré.
+</Note>

@@ -1,0 +1,112 @@
+---
+slug: /parts
+title: 'Partes de tabela'
+description: 'O que são os data parts no ClickHouse'
+keywords: ['parte']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="what-are-table-parts-in-clickhouse">
+  ## O que são partes de tabela no ClickHouse?
+</div>
+
+<br />
+
+Os dados de cada tabela da família de motores [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) no ClickHouse são organizados em disco como uma coleção de `data part` imutáveis.
+
+Para ilustrar isso, usamos [esta](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) tabela (adaptada do [conjunto de dados de preços de imóveis do Reino Unido](/pt-BR/get-started/sample-datasets/uk-price-paid)), que registra a data, a cidade, a rua e o preço dos imóveis vendidos no Reino Unido:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street);
+```
+
+Você pode [consultar esta tabela](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZTs\&run_query=true\&tab=results) em nosso playground SQL do ClickHouse.
+
+Uma parte de dados é criada sempre que um conjunto de linhas é inserido na tabela. O diagrama a seguir mostra isso:
+
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+
+<br />
+
+Quando o servidor do ClickHouse processa a inserção de exemplo com 4 linhas (por exemplo, por meio de uma [instrução INSERT INTO](/pt-BR/reference/statements/insert-into)) mostrada no diagrama acima, ele executa várias etapas:
+
+① **Ordenação**: As linhas são ordenadas pela chave de ordenação da tabela `(town, street)`, e um [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para as linhas ordenadas.
+
+② **Divisão**: Os dados ordenados são divididos em colunas.
+
+③ **Compressão**: Cada coluna é [comprimida](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+
+④ **Gravação em disco**: As colunas comprimidas são salvas como arquivos binários de coluna em um novo diretório que representa a parte de dados da inserção. O índice primário esparso também é comprimido e armazenado no mesmo diretório.
+
+Dependendo do engine específico da tabela, transformações adicionais [podem](/pt-BR/reference/settings/session-settings) ocorrer juntamente com a ordenação.
+
+As partes de dados são autocontidas e incluem todos os metadados necessários para interpretar seu conteúdo sem exigir um catálogo central. Além do índice primário esparso, as partes contêm metadados adicionais, como [data skipping indexes](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) secundários, [estatísticas de coluna](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere), checksums, índices min-max (se [particionamento](/pt-BR/concepts/core-concepts/partitions) for usado) e [mais](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104).
+
+<div id="part-merges">
+  ## Mesclagens de partes
+</div>
+
+Para gerenciar o número de partes por tabela, uma tarefa de [mesclagem em segundo plano](/pt-BR/concepts/core-concepts/merges) combina periodicamente partes menores em partes maiores até que elas atinjam um tamanho [configurável](/pt-BR/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) comprimido (normalmente ~150 GB). As partes mescladas são marcadas como inativas e excluídas após um intervalo de tempo [configurável](/pt-BR/reference/settings/merge-tree-settings#old_parts_lifetime). Com o tempo, esse processo cria uma estrutura hierárquica de partes mescladas, por isso ela é chamada de tabela MergeTree:
+
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+
+<br />
+
+Para minimizar o número de partes iniciais e a sobrecarga das mesclagens, os clientes de banco de dados são [incentivados](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) a inserir tuplas em lote, por exemplo, 20.000 linhas de uma vez, ou a usar o [modo de inserção assíncrona](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse), no qual o ClickHouse armazena em buffer linhas de vários INSERTs recebidos na mesma tabela e cria uma nova parte somente depois que o tamanho do buffer excede um limite configurável ou que um timeout é atingido.
+
+<div id="monitoring-table-parts">
+  ## Monitorando partes de tabela
+</div>
+
+Você pode [consultar](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results) a lista de todas as partes ativas que existem atualmente na nossa tabela de exemplo usando a [coluna virtual](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns) `_part`:
+
+```sql
+SELECT _part
+FROM uk.uk_price_paid_simple
+GROUP BY _part
+ORDER BY _part ASC;
+```
+
+```response
+   ┌─_part───────┐
+1. │ all_0_5_1   │
+2. │ all_12_17_1 │
+3. │ all_18_23_1 │
+4. │ all_6_11_1  │
+   └─────────────┘
+```
+
+A consulta acima recupera os nomes dos diretórios no disco, com cada diretório representando uma parte de dados ativa da tabela. Os componentes desses nomes de diretório têm significados específicos, documentados [aqui](https://github.com/ClickHouse/ClickHouse/blob/f90551824bb90ade2d8a1d8edd7b0a3c0a459617/src/Storages/MergeTree/MergeTreeData.h#L130) para quem quiser se aprofundar no assunto.
+
+Como alternativa, o ClickHouse mantém informações sobre todas as partes de todas as tabelas na tabela de sistema [system.parts](/pt-BR/reference/system-tables/parts), e a consulta a seguir [retorna](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results), para nossa tabela de exemplo acima, a lista de todas as partes ativas no momento, seu nível de mesclagem e o número de linhas armazenadas nessas partes:
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+O nível de mesclagem é incrementado em um a cada mesclagem adicional na parte. Um nível 0 indica que esta é uma parte nova que ainda não passou por mesclagem.

@@ -1,0 +1,134 @@
+---
+sidebarTitle: 'Amazon RDS MariaDB'
+description: 'Пошаговое руководство по настройке Amazon RDS MariaDB в качестве источника для ClickPipes'
+slug: /integrations/clickpipes/mysql/source/rds_maria
+title: 'Руководство по настройке источника RDS MariaDB'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Это пошаговое руководство по настройке экземпляра RDS MariaDB для репликации данных через ClickPipe для MySQL.
+
+<br />
+
+<Info>
+  Рекомендуем также ознакомиться с ответами на часто задаваемые вопросы по MySQL [здесь](/ru/integrations/clickpipes/mysql/faq). Страница FAQ активно обновляется.
+</Info>
+
+<div id="enable-binlog-retention-rds">
+  ## Включите хранение бинарного лога
+</div>
+
+Бинарный лог — это набор файлов журнала, содержащих сведения об изменениях данных на экземпляре сервера MySQL. Файлы бинарного лога необходимы для репликации. Необходимо выполнить оба шага ниже:
+
+<div id="enable-binlog-logging-rds">
+  ### 1. Включите бинарное логирование с помощью автоматического резервного копирования
+</div>
+
+Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Это можно настроить в консоли AWS:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
+
+Рекомендуется установить срок хранения резервных копий достаточно большим — в зависимости от сценария репликации.
+
+<div id="binlog-retention-hours-rds">
+  ### 2. Срок хранения binlog в часах
+</div>
+
+В Amazon RDS for MariaDB срок хранения binlog задаётся иначе: это время, в течение которого сохраняется файл binlog, содержащий изменения. Если какие-либо изменения не будут прочитаны до удаления файла binlog, репликация не сможет продолжиться. Значение по умолчанию для срока хранения binlog в часах — NULL, то есть бинарные логи не сохраняются.
+
+Чтобы указать, сколько часов нужно хранить бинарные логи в экземпляре DB, используйте функцию mysql.rds&#95;set&#95;configuration, задав период хранения binlog, достаточный для выполнения репликации. `24 hours` — рекомендуемый минимум.
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+```
+
+<div id="binlog-parameter-group-rds">
+  ## Настройте параметры binlog в группе параметров
+</div>
+
+Группу параметров можно найти, если нажать на свой экземпляр MariaDB в RDS Console, а затем перейти на вкладку `Configurations`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="Где найти группу параметров в RDS" size="lg" border />
+
+После нажатия на ссылку группы параметров вы перейдёте на страницу этой группы. В правом верхнем углу будет кнопка Edit:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Редактирование группы параметров" size="lg" border />
+
+Параметры `binlog_format`, `binlog_row_metadata` и `binlog_row_image` должны быть заданы следующим образом:
+
+1. `binlog_format` — `ROW`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Формат binlog: ROW" size="lg" border />
+
+2. `binlog_row_metadata` — `FULL`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Метаданные строк binlog: FULL" size="lg" border />
+
+3. `binlog_row_image` — `FULL`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Образ строки binlog: FULL" size="lg" border />
+
+Затем нажмите `Save Changes` в правом верхнем углу. Чтобы изменения вступили в силу, может потребоваться перезагрузить экземпляр. Если рядом со ссылкой на группу параметров на вкладке `Configurations` экземпляра RDS отображается `Pending reboot`, это означает, что экземпляр, скорее всего, нужно перезагрузить.
+
+<br />
+
+<Tip>
+  Если у вас кластер MariaDB, указанные выше параметры будут находиться в группе параметров [DB Cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html), а не в группе параметров экземпляра DB.
+</Tip>
+
+<div id="gtid-mode-rds">
+  ## Включение режима GTID
+</div>
+
+Глобальные идентификаторы транзакций (GTID) — это уникальные идентификаторы, присваиваемые каждой зафиксированной транзакции в MySQL/MariaDB. Они упрощают репликацию binlog и облегчают устранение неполадок. В MariaDB режим GTID включен по умолчанию, поэтому никаких дополнительных действий со стороны пользователя не требуется.
+
+<div id="configure-database-user-rds">
+  ## Настройте пользователя базы данных
+</div>
+
+Подключитесь к своему экземпляру RDS MariaDB под пользователем с правами администратора и выполните следующие команды:
+
+1. Создайте отдельного пользователя для ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+   ```
+
+2. Выдайте права на схему. В следующем примере показаны права для базы данных `mysql`. Повторите эти команды для каждой базы данных и хоста, которые вы хотите реплицировать:
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+   ```
+
+3. Выдайте пользователю права на репликацию:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<div id="configure-network-access">
+  ## Настройте сетевой доступ
+</div>
+
+<div id="ip-based-access-control">
+  ### Управление доступом по IP
+</div>
+
+Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в `Inbound rules` группы безопасности RDS.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в RDS?" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### Частный доступ через AWS PrivateLink
+</div>
+
+Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Чтобы настроить подключение, следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
