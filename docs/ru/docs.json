@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ru/products/cloud/guides/index"
-                },
-                {
-                  "group": "Справочник API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },

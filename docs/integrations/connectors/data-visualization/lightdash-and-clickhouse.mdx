@@ -30,8 +30,7 @@ The example below shows a finished dashboard powered by data from ClickHouse.
 <Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash dashboard example" border />
 
 <Steps>
-<Step>
-### Gather connection data {#connection-data-required}
+<Step title="Gather connection data" id="connection-data-required">
 
 When setting up your connection between Lightdash and ClickHouse, you’ll need the following details:
 
@@ -49,8 +48,7 @@ When setting up your connection between Lightdash and ClickHouse, you’ll need 
 
 ---
 </Step>
-<Step>
-### Configure your dbt profile for ClickHouse {#configuring-your-dbt-profile-for-clickhouse}
+<Step title="Configure your dbt profile for ClickHouse" id="configuring-your-dbt-profile-for-clickhouse">
 
 In Lightdash, connections are based on your existing **dbt project**.  
 To connect ClickHouse, make sure your local `~/.dbt/profiles.yml` file contains a valid ClickHouse target configuration.
@@ -60,8 +58,7 @@ For example:
 <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="Example profiles.yml configuration for a lightdash-clickhouse project" border />
 <br/>
 </Step>
-<Step>
-### Create a Lightdash project connected to ClickHouse {#creating-a-lightdash-project-connected-to-clickhouse}
+<Step title="Create a Lightdash project connected to ClickHouse" id="creating-a-lightdash-project-connected-to-clickhouse">
 
 Once your dbt profile is configured for ClickHouse, you’ll also need to connect your **dbt project** to Lightdash.
 
@@ -73,8 +70,7 @@ After connecting your dbt project, Lightdash will automatically detect your Clic
 
 ---
 </Step>
-<Step>
-### Explore your ClickHouse data in Lightdash {#exploring-your-clickhouse-data-in-lightdash}
+<Step title="Explore your ClickHouse data in Lightdash" id="exploring-your-clickhouse-data-in-lightdash">
 
 Once connected, Lightdash automatically syncs your dbt models and exposes:
 
@@ -86,8 +82,7 @@ You can now build dashboards, share insights, and even use **Ask AI** to generat
 
 ---
 </Step>
-<Step>
-### Define metrics and dimensions in Lightdash {#defining-metrics-and-dimensions-in-lightdash}
+<Step title="Define metrics and dimensions in Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
 
 In Lightdash, all **metrics** and **dimensions** are defined directly in your dbt model `.yml` files. This makes your business logic version-controlled, consistent, and fully transparent.
 
@@ -102,8 +97,7 @@ To learn more about how to define these, see the following Lightdash guides:
 
 ---
 </Step>
-<Step>
-### Query your data from tables {#querying-your-data-from-tables}
+<Step title="Query your data from tables" id="querying-your-data-from-tables">
 
 Once your dbt project is connected and synced with Lightdash, you can start exploring data directly from your **tables** (or “explores”).  
 Each table represents a dbt model and includes the metrics and dimensions you’ve defined in YAML.
@@ -125,8 +119,7 @@ For a deeper look at explores and how to query from your tables, see:
 
 ---
 </Step>
-<Step>
-### Build dashboards {#building-dashboards}
+<Step title="Build dashboards" id="building-dashboards">
 
 Once you’ve explored your data and saved visualizations, you can combine them into **dashboards** to share with your team.
 
@@ -147,8 +140,7 @@ Learn more about how to create and organize dashboards here:
 
 ---
 </Step>
-<Step>
-### Ask AI: self-serve analytics powered by dbt {#ask-ai}
+<Step title="Ask AI: self-serve analytics powered by dbt" id="ask-ai">
 
 **AI Agents** in Lightdash make data exploration truly self-serve.  
 Instead of writing queries, you can simply ask questions in plain language — like *“What was our monthly revenue growth?”* — and the AI Agent automatically generates the right visualization, referencing your dbt-defined metrics and models to ensure accuracy and consistency.

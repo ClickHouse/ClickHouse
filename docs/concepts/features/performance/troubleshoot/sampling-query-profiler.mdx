@@ -60,8 +60,7 @@ SETTINGS allow_introspection_functions = 1
 In self-managed deployments, to use the query profiler follow the steps below:
 
 <Steps>
-<Step>
-### Install ClickHouse with debug info {#debug-info}
+<Step title="Install ClickHouse with debug info" id="debug-info">
 
 Install the `clickhouse-common-static-dbg` package:
 1. Follow the instructions in step ["Set up the Debian repository"](/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,8 +68,7 @@ Install the `clickhouse-common-static-dbg` package:
 3. Run `sudo service clickhouse-server start` to start the server
 4. Run `clickhouse-client`. The debug symbols from clickhouse-common-static-dbg will automatically be picked up by the server - you don't need to do anything special to enable them
 </Step>
-<Step>
-### Check server config {#server-config}
+<Step title="Check server config" id="server-config">
 
 Ensure that the [`trace_log`](/reference/settings/server-settings/settings#trace_log) section of your [server configuration file](/concepts/features/configuration/server-config/configuration-files) is set up. It is enabled by default:
 
@@ -96,8 +94,7 @@ This section configures the [trace_log](/reference/system-tables/trace_log) syst
 Remember that data in this table is valid only for a running server.
 After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
 </Step>
-<Step>
-### Configure profile timers {#configure-profile-timers}
+<Step title="Configure profile timers" id="configure-profile-timers">
 
 Set up the [`query_profiler_cpu_time_period_ns`](/reference/settings/session-settings#query_profiler_cpu_time_period_ns) or [`query_profiler_real_time_period_ns`](/reference/settings/session-settings#query_profiler_real_time_period_ns) settings.
 Both settings can be used simultaneously.
@@ -109,8 +106,7 @@ The default sampling frequency is one sample per second, and both CPU and real t
 This frequency allows you to collect sufficient information about your ClickHouse cluster whilst not affecting your server's performance.
 If you need to profile each individual query, use a higher sampling frequency.
 </Step>
-<Step>
-### Analyze the `trace_log` system table {#analyze-trace-log-system-table}
+<Step title={<>Analyze the <code>trace_log</code> system table</>} id="analyze-trace-log-system-table">
 
 To analyze the `trace_log` system table allow introspection functions with the [`allow_introspection_functions`](/reference/settings/session-settings#allow_introspection_functions) setting:
 
