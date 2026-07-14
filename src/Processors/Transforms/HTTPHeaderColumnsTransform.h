@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/ISimpleTransform.h>
@@ -73,11 +74,7 @@ protected:
             }
             else
             {
-                auto new_col = src.type->createColumn();
-                new_col->reserve(num_rows);
-                for (size_t row = 0; row < num_rows; ++row)
-                    new_col->insertFrom(*src.parsed_value, 0);
-                output_columns.push_back(std::move(new_col));
+                output_columns.push_back(ColumnConst::create(src.parsed_value, num_rows));
             }
         }
         chunk.setColumns(std::move(output_columns), num_rows);

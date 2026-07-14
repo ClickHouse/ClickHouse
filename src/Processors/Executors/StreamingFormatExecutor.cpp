@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -153,12 +154,7 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
             /// column positions match the BlockMissingValues indices from the format.
             auto cols = chunk.detachColumns();
             for (const auto & const_col : constant_cols_for_defaults)
-            {
-                auto full_col = const_col->cloneEmpty();
-                for (size_t row = 0; row < chunk_rows; ++row)
-                    full_col->insertFrom(*const_col, 0);
-                cols.push_back(std::move(full_col));
-            }
+                cols.push_back(ColumnConst::create(const_col, chunk_rows));
             chunk.setColumns(std::move(cols), chunk_rows);
             adding_defaults_transform->transform(chunk);
 

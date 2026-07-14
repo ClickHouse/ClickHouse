@@ -642,16 +642,14 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             const auto & str_value = http_header_columns.at(col_name);
             const auto & col_type = insertable_block.getByName(col_name).type;
 
-            /// Validate that the string value parses correctly against the current
-            /// column type. The parsed result is discarded; only the raw string is
-            /// stored so that a later ALTER TABLE ... MODIFY COLUMN does not break
-            /// the batch (flush time re-parses from the string using the live type).
-            {
-                auto tmp_col = col_type->createColumn();
-                ReadBufferFromString buf(str_value);
-                col_type->getDefaultSerialization()->deserializeWholeText(*tmp_col, buf, format_settings);
-            }
-            entry->http_header_column_values.emplace_back(col_name, str_value);
+            /// Parse the header value once at push time so that type errors
+            /// (e.g. "not-a-number" for UInt64) surface immediately to the client.
+            /// The resulting 1-row column is stored directly; flush time reuses it
+            /// without re-parsing.
+            auto parsed = col_type->createColumn();
+            ReadBufferFromString buf(str_value);
+            col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
+            entry->http_header_column_values.emplace_back(col_name, std::move(parsed));
         }
     }
 
@@ -1508,16 +1506,26 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         /// using the correct header-injected value for this entry's rows.
         if (!injected_column_infos.empty())
         {
-            const FormatSettings fmt_settings = getFormatSettings(insert_context);
             Columns const_cols;
             const_cols.reserve(injected_column_infos.size());
             for (const auto & info : injected_column_infos)
             {
-                const auto & raw_value = entry->http_header_column_values[info.entry_parsed_idx].second;
-                auto col = info.type->createColumn();
-                ReadBufferFromString buf(raw_value);
-                info.type->getDefaultSerialization()->deserializeWholeText(*col, buf, fmt_settings);
-                const_cols.push_back(std::move(col));
+                const ColumnPtr & stored_col = entry->http_header_column_values[info.entry_parsed_idx].second;
+                /// Handle schema drift (ALTER TABLE ... MODIFY COLUMN during buffering):
+                /// if the push-time column type differs from the flush-time type, convert
+                /// via Field so the DEFAULT expression sees the right type.
+                if (stored_col->getDataType() != info.type->getTypeId())
+                {
+                    Field value;
+                    stored_col->get(0, value);
+                    auto converted = info.type->createColumn();
+                    converted->insert(value);
+                    const_cols.push_back(std::move(converted));
+                }
+                else
+                {
+                    const_cols.push_back(stored_col);
+                }
             }
             executor.setConstantColumnsForDefaults(std::move(const_cols));
         }
@@ -1556,23 +1564,29 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         {
             if (inj_idx < injected_column_infos.size() && injected_column_infos[inj_idx].header_col_idx == col_idx)
             {
-                /// Injected column: parse each entry's raw string against the live
-                /// flush-time column type. This survives ALTER TABLE ... MODIFY COLUMN
-                /// on a mapped column while requests are buffered.
+                /// Injected column: use the pre-parsed 1-row column stored at push
+                /// time — no re-parsing. For schema drift (ALTER TABLE during buffering)
+                /// fall back to Field-based conversion.
                 const auto & info = injected_column_infos[inj_idx++];
-                const auto & serialization = info.type->getDefaultSerialization();
-                const FormatSettings fmt_settings = getFormatSettings(insert_context);
                 auto new_col = info.type->createColumn();
                 new_col->reserve(total_rows);
                 size_t ei = 0;
                 for (const auto & entry : data->entries)
                 {
-                    const auto & raw_value = entry->http_header_column_values[info.entry_parsed_idx].second;
-                    auto tmp_col = info.type->createColumn();
-                    ReadBufferFromString buf(raw_value);
-                    serialization->deserializeWholeText(*tmp_col, buf, fmt_settings);
-                    for (size_t row = 0; row < entry_num_rows[ei++]; ++row)
-                        new_col->insertFrom(*tmp_col, 0);
+                    const ColumnPtr & stored_col = entry->http_header_column_values[info.entry_parsed_idx].second;
+                    ColumnPtr col_to_use = stored_col;
+                    if (stored_col->getDataType() != info.type->getTypeId())
+                    {
+                        /// Schema drift: convert the stored value to the current column
+                        /// type via Field (handles common numeric promotions; throws on
+                        /// incompatible types — same behaviour as a raw-string re-parse).
+                        Field value;
+                        stored_col->get(0, value);
+                        auto converted = info.type->createColumn();
+                        converted->insert(value);
+                        col_to_use = std::move(converted);
+                    }
+                    new_col->insertManyFrom(*col_to_use, 0, entry_num_rows[ei++]);
                 }
                 result_columns.push_back(std::move(new_col));
             }
