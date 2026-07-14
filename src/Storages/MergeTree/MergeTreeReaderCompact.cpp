@@ -57,7 +57,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
+            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size(),
+        settings.use_streaming_marks_compression))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
@@ -288,9 +289,15 @@ void MergeTreeReaderCompact::readData(
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())
+                {
                     column = IColumn::mutate(subcolumn);
+                }
                 else
-                    column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                {
+                    auto mutable_column = IColumn::mutate(std::move(column));
+                    mutable_column->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                    column = std::move(mutable_column);
+                }
             }
         }
         else

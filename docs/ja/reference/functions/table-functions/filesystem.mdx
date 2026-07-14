@@ -1,0 +1,112 @@
+---
+description: 'ファイルシステムにアクセスし、ファイルの一覧表示や、そのメタデータと内容の取得を行います。'
+sidebarTitle: 'filesystem'
+slug: /sql-reference/table-functions/filesystem
+title: 'filesystem'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="filesystem-table-function">
+  # filesystem テーブル関数
+</div>
+
+<CloudNotSupportedBadge />
+
+ディレクトリを再帰的に走査し、ファイルのメタデータ (パス、サイズ、種別、権限、更新時刻) と、必要に応じてファイルの内容を含むテーブルを返します。
+
+`clickhouse-server` モードでは、パスは [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) ディレクトリ内になければなりません。`user_files_path` 内にあるものの、その外部を指すシンボリックリンクはたどられますが、返されるのは (シンボリックリンク経由の) パスが `user_files_path` で始まるエントリのみです。
+
+`clickhouse-local` モードでは、パスに制限はありません。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+filesystem([path])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| パラメータ  | 説明                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path` | 一覧表示するディレクトリです。絶対パス (サーバーモードでは `user_files_path` 内にある必要があります) または `user_files_path` からの相対パスを指定できます。空欄または省略した場合は、デフォルトで `user_files_path` が使用されます。 |
+
+<div id="returned_columns">
+  ## 返されるカラム
+</div>
+
+| カラム                 | 型                          | 説明                                                                                                                                     |
+| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`              | `String`                   | エントリが含まれるディレクトリ (ファイル名またはディレクトリ名自体は含みません) 。                                                                                            |
+| `name`              | `String`                   | ファイルまたはディレクトリの名前 (パスの最後の要素) 。                                                                                                          |
+| `file`              | `String` (ALIAS of `name`) | `name` カラムの別名。                                                                                                                         |
+| `type`              | `Enum8`                    | ファイル種別: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`。 |
+| `size`              | `Nullable(UInt64)`         | ファイルサイズ (通常ファイルの場合、バイト単位) 。通常ファイル以外 (ディレクトリ、シンボリックリンクなど) およびエラー時は `NULL`。                                                              |
+| `depth`             | `UInt16`                   | 再帰の深さ。クエリ対象のディレクトリ自体とその直下の子は `0`、1 階層深いエントリは `1`、以降も同様です。                                                                              |
+| `modification_time` | `Nullable(DateTime64(6))`  | 最終更新時刻 (マイクロ秒精度) 。エラー時は `NULL`。                                                                                                        |
+| `is_symlink`        | `Bool`                     | そのエントリがシンボリックリンクかどうか。                                                                                                                  |
+| `content`           | `Nullable(String)`         | ファイルの内容 (通常ファイルの場合) 。通常ファイル以外 (ディレクトリ、シンボリックリンクなど) では `NULL`。読み取りエラー時は例外が発生します。このカラムを読み取ると実際のファイル I/O がトリガーされるため、不要であれば省略してください。       |
+| `owner_read`        | `Bool`                     | 所有者に読み取り権限があるかどうか。                                                                                                                     |
+| `owner_write`       | `Bool`                     | 所有者に書き込み権限があるかどうか。                                                                                                                     |
+| `owner_exec`        | `Bool`                     | 所有者に実行権限があるかどうか。                                                                                                                       |
+| `group_read`        | `Bool`                     | グループに読み取り権限があるかどうか。                                                                                                                    |
+| `group_write`       | `Bool`                     | グループに書き込み権限があるかどうか。                                                                                                                    |
+| `group_exec`        | `Bool`                     | グループに実行権限があるかどうか。                                                                                                                      |
+| `others_read`       | `Bool`                     | その他のユーザーに読み取り権限があるかどうか。                                                                                                                |
+| `others_write`      | `Bool`                     | その他のユーザーに書き込み権限があるかどうか。                                                                                                                |
+| `others_exec`       | `Bool`                     | その他のユーザーに実行権限があるかどうか。                                                                                                                  |
+| `set_gid`           | `Bool`                     | Set-GID ビット。                                                                                                                           |
+| `set_uid`           | `Bool`                     | Set-UID ビット。                                                                                                                           |
+| `sticky_bit`        | `Bool`                     | スティッキービット。                                                                                                                             |
+
+クエリで実際に使用されるカラムだけが計算されるため、一部のカラムだけを選択するのは効率的です (特に `content` を省略する場合) 。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="list-files">
+  ### user_files 内のファイルを一覧表示
+</div>
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+<div id="find-large-files">
+  ### 大きなファイルを探す
+</div>
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+<div id="read-contents">
+  ### ファイルの内容を読む
+</div>
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+<div id="list-immediate">
+  ### 直下の子のみを一覧表示する
+</div>
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```

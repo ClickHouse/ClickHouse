@@ -1,0 +1,12 @@
+---
+name: gitlab_base.EOLWhitespace
+description: |
+  Checks that there is no useless whitespace at the end of lines.
+extends: existence
+message: "Remove whitespace characters from the end of the line."
+link: https://docs.gitlab.com/development/documentation/styleguide/
+vocab: false
+level: warning
+scope: raw
+raw:
+  - ' +\n'

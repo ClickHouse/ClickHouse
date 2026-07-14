@@ -1,0 +1,71 @@
+---
+slug: /best-practices/choosing-a-partitioning-key
+sidebarTitle: '파티셔닝 키 선택하기'
+title: '파티셔닝 키 선택하기'
+description: '파티셔닝 키를 선택하는 방법을 설명하는 페이지'
+keywords: ['파티셔닝 키']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Info>
+  **데이터 관리 기법**
+
+  파티셔닝은 기본적으로 데이터 관리 기법이며 쿼리 최적화 도구는 아닙니다. 특정 워크로드에서는 성능 향상에 도움이 될 수 있지만, 쿼리 속도를 높이기 위한 첫 번째 수단으로 사용해서는 안 됩니다. 파티셔닝 키는 그 영향과 특성을 명확히 이해한 상태에서 신중하게 선택해야 하며, 데이터 수명 주기 요구 사항이나 잘 이해된 액세스 패턴에 부합하는 경우에만 적용해야 합니다.
+</Info>
+
+ClickHouse에서 파티셔닝은 지정된 키를 기준으로 데이터를 논리적 세그먼트로 나누어 구성합니다. 이는 테이블 생성 시 `PARTITION BY` 절을 사용해 정의하며, 일반적으로 시간 인터벌, 범주 또는 기타 비즈니스상 중요한 차원을 기준으로 행을 그룹화하는 데 사용됩니다. 파티셔닝 표현식의 각 고유 값은 디스크에 각각의 물리적 파티션을 형성하며, ClickHouse는 각 값에 해당하는 데이터를 별도의 파트에 저장합니다. 파티셔닝은 데이터 관리를 개선하고 보존 정책을 단순화하며, 일부 쿼리 패턴에 도움이 될 수 있습니다.
+
+예를 들어, 다음 영국 부동산 실거래가 데이터셋 테이블은 `toStartOfMonth(date)`를 파티셔닝 키로 사용합니다.
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+  date Date,
+  town LowCardinality(String),
+  street LowCardinality(String),
+  price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date)
+```
+
+행 집합이 테이블에 삽입될 때마다, 삽입된 모든 행을 포함하는 단일 데이터 파트를 (at[ least](/ko/reference/settings/session-settings#max_insert_block_size)) 하나만 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 것처럼), ClickHouse는 삽입된 행들에서 각 고유한 파티션 키 값마다 새 데이터 파트를 하나씩 생성합니다:
+
+<Image img="/images/bestpractices/partitions.webp" size="lg" alt="파티션" />
+
+ClickHouse 서버는 먼저 위 다이어그램에 개략적으로 표시된 4개 행으로 이루어진 예시 삽입의 행들을 파티션 키 값 `toStartOfMonth(date)`를 기준으로 분할합니다. 그런 다음 식별된 각 파티션에 대해, 여러 순차적 단계를 거쳐 행을 평소와[ 같이](/ko/concepts/core-concepts/parts) 처리합니다(① 정렬, ② 컬럼으로 분할, ③ 압축, ④ 디스크에 쓰기).
+
+파티셔닝에 대한 더 자세한 설명은 [이 가이드](/ko/concepts/core-concepts/partitions)를 참조하십시오.
+
+파티셔닝이 활성화되면, ClickHouse는 파티션을 넘어서지는 않고 각 파티션 내부에서만 데이터 파트를 [머지](/ko/concepts/core-concepts/merges)합니다. 이를 위의 예시 테이블에 대해 개략적으로 나타내면 다음과 같습니다:
+
+<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="파티션" />
+
+<div id="applications-of-partitioning">
+  ## 파티셔닝의 활용
+</div>
+
+파티셔닝은 ClickHouse에서 대규모 데이터셋을 관리하는 강력한 도구이며, 특히 관측성 및 분석 사용 사례에서 효과적입니다. 파티션을 사용하면 전체 파티션(대개 시간이나 비즈니스 로직에 따라 구성됨)을 단일 메타데이터 작업으로 삭제, 이동 또는 아카이브할 수 있어 데이터 수명 주기 작업을 효율적으로 수행할 수 있습니다. 이는 행 수준의 삭제 또는 복사 작업보다 훨씬 빠르고 리소스 사용량도 적습니다. 또한 파티셔닝은 TTL 및 계층형 스토리지와 같은 ClickHouse 기능과도 자연스럽게 통합되므로, 별도의 사용자 지정 오케스트레이션 없이 보존 정책이나 핫/콜드 스토리지 전략을 구현할 수 있습니다. 예를 들어, 최근 데이터는 빠른 SSD 기반 스토리지에 유지하고, 오래된 파티션은 더 저렴한 객체 스토리지로 자동 이동하도록 할 수 있습니다.
+
+파티셔닝은 일부 워크로드에서 쿼리 성능을 개선할 수 있지만, 응답 시간에 부정적인 영향을 줄 수도 있습니다.
+
+파티셔닝 키가 프라이머리 키에 포함되어 있지 않고 해당 키를 기준으로 필터링하는 경우, 파티셔닝을 통해 쿼리 성능이 개선될 수 있습니다. 예시는 [여기](/ko/concepts/core-concepts/partitions#query-optimization)를 참조하십시오.
+
+반대로, 쿼리가 여러 파티션에 걸쳐 데이터를 조회해야 하는 경우 전체 파트 수가 많아져 성능이 저하될 수 있습니다. 따라서 파티셔닝을 쿼리 최적화 기법으로 고려하기 전에 액세스 패턴을 이해해야 합니다.
+
+요약하면, 파티셔닝은 기본적으로 데이터 관리 기법으로 이해해야 합니다. 데이터 관리 예시는 관측성 사용 사례 가이드의 [&quot;Managing Data&quot;](/ko/guides/use-cases/observability/build-your-own/managing-data)와 Core Concepts - Table partitions의 [&quot;What are table partitions used for?&quot;](/ko/concepts/core-concepts/partitions#data-management)를 참조하십시오.
+
+<div id="choose-a-low-cardinality-partitioning-key">
+  ## 낮은 카디널리티 파티셔닝 키 선택
+</div>
+
+중요한 점은 파트 수가 많아질수록 쿼리 성능에 부정적인 영향을 미친다는 것입니다. 따라서 ClickHouse는 파트 수가 [전체](/ko/reference/settings/merge-tree-settings#max_parts_in_total) 또는 [파티션별](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert)로 지정된 한도를 초과하면 삽입 요청에 대해 [“too many parts”](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류로 응답합니다.
+
+파티셔닝 키에 적절한 **카디널리티**를 선택하는 것은 매우 중요합니다. 카디널리티가 높은 파티셔닝 키, 즉 서로 다른 파티션 값의 수가 많은 경우에는 데이터 파트가 과도하게 늘어날 수 있습니다. ClickHouse는 파티션 간에는 파트를 머지하지 않으므로, 파티션이 너무 많으면 병합되지 않은 파트가 지나치게 많아지고 결국 “Too many parts” 오류가 발생합니다. [머지(Merge)는 필수적입니다](/ko/concepts/core-concepts/merges). 머지는 저장소 단편화를 줄이고 쿼리 속도를 최적화하는 데 중요하지만, 카디널리티가 높은 파티션에서는 이러한 병합 이점을 얻을 수 없습니다.
+
+반대로 **낮은 카디널리티 파티셔닝 키**—서로 다른 값이 100~1,000개 미만인 경우—가 일반적으로 가장 적합합니다. 이렇게 하면 효율적인 파트 병합이 가능하고, 메타데이터 오버헤드를 낮게 유지하며, 스토리지에서 객체가 과도하게 생성되는 것을 방지할 수 있습니다. 또한 ClickHouse는 파티션 컬럼에 대해 자동으로 MinMax 인덱스를 생성하므로, 해당 컬럼을 기준으로 필터링하는 쿼리 속도를 크게 높일 수 있습니다. 예를 들어 테이블이 `toStartOfMonth(date)`로 파티셔닝되어 있다면, 월 기준 필터링 시 엔진은 관련 없는 파티션과 그 파트를 완전히 건너뛸 수 있습니다.
+
+파티셔닝은 일부 쿼리 패턴에서 성능을 개선할 수 있지만, 기본적으로는 데이터 관리 기능입니다. 많은 경우 모든 파티션에 걸쳐 쿼리하면 데이터 단편화가 증가하고 스캔해야 하는 파트 수가 많아지므로, 파티셔닝되지 않은 테이블을 사용하는 것보다 더 느릴 수 있습니다. 파티셔닝은 신중하게 사용하고, 선택한 키가 항상 낮은 카디널리티를 가지며 데이터 수명 주기 정책(예: TTL을 통한 보존)과도 부합하는지 확인하십시오. 파티셔닝이 필요한지 확신이 없다면 먼저 파티셔닝 없이 시작한 뒤, 관찰된 액세스 패턴을 바탕으로 나중에 최적화하는 것이 좋습니다.

@@ -3,7 +3,7 @@ legacy-cgi==2.6.4
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 PyHDFS==0.4.0
-PyJWT==2.11.0
+PyJWT==2.13.0
 PyMySQL==1.1.2
 PyNaCl==1.6.2
 annotated-types==0.7.0
@@ -100,7 +100,7 @@ s3transfer==0.16.0
 setuptools==82.0.1
 simplejson==3.20.2
 sortedcontainers==2.4.0
-soupsieve==2.8.3
+soupsieve==2.8.4
 tenacity==8.5.0
 tzlocal==2.1
 websocket-client==1.9.0

@@ -7,7 +7,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -28,6 +27,16 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCORRECT_DATA;
+}
+
+static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t num_variants, bool allow_logical_error)
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
+        throw Exception(
+            allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA,
+            "Invalid discriminator value {} (num_variants = {})",
+            static_cast<UInt32>(discr), num_variants);
 }
 
 std::string ColumnVariant::getName() const
@@ -957,38 +966,37 @@ void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     }
 }
 
-WeakHash32 ColumnVariant::getWeakHash32() const
+void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = size();
-
-    /// If we have only NULLs, keep hash unchanged.
-    if (hasOnlyNulls())
-        return WeakHash32(s);
-
-    /// Optimization for case when there is only 1 non-empty variant and no NULLs.
-    /// In this case we can just calculate weak hash for this variant.
-    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-        return variants[*non_empty_local_discr]->getWeakHash32();
-
-    /// Calculate weak hash for all variants.
-    VectorWithMemoryTracking<WeakHash32> nested_hashes;
-    for (const auto & variant : variants)
-        nested_hashes.emplace_back(variant->getWeakHash32());
-
-    /// For each row hash is a hash of corresponding row from corresponding variant.
-    WeakHash32 hash(s);
-    auto & hash_data = hash.getData();
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
-    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+
+    /// Optimization for case when there is only 1 non-empty variant and no NULLs:
+    /// the per-row hash is just the hash of that variant.
+    if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        Discriminator discr = local_discriminators_data[i];
-        /// Update hash only for non-NULL values
-        if (discr != NULL_DISCRIMINATOR)
-            hash_data[i] = nested_hashes[discr].getData()[offsets_data[i]];
+        variants[*non_empty_local_discr]->computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
     }
 
-    return hash;
+    /// Calculate per-row hash for all variants once, then gather by discriminator.
+    /// NULL rows contribute `WEAK_HASH32_INITIAL_VALUE`, like `ColumnNullable` and the former `getWeakHash32`.
+    VectorWithMemoryTracking<PaddedPODArray<UInt32>> nested_hashes(variants.size());
+    for (size_t v = 0; v < variants.size(); ++v)
+    {
+        const size_t variant_size = variants[v]->size();
+        nested_hashes[v].resize(variant_size);
+        if (variant_size)
+            variants[v]->computeHashInto(0, variant_size, nested_hashes[v].data(), true);
+    }
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        const Discriminator discr = local_discriminators_data[i];
+        const UInt32 value = discr == NULL_DISCRIMINATOR ? WEAK_HASH32_INITIAL_VALUE : nested_hashes[discr][offsets_data[i]];
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnVariant::updateHashFast(SipHash & hash) const
@@ -1767,9 +1775,9 @@ void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     applyNullMapImpl<false>(null_map);
 }
 
-void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
+void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
-    applyNullMapImpl<true>(null_map);
+    applyNullMapImpl<true>(null_map, offset);
 }
 
 ColumnPtr ColumnVariant::createNullMap() const
@@ -1783,8 +1791,26 @@ ColumnPtr ColumnVariant::createNullMap() const
 }
 
 template <bool inverted>
-void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
+void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
+    if (offset + null_map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Applying a null map to a Variant column is only supported for a suffix range, but offset {} plus "
+            "null map size {} does not reach the column size {}",
+            offset,
+            null_map.size(),
+            size());
+
+    if (offset != 0)
+    {
+        auto range = IColumn::mutate(cut(offset, null_map.size()));
+        assert_cast<ColumnVariant &>(*range).applyNullMapImpl<inverted>(null_map);
+        popBack(null_map.size());
+        insertRangeFrom(*range, 0, range->size());
+        return;
+    }
+
     if (null_map.size() != local_discriminators->size())
         throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
                         "Logical error: Sizes of discriminators column and null map data are not equal");
@@ -1941,12 +1967,12 @@ void ColumnVariant::fixDynamicStructure()
         variant->fixDynamicStructure();
 }
 
-void ColumnVariant::validateState() const
+void ColumnVariant::validateState(bool allow_logical_error) const
 {
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
     if (local_discriminators_data.size() != offsets_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
+        throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
 
     VectorWithMemoryTracking<size_t> actual_variant_sizes(variants.size());
     for (size_t i = 0; i != variants.size(); ++i)
@@ -1958,16 +1984,17 @@ void ColumnVariant::validateState() const
         auto local_discr = local_discriminators_data[i];
         if (local_discr != NULL_DISCRIMINATOR)
         {
+            checkDiscriminatorValue(local_discr, variants.size(), allow_logical_error);
             ++expected_variant_sizes[local_discr];
             if (offsets_data[i] >= actual_variant_sizes[local_discr])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+                throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
         }
     }
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->size() != expected_variant_sizes[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+            throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
     }
 }
 

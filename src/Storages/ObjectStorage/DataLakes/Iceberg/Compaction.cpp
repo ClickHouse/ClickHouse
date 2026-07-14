@@ -1,3 +1,4 @@
+#include <optional>
 #include <string>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -17,6 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -25,13 +28,15 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 
-#if USE_AVRO
+#if USE_AVRO && !CLICKHOUSE_CLOUD
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Iceberg
@@ -324,6 +329,49 @@ static void writeDataFiles(
     }
 }
 
+namespace
+{
+
+[[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
+{
+    if (!history_record.snapshot_summary)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Missing summary, snapshot={}", history_record.snapshot_id);
+
+    const auto & summary = history_record.snapshot_summary;
+    switch (summary->getOperation())
+    {
+        case SnapshotSummaryOperation::APPEND:
+            return summary->getUpdate<SnapshotSummaryUpdateAppend>();
+        case SnapshotSummaryOperation::DELETE:
+            return std::nullopt;
+        case SnapshotSummaryOperation::OVERWRITE: {
+            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
+            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
+            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+                return std::nullopt;
+            [[fallthrough]];
+        }
+        case SnapshotSummaryOperation::REPLACE:
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported snapshot's operation type {}", summary->getOperation());
+    }
+};
+
+
+/// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
+/// Lets force this invariant
+void checkIfIcebergHistorySupported(const IcebergHistory & history)
+{
+    for (const auto & history_record : history)
+    {
+        auto append = tryGetAppendUpdate(history_record);
+        if (append && append->added_files == 0)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
+    }
+}
+
+}
+
 static void writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
@@ -353,11 +401,13 @@ static void writeMetadataFiles(
 
     for (const auto & history_record : plan.history)
     {
-        if (history_record.added_files == 0)
+        auto append = tryGetAppendUpdate(history_record);
+        if (!append)
         {
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
+
         Int32 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
@@ -366,10 +416,10 @@ static void writeMetadataFiles(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
-            history_record.added_files,
+            append->added_files,
             total_records_count,
-            history_record.added_files_size,
-            history_record.num_partitions,
+            append->added_files_size,
+            append->num_partitions,
             0,
             0,
             history_record.snapshot_id,
@@ -488,7 +538,7 @@ static void writeMetadataFiles(
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_list_renamings;
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_files == 0)
+        if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
             continue;
 
         manifest_list_renamings[plan.history[i].manifest_list_path] = new_snapshots[i].manifest_list_path;
@@ -496,7 +546,7 @@ static void writeMetadataFiles(
 
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_files == 0)
+        if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
             continue;
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
@@ -513,7 +563,9 @@ static void writeMetadataFiles(
         }
         std::vector<Int64> per_manifest_sizes;
         for (const auto & entry : renamed_manifest_entries)
+        {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -535,9 +587,7 @@ static void writeMetadataFiles(
     }
 
     {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
+        std::string json_representation = stringifyJSON(metadata_object, 4);
 
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(path_resolver.resolve(generated_metadata_info.path)),
@@ -580,6 +630,8 @@ void compactIcebergTable(
     ContextPtr context_,
     const String & write_format)
 {
+    checkIfIcebergHistorySupported(snapshots_info);
+
     auto plan = getPlan(
         std::move(snapshots_info),
         data_lake_settings,
