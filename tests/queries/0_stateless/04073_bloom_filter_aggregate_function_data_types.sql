@@ -32,17 +32,19 @@ SELECT
 WITH
     (SELECT groupBloomFilterState(1000)(toFloat32(number)) FROM numbers(100)) AS float32_bf,
     (SELECT groupBloomFilterState(1000)(toFloat32(0.0)) FROM numbers(1)) AS float32_zero_bf,
-    (SELECT groupBloomFilterState(1000)(CAST(nan AS Float32)) FROM numbers(1)) AS float32_nan_bf,
+    (SELECT groupBloomFilterState(1000)(reinterpretAsFloat32(toUInt32(0x7FC00000))) FROM numbers(1)) AS float32_nan_bf,
     (SELECT groupBloomFilterState(1000)(toFloat64(number * 0.1)) FROM numbers(100)) AS float64_bf,
     (SELECT groupBloomFilterState(1000)(toFloat64(0.0)) FROM numbers(1)) AS float64_zero_bf,
-    (SELECT groupBloomFilterState(1000)(CAST(nan AS Float64)) FROM numbers(1)) AS float64_nan_bf
+    (SELECT groupBloomFilterState(1000)(reinterpretAsFloat64(toUInt64(0x7FF8000000000000))) FROM numbers(1)) AS float64_nan_bf
 SELECT
     bloomFilterContains(float32_bf, toFloat32(42)),
     bloomFilterContains(float32_zero_bf, toFloat32(-0.0)),
-    bloomFilterContains(float32_nan_bf, CAST(-nan AS Float32)),
+    bloomFilterContains(float32_nan_bf, reinterpretAsFloat32(toUInt32(0x7FC00000))),
+    bloomFilterContains(float32_nan_bf, reinterpretAsFloat32(toUInt32(0xFFC00000))),
     bloomFilterContains(float64_bf, toFloat64(4.2)),
     bloomFilterContains(float64_zero_bf, toFloat64(-0.0)),
-    bloomFilterContains(float64_nan_bf, CAST(-nan AS Float64));
+    bloomFilterContains(float64_nan_bf, reinterpretAsFloat64(toUInt64(0x7FF8000000000000))),
+    bloomFilterContains(float64_nan_bf, reinterpretAsFloat64(toUInt64(0xFFF8000000000000)));
 
 -- Date and time types
 WITH

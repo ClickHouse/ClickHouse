@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -76,12 +75,9 @@ T canonicalizeGroupBloomFilterValue(T value)
 {
     if constexpr (std::is_floating_point_v<T>)
     {
-        /// IEEE 754 has multiple representations for zero and NaN; canonicalize so the filter
-        /// never produces false negatives for equal values with different bit patterns.
+        /// IEEE 754 has multiple representations for zero; canonicalize them because they compare equal.
         if (value == static_cast<T>(0))
             return static_cast<T>(0);
-        if (std::isnan(value))
-            return std::numeric_limits<T>::quiet_NaN();
     }
 
     return value;
