@@ -31,6 +31,7 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+#include <Analyzer/Resolve/StandardNameMatching.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
@@ -64,31 +65,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Quote-structured suffix of the lookup after `qualifier_parts` leading parts, for `standard`
-/// name matching. Returns an empty name when folded matching must not be used: the mode is
-/// `sensitive`, the lookup was synthesized from an internal name (no quote structure), or every
-/// remaining part is double-quoted and therefore matches exactly anyway.
-IdentifierName getFoldableIdentifierSuffix(const IdentifierLookup & identifier_lookup, size_t qualifier_parts, NameMatchMode mode)
-{
-    if (mode != NameMatchMode::Standard)
-        return {};
-
-    const auto & name = identifier_lookup.identifier_name;
-    if (name.size() != identifier_lookup.identifier.getPartsSize() || name.size() <= qualifier_parts)
-        return {};
-
-    IdentifierName suffix(std::vector<IdentifierPart>(name.parts.begin() + qualifier_parts, name.parts.end()));
-
-    bool any_foldable = false;
-    for (const auto & part : suffix.parts)
-        any_foldable |= part.isCaseFoldable();
-
-    if (!any_foldable)
-        return {};
-
-    return suffix;
-}
 
 [[noreturn]] void throwAmbiguousIdentifier(const IdentifierLookup & identifier_lookup, const std::vector<String> & candidates, const IdentifierResolveScope & scope)
 {
@@ -553,16 +529,62 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   */
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    auto it = scope.expression_argument_name_to_node.find(identifier_lookup.identifier.getFullName());
-    bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
+    auto & argument_map = scope.expression_argument_name_to_node;
+    auto it = argument_map.end();
+    bool resolve_full_identifier = false;
 
-    if (!resolve_full_identifier)
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, name_match_mode);
+    if (!foldable_name.empty())
     {
-        const auto & identifier_bind_part = identifier_lookup.identifier.front();
+        auto argument_is_pinned = [&](const String & key, const QueryTreeNodePtr &)
+        {
+            return scope.pinned_expression_argument_names.contains(key);
+        };
 
-        it = scope.expression_argument_name_to_node.find(identifier_bind_part);
-        if (it == scope.expression_argument_name_to_node.end())
+        auto find_folded = [&](const IdentifierName & name) -> std::optional<decltype(it)>
+        {
+            auto matches = collectFoldedNameMatches(argument_map, name, argument_is_pinned);
+            if (matches.size() > 1)
+                throwAmbiguousIdentifier(identifier_lookup, matches, scope);
+            if (matches.size() == 1)
+                return argument_map.find(matches.front());
             return {};
+        };
+
+        if (auto full_match = find_folded(foldable_name))
+        {
+            it = *full_match;
+            resolve_full_identifier = true;
+        }
+        else if (foldable_name.front().isCaseFoldable())
+        {
+            auto bind_match = find_folded(IdentifierName({foldable_name.front()}));
+            if (!bind_match)
+                return {};
+            it = *bind_match;
+        }
+        else
+        {
+            /// A double-quoted first part binds exactly, including to pinned names.
+            it = argument_map.find(foldable_name.front().spelling);
+            if (it == argument_map.end())
+                return {};
+        }
+    }
+    else
+    {
+        it = argument_map.find(identifier_lookup.identifier.getFullName());
+        resolve_full_identifier = it != argument_map.end();
+
+        if (!resolve_full_identifier)
+        {
+            const auto & identifier_bind_part = identifier_lookup.identifier.front();
+
+            it = argument_map.find(identifier_bind_part);
+            if (it == argument_map.end())
+                return {};
+        }
     }
 
     auto node_type = it->second->getNodeType();
@@ -585,7 +607,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]) != nullptr;
 }
 
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)

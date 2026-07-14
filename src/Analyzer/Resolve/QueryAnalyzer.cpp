@@ -32,12 +32,15 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+#include <Analyzer/Resolve/StandardNameMatching.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+
+#include <fmt/ranges.h>
 #include <Core/IdentifierName.h>
 #include <Core/Settings.h>
 
@@ -112,6 +115,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -233,6 +237,48 @@ bool identifierResolveCacheIsSupported(const ContextPtr & context)
         && settings[Setting::column_and_query_name_matching] == NameMatchMode::Sensitive;
 }
 
+/// Quoting of a CTE definition name in the scope CTE map. The map value is the registered
+/// QueryNode or UnionNode, or the TableNode that replaced a materialized CTE (its alias is
+/// set together with the definition quote in tryResolveIdentifierFromCTE).
+IdentifierPartQuote cteDefinitionNameQuote(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->getCTENameQuote();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->getCTENameQuote();
+    return node->getAliasQuote();
+}
+
+/// Find a window definition by name honoring the name matching mode. A window definition is
+/// registered under its alias; a double-quoted definition is pinned to exact-spelling lookups
+/// and a foldable reference resolves through the folded namespace.
+std::unordered_map<std::string, QueryTreeNodePtr>::iterator findWindowNodeByName(
+    std::unordered_map<std::string, QueryTreeNodePtr> & window_map,
+    const String & name,
+    IdentifierPartQuote name_quote,
+    NameMatchMode name_match_mode,
+    const IdentifierResolveScope & scope)
+{
+    auto foldable_name = getFoldableSingleName(name, name_quote, name_match_mode);
+    if (foldable_name.empty())
+        return window_map.find(name);
+
+    auto matches = collectFoldedNameMatches(window_map, foldable_name,
+        [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+
+    if (matches.size() > 1)
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Window reference '{}' is ambiguous under standard name matching. Candidates: {}. In scope {}",
+            name,
+            fmt::join(matches, ", "),
+            scope.scope_node->formatASTForErrorMessage());
+
+    if (matches.empty())
+        return window_map.end();
+
+    return window_map.find(matches.front());
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -299,7 +345,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
             if (node_type == QueryTreeNodeType::LIST)
             {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
                 visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
@@ -310,7 +356,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -1196,7 +1242,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-    auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+    auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME, name_match_mode);
     if (it == nullptr)
         return {};
 
@@ -1226,8 +1273,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
      * 2. SELECT avg(a) OVER () AS a, id FROM test
+     *
+     * Under `standard` matching a foldable reference must also detect an in-process expression
+     * whose alias is a case variant, otherwise the reference would resolve into the alias body.
      */
-    if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part) != nullptr)
+    bool bind_part_folds = name_match_mode == NameMatchMode::Standard
+        && identifier_lookup.identifier_name.size() == identifier_lookup.identifier.getPartsSize()
+        && identifier_lookup.identifier_name.front().isCaseFoldable();
+
+    auto in_resolve_process_expression = bind_part_folds
+        ? scope.expressions_in_resolve_process_stack.getExpressionWithAliasFolded(foldIdentifierCaseASCII(identifier_bind_part))
+        : scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part);
+    if (in_resolve_process_expression != nullptr)
     {
         /* This is an important fallback in the identifier resolution. In the case of transitive aliases,
          * we may end up in the situation when we try to resolve the same expression, but it's not a cycle.
@@ -1322,7 +1379,32 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+    auto cte_query_node_it = scope.cte_name_to_query_node.end();
+
+    /// `standard` matching: a foldable reference resolves through the folded CTE namespace;
+    /// a double-quoted CTE definition is pinned and only found by an exact-spelling lookup.
+    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+    if (!foldable_name.empty())
+    {
+        auto matches = collectFoldedNameMatches(scope.cte_name_to_query_node, foldable_name,
+            [](const String &, const QueryTreeNodePtr & existing) { return cteDefinitionNameQuote(existing) == IdentifierPartQuote::DoubleQuoted; });
+
+        if (matches.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "CTE reference '{}' is ambiguous under standard name matching. Candidates: {}. In scope {}",
+                full_name,
+                fmt::join(matches, ", "),
+                scope.scope_node->formatASTForErrorMessage());
+
+        if (matches.size() == 1)
+        {
+            /// Use the canonical definition spelling for the resolved name.
+            full_name = matches.front();
+            cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+        }
+    }
+    else
+        cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -1348,8 +1430,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     {
         /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
         /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
+        /// The alias keeps the definition quote so the pin survives the map value replacement.
         auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
-        table_node->setAlias(full_name);
+        table_node->setAlias(full_name, cteDefinitionNameQuote(cte_node));
 
         cte_node = table_node;
     }
@@ -1551,7 +1634,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
              * In the example, identifier `id` should be resolved into one from USING (id) column.
              */
 
-            auto * alias_it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME);
+            auto * alias_it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
             if (alias_it && (*alias_it)->getNodeType() == QueryTreeNodeType::COLUMN)
             {
                 const auto & column_node = (*alias_it)->as<ColumnNode &>();
@@ -2862,15 +2945,23 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     std::string parent_window_name;
+    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
     auto * identifier_node = node->as<IdentifierNode>();
 
     ProjectionName result_projection_name;
     QueryTreeNodePtr parent_window_node;
 
     if (identifier_node)
+    {
         parent_window_name = identifier_node->getIdentifier().getFullName();
+        if (identifier_node->getIdentifierName().size() == 1)
+            parent_window_name_quote = identifier_node->getIdentifierName().front().quote;
+    }
     else if (auto * window_node = node->as<WindowNode>())
+    {
         parent_window_name = window_node->getParentWindowName();
+        parent_window_name_quote = window_node->getParentWindowNameQuote();
+    }
 
     if (!parent_window_name.empty())
     {
@@ -2881,12 +2972,16 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
         auto & scope_window_name_to_window_node = nearest_query_scope->window_name_to_window_node;
 
-        auto window_node_it = scope_window_name_to_window_node.find(parent_window_name);
+        auto window_node_it = findWindowNodeByName(scope_window_name_to_window_node, parent_window_name, parent_window_name_quote,
+            scope.context->getSettingsRef()[Setting::column_and_query_name_matching], *nearest_query_scope);
         if (window_node_it == scope_window_name_to_window_node.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window '{}' does not exist. In scope {}",
                 parent_window_name,
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
+
+        /// Use the canonical definition spelling for the resolved window name.
+        parent_window_name = window_node_it->first;
 
         parent_window_node = window_node_it->second;
 
@@ -3041,7 +3136,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -3050,6 +3145,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
       */
     QueryTreeNodes lambda_new_arguments_nodes;
     lambda_new_arguments_nodes.reserve(lambda_arguments_nodes_size);
+
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
 
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
     {
@@ -3061,8 +3158,27 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         const auto & lambda_argument_name = lambda_argument_identifier ? lambda_argument_identifier->getIdentifier().getFullName()
                                                                        : lambda_argument_column->getColumnName();
 
+        /// A double-quoted lambda argument is pinned to exact-spelling lookups under `standard` matching.
+        bool lambda_argument_pinned = lambda_argument_identifier && lambda_argument_identifier->getIdentifierName().anyPartDoubleQuoted();
+
         bool has_expression_node = scope.aliases.alias_name_to_expression_node.contains(lambda_argument_name);
         bool has_alias_node = scope.aliases.alias_name_to_lambda_node.contains(lambda_argument_name);
+
+        if (name_match_mode == NameMatchMode::Standard && !lambda_argument_pinned)
+        {
+            /// Reject case-sibling lambda arguments in one scope (fail-close, mirroring alias registration).
+            auto argument_is_pinned = [&](const String & key, const QueryTreeNodePtr &) { return scope.pinned_expression_argument_names.contains(key); };
+            if (const auto * sibling = findCaseSiblingName(scope.expression_argument_name_to_node, lambda_argument_name, argument_is_pinned))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Lambda argument {} cannot be registered: its name differs only in character case from {} in the same scope. "
+                    "Double-quote the argument names to distinguish them",
+                    backQuoteIfNeed(lambda_argument_name), backQuoteIfNeed(*sibling));
+
+            /// An alias inside the lambda that folds to the argument name collides the same way an exact alias does.
+            auto alias_is_pinned = [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; };
+            has_expression_node = has_expression_node || findCaseSiblingName(scope.aliases.alias_name_to_expression_node, lambda_argument_name, alias_is_pinned) != nullptr;
+            has_alias_node = has_alias_node || findCaseSiblingName(scope.aliases.alias_name_to_lambda_node, lambda_argument_name, alias_is_pinned) != nullptr;
+        }
 
         if (has_expression_node || has_alias_node)
         {
@@ -3072,6 +3188,9 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
                 lambda_argument_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
+
+        if (lambda_argument_pinned)
+            scope.pinned_expression_argument_names.insert(lambda_argument_name);
 
         scope.expression_argument_name_to_node.emplace(lambda_argument_name, lambda_arguments[i]);
         lambda_new_arguments_nodes.push_back(lambda_arguments[i]);
@@ -3188,11 +3307,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             }
 
             if (!resolved_identifier_node && allow_lambda_expression)
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
+            {
+                IdentifierLookup function_lookup{unresolved_identifier, IdentifierLookupContext::FUNCTION};
+                function_lookup.identifier_name = identifier_node.getIdentifierName();
+                resolved_identifier_node = tryResolveIdentifier(function_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
+            }
 
             if (!resolved_identifier_node && allow_table_expression)
             {
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
+                IdentifierLookup table_lookup{unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION};
+                table_lookup.identifier_name = identifier_node.getIdentifierName();
+                resolved_identifier_node = tryResolveIdentifier(table_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
 
                 if (resolved_identifier_node)
                 {
@@ -3315,11 +3440,21 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                   * which is a much more helpful error message.
                   * Example: SELECT number AS num, num * 1 AS num FROM numbers(10)
                   */
-                if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName()) != nullptr)
+                bool full_name_folds = scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard
+                    && identifier_lookup.identifier_name.size() == unresolved_identifier.getPartsSize()
+                    && !identifier_lookup.identifier_name.anyPartDoubleQuoted();
+                auto same_alias_in_resolve_process = full_name_folds
+                    ? scope.expressions_in_resolve_process_stack.getExpressionWithAliasFolded(identifier_lookup.identifier_name.foldedFullKey())
+                    : scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName());
+                if (same_alias_in_resolve_process != nullptr)
                 {
                     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
                     {
-                        if (node_with_duplicated_alias->getAlias() == unresolved_identifier.getFullName())
+                        bool duplicated_alias_matches = full_name_folds
+                            ? (node_with_duplicated_alias->getAliasQuote() != IdentifierPartQuote::DoubleQuoted
+                                && foldIdentifierCaseASCII(node_with_duplicated_alias->getAlias()) == identifier_lookup.identifier_name.foldedFullKey())
+                            : node_with_duplicated_alias->getAlias() == unresolved_identifier.getFullName();
+                        if (duplicated_alias_matches)
                         {
                             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                                 "Multiple expressions with the same alias {}. In scope {}",
@@ -4164,6 +4299,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             {
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
                 auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+                table_identifier_lookup.identifier_name = from_table_identifier.getIdentifierName();
                 if (current_join_tree_node->hasOriginalAST())
                     table_identifier_lookup.original_ast_node = current_join_tree_node->getOriginalAST();
 
@@ -4485,7 +4621,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 alias_column_resolve_scope.context = scope.context;
 
                 /// Initialize aliases in alias column scope
-                QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
+                QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
                 visitor.visit(alias_column_to_resolve->getExpression());
 
                 resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -5939,6 +6075,18 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         if (alias_name.empty())
             return;
 
+        if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard
+            && table_expression_node->getAliasQuote() != IdentifierPartQuote::DoubleQuoted)
+        {
+            const auto * sibling = findCaseSiblingName(scope.aliases.alias_name_to_table_expression_node, alias_name,
+                [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+            if (sibling)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Table expression alias {} cannot be registered: its name differs only in character case from alias {} in the same scope. "
+                    "Double-quote the alias names to distinguish them",
+                    backQuoteIfNeed(alias_name), backQuoteIfNeed(*sibling));
+        }
+
         auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -6014,7 +6162,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
     /// Initialize aliases in query node scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+    QueryExpressionsAliasVisitor visitor(scope.aliases, name_match_mode);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -6022,7 +6171,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, name_match_mode);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;
@@ -6083,6 +6232,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (!subquery_is_cte)
             continue;
         const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        auto cte_name_quote = subquery_node ? subquery_node->getCTENameQuote() : union_node->getCTENameQuote();
+
+        if (name_match_mode == NameMatchMode::Standard && cte_name_quote != IdentifierPartQuote::DoubleQuoted)
+        {
+            const auto * sibling = findCaseSiblingName(scope.cte_name_to_query_node, cte_name,
+                [](const String &, const QueryTreeNodePtr & existing) { return cteDefinitionNameQuote(existing) == IdentifierPartQuote::DoubleQuoted; });
+            if (sibling)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE {} cannot be registered: its name differs only in character case from CTE {} in the same scope. "
+                    "Double-quote the CTE names to distinguish them",
+                    backQuoteIfNeed(cte_name), backQuoteIfNeed(*sibling));
+        }
 
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
@@ -6105,7 +6266,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto parent_window_name = window_node_typed.getParentWindowName();
         if (!parent_window_name.empty())
         {
-            auto window_node_it = scope.window_name_to_window_node.find(parent_window_name);
+            auto window_node_it = findWindowNodeByName(scope.window_name_to_window_node, parent_window_name,
+                window_node_typed.getParentWindowNameQuote(), name_match_mode, scope);
             if (window_node_it == scope.window_name_to_window_node.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window '{}' does not exist. In scope {}",
@@ -6114,6 +6276,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
             mergeWindowWithParentWindow(window_node, window_node_it->second, scope);
             window_node_typed.setParentWindowName({});
+        }
+
+        if (name_match_mode == NameMatchMode::Standard && window_node_typed.getAliasQuote() != IdentifierPartQuote::DoubleQuoted)
+        {
+            const auto * sibling = findCaseSiblingName(scope.window_name_to_window_node, window_node_typed.getAlias(),
+                [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+            if (sibling)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window {} cannot be registered: its name differs only in character case from window {} in the same scope. "
+                    "Double-quote the window names to distinguish them",
+                    backQuoteIfNeed(window_node_typed.getAlias()), backQuoteIfNeed(*sibling));
         }
 
         auto [_, inserted] = scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
@@ -6126,7 +6299,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     auto transitive_aliases = std::move(scope.aliases.alias_name_to_table_expression_node);
 
-    TableExpressionsAliasVisitor table_expressions_visitor(scope);
+    TableExpressionsAliasVisitor table_expressions_visitor(scope, name_match_mode);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
@@ -6465,6 +6638,8 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
                 IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
                 subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+                if (union_node_typed.getCTENameQuote() == IdentifierPartQuote::DoubleQuoted)
+                    subquery_scope.pinned_expression_argument_names.insert(union_node_typed.getCTEName());
 
                 auto query_node_type = query_node->getNodeType();
                 if (query_node_type == QueryTreeNodeType::QUERY)

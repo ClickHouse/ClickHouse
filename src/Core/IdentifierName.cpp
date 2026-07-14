@@ -41,6 +41,30 @@ bool IdentifierName::anyPartDoubleQuoted() const
     return false;
 }
 
+String IdentifierName::foldedFullKey() const
+{
+    String joined;
+    for (const auto & part : parts)
+    {
+        if (!joined.empty())
+            joined += '.';
+        joined += part.spelling;
+    }
+    return foldIdentifierCaseASCII(joined);
+}
+
+bool IdentifierName::quotedPartsMatch(std::string_view candidate) const
+{
+    size_t offset = 0;
+    for (const auto & part : parts)
+    {
+        if (!part.isCaseFoldable() && candidate.substr(offset, part.spelling.size()) != part.spelling)
+            return false;
+        offset += part.spelling.size() + 1;
+    }
+    return true;
+}
+
 String IdentifierName::toString() const
 {
     String result;

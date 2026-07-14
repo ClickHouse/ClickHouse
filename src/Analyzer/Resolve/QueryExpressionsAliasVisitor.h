@@ -3,9 +3,15 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Resolve/ScopeAliases.h>
 #include <Analyzer/LambdaNode.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
+}
 
 /** Visitor that extracts expression and function aliases from node and initialize scope tables with it.
   * Does not go into child lambdas and queries.
@@ -34,8 +40,9 @@ namespace DB
 class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_)
+    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_, NameMatchMode name_match_mode_)
         : aliases(aliases_)
+        , name_match_mode(name_match_mode_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -75,6 +82,24 @@ private:
         aliases.nodes_with_duplicated_aliases.emplace_back(node);
     }
 
+    /// `standard` matching: reject at registration an unquoted alias whose name differs only in
+    /// character case from another unquoted alias in the same scope (fail-close, mirroring the
+    /// CREATE-side contract for databases and tables). Double-quoted aliases are pinned to exact
+    /// matching and never collide through folding.
+    void throwIfCaseSiblingAlias(const std::unordered_map<std::string, QueryTreeNodePtr> & alias_map, const QueryTreeNodePtr & node)
+    {
+        if (name_match_mode != NameMatchMode::Standard || node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+            return;
+
+        const auto * sibling = findCaseSiblingName(alias_map, node->getAlias(),
+            [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+        if (sibling)
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                "Alias {} cannot be registered: its name differs only in character case from alias {} in the same scope. "
+                "Double-quote the alias names to distinguish them",
+                backQuoteIfNeed(node->getAlias()), backQuoteIfNeed(*sibling));
+    }
+
     void updateAliasesIfNeeded(const QueryTreeNodePtr & node)
     {
         if (!node->hasAlias())
@@ -101,6 +126,7 @@ private:
         {
         case QueryTreeNodeType::LAMBDA:
             {
+                throwIfCaseSiblingAlias(aliases.alias_name_to_lambda_node, cloned_alias_node);
                 auto [_, inserted] = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
@@ -108,6 +134,7 @@ private:
             }
         case QueryTreeNodeType::IDENTIFIER:
             {
+                throwIfCaseSiblingAlias(aliases.alias_name_to_expression_node, cloned_alias_node);
                 auto [_1, inserted_expression] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
                 bool inserted_lambda           = true; // Avoid adding to duplicating aliases if identifier is compound.
                 bool inserted_table_expression = true; // Avoid adding to duplicating aliases if identifier is compound.
@@ -117,6 +144,8 @@ private:
                 auto * identifier_node = node->as<IdentifierNode>();
                 if (identifier_node->getIdentifier().isShort())
                 {
+                    throwIfCaseSiblingAlias(aliases.alias_name_to_lambda_node, cloned_alias_node);
+                    throwIfCaseSiblingAlias(aliases.alias_name_to_table_expression_node, cloned_alias_node);
                     inserted_lambda = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node).second;
                     inserted_table_expression = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node).second;
                 }
@@ -127,6 +156,7 @@ private:
             }
         default:
             {
+                throwIfCaseSiblingAlias(aliases.alias_name_to_expression_node, cloned_alias_node);
                 auto [_, inserted] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
@@ -136,6 +166,7 @@ private:
     }
 
     ScopeAliases & aliases;
+    NameMatchMode name_match_mode;
 };
 
 }

@@ -72,6 +72,9 @@ public:
     // with the visitor interface.
 
     String window_name;
+    /// Quoting of the `OVER window_name` reference as written in the query. Double quotes pin
+    /// the name to exact-case matching under `standard` name matching.
+    IdentifierPartQuote window_name_quote = IdentifierPartQuote::Unquoted;
     ASTPtr window_definition;
 
     NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }

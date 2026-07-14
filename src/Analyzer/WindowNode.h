@@ -59,10 +59,17 @@ public:
         return parent_window_name;
     }
 
-    /// Set parent window name
-    void setParentWindowName(String parent_window_name_value)
+    /// Get quoting of the parent window name as written in the query
+    IdentifierPartQuote getParentWindowNameQuote() const
+    {
+        return parent_window_name_quote;
+    }
+
+    /// Set parent window name. The quote flag is always updated together with the name.
+    void setParentWindowName(String parent_window_name_value, IdentifierPartQuote parent_window_name_quote_value = IdentifierPartQuote::Unquoted)
     {
         parent_window_name = std::move(parent_window_name_value);
+        parent_window_name_quote = parent_window_name_quote_value;
     }
 
     /// Returns true if window node has order by, false otherwise
@@ -186,6 +193,9 @@ private:
 
     WindowFrame window_frame;
     String parent_window_name;
+    /// Quoting of the parent window name as written in the query. Double quotes pin the name
+    /// to exact-case matching under `standard` name matching.
+    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 };
 
 }

@@ -22,21 +22,6 @@ String joinPartSpellings(const IdentifierName & name)
     return result;
 }
 
-/// The ASCII fold maps bytes one to one, so a candidate equal to the lookup under whole-string
-/// folding has the same length with part boundaries at the same byte offsets. Verify that every
-/// double-quoted part matches its candidate segment exactly.
-bool candidateMatchesQuotedParts(const IdentifierName & name, std::string_view candidate)
-{
-    size_t offset = 0;
-    for (const auto & part : name.parts)
-    {
-        if (!part.isCaseFoldable() && candidate.substr(offset, part.spelling.size()) != part.spelling)
-            return false;
-        offset += part.spelling.size() + 1;
-    }
-    return true;
-}
-
 }
 
 void AnalysisTableExpressionData::ensureColumnMembershipSetsArePopulated() const
@@ -110,11 +95,11 @@ AnalysisTableExpressionData::tryMatchColumnOrSubcolumnStandard(const IdentifierN
     auto collect_column_candidates = [&](const IdentifierName & column_part)
     {
         std::vector<String> verified;
-        auto it = folded_column_names.find(foldIdentifierCaseASCII(joinPartSpellings(column_part)));
+        auto it = folded_column_names.find(column_part.foldedFullKey());
         if (it == folded_column_names.end())
             return verified;
         for (const auto & canonical : it->second)
-            if (candidateMatchesQuotedParts(column_part, canonical))
+            if (column_part.quotedPartsMatch(canonical))
                 verified.push_back(canonical);
         return verified;
     };
@@ -174,7 +159,7 @@ AnalysisTableExpressionData::tryMatchColumnOrSubcolumnStandard(const IdentifierN
             for (const auto & subcolumn_name : column_type->getSubcolumnNames())
             {
                 if (foldIdentifierCaseASCII(subcolumn_name) == subcolumn_folded
-                    && candidateMatchesQuotedParts(subcolumn_part, subcolumn_name))
+                    && subcolumn_part.quotedPartsMatch(subcolumn_name))
                     matched_subcolumns.push_back(subcolumn_name);
             }
 

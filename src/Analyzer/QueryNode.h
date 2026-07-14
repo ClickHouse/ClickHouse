@@ -136,10 +136,17 @@ public:
         return cte_name;
     }
 
-    /// Set query node CTE name
-    void setCTEName(std::string cte_name_value)
+    /// Get quoting of the CTE name as written in the query
+    IdentifierPartQuote getCTENameQuote() const
+    {
+        return cte_name_quote;
+    }
+
+    /// Set query node CTE name. The quote flag is always updated together with the name.
+    void setCTEName(std::string cte_name_value, IdentifierPartQuote cte_name_quote_value = IdentifierPartQuote::Unquoted)
     {
         cte_name = std::move(cte_name_value);
+        cte_name_quote = cte_name_quote_value;
     }
 
     /// Returns true if query node is a MATERIALIZED CTE, false otherwise
@@ -709,6 +716,9 @@ private:
     bool is_limit_by_all = false;
 
     std::string cte_name;
+    /// Quoting of the CTE name as written in the query. Double quotes pin the name to
+    /// exact-case matching under `standard` name matching.
+    IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
     ContextMutablePtr context;

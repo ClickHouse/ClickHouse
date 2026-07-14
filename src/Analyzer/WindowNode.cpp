@@ -104,6 +104,7 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
 {
     auto window_node = std::make_shared<WindowNode>(window_frame);
     window_node->parent_window_name = parent_window_name;
+    window_node->parent_window_name_quote = parent_window_name_quote;
 
     return window_node;
 }
@@ -113,6 +114,7 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
     auto window_definition = make_intrusive<ASTWindowDefinition>();
 
     window_definition->parent_window_name = parent_window_name;
+    window_definition->parent_window_name_quote = parent_window_name_quote;
 
     if (hasPartitionBy())
     {

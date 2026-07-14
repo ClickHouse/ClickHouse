@@ -265,6 +265,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->cte_name_quote = cte_name_quote;
 
     return result_union_node;
 }
@@ -287,6 +288,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
+        with_element_ast->name_quote = cte_name_quote;
         with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 

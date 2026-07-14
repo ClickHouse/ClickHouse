@@ -645,6 +645,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
             function.window_name = getIdentifierName(window_name_ast);
+            function.window_name_quote = identifierPartQuoteFromAST(window_name_ast);
             return true;
         }
 
@@ -868,6 +869,7 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     }
     result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
+    result->parent_window_name_quote = identifierPartQuoteFromAST(window_name_identifier);
 
     if (!parseWindowDefinitionParts(pos, *result, expected))
     {
@@ -899,6 +901,7 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
         elem->name = getIdentifierName(window_name_identifier);
+        elem->name_quote = identifierPartQuoteFromAST(window_name_identifier);
 
         ParserKeyword keyword_as(Keyword::AS);
         if (!keyword_as.ignore(pos, expected))

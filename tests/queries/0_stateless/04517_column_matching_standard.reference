@@ -34,3 +34,31 @@ x	3
 y	5
 y
 x
+--- standard: expression aliases fold, quoted alias definitions pin, case-sibling definitions rejected
+1	1
+1	1
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
+UNKNOWN_IDENTIFIER
+1	2
+--- standard: CTE names fold, quoted CTE definitions pin, case-sibling definitions rejected
+1
+UNKNOWN_TABLE
+1
+MULTIPLE_EXPRESSIONS_FOR_ALIAS
+UNKNOWN_TABLE
+--- standard: lambda arguments fold, case-sibling arguments rejected
+[2,3]
+BAD_ARGUMENTS
+UNKNOWN_IDENTIFIER
+--- standard: alias vs column precedence follows the exact-mode order
+5	5
+5	5
+5	10
+AMBIGUOUS_COLUMN_NAME
+--- standard: window names fold, quoted definitions pin, case-sibling definitions rejected
+1
+2
+2
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS

@@ -97,6 +97,7 @@ private:
     struct CommonTableExpressionData
     {
         std::string_view cte_name;
+        IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
         bool is_materialized = false;
     };
 
@@ -201,7 +202,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
-    union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
@@ -244,7 +245,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
-    union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
@@ -318,7 +319,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
-    current_query_tree->setCTEName(std::string(cte_data.cte_name));
+    current_query_tree->setCTEName(std::string(cte_data.cte_name), cte_data.cte_name_quote);
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
@@ -637,7 +638,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindowList(const ASTPtr & window_definit
         const auto & window_list_element_typed = window_list_element->as<const ASTWindowListElement &>();
 
         auto window_node = buildWindow(window_list_element_typed.definition, context);
-        window_node->setAlias(window_list_element_typed.name);
+        window_node->setAlias(window_list_element_typed.name, window_list_element_typed.name_quote);
 
         list_node->getNodes().push_back(std::move(window_node));
     }
@@ -701,6 +702,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             auto lambda_arguments_nodes = std::make_shared<ListNode>();
             Names lambda_arguments;
             NameSet lambda_arguments_set;
+            std::vector<IdentifierName> lambda_argument_names;
 
             if (lambda_arguments_tuple.arguments)
             {
@@ -729,13 +731,23 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             argument_name);
 
                     lambda_arguments.push_back(argument_name);
+                    lambda_argument_names.push_back(lambda_argument_identifier->name_parts);
                 }
             }
 
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+            auto lambda_node = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+
+            /// LambdaNode rebuilds argument identifier nodes as unquoted; restore the quoting of
+            /// double-quoted arguments, which pins them to exact matching under `standard` mode.
+            auto & lambda_argument_identifier_nodes = lambda_node->getArguments().getNodes();
+            for (size_t i = 0; i < lambda_argument_names.size(); ++i)
+                if (lambda_argument_names[i].anyPartDoubleQuoted())
+                    lambda_argument_identifier_nodes[i] = std::make_shared<IdentifierNode>(lambda_argument_names[i]);
+
+            result = std::move(lambda_node);
         }
         else
         {
@@ -772,7 +784,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
                     else
-                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{function->window_name, function->window_name_quote}}));
                 }
 
                 result = std::move(function_node);
@@ -796,6 +808,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
+            .cte_name_quote = with_element->name_quote,
             .is_materialized = with_element->is_materialized,
         };
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
@@ -879,7 +892,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition,
     }
 
     auto window_node = std::make_shared<WindowNode>(window_frame);
-    window_node->setParentWindowName(window_definition_typed.parent_window_name);
+    window_node->setParentWindowName(window_definition_typed.parent_window_name, window_definition_typed.parent_window_name_quote);
 
     if (window_definition_typed.partition_by)
         window_node->getPartitionByNode() = buildExpressionList(window_definition_typed.partition_by, context);

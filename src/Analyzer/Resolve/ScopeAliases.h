@@ -2,10 +2,18 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
+#include <Analyzer/Resolve/StandardNameMatching.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int AMBIGUOUS_IDENTIFIER;
+}
 
 struct ScopeAliases
 {
@@ -51,9 +59,37 @@ struct ScopeAliases
         }
     }
 
-    QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)
+    QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option, NameMatchMode name_match_mode)
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
+
+        /// `standard` matching: an unquoted reference resolves through the folded alias namespace.
+        /// A double-quoted alias definition is pinned and can only be found by an exact-spelling
+        /// lookup; a double-quoted reference falls through to the exact path below.
+        auto foldable_name = getFoldableIdentifierSuffix(lookup, 0 /*qualifier_parts*/, name_match_mode);
+        if (!foldable_name.empty())
+        {
+            if (find_option == FindOption::FIRST_NAME)
+                foldable_name = IdentifierName({foldable_name.front()});
+
+            if (find_option == FindOption::FULL_NAME || foldable_name.front().isCaseFoldable())
+            {
+                auto matches = collectFoldedNameMatches(alias_map, foldable_name,
+                    [](const String &, const QueryTreeNodePtr & node) { return node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+
+                if (matches.size() > 1)
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Alias reference '{}' is ambiguous under standard name matching. Candidates: {}",
+                        lookup.identifier.getFullName(),
+                        fmt::join(matches, ", "));
+
+                if (matches.empty())
+                    return {};
+
+                return &alias_map.find(matches.front())->second;
+            }
+        }
+
         const std::string * key = &getKey(lookup.identifier, find_option);
 
         auto it = alias_map.find(*key);
@@ -64,9 +100,9 @@ struct ScopeAliases
         return &it->second;
     }
 
-    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
+    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option, NameMatchMode name_match_mode) const
     {
-        return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
+        return const_cast<ScopeAliases *>(this)->find(lookup, find_option, name_match_mode);
     }
 };
 

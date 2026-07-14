@@ -440,6 +440,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
+    result_query_node->cte_name_quote = cte_name_quote;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
@@ -483,6 +484,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                 continue;
 
             const auto & with_node_cte_name = with_query_node ? with_query_node->cte_name : with_union_node->getCTEName();
+            auto with_node_cte_name_quote = with_query_node ? with_query_node->cte_name_quote : with_union_node->getCTENameQuote();
 
             auto * with_node_ast_subquery = with_node_ast->as<ASTSubquery>();
             if (with_node_ast_subquery)
@@ -490,6 +492,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
             auto with_element_ast = make_intrusive<ASTWithElement>();
             with_element_ast->name = with_node_cte_name;
+            with_element_ast->name_quote = with_node_cte_name_quote;
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();

@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
+#include <Core/IdentifierName.h>
 
 namespace DB
 {
@@ -94,6 +95,20 @@ public:
             return {};
 
         return expression_it->second.front();
+    }
+
+    /// `standard` matching variant for an unquoted reference: an in-process expression matches
+    /// when its alias folds to `folded_alias`, unless its alias is double-quoted (pinned).
+    QueryTreeNodePtr getExpressionWithAliasFolded(const std::string & folded_alias) const
+    {
+        for (const auto & [alias, alias_expressions] : alias_name_to_expressions)
+        {
+            if (alias_expressions.empty() || alias_expressions.front()->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+                continue;
+            if (foldIdentifierCaseASCII(alias) == folded_alias)
+                return alias_expressions.front();
+        }
+        return {};
     }
 
     bool has(const IQueryTreeNode * node) const

@@ -2,8 +2,10 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/StandardNameMatching.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -16,8 +18,9 @@ namespace ErrorCodes
 class TableExpressionsAliasVisitor : public InDepthQueryTreeVisitor<TableExpressionsAliasVisitor>
 {
 public:
-    explicit TableExpressionsAliasVisitor(IdentifierResolveScope & scope_)
+    TableExpressionsAliasVisitor(IdentifierResolveScope & scope_, NameMatchMode name_match_mode_)
         : scope(scope_)
+        , name_match_mode(name_match_mode_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -62,6 +65,7 @@ private:
             return;
 
         const auto & node_alias = node->getAlias();
+        throwIfCaseSiblingTableAlias(node);
         auto [_, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(node_alias, node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -70,7 +74,24 @@ private:
                 scope.scope_node->formatASTForErrorMessage());
     }
 
+    /// `standard` matching: unquoted table expression aliases that differ only in character case
+    /// are rejected in one scope, mirroring the alias registration contract.
+    void throwIfCaseSiblingTableAlias(const QueryTreeNodePtr & node)
+    {
+        if (name_match_mode != NameMatchMode::Standard || node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+            return;
+
+        const auto * sibling = findCaseSiblingName(scope.aliases.alias_name_to_table_expression_node, node->getAlias(),
+            [](const String &, const QueryTreeNodePtr & existing) { return existing->getAliasQuote() == IdentifierPartQuote::DoubleQuoted; });
+        if (sibling)
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                "Table expression alias {} cannot be registered: its name differs only in character case from alias {} in the same scope. "
+                "Double-quote the alias names to distinguish them",
+                backQuoteIfNeed(node->getAlias()), backQuoteIfNeed(*sibling));
+    }
+
     IdentifierResolveScope & scope;
+    NameMatchMode name_match_mode;
 };
 
 }

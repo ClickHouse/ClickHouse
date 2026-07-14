@@ -77,6 +77,14 @@ struct IdentifierName
 
     bool anyPartDoubleQuoted() const;
 
+    /// Matching key of the whole name in `standard` mode: ASCII fold of the dot-joined spellings.
+    String foldedFullKey() const;
+
+    /// Whether every double-quoted part matches its byte segment of `candidate` exactly.
+    /// Only meaningful when `candidate` equals this name under whole-string folding:
+    /// the fold maps bytes one to one, so part boundaries stay at the same offsets.
+    bool quotedPartsMatch(std::string_view candidate) const;
+
     /// Flattened form for display and error messages only. Never re-split it.
     String toString() const;
 

@@ -350,7 +350,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
     {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        /// A function name is written without quotes, so it folds under `standard` matching.
+        IdentifierLookup function_name_lookup{Identifier{function_name}, IdentifierLookupContext::FUNCTION};
+        function_name_lookup.identifier_name = IdentifierName({IdentifierPart{function_name, IdentifierPartQuote::Unquoted}});
+        auto function_lookup_result = tryResolveIdentifier(function_name_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
@@ -1042,13 +1045,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 /// Now check if the identifier resolves as a column or alias.
                                 /// This is deferred to here because tryResolveIdentifier may allocate
                                 /// tree nodes that affect node ID numbering.
-                                auto expression_resolve_result = tryResolveIdentifier(
-                                    {identifier, IdentifierLookupContext::EXPRESSION}, scope, {});
+                                IdentifierLookup rewrite_expression_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+                                rewrite_expression_lookup.identifier_name = identifier_node->getIdentifierName();
+                                auto expression_resolve_result = tryResolveIdentifier(rewrite_expression_lookup, scope, {});
 
                                 if (!expression_resolve_result.isResolved())
                                 {
-                                    auto function_resolve_result = tryResolveIdentifier(
-                                        {identifier, IdentifierLookupContext::FUNCTION}, scope, {});
+                                    IdentifierLookup rewrite_function_lookup{identifier, IdentifierLookupContext::FUNCTION};
+                                    rewrite_function_lookup.identifier_name = identifier_node->getIdentifierName();
+                                    auto function_resolve_result = tryResolveIdentifier(rewrite_function_lookup, scope, {});
 
                                     if (!function_resolve_result.isResolved())
                                     {
