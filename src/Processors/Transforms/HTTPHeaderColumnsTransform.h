@@ -7,32 +7,50 @@
 namespace DB
 {
 
-/// Replaces specified columns in each chunk with constant values parsed from strings.
-/// Used by the http_column_* feature to inject HTTP header values into INSERT columns.
-/// For the sync INSERT path, all rows in a single request carry the same header values.
-/// The string values are deserialized through the column type's text serialization,
-/// so non-String types (UInt64, Array, etc.) are parsed correctly.
+/// Injects HTTP header values as INSERT columns for the sync path.
+///
+/// This is an expanding transform: input is the body-only block (columns the format
+/// parsed from the HTTP body), output is the full block (body columns + http_column_*
+/// mapped columns). The injected columns are placed at their correct positions in the
+/// output so the downstream chain (addMissingDefaults, constraints, sink) receives a
+/// complete block and does NOT evaluate DEFAULT expressions for the injected columns.
+///
+/// Using the format-only block as input lets positional formats (TSV, CSV, Values,
+/// RowBinary) work correctly: they see only the body columns and read the exact number
+/// of fields they expect.
 class HTTPHeaderColumnsTransform : public ISimpleTransform
 {
 public:
+    /// input_header  - block the format produces (body columns only).
+    /// output_header - full pipeline block (body + http_column_* columns).
+    /// http_header_columns - column_name -> header_value from the URL params.
+    /// format_settings - query/session format settings for value deserialization.
     HTTPHeaderColumnsTransform(
-        const Block & header_,
-        const NameToNameMap & http_header_columns_)
-        : ISimpleTransform(header_, header_, false)
+        const Block & input_header,
+        const Block & output_header,
+        const NameToNameMap & http_header_columns,
+        const FormatSettings & format_settings)
+        : ISimpleTransform(input_header, output_header, false)
     {
-        /// Precompute column indices and pre-parse values for the injected columns.
-        for (size_t i = 0; i < header_.columns(); ++i)
+        col_sources.reserve(output_header.columns());
+        for (size_t i = 0; i < output_header.columns(); ++i)
         {
-            auto it = http_header_columns_.find(header_.getByPosition(i).name);
-            if (it != http_header_columns_.end())
+            const auto & col_name = output_header.getByPosition(i).name;
+            if (input_header.has(col_name))
             {
-                const auto & col_type = header_.getByPosition(i).type;
-                /// Parse the string value into the target column type once.
-                auto parsed_col = col_type->createColumn();
-                ReadBufferFromString buf(it->second);
-                FormatSettings format_settings;
-                col_type->getDefaultSerialization()->deserializeWholeText(*parsed_col, buf, format_settings);
-                injected_columns.push_back({i, std::move(parsed_col), col_type});
+                /// Body column: pass through from input at the corresponding position.
+                col_sources.push_back({false, input_header.getPositionByName(col_name), nullptr, nullptr});
+            }
+            else
+            {
+                /// Injected column: parse the header value once.
+                auto it = http_header_columns.find(col_name);
+                const String & str_value = (it != http_header_columns.end()) ? it->second : "";
+                const auto & col_type = output_header.getByPosition(i).type;
+                auto parsed = col_type->createColumn();
+                ReadBufferFromString buf(str_value);
+                col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
+                col_sources.push_back({true, 0, std::move(parsed), col_type});
             }
         }
     }
@@ -42,32 +60,38 @@ public:
 protected:
     void transform(Chunk & chunk) override
     {
-        if (injected_columns.empty())
-            return;
-
         size_t num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
+        auto input_columns = chunk.detachColumns();
 
-        for (const auto & inj : injected_columns)
+        Columns output_columns;
+        output_columns.reserve(col_sources.size());
+        for (const auto & src : col_sources)
         {
-            auto new_col = inj.type->createColumn();
-            new_col->reserve(num_rows);
-            for (size_t row = 0; row < num_rows; ++row)
-                new_col->insertFrom(*inj.parsed_value, 0);
-            columns[inj.index] = std::move(new_col);
+            if (!src.is_injected)
+            {
+                output_columns.push_back(std::move(input_columns[src.input_idx]));
+            }
+            else
+            {
+                auto new_col = src.type->createColumn();
+                new_col->reserve(num_rows);
+                for (size_t row = 0; row < num_rows; ++row)
+                    new_col->insertFrom(*src.parsed_value, 0);
+                output_columns.push_back(std::move(new_col));
+            }
         }
-
-        chunk.setColumns(std::move(columns), num_rows);
+        chunk.setColumns(std::move(output_columns), num_rows);
     }
 
 private:
-    struct InjectedColumn
+    struct ColSource
     {
-        size_t index;
-        ColumnPtr parsed_value;  /// Single pre-parsed value to replicate into each chunk.
-        DataTypePtr type;
+        bool is_injected;
+        size_t input_idx;      /// Position in the input (body) block; valid when !is_injected.
+        ColumnPtr parsed_value; /// Pre-parsed single-row column; valid when is_injected.
+        DataTypePtr type;       /// Column type; valid when is_injected.
     };
-    std::vector<InjectedColumn> injected_columns;
+    std::vector<ColSource> col_sources;
 };
 
 }

@@ -1361,14 +1361,48 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+    /// Build a body-only header: the full pipeline header minus http_column_* columns.
+    /// The format only reads columns from the body; positional formats (TSV, CSV, etc.)
+    /// must not see the injected columns or they expect them in the body.
+    /// The injected columns are appended after the executor loop.
+    struct InjectedColumnInfo
+    {
+        size_t header_col_idx;   /// Position in the full pipeline header.
+        size_t entry_parsed_idx; /// Position in entry->parsed_http_header_columns.
+        DataTypePtr type;
+    };
+    std::vector<InjectedColumnInfo> injected_column_infos;
+    Block format_header;  /// Body-only block passed to the format and AddingDefaultsTransform.
+    if (!data->entries.empty() && !data->entries.front()->parsed_http_header_columns.empty())
+    {
+        const auto & first_parsed = data->entries.front()->parsed_http_header_columns;
+
+        /// Collect injected column names for fast lookup.
+        std::unordered_map<String, size_t> injected_name_to_parsed_idx;
+        for (size_t i = 0; i < first_parsed.size(); ++i)
+            injected_name_to_parsed_idx.emplace(first_parsed[i].first, i);
+
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            const auto & col_name = header.getByPosition(i).name;
+            auto it = injected_name_to_parsed_idx.find(col_name);
+            if (it != injected_name_to_parsed_idx.end())
+                injected_column_infos.push_back({i, it->second, header.getByPosition(i).type});
+            else
+                format_header.insert(header.getByPosition(i));
+        }
+    }
+    if (format_header.columns() == 0 && injected_column_infos.empty())
+        format_header = header;  /// No injection: use the full header as-is.
+
+    auto format = getInputFormatFromASTInsertQuery(key.query, false, format_header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(format_header), columns, *format, insert_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1385,7 +1419,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     };
 
     StreamingFormatExecutor executor(
-        header,
+        format_header,
         format,
         std::move(on_error),
         data->size_in_bytes,
@@ -1393,31 +1427,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         std::move(adding_defaults_transform));
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
-
-    /// Build a lookup: header column name → position in entry's parsed_http_header_columns
-    /// and column index in the pipeline header. Built once before the entry loop.
-    struct InjectedColumnInfo
-    {
-        size_t header_col_idx;   /// Position in the pipeline header / result_columns.
-        size_t entry_parsed_idx; /// Position in entry->parsed_http_header_columns.
-        DataTypePtr type;
-    };
-    std::vector<InjectedColumnInfo> injected_column_infos;
-    if (!data->entries.empty() && !data->entries.front()->parsed_http_header_columns.empty())
-    {
-        /// Map column names from the first entry's parsed columns to header positions.
-        /// All entries share the same column name set (enforced by the batching key).
-        const auto & first_parsed = data->entries.front()->parsed_http_header_columns;
-        for (size_t parsed_idx = 0; parsed_idx < first_parsed.size(); ++parsed_idx)
-        {
-            const auto & col_name = first_parsed[parsed_idx].first;
-            if (header.has(col_name))
-            {
-                size_t header_idx = header.getPositionByName(col_name);
-                injected_column_infos.push_back({header_idx, parsed_idx, header.getByPosition(header_idx).type});
-            }
-        }
-    }
 
     /// Track per-entry row counts for column replication after the loop.
     std::vector<size_t> entry_num_rows;
@@ -1450,25 +1459,42 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries", total_rows, data->entries.size());
 
-    auto result_columns = executor.getResultColumns();
+    auto body_columns = executor.getResultColumns();  /// Matches format_header.
 
-    /// Overwrite columns that were mapped from HTTP headers (http_column_* URL params).
-    /// Values were pre-parsed at push time, so just replicate per-entry.
-    if (!injected_column_infos.empty())
+    /// Build the full result matching the pipeline header by interleaving body columns
+    /// (from the executor) and injected columns (pre-parsed per-entry at push time).
+    MutableColumns result_columns;
+    if (injected_column_infos.empty())
     {
-        for (const auto & info : injected_column_infos)
+        result_columns = std::move(body_columns);
+    }
+    else
+    {
+        result_columns.reserve(header.columns());
+        size_t body_idx = 0;
+        size_t inj_idx = 0;
+        for (size_t col_idx = 0; col_idx < header.columns(); ++col_idx)
         {
-            auto new_col = info.type->createColumn();
-            new_col->reserve(total_rows);
-            size_t entry_idx = 0;
-            for (const auto & entry : data->entries)
+            if (inj_idx < injected_column_infos.size() && injected_column_infos[inj_idx].header_col_idx == col_idx)
             {
-                const auto & parsed_col = entry->parsed_http_header_columns[info.entry_parsed_idx].second;
-                size_t num_rows = entry_num_rows[entry_idx++];
-                for (size_t row = 0; row < num_rows; ++row)
-                    new_col->insertFrom(*parsed_col, 0);
+                /// Injected column: replicate per-entry pre-parsed value.
+                const auto & info = injected_column_infos[inj_idx++];
+                auto new_col = info.type->createColumn();
+                new_col->reserve(total_rows);
+                size_t ei = 0;
+                for (const auto & entry : data->entries)
+                {
+                    const auto & parsed_col = entry->parsed_http_header_columns[info.entry_parsed_idx].second;
+                    for (size_t row = 0; row < entry_num_rows[ei++]; ++row)
+                        new_col->insertFrom(*parsed_col, 0);
+                }
+                result_columns.push_back(std::move(new_col));
             }
-            result_columns[info.header_col_idx] = std::move(new_col);
+            else
+            {
+                /// Body column: take directly from the executor result.
+                result_columns.push_back(std::move(body_columns[body_idx++]));
+            }
         }
     }
 

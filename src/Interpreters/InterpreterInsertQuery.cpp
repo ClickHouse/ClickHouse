@@ -11,6 +11,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -835,14 +836,26 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 chain.getInputSharedHeader()));
     }
 
-    /// For http_column_* mappings: inject a transform that replaces the mapped columns
-    /// with the HTTP header values from the originating request. For the sync path all
-    /// rows share the same header values, so one constant-fill transform suffices.
+    /// For http_column_* mappings: inject an expanding transform that adds the http_column
+    /// columns to the block before addMissingDefaults sees it. addMissingDefaults then
+    /// treats these columns as client-provided and skips evaluating their DEFAULT expressions.
+    /// The transform uses a body-only input header so positional formats (TSV, CSV, Values)
+    /// only see the columns present in the body, not the injected ones.
     const auto & http_header_columns = context->getHTTPHeaderColumns();
     if (!http_header_columns.empty())
     {
+        /// full_header: what the chain expects (body cols + http_column cols).
+        /// format_header: body-only block that the format source will produce.
+        const Block & full_header = *chain.getInputSharedHeader();
+        Block format_header;
+        for (size_t i = 0; i < full_header.columns(); ++i)
+        {
+            const auto & col = full_header.getByPosition(i);
+            if (!http_header_columns.contains(col.name))
+                format_header.insert(col);
+        }
         chain.addSource(std::make_shared<HTTPHeaderColumnsTransform>(
-            *chain.getInputSharedHeader(), http_header_columns));
+            format_header, full_header, http_header_columns, getFormatSettings(context)));
     }
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota(), context->getNormalizedQueryHash());
@@ -862,7 +875,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
+        /// Use the pipeline's current input header (body-only after HTTPHeaderColumnsTransform
+        /// was added above) so that the format source produces only body columns.
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *pipeline.getSharedHeader(), context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
