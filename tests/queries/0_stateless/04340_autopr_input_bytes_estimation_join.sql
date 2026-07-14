@@ -31,7 +31,13 @@ DROP TABLE IF EXISTS ij_big;
 DROP TABLE IF EXISTS ij_small;
 
 -- Big (parallelized) side: 1M rows with a varied, poorly-compressible payload, read in full.
+-- Force wide parts so the input-byte estimate uses the part's ACTUAL per-column compression ratio
+-- (`recordInputColumns` reads it from `getColumnSizes()`). For a compact part those per-column sizes
+-- are unavailable, so the estimate falls back to re-compressing a sample with a fixed codec, which can
+-- diverge from the part's on-disk compression by more than the tolerance below once the settings
+-- randomizer perturbs the compress-block sizes -- pure test flakiness, not an estimation bug.
 CREATE TABLE ij_big (key UInt64, payload String) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
 AS SELECT number, toString(cityHash64(number)) FROM numbers(1000000);
 
 -- Tiny broadcast side, so `ReadCompressedBytes` ~ the bytes read from `ij_big`.
@@ -56,7 +62,11 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Fail if the input-byte estimate is missing (0, i.e. no/wrong reading step instrumented) or deviates
--- from the actual `ReadCompressedBytes` (dominated by the big parallelized table) by more than 2x.
+-- from the actual `ReadCompressedBytes` (dominated by the big parallelized table) by more than 3x. The
+-- estimate is a heuristic (in-memory `byteSize` scaled by the part's compression ratio) and its exact
+-- value shifts with the randomized string serialization, so the tolerance leaves headroom above that
+-- residual noise while staying far below the ~10x gap that instrumenting the tiny broadcast side would
+-- produce -- the actual failure mode this test guards against.
 SELECT format('{} {} {}', log_comment, input_bytes, compressed_bytes)
 FROM (
     SELECT
@@ -69,4 +79,4 @@ FROM (
     ORDER BY event_time_microseconds
 )
 WHERE input_bytes = 0
-   OR greatest(input_bytes, compressed_bytes) / nullIf(least(input_bytes, compressed_bytes), 0) > 2;
+   OR greatest(input_bytes, compressed_bytes) / nullIf(least(input_bytes, compressed_bytes), 0) > 3;
