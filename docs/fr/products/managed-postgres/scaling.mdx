@@ -1,0 +1,170 @@
+---
+slug: /cloud/managed-postgres/scaling
+sidebarTitle: 'Mise à l’échelle'
+title: 'Mise à l’échelle'
+description: 'Redimensionnez verticalement votre instance Postgres managed by ClickHouse grâce à des types de VM flexibles et à une mise à l’échelle indépendante des ressources'
+keywords: ['mise à l’échelle Postgres', 'mise à l’échelle verticale', 'types de VM', 'mise à l’échelle NVMe', 'types d’instance', 'mise à l’échelle des performances']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
+
+Managed Postgres offre des options de mise à l’échelle flexibles pour s’adapter aux exigences de votre charge de travail. Avec plus de 50 types d’instance basés sur NVMe au choix, vous pouvez faire évoluer indépendamment le CPU, la mémoire et le stockage afin d’optimiser les performances et les coûts pour votre use case spécifique.
+
+<div id="instance-types">
+  ## Types d’instance et flexibilité
+</div>
+
+Managed Postgres offre un large éventail de types d’instance, chacun optimisé pour différents profils de charge de travail :
+
+* **Plus de 50 types d’instance** disponibles, avec des configurations optimisées pour la puissance de calcul, la mémoire et le stockage
+* **Stockage basé sur NVMe** sur tous les types d’instance pour des E/S disque stables et hautes performances
+* **Mise à l’échelle indépendante des ressources** : choisissez le bon équilibre entre CPU, mémoire et stockage en fonction de votre charge de travail
+
+<Image img="/images/managed-postgres/instance-types.webp" alt="Types d’instance" size="md" border />
+
+<div id="choosing-instance">
+  ### Choisir le bon type d’instance
+</div>
+
+Différents types de charges de travail tirent parti de configurations de ressources différentes :
+
+| Type de charge de travail                                               | CPU   | Mémoire | Stockage | Instance recommandée                                |
+| ----------------------------------------------------------------------- | ----- | ------- | -------- | --------------------------------------------------- |
+| **Optimisée pour le calcul**                                            | Élevé | Moyen   | Moyen    | Optimisée pour le calcul (nombre élevé de vCPU)     |
+| **Optimisée pour la mémoire** (ensemble de travail important)           | Moyen | Élevé   | Moyen    | Optimisée pour la mémoire (ratio mémoire/CPU élevé) |
+| **Optimisée pour le stockage** (grands jeux de données, E/S intensives) | Moyen | Moyen   | Élevé    | Optimisée pour le stockage (capacité NVMe élevée)   |
+
+<Tip>
+  Pour des raisons de sécurité, il se peut que vous ne puissiez pas basculer vers des types d’instance dont le stockage est proche de votre capacité de stockage actuellement utilisée. Choisissez toujours des types d’instance offrant une marge de capacité par rapport à votre utilisation actuelle afin d’éviter tout problème.
+</Tip>
+
+<div id="how-scaling-works">
+  ## Fonctionnement de la mise à l’échelle
+</div>
+
+Lorsque vous changez de type d’instance, Managed Postgres effectue une mise à l’échelle verticale qui alloue une nouvelle infrastructure et migre votre base de données avec un minimum d’indisponibilité.
+
+<Image img="/images/managed-postgres/scaling-settings.webp" alt="Paramètres de mise à l’échelle" size="md" border />
+
+<div id="scaling-process">
+  ### Processus de mise à l’échelle
+</div>
+
+Le workflow de mise à l’échelle met en service une nouvelle instance de secours à partir de sauvegardes et effectue un basculement contrôlé :
+
+1. **Provisionnement de l’instance de secours** : une nouvelle instance de secours est créée avec le type d’instance cible (CPU, mémoire et configuration du stockage)
+
+2. **Restauration à partir des sauvegardes S3** : l’instance de secours est initialisée en restaurant la sauvegarde la plus récente stockée dans S3
+
+3. **WAL replay en parallèle** : l’instance de secours applique toutes les modifications du Write-Ahead Log (WAL) depuis la sauvegarde à l’aide de mécanismes de restauration parallèles fournis par [WAL-G](https://github.com/wal-g/wal-g)
+   * WAL-G permet des restore operations rapides et parallélisées
+   * Le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, ce qui garantit une expertise approfondie et une optimisation poussée
+
+4. **Rattrapage de la réplication** : l’instance de secours rattrape l’instance primaire en transmettant en continu et en appliquant les modifications WAL en cours
+
+5. **Basculement** : une fois l’instance de secours entièrement synchronisée, un basculement contrôlé la promeut au rang de nouvelle instance primaire
+   * **C’est la seule étape qui entraîne une indisponibilité** (~30 secondes)
+   * Toutes les connexions actives sont interrompues pendant le basculement
+   * Les clients doivent se reconnecter une fois le basculement terminé
+
+6. **Mise hors service de l’ancienne instance** : l’instance d’origine est mise hors service une fois le basculement terminé
+
+<div id="scaling-duration">
+  ### Durée de la mise à l’échelle
+</div>
+
+Le temps total requis pour la mise à l’échelle dépend principalement de la taille de votre base de données et du volume de données WAL à rejouer à partir des sauvegardes :
+
+* **Restauration de la sauvegarde** : temps nécessaire pour restaurer la sauvegarde complète la plus récente depuis S3 vers la nouvelle instance
+* **WAL replay** : temps nécessaire pour rejouer les modifications WAL incrémentielles depuis la dernière sauvegarde complète
+* **Restauration parallèle** : les mécanismes de restauration parallèle de WAL-G accélèrent considérablement le processus
+
+Le temps de restauration peut varier de quelques minutes à quelques heures, mais la durée de maintenance ou d’indisponibilité reste très faible (environ 30 secondes seulement).
+
+<Warning>
+  **Indisponibilité minimale**
+
+  Votre application subira environ 30 secondes d’indisponibilité pendant le basculement, quelle que soit la durée totale du processus de mise à l’échelle. Toutes les opérations de restauration et de rattrapage s’effectuent en arrière-plan sur l’instance de secours.
+</Warning>
+
+<div id="parallel-restore">
+  ### Restauration parallèle avec WAL-G
+</div>
+
+Managed Postgres utilise [WAL-G](https://github.com/wal-g/wal-g) pour accélérer la restauration des sauvegardes lors des opérations de mise à l’échelle. À noter que le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, apportant une solide expertise au processus de restauration.
+
+WAL-G offre :
+
+* **Téléchargement et décompression en parallèle** : plusieurs segments de sauvegarde sont récupérés depuis S3 et décompressés simultanément
+* **WAL replay efficace** : les changements incrémentaux du WAL sont appliqués en parallèle lorsque c’est possible
+* **Streaming optimisé** : streaming direct depuis le stockage S3, sans copies intermédiaires
+* **Restauration rapide** : bien que la durée totale dépende du volume de données, l’approche parallélisée rend le processus particulièrement rapide
+
+Ces optimisations réduisent considérablement le temps nécessaire pour mettre en service la nouvelle instance de secours. Plus important encore, la restauration s’effectue entièrement en arrière-plan — votre application ne subit une indisponibilité que pendant la brève fenêtre de basculement d’environ 30 secondes.
+
+<div id="initiating-scaling">
+  ### Démarrer une opération de mise à l&#39;échelle
+</div>
+
+Pour mettre à l&#39;échelle votre instance Managed Postgres :
+
+1. Accédez à l&#39;onglet **Paramètres** de votre instance
+2. Dans la section **Mise à l&#39;échelle**, faites défiler jusqu&#39;à **Taille du service**
+3. Sélectionnez le type d&#39;instance cible
+4. Vérifiez les modifications, puis cliquez sur &quot;Appliquer les modifications&quot;
+
+<div id="scaling-strategies">
+  ## Stratégies de mise à l’échelle
+</div>
+
+<div id="vertical-scaling">
+  ### Mise à l’échelle verticale
+</div>
+
+La mise à l’échelle verticale (changement de type d’instance) est la principale méthode pour ajuster les ressources de Managed Postgres. Cette approche offre :
+
+* **Contrôle précis** : choisissez parmi plus de 50 types d’instance pour ajuster finement le CPU, la mémoire et le stockage
+* **Optimisation de la charge de travail** : sélectionnez des configurations optimisées pour votre charge de travail spécifique (à forte intensité de calcul, de mémoire ou de stockage)
+* **Maîtrise des coûts** : payez uniquement pour les ressources dont vous avez besoin, sans surprovisionnement
+
+<div id="read-replicas">
+  ### Répliques de lecture pour la mise à l’échelle horizontale
+</div>
+
+Pour les charges de travail à forte dominante de lecture, envisagez d’utiliser des [répliques de lecture](/fr/products/managed-postgres/read-replicas) afin d’augmenter horizontalement la capacité de lecture :
+
+* Déchargez les requêtes de lecture sur des instances de réplique de lecture dédiées
+* Chaque réplique de lecture est une instance Postgres entièrement indépendante, avec ses propres ressources de calcul et sa propre mémoire
+* Les répliques de lecture transmettent les modifications du WAL depuis le stockage objet pour assurer une réplication efficace
+
+Cette approche est idéale pour les applications présentant un ratio lecture/écriture élevé, comme les tableaux de bord de reporting, les requêtes analytiques ou les points de terminaison de l’API à forte intensité de lecture.
+
+<div id="cdc-scaling">
+  ### Mise à l’échelle du CDC pour l’intégration ClickHouse
+</div>
+
+Si vous répliquez des données vers ClickHouse à l’aide de [ClickPipes](/fr/products/managed-postgres/clickhouse-integration), vous pouvez mettre à l’échelle le pipeline CDC (capture des changements de données) indépendamment :
+
+* Mise à l’échelle des workers CDC de 1 à 24 cœurs CPU
+* La mémoire est automatiquement dimensionnée à 4x le nombre de cœurs CPU
+* Réglez la mise à l’échelle via l’[API OpenAPI de ClickPipes](/fr/integrations/clickpipes/postgres/scaling)
+
+Cela vous permet d’optimiser le débit de réplication indépendamment des ressources de votre instance Postgres.
+
+<div id="autoscaling">
+  ## Mise à l’échelle automatique
+</div>
+
+Lorsque l’utilisation du disque atteint 90 %, votre type d’instance est remplacé par un type d’instance supérieur.
+
+<div id="resources">
+  ## Ressources complémentaires
+</div>
+
+* [Paramètres et configuration](/fr/products/managed-postgres/settings)
+* [Réplicas de lecture](/fr/products/managed-postgres/read-replicas)
+* [Haute disponibilité](/fr/products/managed-postgres/high-availability)

@@ -1,0 +1,59 @@
+---
+alias: []
+description: 'توثيق تنسيق ProtobufList'
+input_format: true
+keywords: ['ProtobufList']
+output_format: true
+slug: /interfaces/formats/ProtobufList
+title: 'ProtobufList'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+| المدخل | المخرج | الاسم المستعار |
+| ------ | ------ | -------------- |
+| ✔      | ✔      |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+تنسيق `ProtobufList` مشابه لتنسيق [`Protobuf`](/ar/reference/formats/Protobuf/Protobuf)، لكن تُمثَّل الصفوف كتسلسل من الرسائل الفرعية المضمَّنة داخل رسالة ذات اسم ثابت هو &quot;Envelope&quot;.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+على سبيل المثال:
+
+```sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+حيث يكون الملف `schemafile.proto` كما يلي:
+
+```capnp title="schemafile.proto"
+syntax = "proto3";
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
+
+يُحَلّ نوع الرسالة المحدَّد في `format_schema` بالبحث عنه أولًا باعتباره نوعًا متداخلًا داخل رسالة `Envelope` من المستوى الأعلى. وإذا لم يُعثَر هناك على تطابق — سواء لأن المخطط لا يحتوي على رسالة `Envelope`، أو لأن `Envelope` لا تتضمن رسالة بالاسم المطلوب — فتُستخدم مباشرةً الرسالة من المستوى الأعلى التي تحمل ذلك الاسم.
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

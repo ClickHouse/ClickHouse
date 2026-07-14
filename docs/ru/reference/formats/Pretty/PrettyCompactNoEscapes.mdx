@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Документация по формату PrettyCompactNoEscapes'
+input_format: false
+keywords: ['PrettyCompactNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyCompactNoEscapes
+title: 'PrettyCompactNoEscapes'
+doc_type: 'справочник'
+---
+
+import PrettyFormatSettings from '/snippets/ru/common-pretty-format-settings.mdx';
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✗    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Отличается от формата [`PrettyCompact`](/ru/reference/formats/Pretty/PrettyCompact) тем, что не использует [ANSI-последовательности экранирования](http://en.wikipedia.org/wiki/ANSI_escape_code).
+Это необходимо для отображения этого формата в браузере, а также для использования утилиты командной строки `watch`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<PrettyFormatSettings />

@@ -1,0 +1,25 @@
+---
+description: 'ALTER MASKING POLICY に関するドキュメント'
+sidebarTitle: 'MASKING POLICY'
+slug: /sql-reference/statements/alter/masking-policy
+title: 'ALTER MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+既存のマスキングポリシーを変更します。
+
+構文:
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+```
+
+すべての句は省略可能です。指定された句のみが更新されます。

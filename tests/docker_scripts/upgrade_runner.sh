@@ -337,6 +337,21 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       - 01155_old_mutation_parts_to_do: `UPDATE m = m*toInt8(s) WHERE n=3` on String data ('fail')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
+# `Value passed to 'throwIf' function is non-zero` (`FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, Code: 395) is the same
+#       class of expected test-induced mutation error. It comes from tests that run an intentionally-failing
+#       `ALTER TABLE ... UPDATE <col> = <col> <op> throwIf(1)` async mutation:
+#       - 04341_broken_mutation_part_log_flush: plain `MergeTree`, so the error is emitted by
+#         `MutatePlainMergeTreeTask`, which is NOT covered by the `MutateFromLogEntryTask` exclusion above.
+#       - 02597_column_{update,delete,update_tricky_expression}_and_replication: `ReplicatedMergeTree`, where
+#         `MutateFromLogEntryTask` catches only the first line and the wrapping `MergeTreeBackgroundExecutor`
+#         line leaks.
+#       After the upgrade restart the broken mutation is retried in the background and logged to
+#       `clickhouse-server.upgrade.log`. `throwIf` is a user-level function that only ever raises when a query
+#       explicitly calls it with a truthy argument, so this default message can only ever originate from such a
+#       test query, never from a background or internal assertion - matching it is therefore safe to suppress
+#       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
+#       mutations emit above. Matching the message rather than the task type also covers the wrapping
+#       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -414,6 +429,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
 #       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
 #       query errors) are not masked.
+# The MySQL matchers below filter the same class of benign connection failure from a `DatabaseMySQL` engine
+#       that `04210_show_remote_databases_in_system_tables` also creates
+#       (`ENGINE = MySQL('192.0.2.1:3306', ...)`, the same unreachable RFC 5737 host). On the post-upgrade
+#       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
+#       expected connection failure. Filtered to require the MySQL component AND the connection-failure
+#       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -499,8 +520,12 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "Value passed to 'throwIf' function is non-zero" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error" \
     | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
+    | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
+    | grep -av -e "Application: Connection to mysql failed" \
+    | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

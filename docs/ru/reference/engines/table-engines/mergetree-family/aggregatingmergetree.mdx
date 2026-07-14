@@ -1,0 +1,239 @@
+---
+description: 'Заменяет все строки с одинаковым первичным ключом (или, точнее, с
+  одинаковым [ключом сортировки](/reference/engines/table-engines/mergetree-family/mergetree))
+  одной строкой (в пределах одной части данных), которая хранит комбинацию состояний
+  агрегатных функций.'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'Движок таблицы AggregatingMergeTree'
+doc_type: 'reference'
+---
+
+Этот движок наследуется от [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree), изменяя логику слияния частей данных. ClickHouse заменяет все строки с одинаковым первичным ключом (или, точнее, с одинаковым [ключом сортировки](/ru/reference/engines/table-engines/mergetree-family/mergetree)) одной строкой (в пределах одной части данных), которая хранит комбинацию состояний агрегатных функций.
+
+Таблицы `AggregatingMergeTree` можно использовать для инкрементальной агрегации данных, в том числе для агрегированных materialized view.
+
+Ниже в видео показан пример использования AggregatingMergeTree и агрегатных функций:
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Состояния агрегации в ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+Движок обрабатывает все столбцы следующих типов:
+
+* [`AggregateFunction`](/ru/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/ru/reference/data-types/simpleaggregatefunction)
+
+`AggregatingMergeTree` целесообразно использовать, если это позволяет уменьшить количество строк на порядки.
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+Описание параметров запроса см. в разделе [описание запроса](/ru/reference/statements/create/table).
+
+**Секции запроса**
+
+При создании таблицы `AggregatingMergeTree` требуются те же [секции](/ru/reference/engines/table-engines/mergetree-family/mergetree), что и при создании таблицы `MergeTree`.
+
+<details markdown="1">
+  <summary>Устаревший метод создания таблицы</summary>
+
+  <Note>
+    Не используйте этот метод в новых проектах и, если возможно, переведите старые проекты на метод, описанный выше.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  Все параметры имеют тот же смысл, что и в `MergeTree`.
+</details>
+
+<div id="select-and-insert">
+  ## SELECT и INSERT
+</div>
+
+Чтобы вставить данные, используйте запрос [INSERT SELECT](/ru/reference/statements/insert-into) с агрегатными функциями со суффиксом `-State`.
+При выборке данных из таблицы `AggregatingMergeTree` используйте оператор `GROUP BY` и те же агрегатные функции, что и при вставке данных, но с суффиксом `-Merge`.
+
+В результатах запроса `SELECT` значения типа `AggregateFunction` имеют зависящее от реализации двоичное представление во всех форматах вывода ClickHouse. Например, если вы выгрузите данные в формат `TabSeparated` с помощью запроса `SELECT`, этот дамп можно затем загрузить обратно с помощью запроса `INSERT`.
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## Пример агрегированного materialized view
+</div>
+
+В следующем примере предполагается, что у вас есть база данных с именем `test`. Если она ещё не создана, выполните команду ниже:
+
+```sql
+CREATE DATABASE test;
+```
+
+Теперь создайте таблицу `test.visits`, содержащую исходные данные:
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+Далее необходимо создать таблицу `AggregatingMergeTree`, которая будет хранить `AggregationFunction`s для отслеживания общего числа посещений и количества уникальных пользователей.
+
+Создайте materialized view `AggregatingMergeTree`, который отслеживает таблицу `test.visits` и использует тип [`AggregateFunction`](/ru/reference/data-types/aggregatefunction):
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+Создайте materialized view, который заполняет `test.agg_visits` данными из `test.visits`:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+Вставьте данные в таблицу `test.visits`:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+Данные вставляются в обе таблицы: `test.visits` и `test.agg_visits`.
+
+Чтобы получить агрегированные данные, выполните запрос вида `SELECT ... GROUP BY ...` из materialized view `test.visits_mv`:
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+Добавьте ещё несколько записей в `test.visits`, но на этот раз укажите другую временную метку для одной из записей:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+Выполните запрос `SELECT` ещё раз — он вернёт следующий результат:
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+В некоторых случаях может потребоваться избежать предварительной агрегации строк при вставке, чтобы перенести затраты на агрегацию с момента вставки на момент слияния. Как правило, чтобы избежать ошибки, необходимо включать в конструкцию `GROUP BY` определения materialized view те столбцы, которые не участвуют в агрегации. Однако этого можно добиться с помощью функции [`initializeAggregation`](/ru/reference/functions/regular-functions/other-functions#initializeAggregation) и параметра `optimize_on_insert = 0` (по умолчанию он включён). В таком случае использование `GROUP BY` больше не требуется:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  При использовании `initializeAggregation` для каждой отдельной строки создаётся aggregate state без группировки.
+  Каждая исходная строка создаёт одну строку в materialized view, а фактическая агрегация происходит позже — при
+  слиянии частей в `AggregatingMergeTree`. Это верно только при `optimize_on_insert = 0`.
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Агрегация элементов Tuple
+</div>
+
+Когда включена настройка `allow_tuple_element_aggregation`, столбцы `Tuple` рекурсивно разворачиваются в плоскую структуру, так что каждый конечный элемент независимо участвует в агрегации. Это означает, что подстолбцы `AggregateFunction` или `SimpleAggregateFunction` внутри `Tuple` агрегируются в соответствии со своими функциями, как если бы они были столбцами верхнего уровня.
+
+Подстолбцы, входящие в `Tuple` в ключе сортировки, исключаются из агрегации. Неагрегатные подстолбцы обрабатываются как обычные столбцы (сохраняется их первое значение).
+
+<Note>
+  Эта настройка неизменяема и должна быть указана при создании таблицы.
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits` агрегируется функцией `sum` (100 + 200 = 300), а `unique_users` — функцией `max` (max(5, 8) = 8).
+
+<div id="related-content">
+  ## Материалы по теме
+</div>
+
+* Блог: [Использование комбинаторов агрегатных функций в ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

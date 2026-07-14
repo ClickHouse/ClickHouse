@@ -1,0 +1,135 @@
+---
+slug: /guides/sre/configuring-tls-acme-client
+sidebarTitle: 'تهيئة التزويد التلقائي لـ TLS عبر ACME'
+title: 'تهيئة التزويد التلقائي لـ TLS عبر ACME'
+description: 'يوفّر هذا الدليل إعدادات بسيطة ومحدودة لتهيئة ClickHouse لاستخدام شهادات OpenSSL للتحقق من صحة الاتصالات.'
+keywords: ['تهيئة ACME', 'إعداد TLS', 'شهادات OpenSSL', 'الاتصالات الآمنة', 'دليل SRE', 'Let`s Encrypt']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<SelfManaged />
+
+يوضح هذا الدليل كيفية إعداد ClickHouse لاستخدام بروتوكول [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) (الموصوف في [RFC8555](https://www.rfc-editor.org/rfc/rfc8555)).
+ومع دعم ACME، يمكن لـ ClickHouse الحصول على الشهادات وتجديدها تلقائيًا من موفّرين مثل [Let&#39;s Encrypt](https://letsencrypt.org/) أو [ZeroSSL](https://zerossl.com/).
+يحمي تشفير TLS البيانات أثناء انتقالها بين العملاء وخوادم ClickHouse، مما يمنع التنصت على الاستعلامات الحساسة ونتائجها.
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يحدّد بروتوكول ACME آلية التحديث التلقائي للشهادات بالاستعانة بخدمات مثل [Let&#39;s Encrypt](https://letsencrypt.org/) أو [ZeroSSL](https://zerossl.com/). باختصار، يحتاج ClickHouse، بصفته طالب الشهادة، إلى إثبات ملكية النطاق عبر أنواع التحديات المحددة مسبقًا للحصول على شهادة.
+
+لتمكين ACME، اضبط منفذي HTTP وHTTPS إلى جانب كتلة `acme`:
+
+```xml
+<http_port>80</http_port>
+<https_port>443</https_port>
+
+<acme>
+    <email>valid_email@example.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>example.com</domain>
+    </domains>
+</acme>
+```
+
+يتولى منفذ HTTP خدمة طلبات تحدّي ACME من نوع `HTTP-01` أثناء التحقّق من النطاق (للمزيد عن أنواع التحديات، راجع [هنا](https://letsencrypt.org/docs/challenge-types/)). وبمجرد اكتمال التحقّق وإصدار الشهادة، يتولى منفذ HTTPS خدمة حركة المرور المشفّرة باستخدام الشهادة التي تم الحصول عليها.
+
+لا يلزم أن يكون منفذ HTTP هو 80 على الخادم نفسه؛ إذ يمكن إعادة تعيينه باستخدام `nftables` أو أدوات مشابهة. راجع وثائق موفّر ACME لمعرفة المنافذ المقبولة لتحديات `HTTP-01`.
+
+في كتلة `acme`، نحدّد `email` لإنشاء الحساب، ونوافق على شروط خدمة ACME.
+بعد ذلك، كل ما نحتاجه هو قائمة بالنطاقات.
+
+<div id="current-limitations">
+  ### القيود الحالية
+</div>
+
+* لا يُدعَم إلا نوع التحدي `HTTP-01`.
+* لا تُدعَم إلا مفاتيح `RSA 2048`.
+* لا تتم معالجة تحديد المعدّل.
+
+<div id="configuration-parameters">
+  ## معلمات التكوين
+</div>
+
+خيارات التكوين المتاحة في قسم `acme`:
+
+| المعلمة                              | القيمة الافتراضية                                | الوصف                                                                                                                                |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `zookeeper_path`                     | `/clickhouse/acme`                               | مسار ZooKeeper المستخدم لتخزين بيانات حساب ACME والشهادات وحالة التنسيق بين عُقد ClickHouse.                                         |
+| `directory_url`                      | `https://acme-v02.api.letsencrypt.org/directory` | نقطة نهاية الدليل الخاصة بـ ACME والمستخدمة لإصدار الشهادات. وتكون افتراضيًا دليل الإنتاج الخاص بـ Let’s Encrypt.                    |
+| `email`                              |                                                  | عنوان البريد الإلكتروني المستخدم لإنشاء حساب ACME وإدارته. وقد يستخدمه موفّرو ACME لإرسال إشعارات انتهاء الصلاحية والتحديثات المهمة. |
+| `terms_of_service_agreed`            | `false`                                          | يحدد ما إذا كانت شروط الخدمة الخاصة بموفّر ACME قد تم قبولها. يجب ضبطه على `true` لتمكين ACME.                                       |
+| `domains`                            |                                                  | قائمة بأسماء النطاقات التي ينبغي إصدار شهادات TLS لها. يُحدَّد كل نطاق كإدخال `<domain>`.                                            |
+| `refresh_certificates_before`        | `2592000` (شهر واحد، بالثواني)                   | الفترة الزمنية السابقة لانتهاء صلاحية الشهادة التي سيحاول خلالها ClickHouse تجديد الشهادة.                                           |
+| `refresh_certificates_task_interval` | `3600` (ساعة واحدة، بالثواني)                    | الفاصل الزمني الذي يتحقق عنده ClickHouse مما إذا كانت الشهادات بحاجة إلى التجديد.                                                    |
+
+لاحظ أن التكوين يستخدم دليل الإنتاج الخاص بـ Let&#39;s Encrypt افتراضيًا. ولتجنب استهلاك حصة الطلبات بسبب خطأ محتمل في التكوين، يُنصح أولًا باختبار عملية إصدار الشهادات باستخدام [دليل staging](https://letsencrypt.org/docs/staging-environment/).
+
+<div id="administration">
+  # الإدارة
+</div>
+
+<div id="initial-deployment">
+  ## النشر الأولي
+</div>
+
+عند تمكين عميل ACME على عنقود يضم عدة نسخ متماثلة، يلزم توخي عناية إضافية عند إصدار الشهادة لأول مرة.
+
+ستحاول أول نسخة متماثلة تبدأ مع تمكين ACME فورًا إنشاء طلب ACME وإجراء التحقق من تحدي HTTP-01. وإذا كانت مجموعة فرعية فقط من النسخ المتماثلة تستقبل حركة المرور في تلك اللحظة، فمن المرجح أن يفشل التحدي، لأن النسخ المتماثلة الأخرى لن تتمكن من الاستجابة لطلبات التحقق.
+
+إن أمكن، يُوصى بتوجيه حركة المرور مؤقتًا إلى نسخة متماثلة واحدة (على سبيل المثال، عبر تعديل سجلات DNS) وتركها تُكمل إصدار الشهادة الأولي. وبمجرد إصدار الشهادة بنجاح وتخزينها في Keeper، يمكن تمكين ACME على النسخ المتماثلة المتبقية. وستُعيد هذه النسخ تلقائيًا استخدام الشهادة الحالية وتشارك في عمليات التجديد المستقبلية.
+
+إذا لم يكن توجيه حركة المرور إلى نسخة متماثلة واحدة ممكنًا، فهناك نهج بديل يتمثل في رفع الشهادة الحالية والمفتاح الخاص يدويًا إلى Keeper قبل تمكين عميل ACME. وهذا يجنّب خطوة التحقق الأولية ويتيح لجميع النسخ المتماثلة البدء مع وجود شهادة صالحة بالفعل.
+
+بعد إصدار الشهادة الأولية أو استيرادها، لا يتطلب تجديد الشهادة أي معالجة خاصة، لأن جميع النسخ المتماثلة ستكون قد شغّلت بالفعل عميل ACME وتتشارك الحالة عبر Keeper.
+
+<div id="keeper-data-structure">
+  ## هيكل بيانات Keeper
+</div>
+
+```text
+/clickhouse/acme
+└── <acme-directory-host>
+    ├── account_private_key          # ACME account private key (PEM)
+    ├── challenges                   # Active HTTP-01 challenge state
+    └── domains
+        └── <domain-name>
+            ├── certificate          # Issued TLS certificate (PEM)
+            └── private_key          # Domain private key (PEM)
+```
+
+<div id="migrating-from-other-acme-clients">
+  ## الترحيل من عملاء ACME الآخرين
+</div>
+
+يمكن ترحيل شهادة TLS الحالية ومفتاحها إلى Keeper لتبسيط عملية الترحيل.
+في الوقت الحالي، لا يدعم الخادم سوى مفاتيح `RSA 2048`.
+
+بافتراض أننا نُرحّل من `certbot` ونستخدم الدليل `/etc/letsencrypt/live`، يمكن استخدام مجموعة الأوامر التالية:
+
+```bash
+DOMAIN=example.com
+CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+ZK_BASE=/clickhouse/acme/acme-v02.api.letsencrypt.org/domains/$DOMAIN
+
+clickhouse keeper-client -q "create '/clickhouse' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org/domains' ''"
+clickhouse keeper-client -q "create '$ZK_BASE' ''"
+
+clickhouse keeper-client -q "create '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+
+clickhouse keeper-client -q "create '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+```

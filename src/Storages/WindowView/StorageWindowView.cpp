@@ -1737,6 +1737,26 @@ void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
     }
 }
 
+void StorageWindowView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    if (!has_inner_table)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`: it drops `inner_table_id` and, when
+    /// `has_inner_target_table`, also `target_table_id`. We must size-check both;
+    /// otherwise a `CREATE OR REPLACE` codepath that lands on this storage could
+    /// silently delete an over-limit inner table under a zeroed drop guard.
+    auto check_one = [&](const StorageID & inner_id)
+    {
+        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
+            inner->checkTableSizeBelowDropLimit(query_context);
+    };
+
+    check_one(inner_table_id);
+    if (has_inner_target_table)
+        check_one(target_table_id);
+}
+
 void StorageWindowView::drop()
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,

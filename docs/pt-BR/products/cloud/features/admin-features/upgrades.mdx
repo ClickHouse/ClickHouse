@@ -1,0 +1,139 @@
+---
+sidebarTitle: 'Upgrade'
+slug: /manage/updates
+title: 'Upgrade'
+description: 'Com o ClickHouse Cloud, você nunca precisa se preocupar em aplicar patches e upgrades. Implementamos upgrades periodicamente, incluindo correções, novos recursos e melhorias de desempenho.'
+doc_type: 'guide'
+keywords: ['upgrades', 'gerenciamento de versões', 'recursos da nuvem', 'manutenção', 'upgrades']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Com o ClickHouse Cloud, você nunca precisa se preocupar com patches e upgrades. Lançamos upgrades que incluem correções, novos recursos e melhorias de desempenho periodicamente. Para ver a lista completa de novidades do ClickHouse, consulte nosso [changelog da Cloud](/pt-BR/resources/changelogs/cloud/2026).
+
+<Note>
+  Estamos introduzindo um novo mecanismo de upgrade, um conceito que chamamos de &quot;make before break&quot; (ou MBB). Com essa nova abordagem, adicionamos réplicas atualizadas antes de remover as antigas durante a operação de upgrade. Isso resulta em upgrades mais suaves e menos impactantes para as cargas de trabalho em execução.
+
+  Como parte dessa mudança, os dados históricos das tabelas de sistema serão mantidos por no máximo 30 dias durante eventos de upgrade. Além disso, dados de tabelas de sistema anteriores a 19 de dezembro de 2024, para serviços na AWS ou no GCP, e anteriores a 14 de janeiro de 2025, para serviços no Azure, não serão mantidos como parte da migração para os novos tiers da organização.
+</Note>
+
+<div id="version-compatibility">
+  ## Compatibilidade de versão
+</div>
+
+Quando você cria um serviço, a configuração [`compatibility`](/pt-BR/reference/settings/session-settings#compatibility) é definida com a versão mais recente do ClickHouse oferecida no ClickHouse Cloud no momento em que o serviço é provisionado pela primeira vez.
+
+A configuração `compatibility` permite usar os valores padrão das configurações de versões anteriores. Quando o serviço é atualizado para uma nova versão, a versão especificada para a configuração `compatibility` não muda. Isso significa que os valores padrão das configurações que existiam quando você criou o serviço inicialmente não serão alterados (a menos que você já tenha substituído esses valores padrão; nesse caso, eles serão preservados após a atualização).
+
+Você não pode gerenciar a configuração `compatibility` padrão no nível do serviço. É necessário [entrar em contato com o suporte](https://clickhouse.com/support/program) se quiser alterar a versão definida para a configuração `compatibility` padrão do serviço. No entanto, é possível substituir a configuração `compatibility` no nível de usuário, função, perfil, consulta ou sessão usando os mecanismos padrão de configuração do ClickHouse, como `SET compatibility = '22.3'` em uma sessão ou `SETTINGS compatibility = '22.3'` em uma consulta.
+
+<div id="maintenance-mode">
+  ## Modo de manutenção
+</div>
+
+Às vezes, pode ser necessário atualizar seu serviço, o que pode exigir a desativação de determinados recursos, como escalonamento ou entrada em modo ocioso. Em casos raros, também pode ser necessário intervir em um serviço que esteja apresentando problemas para restaurá-lo a um estado saudável. Durante essa manutenção, você verá um banner na página do serviço com a mensagem *&quot;Manutenção em andamento&quot;*. Ainda assim, talvez seja possível usar o serviço para consultas durante esse período.
+
+Você não será cobrado pelo tempo em que o serviço estiver em manutenção. O *modo de manutenção* é algo raro e não deve ser confundido com upgrades regulares do serviço.
+
+<div id="release-channels-upgrade-schedule">
+  ## Canais de lançamento (cronograma de upgrades)
+</div>
+
+Os usuários podem especificar o cronograma de upgrades do seu serviço do ClickHouse Cloud assinando um canal de lançamento específico. Há três canais de lançamento, e o usuário pode configurar o dia da semana e o horário dos upgrades com o recurso de **upgrades agendados**.
+
+Os três canais de lançamento são:
+
+* O [**canal de lançamento rápido**](#fast-release-channel-early-upgrades) para acesso antecipado a upgrades.
+* O [**canal de lançamento regular**](#regular-release-channel) é o padrão, e os upgrades nesse canal começam duas semanas após os upgrades do canal de lançamento rápido. Se o seu serviço nos tiers Scale e Enterprise não tiver um canal de lançamento definido, ele ficará no canal de lançamento regular por padrão.
+* O [**canal de lançamento lento**](#slow-release-channel-deferred-upgrades) é para lançamentos postergados. Os upgrades nesse canal ocorrem duas semanas após os upgrades do canal de lançamento regular.
+
+<Note>
+  Os serviços do tier Basic são automaticamente inscritos no canal de lançamento rápido
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### Canal de lançamento rápido (atualizações antecipadas)
+</div>
+
+<ScalePlanFeatureBadge feature="O canal de lançamento rápido" />
+
+Além do cronograma regular de atualizações, oferecemos um canal de **lançamento rápido** caso você queira que seus serviços recebam atualizações antes do cronograma regular de lançamento.
+
+Especificamente, os serviços irão:
+
+* Receber as versões mais recentes do ClickHouse
+* Receber atualizações com mais frequência à medida que novas versões forem testadas
+
+Você pode modificar o cronograma de lançamento do serviço no console do Cloud, como mostrado abaixo:
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Selecione o tipo de canal de release" border />
+</div>
+
+<br />
+
+Este canal de **lançamento rápido** é adequado para testar novos recursos em ambientes não críticos. **Não é recomendado para workloads de produção com requisitos rigorosos de uptime e confiabilidade.**
+
+<div id="regular-release-channel">
+  ### Canal de lançamento regular
+</div>
+
+Para todos os serviços do tier Scale e Enterprise que não têm um canal de lançamento ou um cronograma de atualização configurado, as atualizações serão feitas como parte da liberação do canal Regular. Isso é recomendado para ambientes de produção.
+
+As atualizações no canal de lançamento regular normalmente são realizadas duas semanas após o **canal de lançamento rápido**.
+
+<Note>
+  Os serviços do tier Basic são atualizados logo após o canal de lançamento rápido.
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### Canal de lançamento lento (upgrades adiados)
+</div>
+
+<EnterprisePlanFeatureBadge feature="O canal de lançamento lento" />
+
+Oferecemos um canal de **lançamento lento** caso você queira que seus serviços recebam upgrades após o cronograma regular de lançamentos.
+
+Especificamente, os serviços irão:
+
+* Ser atualizados após a conclusão das implantações dos canais de lançamento Fast e Regular
+* Receber releases do ClickHouse cerca de 2 semanas após o release regular
+* Ser voltados a clientes que desejam mais tempo para testar releases do ClickHouse em ambientes não produtivos antes do upgrade em produção. Os ambientes não produtivos podem receber upgrades no canal de lançamento Fast ou Regular para testes e validação.
+
+<Note>
+  Você pode mudar de canal de lançamento a qualquer momento. No entanto, em alguns casos, a mudança só será aplicada a releases futuros.
+
+  * Ao mudar para um canal mais rápido, seu serviço será atualizado imediatamente. Ex.: de Slow para Regular, de Regular para Fast
+  * Se o seu serviço estiver usando [upgrades agendados](#scheduled-upgrades), o upgrade ocorrerá no próximo upgrade agendado.
+  * Ao mudar para um canal mais lento, seu serviço não sofrerá downgrade e permanecerá na versão atual até que uma versão mais recente esteja disponível nesse canal. Ex.: de Regular para Slow, de Fast para Regular ou Slow
+</Note>
+
+<div id="scheduled-upgrades">
+  ## Upgrades agendados
+</div>
+
+<EnterprisePlanFeatureBadge feature="Upgrades agendados" linking_verb_are="true" />
+
+Você pode configurar uma janela de upgrade para serviços no tier Enterprise.
+
+Selecione o serviço para o qual deseja definir um upgrade agendado e, no menu à esquerda, clique em `Settings`. Role até `Scheduled upgrades`.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="Upgrades agendados" border />
+</div>
+
+<br />
+
+Ao selecionar essa opção, você poderá escolher o dia da semana e o intervalo de horário para upgrades do banco de dados e da Cloud.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="Janela de upgrade agendado" border />
+</div>
+
+<br />
+
+<Note>
+  Embora os upgrades agendados sigam a programação definida, há exceções para patches críticos de segurança e correções de vulnerabilidades, bem como para cenários em que problemas em potencial possam levar à corrupção ou à perda de dados. Nos casos em que um problema urgente de segurança for identificado, os upgrades poderão ser realizados fora da janela agendada. Os clientes serão notificados sobre essas exceções quando necessário.
+</Note>

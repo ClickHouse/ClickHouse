@@ -1,0 +1,226 @@
+---
+sidebarTitle: '概要'
+description: 'オブジェクトストレージをClickHouse Cloudにシームレスに接続します。'
+slug: /integrations/clickpipes/object-storage/abs/overview
+title: 'Azure Blob StorageをClickHouse Cloudに統合する'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ABS ClickPipe は、Azure Blob Storage から ClickHouse Cloud にデータを取り込むための、フルマネージドで高い耐障害性を備えたソリューションです。**一回限り**と**継続的インジェスト**の両方を、exactly-once セマンティクスでサポートしています。
+
+ABS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
+
+<div id="supported-formats">
+  ## 対応フォーマット
+</div>
+
+* [JSON](/ja/reference/formats/JSON/JSON)
+* [CSV](/ja/reference/formats/CSV/CSV)
+* [TSV](/ja/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/ja/reference/formats/Parquet/Parquet)
+* [Avro](/ja/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="one-time-ingestion">
+  ### 一回限りのインジェスト
+</div>
+
+ABS ClickPipe は、指定したコンテナー内でパターンに一致するすべてのファイルを、単一のバッチ処理で ClickHouse の宛先テーブルに読み込みます。インジェスト タスクが完了すると、ClickPipe は自動的に停止します。この一回限りのインジェスト モードでは exactly-once セマンティクスが提供されるため、各ファイルは重複なく確実に処理されます。
+
+<div id="continuous-ingestion">
+  ### 継続的インジェスト
+</div>
+
+継続的インジェストが有効な場合、ClickPipes は指定されたパスからデータを継続的に取り込みます。インジェスト順序は、ABS ClickPipe がファイルの暗黙的な[辞書式順序](#continuous-ingestion-lexicographical-order)に基づいて決定します。
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### 辞書式順序
+</div>
+
+ABS ClickPipe は、ファイルがコンテナーに辞書式順序で追加されることを前提としており、この暗黙の順序に基づいてファイルを順番に取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書式順序で後になっている**必要があります**。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` がコンテナーに追加された場合、そのファイル名は最後に取り込まれたファイルよりも辞書式順序で後ではないため、**無視**されます。
+
+このモードでは、ABS ClickPipe は指定したパス内の**すべてのファイル**を初期ロードし、その後、新しいファイルがないかを設定可能な間隔 (デフォルトでは 30 Seconds) でポーリングします。特定のファイルや時点からインジェストを開始することは**できません**。ClickPipes は常に、指定したパス内のすべてのファイルを読み込みます。
+
+<div id="file-pattern-matching">
+  ### ファイルパターンマッチング
+</div>
+
+Object Storage 用 ClickPipes では、ファイルのパターンマッチングに POSIX 標準を採用しています。すべてのパターンは **大文字と小文字を区別**し、コンテナー名以降の**フルパス全体**に対して照合されます。パフォーマンス向上のため、できるだけ具体的なパターンを使用してください (たとえば、`*.csv` ではなく `data-2024-*.csv`) 。
+
+<div id="supported-patterns">
+  #### 対応しているパターン
+</div>
+
+| パターン           | 説明                                            | 例                   | 一致するもの                                                            |
+| -------------- | --------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`            | **1文字ちょうど** (`/` を除く) に一致します                  | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`            | **0文字以上** (`/` を除く) に一致します                    | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> 再帰 | **0文字以上** (`/` を含む) に一致します。ディレクトリを再帰的に走査できます。 | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**例:**
+
+* `https://storageaccount.blob.core.windows.net/container/folder/*.csv`
+* `https://storageaccount.blob.core.windows.net/container/logs/**/data.json`
+* `https://storageaccount.blob.core.windows.net/container/file-?.parquet`
+* `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### サポートされていないパターン
+</div>
+
+| Pattern     | 説明            | Example                | Alternatives                             |
+| ----------- | ------------- | ---------------------- | ---------------------------------------- |
+| `{abc,def}` | ブレース展開による代替指定 | `{logs,data}/file.csv` | パスごとに個別の ClickPipes を作成してください。           |
+| `{N..M}`    | 数値範囲の展開       | `file-{1..100}.csv`    | `file-*.csv` または `file-?.csv` を使用してください。 |
+
+**例:**
+
+* `https://storageaccount.blob.core.windows.net/container/{documents-01,documents-02}.json`
+* `https://storageaccount.blob.core.windows.net/container/file-{1..100}.csv`
+* `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### exactly-once セマンティクス
+</div>
+
+大規模なデータセットの取り込み時には、さまざまな障害が発生する可能性があり、その結果、挿入が一部しか完了しなかったり、データが重複したりすることがあります。Object Storage 用 ClickPipes は挿入失敗に対して耐性があり、exactly-once セマンティクスを提供します。これは、一時的な「ステージングテーブル」を使用することで実現されます。まず、データはステージングテーブルに挿入されます。この挿入で問題が発生した場合は、ステージングテーブルを空にして、クリーンな状態から挿入を再試行できます。挿入が正常に完了した場合にのみ、ステージングテーブル内のパーティションがターゲットテーブルに移動されます。この戦略の詳細については、[こちらのブログ記事](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)をご覧ください。
+
+<div id="virtual-columns">
+  ### 仮想カラム
+</div>
+
+どのファイルが取り込まれたかを追跡するには、`_file` 仮想カラムをカラムマッピングのリストに追加します。`_file` 仮想カラムにはソースオブジェクトのファイル名が含まれており、どのファイルが処理されたかをクエリできます。
+
+<div id="access-control">
+  ## アクセス制御
+</div>
+
+<div id="permissions">
+  ### 権限
+</div>
+
+ABS ClickPipe では、プライベートコンテナーのみサポートされています。パブリックコンテナーは**サポートされていません**。
+
+コンテナーのバケットポリシーで、[`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) および [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html) アクションを許可する必要があります。
+
+<div id="authentication">
+  ### 認証
+</div>
+
+<Note>
+  Microsoft Entra ID 認証 (Managed Identities を含む) は、現時点ではサポートされていません。
+</Note>
+
+Azure Blob Storage の認証には、アクセスキーと共有アクセス署名 (SAS) の両方に対応した[接続文字列](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string)を使用します。
+
+<div id="access-key">
+  #### アクセスキー
+</div>
+
+[アカウント アクセス キー](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage)を使用して認証するには、次の形式で接続文字列を指定します。
+
+```bash
+DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=account-access-key;EndpointSuffix=core.windows.net
+```
+
+ストレージ アカウント名とアクセス キーは、Azure Portal の **Storage Account &gt; Access keys** で確認できます。
+
+<div id="sas">
+  #### Shared Access Signature (SAS)
+</div>
+
+[Shared Access Signature (SAS)](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview) を使用して認証するには、SAS トークンを含む接続文字列を指定します。
+
+```bash
+BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSignature=sas-token
+```
+
+Azure Portal の **Storage Account &gt; Shared access signature** で、取り込み対象のコンテナーとブロブに必要なアクセス許可 (`Read`、`List`) を付与した SAS token を生成します。
+
+<div id="network-access">
+  ### ネットワークアクセス
+</div>
+
+ABS ClickPipes では、メタデータの検出とデータのインジェストに、それぞれ ClickPipes サービスと ClickHouse Cloud サービスという 2 つの異なるネットワーク経路を使用します。ネットワークセキュリティをさらに強化したい場合 (たとえばコンプライアンス上の理由など) 、**両方の経路に対して**ネットワークアクセスを設定する必要があります。
+
+<Warning>
+  Azure Blob Storage コンテナーが ClickHouse Cloud サービスと同じ Azure リージョンにある場合、IP ベースのアクセス制御は**機能しません**。両方のサービスが同じリージョン内にあると、トラフィックはパブリックインターネットではなく Azure の内部ネットワークを経由してルーティングされます。
+</Warning>
+
+* **IP ベースのアクセス制御**では、Azure Storage ファイアウォールの [IP network rules](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) で、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)に記載されている ClickPipes サービスリージョンの静的 IP と、ClickHouse Cloud サービスの [静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行してください。
+
+  ```bash
+  # <your-region> を ClickHouse Cloud のリージョンに置き換えます
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## 高度な設定
+</div>
+
+ClickPipes には、ほとんどのユースケースの要件を満たす適切なデフォルト設定が用意されています。さらに細かく調整する必要がある場合は、次の設定を変更できます。
+
+| Setting                              | Default value | Description                                                                                                       |
+| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 1 回の insert バッチで処理するバイト数。                                                                                         |
+| `Max file count`                     | 100           | 1 回の insert バッチで処理するファイルの最大数。                                                                                     |
+| `Max threads`                        | auto(3)       | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                      |
+| `Max insert threads`                 | 1             | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
+| `Min insert block size bytes`        | 1GB           | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
+| `Max download threads`               | 4             | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                  |
+| `Object storage polling interval`    | 30s           | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                         |
+| `Parallel distributed insert select` | 2             | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | アタッチされたビューへのプッシュを[順次ではなく同時実行で](/ja/reference/settings/session-settings#parallel_view_processing)行うかどうか。              |
+| `Use cluster function`               | true          | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                     |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
+
+<div id="scaling">
+  ### スケーリング
+</div>
+
+Object Storage 用 ClickPipes は、[構成済みの垂直オートスケーリング設定](/ja/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)で決まる ClickHouse service の最小サイズに基づいてスケーリングされます。ClickPipe のサイズは、パイプの作成時に決まります。その後に ClickHouse service の設定を変更しても、ClickPipe のサイズには影響しません。
+
+大規模な取り込みジョブのスループットを高めるには、ClickPipe を作成する前に ClickHouse service をスケーリングすることを推奨します。
+
+<div id="known-limitations">
+  ## 既知の制限事項
+</div>
+
+<div id="file-size">
+  ### ファイルサイズ
+</div>
+
+ClickPipes は、サイズが **10GB 以下** のオブジェクトに対してのみ取り込みを試みます。ファイルが 10GB を超える場合は、ClickPipes 専用のエラーテーブルにエラーが追記されます。
+
+<div id="latency">
+  ### レイテンシ
+</div>
+
+100,000 個を超えるファイルを含むコンテナーでは、Azure Blob Storage の `LIST` 操作により、新しいファイルの検出時に、既定のポーリング間隔に加えて追加のレイテンシが発生します。
+
+* **&lt; 100k files**: 約 30 秒 (既定のポーリング間隔)
+* **100k files**: 約 40～45 秒
+* **250k files**: 約 55～70 秒
+* **500k+ files**: 90 秒を超える場合があります
+
+[継続的インジェスト](#continuous-ingestion) では、最後に取り込んだファイルより辞書順で後にある新しいファイルを特定するために、ClickPipes がコンテナーをスキャンする必要があります。リスト操作ごとのファイル数を減らすため、ファイルをより小さなコンテナーに分割するか、階層的なディレクトリ構造を使用することを推奨します。
+
+<div id="view-support">
+  ### ビューのサポート
+</div>
+
+ターゲットテーブル上の materialized view もサポートされています。ClickPipes は、ターゲットテーブルだけでなく、それに依存するすべての materialized view に対してもステージングテーブルを作成します。
+
+non-materialized view に対しては、ステージングテーブルは作成されません。つまり、1 つ以上の下流の materialized view を持つターゲットテーブルがある場合、それらの materialized view では、ターゲットテーブルのデータをビュー経由で参照しないようにする必要があります。そうしないと、materialized view のデータが欠落する可能性があります。
+
+<div id="dependencies">
+  ### 依存関係
+</div>
+
+ClickPipe が Running 状態の間に、宛先テーブル、その materialized view (カスケードされた materialized view を含む) 、またはそれらの materialized view のターゲットテーブルに変更を加えると、再試行可能なエラーが発生します。これらの依存関係に対してスキーマ変更を行う場合は、ClickPipe を一時停止し、変更を適用してから再開してください。

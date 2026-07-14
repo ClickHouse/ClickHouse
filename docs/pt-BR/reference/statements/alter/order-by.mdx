@@ -1,0 +1,19 @@
+---
+description: 'Documentação para manipulação de expressões de chave'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: 'Manipulação de expressões de chave'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+O comando altera a [chave de ordenação](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) da tabela para `new_expression` (uma expressão ou uma tupla de expressões). A chave primária permanece a mesma.
+
+O comando é leve no sentido de alterar apenas os metadados. Para preservar a propriedade de que as linhas das partes de dados sejam ordenadas pela expressão da chave de ordenação, você não pode adicionar à chave de ordenação expressões que contenham colunas existentes (apenas colunas adicionadas pelo comando `ADD COLUMN` na mesma consulta `ALTER`, sem valor padrão para a coluna).
+
+<Note>
+  Isso só funciona para tabelas da família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

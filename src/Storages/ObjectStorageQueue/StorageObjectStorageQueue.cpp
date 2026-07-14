@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -264,6 +265,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_,
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
@@ -326,7 +328,34 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
     validateSettings(*queue_settings_, is_attach);
 
-    object_storage = configuration->createObjectStorage(context_, /* is_readonly */true, std::nullopt);
+    /// The object storage S3 client is built once here and reused by background threads, so the effective
+    /// per-session credential restriction must be captured now from the CREATE query (its
+    /// `s3_allow_server_credentials_in_user_queries` value arrives as `allow_server_credentials_in_user_queries_`).
+    /// The restriction is NOT relaxed when loading from existing metadata: a queue whose definition resolves to
+    /// server-managed credentials (e.g. a named collection later re-bound to `use_environment_credentials = 1`)
+    /// must not silently regain the server identity on restart, since that is something a user `CREATE`/`ATTACH`
+    /// of the same definition would be refused. Instead, flagging the load lets `getClient` downgrade such a
+    /// queue to an anonymous client (so the server still starts and the queue is merely inaccessible) rather
+    /// than escalating or aborting startup, controlled by the server setting
+    /// `s3_load_table_anonymously_if_credentials_restricted`. `context_` stays the persistent global context
+    /// held weakly by `WithContext`, and `createObjectStorage` copies the context it is given into its
+    /// credential refresher, so the transient settings copy here is safe.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(mode);
+
+    /// Server-internal log-pipeline S3Queue tables live in the `system` database and are named `<log>_s3queue`.
+    /// Users cannot create tables there, so this is a safe internal marker. These tables must never abort server
+    /// startup when server-managed credentials are restricted: force the anonymous-load fallback in `getClient`
+    /// even if the operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap
+    /// re-credentials the client in place right after startup.
+    if (table_id_.database_name == DatabaseCatalog::SYSTEM_DATABASE && table_id_.table_name.ends_with("_s3queue"))
+        configuration->force_anonymous_load_fallback = true;
+
+    auto object_storage_context = Context::createCopy(context_);
+    object_storage_context->setSetting(
+        "s3_allow_server_credentials_in_user_queries",
+        allow_server_credentials_in_user_queries_);
+
+    object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -529,6 +558,16 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
+{
+    /// Force a client rebuild under `rebuild_context` (re-resolving credentials) without detaching the table.
+    /// The client is hot-swapped in the object storage (MultiVersion), so the concurrently-running streaming
+    /// task keeps using the storage and picks up the new client on its next operation.
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = true, .force_client_rebuild = true};
+    object_storage->applyNewSettings(
+        rebuild_context->getConfigRef(), configuration->getTypeName() + ".", rebuild_context, options);
 }
 
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
