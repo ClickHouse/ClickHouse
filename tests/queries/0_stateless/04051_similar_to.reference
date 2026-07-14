@@ -182,3 +182,32 @@
 1
 1
 1
+-- ESCAPE clause: the escape character makes the next character a literal
+1
+0
+1
+0
+1
+-- ESCAPE disables a SIMILAR TO metacharacter
+1
+0
+1
+1
+-- ESCAPE the escape character itself, and escaping a plain character
+1
+1
+-- ESCAPE with backslash behaves like the default escape
+1
+1
+-- A bare backslash is a literal when a custom escape character is used
+1
+-- NOT SIMILAR TO with ESCAPE
+0
+1
+-- The operator form and the 3-argument function form agree
+1
+1
+-- ESCAPE round-trips through the formatter
+SELECT s SIMILAR TO p ESCAPE \'#\'
+SELECT s NOT SIMILAR TO p ESCAPE \'#\'
+-- ESCAPE must be a single ASCII character

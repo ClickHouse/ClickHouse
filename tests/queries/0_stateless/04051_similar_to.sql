@@ -223,3 +223,42 @@ SELECT 'abc' NOT SIMILAR TO ALL(['a%', 'z%']);     -- not all: 'abc' SIMILAR TO 
 SELECT ('abc' SIMILAR TO SOME(['a%', 'z%'])) = arrayExists(_a -> 'abc' SIMILAR TO _a, ['a%', 'z%']);
 SELECT ('abc' SIMILAR TO ALL(['a%', '%c'])) = arrayAll(_a -> 'abc' SIMILAR TO _a, ['a%', '%c']);
 SELECT ('abc' NOT SIMILAR TO ALL(['x%', 'y%'])) = arrayAll(_a -> 'abc' NOT SIMILAR TO _a, ['x%', 'y%']);
+
+SELECT '-- ESCAPE clause: the escape character makes the next character a literal';
+SELECT 'a_b'  SIMILAR TO 'a#_b' ESCAPE '#';        -- Returns: 1 (#_ is a literal _)
+SELECT 'axb'  SIMILAR TO 'a#_b' ESCAPE '#';        -- Returns: 0
+SELECT 'a%b'  SIMILAR TO 'a#%b' ESCAPE '#';        -- Returns: 1 (#% is a literal %)
+SELECT 'aXXb' SIMILAR TO 'a#%b' ESCAPE '#';        -- Returns: 0
+SELECT '100%' SIMILAR TO '100!%' ESCAPE '!';       -- Returns: 1 (a different escape char)
+
+SELECT '-- ESCAPE disables a SIMILAR TO metacharacter';
+SELECT 'a'    SIMILAR TO 'a|b';                    -- Returns: 1 (unescaped: alternation)
+SELECT 'a'    SIMILAR TO 'a#|b' ESCAPE '#';        -- Returns: 0 (escaped: literal 'a|b')
+SELECT 'a|b'  SIMILAR TO 'a#|b' ESCAPE '#';        -- Returns: 1
+SELECT 'a(b)' SIMILAR TO 'a#(b#)' ESCAPE '#';      -- Returns: 1 (literal parentheses)
+
+SELECT '-- ESCAPE the escape character itself, and escaping a plain character';
+SELECT 'a#b'  SIMILAR TO 'a##b' ESCAPE '#';        -- Returns: 1 (## is a literal #)
+SELECT 'ab'   SIMILAR TO 'a#b' ESCAPE '#';         -- Returns: 1 (#b is a literal b)
+
+SELECT '-- ESCAPE with backslash behaves like the default escape';
+SELECT 'a_b'  SIMILAR TO 'a\\_b' ESCAPE '\\';      -- Returns: 1
+SELECT ('a_b' SIMILAR TO 'a\\_b' ESCAPE '\\') = ('a_b' SIMILAR TO 'a\\_b'); -- Returns: 1
+
+SELECT '-- A bare backslash is a literal when a custom escape character is used';
+SELECT 'a\\b' SIMILAR TO 'a\\b' ESCAPE '#';        -- Returns: 1
+
+SELECT '-- NOT SIMILAR TO with ESCAPE';
+SELECT 'a_b'  NOT SIMILAR TO 'a#_b' ESCAPE '#';    -- Returns: 0
+SELECT 'axb'  NOT SIMILAR TO 'a#_b' ESCAPE '#';    -- Returns: 1
+
+SELECT '-- The operator form and the 3-argument function form agree';
+SELECT ('a_b' SIMILAR TO 'a#_b' ESCAPE '#')     = similarTo('a_b', 'a#_b', '#');    -- Returns: 1
+SELECT ('a_b' NOT SIMILAR TO 'a#_b' ESCAPE '#') = notSimilarTo('a_b', 'a#_b', '#'); -- Returns: 1
+
+SELECT '-- ESCAPE round-trips through the formatter';
+SELECT formatQuery('SELECT s SIMILAR TO p ESCAPE ''#''');
+SELECT formatQuery('SELECT s NOT SIMILAR TO p ESCAPE ''#''');
+
+SELECT '-- ESCAPE must be a single ASCII character';
+SELECT 'a' SIMILAR TO 'a' ESCAPE 'ab'; -- { serverError BAD_ARGUMENTS }
