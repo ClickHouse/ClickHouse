@@ -449,6 +449,64 @@ SETTINGS validate_enum_literals_in_operators = 1;
 
 DROP TABLE enum_edges;
 
+-- A fail-closed fallback for one join key must be scoped to that key, not the
+-- whole recursive step: each generated predicate is independently
+-- semantics-preserving, so a branch that cannot be safely optimized must not
+-- disable the injected `IN` filter of an unrelated, safe branch. Here two
+-- recursive branches share one CTE. The `big` branch walks a large, prunable
+-- table (its `from_id IN (...)` lookup must keep hitting the index), while the
+-- `small` branch carries a branch-local `max_rows_in_set = 1`: because the
+-- shared frontier holds two live chains, the `small` branch's generated set is
+-- always oversized, so its preflight (`generatedInSetIsSafeToInject`) fails and
+-- that branch correctly falls back to a plain scan every step. That fallback
+-- must skip only the `small` key; if it discarded the whole step's predicates,
+-- the safe `big.from_id IN (...)` filter would be dropped too and `big` (5010
+-- rows) full-scanned on every step. The result is identical either way (the
+-- optimization is semantics-preserving), so only `read_rows` proves the safe
+-- branch stayed indexed.
+DROP TABLE IF EXISTS big_branch;
+DROP TABLE IF EXISTS small_branch;
+CREATE TABLE big_branch (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
+INSERT INTO big_branch SELECT number, number + 1 FROM numbers(10);
+INSERT INTO big_branch SELECT number + 1000, number + 1000000 FROM numbers(5000);
+OPTIMIZE TABLE big_branch FINAL;
+CREATE TABLE small_branch (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id;
+INSERT INTO small_branch SELECT number + 100, number + 101 FROM numbers(10);
+
+WITH RECURSIVE mixed_branch_skip AS
+(
+    SELECT CAST(number, 'UInt64') * 100 AS id FROM numbers(2)
+  UNION ALL
+    SELECT b.to_id AS id
+    FROM big_branch AS b
+    INNER JOIN mixed_branch_skip AS r ON b.from_id = r.id
+  UNION ALL
+    SELECT s.to_id AS id
+    FROM small_branch AS s
+    INNER JOIN mixed_branch_skip AS r ON s.from_id = r.id
+    SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw'
+)
+SELECT count() FROM mixed_branch_skip;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The safe `big_branch` must stay indexed even though `small_branch` falls back
+-- on every step: a per-key skip keeps `big_branch` pruned (a few hundred rows
+-- total — the trace shows a single 1/39 mark read per step), whereas a
+-- whole-step abort would full-scan it (~50K rows).
+SELECT read_rows < 10000 AS safe_branch_stays_indexed
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE mixed_branch_skip%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE big_branch;
+DROP TABLE small_branch;
+
 -- A byte-heavy generated `IN` set with a tiny `max_bytes_in_set` must fail
 -- closed to a plain scan, exactly like the row-count guard above. The working
 -- frontier holds wide `String` keys, so the generated set's measured byte size

@@ -700,13 +700,19 @@ private:
     /// filter from the pristine original WHERE saved at construction time, so
     /// nothing accumulates across steps.
     ///
-    /// Returns true on success, false if for some key the join-key cardinality
-    /// exceeded the configured cap, the generated `IN` set would exceed the
-    /// user's `max_rows_in_set` / `max_bytes_in_set` limits (or fail to
-    /// materialize under `max_memory_usage`), or the generated `IN` predicate
-    /// could not be resolved for the join-key type — in any of those cases the
-    /// recursive step runs without any CTE-derived filter (the caller restores
-    /// original clauses).
+    /// Returns true if at least one filter was injected. Each key is handled
+    /// independently: if for some key the join-key cardinality exceeded the
+    /// configured cap, the generated `IN` set would exceed the user's
+    /// `max_rows_in_set` / `max_bytes_in_set` limits (or fail to materialize
+    /// under `max_memory_usage`), or the generated `IN` predicate could not be
+    /// resolved for the join-key type, that single key is skipped while the safe
+    /// predicates already collected for the other keys/branches are still
+    /// installed. Because every generated predicate is independently
+    /// semantics-preserving, dropping one never affects the correctness (or the
+    /// pruning) of the others — a mixed recursive query keeps primary-key pruning
+    /// on its safe `MergeTree` branches even when an unrelated branch has to fall
+    /// back. If no key could be injected the caller runs the step unfiltered
+    /// (the caller restores original clauses).
     bool injectFiltersIntoRecursiveQuery()
     {
         if (cte_join_keys.empty())
@@ -745,11 +751,12 @@ private:
             /// themselves fail closed. A tight `max_memory_usage` can make either
             /// step raise `MEMORY_LIMIT_EXCEEDED` (the memory tracker fires on the
             /// allocations); the unoptimized recursive scan never builds these, so
-            /// such a failure must skip injection and fall back to a plain scan,
-            /// not fail the whole recursive query — exactly like the probe-set
-            /// build inside `generatedInSetIsSafeToInject`. The cheaper limit
-            /// breaches (cardinality / byte budget) are reported as nullopt rather
-            /// than thrown.
+            /// such a failure must skip injection for this key and let it fall back
+            /// to a plain scan, not fail the whole recursive query — exactly like
+            /// the probe-set build inside `generatedInSetIsSafeToInject`. The
+            /// cheaper limit breaches (cardinality / byte budget) are reported as
+            /// nullopt rather than thrown. Skipping is per key: the other keys keep
+            /// their safe predicates.
             std::optional<std::vector<Field>> values;
             std::shared_ptr<ConstantNode> rhs_node;
             try
@@ -759,16 +766,16 @@ private:
                     max_in_filter_cardinality, max_bytes_in_set);
 
                 if (!values.has_value())
-                    return false;
+                    continue;
 
                 if (values->empty())
                     continue;
 
                 rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
             }
-            catch (...) // Ok: building the generated IN values hit a limit (e.g. memory); skip injection and fall back to a plain scan instead of failing the recursive query.
+            catch (...) // Ok: building the generated IN values hit a limit (e.g. memory); skip injection for this key and fall back to a plain scan for it instead of failing the recursive query.
             {
-                return false;
+                continue;
             }
 
             /// Fail closed if the planner could not build the generated `IN`
@@ -777,26 +784,28 @@ private:
             /// `SET_SIZE_LIMIT_EXCEEDED` or silently truncating), or the
             /// conversion to the storage column type could throw (e.g.
             /// `UNKNOWN_ELEMENT_OF_ENUM`). Neither can happen on the unoptimized
-            /// scan path, so in both cases we skip injection for this step.
+            /// scan path, so in both cases we skip injection for this key (the
+            /// other keys keep their safe predicates).
             if (!generatedInSetIsSafeToInject(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
-                return false;
+                continue;
 
             /// Building the predicate resolves the `in` function's return type,
             /// which can itself throw for a join key whose type is valid for
             /// `JOIN` but rejected by `IN` — e.g. a `Dynamic` key allowed by
             /// `allow_dynamic_type_in_join_keys` that `FunctionIn::getReturnTypeImpl`
             /// refuses. The unoptimized scan never builds this predicate, so a
-            /// resolution failure must skip injection and fall back to a plain
-            /// scan rather than fail the recursive query — exactly like the
-            /// conversion and set-build guards above.
+            /// resolution failure must skip injection for this key and let it fall
+            /// back to a plain scan rather than fail the recursive query — exactly
+            /// like the conversion and set-build guards above (the other keys keep
+            /// their safe predicates).
             QueryTreeNodePtr in_filter;
             try
             {
                 in_filter = buildInFilterNode(*key.real_column_node, std::move(rhs_node), containing_query_context);
             }
-            catch (...) // Ok: resolving the generated IN predicate failed (e.g. a type illegal for IN); skip injection and fall back to a plain scan instead of failing the recursive query.
+            catch (...) // Ok: resolving the generated IN predicate failed (e.g. a type illegal for IN); skip injection for this key and fall back to a plain scan for it instead of failing the recursive query.
             {
-                return false;
+                continue;
             }
 
             predicates_by_query[key.containing_query_node].push_back(std::move(in_filter));
