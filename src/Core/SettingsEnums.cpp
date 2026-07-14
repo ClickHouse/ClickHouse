@@ -338,7 +338,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
-     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+     {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL},
+     {"DoubleQuotesStandard", IdentifierQuotingStyle::DoubleQuotesStandard}})
 
 IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingRule,

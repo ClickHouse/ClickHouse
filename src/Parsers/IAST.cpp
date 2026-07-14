@@ -332,6 +332,14 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
+        case IdentifierQuotingStyle::DoubleQuotesStandard:
+        {
+            if (must_quote)
+                writeDoubleQuotedStringStandard(name, ostr);
+            else
+                writeProbablyDoubleQuotedStringStandard(name, ostr);
+            break;
+        }
     }
 }
 

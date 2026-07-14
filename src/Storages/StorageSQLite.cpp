@@ -275,7 +275,7 @@ Pipe StorageSQLite::read(
         /// The user-provided query is passed to SQLite as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
-        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotes);
+        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotesStandard);
     }
     else
         query = transformQueryForExternalDatabase(
@@ -284,8 +284,12 @@ Pipe StorageSQLite::read(
             /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
             /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
             storage_snapshot->metadata->getColumns().getAllPhysical(),
-            IdentifierQuotingStyle::DoubleQuotes,
-            LiteralEscapingStyle::Regular,
+            /// SQLite has no escape sequences inside quoted identifiers or string literals: an embedded quote
+            /// is doubled and a backslash is a literal character, so the ClickHouse-style backslash escaping
+            /// of `DoubleQuotes`/`Regular` would make the pushed-down query look up a different identifier
+            /// (or match a different literal) than the one written by `quoteSQLiteIdentifier` on the write path.
+            IdentifierQuotingStyle::DoubleQuotesStandard,
+            LiteralEscapingStyle::PostgreSQL,
             "",
             remote_table_or_query.getTableName(),
             context_);
@@ -425,7 +429,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)

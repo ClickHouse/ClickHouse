@@ -9,8 +9,9 @@ namespace DB
 enum class IdentifierQuotingStyle : uint8_t
 {
     Backticks, /// `clickhouse` style
-    DoubleQuotes, /// "postgres" style
+    DoubleQuotes, /// "postgres" style, but with ClickHouse escaping: '\"' for an embedded quote, '\\' for a backslash
     BackticksMySQL, /// `mysql` style, most same as Backticks, but it uses '``' to escape '`'
+    DoubleQuotesStandard, /// standard SQL style: an embedded double quote is doubled ('""'), a backslash stays literal (SQLite, PostgreSQL)
 };
 
 enum class IdentifierQuotingRule : uint8_t
