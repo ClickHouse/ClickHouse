@@ -13,9 +13,23 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Both shard queries must still contain the function call, not a folded literal
 -- (when folded, the shipped query starts with `SELECT _CAST(<initiator value>, ...`).
+-- The shard-side entries do not run in the test database, so they are anchored to the
+-- initial query, which does.
 SELECT count() = 2, countIf(query LIKE 'SELECT getServerSetting(%') = 2
 FROM system.query_log
-WHERE event_date >= yesterday() AND log_comment = '04538_get_server_setting_distributed_fold' AND is_initial_query = 0 AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
+    AND initial_query_id =
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND event_date >= yesterday()
+            AND log_comment = '04538_get_server_setting_distributed_fold'
+            AND is_initial_query
+            AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    );
 
 -- The function-cache regression shape: identical calls in the outer scope and an inner
 -- clusterAllReplicas scope must not share a FunctionBase, because the built base captures
