@@ -8,6 +8,7 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -19,6 +20,9 @@
 using namespace DB;
 
 static bool initialized = false;
+
+extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {

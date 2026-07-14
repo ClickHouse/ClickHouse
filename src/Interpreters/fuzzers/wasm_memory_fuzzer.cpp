@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 #include <Common/StopToken.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,9 @@ static const uint8_t kMinimalWasm[] = {
 ContextMutablePtr context;
 static std::unique_ptr<IWasmEngine> engine;
 static std::unique_ptr<WasmModule> wasm_module;
+
+extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {

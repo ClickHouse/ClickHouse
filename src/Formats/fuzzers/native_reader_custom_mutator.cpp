@@ -84,6 +84,16 @@ static size_t writeLenPrefixedString(std::string_view s, uint8_t * out, size_t c
     return vlen + s.size();
 }
 
+extern "C" size_t LLVMFuzzerCustomMutator(uint8_t * Data, size_t Size, size_t MaxSize, unsigned int Seed);
+extern "C" size_t LLVMFuzzerCustomCrossOver(
+    const uint8_t * Data1,
+    size_t Size1,
+    const uint8_t * Data2,
+    size_t Size2,
+    uint8_t * Out,
+    size_t MaxOutSize,
+    unsigned int Seed);
+
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t * Data, size_t Size, size_t MaxSize, unsigned int Seed)
 {
     /// Need at least 2 bytes: mode byte + 1 payload byte.

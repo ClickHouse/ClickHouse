@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 #include <Common/StopToken.h>
 #include <Interpreters/Context.h>
@@ -20,6 +21,9 @@ using namespace DB;
 using namespace DB::WebAssembly;
 
 ContextMutablePtr context;
+
+extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {

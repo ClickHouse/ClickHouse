@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -14,6 +15,9 @@ struct AuxiliaryRandomData
 
 using namespace DB;
 ContextMutablePtr context;
+extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
     if (context)
