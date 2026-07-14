@@ -1,7 +1,9 @@
--- Tags: no-fasttest, no-parallel, no-msan
+-- Tags: no-fasttest, no-parallel, no-msan, no-random-settings
+-- JIT CompileFunction counts are sensitive to randomized optimizer/compiler settings
 
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
+SET compile_sort_description = 0;
 
 SYSTEM CLEAR COMPILED EXPRESSION CACHE;
 
@@ -9,13 +11,14 @@ SELECT number + number + number FROM numbers(1);
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE
+SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query == 'SELECT number + number + number FROM numbers(1);'
     AND event_date >= yesterday() AND event_time > now() - interval 10 minute
     LIMIT 1;
 
+SET compile_expressions = 0;
 SET compile_aggregate_expressions = 1;
 SET min_count_to_compile_aggregate_expression = 0;
 
@@ -23,7 +26,7 @@ SELECT avg(number), avg(number + 1), avg(number + 2) FROM numbers(1) GROUP BY nu
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE
+SELECT ProfileEvents['CompileFunction'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query == 'SELECT avg(number), avg(number + 1), avg(number + 2) FROM numbers(1) GROUP BY number;'

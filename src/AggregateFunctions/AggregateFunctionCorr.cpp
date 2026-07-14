@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCorr = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CorrMoments>>;
 
+void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -56,7 +57,7 @@ FROM series
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, AggregateFunctionProperties{}, documentation }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, documentation }, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

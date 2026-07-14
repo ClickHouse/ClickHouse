@@ -4,12 +4,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -225,7 +226,7 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
-SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
+SETTINGS optimize_aggregators_of_group_by_keys=0, enable_optimize_predicate_expression=1, query_plan_merge_filters=1 -- CI may inject False for either; enable_optimize_predicate_expression=False: WHERE a>0 not pushed as HAVING; query_plan_merge_filters=False: WHERE+HAVING not merged into single Filter step; avoid removing any() as it depends on order and we need it for the test"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"

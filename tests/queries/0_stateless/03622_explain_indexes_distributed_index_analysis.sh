@@ -9,12 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 # Generate many parts (partitions) to ensure that all replicas will be chosen for distributed index analysis
 # even failed replica (that is included into parallel_replicas), and ensure that the SELECT wont fail (parts should be analyzed locally).
 
 $CLICKHOUSE_CLIENT -nm -q "
   drop table if exists test_10m;
-  create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_size_to_activate=0;
+  create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;
   system stop merges test_10m;
   insert into test_10m select number, number*100 from numbers(1e6) settings max_partitions_per_insert_block=100, max_block_size=10000, min_insert_block_size_rows=10000;
   select count() from system.parts where database = currentDatabase() and table = 'test_10m';

@@ -9,11 +9,11 @@ class ParserKQLBase : public IParserBase
 {
 public:
     static String getExprFromToken(Pos & pos);
-    static String getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks);
+    static String getExprFromToken(const String & text, const Pos & parent_pos);
     static String getExprFromPipe(Pos & pos);
     static bool setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery);
-    static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
-    bool parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks);
+    static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, const Pos & parent_pos);
+    bool parseByString(String expr, ASTPtr & node, const Pos & parent_pos);
 };
 
 class ParserKQLQuery : public IParserBase

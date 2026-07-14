@@ -1,15 +1,11 @@
 import logging
-import time
 
 import pytest
 from kafka import KafkaAdminClient
-from kafka.admin import NewTopic
 
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
+import helpers.kafka.common as k
 from helpers.test_tools import TSV
-
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -49,61 +45,6 @@ def kafka_setup_teardown():
     yield  # run test
 
 
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
-
-
 def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     # reproduction of #61060 with validating the written messages
     admin_client = KafkaAdminClient(
@@ -125,6 +66,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
     extra_settings = {
         "Protobuf": ", kafka_schema = 'string_key_value.proto:StringKeyValuePair'",
+        "ProtobufList": ", kafka_schema = 'string_key_value_list.proto:StringKeyValuePair'",
         "CapnProto": ", kafka_schema='string_key_value:StringKeyValuePair'",
         "Template": ", format_template_row='string_key_value.format'",
     }
@@ -134,10 +76,6 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     #  - JSONStrings: not actually an input format
     #  - ProtobufSingle: I cannot make it work to parse the messages. Probably something is broken,
     #    because the producer can write multiple rows into a same message, which makes them impossible to parse properly. Should added after #67549 is fixed.
-    #  - ProtobufList: I didn't want to deal with the envelope and stuff
-    #  - Npy: supports only single column
-    #  - LineAsString: supports only single column
-    #  - RawBLOB: supports only single column
     formats_to_test = [
         "TabSeparated",
         "TabSeparatedRaw",
@@ -170,6 +108,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
         "BSONEachRow",
         "TSKV",
         "Protobuf",
+        "ProtobufList",
         "Avro",
         "Parquet",
         "Arrow",
@@ -185,7 +124,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     for format in formats_to_test:
         logging.debug(f"Creating tables and writing messages to {format}")
         topic = topic_prefix + format
-        kafka_create_topic(admin_client, topic)
+        k.kafka_create_topic(admin_client, topic)
 
         extra_setting = extra_settings.get(format, "")
 
@@ -235,7 +174,86 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
         assert TSV(result) == TSV(expected)
 
-        kafka_delete_topic(admin_client, topic)
+        k.kafka_delete_topic(admin_client, topic)
+
+
+def test_kafka_produce_http_interface_single_column_format(kafka_cluster):
+    # Test formats that only support a single column: LineAsString, RawBLOB, Npy
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic_prefix = "http_single_col_"
+
+    formats_to_test = {
+        "LineAsString": {
+            "column_def": "line String",
+            "values": "('01234567890123456789'), ('aaaaabbbbbccccc'), ('some_other_value')",
+            "expected": "01234567890123456789\naaaaabbbbbccccc\nsome_other_value\n",
+            "max_rows_per_message": 2,
+        },
+        "RawBLOB": {
+            "column_def": "data String",
+            "values": "('01234567890123456789'), ('aaaaabbbbbccccc'), ('some_other_value')",
+            "expected": "01234567890123456789\naaaaabbbbbccccc\nsome_other_value\n",
+            # RawBLOB concatenates rows without delimiters, so only 1 row per message can round-trip
+            "max_rows_per_message": 1,
+        },
+        "Npy": {
+            "column_def": "value UInt64",
+            "values": "(1), (2), (3)",
+            "expected": "1\n2\n3\n",
+            "max_rows_per_message": 2,
+        },
+    }
+
+    for format, config in formats_to_test.items():
+        logging.debug(f"Creating tables and writing messages to {format}")
+        topic = topic_prefix + format
+        k.kafka_create_topic(admin_client, topic)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view_{topic};
+            DROP TABLE IF EXISTS test.consumer_{topic};
+            CREATE TABLE test.kafka_writer_{topic} ({config["column_def"]})
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                        kafka_topic_list = '{topic}',
+                        kafka_group_name = '{topic}',
+                        kafka_format = '{format}',
+                        kafka_max_rows_per_message = {config["max_rows_per_message"]};
+
+            CREATE TABLE test.kafka_{topic} ({config["column_def"]})
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                        kafka_topic_list = '{topic}',
+                        kafka_group_name = '{topic}',
+                        kafka_format = '{format}';
+
+            CREATE MATERIALIZED VIEW test.view_{topic} Engine=Log AS
+                SELECT * FROM test.kafka_{topic};
+            """
+        )
+
+        col_name = config["column_def"].split()[0]
+        instance.http_query(
+            f"INSERT INTO test.kafka_writer_{topic} ({col_name}) VALUES {config['values']}",
+            method="POST",
+        )
+
+    for format, config in formats_to_test.items():
+        logging.debug(f"Checking result for {format}")
+        topic = topic_prefix + format
+
+        result = instance.query_with_retry(
+            f"SELECT * FROM test.view_{topic}",
+            check_callback=lambda res: res.count("\n") == 3,
+        )
+
+        assert TSV(result) == TSV(config["expected"]), f"Format {format}: expected {config['expected']!r}, got {result!r}"
+
+        k.kafka_delete_topic(admin_client, topic)
 
 
 if __name__ == "__main__":

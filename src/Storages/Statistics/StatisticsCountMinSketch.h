@@ -22,7 +22,7 @@ public:
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf) override;
+    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     String getNameForLogs() const override { return "CMSketch"; }
 private:

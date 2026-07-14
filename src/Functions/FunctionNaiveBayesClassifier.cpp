@@ -1,3 +1,5 @@
+#include <mutex>
+#include <optional>
 #include <ranges>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -47,23 +50,35 @@ public:
     using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
 
     using Model = std::variant<ByteNBC, CodeNBC, TokenNBC>;
-    using Models = std::unordered_map<String, Model>;
+    using Models = UnorderedMapWithMemoryTracking<String, Model>;
 
-    // context from the FIRST call is used to build the registry.
-    // Later calls ignore their argument — they only return the map.
+    /// Public so `std::optional::emplace` can call it; the singleton is still enforced because
+    /// `registry` is private and only reachable through `instance`.
+    explicit NBModelRegistry(ContextPtr context) { load(context); }
+
+    /// Context from the first successful call is used to build the registry; later calls only return the map.
+    /// A failed `load` rethrows and leaves the registry empty so the next caller can retry once the config is fixed.
+    /// Explicit mutex+optional avoids a TSan race seen when two threads concurrently re-attempt construction
+    /// after the first attempt throws (the C++ runtime's guard-abort edge is not always recognized by TSan).
     static const Models & instance(ContextPtr context)
     {
-        static NBModelRegistry reg(context);
-        return reg.models;
+        std::lock_guard lock(mutex);
+        if (!registry.has_value())
+            registry.emplace(context);
+        return registry->models;
     }
 
 private:
     Models models;
 
-    explicit NBModelRegistry(ContextPtr context) { load(context); }
-
     void load(ContextPtr context);
+
+    static std::mutex mutex;
+    static std::optional<NBModelRegistry> registry;
 };
+
+std::mutex NBModelRegistry::mutex;
+std::optional<NBModelRegistry> NBModelRegistry::registry;
 
 void NBModelRegistry::load(ContextPtr context)
 {
@@ -222,16 +237,16 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier : public IFunction
+class FunctionNaiveBayesClassifier final : public IFunction
 {
 private:
-    ContextPtr context;
+    const NBModelRegistry::Models & models;
 
 public:
     static constexpr auto name = "naiveBayesClassifier";
 
     explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : context(context_)
+        : models(NBModelRegistry::instance(context_))
     {
     }
 
@@ -270,8 +285,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const auto & models = NBModelRegistry::instance(context);
-
         const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
         const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
         if (const_model_name_col and const_input_text_col)
@@ -310,8 +323,6 @@ public:
 private:
     void validateModelName(const String & model_name) const
     {
-        const auto & models = NBModelRegistry::instance(context);
-
         if (!models.contains(model_name))
         {
             throw Exception(
@@ -334,8 +345,118 @@ private:
 
 REGISTER_FUNCTION(NaiveBayesClassifier)
 {
-    FunctionDocumentation::Description description = "Classifies input text using a Naive Bayes model with ngrams and Laplace smoothing. "
-                                                     "The model must be configured in ClickHouse before use.";
+    FunctionDocumentation::Description description = R"NBDOC(
+Classifies input text using a Naive Bayes model with n-grams and Laplace smoothing.
+The model must be configured in ClickHouse before use.
+
+**Implementation details**
+
+*Algorithm*
+
+Uses the Naive Bayes classification algorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen n-grams, based on n-gram probabilities as described [here](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+
+*Key features*
+
+- Supports n-grams of any size.
+- Three tokenization modes:
+    - `byte`: Operates on raw bytes. Each byte is one token.
+    - `codepoint`: Operates on Unicode scalar values decoded from UTF-8. Each codepoint is one token.
+    - `token`: Splits on runs of Unicode whitespace (regex `\s+`). Tokens are substrings of non-whitespace; punctuation is part of the token if adjacent (e.g. `you?` is one token).
+
+**Model configuration**
+
+Sample source code for creating a Naive Bayes model for language detection is available [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models), along with sample models and their associated config files [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models).
+
+An example configuration for a Naive Bayes model in ClickHouse:
+
+```xml
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>sentiment</name>
+            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
+            <n>2</n>
+            <mode>token</mode>
+            <alpha>1.0</alpha>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.6</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.4</value>
+                </prior>
+            </priors>
+        </model>
+    </nb_models>
+</clickhouse>
+```
+
+*Configuration parameters*
+
+| Parameter | Description                                                                                              | Example                                                  | Default            |
+|-----------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------------|--------------------|
+| `name`    | Unique model identifier.                                                                                  | `language_detection`                                     | Required           |
+| `path`    | Full path to the model binary.                                                                            | `/etc/clickhouse-server/config.d/language_detection.bin` | Required           |
+| `mode`    | Tokenization method: `byte` (byte sequences), `codepoint` (Unicode characters) or `token` (word tokens). | `token`                                                  | Required           |
+| `n`       | N-gram size: `1` (single word), `2` (word pairs) or `3` (word triplets).                                  | `2`                                                      | Required           |
+| `alpha`   | Laplace smoothing factor used during classification for n-grams that do not appear in the model.          | `0.5`                                                    | `1.0`              |
+| `priors`  | Class probabilities (percentage of documents belonging to a class).                                       | 60% class 0, 40% class 1                                 | Equal distribution |
+
+**Model training guide**
+
+*File format*
+
+In human-readable format, for `n=1` and `token` mode, the model might look like this:
+
+```text
+<class_id> <n-gram> <count>
+0 excellent 15
+1 refund 28
+```
+
+For `n=3` and `codepoint` mode, it might look like:
+
+```text
+<class_id> <n-gram> <count>
+0 exc 15
+1 ref 28
+```
+
+The human-readable format is not used by ClickHouse directly; it must be converted to the binary format described below.
+
+*Binary format details*
+
+Each n-gram is stored as:
+1. 4-byte `class_id` (UInt, little-endian).
+2. 4-byte `n-gram` bytes length (UInt, little-endian).
+3. Raw `n-gram` bytes.
+4. 4-byte `count` (UInt, little-endian).
+
+*Preprocessing requirements*
+
+Before the model is created from the document corpus, the documents must be preprocessed to extract n-grams according to the specified `mode` and `n`:
+
+1. Add boundary markers at the start and end of each document based on the tokenization mode:
+    - `byte`: `0x01` (start), `0xFF` (end)
+    - `codepoint`: `U+10FFFE` (start), `U+10FFFF` (end)
+    - `token`: `<s>` (start), `</s>` (end)
+
+    Note: `(n - 1)` tokens are added at both the beginning and the end of the document.
+
+2. Example for `n=3` in `token` mode:
+    - Document: `ClickHouse is fast`
+    - Processed as: `<s> <s> ClickHouse is fast </s> </s>`
+    - Generated trigrams:
+        - `<s> <s> ClickHouse`
+        - `<s> ClickHouse is`
+        - `ClickHouse is fast`
+        - `is fast </s>`
+        - `fast </s> </s>`
+
+To simplify model creation for `byte` and `codepoint` modes, it may be convenient to first tokenize the document (a list of bytes for `byte` mode, a list of codepoints for `codepoint` mode), append `n - 1` start tokens at the beginning and `n - 1` end tokens at the end, then generate the n-grams and write them to the serialized file.
+)NBDOC";
     FunctionDocumentation::Syntax syntax = "naiveBayesClassifier(model_name, input_text)";
     FunctionDocumentation::Arguments arguments
         = {{"model_name", "Name of the pre-configured model. The model must be defined in ClickHouse's configuration files.", {"String"}},

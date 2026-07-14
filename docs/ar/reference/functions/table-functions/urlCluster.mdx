@@ -1,0 +1,76 @@
+---
+description: 'يسمح بمعالجة الملفات من URL بالتوازي من عدة عقد في عنقود محدد.'
+sidebarTitle: 'urlCluster'
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
+doc_type: 'reference'
+---
+
+يسمح بمعالجة الملفات من URL بالتوازي من عدة عقد في عنقود محدد. على العقدة البادئة، يُنشئ اتصالًا بجميع العقد في العنقود، ويُوسّع علامة النجمة في مسار ملف URL، ثم يوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة البادئة المهمة التالية لمعالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+urlCluster(cluster_name, URL, format, structure)
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+| الوسيطة        | الوصف                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name` | اسم عنقود يُستخدم لتكوين مجموعة من العناوين ومعلمات الاتصال للخوادم البعيدة والمحلية.                                                |
+| `URL`          | عنوان خادم HTTP أو HTTPS يمكنه قبول طلبات `GET`. النوع: [String](/ar/reference/data-types/string).                                      |
+| `format`       | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                           |
+| `structure`    | بنية الجدول بالتنسيق `'UserID UInt64, Name String'`. وهي تحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string). |
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+جدول بالتنسيق والبنية المحددَين، ويتضمن بيانات من `URL` المحدد.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+الحصول على أول 3 أسطر من جدول يحتوي على أعمدة من النوع `String` و[UInt32](/ar/reference/data-types/int-uint) من خادم HTTP يستجيب بتنسيق [CSV](/ar/reference/formats/CSV/CSV).
+
+1. أنشئ خادم HTTP بسيطًا باستخدام أدوات بايثون 3 القياسية، ثم ابدأ تشغيله:
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```sql
+SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
+```
+
+<div id="globs-in-url">
+  ## Globs في URL
+</div>
+
+تُستخدم الأنماط ضمن `{ }` لإنشاء مجموعة من الأجزاء (shards) أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة وأمثلتها، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
+يُستخدم الحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الذي ترد به في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings#glob_expansion_max_elements).
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك HDFS](/ar/reference/engines/table-engines/integrations/hdfs)
+* [دالة جدول URL](/ar/reference/engines/table-engines/special/url)

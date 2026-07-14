@@ -68,6 +68,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
@@ -251,7 +256,7 @@ private:
     {
         bool is_protected = false;
         MappedPtr value;
-        size_t size;
+        size_t size{};
         SLRUQueueIterator queue_iterator;
     };
 

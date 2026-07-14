@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionTwoSampleProportionsZTest : public IFunction
+class FunctionTwoSampleProportionsZTest final : public IFunction
 {
 public:
     static constexpr auto POOLED = "pooled";
@@ -174,7 +174,7 @@ public:
 
             /// z-statistics
             /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
-            Float64 zstat;
+            Float64 zstat = 0;
             if (is_unpooled)
             {
                 zstat = (props_x - props_y) / se;
@@ -248,7 +248,7 @@ SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
     FunctionDocumentation::IntroducedIn introduced_in = {22, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionTwoSampleProportionsZTest>();
+    factory.registerFunction<FunctionTwoSampleProportionsZTest>(documentation);
 }
 
 }

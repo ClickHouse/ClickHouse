@@ -5,6 +5,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 
 
@@ -565,6 +566,7 @@ void ReplicatedMergeTreePartCheckThread::run()
     if (need_stop)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreePartCheckThread::run");
     try
     {
         const auto current_time = std::chrono::steady_clock::now();

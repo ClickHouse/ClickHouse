@@ -1,0 +1,154 @@
+---
+title: Как организовать приём файлов Parquet из S3 бакета
+description: "Узнайте основы использования движка таблицы S3 в ClickHouse для приёма файлов Parquet из S3 бакета и выполнения запросов к ним, включая настройку, разрешения доступа и примеры импорта данных."
+date: 2023-03-22
+tags: ['Ингестия данных']
+keywords: ['Parquet', 'S3 бакет']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ingesting-parquet-files-from-an-s3-bucket">
+  ## Приём файлов Parquet из S3 бакета
+</div>
+
+Ниже приведены основные сведения об использовании движка таблицы S3 для чтения файлов Parquet.
+
+* создайте ключ доступа и секретный ключ для сервисного пользователя IAM.
+  обычные пользователи обычно не подходят, так как для них может быть настроена политика MFA.
+
+* задайте в политике разрешения, позволяющие сервисному пользователю получать доступ к бакету и папкам.
+
+Ниже приведён очень простой пример, который можно использовать, чтобы проверить, что доступ к вашим файлам Parquet работает корректно, прежде чем применять это к реальным данным.
+
+Если вам нужен пример создания пользователя и бакета, вы можете воспользоваться первыми двумя разделами (создание пользователя и создание бакета):
+https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+
+Я использовал этот пример файла: https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
+и загрузил его в свой тестовый бакет
+
+Для бакета можно задать примерно такую политику:
+(при необходимости скорректируйте: этот вариант даёт довольно широкие разрешения, но поможет при тестировании. при необходимости вы можете сузить их)
+
+```
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::1234567890:user/mars-s3-user"
+                ]
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::mars-doc-test",
+                "arn:aws:s3:::mars-doc-test/*"
+            ]
+        }
+    ]
+}
+```
+
+Вы можете выполнять запросы с таким синтаксисом, используя движок таблицы S3:
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+```
+clickhouse-cloud :)  select count(*) from s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet','ABC123', 'abc+123', 'Parquet', 'first_name String');
+
+SELECT count(*)
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'first_name String')
+
+Query id: fd4f1193-d604-4ac0-9a46-bdd2d5e14727
+
+┌─count()─┐
+│    1000 │
+└─────────┘
+
+1 row in set. Elapsed: 1.274 sec. Processed 1.00 thousand rows, 14.64 KB (784.81 rows/s., 11.49 KB/s.)
+```
+
+Справочник по типам данных для формата Parquet находится здесь:
+https://clickhouse.com/docs/interfaces/formats/#data-format-parquet
+
+Чтобы загрузить данные в собственную таблицу ClickHouse:
+
+создайте таблицу, например так (для примера выбрано всего несколько столбцов из файла Parquet):
+
+```
+clickhouse-cloud :) CREATE TABLE my_parquet_table (id UInt64, first_name String) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE my_parquet_table
+(
+    `id` UInt64,
+    `first_name` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 412e3994-bf8e-444e-ac43-a7c82642b7da
+
+Ok.
+
+0 rows in set. Elapsed: 0.600 sec.
+```
+
+Выберите данные из S3 бакета для вставки в новую таблицу:
+
+```
+clickhouse-cloud :) INSERT INTO my_parquet_table (id, first_name) SELECT id, first_name FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123','abc+123', 'Parquet', 'id UInt64, first_name String') FORMAT Parquet
+
+INSERT INTO my_parquet_table (id, first_name) SELECT
+    id,
+    first_name
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'id UInt64, first_name String')
+
+Query id: c3cdc871-f338-462d-8797-6751b45a0b58
+
+Ok.
+
+0 rows in set. Elapsed: 1.220 sec. Processed 1.00 thousand rows, 22.64 KB (819.61 rows/s., 18.56 KB/s.)
+```
+
+Проверьте импорт:
+
+```
+clickhouse-cloud :) SELECT * FROM my_parquet_table LIMIT 10;
+
+SELECT *
+FROM my_parquet_table
+LIMIT 10
+
+Query id: 1ccf59dd-d804-46a9-aadd-ed5c57b9e1a0
+
+┌─id─┬─first_name─┐
+│  1 │ Amanda     │
+│  2 │ Albert     │
+│  3 │ Evelyn     │
+│  4 │ Denise     │
+│  5 │ Carlos     │
+│  6 │ Kathryn    │
+│  7 │ Samuel     │
+│  8 │ Harry      │
+│  9 │ Jose       │
+│ 10 │ Emily      │
+└────┴────────────┘
+```
+
+Когда вы будете готовы импортировать реальные данные, можно использовать специальный синтаксис — например, подстановочные шаблоны и диапазоны, — чтобы указать папки, подпапки и файлы в вашем бакете.
+Я бы рекомендовал для начала отфильтровать несколько каталогов и файлов, чтобы проверить импорт, например выбрать определённый год, пару месяцев и какой-нибудь диапазон дат.
+
+Помимо параметров path, здесь также появился новый синтаксис `**`, который рекурсивно указывает все подкаталоги.
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+Например, предположим, что пути и структура бакета выглядят примерно так:
+`https://your_s3_bucket.s3.amazonaws.com/<your_folder>/<year>/<month>/<day>/<filename>.parquet`
+`https://mars-doc-test.s3.amazonaws.com/system_logs/2022/11/01/my-app-logs-0001.parquet`
+
+Это позволит получить все файлы за 1-й день каждого месяца в 2021–2022 годах
+`https://mars-doc-test.s3.amazonaws.com/system_logs/{2021-2022}/**/01/*.parquet`

@@ -1,0 +1,110 @@
+---
+description: 'O motor permite consultar e inserir em conjuntos de dados remotos por meio do Apache Arrow Flight.'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'Motor de tabela ArrowFlight'
+doc_type: 'reference'
+---
+
+O motor de tabela ArrowFlight permite que o ClickHouse leia de e grave em conjuntos de dados remotos por meio do protocolo [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
+Essa integração permite que o ClickHouse interaja com servidores externos com suporte a Flight no formato colunar Arrow, com alto desempenho.
+
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**Parâmetros do motor**
+
+* `host:port` — Endereço do servidor Arrow Flight remoto. Se a porta for omitida, a porta padrão `8815` será usada. [String](/pt-BR/reference/data-types/string).
+* `dataset_name` — Identificador do conjunto de dados no servidor Flight (usado como um descritor PATH ou em uma consulta `SELECT *`, dependendo da configuração `arrow_flight_request_descriptor_type`). [String](/pt-BR/reference/data-types/string).
+* `username` — Nome de usuário para autenticação HTTP básica. [String](/pt-BR/reference/data-types/string).
+* `password` — Senha para autenticação HTTP básica. [String](/pt-BR/reference/data-types/string).
+
+Se `username` e `password` forem omitidos, a autenticação não será usada (isso só funciona se o servidor Arrow Flight permitir acesso sem autenticação).
+
+A lista de colunas é opcional — se omitida, o esquema é inferido do servidor Arrow Flight remoto via `GetSchema`.
+
+<div id="named-collections">
+  ## Coleções nomeadas
+</div>
+
+O motor oferece suporte a [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) para armazenar parâmetros de conexão:
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+Parâmetros da coleção nomeada:
+
+| Parâmetro                  | Obrigatório                          | Padrão  | Descrição                                                         |
+| -------------------------- | ------------------------------------ | ------- | ----------------------------------------------------------------- |
+| `host` or `hostname`       | Não                                  | `""`    | Hostname do servidor.                                             |
+| `port`                     | Sim                                  | —       | Porta do servidor.                                                |
+| `dataset`                  | Sim                                  | —       | Nome do conjunto de dados ou descritor.                           |
+| `use_basic_authentication` | Não                                  | `true`  | Habilita a autenticação básica.                                   |
+| `user` or `username`       | Se a autenticação estiver habilitada | —       | Nome de usuário para autenticação.                                |
+| `password`                 | Não                                  | `""`    | Senha para autenticação.                                          |
+| `enable_ssl`               | Não                                  | `false` | Habilita a criptografia TLS.                                      |
+| `ssl_ca`                   | Não                                  | `""`    | Caminho para o arquivo do certificado da CA para verificação TLS. |
+| `ssl_override_hostname`    | Não                                  | `""`    | Substitui o hostname verificado durante a verificação TLS.        |
+
+<div id="settings">
+  ## Configurações
+</div>
+
+* `arrow_flight_request_descriptor_type` — Controla como o nome do conjunto de dados é enviado ao servidor Flight. Valores possíveis: `path` (padrão; envia como um descritor PATH) ou `command` (envia como um descritor CMD com `SELECT * FROM <dataset>`). Use `command` em servidores Flight que esperam comandos SQL (por exemplo, Dremio).
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Leitura de dados de um servidor remoto do Arrow Flight:
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+Inserindo dados em um servidor remoto do Arrow Flight:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## Notas
+</div>
+
+* Se colunas forem especificadas na instrução `CREATE TABLE`, elas deverão corresponder ao esquema retornado pelo servidor Flight.
+* Se as colunas forem omitidas, o esquema será inferido automaticamente do servidor remoto.
+* Há suporte tanto para leitura (`SELECT`) quanto para gravação (`INSERT`).
+* A configuração `arrow_flight_request_descriptor_type` controla se o nome do conjunto de dados é enviado como um descritor PATH ou como um descritor CMD que encapsula uma consulta `SELECT *`.
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [função de tabela arrowFlight](/pt-BR/reference/functions/table-functions/arrowflight)
+* [interface do Arrow Flight](/pt-BR/concepts/features/interfaces/arrowflight)
+* [especificação SQL do Apache Arrow Flight](https://arrow.apache.org/docs/format/FlightSql.html)
+* [formato Arrow no ClickHouse](/pt-BR/reference/formats/Arrow/Arrow)

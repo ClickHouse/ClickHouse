@@ -1,7 +1,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <iterator>
-#include <queue>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -11,6 +14,8 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/NegativeLimitTransform.h>
+#include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -57,7 +62,7 @@ QueryPipeline::QueryPipeline()
 }
 
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
@@ -155,19 +160,19 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
-    std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
-    std::unordered_set<IProcessor *> visited;
+    VectorWithMemoryTracking<IProcessor *> processors;
+    MapWithMemoryTracking<IProcessor *, VectorWithMemoryTracking<size_t>> limit_candidates;
+    UnorderedSetWithMemoryTracking<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        LimitTransform * limit_processor;
+        IProcessor * limit_processor;
         ssize_t limit_input_port;
     };
 
-    std::queue<QueuedEntry> queue;
+    QueueWithMemoryTracking<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
@@ -195,7 +200,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        if (auto * limit = typeid_cast<LimitTransform *>(processor))
+        if (typeid_cast<LimitTransform *>(processor) || typeid_cast<NegativeLimitTransform *>(processor)
+            || typeid_cast<FractionalLimitTransform *>(processor))
         {
             has_limit = true;
 
@@ -203,7 +209,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (limit_processor)
                 continue;
 
-            limit_processor = limit;
+            limit_processor = processor;
             limit_candidates[limit_processor] = {};
         }
         else if (limit_processor)
@@ -240,7 +246,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 6.
-            if (typeid_cast<LimitByTransform *>(processor))
+            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
@@ -287,12 +293,19 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     /// Case 7.
     for (auto && [limit, ports] : limit_candidates)
     {
-        /// If there are some input ports which don't have the counter, add it to LimitTransform.
+        /// If there are some input ports which don't have the counter, add it to the limit processor.
         if (ports.size() < limit->getInputs().size())
         {
             processors.push_back(limit);
             for (auto port : ports)
-                limit->setInputPortHasCounter(port);
+            {
+                if (auto * lim = typeid_cast<LimitTransform *>(limit))
+                    lim->setInputPortHasCounter(port);
+                else if (auto * neg_lim = typeid_cast<NegativeLimitTransform *>(limit))
+                    neg_lim->setInputPortHasCounter(port);
+                else if (auto * frac_lim = typeid_cast<FractionalLimitTransform *>(limit))
+                    frac_lim->setInputPortHasCounter(port);
+            }
         }
     }
 
@@ -417,7 +430,6 @@ QueryPipeline::QueryPipeline(Chain chain)
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    processors->reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -498,7 +510,6 @@ void QueryPipeline::complete(Chain chain)
     drop(totals, *processors);
     drop(extremes, *processors);
 
-    processors->reserve(processors->size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -643,6 +654,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
+    transform->setNormalizedQueryHash(normalized_query_hash);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors->emplace_back(std::move(transform));
@@ -660,7 +672,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
-    assert(pulling());
+    chassert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
     /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.
@@ -687,14 +699,12 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
 
 void QueryPipeline::finalizeWriteInQueryResultCache()
 {
-    auto it = std::find_if(
-        processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
-
-    /// The pipeline can contain up to three StreamInQueryResultCacheTransforms which all point to the same query result cache writer
-    /// object. We can call finalize() on any of them.
-    if (it != processors->end())
-        dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
+    /// QueryPipeline can contain multiple StreamInQueryResultCacheTransforms,
+    /// and all StreamInQueryResultCacheTransforms can point to different QueryResultCacheWriter objects if subqueries are cached.
+    /// We should call finalize() on all of them.
+    for (auto & processor : *processors)
+        if (auto * stream_processor = dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); stream_processor)
+            stream_processor->finalizeWriteInQueryResultCache();
 }
 
 void QueryPipeline::readFromQueryResultCache(
@@ -773,10 +783,31 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
 
+    const auto & source_header = output->getHeader();
+
+    /// Prefer matching the source columns to the target structure by name, not by position.
+    /// This is used to read external dictionaries from a local ClickHouse source: the dictionary expects its
+    /// columns in keys-first order, but the source query may return them in a different order. Matching by name
+    /// reorders the columns correctly and keeps the local source consistent with the remote one, which already
+    /// matches by name (see `adaptBlockStructure` in `RemoteQueryExecutor`).
+    ///
+    /// Matching by name is only possible when every target column is present in the source by name. When the
+    /// source query does not name its columns to match the target (e.g. `SELECT 1, 1`), keep the historical
+    /// positional matching of a local dictionary source, so that such dictionaries continue to load.
+    auto match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
+    for (const auto & column : columns)
+    {
+        if (!source_header.has(column.name))
+        {
+            match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+            break;
+        }
+    }
+
     auto converting = ActionsDAG::makeConvertingActions(
-        output->getHeader().getColumnsWithTypeAndName(),
+        source_header.getColumnsWithTypeAndName(),
         columns,
-        ActionsDAG::MatchColumnsMode::Position,
+        match_columns_mode,
         context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
@@ -791,6 +822,7 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
 
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
+    callback->setNormalizedQueryHash(normalized_query_hash);
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)

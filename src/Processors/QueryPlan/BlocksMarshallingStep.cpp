@@ -59,13 +59,19 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getSharedHeader()));
     const size_t num_threads = pipeline.getNumThreads();
     pipeline.resize(num_threads);
-    pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback); });
+    pipeline.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
+    {
+        /// Skip marshalling for totals and extremes streams because `IOutputFormat::prepareTotals`
+        /// may call `cut` on columns, which `ColumnBLOB` does not support.
+        if (stream_type != Pipe::StreamType::Main)
+            return nullptr;
+        return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback);
+    });
     if (single_stream)
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));
 }
 
-std::unique_ptr<IQueryPlanStep> BlocksMarshallingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
     chassert(ctx.input_headers.size() == 1);
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());

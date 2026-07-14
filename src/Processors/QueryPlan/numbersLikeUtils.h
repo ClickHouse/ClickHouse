@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+#include <Core/Range.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <cstddef>
@@ -11,50 +11,42 @@
 namespace DB
 {
 
+class KeyCondition;
+class Pipe;
+
 struct Settings;
 
 namespace NumbersLikeUtils
 {
 
-/// Whether we should push limit down to scan.
-inline bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
+struct ExtractedRanges
 {
-    /// Reject negative, fractional, and zero limits for pushdown
-    if (lim_info.is_limit_length_negative
-        || lim_info.fractional_limit > 0
-        || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0)
-        return false;
+    enum class Kind
+    {
+        ExactRanges,
+        ConservativeRanges
+    };
 
-    chassert(query_info.query);
+    Kind kind = Kind::ConservativeRanges;
+    Ranges ranges;
+};
 
-    const auto & query = query_info.query->as<ASTSelectQuery &>();
+/// Return true if extracted ranges represent an unsatisfiable condition.
+inline bool isAlwaysFalse(const Ranges & ranges) { return ranges.empty(); }
 
-    /// Just ignore some minor cases, such as:
-    ///     select * from system.numbers order by number asc limit 10
-    return !query.distinct
-        && !query.limitBy()
-        && !query_info.has_order_by
-        && !query_info.need_aggregate
-        /// For new analyzer, window will be deleted from AST, so we should not use query.window()
-        && !query_info.has_window
-        && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
-}
+/// Return true if extracted ranges carry no restrictions (i.e. the whole universe).
+inline bool isUniverse(const Ranges & ranges) { return ranges.size() == 1 && ranges.front().isInfinite(); }
+
+/// Try to extract exact ranges from the condition, otherwise fall back to conservative ranges extraction.
+ExtractedRanges extractRanges(const KeyCondition & condition);
+
+/// Apply query LIMIT to an effective (storage) limit, if possible.
+void applyQueryLimit(std::optional<UInt64> & effective_limit, const std::optional<size_t> & query_limit);
+
+void addNullSource(Pipe & pipe, SharedHeader header);
 
 /// TODO: This is ideologically wrong. We should only get it from the query plan optimization.
-inline std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
-{
-    if (!query_info.query)
-        return {};
-
-    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-
-    if (!shouldPushdownLimit(query_info, lim_info))
-        return {};
-
-    return lim_info.limit_length + lim_info.limit_offset;
-}
+std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context);
 
 /// Fail fast if estimated number of rows to read exceeds the limit.
 void checkLimits(const Settings & settings, size_t rows);

@@ -70,7 +70,7 @@ The minimum set of characters that you need to escape when passing data in TabSe
 
 Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
+Arrays are written as a list of comma-separated values in `[]`. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
 [NULL](/sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](/operations/settings/settings-formats.md/#format_tsv_null_representation) (default value is `\N`).
 

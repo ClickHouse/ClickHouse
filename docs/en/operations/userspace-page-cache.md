@@ -8,8 +8,6 @@ title: 'Userspace page cache'
 doc_type: 'reference'
 ---
 
-# Userspace page cache
-
 ## Overview {#overview}
 
 > The userspace page cache is a new caching mechanism that allows for caching of 

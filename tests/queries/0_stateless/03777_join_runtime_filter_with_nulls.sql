@@ -60,3 +60,19 @@ FROM
 USING (id);
 
 SELECT 1 FROM t0 JOIN t1 USING c0;
+
+
+-- Check result when exact values limit is exceeded
+SET join_runtime_filter_exact_values_limit = 5;
+
+
+CREATE TABLE t2 (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE t3 (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
+
+INSERT INTO t2 SELECT * FROM system.numbers LIMIT 10;
+INSERT INTO t2 SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+INSERT INTO t3 SELECT * FROM system.numbers LIMIT 100;
+INSERT INTO t3 SELECT * FROM system.numbers LIMIT 100 OFFSET 100;
+
+
+SELECT COUNT(*) FROM t2 JOIN t3 USING (c0);

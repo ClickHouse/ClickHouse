@@ -36,7 +36,9 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_DATABASE}.table_for_dict VA
 
 function check()
 {
-    local TIMELIMIT=$((SECONDS+10))
+    # The background reload thread (PeriodicUpdater) wakes up every 5 seconds regardless of LIFETIME,
+    # so allow enough time for several check cycles plus the reload itself.
+    local TIMELIMIT=$((SECONDS+30))
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_with_zero_min_lifetime', 'value', toUInt64(2))")
 
     while [ "$query_result" != "2.2" ] && [ $SECONDS -lt "$TIMELIMIT" ]

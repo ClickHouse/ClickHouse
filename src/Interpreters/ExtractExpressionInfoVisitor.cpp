@@ -30,13 +30,13 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     // For aggregate functions we can't do (1) but can do (2).
     // For window functions both don't make sense -- they are not allowed in
     // WHERE or HAVING.
-    else if (!ast_function.is_window_function
+    else if (!ast_function.isWindowFunction()
         && AggregateFunctionFactory::instance().isAggregateFunctionName(
             ast_function.name))
     {
         data.is_aggregate_function = true;
     }
-    else if (ast_function.is_window_function)
+    else if (ast_function.isWindowFunction())
     {
         data.is_window_function = true;
     }

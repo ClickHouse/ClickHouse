@@ -140,7 +140,81 @@ public:
             visit(*t, ast, data);
     }
 
+    static void extractNestedColumnsRegexpMatchers(ASTPtr ast, Data & data)
+    {
+        if (!ast || ast->as<ASTSubquery>())
+            return;
+
+        if (auto * expression_list = ast->as<ASTExpressionList>())
+        {
+            extractNestedColumnsRegexpMatchers(*expression_list, data);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            extractNestedColumnsRegexpMatchers(child, data);
+    }
+
 private:
+    static void extractColumnsRegexpMatcher(
+        const ASTColumnsRegexpMatcher & columns_regexp_matcher,
+        ASTs & columns,
+        Data & data)
+    {
+        String pattern = columns_regexp_matcher.getPattern();
+        re2::RE2 regexp(pattern, re2::RE2::Quiet);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
+        for (auto & table_name : data.tables_order)
+            data.addTableColumns(
+                table_name,
+                columns,
+                [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
+
+        if (columns_regexp_matcher.transformers)
+        {
+            for (const auto & transformer : columns_regexp_matcher.transformers->children)
+                IASTColumnsTransformer::transform(transformer, columns);
+        }
+    }
+
+    static void extractQualifiedColumnsRegexpMatcher(
+        const ASTQualifiedColumnsRegexpMatcher & qualified_columns_regexp_matcher,
+        ASTs & columns,
+        Data & data)
+    {
+        if (!qualified_columns_regexp_matcher.qualifier)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must have a qualifier");
+
+        auto & identifier = qualified_columns_regexp_matcher.qualifier->as<ASTIdentifier &>();
+
+        String pattern = qualified_columns_regexp_matcher.getPattern();
+        re2::RE2 regexp(pattern, re2::RE2::Quiet);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
+        data.addTableColumns(
+            identifier.name(),
+            columns,
+            [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
+
+        if (qualified_columns_regexp_matcher.transformers)
+        {
+            for (const auto & transformer : qualified_columns_regexp_matcher.transformers->children)
+            {
+                if (transformer->as<ASTColumnsApplyTransformer>() ||
+                    transformer->as<ASTColumnsExceptTransformer>() ||
+                    transformer->as<ASTColumnsReplaceTransformer>())
+                    IASTColumnsTransformer::transform(transformer, columns);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must only have children of IASTColumnsTransformer type");
+            }
+        }
+    }
+
     static void visit(const ASTExpressionList & node, const ASTPtr &, Data & data)
     {
         bool has_asterisks = false;
@@ -203,24 +277,12 @@ private:
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
                 has_asterisks = true;
-
-                String pattern = columns_regexp_matcher->getPattern();
-                re2::RE2 regexp(pattern, re2::RE2::Quiet);
-                if (!regexp.ok())
-                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
-
-                for (auto & table_name : data.tables_order)
-                    data.addTableColumns(
-                        table_name,
-                        columns,
-                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
-
-                if (columns_regexp_matcher->transformers)
-                {
-                    for (const auto & transformer : columns_regexp_matcher->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
-                }
+                extractColumnsRegexpMatcher(*columns_regexp_matcher, columns, data);
+            }
+            else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+            {
+                has_asterisks = true;
+                extractQualifiedColumnsRegexpMatcher(*qualified_columns_regexp_matcher, columns, data);
             }
             else
                 data.new_select_expression_list->children.push_back(child);
@@ -233,6 +295,43 @@ private:
 
         if (!has_asterisks)
             data.new_select_expression_list.reset();
+    }
+
+    static bool extractNestedColumnsRegexpMatchers(ASTExpressionList & node, Data & data)
+    {
+        bool has_matchers = false;
+        ASTs new_children;
+        new_children.reserve(node.children.size());
+
+        for (const auto & child : node.children)
+        {
+            ASTs columns;
+            if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
+            {
+                has_matchers = true;
+                extractColumnsRegexpMatcher(*columns_regexp_matcher, columns, data);
+            }
+            else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+            {
+                has_matchers = true;
+                extractQualifiedColumnsRegexpMatcher(*qualified_columns_regexp_matcher, columns, data);
+            }
+            else
+            {
+                extractNestedColumnsRegexpMatchers(child, data);
+                new_children.push_back(child);
+            }
+
+            new_children.insert(
+                new_children.end(),
+                std::make_move_iterator(columns.begin()),
+                std::make_move_iterator(columns.end()));
+        }
+
+        if (has_matchers)
+            node.children = std::move(new_children);
+
+        return has_matchers;
     }
 };
 
@@ -308,7 +407,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 using ExtractAsterisksVisitor = ConstInDepthNodeVisitor<ExtractAsterisksMatcher, true>;
-
 /// V2 specific visitors
 
 struct CollectColumnIdentifiersMatcher
@@ -353,7 +451,9 @@ struct CollectColumnIdentifiersMatcher
         /// Do not go into subqueries. Do not collect table identifiers. Do not get identifier from 't.*'.
         return !node->as<ASTSubquery>() &&
             !node->as<ASTTablesInSelectQuery>() &&
-            !node->as<ASTQualifiedAsterisk>();
+            !node->as<ASTQualifiedAsterisk>() &&
+            !node->as<ASTQualifiedColumnsRegexpMatcher>() &&
+            !node->as<ASTQualifiedColumnsListMatcher>();
     }
 
     static void visit(const ASTPtr & ast, Data & data)
@@ -505,8 +605,7 @@ class UniqueShortNames
 public:
     /// We know that long names are unique (do not clashes with others).
     /// So we could make unique names base on this knolage by adding some unused prefix.
-    /// Add a heading underscore to make unique names valid for `isValidIdentifierBegin`
-    static constexpr const char * pattern = "_--";
+    static constexpr const char * pattern = "--";
 
     String longToShort(const String & long_name)
     {
@@ -605,8 +704,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 size_t count = countTablesWithColumn(tables, short_name);
                 const auto & table = tables[*table_pos];
 
-                /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
-                if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
+                if (count > 1 || aliases.contains(short_name))
                 {
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
@@ -632,47 +730,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 restoreName(*ident, original_long_name, restored_names);
             }
             else if (got_alias)
-            {
-                String short_name = ident->shortName();
-                if (!isValidIdentifierBegin(short_name.at(0)))
-                {
-                    String original_long_name;
-                    if (public_identifiers.contains(ident))
-                        original_long_name = ident->name();
-
-                    const auto & table = tables[*table_pos];
-                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    const auto & unique_long_name = ident->name();
-
-                    String unique_short_name = unique_names.longToShort(unique_long_name);
-                    ident->setShortName(unique_short_name);
-                    needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
-                    restoreName(*ident, original_long_name, restored_names);
-                }
-                else
-                    needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
-            }
+                needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
             else
-            {
-                String short_name = ident->shortName();
-                if (!isValidIdentifierBegin(short_name.at(0)))
-                {
-                    String original_long_name;
-                    if (public_identifiers.contains(ident))
-                        original_long_name = ident->name();
-
-                    const auto & table = tables[*table_pos];
-                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    const auto & unique_long_name = ident->name();
-
-                    String unique_short_name = unique_names.longToShort(unique_long_name);
-                    ident->setShortName(unique_short_name);
-                    needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
-                    restoreName(*ident, original_long_name, restored_names);
-                }
-                else
-                    needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
-            }
+                needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
     }
 
@@ -708,7 +768,13 @@ boost::intrusive_ptr<ASTExpressionList> subqueryExpressionList(
 
 bool JoinToSubqueryTransformMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
@@ -743,6 +809,8 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         ExtractAsterisksVisitor(asterisks_data).visit(select.select());
         if (asterisks_data.new_select_expression_list)
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(asterisks_data.new_select_expression_list));
+
+        ExtractAsterisksMatcher::extractNestedColumnsRegexpMatchers(select.select(), asterisks_data);
     }
 
     /// Collect column identifiers

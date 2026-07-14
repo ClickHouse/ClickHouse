@@ -10,9 +10,12 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB
@@ -70,7 +73,7 @@ public:
         data(place).addY(new_y, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -114,6 +117,7 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(
 }
 
 
+void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_rankCorr = R"(
@@ -162,7 +166,7 @@ SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);
     FunctionDocumentation::Category category_rankCorr = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_rankCorr = {description_rankCorr, syntax_rankCorr, arguments_rankCorr, parameters_rankCorr, returned_value_rankCorr, examples_rankCorr, introduced_in_rankCorr, category_rankCorr};
 
-    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, {}, documentation_rankCorr});
+    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, documentation_rankCorr});
 }
 
 }

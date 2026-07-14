@@ -569,3 +569,108 @@ def test_limit(started_cluster):
     assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 OFFSET 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("5\n6\n7\n8\n9\n")
 
     group_by_limit_mongo_table.drop()
+
+
+def test_named_collection(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_named_collection"]
+    try:
+        db.command("dropAllUsersFromDatabase")
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    simple_table = db["simple_table"]
+    data = [{"key": 1, "data": "a"}, {"key": 2, "data": "b"}]
+    simple_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
+    # database and collection via key-value arguments. This should be accepted and forwarded
+    # to the storage configuration.
+    result = node.query(
+        "SELECT count() FROM mongodb(mongo1_nc, structure='key UInt64, data String')"
+    )
+    assert result == "2\n"
+
+    simple_table.drop()
+
+def test_named_collection_overrides(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_named_collection_overrides"]
+    try:
+        db.command("dropAllUsersFromDatabase")
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    override_table = db["override_collection"]
+    data = [{"key": 1, "data": "a"}, {"key": 2, "data": "b"}]
+    override_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
+    # database and collection via key-value arguments. This should be accepted and forwarded
+    # to the storage configuration.
+    result = node.query("SELECT sum(key) FROM mongodb(mongo1_nc, database = 'test_named_collection_overrides', collection = 'override_collection', structure='key UInt64, data String')")
+    assert result == "3\n"
+
+    override_table.drop()
+
+
+def test_oid_columns_named_argument(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_oid_columns_named_argument"]
+    try:
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    oid_table = db["oid_table"]
+    data = [{"key": i, "data": hex(i * i)} for i in range(0, 100)]
+    oid_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # `oid_columns` passed as a named argument must be accepted. It used to be rejected with
+    # BAD_ARGUMENTS ("Expected key-value defined argument") because the named-argument
+    # allowlist in getKeyValueMongoDBArgument did not include `oid_columns`. Use the URI form,
+    # where `oid_columns` follows `structure` directly (as documented).
+    assert (
+        node.query(
+            f"SELECT count() FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test_oid_columns_named_argument', 'oid_table', structure='key UInt64, data String', oid_columns='_id')"
+        )
+        == "100\n"
+    )
+
+    # A named `oid_columns` must also take effect (not merely be accepted) in the `host:port`
+    # form when `options` is omitted. The named argument is stripped to a positional value, so it
+    # used to land in the `options` slot and be silently ignored. With `oid_columns='data'` the
+    # `data` column is treated as an oid, so filtering by a non-oid string must raise.
+    long_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', oid_columns='data')"
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {long_form} WHERE data = 'not-oid'")
+
+    # Sanity check: without `oid_columns`, `data` is a plain string column and the same filter
+    # just matches no rows instead of raising. This confirms the failure above is caused by
+    # `oid_columns` taking effect.
+    plain_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String')"
+    )
+    assert node.query(f"SELECT count() FROM {plain_form} WHERE data = 'not-oid'") == "0\n"
+
+    # A named `options` combined with a positional `oid_columns` must keep both values in their
+    # canonical slots. The positional `oid_columns` used to overwrite the `options` slot, so the
+    # connection `options` were lost and `oid_columns` was never set. With a valid `options` and
+    # the positional `'data'` bound to `oid_columns`, a plain count must still succeed (proving the
+    # connection `options` survived) and filtering `data` by a non-oid string must raise (proving
+    # the positional `oid_columns` took effect).
+    mixed_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', options='connectTimeoutMS=20000', 'data')"
+    )
+    assert node.query(f"SELECT count() FROM {mixed_form}") == "100\n"
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {mixed_form} WHERE data = 'not-oid'")
+
+    oid_table.drop()

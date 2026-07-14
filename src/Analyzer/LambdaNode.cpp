@@ -79,7 +79,7 @@ ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
     tuple_function->name = "tuple";
     tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
     tuple_function->arguments = tuple_function->children.back();
-    tuple_function->is_operator = true;
+    tuple_function->setIsOperator(true);
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
     lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
@@ -89,8 +89,8 @@ ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
-    lambda_function_ast->is_lambda_function = true;
-    lambda_function_ast->is_operator = is_operator;
+    lambda_function_ast->setIsLambdaFunction(true);
+    lambda_function_ast->setIsOperator(is_operator);
 
     return lambda_function_ast;
 }

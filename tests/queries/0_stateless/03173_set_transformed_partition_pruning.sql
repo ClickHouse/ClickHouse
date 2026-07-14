@@ -19,7 +19,7 @@ OPTIMIZE TABLE 03173_single_function FINAL;
 
 SELECT count() FROM 03173_single_function WHERE dt IN ('2024-01-20', '2024-05-25') SETTINGS log_comment='03173_single_function';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_single_function';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_single_function';
 
 DROP TABLE IF EXISTS 03173_single_function;
 
@@ -39,8 +39,8 @@ OPTIMIZE TABLE 03173_nested_function FINAL;
 SELECT count() FROM 03173_nested_function WHERE id IN (10) SETTINGS log_comment='03173_nested_function';
 SELECT count() FROM 03173_nested_function WHERE xxHash32(id) IN (2158931063, 1449383981) SETTINGS log_comment='03173_nested_function_subexpr';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function';
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr';
 
 DROP TABLE IF EXISTS 03173_nested_function;
 
@@ -62,8 +62,8 @@ OPTIMIZE TABLE 03173_nested_function_lc FINAL;
 SELECT count() FROM 03173_nested_function_lc WHERE id IN (10) SETTINGS log_comment='03173_nested_function_lc';
 SELECT count() FROM 03173_nested_function_lc WHERE xxHash32(id) IN (2158931063, 1449383981) SETTINGS log_comment='03173_nested_function_subexpr_lc';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_lc';
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_lc';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_lc';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_lc';
 
 DROP TABLE IF EXISTS 03173_nested_function_lc;
 
@@ -84,8 +84,8 @@ OPTIMIZE TABLE 03173_nested_function_null FINAL;
 SELECT count() FROM 03173_nested_function_null WHERE id IN (10) SETTINGS log_comment='03173_nested_function_null';
 SELECT count() FROM 03173_nested_function_null WHERE xxHash32(id) IN (2158931063, 1449383981) SETTINGS log_comment='03173_nested_function_subexpr_null';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_null';
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_null';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_null';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_null';
 
 DROP TABLE IF EXISTS 03173_nested_function_null;
 
@@ -108,8 +108,8 @@ OPTIMIZE TABLE 03173_nested_function_lc_null FINAL;
 SELECT count() FROM 03173_nested_function_lc_null WHERE id IN (10) SETTINGS log_comment='03173_nested_function_lc_null';
 SELECT count() FROM 03173_nested_function_lc_null WHERE xxHash32(id) IN (2158931063, 1449383981) SETTINGS log_comment='03173_nested_function_subexpr_lc_null';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_lc_null';
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_lc_null';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_lc_null';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_function_subexpr_lc_null';
 
 DROP TABLE IF EXISTS 03173_nested_function_lc_null;
 
@@ -128,7 +128,7 @@ OPTIMIZE TABLE 03173_nonsafe_cast FINAL;
 
 SELECT count() FROM 03173_nonsafe_cast WHERE id IN (SELECT '50' UNION ALL SELECT '99') SETTINGS log_comment='03173_nonsafe_cast';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nonsafe_cast';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nonsafe_cast';
 
 DROP TABLE IF EXISTS 03173_nonsafe_cast;
 
@@ -149,10 +149,10 @@ OPTIMIZE TABLE 03173_multiple_partition_cols FINAL;
 SELECT count() FROM 03173_multiple_partition_cols WHERE key2 IN (4) SETTINGS log_comment='03173_multiple_columns';
 SELECT count() FROM 03173_multiple_partition_cols WHERE xxHash32(key2) IN (4251411170) SETTINGS log_comment='03173_multiple_columns_subexpr';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_multiple_columns';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_multiple_columns';
 -- Due to xxHash32() in WHERE condition, MinMax is unable to eliminate any parts,
 -- so partition pruning leave two parts (for key1 // 50 = 0 and key1 // 50 = 1)
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_multiple_columns_subexpr';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_multiple_columns_subexpr';
 
 -- Preparing base table for filtering by LowCardinality/Nullable sets
 DROP TABLE IF EXISTS 03173_base_data_source;
@@ -174,7 +174,7 @@ CREATE TABLE 03173_low_cardinality_set (id LowCardinality(Int32)) ENGINE=Memory 
 
 SELECT count() FROM 03173_base_data_source WHERE id IN (SELECT id FROM 03173_low_cardinality_set) SETTINGS log_comment='03173_low_cardinality_set';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_low_cardinality_set';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_low_cardinality_set';
 
 DROP TABLE IF EXISTS 03173_low_cardinality_set;
 
@@ -185,7 +185,7 @@ CREATE TABLE 03173_nullable_set (id Nullable(Int32)) ENGINE=Memory AS SELECT 10;
 
 SELECT count() FROM 03173_base_data_source WHERE id IN (SELECT id FROM 03173_nullable_set) SETTINGS log_comment='03173_nullable_set';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nullable_set';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nullable_set';
 
 DROP TABLE IF EXISTS 03173_nullable_set;
 
@@ -196,7 +196,7 @@ CREATE TABLE 03173_lc_nullable_set (id LowCardinality(Nullable(Int32))) ENGINE=M
 
 SELECT count() FROM 03173_base_data_source WHERE id IN (SELECT id FROM 03173_lc_nullable_set) SETTINGS log_comment='03173_lc_nullable_set';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_lc_nullable_set';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_lc_nullable_set';
 
 DROP TABLE IF EXISTS 03173_lc_nullable_set;
 
@@ -236,7 +236,7 @@ SELECT toString(toDate('2100-01-01') + 10 * number) FROM numbers(50);
 
 SELECT count() FROM 03173_nested_date_parsing WHERE id IN ('2000-01-21', '2023-05-02') SETTINGS log_comment='03173_nested_date_parsing', session_timezone = '';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_date_parsing';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_date_parsing';
 SELECT count() FROM 03173_nested_date_parsing WHERE id IN ('not a date');
 
 DROP TABLE IF EXISTS 03173_nested_date_parsing;
@@ -256,6 +256,6 @@ OPTIMIZE TABLE 03173_empty_transform FINAL;
 
 SELECT id FROM 03173_empty_transform WHERE xxHash32(id) % 3 IN (xxHash32(2::Int32) % 3) SETTINGS log_comment='03173_empty_transform';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_empty_transform';
+SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_empty_transform';
 
 DROP TABLE IF EXISTS 03173_empty_transform;

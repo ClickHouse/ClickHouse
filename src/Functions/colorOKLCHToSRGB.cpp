@@ -14,7 +14,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLCHToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLCHToSRGB>
+class FunctionColorOKLCHToSRGB final : public ColorConversionToSRGBBase<FunctionColorOKLCHToSRGB>
 {
 public:
     static constexpr auto name = "colorOKLCHToSRGB";
@@ -45,25 +45,25 @@ public:
 REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
 {
     FunctionDocumentation::Description description = R"(
-        Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
+Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
 
-        If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
+If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
 
-        :::note
-        **OKLCH** is a cylindrical version of the OKLab colour space.
-        It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`).
-        OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-        :::
+:::note
+**OKLCH** is a cylindrical version of the OKLab colour space.
+It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`).
+OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
 
-        The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
+The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 
-        1) OKLCH to OKLab.
-        2) OKLab to Linear sRGB
-        3) Linear sRGB to sRGB
+1) OKLCH to OKLab.
+2) OKLab to Linear sRGB
+3) Linear sRGB to sRGB
 
-        The second argument gamma is used at the last stage.
+The second argument gamma is used at the last stage.
 
-        For references of colors in OKLCH space, and how they correspond to sRGB colors please see [https://oklch.com/](https://oklch.com/).
+For references of colors in OKLCH space, and how they correspond to sRGB colors please see [https://oklch.com/](https://oklch.com/).
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLCHToSRGB(tuple [, gamma])";
     FunctionDocumentation::Arguments arguments = {
@@ -75,24 +75,24 @@ REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
         {
             "Convert OKLCH to sRGB",
             R"(
-                            SELECT colorOKLCHToSRGB((0.6, 0.12, 40)) AS rgb
+SELECT colorOKLCHToSRGB((0.6, 0.12, 40)) AS rgb;
                         )",
             R"(
-                            ┌─rgb─────────────────────────────────────────────────────┐
-                            │(186.02058688365264,100.68677189684993,71.67819977081572)                                      │
-                            └─────────────────────────────────────────────────────────┘
+┌─rgb───────────────────────────────────────────────────────┐
+│ (186.02058688365264,100.68677189684993,71.67819977081575) │
+└───────────────────────────────────────────────────────────┘
                         )"
             },
          {
             "Convert OKLCH to sRGB (UInt8)",
             R"(
-                            WITH colorOKLCHToSRGB((0.6, 0.12, 40)) AS t
-                            SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+WITH colorOKLCHToSRGB((0.6, 0.12, 40)) AS t
+SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
                         )",
             R"(
-                            ┌─RGB──────────┐
-                            │ (186,100,71) │
-                            └──────────────┘
+┌─RGB──────────┐
+│ (186,100,71) │
+└──────────────┘
                         )"
             }
     };

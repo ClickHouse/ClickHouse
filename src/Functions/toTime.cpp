@@ -19,7 +19,7 @@ but the exact point in time is an implementation detail which may change in futu
 The main purpose of the function is to calculate the time difference between two dates or dates with time, e.g., `toTime(dt1) - toTime(dt2)`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-toTime(date[, timezone])
+toTimeWithFixedDate(date[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"date", "Date to convert to a time.", {"Date", "DateTime", "DateTime64"}},
@@ -28,7 +28,7 @@ toTime(date[, timezone])
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the time component of a date or date with time in the form of an offset to a fixed point in time (selected as 1970-01-02, currently).", {"DateTime"}};
     FunctionDocumentation::Examples examples = {
         {"Calculate the time difference between two dates", R"(
-SELECT toTime('2025-06-15 12:00:00'::DateTime) - toTime('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
+SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDate('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
         )",
         R"(
 ┌─result─┬─toTypeName(result)─┐

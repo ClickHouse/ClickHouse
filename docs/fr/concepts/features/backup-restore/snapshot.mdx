@@ -1,0 +1,244 @@
+---
+description: 'Comment créer et restaurer des snapshots légers de tables cloud-native à l’aide du stockage objet dans le cloud.'
+sidebarTitle: 'Sauvegarde par snapshot'
+slug: /operations/backup/snapshot
+title: 'Sauvegarde et restauration par snapshot'
+doc_type: 'guide'
+keywords: ['snapshot', 'backup', 'restore', 'SharedMergeTree', 'SharedSet', 'SharedJoin', 'lightweight backup', 'cloud backup', 'S3', 'Azure Blob Storage', 'snapshot_locks', 'snapshot_parts', 'experimental_lightweight_snapshot']
+---
+
+La sauvegarde par snapshot est un mode de sauvegarde léger pour les table engines cloud-native. Au lieu de copier les données, elle écrit dans ClickHouse Keeper des nœuds de verrouillage pour chaque part. Ces verrous empêchent le server de supprimer les parts du stockage objet référencées tant que le snapshot est conservé. La sauvegarde enregistre ensuite les références du stockage objet au lieu de copier physiquement les données, ce qui permet de créer rapidement des snapshots, quelle que soit la taille de la table.
+
+Le mode léger s’applique aux tables [SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree), SharedSet et SharedJoin. Pour tous les autres types d’engine — comme Log ou Memory — la sauvegarde bascule automatiquement vers une sauvegarde standard par copie.
+
+<div id="create-a-snapshot">
+  ## Créer un snapshot
+</div>
+
+La sauvegarde par snapshot utilise la commande standard [`BACKUP`](/fr/concepts/features/backup-restore/overview#syntax) avec `experimental_lightweight_snapshot = true`. Le paramètre `id` est obligatoire — il donne un nom au snapshot et sert à y faire référence dans les commandes déverrouillage et observability :
+
+```sql
+BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
+TO { S3(...) | AzureBlobStorage(...) }
+SETTINGS experimental_lightweight_snapshot = true, id = '<snapshot_id>'
+```
+
+La commande renvoie `id` et `status`, et `id` peut servir à suivre l&#39;opération dans [`system.backups`](/fr/reference/system-tables/backups).
+
+Sauvegardez une seule table vers S3 :
+
+```sql
+BACKUP TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+Sauvegarder une base de données complète :
+
+```sql
+BACKUP DATABASE mydb
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/mydb/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'mydb_snapshot_1'
+```
+
+Sauvegardez toutes les tables sauf une :
+
+```sql
+BACKUP ALL
+EXCEPT TABLES mydb.staging_table
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
+```
+
+Les mêmes commandes fonctionnent également avec Azure Blob Storage :
+
+```sql
+BACKUP TABLE mydb.events
+TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=...', 'my-container', 'snapshots/events/')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+<div id="restore-to-same-service">
+  ## Restaurer sur le même service
+</div>
+
+Comme un snapshot stocke des références vers des fichiers de stockage objet plutôt que des copies des données, une restauration vers un nouveau service ClickHouse ou vers un autre service ClickHouse nécessite un accès au stockage objet d’origine. C’est pourquoi la restauration entre services n’est pas prise en charge via SQL : elle est uniquement disponible dans l’UI. En SQL, vous pouvez restaurer un snapshot sur le même service à partir d’un bucket de sauvegarde externe à l’aide de `snapshot_from_current_service = 1`. Cela lit directement les objets via le disk de destination, au lieu de passer par un lecteur de snapshot distant :
+
+```sql
+RESTORE TABLE mydb.events AS mydb.events_restored
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+La clause `AS` restaure la table sous un nouveau nom, en laissant la table d&#39;origine intacte. Pour remplacer la table d&#39;origine, supprimez-la d&#39;abord :
+
+```sql
+DROP TABLE mydb.events;
+
+RESTORE TABLE mydb.events
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+<div id="unlock-snapshot">
+  ## Déverrouiller un snapshot
+</div>
+
+Chaque snapshot conserve des verrous dans ClickHouse Keeper qui empêchent les fichiers de stockage objet référencés d’être supprimés par le ramasse-miettes. Une fois la restauration terminée — ou lorsqu’un snapshot n’est plus nécessaire — déverrouillez-le pour libérer ces verrous.
+
+Il existe deux formes : un déverrouillage au niveau système, qui supprime tous les verrous du snapshot d’un seul coup, et un déverrouillage par table, qui supprime le verrou d’une seule table tout en laissant le reste du snapshot intact.
+
+**Déverrouillage au niveau système** — supprime tous les verrous du snapshot :
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+**Déverrouillage par table** — retire le verrou d’une seule table :
+
+```sql
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+La clause `FROM` est facultative lorsque la destination du snapshot a été enregistrée dans Keeper lors de sa création (visible dans la colonne `info` de `system.snapshot_locks`) :
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+
+-- or per-table:
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+```
+
+Après déverrouillage, la ligne correspondante disparaît de `system.snapshot_locks`, et les parts qui ne sont plus référencées par d&#39;autres snapshots ne figurent plus dans `system.snapshot_parts`.
+
+<div id="observability">
+  ## Observability
+</div>
+
+<div id="system-backups">
+  ### system.backups
+</div>
+
+Toutes les opérations de snapshot apparaissent dans [`system.backups`](/fr/reference/system-tables/backups), aux côtés des opérations habituelles de sauvegarde et de restauration. Interrogez cette table à l’aide de l’`id` que vous avez défini (ou de l’UUID renvoyé par la commande) :
+
+```sql
+SELECT id, name, status, error, start_time, end_time, num_files, uncompressed_size, compressed_size
+FROM system.backups
+WHERE id = 'events_snapshot_1'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                events_snapshot_1
+name:              S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', '[HIDDEN]')
+status:            BACKUP_CREATED
+error:
+start_time:        2024-06-01 10:00:00
+end_time:          2024-06-01 10:00:03
+num_files:         42
+uncompressed_size: 1073741824
+compressed_size:   0
+```
+
+<div id="system-snapshot-locks">
+  ### system.snapshot_locks
+</div>
+
+`system.snapshot_locks` affiche les snapshots validés actuellement enregistrés dans Keeper. Lorsqu’un snapshot est validé, un nœud Keeper est créé à l’emplacement `/clickhouse/snapshot/committed/{snapshot_id}`. Avant de supprimer une partie de données, le server vérifie si un snapshot validé verrouille cette part. Si c’est le cas, la suppression n’a pas lieu. Le verrou reste en place jusqu’à ce que vous déverrouilliez explicitement le snapshot.
+
+```sql
+SELECT *
+FROM system.snapshot_locks
+```
+
+| Colonne     | Type       | Description                                     |
+| ----------- | ---------- | ----------------------------------------------- |
+| `id`        | `String`   | ID du snapshot                                  |
+| `info`      | `String`   | Destination du snapshot, p. ex. `S3('...')`     |
+| `ctime`     | `DateTime` | Date de création de ce verrou dans Keeper       |
+| `lock_path` | `String`   | Chemin Keeper de ce verrou                      |
+
+Chaque ligne représente un snapshot validé. Si vous voyez des verrous pour des snapshots qui n’ont plus de destination de sauvegarde valide, exécutez `SYSTEM UNLOCK SNAPSHOT` pour les supprimer.
+
+Pour vérifier si un verrou de snapshot spécifique est présent :
+
+```sql
+SELECT id, info, lock_path
+FROM system.snapshot_locks
+WHERE id = 'events_snapshot_1'
+```
+
+<div id="system-snapshot-parts">
+  ### system.snapshot_parts
+</div>
+
+`system.snapshot_parts` affiche les parties de données actuellement retenues par au moins un verrou de snapshot. Pour chaque partie verrouillée, un nœud Keeper existe à l’emplacement `/clickhouse/snapshot/{table_uuid}/{part_name}` et contient la taille compressée et non compressée de la partie. Cette table lit ces nœuds pour indiquer quelles parties sont actuellement protégées contre la suppression.
+
+```sql
+SELECT *
+FROM system.snapshot_parts
+ORDER BY data_compressed_bytes DESC
+LIMIT 20
+```
+
+| Colonne                   | Type     | Description                                                  |
+| ------------------------- | -------- | ------------------------------------------------------------ |
+| `name`                    | `String` | Nom de la part de données                                    |
+| `table_id`                | `String` | UUID de la table à laquelle appartient cette part            |
+| `data_compressed_bytes`   | `UInt64` | Taille compressée de cette part                              |
+| `data_uncompressed_bytes` | `UInt64` | Taille non compressée de cette part                          |
+| `snapshots_size`          | `UInt64` | Nombre de snapshots qui verrouillent actuellement cette part |
+
+Les parts avec `snapshots_size > 1` sont référencées par plusieurs snapshots et ne seront pas supprimées du stockage objet tant que tous les snapshots qui les verrouillent n’auront pas été déverrouillés.
+
+Pour vérifier le stockage total retenu :
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS total_pinned_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS total_pinned_uncompressed,
+    count() AS parts_count
+FROM system.snapshot_parts
+```
+
+Pour trouver les parts verrouillées par un snapshot mais qui ont déjà été supprimées ou ne sont plus actives sur le serveur — c’est-à-dire les données conservées dans le stockage objet uniquement en raison de verrous de snapshot :
+
+```sql
+SELECT
+    count(*),
+    sum(data_uncompressed_bytes)
+FROM system.snapshot_parts
+WHERE (name, table_id) NOT IN (
+    SELECT
+        name,
+        toString(tables.uuid)
+    FROM system.parts
+    INNER JOIN system.tables ON (parts.`table` = tables.name) AND parts.active
+)
+```
+
+```response
+┌─count()─┬─sum(data_uncompressed_bytes)─┐
+│    1000 │                        96037 │
+└─────────┴──────────────────────────────┘
+```
+
+C’est utile pour comprendre le surcoût de stockage qu’entraîne la conservation de snapshots après la modification ou la suppression des données d’origine.
+
+<div id="server-settings">
+  ## Paramètres du serveur
+</div>
+
+Les paramètres de configuration du serveur ci-dessous contrôlent le comportement des snapshots. Ils sont définis dans le fichier de configuration du serveur, et non en SQL.
+
+| Paramètre                                                                                                                             | Type   | Par défaut | Modifiable sans redémarrage | Description                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`max_held_snapshots`](/fr/reference/settings/server-settings/settings#max_held_snapshots)                                               | UInt64 | `0`        | Non                         | Nombre maximal de snapshots légers pouvant être conservés simultanément. `0` signifie illimité. Si cette limite est atteinte, la création d’un nouveau snapshot lève une exception.                                                                             |
+| [`max_snapshot_commit_thread_pool_size`](/fr/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_size)           | UInt64 | `64`       | Oui                         | Nombre de threads utilisés pour valider dans Keeper les nœuds de verrouillage des snapshots. Augmentez cette valeur si la création de snapshots est lente sur de grandes tables comportant de nombreux parts.                                                   |
+| [`max_snapshot_commit_thread_pool_free_size`](/fr/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_free_size) | UInt64 | `0`        | Oui                         | Si le nombre de threads inactifs dans le pool de validation des snapshots dépasse cette valeur, ClickHouse libère ces threads et réduit la taille du pool. Les threads sont recréés à la demande. `0` signifie que les threads inactifs ne sont jamais libérés. |
+| [`snapshot_cleaner_period`](/fr/reference/settings/server-settings/settings#snapshot_cleaner_period)                                     | UInt64 | `120`      | Non                         | Fréquence d’exécution (en secondes) du nettoyeur de snapshots pour supprimer les parts qui ne sont plus référencés par aucun verrou de snapshot. ClickHouse Cloud uniquement.                                                                                   |
+| [`snapshot_cleaner_pool_size`](/fr/reference/settings/server-settings/settings#snapshot_cleaner_pool_size)                               | UInt64 | `128`      | Non                         | Nombre de threads dans le pool de threads du nettoyeur de snapshots. ClickHouse Cloud uniquement.                                                                                                                                                               |

@@ -3,6 +3,7 @@
 -- This test was split in two due to long runtimes in sanitizers.
 -- The other part is 00284_external_aggregation_2.
 
+SET max_threads = 'auto';
 SET max_bytes_before_external_group_by = 100000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET max_memory_usage = 410000000;

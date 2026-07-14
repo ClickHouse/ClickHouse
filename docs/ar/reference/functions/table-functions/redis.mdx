@@ -1,0 +1,72 @@
+---
+description: 'تتيح دالة الجدول هذه تكامل ClickHouse مع Redis.'
+sidebarTitle: 'redis'
+slug: /sql-reference/table-functions/redis
+title: 'redis'
+doc_type: 'reference'
+---
+
+تتيح دالة الجدول هذه تكامل ClickHouse مع [Redis](https://redis.io/).
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| المعامل     | الوصف                                                                                                          |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `host:port` | عنوان خادم Redis. يمكنك تجاهل المنفذ، وسيُستخدم منفذ Redis الافتراضي 6379.                                     |
+| `key`       | أي اسم عمود في قائمة الأعمدة.                                                                                  |
+| `structure` | البنية الخاصة بجدول ClickHouse الذي تُعيده هذه الدالة.                                                         |
+| `db_index`  | نطاق فهرس قاعدة بيانات Redis من 0 إلى 15، والقيمة الافتراضية هي 0.                                             |
+| `password`  | كلمة مرور المستخدم، والقيمة الافتراضية سلسلة فارغة.                                                            |
+| `pool_size` | الحد الأقصى لحجم تجمّع الاتصالات في Redis، والقيمة الافتراضية هي 16.                                           |
+| `primary`   | يجب تحديده، وهو يدعم عمودًا واحدًا فقط في المفتاح الأساسي. سيُسلسَل المفتاح الأساسي بصيغة ثنائية كمفتاح Redis. |
+
+* ستُسلسَل الأعمدة الأخرى غير المفتاح الأساسي بصيغة ثنائية كقيمة Redis وفق الترتيب المقابل.
+* ستُحسَّن الاستعلامات التي تتضمن تصفية بالمفتاح باستخدام equals أو in إلى عمليات بحث متعددة المفاتيح في Redis. أما إذا كانت الاستعلامات بلا تصفية بالمفتاح، فسيحدث مسح كامل للجدول، وهي عملية مكلفة.
+
+[المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) غير مدعومة حاليًا في دالة الجدول `redis`.
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+كائن جدول يكون فيه المفتاح هو مفتاح Redis، بينما تُجمَّع الأعمدة الأخرى معًا على أنها قيمة Redis.
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+القراءة من Redis:
+
+```sql
+SELECT * FROM redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32'
+)
+```
+
+الإدراج في Redis:
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
+```
+
+<div id="related">
+  ## ذات صلة
+</div>
+
+* [محرك الجدول `Redis`](/ar/reference/engines/table-engines/integrations/redis)
+* [استخدام Redis كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/redis)

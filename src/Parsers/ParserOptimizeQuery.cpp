@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
 
@@ -26,6 +27,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 {
     ParserKeyword s_optimize_table(Keyword::OPTIMIZE_TABLE);
     ParserKeyword s_partition(Keyword::PARTITION);
+    ParserKeyword s_dry_run(Keyword::DRY_RUN);
+    ParserKeyword s_parts(Keyword::PARTS);
     ParserKeyword s_final(Keyword::FINAL);
     ParserKeyword s_force(Keyword::FORCE);
     ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
@@ -38,6 +41,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr database;
     ASTPtr table;
     ASTPtr partition;
+    ASTPtr parts_list;
+    bool dry_run = false;
     bool final = false;
     bool deduplicate = false;
     bool cleanup = false;
@@ -65,6 +70,17 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
+    if (s_dry_run.ignore(pos, expected))
+    {
+        dry_run = true;
+        if (!s_parts.ignore(pos, expected))
+            return false;
+
+        ParserList parser_list(std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+        if (!parser_list.parse(pos, parts_list, expected))
+            return false;
+    }
+
     if (s_final.ignore(pos, expected) || s_force.ignore(pos, expected))
         final = true;
 
@@ -88,6 +104,9 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->cluster = cluster_str;
     if ((query->partition = partition))
         query->children.push_back(partition);
+    if ((query->parts_list = parts_list))
+        query->children.push_back(parts_list);
+    query->dry_run = dry_run;
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;

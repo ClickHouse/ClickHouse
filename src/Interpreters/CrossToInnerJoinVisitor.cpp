@@ -204,7 +204,17 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    /// Do not descend into table expressions — they may contain
+    /// table functions like view(SELECT ... JOIN ...) whose inner
+    /// ASTSelectQuery has a different set of tables and must not be
+    /// processed by this visitor.
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)

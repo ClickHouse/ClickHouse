@@ -82,6 +82,8 @@ public:
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
+    size_t getFailedPoolsCount() const { return failed_pools_count; }
+
     ~HedgedConnectionsFactory();
 
 private:
@@ -147,7 +149,7 @@ private:
     /// The number of established connections that are up to date.
     size_t up_to_date_count = 0;
     /// The number of failed connections (replica is considered failed after max_tries attempts to connect).
-    size_t failed_pools_count= 0;
+    size_t failed_pools_count = 0;
 
     /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;

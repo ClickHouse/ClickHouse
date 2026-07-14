@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 --query_id "$query_i
     FORMAT Null
 " 2>&1 | grep -m1 -o "Code: 159"
 $CLICKHOUSE_CLIENT -q "system flush logs query_log"
-${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
+${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
 
 
 ### Should stop pulling data and return what has been generated already (return code 0)
@@ -53,7 +53,7 @@ $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 --query_id "$query_i
 "
 echo $?
 $CLICKHOUSE_CLIENT -q "system flush logs query_log"
-${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
+${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
 
 
 # HTTP CLIENT: As of today (02/12/21) uses PullingPipelineExecutor

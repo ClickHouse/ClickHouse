@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
@@ -27,12 +28,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToChildren : public IFunction
+class FunctionH3ToChildren final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToChildren>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ToChildren(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToChildren>(context); }
 
     std::string getName() const override { return name; }
 
@@ -99,22 +104,28 @@ public:
             const UInt64 parent_hindex = data_hindex[row];
             const UInt8 child_resolution = data_resolution[row];
 
-            validateH3Cell(parent_hindex);
-
             if (child_resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(child_resolution), getName(), toString(MAX_H3_RES));
 
-            const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
+            if (!validator.validateCell(parent_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
+
+            int64_t children_size = 0;
+            cellToChildrenSize(parent_hindex, child_resolution, &children_size);
+            const size_t vec_size = static_cast<size_t>(children_size);
             if (vec_size > MAX_ARRAY_SIZE)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
-            std::vector<H3Index> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 

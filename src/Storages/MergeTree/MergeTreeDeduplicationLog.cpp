@@ -35,7 +35,7 @@ enum class MergeTreeDeduplicationOp : uint8_t
 /// Record for deduplication on disk
 struct MergeTreeDeduplicationLogRecord
 {
-    MergeTreeDeduplicationOp operation;
+    MergeTreeDeduplicationOp operation{};
     std::string part_name;
     std::string block_id;
 };
@@ -53,7 +53,7 @@ void writeRecord(const MergeTreeDeduplicationLogRecord & record, WriteBuffer & o
 
 void readRecord(MergeTreeDeduplicationLogRecord & record, ReadBuffer & in)
 {
-    uint8_t op;
+    uint8_t op = 0;
     readIntText(op, in);
     record.operation = static_cast<MergeTreeDeduplicationOp>(op);
     assertChar('\t', in);
@@ -343,6 +343,9 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
 {
     std::lock_guard lock(state_mutex);
+
+    if (stopped)
+        return;
 
     deduplication_window = deduplication_window_;
     rotate_interval = deduplication_window * 2;

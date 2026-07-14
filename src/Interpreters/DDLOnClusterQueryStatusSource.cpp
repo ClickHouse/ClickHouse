@@ -25,6 +25,7 @@ extern const int TIMEOUT_EXCEEDED;
 DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
     const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
+          "default",
           zk_node_path,
           zk_replicas_path,
           std::make_shared<const Block>(getSampleBlock(context_->getSettingsRef()[Setting::distributed_ddl_output_mode])),
@@ -116,7 +117,7 @@ Chunk DDLOnClusterQueryStatusSource::stopWaitingOfflineHosts()
 }
 void DDLOnClusterQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
-    assert(status.code != 0);
+    chassert(status.code != 0);
 
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {

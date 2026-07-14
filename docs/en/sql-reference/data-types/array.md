@@ -7,8 +7,6 @@ title: 'Array(T)'
 doc_type: 'reference'
 ---
 
-# Array(T)
-
 An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
 
 ## Creating an Array {#creating-an-array}
@@ -19,7 +17,7 @@ You can use a function to create an array:
 array(T)
 ```
 
-You can also use square brackets.
+You can also use `[]`.
 
 ```sql
 []
@@ -82,9 +80,7 @@ It is possible to find the size of an array by using the `size0` subcolumn witho
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t_arr (`arr` Array(Array(Array(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_arr VALUES ([[[12, 13, 0, 1],[12]]]);
@@ -92,9 +88,7 @@ INSERT INTO t_arr VALUES ([[[12, 13, 0, 1],[12]]]);
 SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─arr.size0─┬─arr.size1─┬─arr.size2─┐
 │         1 │ [2]       │ [[4,1]]   │
 └───────────┴───────────┴───────────┘

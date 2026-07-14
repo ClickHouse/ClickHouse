@@ -57,6 +57,8 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+
+    std::map<String, UInt64> projections_merge_time;
 };
 
 

@@ -32,8 +32,8 @@ void OpenSSLInitializer::initialize()
 #if USE_SSL
 
 #ifndef NDEBUG
-    assert(!initialize_done);
-    assert(!cleanup_done);
+    chassert(!initialize_done);
+    chassert(!cleanup_done);
 #endif
 
     if (!initialize_done)
@@ -77,8 +77,8 @@ void OpenSSLInitializer::cleanup()
 #if USE_SSL
 
 #ifndef NDEBUG
-    assert(initialize_done);
-    assert(!cleanup_done);
+    chassert(initialize_done);
+    chassert(!cleanup_done);
 #endif
 
     if (!cleanup_done)
@@ -87,13 +87,15 @@ void OpenSSLInitializer::cleanup()
 
         if (legacy_provider)
         {
-            chassert(OSSL_PROVIDER_unload(legacy_provider));
+            [[maybe_unused]] int ok = OSSL_PROVIDER_unload(legacy_provider);
+            chassert(ok);
             legacy_provider = nullptr;
         }
 
         if (default_provider)
         {
-            chassert(OSSL_PROVIDER_unload(default_provider));
+            [[maybe_unused]] int ok = OSSL_PROVIDER_unload(default_provider);
+            chassert(ok);
             default_provider = nullptr;
         }
 

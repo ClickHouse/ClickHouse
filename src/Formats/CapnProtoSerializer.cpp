@@ -21,6 +21,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnMap.h>
+#include <base/find_symbols.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -1012,7 +1013,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
+        capnp::_::StructSize struct_size{};
         UInt32 discriminant_offset;
         UInt16 null_discriminant;
         UInt16 nested_discriminant;
@@ -1119,7 +1120,7 @@ namespace
         capnp::ListSchema list_schema;
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::ElementSize element_size;
-        capnp::_::StructSize element_struct_size;
+        capnp::_::StructSize element_struct_size{};
         bool element_is_struct = false;
 
     };
@@ -1242,7 +1243,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
+        capnp::_::StructSize struct_size{};
         UInt32 entries_slot_offset;
     };
 
@@ -1403,8 +1404,8 @@ namespace
         }
 
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
-        size_t fields_count;
+        capnp::_::StructSize struct_size{};
+        size_t fields_count{};
         std::vector<std::unique_ptr<ICapnProtoSerializer>> fields_serializers;
         std::vector<UInt32> fields_offsets;
         std::vector<size_t> fields_indexes;

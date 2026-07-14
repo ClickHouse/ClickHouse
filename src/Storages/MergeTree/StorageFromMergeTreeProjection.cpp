@@ -19,7 +19,6 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
-    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(
@@ -33,6 +32,10 @@ void StorageFromMergeTreeProjection::read(
     size_t num_streams)
 {
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
+
+    /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
+    /// constructor below (the universal projection-read chokepoint), since reading a
+    /// projection part bypasses the parent's delete-bitmap filter.
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -79,6 +82,7 @@ StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & me
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
 
     auto data = std::make_unique<MergeTreeData::SnapshotData>();
+    data->storage = parent_snapshot_data.storage;
     data->parts = parent_snapshot_data.parts;
     data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
 

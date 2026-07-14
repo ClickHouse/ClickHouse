@@ -1,0 +1,41 @@
+---
+title: Excepción al modificar la configuración del usuario
+description: Cómo gestionar una excepción generada al modificar la configuración del usuario
+date: 2023-08-26
+tags: ['Configuración', 'Errores y excepciones']
+keywords: ['Excepción', 'Configuración del usuario']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-cannot-update-user-default-in-usersxml-because-this-storage-is-readonly-access_storage_readonly">
+  ## DB::Exception: No se puede actualizar el usuario `default` en users.xml porque este almacenamiento es de solo lectura. (ACCESS_STORAGE_READONLY)
+</div>
+
+Al intentar modificar la configuración de un usuario, es posible que te encuentres con la excepción anterior.
+
+Estas son algunas opciones para solucionar este error:
+
+<div id="edit-usersxml-directly">
+  ## Editar users.xml directamente
+</div>
+
+Puedes editar o añadir directamente en `users.xml` la configuración deseada para un usuario específico en `/etc/clickhouse-server/users.d`.
+
+Más información sobre `users.xml` [aquí](/es/concepts/features/configuration/settings/settings-profiles).
+
+<div id="create-another-user">
+  ## Crear otro usuario
+</div>
+
+Puedes crear otro usuario con la configuración especificada y luego conectarte a ClickHouse con ese nuevo usuario.
+
+Consulta [esta página](/es/reference/statements/create/user) para obtener más información sobre cómo crear usuarios.
+
+<div id="enable-sql-driven-access-control">
+  ## Habilitar el control de acceso basado en SQL
+</div>
+
+Puede habilitar el control de acceso basado en SQL y la gestión de cuentas para el usuario `default`. Los pasos para hacerlo se indican en esta [página](/es/concepts/features/security/access-rights#enabling-access-control).

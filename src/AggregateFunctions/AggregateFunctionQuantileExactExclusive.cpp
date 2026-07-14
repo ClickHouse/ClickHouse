@@ -46,6 +46,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileExactExclusive(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactExclusive(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -68,7 +69,7 @@ In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/q
 quantileExactExclusive(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Level of quantile. Constant floating-point number from 0 to 1 (exclusive). We recommend using a `level` value in the range of `(0.01, 0.99)`.", {"Float*"}}
@@ -102,12 +103,12 @@ SELECT quantileExactExclusive(0.1)(number), quantileExactExclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantileExactExclusive>, {}, documentation});
+    factory.registerFunction(NameQuantileExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantileExactExclusive>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the exclusive method.
 
-This function is equivalent to [`quantileExactExclusive`](/sql-reference/aggregate-functions/reference/quantileexactexclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactExclusive`](/sql-reference/aggregate-functions/reference/quantileExactExclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 This function uses the exclusive method for calculating quantiles, as described in the [R-6 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 This is equivalent to [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba) Excel function.
@@ -119,7 +120,7 @@ The sorting algorithm's complexity is `O(N·log(N))`, where `N = std::distance(f
 quantilesExactExclusive(level1, level2, ...)(expr)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. Constant floating-point numbers from 0 to 1 (exclusive). We recommend using `level` values in the range of `(0.01, 0.99)`.", {"Float*"}}
@@ -143,7 +144,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number) 
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, properties, documentation_quantiles});
+    factory.registerFunction(NameQuantilesExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, documentation_quantiles, properties});
 
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/StackTrace.h>
 #include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>

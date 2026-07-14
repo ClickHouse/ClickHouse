@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -201,13 +200,16 @@ String FunctionDocumentation::examplesAsString() const
     for (const auto & [name, query, result] : examples)
     {
         res += "**" + name + "**" + "\n\n";
-        res += "```sql title=""Query""\n";
-        res += boost::algorithm::trim_copy(query) + "\n";
-        res += "```\n\n";
-        res += "```response title=""Response""\n";
-        res += boost::algorithm::trim_copy(result) + "\n";
-        res += "```";
-        res += "\n\n";
+
+        const String trimmed_query = boost::algorithm::trim_copy(query);
+        if (!trimmed_query.empty())
+            res += "```sql title=""Query""\n" + trimmed_query + "\n```\n\n";
+
+        /// Only emit the response block when there is a response; otherwise an empty example
+        /// (e.g. for some internal functions) would render as an empty code box.
+        const String trimmed_result = boost::algorithm::trim_copy(result);
+        if (!trimmed_result.empty())
+            res += "```response title=""Response""\n" + trimmed_result + "\n```\n\n";
     }
     return res;
 }
@@ -226,6 +228,7 @@ String FunctionDocumentation::categoryAsString() const
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
 
+        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
@@ -270,6 +273,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
 
+        {Category::Internal, "Internal"},
+
         {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
@@ -279,4 +284,7 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
+
 }

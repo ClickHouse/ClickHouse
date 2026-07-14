@@ -1,4 +1,6 @@
 #include <deque>
+#include <filesystem>
+#include <memory>
 #include <vector>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
@@ -42,7 +44,89 @@ namespace Setting
     extern const SettingsBool use_async_executor_for_materialized_views;
 }
 
+
+DeduplicationHash::DeduplicationHash(UInt128 hash_, std::string partition_id_, HashType htype)
+    : hash(std::move(hash_))
+    , partition_id(std::move(partition_id_))
+    , hash_type(htype)
+{}
+
+
+DeduplicationHash DeduplicationHash::createUnifiedHash(UInt128 hash, std::string partition_id)
+{
+    return DeduplicationHash(hash, std::move(partition_id), HashType::UNIFIED);
+}
+
+
+std::string DeduplicationHash::getBlockId() const
+{
+    return fmt::format("{}_{}_{}", partition_id, hash.items[0], hash.items[1]);
+}
+
+
+std::string DeduplicationHash::getPath(const std::string & storage_path) const
+{
+    std::string hashes_directory = [&] ()
+    {
+        switch (hash_type)
+        {
+            case HashType::SYNC:
+                return "blocks";
+            case HashType::ASYNC:
+                return "async_blocks";
+            case HashType::UNIFIED:
+                return "deduplication_hashes";
+        }
+    }();
+    return (std::filesystem::path(storage_path) / hashes_directory / getBlockId()).string();
+}
+
+
+void DeduplicationHash::setConflictPartName(const std::string & part_name)
+{
+    conflicted_part_name = part_name;
+}
+
+
+bool DeduplicationHash::hasConflictPartName() const
+{
+    return conflicted_part_name.has_value();
+}
+
+
+std::string DeduplicationHash::getConflictPartName() const
+{
+    chassert(conflicted_part_name.has_value());
+    return conflicted_part_name.value_or("");
+}
+
+
+std::vector<std::string> getDeduplicationBlockIds(const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    std::vector<std::string> result;
+    result.reserve(deduplication_hashes.size());
+    for (const auto & deduplication_hash : deduplication_hashes)
+    {
+        result.push_back(deduplication_hash.getBlockId());
+    }
+    return result;
+}
+
+
+std::vector<std::string> getDeduplicationPaths(std::string storage_path, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    std::vector<std::string> result;
+    result.reserve(deduplication_hashes.size());
+    for (const auto & deduplication_hash : deduplication_hashes)
+    {
+        result.push_back(deduplication_hash.getPath(storage_path));
+    }
+    return result;
+}
+
+
 static std::atomic<size_t> deduplication_info_id_counter{0};
+
 
 DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const
 {
@@ -97,7 +181,7 @@ std::set<size_t> DeduplicationInfo::filterSelf(const String & partition_id) cons
 
 std::set<size_t> DeduplicationInfo::filterOriginal(const std::vector<std::string> & collisions, const String & partition_id) const
 {
-    chassert(original_block && !original_block->empty());
+    chassert(getCount() == 1 || (original_block && !original_block->empty()));
 
     if (collisions.empty())
         return {};
@@ -115,7 +199,6 @@ std::set<size_t> DeduplicationInfo::filterOriginal(const std::vector<std::string
 
 DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 {
-    LOG_TEST(logger, "Cloning deduplication info for filtering, debug: {}", debug());
     auto new_instance = DeduplicationInfo::create(is_async_insert);
     new_instance->disabled = disabled;
     new_instance->level = level;
@@ -128,7 +211,6 @@ DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 
 DeduplicationInfo::Ptr DeduplicationInfo::cloneMergeImpl() const
 {
-    LOG_TEST(logger, "Cloning deduplication info for merging, debug: {}", debug());
     auto new_instance = DeduplicationInfo::create(is_async_insert);
     new_instance->disabled = disabled;
     new_instance->level = level;
@@ -144,8 +226,23 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
     if (collision_offsets.empty())
         return {};
 
-    chassert(original_block && !original_block->empty());
-    chassert(original_block && original_block->rows() > 0);
+    if (!is_async_insert && getCount() == 1)
+    {
+        chassert(collision_offsets.size() == 1 && collision_offsets.contains(0));
+        LOG_TEST(logger, "The only token is filtered, collision offsets: {}, debug: {}", fmt::join(collision_offsets, ", "), debug());
+
+        Ptr new_tokens = cloneSelfFilterImpl();
+        new_tokens->original_block = std::make_shared<Block>(original_block->cloneEmpty());
+
+        return {
+            .filtered_block = new_tokens->original_block,
+            .deduplication_info = new_tokens,
+            .removed_rows = getTokenRows(0),
+            .removed_tokens = 1,
+        };
+    }
+
+    chassert(original_block && !original_block->empty() && original_block->rows() > 0);
 
     auto & block = *original_block;
 
@@ -180,7 +277,7 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
         chassert(removed_tokens == getCount());
         new_tokens->original_block = std::make_shared<Block>(block.cloneEmpty());
 
-        LOG_TEST(
+        LOG_DEBUG(
             logger,
             "All {} rows are removed due to duplicate, debug: {}",
             block.rows(),
@@ -226,65 +323,65 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
 }
 
 
-UInt128 DeduplicationInfo::calculateDataHash(size_t offset) const
+UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Block & block) const
 {
     chassert(offset < offsets.size());
-    chassert(original_block->rows() == getRows());
 
-    auto cols = original_block->getColumns();
+    if (tokens[offset].data_hash_batch.has_value())
+        return tokens[offset].data_hash_batch.value();
+
+    chassert(block.rows() == getRows());
+
+    auto cols = block.getColumns();
 
     SipHash hash;
-    for (size_t j = getTokenBegin(offset); j < getTokenEnd(offset); ++j)
-    {
-        for (const auto & col : cols)
-            col->updateHashWithValue(j, hash);
-    }
+    size_t begin = getTokenBegin(offset);
+    size_t end = getTokenEnd(offset);
+    for (const auto & col : cols)
+        col->updateHashWithValueRange(begin, end, hash);
 
-    return hash.get128();
+    tokens[offset].data_hash_batch = hash.get128();
+    return tokens[offset].data_hash_batch.value();
 }
 
 
-UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
+DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const std::string & partition_id) const
 {
-    // if user token is empty we calculate by_data_hash
+    // when there is no user token, compute the full column-wise hash of the data
+    // this hash is used for deduplication of sync and async inserts in a unified manner
+
     auto & token = tokens[offset];
-    if (token.empty())
-    {
-        chassert(level == Level::SOURCE);
-        token.by_data = calculateDataHash(offset);
-    }
 
-    if (token.by_data.has_value() && level == Level::SOURCE)
-    {
-        return token.by_data.value();
-    }
-
-    // only one value is set here
     std::string extension;
-
     if (!token.by_user.empty())
+    {
         extension = "user-token-" + token.by_user;
+    }
     else
-        extension = fmt::format("{}_{}", token.by_data->items[0], token.by_data->items[1]);
+    {
+        auto data_hash = calculateDataHashColumnWise(offset, *original_block);
+        extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
+    }
 
     // for other token sources addition parts are appended
     for (const auto & extra : token.extra_tokens)
     {
-        if (extra.type == TokenDefinition::Extra::SOURCE_ID)
-            continue; // do not include source id
-        if (token.by_data.has_value()
-            && (extra.type == TokenDefinition::Extra::SOURCE_ID || extra.type == TokenDefinition::Extra::SOURCE_NUMBER))
-            continue; // source id is already included in by_data
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
+        {
+            // do not include source number for async inserts, they are not relevant as data hash is used or user token
+            // a token describes only the data in one block
+            extension.append(":");
+            extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
+            continue;
+        }
 
         extension.append(":");
         extension.append(extra.toString());
     }
 
-    //LOG_DEBUG(logger, "getBlockId {} debug: {}", extension, debug());
-
     SipHash hash;
     hash.update(extension.data(), extension.size());
-    return hash.get128();
+    return DeduplicationHash::createUnifiedHash(hash.get128(), partition_id);
 }
 
 
@@ -292,32 +389,30 @@ std::unordered_map<std::string, std::vector<size_t>> DeduplicationInfo::buildBlo
 {
     std::unordered_map<std::string, std::vector<size_t>> result;
 
-    auto block_ids = getBlockIds(partition_id, true);
-    for (size_t i = 0; i < block_ids.size(); ++i)
-    {
-        result[block_ids[i]].push_back(i);
-    }
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+        result[getBlockUnifiedHash(offset, partition_id).getBlockId()].push_back(offset);
 
     return result;
 }
 
 
-std::vector<std::string> DeduplicationInfo::getBlockIds(const std::string & partition_id, bool deduplication_enabled) const
+std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const
 {
-    LOG_TEST(logger, "getBlockIds for partition_id={}, debug: {}", partition_id, debug());
     if (disabled || !deduplication_enabled)
         return {};
 
-    std::vector<std::string> result;
+    std::vector<DeduplicationHash> result;
     result.reserve(offsets.size());
 
-    for (size_t i = 0; i < offsets.size(); ++i)
-    {
-        auto hash = getBlockHash(i);
-        result.push_back(fmt::format("{}_{}_{}", partition_id, hash.items[0], hash.items[1]));
-    }
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+        result.push_back(getBlockUnifiedHash(offset, partition_id));
 
-    LOG_TEST(logger, "getBlockIds {}, debug: {}", fmt::join(result, ", "), debug());
+    /// Release block columns now that all hashes are cached.
+    /// The block data is no longer needed — hashes are stored in tokens.
+    /// This restores the memory optimization that was previously done eagerly in updateOriginalBlock.
+    if (!is_async_insert && getCount() == 1 && original_block && original_block->rows() > 0)
+        original_block = std::make_shared<Block>(original_block->cloneEmpty());
+
     return result;
 }
 
@@ -342,10 +437,7 @@ std::pair<std::string, size_t> DeduplicationInfo::debug(size_t offset) const
     const auto & token = tokens[offset];
     if (token.empty())
         return {"-", getTokenEnd(offset)};
-    else if (!token.by_user.empty())
-        return {tokens[offset].by_user, getTokenEnd(offset)};
-    else
-        return {fmt::format("{}_{}", token.by_data->items[0], token.by_data->items[1]), getTokenEnd(offset)};
+    return {tokens[offset].by_user, getTokenEnd(offset)};
 }
 
 
@@ -390,7 +482,13 @@ std::string DeduplicationInfo::debug() const
 
 DeduplicationInfo::Ptr DeduplicationInfo::create(bool async_insert_)
 {
-    return std::make_shared<DeduplicationInfo>(async_insert_);
+    struct make_shared_enabler : public DeduplicationInfo
+    {
+        explicit make_shared_enabler(bool async_insert_)
+            : DeduplicationInfo(async_insert_)
+        {}
+    };
+    return std::make_shared<make_shared_enabler>(async_insert_);
 }
 
 
@@ -406,101 +504,10 @@ ChunkInfo::Ptr DeduplicationInfo::clone() const
 }
 
 
-void DeduplicationInfo::setPartWriterHashForPartition(UInt128 hash, size_t count) const
-{
-    LOG_TEST(
-        logger,
-        "setPartWriterHashForPartition: hash={}_{} count={}, debug: {}",
-        hash.items[0],
-        hash.items[1],
-        count,
-        debug());
-
-    if (disabled)
-        return;
-
-    if (level != Level::SOURCE)
-        return;
-
-    if (is_async_insert)
-        return;
-
-    chassert(getCount() >= 1);
-
-    if (getCount() > 1)
-        return;
-
-    if (!tokens[0].empty())
-        return;
-
-    tokens[0].setDataToken(hash);
-}
-
-
-void DeduplicationInfo::setPartWriterHashes(const std::vector<UInt128> & partitions_hashes, size_t count) const
-{
-    LOG_TEST(
-        logger,
-        "setPartWriterHashes: tokens='{}' count={}, debug: {}",
-        partitions_hashes.size(),
-        count,
-        debug());
-
-    // if (disabled)
-    //     return;
-
-    if (is_async_insert)
-        return;
-
-    if (level != Level::SOURCE)
-        return;
-
-    chassert(getCount() >= 1);
-
-    if (getCount() > 1)
-        return;
-
-    if (!tokens[0].empty())
-        return;
-
-    if (partitions_hashes.size() != 1)
-    {
-        /// we can set only one hash here
-        /// if there are multiple partitions in chunk then data hash would be calculated later
-        /// by hash of the whole chunk
-        return;
-    }
-
-    tokens[0].setDataToken(partitions_hashes[0]);
-
-    chassert(getRows() == count);
-}
-
-
-void DeduplicationInfo::redefineTokensWithDataHash()
-{
-    LOG_TEST(logger, "redefineTokensWithDataHash, debug: {}", debug());
-
-    if (level != Level::SOURCE)
-        return;
-
-    for (size_t i = 0; i < tokens.size(); ++i)
-    {
-        auto & token = tokens[i];
-        if (token.empty())
-        {
-            /// calculate tokens from data
-            token.by_data = calculateDataHash(i);
-        }
-    }
-}
-
-
 DeduplicationInfo::DeduplicationInfo(bool async_insert_)
     : instance_id(deduplication_info_id_counter.fetch_add(1, std::memory_order_relaxed))
     , is_async_insert(async_insert_)
 {
-    LOG_TEST(logger, "Create DeduplicationInfo, debug: {}", debug());
 }
 
 
@@ -518,13 +525,17 @@ DeduplicationInfo::DeduplicationInfo(const DeduplicationInfo & other)
     , visited_views(other.visited_views)
     , retried_view_id(other.retried_view_id)
 {
-    LOG_TEST(logger, "Clone DeduplicationInfo {} from {}", instance_id, other.debug());
+    if (!disabled)
+        LOG_TEST(logger, "Clone DeduplicationInfo {} from {}", instance_id, other.debug());
 }
 
 
 void DeduplicationInfo::setUserToken(const String & token, size_t count)
 {
     chassert(level == Level::SOURCE);
+
+    if (count == 0)
+        return;
 
     tokens.push_back(TokenDefinition::asUserToken(token));
     offsets.push_back(getRows() + count);
@@ -538,14 +549,6 @@ DeduplicationInfo::TokenDefinition DeduplicationInfo::TokenDefinition::asUserTok
     TokenDefinition t;
     t.by_user = std::move(token);
     return t;
-}
-
-
-void DeduplicationInfo::TokenDefinition::setDataToken(UInt128 token)
-{
-    if (!empty())
-        return;
-    by_data = token;
 }
 
 
@@ -608,11 +611,6 @@ void DeduplicationInfo::truncateTokensForRetry()
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Invalid deduplication token structure during retry, expected source/view number after source/view id, debug: {}",
-                debug());
-        if (std::get<TokenDefinition::Extra::Range>(next->value_variant).first > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid deduplication token structure during retry, expected source/view number to be zero, debug: {}",
                 debug());
         ++next;
         token.extra_tokens.erase(next, token.extra_tokens.end());
@@ -691,16 +689,21 @@ void DeduplicationInfo::updateOriginalBlock(const Chunk & chunk, SharedHeader he
 {
     chassert(!visited_views.empty());
 
-    LOG_TEST(
-        logger,
-        "updateOriginalBlock with chunk rows/col {}/{} debug: {}",
-        chunk.getNumRows(), chunk.getNumColumns(),
-        debug());
-
     if (!original_block)
         original_block_view_id = visited_views.back();
 
+    if (disabled)
+    {
+        chassert(!original_block);
+        return;
+    }
+
+    /// Store the block with columns for lazy hash computation.
+    /// The data hash will be calculated on demand when getBlockHash/getBlockUnifiedHash
+    /// is called (e.g. in the sink), avoiding redundant recomputation during squashing.
+    /// The columns are COW-shared with the chunk, so this does not increase memory usage.
     original_block = std::make_shared<Block>(header->cloneWithColumns(chunk.getColumns()));
+
 }
 
 
@@ -712,8 +715,8 @@ void DeduplicationInfo::setInsertDependencies(InsertDependenciesBuilderConstPtr 
 
 void DeduplicationInfo::setRootViewID(const StorageIDMaybeEmpty & id)
 {
-    LOG_TEST(logger, "Setting root view ID '{}' in deduplication tokens", id);
     chassert(level == Level::SOURCE);
+
     if (!insert_dependencies || !insert_dependencies->deduplicate_blocks)
         disabled = true;
 
@@ -724,15 +727,16 @@ void DeduplicationInfo::setRootViewID(const StorageIDMaybeEmpty & id)
 
 void DeduplicationInfo::setViewID(const StorageID & id)
 {
-    LOG_TEST(logger, "Setting view ID '{}', debug: {}", id, debug());
-
     if (level == Level::SOURCE)
         level = Level::VIEW;
 
     chassert(level == Level::VIEW);
 
     if (!insert_dependencies || !insert_dependencies->deduplicate_blocks_in_dependent_materialized_views)
+    {
         disabled = true;
+        original_block.reset(); // do not hold original block if deduplication is disabled, to save memory
+    }
 
     addExtraPart(TokenDefinition::Extra::asViewID(id));
     visited_views.push_back(id);
@@ -812,13 +816,13 @@ void DeduplicationInfo::addExtraPart(const TokenDefinition::Extra & extra)
 
 bool DeduplicationInfo::TokenDefinition::empty() const
 {
-    return by_user.empty() && !by_data.has_value();
+    return by_user.empty();
 }
 
 
 bool DeduplicationInfo::TokenDefinition::operator==(const TokenDefinition & other) const
 {
-    return by_user == other.by_user && by_data == other.by_data && extra_tokens == other.extra_tokens;
+    return by_user == other.by_user && extra_tokens == other.extra_tokens;
 }
 
 
@@ -832,15 +836,18 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
 {
     chassert(right);
 
-    LOG_DEBUG(
-        logger,
-        "Merging:\n left: {}\n right: {}\n"
-        , debug()
-        , right->debug());
+    if (!disabled)
+        LOG_TEST(
+            logger,
+            "Merging:\n left: {}\n right: {}\n"
+            , debug()
+            , right->debug());
 
     chassert(disabled == right->disabled);
     chassert(is_async_insert == right->is_async_insert);
-    chassert(this->visited_views == right->visited_views);
+    /// When dedup is disabled, parallel-insert squashing may legitimately merge chunks
+    /// from different views writing to the same target, so their visited_views can differ.
+    chassert(disabled || this->visited_views == right->visited_views);
 
     if (!disabled && is_async_insert && visited_views.size() > 1)
         throw Exception(
@@ -894,10 +901,11 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
         do_concat();
     }
 
-    LOG_DEBUG(
-        logger,
-        "Merged: {}",
-        new_instance->debug());
+    if (!disabled)
+        LOG_TEST(
+            logger,
+            "Merged: {}",
+            new_instance->debug());
 
     return new_instance;
 }
@@ -961,8 +969,6 @@ std::string DeduplicationInfo::TokenDefinition::debug() const
 
     if (!by_user.empty())
         str = fmt::format("user<{}>", by_user);
-    else if (by_data.has_value())
-        str = fmt::format("data-hash<{}_{}>",by_data->items[0], by_data->items[1]);
     else
         str = "-";
 
@@ -1008,9 +1014,7 @@ DeduplicationInfo::TokenDefinition::Extra DeduplicationInfo::TokenDefinition::Ex
 
 bool DeduplicationInfo::TokenDefinition::canBeExtended(const TokenDefinition & right) const
 {
-    LOG_TEST(getLogger("canBeExtended"), "{} vs {}", this->debug(), right.debug());
-
-    if (by_user != right.by_user || by_data != right.by_data)
+    if (by_user != right.by_user)
         return false;
 
     if (extra_tokens.size() != right.extra_tokens.size())
@@ -1069,6 +1073,8 @@ void DeduplicationInfo::TokenDefinition::doExtend(const TokenDefinition & right)
     if (left_last_extra == right_last_extra)
         return;
 
+    data_hash_batch.reset(); // invalidate cached data hash as the token's data has changed
+
     // type is equal but values are different
     switch (left_last_extra.type)
     {
@@ -1087,4 +1093,5 @@ void DeduplicationInfo::TokenDefinition::doExtend(const TokenDefinition & right)
         }
     }
 }
+
 }

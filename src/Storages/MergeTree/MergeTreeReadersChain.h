@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -30,13 +32,18 @@ using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
 class MergeTreeReadersChain
 {
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+
 public:
     MergeTreeReadersChain() = default;
     MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_);
     bool isInitialized() const { return is_initialized; }
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
-    ReadResult read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges);
+
+    ReadResult
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {});
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
@@ -80,6 +87,18 @@ private:
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
+
+    /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
+    /// as a function input before any step overwrites them. They must still be converted to
+    /// the post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
+    /// mismatch. The keep-old fallback of an `UPDATE` (`if(cond, expr, col)`'s third argument)
+    /// counts as a genuine consume too; it is ignored ONLY when `cond` is a compile-time
+    /// constant-true, because then `FunctionIf` never reads the on-disk `col`. A real same-step
+    /// read such as `UPDATE col = f(col)` always forces conversion. Columns whose sole reference
+    /// is a constant-true fallback stay skipped; query PREWHERE steps are excluded (they convert
+    /// at their own turn).
+    /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
+    NameSet columns_consumed_by_chain_actions;
 
     bool is_initialized = false;
     LoggerPtr log = getLogger("MergeTreeReadersChain");

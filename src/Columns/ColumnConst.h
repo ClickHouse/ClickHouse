@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
@@ -39,7 +34,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr removeLowCardinality() const;
+    ColumnPtr convertToFullColumnIfLowCardinality() const override;
 
     std::string getName() const override
     {
@@ -76,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        data->getValueNameImpl(name_buf, 0, options);
     }
 
     std::string_view getDataAt(size_t) const override
@@ -127,11 +122,12 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -174,13 +170,7 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override
-    {
-        if (n > s)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
-        s -= n;
-    }
+    void popBack(size_t n) override;
 
     std::string_view
     serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
@@ -210,7 +200,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -253,19 +243,25 @@ public:
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
+    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
+    {
+        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
+    }
+
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const override
     {
-        data->getExtremes(min, max);
+        data->get(0, min);
+        max = min;
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override
@@ -319,7 +315,8 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    bool onlyNull() const override { return data->isNullAt(0); }
+    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
+    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }

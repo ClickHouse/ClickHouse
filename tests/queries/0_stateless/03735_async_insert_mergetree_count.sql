@@ -90,7 +90,7 @@ select * from dst_2_01 order by all;
 
 system flush logs system.query_log;
 select query, query_kind, exception_code from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     has(databases, currentDatabase())
     and has(tables, currentDatabase() || '.src_table')
     and type != 'QueryStart'

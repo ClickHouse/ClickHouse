@@ -1,7 +1,9 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -21,7 +23,7 @@
 namespace DB
 {
 StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     auto creation_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -45,10 +47,19 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
             { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
         }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-class DataSkippingIndicesSource : public ISource
+VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+class DataSkippingIndicesSource final : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -111,7 +122,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
@@ -246,7 +257,7 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
     }
 }
 
-void StorageSystemDataSkippingIndices::read(
+void StorageSystemDataSkippingIndices::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -295,3 +306,6 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDataSkippingIndices) }

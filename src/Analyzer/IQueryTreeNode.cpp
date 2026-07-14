@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -19,6 +20,10 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
 }
+
+/// Thread-local accumulator of nodes visited by getTreeHash (see definition below). Declared
+/// here so the definition has a prototype; also forward-declared by LogicalExpressionOptimizerPass.
+size_t & getTreeHashWorkCounter();
 
 const char * toString(QueryTreeNodeType type)
 {
@@ -95,8 +100,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
-        assert(lhs_node_to_compare);
-        assert(rhs_node_to_compare);
+        chassert(lhs_node_to_compare);
+        chassert(rhs_node_to_compare);
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
@@ -165,6 +170,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     return true;
 }
 
+size_t & getTreeHashWorkCounter()
+{
+    /// Thread-local accumulator of the number of nodes visited by getTreeHash. It lets a pass
+    /// that hashes many subtrees (e.g. optimize_and_compare_chain) bound its own work directly,
+    /// without separately measuring tree sizes -- it watches this counter and backs off once it
+    /// grows too much. The hashing itself is unchanged; this is a pure observability counter.
+    static thread_local size_t counter = 0;
+    return counter;
+}
+
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
     /** Compute tree hash with this node as root.
@@ -178,6 +193,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
     HashState hash_state;
+    size_t visited_nodes = 0;
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
@@ -188,6 +204,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     {
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
+        ++visited_nodes;
 
         if (is_weak_node)
         {
@@ -232,6 +249,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
+    getTreeHashWorkCounter() += visited_nodes;
     return getSipHash128AsPair(hash_state);
 }
 
@@ -281,6 +299,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 
@@ -298,13 +317,22 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         }
     }
 
+    /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
+      * When a node is replaced, its children are not traversed and thus not added
+      * to old_pointer_to_new_pointer. If those children are also in the replacement_map
+      * (e.g., inner column sources of an ARRAY_JOIN being replaced), their entries
+      * must be available for weak pointer updates below.
+      */
+    for (const auto & [old_ptr, new_ptr] : replacement_map)
+        old_pointer_to_new_pointer.emplace(old_ptr, new_ptr);
+
     /** Update weak pointers to new pointers if they were changed during clone.
       * To do this we check old pointer to new pointer map, if weak pointer
       * strong pointer exists as old pointer in map, reinitialize weak pointer with new pointer.
       */
     for (auto & weak_pointer_ptr : weak_pointers_to_update_after_clone)
     {
-        assert(weak_pointer_ptr);
+        chassert(weak_pointer_ptr);
         auto strong_pointer = weak_pointer_ptr->lock();
         auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
 
@@ -339,6 +367,8 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
+
+    converted_node->setParenthesized(parenthesized);
 
     return converted_node;
 }

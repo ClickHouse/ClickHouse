@@ -16,6 +16,12 @@
 #include <Poco/String.h>
 #include <base/sort.h>
 
+/// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
+/// re-uses the original name during expansion (`#define ucol_open
+/// U_ICU_ENTRY_POINT_RENAME(ucol_open)`), so every ICU call below triggers
+/// `-Wdisabled-macro-expansion`. Keep the suppression at file scope.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -92,7 +98,7 @@ Collator::Collator(const std::string & locale_)
 #if USE_ICU
     /// ICU locales can have settings and keywords, e.g. 'tr-u-kn-true-ka-shifted' is 'Turkish' with keywords.
     /// See https://peter.eisentraut.org/blog/2023/05/16/overview-of-icu-collation-settings for details.
-    /// Remove these as AvailableCollationLocales only knows the the base names.
+    /// Remove these as AvailableCollationLocales only knows the base names.
     static const size_t MAX_BASE_NAME_LENGTH = 128;
     char base_name_buf[MAX_BASE_NAME_LENGTH];
     UErrorCode status = U_ZERO_ERROR;
@@ -160,3 +166,5 @@ const std::string & Collator::getLocale() const
 {
     return locale;
 }
+
+#pragma clang diagnostic pop

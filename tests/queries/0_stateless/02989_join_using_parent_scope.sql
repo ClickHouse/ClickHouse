@@ -26,7 +26,7 @@ SELECT a + 2 AS c FROM ta JOIN tabc USING (c) ORDER BY ALL;
 SELECT b AS a, a FROM tb JOIN tabc USING (a) ORDER BY ALL;
 SELECT 1 AS b FROM tb JOIN ta USING (b); -- { serverError UNKNOWN_IDENTIFIER }
 
--- SELECT * returns all columns from both tables in new analyzer
+-- SELECT * returns all columns from both tables in the analyzer
 SELECT 3 AS a, a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 SELECT b + 1 AS a, * FROM tb JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 
@@ -43,6 +43,8 @@ SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 FULL JOIN (SELECT a, b FROM tabc
 
 SELECT b + 1 AS a, s FROM tb FULL OUTER JOIN tabc USING (a) PREWHERE a > 2 ORDER BY ALL SETTINGS enable_analyzer = 1;
 
+set ignore_format_null_for_explain = 0;
+
 EXPLAIN PIPELINE SELECT (SELECT 1) AS c0 FROM (SELECT 1 AS c0, 1 AS c1) tx JOIN (SELECT 0 AS c0, 1 AS c1) ty USING (c0, c1) FORMAT Null SETTINGS enable_analyzer = 1;
 
 -- It's a default behavior for old analyzer and new with analyzer_compatibility_join_using_top_level_identifier
@@ -51,7 +53,7 @@ EXPLAIN PIPELINE SELECT (SELECT 1) AS c0 FROM (SELECT 1 AS c0, 1 AS c1) tx JOIN 
 SELECT a + 2 AS b FROM tb JOIN tabc USING (b) ORDER BY ALL
 SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1; -- { serverError UNKNOWN_IDENTIFIER }
 
--- In new analyzer with `analyzer_compatibility_join_using_top_level_identifier = 0` we get `b` from left table
+-- In the analyzer with `analyzer_compatibility_join_using_top_level_identifier = 0` we get `b` from left table
 SELECT a + 2 AS b FROM tb JOIN tabc USING (b) ORDER BY ALL
 SETTINGS analyzer_compatibility_join_using_top_level_identifier = 0, enable_analyzer = 1;
 

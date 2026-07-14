@@ -46,6 +46,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileTimingWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileTimingWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -79,7 +80,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 quantileTimingWeighted(level)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}},
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence elements. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters = {
@@ -106,7 +107,7 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileTimingWeighted::name, {createAggregateFunctionQuantile<FuncQuantileTimingWeighted>, {}, documentation});
+    factory.registerFunction(NameQuantileTimingWeighted::name, {createAggregateFunctionQuantile<FuncQuantileTimingWeighted>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision, taking into account the weight of each sequence member.
@@ -132,7 +133,7 @@ For calculating page loading time quantiles, this function is more effective and
 quantilesTimingWeighted(level1, level2, ...)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}},
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence elements. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
@@ -156,7 +157,7 @@ SELECT quantilesTimingWeighted(0.5, 0.99)(response_time, weight) FROM t;
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesTimingWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>, properties, documentation_quantiles});
+    factory.registerFunction(NameQuantilesTimingWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>, documentation_quantiles, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);

@@ -29,7 +29,7 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
 def test_system_reload_async_metrics(start_cluster):
-    node.query("SYSTEM DROP QUERY CACHE")
+    node.query("SYSTEM CLEAR QUERY CACHE")
     node.query("DROP TABLE IF EXISTS tab SYNC;")
 
     # Reload asynchronous metrics to get the latest state (async metrics update period has been set to a large value

@@ -9,6 +9,7 @@ doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -41,26 +42,33 @@ If necessary, primary key can be specified, with one or more key expressions.
 
 Comments can be added for columns and for the table.
 
-### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
+### With Schema of Existing Table {#with-a-schema-similar-to-other-table}
+
+ClickHouse supports the ability to copy the schema and data of an existing table. 
+
+For replicating the schema of an existing table:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
 ```
 
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
+This creates a table with the same structure as another table. 
 
-### With a Schema and Data Cloned from Another Table {#with-a-schema-and-data-cloned-from-another-table}
+### With Schema and Data of Existing Table {#with-a-schema-and-data-cloned-from-another-table}
+
+For replicating the schema and data of an existing table:
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+This creates a table with the same schema and data as an existing table.  After the new table is created, all partitions from `db.table` are attached to it. In other words, the data of `db.table` is cloned into `db2.table_clone` upon creation. This query is equivalent to the following:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 ```
 
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
-```
+For both features, you can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
 ### From a Table Function {#from-a-table-function}
 
@@ -84,16 +92,12 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─x─┬─toTypeName(x)─┐
 │ 1 │ String        │
 └───┴───────────────┘
@@ -263,7 +267,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 - Inside the column list
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...,
     PRIMARY KEY(expr1[, expr2,...])
@@ -274,7 +278,7 @@ ENGINE = engine;
 - Outside the column list
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...
 )
@@ -305,6 +309,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 `boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
+
+Existing constraints across all tables can be inspected via the [`system.constraints`](/operations/system-tables/constraints) table.
 
 ### ASSUME {#assume}
 
@@ -427,9 +433,35 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
+#### ALP {#alp}
+
+<ExperimentalBadge/>
+
+`ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+The codec accepts an optional variant argument:
+
+- `ALP()` or `ALP(AUTO)` (default) — Uses STD and falls back to RD based on the estimated compressed size.
+- `ALP(STD)` — Standard ALP variant. Represents each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Non-representable values are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, prices).
+- `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
+
 #### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+
+#### SZ3 {#sz3}
+
+<ExperimentalBadge/>
+
+`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
 
 #### T64 {#t64}
 
@@ -698,7 +730,7 @@ You can add a comment to the table when creating it.
 **Syntax**
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...
 )
@@ -720,16 +752,12 @@ This means the correct clause order is:
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─┬─comment─────────────┐
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘

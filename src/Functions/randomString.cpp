@@ -10,8 +10,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -19,11 +17,15 @@ namespace
 {
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-template <typename RandImpl>
-class FunctionRandomStringImpl : public IFunction
+class FunctionRandomString : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomString>();
+    }
 
     String getName() const override { return name; }
 
@@ -33,20 +35,17 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument: the size of resulting string", getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
 
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
+        FunctionArgumentDescriptors optional_args{
+            {"x", nullptr, nullptr, "Any"}
+        };
 
-        const IDataType & length_type = *arguments[0];
-        if (!isNumber(length_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
-
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -87,34 +86,6 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
         return col_to;
     }
-};
-
-class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
-{
-public:
-    explicit FunctionRandomString(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandomString>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 }
