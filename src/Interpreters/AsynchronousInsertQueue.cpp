@@ -606,7 +606,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     Names http_col_names;
     if (!http_header_columns.empty())
     {
-        auto table = DatabaseCatalog::instance().getTable(insert_query.table_id, query_context);
+        /// Use InterpreterInsertQuery::getTable so that both regular tables and
+        /// INSERT INTO FUNCTION targets are resolved through the same path.
+        auto insert_context_for_table = Context::createCopy(query_context);
+        InterpreterInsertQuery interpreter_for_table(
+            query,
+            insert_context_for_table,
+            query_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_insert */ false);
+        auto table = interpreter_for_table.getTable(insert_query);
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         const auto format_settings = getFormatSettings(query_context);
 

@@ -26,3 +26,7 @@ NO_SUCH_COLUMN_IN_TABLE
 42	['important','urgent']	3.14	typed-test
 --- async: non-String column types
 100	['async']	2.72	async-typed
+--- sync: INSERT INTO FUNCTION remote()
+push	remote-sync
+--- async: INSERT INTO FUNCTION remote()
+release	remote-async

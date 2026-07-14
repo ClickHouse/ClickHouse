@@ -153,3 +153,33 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT count, tags, rate, payload FROM test_http_columns_typed"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_typed"
+
+# Test INSERT INTO FUNCTION remote() -- verifies that table functions are supported
+# and resolved correctly (not broken by direct DatabaseCatalog lookup).
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS test_http_columns_remote;
+    CREATE TABLE test_http_columns_remote (
+        event_type String,
+        payload    String
+    ) ENGINE = MergeTree ORDER BY tuple();
+"
+
+echo "--- sync: INSERT INTO FUNCTION remote()"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+FUNCTION+remote('127.0.0.1',currentDatabase(),test_http_columns_remote)+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    -d '{"payload":"remote-sync"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns_remote"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns_remote"
+
+echo "--- async: INSERT INTO FUNCTION remote()"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: release' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+FUNCTION+remote('127.0.0.1',currentDatabase(),test_http_columns_remote)+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    -d '{"payload":"remote-async"}'
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns_remote"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_remote"
