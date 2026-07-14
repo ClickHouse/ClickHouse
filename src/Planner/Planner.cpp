@@ -695,15 +695,6 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
-/// `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N` over a *partial*
-/// aggregation (a shard or parallel-replicas follower planning the query text
-/// locally at stage `WithMergeableState`): its plan has no LimitStep for
-/// `tryOptimizeGroupByLimitPushdown` to match, so derive the heap parameters
-/// from the analyzed query.  Sound because the rank is a pure function of the
-/// key: a key pruned locally has >= N better keys globally, and the
-/// initiator's final sort+limit discards it.  Requires a real ORDER BY — the
-/// no-ORDER-BY promotion cannot help here, since the verifying sort would have
-/// to sit above the initiator's MergingAggregatedStep.
 void applyTopKPushdownToPartialAggregation(
     AggregatingStep & aggregating_step,
     const QueryNode & query_node,
@@ -773,8 +764,7 @@ void applyTopKPushdownToPartialAggregation(
     {
         if (sort_description[i].column_name != params.keys[i])
             return;
-        /// The heap compares with `IColumn::compareAt`, which ignores collation;
-        /// WITH FILL inserts rows after the sort.
+
         if (sort_description[i].collator || sort_description[i].with_fill)
             return;
 
@@ -849,9 +839,6 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::force_aggregation_in_order],
         settings[Setting::enable_sharding_aggregator]);
 
-    /// Final aggregation is handled by `tryOptimizeGroupByLimitPushdown` on the
-    /// finished plan; a partial aggregation never gets the plan shape that
-    /// optimization matches, so the top-K parameters are derived here instead.
     if (!query_analysis_result.aggregate_final)
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
 

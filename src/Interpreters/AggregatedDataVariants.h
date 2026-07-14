@@ -313,15 +313,13 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Number of rows (different keys).
     size_t size() const;
     size_t sizeWithoutOverflowRow() const;
-    /// Whether the top-K heap ever skipped a row or evicted a key; false when
-    /// the heap never ran.  See `TopKAggregationHeap::everRejected`.
-    bool topKHeapEverRejected() const;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
     void convertToTwoLevel();
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
+    bool topKHeapEverRejected() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);

@@ -148,14 +148,6 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    /// A top-K heap that skipped rows or evicted keys pruned the hash tables,
-    /// so their sizes are far below the query's true group counts - recording
-    /// them would poison the size hint for later runs of the same query
-    /// without the optimization.  A heap that never rejected anything left
-    /// exactly the groups a plain aggregation would have produced, so those
-    /// sizes are true and worth recording: the next top-K run reads them in
-    /// the `Aggregator` constructor and disables the heap up front when the
-    /// cardinality cannot reach the limit.
     for (const auto & variants : data_variants)
         if (variants->topKHeapEverRejected())
             return;
@@ -775,17 +767,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             ;
     }
 
-    /// The top-K heap only pays off when it can reject rows, which needs more
-    /// groups than the limit.  When the size-hint statistics from a previous
-    /// run of this query say the cardinality cannot reach the heap's capacity,
-    /// skip the heap entirely.  `sum_of_sizes` counts a key once per thread
-    /// that saw it, so it only over-estimates the group count of the run that
-    /// recorded it.  The hint is recorded by runs whose heap never rejected
-    /// anything, or by runs without the optimization - see `updateStatistics`.
-    /// The plan-hash key ignores literal constants, so same-shaped queries
-    /// over different data can share an entry; a mis-gated run is
-    /// self-correcting, since it executes as plain aggregation and records the
-    /// true sizes, un-gating the next run.
     if (params.top_k && params.stats_collecting_params.isCollectionAndUseEnabled())
     {
         if (const auto hint = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params.stats_collecting_params);
@@ -1134,14 +1115,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
 
-    /// Hash-table pruning is only possible when:
-    ///   * the hash table exposes `erase` (`FixedHashTable`-based methods do not), and
-    ///   * the method is not `LowCardinality` (its `State`'s per-index caches
-    ///     would keep pointing at a destroyed state after erase), and
-    ///   * the heap stores the full GROUP BY key (in prefix mode an evicted prefix
-    ///     identifies every hash-table entry sharing it, not a single entry).
-    /// Otherwise just trim the heap and leave the hash table alone - the heap
-    /// still rejects rows in flight, only the memory saving is reduced.
     if constexpr (!requires(DataType d, KeyType k) { d.erase(k); } || Method::low_cardinality_optimization)
     {
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
@@ -1163,10 +1136,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
             method.top_k_heap.free_states.push_back(mapped);
         };
 
-        /// A hashing state over the heap's own storage: each evicted key is
-        /// reconstructed through the same typed accessors used during emplace,
-        /// so the resulting key matches the hash-table key by construction
-        /// (including numeric widening, NULL maps, key packing and serialization).
         ColumnRawPtrs heap_columns;
         if (method.top_k_heap.is_composite)
         {
@@ -1177,18 +1146,10 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
         else
             heap_columns.push_back(method.top_k_heap.heap_column.get());
 
-        /// Lazy: some states (`HashMethodKeysFixed`) pack all heap rows in the
-        /// constructor, and a tie-blocked trim evicts nothing — paying O(heap)
-        /// per such call is quadratic while a tie-set grows.
         std::optional<typename Method::StateNoCache> trim_state;
 
         const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
         {
-            /// Only methods with a dedicated null slot keep the NULL key outside
-            /// the hash table.  For other methods (e.g. nullable serialized) the
-            /// NULL key is encoded into the key bytes and stored in `method.data`,
-            /// so it must be reconstructed and erased like any other key - else a
-            /// stale partial NULL group lingers and the unsorted LIMIT can return it.
             if constexpr (requires { method.data.hasNullKeyData(); })
             {
                 if (method.top_k_heap.heap_column->isNullAt(evicted))
@@ -1344,13 +1305,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         heap_key_cols.assign(key_columns.begin(), key_columns.begin() + heap_key_count);
     }
 
-    /// For `AggregationMethodOneNumber` we can hand the heap a raw typed pointer
-    /// to the source column data so it skips the virtual `IColumn::compareAt`.
-    /// Excluded (silently fall back to the virtual path):
-    ///  - `HashMethodSingleLowCardinalityColumn`, which inherits `getKeyData()`
-    ///    but the pointer addresses dictionary entries, not source rows;
-    ///  - nullable key methods, where the heap column is `ColumnNullable` and
-    ///    its `getDataType()` does not match a concrete numeric `TypeIndex`.
     static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
         && !requires(const State & s) { s.positions; }
         && !Method::one_key_nullable_optimization;
@@ -1366,7 +1320,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         return false;
     };
 
-    /// Accumulated locally and flushed once per batch to keep the per-row path cheap.
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
     if (is_simple_count)
@@ -1498,24 +1451,12 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    /// Rows skipped by the heap leave `places[i] = nullptr`, and the non-JIT
-    /// batch paths do `if (places[i]) add(...)` — see `IAggregateFunction.h`.
-    /// This forces the non-JIT path below (the JIT-compiled `addBatch` does not
-    /// null-check), but avoids accumulating garbage state for stateful
-    /// aggregates (`uniqExact`, `groupArray`, ...).
-    ///
-    /// States destroyed by trims over the whole batch; `places` is fixed up
-    /// once after the loop (a per-trim scan is quadratic under sustained
-    /// eviction).  Sound only because slots freed during this batch are not
-    /// reused within it — see `reusable_free_states`.
     [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
 
     /// For all rows.
     if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-        /// Slots freed within this batch would alias dead pointers still in
-        /// `places`, so only slots freed by previous batches are reusable.
         [[maybe_unused]] size_t reusable_free_states = 0;
         if constexpr (top_k)
         {
@@ -1612,8 +1553,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states);
 
-                    /// The boundary moved and keys may be erased: the bitmap and
-                    /// the consecutive-key cache are stale.
                     skip_bitmap = nullptr;
                     state.resetCache();
                 }
@@ -1652,12 +1591,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// When top-K is active some rows have `places[i] = nullptr` (skipped or
-    /// evicted), which only the non-JIT batch paths tolerate.  In addition,
-    /// `addBatchSinglePlace` (taken when `has_only_one_value` is true, or
-    /// unconditionally when `all_keys_are_const`) is incompatible with mixed
-    /// kept/skipped rows, so it must not see a null place either: when the sole
-    /// constant key was skipped, there is nothing to aggregate at all.
     if constexpr (top_k)
     {
         ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, top_k_rows_skipped);

@@ -470,13 +470,6 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
-    /// Trim the bounded heap back to capacity by batch-popping excess entries,
-    /// erasing evicted keys from the hash table and destroying their aggregate states.
-    /// When `destroyed_states` is non-null, evicted aggregate states are destroyed and
-    /// their pointers appended so the caller can redirect stale `places[]` entries.
-    /// When null (the simple-count path), entries are only erased - inline counts are
-    /// not real aggregate states, so destroying them would be undefined behaviour.
-    /// `pool` provides transient storage for reconstructed serialized keys.
     template <typename Method>
     void trimHeapAndPruneHashTable(Method & method, Arena & pool, std::vector<AggregateDataPtr> * destroyed_states) const;
 

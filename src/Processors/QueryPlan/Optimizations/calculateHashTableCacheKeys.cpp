@@ -225,11 +225,6 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
         {
             auto * node = stack.back();
             stack.pop_back();
-            /// Steps with a top-K heap share the key with the un-optimized query
-            /// (the serialized step hash does not include top-K); that is sound
-            /// because `updateStatistics` only records sizes from runs whose heap
-            /// never rejected anything, and the `Aggregator` constructor uses the
-            /// hint to skip the heap when the cardinality cannot reach the limit.
             if (typeid_cast<AggregatingStep *>(node->step.get()))
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)

@@ -177,23 +177,12 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
 
-    /// Aggregation in order executes through AggregatingInOrderTransform, which
-    /// never consults the top-K heap, and its limit hint already cuts the read
-    /// short (see optimizeLimitForAggregationInOrder).  Drop a previously
-    /// pushed-down top-K so the plan does not advertise an optimization the
-    /// execution would ignore.
     params.top_k.reset();
 }
 
 void AggregatingStep::applyLimitPushdown(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
-
-    /// Note on hash-table size statistics: a heap that skipped or evicted
-    /// prunes the hash tables, so only runs whose heap never rejected anything
-    /// record sizes (see `updateStatistics`); the `Aggregator` constructor
-    /// reads the hint back and skips the heap when the recorded cardinality
-    /// cannot reach the limit.
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const

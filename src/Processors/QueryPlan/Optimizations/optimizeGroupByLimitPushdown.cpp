@@ -8,13 +8,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True when `dag` emits `name` as an unchanged pass-through of its same-named
-/// input (an `INPUT` node, possibly behind `ALIAS` renames that preserve the
-/// name).  The heap ranks by the GROUP BY key column directly, so it is only
-/// sound to match an `ORDER BY` key against a GROUP BY key by name if the
-/// optional `ExpressionStep` between the sort and the aggregation does not
-/// rewrite that column: otherwise the sort could order by `f(key)` while the
-/// heap ranks by `key` (e.g. a `-k AS k` projection), keeping the wrong rows.
 static bool isSortKeyPassThrough(const ActionsDAG & dag, const std::string & name)
 {
     const auto & outputs = dag.getOutputs();
@@ -39,22 +32,14 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (aggregating_step->isGroupingSets())
         return nullptr;
 
-    /// Aggregation in order executes through AggregatingInOrderTransform, which
-    /// never consults the heap, and its limit hint already cuts the read short
-    /// (see optimizeLimitForAggregationInOrder). Do not annotate a Top-K the
-    /// execution would ignore.
     if (aggregating_step->inOrder())
         return nullptr;
 
     const auto & params = aggregating_step->getParams();
 
-    /// WITH TOTALS uses overflow_row which is incompatible with key pruning.
     if (params.overflow_row)
         return nullptr;
 
-    /// When max_rows_to_group_by is set, the aggregation already limits groups
-    /// (via any/throw overflow mode). The heap optimization would interfere
-    /// by changing which groups survive.
     if (params.max_rows_to_group_by > 0)
         return nullptr;
 
@@ -64,22 +49,11 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
-/// `GROUP BY ... [ORDER BY <prefix of keys>] LIMIT N`: maintain a bounded heap
-/// of the top-N keys during aggregation and skip rows whose key cannot reach
-/// the result.  Matches `LimitStep -> SortingStep -> [ExpressionStep] ->
-/// AggregatingStep`.  A query without `ORDER BY` is promoted into that shape
-/// by synthesizing a `SortingStep` over all keys (any N groups are a valid
-/// answer, so any deterministic order works); the sort also discards any group
-/// a heap eviction left partially aggregated, which is what makes the heap
-/// sound in both cases.  Partial (shard-side) aggregation is handled from the
-/// query tree in `Planner.cpp` instead, since its plan has no LimitStep.
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
 
-    /// The distributed planner would split the annotated aggregation into
-    /// independent partial aggregators.
     if (settings.make_distributed_plan)
         return 0;
 
@@ -87,12 +61,9 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (!limit_step)
         return 0;
 
-    /// LIMIT WITH TIES may produce more rows than the limit value.
     if (limit_step->withTies())
         return 0;
 
-    /// exact_rows_before_limit promises the count of all rows that would have
-    /// been returned without the LIMIT; pruning groups would undercount it.
     if (limit_step->alwaysReadTillEnd())
         return 0;
 
@@ -100,7 +71,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (limit < 1)
         return 0;
 
-    /// An unselective limit makes the heap pure overhead (0 = no cap).
     if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
         return 0;
 
@@ -119,7 +89,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         next_node = next_node->children.front();
     }
 
-    /// Allow an optional ExpressionStep ("Before ORDER BY" / projection).
     QueryPlan::Node * node_above_aggregation = parent_node;
     const ExpressionStep * expression_step = typeid_cast<const ExpressionStep *>(next_node->step.get());
     if (expression_step)
@@ -143,7 +112,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
 
     if (sorting_step)
     {
-        /// ORDER BY columns must be a leading prefix of the GROUP BY keys (in order).
         const auto & sort_description = sorting_step->getSortDescription();
         if (sort_description.empty() || sort_description.size() > params.keys.size())
             return 0;
@@ -159,7 +127,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
             if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
-            /// The heap compares with `IColumn::compareAt`, which ignores collation.
             if (sort_description[i].collator)
                 return 0;
 
@@ -171,14 +138,13 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     }
     else
     {
-        /// No ORDER BY: synthesize the sort directly above the aggregation
-        /// (below any projection, so key names need no pass-through check).
         num_key_columns = params.keys.size();
         directions.assign(num_key_columns, 1);
         nulls_directions.assign(num_key_columns, 1);
 
         SortDescription sort_description;
         sort_description.reserve(num_key_columns);
+
         for (const auto & key : params.keys)
             sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
 
@@ -190,9 +156,11 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         synthesized_sort->setStepDescription("Sorting for GROUP BY top-K", settings.max_step_description_length);
 
         auto & sort_node = nodes.emplace_back();
+
         sort_node.step = std::move(synthesized_sort);
         sort_node.children = {aggregating_node};
         chassert(node_above_aggregation->children.front() == aggregating_node);
+
         node_above_aggregation->children.front() = &sort_node;
     }
 
@@ -204,6 +172,7 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         .load_factor = settings.top_k_optimization_load_factor,
         .observation_rows = settings.top_k_optimization_observation_rows,
     });
+
     return 0;
 }
 

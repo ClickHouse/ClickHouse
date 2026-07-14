@@ -61,11 +61,9 @@ struct Optimization
         std::optional<bool> join_swap_table;
 
         bool enable_group_by_top_k_optimization;
-        /// Tuning for the GROUP BY top-K heap (group_by_top_k_optimization_* settings).
         Float64 top_k_optimization_load_factor{};
         UInt64 top_k_optimization_observation_rows{};
-        /// For plan steps constructed inside optimizations (e.g. the SortingStep
-        /// injected by the GROUP BY top-K pushdown).
+
         size_t max_block_size{};
 
         // parallel replicas
@@ -163,7 +161,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Push LIMIT into GROUP BY via bounded heap when ORDER BY matches GROUP BY keys
+/// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references

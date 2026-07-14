@@ -123,8 +123,6 @@ struct QueryPlanOptimizationSettings
 
     size_t max_step_description_length = 0;
 
-    /// For plan steps constructed inside optimizations (e.g. the SortingStep
-    /// injected by the GROUP BY top-K pushdown).
     size_t max_block_size = 0;
 
     bool optimize_use_implicit_projections;
