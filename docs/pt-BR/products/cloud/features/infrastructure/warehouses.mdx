@@ -23,11 +23,7 @@ Cada serviço do ClickHouse Cloud inclui:
 * um endpoint (ou vários endpoints criados pelo console da UI do ClickHouse Cloud) para se conectar ao serviço (por exemplo, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) em conexões locais e de aplicativos de terceiros
 * uma pasta de armazenamento de objetos onde o serviço armazena todos os dados e parte dos metadados:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Serviço único no ClickHouse Cloud" />
-
-<br />
-
-*Fig. 1 - Serviço único no ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Serviço único no ClickHouse Cloud" caption="Fig. 1 - Serviço único no ClickHouse Cloud" />
 
 Em vez de ter um único serviço, você pode criar vários serviços com acesso ao mesmo armazenamento compartilhado, o que permite dedicar recursos a workloads específicos sem precisar duplicar os dados.
 Esse conceito é chamado de **compute-compute separation**.
@@ -37,11 +33,7 @@ Isso significa que você pode escolher o tamanho de compute adequado para o seu 
 
 Compute-compute separation também permite separar operações de leitura de operações de gravação para que não interfiram umas nas outras:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separação de compute no ClickHouse Cloud" />
-
-<br />
-
-*Fig. 2 - Separação de compute no ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separação de compute no ClickHouse Cloud" caption="Fig. 2 - Separação de compute no ClickHouse Cloud" />
 
 <div id="what-is-a-warehouse">
   ## O que é um warehouse?
@@ -54,11 +46,7 @@ Por exemplo, na captura de tela abaixo, você pode ver um warehouse &quot;DWH Pr
 * Serviço primário `DWH Prod`
 * Serviço secundário `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Exemplo de warehouse com serviços primário e secundário" background="white" />
-
-<br />
-
-*Fig. 3 - Exemplo de warehouse*
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Exemplo de warehouse com serviços primário e secundário" background="white" caption="Fig. 3 - Exemplo de warehouse" />
 
 Todos os serviços em um warehouse compartilham o mesmo:
 
@@ -79,11 +67,7 @@ Como todos os serviços em um warehouse compartilham o mesmo conjunto de tabelas
 Isso significa que todos os usuários do banco de dados criados no Serviço 1 também poderão usar o Serviço 2 com as mesmas permissões (grants para tabelas, views etc.) e vice-versa.
 Um endpoint diferente é usado para cada serviço, mas o mesmo nome de usuário e a mesma senha são usados em todos eles. Em outras palavras, **os usuários são compartilhados entre serviços que trabalham com o mesmo armazenamento**, como mostrado na figura abaixo:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acesso de usuários entre serviços que compartilham os mesmos dados" />
-
-<br />
-
-*Fig. 4 - A usuária Alice foi criada no Serviço 1, mas pode usar as mesmas credenciais para acessar todos os serviços que compartilham os mesmos dados*
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acesso de usuários entre serviços que compartilham os mesmos dados" caption="Fig. 4 - A usuária Alice foi criada no Serviço 1, mas pode usar as mesmas credenciais para acessar todos os serviços que compartilham os mesmos dados" />
 
 <div id="network-access-control">
   ### Controle de acesso à rede
@@ -97,11 +81,7 @@ Isso permite impedir que usuários utilizem serviços específicos.
 
 No exemplo abaixo, Alice está impedida de acessar o serviço 2 no warehouse:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configurações de controle de acesso à rede" />
-
-<br />
-
-*Fig. 5 - Alice está impedida de acessar o serviço 2 por causa das configurações de controle de acesso à rede*
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configurações de controle de acesso à rede" caption="Fig. 5 - Alice está impedida de acessar o serviço 2 por causa das configurações de controle de acesso à rede" />
 
 As roles e grants do ClickHouse também podem ser usadas para controlar o acesso aos dados quando os usuários se conectam individualmente, em vez de usar o usuário *default*.
 
@@ -124,11 +104,7 @@ Os serviços podem ser de um destes tipos:
 Às vezes, convém isolar workloads críticos de leitura da sobrecarga de escrita/merge tornando um serviço read-only.
 Você pode fazer isso com o segundo serviço e quaisquer serviços adicionais que criar; no entanto, o primeiro serviço sempre será read-write, como mostrado na figura abaixo:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Serviços read-write e read-only em um warehouse" />
-
-<br />
-
-*Fig. 6 - Serviços read-write e read-only em um warehouse*
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Serviços read-write e read-only em um warehouse" caption="Fig. 6 - Serviços read-write e read-only em um warehouse" />
 
 <Note>
   1. No momento, serviços read-only oferecem suporte a operações de gerenciamento de usuários (CREATE, DROP etc.).
@@ -231,11 +207,7 @@ Consulte a calculadora de preços na página de [preços](https://clickhouse.com
 
 Para criar um warehouse, você precisa criar um segundo serviço que compartilhará dados com um serviço existente. Isso pode ser feito clicando no sinal de mais em qualquer um dos serviços existentes:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Criando um novo serviço em um warehouse" />
-
-<br />
-
-*Fig. 7 - Clique no sinal de mais para criar um novo serviço em um warehouse*
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Criando um novo serviço em um warehouse" caption="Fig. 7 - Clique no sinal de mais para criar um novo serviço em um warehouse" />
 
 Na tela de criação do serviço, o serviço original será selecionado no menu suspenso como a origem dos dados do novo serviço. Após a criação, esses dois serviços formarão um warehouse.
 

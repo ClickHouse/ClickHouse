@@ -31,13 +31,9 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 لتوسيع عنقود أفقيًا، أرسل طلب `PATCH` عبر API لتعديل عدد النسخ المتماثلة. تُظهر لقطات الشاشة أدناه استدعاءً إلى API لتوسيع عنقود من `3` نسخ متماثلة إلى `6` نسخ متماثلة، بالإضافة إلى الاستجابة المقابلة.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="طلب PATCH للتوسع" border />
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="طلب PATCH للتوسع" border caption="طلب `PATCH` لتحديث `numReplicas`" />
 
-*طلب `PATCH` لتحديث `numReplicas`*
-
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="استجابة PATCH للتوسع" border />
-
-*الاستجابة لطلب `PATCH`*
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="استجابة PATCH للتوسع" border caption="الاستجابة لطلب `PATCH`" />
 
 إذا أرسلت طلب توسع جديدًا، أو عدة طلبات متتالية، بينما يوجد طلب قيد التنفيذ بالفعل، فستتجاهل خدمة التوسع الحالات الوسيطة وتستقر على العدد النهائي للنسخ المتماثلة.
 
@@ -47,9 +43,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 لتوسيع الخدمة أفقيًا من خلال UI، يمكنك تعديل عدد النُسخ المتماثلة للخدمة في صفحة **الإعدادات**.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="إعدادات تهيئة التوسيع" border />
-
-*إعدادات توسيع الخدمة من وحدة تحكم ClickHouse Cloud*
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="إعدادات تهيئة التوسيع" border caption="إعدادات توسيع الخدمة من وحدة تحكم ClickHouse Cloud" />
 
 بعد اكتمال توسيع الخدمة، ينبغي أن تعرض لوحة بيانات المقاييس في وحدة تحكم ClickHouse Cloud التخصيص الصحيح للخدمة. وتُظهر لقطة الشاشة أدناه أن العنقود قد توسّع ليصل إجمالي الذاكرة إلى `96 GiB`، أي `6` نُسخ متماثلة، مع تخصيص ذاكرة قدره `16 GiB` لكل نسخة.
 

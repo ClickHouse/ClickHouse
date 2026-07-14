@@ -23,11 +23,7 @@ Cada servicio de ClickHouse Cloud incluye:
 * Un endpoint (o varios endpoints creados desde la consola de la UI de ClickHouse Cloud) para conectarse al servicio (por ejemplo, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) para conexiones locales y de aplicaciones de terceros
 * Una carpeta de almacenamiento de objetos donde el servicio almacena todos los datos y parte de los metadatos:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Servicio único en ClickHouse Cloud" />
-
-<br />
-
-*Fig. 1 - Servicio único en ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Servicio único en ClickHouse Cloud" caption="Fig. 1 - Servicio único en ClickHouse Cloud" />
 
 En lugar de tener un único servicio, puedes crear varios servicios con acceso al mismo almacenamiento compartido, lo que te permite dedicar recursos a cargas de trabajo específicas sin tener que duplicar los datos.
 Este concepto se denomina **separación de cómputo-cómputo**.
@@ -37,11 +33,7 @@ Esto significa que puedes elegir la capacidad de cómputo adecuada para tu carga
 
 La separación de cómputo-cómputo también te permite separar las operaciones de lectura de las de escritura para que no interfieran entre sí:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separación de cómputo en ClickHouse Cloud" />
-
-<br />
-
-*Fig. 2 - Separación de cómputo en ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separación de cómputo en ClickHouse Cloud" caption="Fig. 2 - Separación de cómputo en ClickHouse Cloud" />
 
 <div id="what-is-a-warehouse">
   ## ¿Qué es un warehouse?
@@ -54,11 +46,7 @@ Por ejemplo, en la captura de pantalla de abajo, puedes ver un warehouse, &quot;
 * Servicio principal `DWH Prod`
 * Servicio secundario `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Ejemplo de warehouse con servicio principal y servicios secundarios" background="white" />
-
-<br />
-
-*Fig. 3 - Ejemplo de warehouse*
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Ejemplo de warehouse con servicio principal y servicios secundarios" background="white" caption="Fig. 3 - Ejemplo de warehouse" />
 
 Todos los servicios de un warehouse comparten lo siguiente:
 
@@ -79,11 +67,7 @@ Como todos los servicios de un warehouse comparten el mismo conjunto de tablas, 
 Esto significa que todos los usuarios de base de datos que se creen en servicio 1 también podrán usar servicio 2 con los mismos permisos (grants sobre tablas, vistas, etc.), y viceversa.
 Se usa un endpoint distinto para cada servicio, pero el mismo nombre de usuario y la misma contraseña en todos ellos. En otras palabras, **los usuarios se comparten entre los servicios que trabajan con el mismo almacenamiento**, como se muestra en la figura siguiente:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acceso de usuarios entre servicios que comparten los mismos datos" />
-
-<br />
-
-*Fig. 4 - La usuaria Alice se creó en servicio 1, pero puede usar las mismas credenciales para acceder a todos los servicios que comparten los mismos datos*
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acceso de usuarios entre servicios que comparten los mismos datos" caption="Fig. 4 - La usuaria Alice se creó en servicio 1, pero puede usar las mismas credenciales para acceder a todos los servicios que comparten los mismos datos" />
 
 <div id="network-access-control">
   ### Control de acceso a la red
@@ -97,11 +81,7 @@ Esto le permite impedir que los usuarios utilicen servicios específicos.
 
 En el ejemplo siguiente, Alice tiene restringido el acceso al servicio 2 del warehouse:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configuración del control de acceso a la red" />
-
-<br />
-
-*Fig. 5 - Alice tiene restringido el acceso al servicio 2 debido a la configuración del control de acceso a la red*
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configuración del control de acceso a la red" caption="Fig. 5 - Alice tiene restringido el acceso al servicio 2 debido a la configuración del control de acceso a la red" />
 
 Los roles y privilegios de ClickHouse también pueden aplicarse para controlar el acceso a los datos cuando los usuarios se conectan como usuarios individuales en lugar de hacerlo con el usuario *default*.
 
@@ -124,11 +104,7 @@ Los servicios pueden ser de uno de estos tipos:
 A veces conviene aislar las cargas de trabajo de lectura críticas de la sobrecarga de escritura y fusión haciendo que un servicio sea de solo lectura.
 Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cree; sin embargo, el primer servicio siempre será de lectura y escritura, como se muestra en la figura siguiente:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Servicios de lectura y escritura y de solo lectura en un warehouse" />
-
-<br />
-
-*Fig. 6 - Servicios de lectura y escritura y de solo lectura en un warehouse*
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Servicios de lectura y escritura y de solo lectura en un warehouse" caption="Fig. 6 - Servicios de lectura y escritura y de solo lectura en un warehouse" />
 
 <Note>
   1. Actualmente, los servicios de solo lectura admiten operaciones de gestión de usuarios (CREATE, DROP, etc.).
@@ -231,11 +207,7 @@ Consulta la calculadora de precios en la página de [precios](https://clickhouse
 
 Para crear un warehouse, debe crear un segundo servicio que compartirá los datos con un servicio existente. Para ello, haga clic en el signo más de cualquiera de los servicios existentes:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Crear un nuevo servicio en un warehouse" />
-
-<br />
-
-*Fig. 7 - Haga clic en el signo más para crear un nuevo servicio en un warehouse*
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Crear un nuevo servicio en un warehouse" caption="Fig. 7 - Haga clic en el signo más para crear un nuevo servicio en un warehouse" />
 
 En la pantalla de creación del servicio, el servicio original aparecerá seleccionado en la lista desplegable como origen de los datos del nuevo servicio. Una vez creados, estos dos servicios formarán un warehouse.
 

@@ -208,11 +208,7 @@ ClickHouse 서비스에 데이터를 수집하는 가장 쉬운 방법인 ClickP
 
 성능 가시성은 매우 중요합니다. 이제 ClickPipes는 지연 시간 그래프를 제공하여 메시지가 생성된 시점(Kafka 토픽 또는 Kinesis 스트림)부터 ClickHouse Cloud에 수집되기까지의 시간을 파악할 수 있습니다. 이 새 메트릭을 통해 데이터 파이프라인의 성능을 더 면밀하게 모니터링하고 그에 맞춰 최적화할 수 있습니다.
 
-<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="데이터 수집 성능을 위한 지연 시간 메트릭 그래프를 보여주는 ClickPipes 인터페이스" border />
-
-<br />
-
-*Kafka 및 Kinesis용 스케일링 제어(비공개 베타)*
+<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="데이터 수집 성능을 위한 지연 시간 메트릭 그래프를 보여주는 ClickPipes 인터페이스" border caption="Kafka 및 Kinesis용 스케일링 제어(비공개 베타)" />
 
 고처리량 워크로드에서는 데이터 볼륨과 지연 시간 요구 사항을 충족하기 위해 추가 리소스가 필요할 수 있습니다. ClickPipes를 위한 수평 스케일링을 Cloud Console에서 직접 사용할 수 있도록 도입하고 있습니다. 이 기능은 현재 비공개 베타로 제공되며, 요구 사항에 따라 리소스를 더욱 효과적으로 스케일링할 수 있습니다. 베타 참여를 원하면 [support](https://clickhouse.com/support/program)에 문의하십시오.
 

@@ -31,13 +31,9 @@ Les tiers **Scale** et **Enterprise** prennent également en charge les services
 
 Pour mettre à l’échelle horizontalement un cluster, envoyez une requête `PATCH` via l’API afin d’ajuster le nombre de répliques. Les captures d’écran ci-dessous montrent un appel à l’API pour faire passer un cluster de `3` répliques à `6` répliques, ainsi que la réponse correspondante.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Requête PATCH de mise à l’échelle" border />
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Requête PATCH de mise à l’échelle" border caption="Requête `PATCH` pour mettre à jour `numReplicas`" />
 
-*Requête `PATCH` pour mettre à jour `numReplicas`*
-
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Réponse PATCH de mise à l’échelle" border />
-
-*Réponse à la requête `PATCH`*
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Réponse PATCH de mise à l’échelle" border caption="Réponse à la requête `PATCH`" />
 
 Si vous envoyez une nouvelle demande de mise à l’échelle, ou plusieurs demandes successives, alors qu’une opération est déjà en cours, le service de mise à l’échelle ignorera les états intermédiaires et convergera vers le nombre final de répliques.
 
@@ -47,9 +43,7 @@ Si vous envoyez une nouvelle demande de mise à l’échelle, ou plusieurs deman
 
 Pour mettre un service à l’échelle horizontalement depuis l’UI, vous pouvez ajuster le nombre de répliques du service sur la page **Settings**.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Paramètres de configuration de la mise à l’échelle" border />
-
-*Paramètres de mise à l’échelle du service dans la ClickHouse Cloud console*
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Paramètres de configuration de la mise à l’échelle" border caption="Paramètres de mise à l’échelle du service dans la ClickHouse Cloud console" />
 
 Une fois le service mis à l’échelle, le tableau de bord des métriques dans la console Cloud doit afficher l’allocation correcte du service. La capture d’écran ci-dessous montre le cluster mis à l’échelle jusqu’à une mémoire totale de `96 GiB`, soit `6` répliques, chacun avec une allocation mémoire de `16 GiB`.
 

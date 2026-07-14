@@ -23,11 +23,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 * نقطة نهاية واحدة (أو عدة نقاط نهاية تُنشأ عبر واجهة Console في ClickHouse Cloud) للاتصال بالخدمة (على سبيل المثال، `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) من أجل الاتصالات المحلية واتصالات تطبيقات الجهات الخارجية
 * مجلد في التخزين الكائني تخزّن فيه الخدمة جميع البيانات وجزءًا من البيانات الوصفية:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="خدمة واحدة في ClickHouse Cloud" />
-
-<br />
-
-*الشكل 1 - خدمة واحدة في ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="خدمة واحدة في ClickHouse Cloud" caption="الشكل 1 - خدمة واحدة في ClickHouse Cloud" />
 
 بدلًا من الاكتفاء بخدمة واحدة، يمكنك إنشاء عدة خدمات لها إمكانية الوصول إلى مساحة التخزين المشتركة نفسها، مما يتيح لك تخصيص الموارد لأعباء عمل محددة من دون الحاجة إلى تكرار البيانات.
 ويُسمى هذا المفهوم **فصل الحوسبة عن الحوسبة**.
@@ -37,11 +33,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 كما يتيح **فصل الحوسبة عن الحوسبة** فصل عمليات القراءة عن عمليات الكتابة حتى لا تتداخل مع بعضها:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="فصل compute في ClickHouse Cloud" />
-
-<br />
-
-*الشكل 2 - فصل compute في ClickHouse Cloud*
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="فصل compute في ClickHouse Cloud" caption="الشكل 2 - فصل compute في ClickHouse Cloud" />
 
 <div id="what-is-a-warehouse">
   ## ما هو المستودع؟
@@ -54,11 +46,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 * الخدمة الأساسية `DWH Prod`
 * الخدمة الثانوية `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="مثال على مستودع يضم خدمة أساسية وخدمات ثانوية" background="white" />
-
-<br />
-
-*الشكل 3 - مثال على مستودع*
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="مثال على مستودع يضم خدمة أساسية وخدمات ثانوية" background="white" caption="الشكل 3 - مثال على مستودع" />
 
 تشترك جميع الخدمات داخل المستودع نفسه في ما يلي:
 
@@ -79,11 +67,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 وهذا يعني أن جميع مستخدمي قاعدة البيانات الذين يُنشؤون في Service 1 سيتمكنون أيضًا من استخدام Service 2 بالأذونات نفسها (مثل منح الجداول وطرق العرض وما إلى ذلك)، والعكس صحيح.
 تُستخدم نقطة نهاية مختلفة لكل خدمة، لكن يُستخدم اسم المستخدم وكلمة المرور نفسيهما عبر جميع الخدمات. وبعبارة أخرى، **يتشارك المستخدمون بين الخدمات التي تعمل على مساحة التخزين نفسها**، كما هو موضح في الشكل أدناه:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="وصول المستخدم بين الخدمات التي تشترك في البيانات نفسها" />
-
-<br />
-
-*الشكل 4 - أُنشئت المستخدمِة أليس في Service 1، لكنها تستطيع استخدام بيانات الاعتماد نفسها للوصول إلى جميع الخدمات التي تشترك في البيانات نفسها*
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="وصول المستخدم بين الخدمات التي تشترك في البيانات نفسها" caption="الشكل 4 - أُنشئت المستخدمِة أليس في Service 1، لكنها تستطيع استخدام بيانات الاعتماد نفسها للوصول إلى جميع الخدمات التي تشترك في البيانات نفسها" />
 
 <div id="network-access-control">
   ### التحكم في الوصول إلى الشبكة
@@ -97,11 +81,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 في المثال أدناه، مُنعت Alice من الوصول إلى الخدمة 2 في المستودع:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="إعدادات التحكم في الوصول إلى الشبكة" />
-
-<br />
-
-*الشكل 5 - مُنعت Alice من الوصول إلى الخدمة 2 بسبب إعدادات التحكم في الوصول إلى الشبكة*
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="إعدادات التحكم في الوصول إلى الشبكة" caption="الشكل 5 - مُنعت Alice من الوصول إلى الخدمة 2 بسبب إعدادات التحكم في الوصول إلى الشبكة" />
 
 يمكن أيضًا تطبيق أدوار ClickHouse والامتيازات للتحكم في الوصول إلى البيانات عندما يتصل المستخدمون بحساباتهم الفردية بدلًا من المستخدم *default*.
 
@@ -124,11 +104,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 قد تحتاج أحيانًا إلى عزل workloads القراءة الحرجة عن overhead الكتابة/الدمج من خلال جعل service للقراءة فقط.
 يمكنك القيام بذلك للخدمة الثانية وأي خدمات إضافية تنشئها، لكن الخدمة الأولى ستكون دائمًا من نوع للقراءة والكتابة، كما هو موضح في الشكل أدناه:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="خدمات للقراءة والكتابة وللقراءة فقط في مستودع" />
-
-<br />
-
-*الشكل 6 - خدمات للقراءة والكتابة وللقراءة فقط في مستودع*
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="خدمات للقراءة والكتابة وللقراءة فقط في مستودع" caption="الشكل 6 - خدمات للقراءة والكتابة وللقراءة فقط في مستودع" />
 
 <Note>
   1. تدعم خدمات للقراءة فقط حاليًا عمليات إدارة المستخدمين (CREATE وDROP وما إلى ذلك).
@@ -231,11 +207,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 لإنشاء مستودع، تحتاج إلى إنشاء خدمة ثانية تشترك في البيانات مع خدمة موجودة. ويمكنك القيام بذلك بالنقر على علامة الزائد في أيٍ من الخدمات الحالية:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="إنشاء خدمة جديدة في مستودع" />
-
-<br />
-
-*الشكل 7 - انقر على علامة الزائد لإنشاء خدمة جديدة في مستودع*
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="إنشاء خدمة جديدة في مستودع" caption="الشكل 7 - انقر على علامة الزائد لإنشاء خدمة جديدة في مستودع" />
 
 في شاشة إنشاء الخدمة، ستكون الخدمة الأصلية محددة في القائمة المنسدلة باعتبارها مصدر بيانات الخدمة الجديدة. وبمجرد إنشائها، ستشكّل هاتان الخدمتان مستودعًا.
 

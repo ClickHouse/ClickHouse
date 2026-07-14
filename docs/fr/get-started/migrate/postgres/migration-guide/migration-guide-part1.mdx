@@ -18,9 +18,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Comme jeu de données d’exemple pour illustrer une migration typique de Postgres vers ClickHouse, nous utilisons le jeu de données Stack Overflow documenté [ici](/fr/get-started/sample-datasets/stackoverflow). Il contient tous les `post`, `vote`, `user`, `comment` et `badge` de Stack Overflow de 2008 à avril 2024. Le schéma PostgreSQL de ces données est présenté ci-dessous :
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Schéma PostgreSQL de Stack Overflow" />
-
-*Les commandes DDL permettant de créer les tables dans PostgreSQL sont disponibles [ici](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Schéma PostgreSQL de Stack Overflow" caption="Les commandes DDL permettant de créer les tables dans PostgreSQL sont disponibles [ici](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)." />
 
 Ce schéma, sans être nécessairement le plus optimal, exploite plusieurs fonctionnalités populaires de PostgreSQL, notamment les clés primaires, les clés étrangères, le partitionnement et les index.
 

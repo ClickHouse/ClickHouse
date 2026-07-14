@@ -23,11 +23,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 * 用于连接该服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
 * 一个对象存储文件夹，服务会在其中存储所有数据以及部分元数据：
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" />
-
-<br />
-
-*图 1 - ClickHouse Cloud 中的单个服务*
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" caption="图 1 - ClickHouse Cloud 中的单个服务" />
 
 除了使用单个服务外，你还可以创建多个可访问同一共享存储的服务，这样就能为特定工作负载分配专用资源，而无需复制数据。
 这一概念称为**计算-计算分离**。
@@ -37,11 +33,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 
 计算-计算分离还可以将读操作与写操作分离，避免它们相互干扰：
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud 中的计算分离" />
-
-<br />
-
-*图 2 - ClickHouse Cloud 中的计算分离*
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud 中的计算分离" caption="图 2 - ClickHouse Cloud 中的计算分离" />
 
 <div id="what-is-a-warehouse">
   ## 什么是仓库？
@@ -54,11 +46,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 * 主节点 `DWH Prod`
 * 次级服务 `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="包含主节点和次级服务的仓库示例" background="white" />
-
-<br />
-
-*图 3 - 仓库示例*
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="包含主节点和次级服务的仓库示例" background="white" caption="图 3 - 仓库示例" />
 
 仓库中的所有服务共享以下内容：
 
@@ -79,11 +67,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 这意味着，在服务 1 中创建的所有数据库用户，也都可以用相同的权限 (针对表、视图等的授权) 使用服务 2，反之亦然。
 每个服务使用不同的端点，但所有服务共用相同的用户名和密码。换句话说，**使用相同存储的服务之间，用户是共享的**，如下图所示：
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" />
-
-<br />
-
-*图 4 - 用户 Alice 是在服务 1 中创建的，但她可以使用相同的凭据访问所有共享相同数据的服务*
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" caption="图 4 - 用户 Alice 是在服务 1 中创建的，但她可以使用相同的凭据访问所有共享相同数据的服务" />
 
 <div id="network-access-control">
   ### 网络访问控制
@@ -97,11 +81,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 在下面的示例中，Alice 被限制访问仓库中的服务 2：
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="网络访问控制设置" />
-
-<br />
-
-*图 5 - 由于网络访问控制设置，Alice 无法访问服务 2*
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="网络访问控制设置" caption="图 5 - 由于网络访问控制设置，Alice 无法访问服务 2" />
 
 当用户以个人身份连接、而非使用&#95;默认&#95;用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
 
@@ -124,11 +104,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 有时，你可能希望将某个服务设为只读，以便将关键读取 workload 与写入/合并带来的额外开销隔离开来。
 你可以对第二个服务以及之后创建的任何其他服务这样做；不过，第一个服务始终是读写服务，如下图所示：
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="仓库中的读写与只读服务" />
-
-<br />
-
-*图 6 - 仓库中的读写与只读服务*
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="仓库中的读写与只读服务" caption="图 6 - 仓库中的读写与只读服务" />
 
 <Note>
   1. 只读服务目前支持用户管理操作 (CREATE、DROP 等) 。
@@ -231,11 +207,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 要创建一个仓库，您需要创建第二个服务，并与现有服务共享数据。您可以点击任意现有服务上的加号来完成此操作：
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="在仓库中创建新服务" />
-
-<br />
-
-*图 7 - 点击加号，在仓库中创建新服务*
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="在仓库中创建新服务" caption="图 7 - 点击加号，在仓库中创建新服务" />
 
 在服务创建页面上，原始服务会在下拉列表中默认选为新服务的数据来源。创建完成后，这两个服务将构成一个仓库。
 

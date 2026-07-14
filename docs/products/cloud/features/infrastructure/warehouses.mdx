@@ -20,11 +20,7 @@ Each ClickHouse Cloud service includes:
 - An endpoint (or multiple endpoints created via ClickHouse Cloud UI console) to connect to the service (for example, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) for local and third party app connections 
 - An object storage folder where the service stores all the data and part of the metadata:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Single Service in ClickHouse Cloud" />
-
-<br/>
-
-_Fig. 1 - Single service in ClickHouse Cloud_
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Single Service in ClickHouse Cloud" caption="Fig. 1 - Single service in ClickHouse Cloud" />
 
 Rather than having a single service, you can create multiple services that have access to the same shared storage, which allows you to dedicate resources to specific workloads without having to duplicate data.
 This concept is called **compute-compute separation**. 
@@ -34,11 +30,7 @@ This means you can choose the right size compute for your workload. Some of your
 
 Compute-compute separation also allows you to separate read operations from write operations so they don't interfere with each other:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Compute separation in ClickHouse Cloud" />
-
-<br/>
-
-_Fig. 2 - Compute separation in ClickHouse Cloud_
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Compute separation in ClickHouse Cloud" caption="Fig. 2 - Compute separation in ClickHouse Cloud" />
 
 ## What is a warehouse? {#what-is-a-warehouse}
 
@@ -49,11 +41,7 @@ For example, in the screenshot below, you can see a warehouse "DWH Prod" consist
 - Primary service `DWH Prod`
 - Secondary service `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Warehouse example with primary and secondary services" background='white' />
-
-<br/>
-
-_Fig. 3 - Warehouse example_
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Warehouse example with primary and secondary services" background='white' caption="Fig. 3 - Warehouse example" />
 
 All services in a warehouse share the same:
 
@@ -70,11 +58,7 @@ Because all services in a warehouse share the same set of tables, they also shar
 This means that all database users that are created in Service 1 will also be able to use Service 2 with the same permissions (grants for tables, views, etc), and vice versa.
 A different endpoint is used for each service, but the same username and password is used across all services. In other words, **users are shared across services that work with the same storage** as shown in the figure below:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="User access across services sharing same data" />
-
-<br/>
-
-_Fig. 4 - User Alice was created in Service 1, but she can use the same credentials to access all services that share same data_
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="User access across services sharing same data" caption="Fig. 4 - User Alice was created in Service 1, but she can use the same credentials to access all services that share same data" />
 
 ### Network access control {#network-access-control}
 
@@ -86,11 +70,7 @@ This allows you to restrict users from using specific services.
 
 In the example below, Alice is restricted from accessing service 2 in the warehouse:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Network access control settings"/>
-
-<br/>
-
-_Fig. 5 - Alice is restricted from accessing service 2 because of network access control settings_
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Network access control settings" caption="Fig. 5 - Alice is restricted from accessing service 2 because of network access control settings"/>
 
 ClickHouse roles and grants can also be applied to control access to the data when users are connecting as an individual rather than the _default_ user. 
 
@@ -110,11 +90,7 @@ Services can be one of:
 Sometimes you want to isolate critical read workloads from write/merge overhead by making a service read only.
 You can do so for the second service and any additional services you create, however the first service will always be read-write, as shown in the figure below:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Read-write and Read-only services in a warehouse"/>
-
-<br/>
-
-_Fig. 6 - Read-write and Read-only services in a warehouse_
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Read-write and Read-only services in a warehouse" caption="Fig. 6 - Read-write and Read-only services in a warehouse"/>
 
 <Note>
 1. Read-only services currently support user management operations (CREATE, DROP, etc).
@@ -198,11 +174,7 @@ Please refer to the pricing calculator on the [pricing](https://clickhouse.com/p
 
 To create a warehouse, you need to create a second service that will share the data with an existing service. This can be done by clicking the plus sign on any of the existing services:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Creating a new service in a warehouse"/>
-
-<br/>
-
-_Fig. 7 - Click the plus sign to create a new service in a warehouse_
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Creating a new service in a warehouse" caption="Fig. 7 - Click the plus sign to create a new service in a warehouse"/>
 
 On the service creation screen, the original service will be selected in the dropdown as the source for the data of the new service. Once created, these two services will form a warehouse.
 

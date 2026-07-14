@@ -31,13 +31,9 @@ ClickHouse Cloudの[public APIs](/api-reference/organization/get-list-of-availab
 
 クラスターを水平スケーリングするには、API 経由で `PATCH` リクエストを送信してレプリカ数を調整します。以下のスクリーンショットは、`3` レプリカのクラスターを `6` レプリカへスケールアウトする API 呼び出しと、それに対応するレスポンスを示しています。
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="スケーリング PATCH リクエスト" border />
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="スケーリング PATCH リクエスト" border caption="`numReplicas` を更新する `PATCH` リクエスト" />
 
-*`numReplicas` を更新する `PATCH` リクエスト*
-
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="スケーリング PATCH レスポンス" border />
-
-*`PATCH` リクエストのレスポンス*
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="スケーリング PATCH レスポンス" border caption="`PATCH` リクエストのレスポンス" />
 
 すでにスケーリング処理が進行中の状態で、新たなスケーリングリクエストや複数のリクエストを連続して送信した場合、スケーリングサービスは中間状態を無視し、最終的なレプリカ数に収束します。
 
@@ -47,9 +43,7 @@ ClickHouse Cloudの[public APIs](/api-reference/organization/get-list-of-availab
 
 UI からサービスを水平スケーリングするには、**Settings** ページでそのサービスのレプリカ数を調整します。
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="スケーリング設定" border />
-
-*ClickHouse Cloud console のサービスのスケーリング設定*
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="スケーリング設定" border caption="ClickHouse Cloud console のサービスのスケーリング設定" />
 
 サービスのスケーリングが完了すると、ClickHouse Cloud console のメトリクスダッシュボードに、そのサービスへの割り当てが正しく表示されます。以下のスクリーンショットでは、クラスターは合計メモリ `96 GiB` までスケールしており、これはそれぞれ `16 GiB` のメモリが割り当てられた `6` 個のレプリカに相当します。
 

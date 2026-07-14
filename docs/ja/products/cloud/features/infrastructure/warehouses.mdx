@@ -23,11 +23,7 @@ import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge
 * サービスに接続するためのエンドポイント (または ClickHouse Cloud の UI コンソールから作成された複数のエンドポイント) 。ローカル接続やサードパーティアプリからの接続に使用します (例: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * サービスがすべてのデータとメタデータの一部を保存するオブジェクトストレージ フォルダー:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 内の単一サービス" />
-
-<br />
-
-*図 1 - ClickHouse Cloud 内の単一サービス*
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 内の単一サービス" caption="図 1 - ClickHouse Cloud 内の単一サービス" />
 
 単一のサービスだけでなく、同じ共有ストレージにアクセスできる複数のサービスを作成することもできます。これにより、データを複製することなく、特定のワークロードに専用のリソースを割り当てられます。
 この考え方を**コンピュート-コンピュート分離**と呼びます。
@@ -37,11 +33,7 @@ import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge
 
 また、コンピュート-コンピュート分離を使うことで、読み取り処理と書き込み処理を分離し、相互に干渉しないようにすることもできます。
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud におけるコンピュート分離" />
-
-<br />
-
-*図 2 - ClickHouse Cloud におけるコンピュート分離*
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud におけるコンピュート分離" caption="図 2 - ClickHouse Cloud におけるコンピュート分離" />
 
 <div id="what-is-a-warehouse">
   ## ウェアハウス とは何ですか？
@@ -54,11 +46,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 * プライマリ サービス `DWH Prod`
 * セカンダリ サービス `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例" background="white" />
-
-<br />
-
-*図 3 - ウェアハウス の例*
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例" background="white" caption="図 3 - ウェアハウス の例" />
 
 ウェアハウス 内のすべてのサービスは、以下を共有します。
 
@@ -79,11 +67,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 つまり、Service 1 で作成されたすべてのデータベースユーザーは、同じ権限 (テーブル、ビューなどに対する grant) で Service 2 も利用でき、その逆も同様です。
 各サービスでは異なる endpoint を使用しますが、ユーザー名とパスワードはすべてのサービスで共通です。つまり、以下の図に示すように、**同じストレージを使用するサービス間ではユーザーが共有されます**。
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="同じデータを共有するサービス間でのユーザーアクセス" />
-
-<br />
-
-*図 4 - ユーザー Alice は Service 1 で作成されましたが、同じ認証情報を使って、同じデータを共有するすべてのサービスにアクセスできます*
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="同じデータを共有するサービス間でのユーザーアクセス" caption="図 4 - ユーザー Alice は Service 1 で作成されましたが、同じ認証情報を使って、同じデータを共有するすべてのサービスにアクセスできます" />
 
 <div id="network-access-control">
   ### ネットワークアクセス制御
@@ -97,11 +81,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 
 以下の例では、Alice は ウェアハウス 内のサービス 2 へのアクセスを制限されています。
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="ネットワークアクセス制御の設定" />
-
-<br />
-
-*図 5 - Alice は、ネットワークアクセス制御の設定によりサービス 2 へのアクセスを制限されています*
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="ネットワークアクセス制御の設定" caption="図 5 - Alice は、ネットワークアクセス制御の設定によりサービス 2 へのアクセスを制限されています" />
 
 また、ユーザーが *default* ユーザーではなく個別のユーザーとして接続する場合は、ClickHouse のロールと権限を適用してデータへのアクセスを制御することもできます。
 
@@ -124,11 +104,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 重要な読み取りワークロードを、書き込みやマージのオーバーヘッドから切り離すために、サービスを読み取り専用にしたい場合があります。
 これは 2 つ目のサービスと、それ以降に作成する追加サービスで設定できます。ただし、最初のサービスは常に読み書きサービスです。以下の図を参照してください。
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="ウェアハウス内の読み書きサービスと読み取り専用サービス" />
-
-<br />
-
-*図 6 - ウェアハウス内の読み書きサービスと読み取り専用サービス*
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="ウェアハウス内の読み書きサービスと読み取り専用サービス" caption="図 6 - ウェアハウス内の読み書きサービスと読み取り専用サービス" />
 
 <Note>
   1. 読み取り専用サービスは現在、ユーザー管理操作 (CREATE、DROP など) をサポートしています。
@@ -230,11 +206,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 ウェアハウスを作成するには、既存のサービスとデータを共有する 2 つ目のサービスを作成する必要があります。これは、既存のサービスのいずれかにあるプラス記号をクリックして行えます。
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="ウェアハウス内で新しいサービスを作成" />
-
-<br />
-
-*図 7 - プラス記号をクリックして、ウェアハウス内に新しいサービスを作成します*
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="ウェアハウス内で新しいサービスを作成" caption="図 7 - プラス記号をクリックして、ウェアハウス内に新しいサービスを作成します" />
 
 サービス作成画面では、新しいサービスのデータ元として、元のサービスがドロップダウンで選択された状態になります。作成後、これら 2 つのサービスで 1 つのウェアハウスが構成されます。
 

@@ -18,9 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ولعرض مجموعة بيانات تجريبية تُظهر عملية ترحيل نموذجية من Postgres إلى ClickHouse، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). وهي تتضمن كل `post` و`vote` و`user` و`comment` و`badge` على Stack Overflow من عام 2008 حتى أبريل 2024. ويظهر أدناه مخطط PostgreSQL لهذه البيانات:
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="مخطط Stack Overflow في PostgreSQL" />
-
-*أوامر DDL اللازمة لإنشاء الجداول في PostgreSQL متاحة [هنا](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="مخطط Stack Overflow في PostgreSQL" caption="أوامر DDL اللازمة لإنشاء الجداول في PostgreSQL متاحة [هنا](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)." />
 
 هذا المخطط، وإن لم يكن بالضرورة الأمثل، يوظّف عددًا من ميزات PostgreSQL الشائعة، بما في ذلك المفاتيح الأساسية والمفاتيح الخارجية والتقسيم والفهارس.
 
