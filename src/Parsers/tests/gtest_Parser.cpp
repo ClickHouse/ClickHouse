@@ -1040,22 +1040,22 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
     }
 }
 
-/// A live ASTStorage SETTINGS node whose slot is desynced from `storage->children` but still reachable
-/// from the root (relocated to another in-tree owner) must keep its surviving engine settings; only the
-/// safety cap is stripped. `ASTStorage::formatImpl` serializes `*storage->settings` directly, so the
-/// strip must mutate the live node in place, not blanket-clear the slot: clearing would silently drop
-/// `index_granularity` instead of stripping only `max_rows_to_read`. This is exactly the reachable-but-
-/// not-storage-backed path the fix added - liveness is judged by whole-tree reachability (a live owning
-/// chain leads to the node), so this node is recognised as live and stripped in place, whereas a check
-/// of storage's own `children` would treat it as gone and clear it. The mixed clause (safety + engine
-/// setting) is what distinguishes "strip in place" from "clear the slot"; the all-safety desync case
-/// (ToleratesSettingsSlotDesyncedFromChildren) cannot catch that difference.
+/// An ASTStorage `settings` slot that is NOT backed by an owning child in `storage->children` must be
+/// cleared without ever being dereferenced - the fail-closed case. Liveness is proved only through the
+/// slot's designated owner (`storage->children`): the bare `ASTSetQuery *` has no other owner in
+/// production, so a slot missing from `children` has lost its keep-alive and may be dangling.
 ///
-/// A node held only by a reference OUTSIDE the tree is indistinguishable from a freed node by pointer
-/// value alone, so it is (correctly) not preserved; that case is covered above where the slot is left
-/// unreachable and the transform must not dereference it. In production `storage->children` is the sole
-/// owner of the slot, so an unreachable slot always means freed.
-TEST(RemoveSettingsFromQuery, KeepsSurvivingEngineSettingOnReachableDesyncedStorage)
+/// Judging liveness by pointer-value reachability from the root instead is unsound: `QueryFuzzer::
+/// fuzzMain` mutates the tree in place and keeps allocating before the strip runs, so a freed slot's
+/// address can be reused by an unrelated live node, making an address-membership test report the
+/// dangling slot as "live" and dereference freed memory. This test pins the sound contract - a slot
+/// reachable from the root through some OTHER owner (not `storage->children`) is still treated as not
+/// live and cleared, never stripped in place - which discriminates the owning-child proof from any
+/// address-reachability proof. The node is kept alive elsewhere in the tree here only so the test
+/// itself constructs no use-after-free; the transform must reach the same clear-without-deref result by
+/// pointer value alone. In production `children` is the sole owner, so an unbacked slot always means
+/// freed and clearing loses no real settings.
+TEST(RemoveSettingsFromQuery, ClearsStorageSettingsSlotNotBackedByAnOwningChild)
 {
     static constexpr std::string_view safety_settings[] = {
         "max_rows_to_read",
@@ -1077,10 +1077,11 @@ TEST(RemoveSettingsFromQuery, KeepsSurvivingEngineSettingOnReachableDesyncedStor
     ASSERT_NE(nullptr, create->storage);
     ASSERT_NE(nullptr, create->storage->settings);
 
-    /// Relocate the owning `ASTPtr` from `storage->children` to the CREATE query's own `children`. The
-    /// slot stays valid and reachable from the root through a live owning chain, just no longer through
-    /// `storage->children`. This mimics a fuzzer that moved the node without dropping it - the case a
-    /// storage-local `children` check would misread as freed.
+    /// Move the owning `ASTPtr` out of `storage->children` and into the CREATE query's own `children`,
+    /// leaving the raw `storage->settings` slot set. The node stays alive and reachable from the root,
+    /// but is no longer backed by an owning child of `storage`. A fuzzer that drops the last
+    /// storage-owned reference reaches the same shape (only then the node may be freed) - the strip must
+    /// decide by the owning child alone, so it cannot tell this apart from freed and must fail closed.
     auto & storage_children = create->storage->children;
     ASTPtr moved;
     for (const auto & child : storage_children)
@@ -1097,15 +1098,16 @@ TEST(RemoveSettingsFromQuery, KeepsSurvivingEngineSettingOnReachableDesyncedStor
 
     EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
 
-    /// The safety cap is gone, the engine setting survives, and the surviving node still round-trips.
-    ASSERT_NE(nullptr, create->storage->settings) << "dropped a live storage SETTINGS node with a surviving setting";
-    auto * set_query = create->storage->settings->as<ASTSetQuery>();
-    ASSERT_NE(nullptr, set_query);
-    EXPECT_EQ(nullptr, set_query->changes.tryGet("max_rows_to_read")) << "kept the safety cap on the storage clause";
-    ASSERT_NE(nullptr, set_query->changes.tryGet("index_granularity")) << "dropped the surviving engine setting";
+    /// Fail-closed: the slot is cleared (not stripped in place), so the surrounding CREATE never
+    /// re-serializes a possibly-dangling pointer. The safety cap is gone from the output either way.
+    /// (An address-reachability proof would instead have kept the slot and left `index_granularity`,
+    /// dereferencing what production cannot prove is live - the unsound path this asserts against.)
+    EXPECT_EQ(nullptr, create->storage->settings) << "unbacked storage SETTINGS slot was not cleared";
     const String formatted = ast->formatWithSecretsOneLine();
-    EXPECT_NE(String::npos, formatted.find("index_granularity")) << "engine setting missing from output: " << formatted;
     EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "safety cap survived in output: " << formatted;
+    ParserQuery reparser(formatted.data() + formatted.size());
+    ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+    EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
 }
 
 /// max_rows_to_read + read_overflow_mode = break bound the number of chunks a fuzzed query reads, but
