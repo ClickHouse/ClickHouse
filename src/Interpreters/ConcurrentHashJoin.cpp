@@ -35,6 +35,8 @@
 #include <deque>
 #include <iterator>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 using namespace DB;
 
@@ -220,7 +222,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
-                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                    inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
+                    global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
@@ -300,6 +303,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         }
     }
 
+    size_t post_join_total_rows = 0;
+    size_t post_join_total_bytes = 0;
+
     while (blocks_left > 0)
     {
         bool made_progress = false;
@@ -328,9 +334,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
-                /// Update the snapshot of total rows and bytes for the current join instance
-                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
-                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -347,7 +351,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
-        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
@@ -464,18 +468,12 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->total_rows.load(std::memory_order_relaxed);
-    return res;
+    return global_total_rows.load(std::memory_order_relaxed);
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->total_bytes.load(std::memory_order_relaxed);
-    return res;
+    return global_total_bytes.load(std::memory_order_relaxed);
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
@@ -734,6 +732,40 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
+std::pair<size_t, size_t> ConcurrentHashJoin::updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Update total rows for the current hash join instance and for the overall concurrent hash join
+    const size_t rows_delta = hash_join->data->getTotalRowCount() - hash_join->local_total_rows;
+    const size_t updated_global_rows = global_total_rows.fetch_add(rows_delta, std::memory_order_relaxed) + rows_delta;
+    hash_join->local_total_rows += rows_delta;
+
+    /// Update total bytes for the current hash join instance and for the overall concurrent hash join, taking
+    /// into account that bytes could shrink
+    const size_t updated_local_bytes = hash_join->data->getTotalByteCount();
+    size_t updated_global_bytes = 0;
+    if (updated_local_bytes >= hash_join->local_total_bytes)
+    {
+        const size_t bytes_delta = updated_local_bytes - hash_join->local_total_bytes;
+        updated_global_bytes = global_total_bytes.fetch_add(bytes_delta, std::memory_order_relaxed) + bytes_delta;
+    }
+    else
+    {
+        const size_t bytes_delta = hash_join->local_total_bytes - updated_local_bytes;
+        updated_global_bytes = global_total_bytes.fetch_sub(bytes_delta, std::memory_order_relaxed) - bytes_delta;
+    }
+    hash_join->local_total_bytes = updated_local_bytes;
+    return {updated_global_rows, updated_global_bytes};
+}
+
+void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Reset global and local total rows and bytes
+    global_total_rows.fetch_sub(hash_join->local_total_rows, std::memory_order_relaxed);
+    global_total_bytes.fetch_sub(hash_join->local_total_bytes, std::memory_order_relaxed);
+    hash_join->local_total_rows = 0;
+    hash_join->local_total_bytes = 0;
+}
+
 BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
@@ -741,8 +773,7 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     std::lock_guard lock(hash_join->mutex);
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
-    hash_join->total_rows.store(0, std::memory_order_relaxed);
-    hash_join->total_bytes.store(0, std::memory_order_relaxed);
+    resetTotalRowsAndBytesUnlocked(hash_join);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
