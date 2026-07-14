@@ -20,6 +20,10 @@ namespace DB
 /// Backed by a `google::cloud::storage::ObjectReadStream` (a std::istream). Ranged reads are used
 /// for seeks and for a bounded right edge (`read_until_position`), mirroring ReadBufferFromS3 /
 /// ReadBufferFromAzureBlobStorage semantics.
+///
+/// When `expected_generation` is set, every `ReadObject` request carries an `IfGenerationMatch`
+/// precondition, so a concurrent in-place overwrite fails the read instead of splicing bytes from
+/// two object generations (the native counterpart of `s3_validate_etag_on_read`).
 class ReadBufferFromGCS : public ReadBufferFromFileBase
 {
 public:
@@ -32,7 +36,8 @@ public:
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
-        std::optional<size_t> file_size_ = std::nullopt);
+        std::optional<size_t> file_size_ = std::nullopt,
+        std::optional<Int64> expected_generation_ = std::nullopt);
 
     ~ReadBufferFromGCS() override = default;
 
@@ -68,6 +73,9 @@ private:
     off_t offset = 0;
     /// Right boundary (exclusive); 0 means "read to the end of the object".
     off_t read_until_position = 0;
+
+    /// If set, pin every read request to this object generation (see the class comment).
+    std::optional<Int64> expected_generation;
 
     bool initialized = false;
     std::unique_ptr<google::cloud::storage::ObjectReadStream> read_stream;

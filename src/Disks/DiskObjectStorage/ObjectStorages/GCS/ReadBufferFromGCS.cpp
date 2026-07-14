@@ -27,7 +27,8 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_,
-    std::optional<size_t> file_size_)
+    std::optional<size_t> file_size_,
+    std::optional<Int64> expected_generation_)
     : ReadBufferFromFileBase()
     , client(std::move(client_))
     , bucket(bucket_)
@@ -37,6 +38,7 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     , restricted_seek(restricted_seek_)
     , offset(offset_)
     , read_until_position(read_until_position_)
+    , expected_generation(expected_generation_)
     , tmp_buffer_size(read_settings_.remote_fs_settings.buffer_size)
 {
     file_size = file_size_;
@@ -53,6 +55,11 @@ void ReadBufferFromGCS::initialize()
     if (initialized)
         return;
 
+    /// A default-constructed option is "not set" and does not affect the request.
+    gcs::IfGenerationMatch generation_match;
+    if (expected_generation)
+        generation_match = gcs::IfGenerationMatch(*expected_generation);
+
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
     if (read_until_position)
     {
@@ -61,17 +68,21 @@ void ReadBufferFromGCS::initialize()
                 "Attempt to read beyond the right offset ({} > {})", offset, read_until_position - 1);
 
         read_stream = std::make_unique<gcs::ObjectReadStream>(
-            client->ReadObject(bucket, key, gcs::ReadRange(offset, read_until_position)));
+            client->ReadObject(bucket, key, gcs::ReadRange(offset, read_until_position), generation_match));
     }
     else
     {
         read_stream = std::make_unique<gcs::ObjectReadStream>(
-            client->ReadObject(bucket, key, gcs::ReadFromOffset(offset)));
+            client->ReadObject(bucket, key, gcs::ReadFromOffset(offset), generation_match));
     }
 
     if (!read_stream->status().ok())
         throwFromGCSStatus(read_stream->status(),
-            fmt::format("while opening a read stream for '{}' in bucket '{}' at offset {}", key, bucket, offset));
+            fmt::format("while opening a read stream for '{}' in bucket '{}' at offset {}{}", key, bucket, offset,
+                expected_generation
+                    ? fmt::format(" (pinned to generation {}; a precondition failure means the object was overwritten during the read)",
+                        *expected_generation)
+                    : ""));
 
     initialized = true;
 }

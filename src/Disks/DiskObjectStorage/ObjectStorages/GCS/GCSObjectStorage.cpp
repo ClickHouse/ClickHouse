@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/ReadBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/WriteBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -35,7 +36,12 @@ namespace
         ObjectMetadata result;
         result.size_bytes = md.size();
         result.last_modified = Poco::Timestamp::fromEpochTime(timePointToEpochSeconds(md.updated()));
-        result.etag = md.etag();
+        /// The native backend uses the object *generation* as its etag. The JSON API etag is an
+        /// opaque string that cannot be fed back into a request precondition, while the generation
+        /// is GCS's canonical content-version token: it changes on every overwrite (so it is a valid
+        /// cache key wherever an etag is expected) and `readObject` can pin ranged re-reads to it
+        /// with `IfGenerationMatch` to detect concurrent overwrites (`s3_validate_etag_on_read`).
+        result.etag = std::to_string(md.generation());
         return result;
     }
 }
@@ -63,6 +69,19 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
     if (object.bytes_size && object.bytes_size != StoredObject::UnknownSize)
         file_size = object.bytes_size;
 
+    /// A non-empty etag means the caller pinned the read to the object version it saw at LIST/HEAD
+    /// time (`s3_validate_etag_on_read`). For this backend the etag is the object generation (see
+    /// `toObjectMetadata`), enforced on every read request via `IfGenerationMatch`.
+    std::optional<Int64> expected_generation;
+    if (!object.etag.empty())
+    {
+        Int64 generation = 0;
+        if (!tryParse(generation, object.etag))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Native GCS read of '{}' got etag '{}' which is not an object generation", object.remote_path, object.etag);
+        expected_generation = generation;
+    }
+
     return std::make_unique<ReadBufferFromGCS>(
         getClient(),
         bucket,
@@ -72,7 +91,8 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
         /* offset */ 0,
         /* read_until_position */ 0,
         restrict_seek,
-        file_size);
+        file_size,
+        expected_generation);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLINT
