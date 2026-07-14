@@ -43,6 +43,11 @@ public:
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
 
+    /// True if the tokenizer keeps mutable iteration state across calls (e.g. sparseGrams),
+    /// so a single instance is not safe to use from multiple threads concurrently. Consumers
+    /// that may tokenize in parallel must use a private clone() per thread. See tokens.cpp.
+    virtual bool isStateful() const { return false; }
+
     /// Returns a formatted description of the tokenizer with arguments.
     virtual String getDescription() const = 0;
 
@@ -352,6 +357,8 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    /// Holds a mutable sparse-grams iterator that is advanced during tokenization.
+    bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:

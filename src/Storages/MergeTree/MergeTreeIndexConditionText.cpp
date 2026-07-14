@@ -123,7 +123,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , tokenizer(tokenizer_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? tokenizer_->clone() : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
@@ -216,6 +217,8 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         }
     }
 }
+
+MergeTreeIndexConditionText::~MergeTreeIndexConditionText() = default;
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {

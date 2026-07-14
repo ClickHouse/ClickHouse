@@ -86,3 +86,33 @@ SELECT '-- modulo IN (-199, -57), folding on';
 SELECT count() FROM t_04510_mod WHERE id % 200 IN (-199, -57) SETTINGS use_constant_folding_in_index_analysis = 1;
 
 DROP TABLE t_04510_mod;
+
+-- Regression test for a data race / crash with a stateful sparseGrams tokenizer.
+-- With folding on, the skip-index condition is regenerated per partition in parallel, and every
+-- build shared the text index's single sparseGrams tokenizer whose iterator state is mutable.
+-- Concurrent tokenization of the LIKE needle corrupted that shared state (heap corruption / SIGSEGV
+-- in SparseGramsTokenizer::nextInStringLike). Each condition must own a private clone of a stateful
+-- tokenizer. Many partitions + max_threads > 1 are required to run the per-partition builds in
+-- parallel. The result must be stable across repetitions.
+
+DROP TABLE IF EXISTS t_04510_sg;
+
+CREATE TABLE t_04510_sg
+(
+    id UInt32,
+    s String,
+    INDEX idx s TYPE text(tokenizer = sparseGrams(3, 20, 5)) GRANULARITY 1
+)
+ENGINE = MergeTree PARTITION BY id ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_04510_sg SELECT number, 'foobar' || toString(number) FROM numbers(64);
+
+SELECT '-- sparseGrams LIKE under parallel per-partition folding';
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+
+DROP TABLE t_04510_sg;

@@ -29,3 +29,7 @@
 5
 -- modulo IN (-199, -57), folding on
 5
+-- sparseGrams LIKE under parallel per-partition folding
+64
+64
+64
