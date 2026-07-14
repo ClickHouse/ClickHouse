@@ -2057,7 +2057,8 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     bool final,
     size_t partition_index,
     size_t num_partitions,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     const AggregatedDataVariantsPtr & first = non_empty_data.at(0);
 
@@ -2090,10 +2091,21 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
+    /// The partitions' tables are disjoint, and the dataflow-statistics updater accumulates, so the
+    /// per-partition records sum up to the whole result — the same accounting the two-level merge
+    /// does per bucket.
+    if (updater)
+        updater->recordAggregationStateSizes(dst, /*bucket=*/-1);
+
     if (is_cancelled.load(std::memory_order_seq_cst))
         return {};
 
-    return prepareChunkAndFillSingleLevel<true /* return_single_block */>(dst, final);
+    auto agg_chunk = prepareChunkAndFillSingleLevel<true /* return_single_block */>(dst, final);
+
+    if (updater)
+        updater->recordAggregationKeySizes(agg_chunk.chunk, keys_positions, key_types);
+
+    return agg_chunk;
 }
 
 template <typename Method, typename TwoLevelMethod>

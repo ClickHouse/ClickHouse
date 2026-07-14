@@ -285,12 +285,17 @@ public:
     using SharedDataPtr = ConvertingAggregatedToChunksWithMergingSource::SharedDataPtr;
 
     ConvertingAggregatedToChunksByPartitionMergingSource(
-        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, UInt32 num_partitions_)
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        UInt32 num_partitions_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , num_partitions(num_partitions_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -317,7 +322,7 @@ protected:
         }
 
         auto agg_chunk = params->aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-            *data, params->final, partition, num_partitions, shared_data->is_cancelled);
+            *data, params->final, partition, num_partitions, shared_data->is_cancelled, updater);
 
         /// Under the `throw` overflow mode this raises as soon as the running total exceeds the
         /// limit — the same condition on which the serial merge would have thrown between tables.
@@ -332,6 +337,7 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     UInt32 num_partitions;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -945,7 +951,7 @@ private:
         for (size_t thread = 0; thread < num_sources; ++thread)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
-                params, data, shared_data, static_cast<UInt32>(num_partitions));
+                params, data, shared_data, static_cast<UInt32>(num_partitions), updater);
             processors.emplace_back(std::move(source));
         }
 
