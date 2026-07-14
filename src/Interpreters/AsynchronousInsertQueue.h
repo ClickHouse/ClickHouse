@@ -95,6 +95,11 @@ public:
         String current_user;
         String initial_user;
         String authenticated_user;
+        /// Protocol revision of the client connection for revision-dependent data formats
+        /// (the Native format reads it through FormatSettings). Restored on the flush context
+        /// before the buffered data is parsed, and part of the batching key so entries written
+        /// at different revisions are never parsed as one batch.
+        UInt64 client_protocol_version = 0;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -107,6 +112,7 @@ public:
             const String & current_user_,
             const String & initial_user_,
             const String & authenticated_user_,
+            UInt64 client_protocol_version_,
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
@@ -116,7 +122,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, client_protocol_version, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };

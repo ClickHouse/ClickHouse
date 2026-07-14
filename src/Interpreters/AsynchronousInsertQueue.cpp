@@ -121,6 +121,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
+    UInt64 client_protocol_version_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
@@ -130,6 +131,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
+    , client_protocol_version(client_protocol_version_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -154,6 +156,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field.size());
         siphash.update(identity_field);
     }
+
+    siphash.update(client_protocol_version);
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -182,6 +186,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
+    client_protocol_version = other.client_protocol_version;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -200,6 +205,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
+        client_protocol_version = other.client_protocol_version;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -555,6 +561,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
+        query_context->getClientProtocolVersion(),
         settings,
         data_kind};
     InsertDataPtr data_to_process;
@@ -1012,6 +1019,10 @@ try
     insert_context->setAuthenticatedUserName(key.authenticated_user);
 
     insert_context->setSettings(*key.settings);
+
+    /// Revision-dependent data formats (Native) must be parsed at the protocol version the
+    /// client wrote them at; it lives on the Context, not in the settings.
+    insert_context->setClientProtocolVersion(key.client_protocol_version);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
     insert_context->setCurrentQueryId(""); // "" means generate a new query id

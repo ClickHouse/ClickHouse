@@ -40,13 +40,16 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_04512_rt (s String, a Array(String), n Nul
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_04512_rt2 AS t_04512_rt"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_04512_rt SELECT concat('v', toString(number), repeat('y', number % 7)), arrayMap(i -> toString(i), range(number % 3)), if(number % 2 = 0, NULL, toString(number)) FROM numbers(100)"
 
+# Both the synchronous and the asynchronous insert paths parse the data at the protocol version
+# of the inserting connection (the async-insert queue keys batches by it and restores it on the
+# flush context).
 for version in "" "&client_protocol_version=54487"; do
-    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
-    # async_insert=0: the async-insert flush re-parses the buffered data in a context that does
-    # not carry client_protocol_version, so a nonzero protocol version requires a synchronous insert.
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native"
-    $CLICKHOUSE_CLIENT -q "SELECT count() = 100 AND groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) = (SELECT groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) FROM t_04512_rt) FROM t_04512_rt2"
+    for insert_mode in "async_insert=0" "async_insert=1&wait_for_async_insert=1"; do
+        $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&${insert_mode}&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native"
+        $CLICKHOUSE_CLIENT -q "SELECT count() = 100 AND groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) = (SELECT groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) FROM t_04512_rt) FROM t_04512_rt2"
+    done
 done
 # A corrupted size stream is reported as a regular error (INCORRECT_DATA), not as a logical error
 # that aborts debug and sanitizer builds.
@@ -56,7 +59,7 @@ data = bytearray(open('${CLICKHOUSE_TMP}/04512_rt.native', 'rb').read())
 data[-9] = 0x80  # the most significant byte of the UInt64 size of the only value
 open('${CLICKHOUSE_TMP}/04512_rt.native', 'wb').write(bytes(data))
 "
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native" | grep -oF "INCORRECT_DATA" | head -1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native" | grep -oF "INCORRECT_DATA" | head -1
 
 rm -f "${CLICKHOUSE_TMP}/04512_rt.native"
 
