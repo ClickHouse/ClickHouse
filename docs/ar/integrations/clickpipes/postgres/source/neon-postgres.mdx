@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Neon Postgres'
+description: 'إعداد مثيل Neon Postgres ليكون مصدرًا لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/neon-postgres
+title: 'دليل إعداد مصدر Neon Postgres'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'إدخال البيانات', 'المزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+هذا دليل يوضح كيفية إعداد Neon Postgres، والذي يمكنك استخدامه للنسخ المتماثل في ClickPipes.
+تأكد من أنك مسجّل الدخول إلى [وحدة تحكم Neon](https://console.neon.tech/app/projects) لإتمام هذا الإعداد.
+
+<div id="creating-a-user-with-permissions">
+  ## إنشاء مستخدم مع أذونات
+</div>
+
+اتصل بمثيل Neon الخاص بك باستخدام مستخدم مسؤول، ثم نفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصّصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة حق وصول للقراءة فقط على مستوى المخطط. يوضّح المثال التالي الأذونات الخاصة بالمخطط `public`. كرّر هذه الأوامر لكل مخطط يحتوي على الجداول التي تريد نسخها متماثلًا:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) تتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بقصر الـ publication على الجداول التي تحتاجها فقط لتجنّب العبء الإضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لكل جدول مُدرج في الـ publication إما **مفتاح أساسي** معرّف، *أو* أن تكون **هوية النسخة المتماثلة** له مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لجميع الجداول ضمن مخطط محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+سيحتوي الـ publication المسمى `clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وسيُستخدم لاحقًا لإدخال دفق النسخ المتماثل.
+
+<div id="enable-logical-replication">
+  ## تمكين النسخ المتماثل المنطقي
+</div>
+
+في Neon، يمكنك تمكين النسخ المتماثل المنطقي عبر واجهة المستخدم. وهذا ضروري لكي يتمكن CDC في ClickPipes من إجراء نسخ متماثل للبيانات.
+انتقل إلى تبويب **Settings** ثم إلى قسم **Logical Replication**.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="تمكين النسخ المتماثل المنطقي" border />
+
+انقر على **Enable** لإتمام الإعداد هنا. وبمجرد تمكينه، ينبغي أن تظهر لك رسالة النجاح أدناه.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="تم تمكين النسخ المتماثل المنطقي" border />
+
+لنتحقق من الإعدادات التالية في مثيل Neon Postgres لديك:
+
+```sql
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
+```
+
+<div id="ip-whitelisting-for-neon-enterprise-plan">
+  ## إدراج عناوين IP في قائمة السماح (لخطة Neon Enterprise)
+</div>
+
+إذا كانت لديك خطة Neon Enterprise، فيمكنك إدراج [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) في قائمة السماح لتمكين النسخ المتماثل من ClickPipes إلى مثيل Neon Postgres الخاص بك.
+للقيام بذلك، انقر على علامة التبويب **Settings** ثم انتقل إلى قسم **IP Allow**.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="شاشة السماح لعناوين IP" border />
+
+<div id="copy-connection-details">
+  ## انسخ تفاصيل الاتصال
+</div>
+
+الآن بعد أن أصبح لدينا المستخدم، وأصبحت الـ publication جاهزة، وأصبح النسخ المتماثل مفعّلًا، يمكننا نسخ تفاصيل الاتصال لإنشاء ClickPipe جديد.
+توجّه إلى **Dashboard**، وفي مربع النص الذي يعرض سلسلة الاتصال،
+غيّر طريقة العرض إلى **Parameters Only**. سنحتاج إلى هذه المعلمات في الخطوة التالية.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="تفاصيل الاتصال" border />
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

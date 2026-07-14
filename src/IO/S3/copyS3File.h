@@ -16,8 +16,17 @@ namespace DB
 {
 struct ReadSettings;
 class SeekableReadBuffer;
+class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// Builds the S3 upload request body for the part [offset, offset + size) of the source.
+/// The part is read fully into memory up front, so the returned body has no failable inner
+/// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
+/// without re-reading the source. Used for both PutObject and UploadPart request bodies.
+/// Declared here so unit tests can drive the real request-body construction.
+std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
+    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size);
 
 /// Copies a file from S3 to S3.
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3

@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: '查询优化'
+title: '查询优化简明指南'
+description: '查询优化简明指南，介绍提升查询性能的常见方法'
+doc_type: 'guide'
+keywords: ['查询优化', '性能', '最佳实践', '查询调优', '效率']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本节将通过常见场景说明如何使用不同的性能分析和优化技术，例如 [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer)、[查询性能分析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler) 或 [避免使用 Nullable 列](/zh/concepts/best-practices/avoidnullablecolumns)，从而提升 ClickHouse 查询性能。
+
+<div id="understand-query-performance">
+  ## 了解查询性能
+</div>
+
+考虑性能优化的最佳时机，是在首次将数据摄取到 ClickHouse 之前设计[数据 schema](/zh/guides/clickhouse/data-modelling/schema-design)的时候。 
+
+但说实话，很难预测你的数据会增长到什么规模，或者会执行哪些类型的查询。 
+
+如果你已经有一个现有部署，并且有几个查询希望加以改进，那么第一步就是了解这些查询的性能表现，以及为什么有些查询能在几毫秒内完成，而另一些则需要更长时间。
+
+ClickHouse 提供了丰富的工具，帮助你了解查询是如何执行的，以及执行过程中消耗了哪些资源。 
+
+在本节中，我们将介绍这些工具及其使用方法。 
+
+<div id="general-considerations">
+  ## 基本注意事项
+</div>
+
+为了理解查询性能，我们先来看看 ClickHouse 在执行查询时会发生什么。 
+
+下面的内容是刻意简化后的版本，也省略了一些细节；目的不是让你被各种细节淹没，而是帮助你快速建立对基本概念的认识。更多信息请参阅[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)。 
+
+从较高层面来看，ClickHouse 执行查询时大致会经历以下过程： 
+
+* **查询解析与分析**
+
+查询会先被解析和分析，然后生成一个通用的查询执行计划。 
+
+* **查询优化**
+
+查询执行计划会被优化，剔除不必要的数据，并基于查询计划构建查询管道。 
+
+* **查询管道执行**
+
+数据会被并行读取和处理。这个阶段中，ClickHouse 会实际执行过滤、聚合、排序等查询操作。 
+
+* **最终处理**
+
+结果在发送给客户端之前，会先进行合并、排序并格式化为最终结果。
+
+实际上，这一过程中还会发生许多[优化](/zh/get-started/about/why-clickhouse-is-so-fast)。我们会在本指南后面进一步讨论其中的一些内容；不过现在，这几个主要概念已经足以帮助我们理解 ClickHouse 执行查询时幕后发生了什么。 
+
+有了这一层面的理解之后，我们再来看看 ClickHouse 提供了哪些工具，以及如何利用它们来跟踪影响查询性能的指标。 
+
+<div id="dataset">
+  ## 数据集
+</div>
+
+我们将通过一个真实示例来说明我们如何优化查询性能。 
+
+我们以 NYC Taxi 数据集为例，其中包含纽约市的出租车行程数据。首先，我们在不做任何优化的情况下摄取 NYC Taxi 数据集。
+
+下面的命令用于创建表，并从 S3 存储桶插入数据。请注意，这里我们有意根据数据推断 schema，而这并不是优化后的做法。
+
+```sql
+-- 创建具有推断 schema 的表
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- 将数据插入具有推断 schema 的表
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+让我们来看一下根据数据自动推断出的表 schema。
+
+```sql
+--- 显示推断出的表 schema
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## 找出慢查询
+</div>
+
+<div id="query-logs">
+  ### 查询日志
+</div>
+
+默认情况下，ClickHouse 会在[查询日志](/zh/reference/system-tables/query_log)中收集并记录每个已执行查询的信息。这些数据存储在 `system.query_log` 表中。 
+
+对于每个已执行的查询，ClickHouse 都会记录查询执行时间、读取行数等统计信息，以及 CPU、内存使用量或文件系统缓存命中次数等资源使用情况。 
+
+因此，排查慢查询时，查询日志是一个很好的切入点。你可以轻松找出执行时间较长的查询，并查看每个查询的资源使用信息。 
+
+下面我们来找出 NYC taxi 数据集中运行时间最长的前五个查询。
+
+```sql
+-- 查找过去 1 小时内 nyc_taxi 数据库中耗时最长的前 5 条查询
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+字段 `query_duration_ms` 表示该查询的执行耗时。查看查询日志中的结果，我们可以看到，第一个查询的运行耗时为 2967ms，还有优化空间。 
+
+你可能还想通过检查占用内存或 CPU 最多的查询，了解哪些查询给系统带来了较大压力。 
+
+```sql
+-- 按内存使用量排序的热门查询
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+我们把找到的长时间运行的查询单独挑出来，再重复运行几次，以了解其响应时间。 
+
+此时，务必将 `enable_filesystem_cache` 设置为 0，以关闭文件系统缓存，从而提高结果的可复现性。
+
+```sql
+-- 禁用文件系统缓存
+set enable_filesystem_cache = 0;
+
+-- 运行查询 1
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+峰值内存占用: 440.24 MiB.
+```
+
+```sql
+-- 运行查询 2
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+峰值内存占用: 546.75 MiB.
+```
+
+```sql
+-- 运行查询 3
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+峰值内存占用: 451.53 MiB.
+```
+
+汇总如下，便于阅读。
+
+| 名称   | 耗时      | 已处理行数    | 峰值内存占用     |
+| ---- | ------- | -------- | ---------- |
+| 查询 1 | 1.699 秒 | 3.2904 亿 | 440.24 MiB |
+| 查询 2 | 1.419 秒 | 3.2904 亿 | 546.75 MiB |
+| 查询 3 | 1.414 秒 | 3.2904 亿 | 451.53 MiB |
+
+下面我们更具体地看看这些查询分别实现了什么。 
+
+* 查询 1 计算平均速度超过 30 英里/小时的行程中，行驶距离的分布。
+* 查询 2 统计每周的行程数量和平均费用。 
+* 查询 3 计算数据集中每次行程的平均时长。
+
+这些查询都不涉及特别复杂的处理，唯一的例外是第一个查询，因为它每次执行时都要动态计算行程时长。不过，这些查询每一个的执行时间都超过了 1 秒，而在 ClickHouse 的世界里，这已经算是非常长了。我们还可以注意到这些查询的内存占用：每个查询大约都用了 400 Mb 内存，这已经相当高了。此外，每个查询读取的行数看起来都一样 (即 3.2904 亿) 。下面我们快速确认一下这个表里到底有多少行。
+
+```sql
+-- 统计表中的行数
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 3.2904 亿
+   └───────────┘
+```
+
+该表包含 3.2904 亿行，因此每次查询都需要对整张表进行全表扫描。
+
+<div id="explain-statement">
+  ### Explain 语句
+</div>
+
+既然我们已经找到了一些耗时较长的查询，接下来让我们了解它们的执行方式。为此，ClickHouse 支持 [EXPLAIN 语句命令](/zh/reference/statements/explain)。这是一个非常实用的工具，无需实际执行查询，即可详细展示查询执行的各个阶段。对于不熟悉 ClickHouse 的用户来说，其输出内容可能较为繁杂，但它仍然是深入理解查询执行机制的必备工具。
+
+文档中有一份详细的[指南](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer)，介绍了 EXPLAIN 语句的用途及如何使用它分析查询执行过程。本文不再赘述该指南的内容，而是重点介绍几个有助于定位查询执行性能瓶颈的命令。
+
+**Explain indexes = 1**
+
+我们先使用 EXPLAIN indexes = 1 来检查查询计划。查询计划是一棵树形结构，展示了查询的执行方式。通过它，您可以了解查询中各子句的执行顺序。EXPLAIN 语句返回的查询计划需从下往上阅读。
+
+我们来试用第一个耗时较长的查询。
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+输出结果一目了然。该查询首先从 `nyc_taxi.trips_small_inferred` 表中读取数据，然后应用 WHERE 子句，根据计算值对行进行过滤，过滤后的数据进入聚合阶段并完成分位数计算，最后对结果排序输出。
+
+可以看到，此处没有使用任何主键——这是预期行为，因为我们在创建表时并未定义主键。因此，ClickHouse 对该表执行了全表扫描来完成此次查询。
+
+**EXPLAIN PIPELINE**
+
+EXPLAIN Pipeline 展示了查询的具体执行策略。通过它，您可以了解 ClickHouse 实际上是如何执行我们之前查看的通用查询计划的。
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+在这里，我们可以注意到执行该查询所使用的线程数：59 个线程，说明并行化程度较高。这加快了查询速度——同样的查询在配置较低的机器上执行会耗费更长时间。并行运行的线程数量可以解释该查询内存占用较高的原因。
+
+理想情况下，您应以相同的方式排查所有慢查询，从而识别不必要的复杂查询计划，并了解每个查询读取的行数及其资源消耗情况。
+
+<div id="methodology">
+  ## 方法
+</div>
+
+在生产环境的部署中识别有问题的查询并不容易，因为在任意时刻，你的 ClickHouse 部署中很可能都有大量查询正在执行。 
+
+如果你知道是哪个用户、数据库或表存在问题，可以使用 `system.query_logs` 中的 `user`、`tables` 或 `databases` 字段来缩小搜索范围。 
+
+一旦确定了要优化的查询，就可以开始着手优化。在这个阶段，开发者常犯的一个错误是同时改动多项内容，做一些临时性的实验，结果往往是得到好坏参半的结果；更重要的是，无法清楚理解究竟是什么让查询变快了。 
+
+查询优化需要有条理的方法。我说的不是高级基准测试，而是建立一个简单的流程，帮助你理解自己的改动会如何影响查询性能；这样做会很有帮助。 
+
+先从查询日志中找出慢查询，再单独分析可能的改进点。测试查询时，务必禁用文件系统缓存。 
+
+> ClickHouse 会利用[缓存](/zh/concepts/features/performance/caches/caches)在不同阶段加速查询性能。这对查询性能是有益的，但在故障排查时，它可能会掩盖潜在的 I/O 瓶颈或不合理的表 schema。因此，我建议你在测试期间关闭文件系统缓存。请确保在生产环境中将其启用。
+
+一旦识别出潜在的优化项，建议逐项实施，这样更容易跟踪它们对性能的影响。下图展示了总体方法。
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="优化工作流" />
+
+*最后，要注意异常值；查询偶尔运行缓慢是很常见的，可能是因为某个用户执行了一条高开销的临时查询，也可能是系统由于其他原因正处于高压状态。你可以按 `normalized_query_hash` 字段分组，以识别那些被定期执行的高开销查询。这些通常才是你真正需要重点调查的对象。*
+
+<div id="basic-optimization">
+  ## 基础优化
+</div>
+
+现在我们已经有了可供测试的框架，可以开始着手优化了。
+
+最好的起点是先看数据是如何存储的。对任何数据库来说，读取的数据越少，查询执行得就越快。 
+
+具体取决于你摄取数据的方式，你可能已经利用 ClickHouse 的[功能](/zh/concepts/features/interfaces/schema-inference)，根据摄取的数据推断出表 schema。虽然这对快速上手非常方便，但如果你想优化查询性能，就需要检查数据 schema，使其尽可能契合你的使用场景。
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+如[最佳实践文档](/zh/concepts/best-practices/select-data-type#avoid-nullable-columns)中所述，应尽可能避免使用 Nullable 列。它们虽然会让数据摄取机制更灵活，因此很容易被频繁使用，但由于每次都需要处理一个额外的列，会对性能产生负面影响。
+
+运行一条统计包含 NULL 值的行数的 SQL 查询，就能轻松找出你的表中哪些列实际上需要使用 Nullable。
+
+```sql
+-- 查找含空值的列
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+只有 `mta_tax` 和 `payment_type` 这两列包含 NULL 值。其余字段不应使用 `Nullable` 类型的列。
+
+<div id="low-cardinality">
+  ### 低基数
+</div>
+
+对于 String 类型，一个很容易采用的优化方式是尽量使用 LowCardinality 数据类型。如低基数[文档](/zh/reference/data-types/lowcardinality)所述，ClickHouse 会对 LowCardinality 列应用字典编码，从而显著提升查询性能。 
+
+判断哪些列适合使用 LowCardinality 的一个简单经验法则是：任何唯一值少于 10,000 个的列，都是非常理想的候选项。
+
+你可以使用以下 SQL 查询来找出唯一值较少的列。
+
+```sql
+-- 识别低基数列
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+查询 id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+行 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+由于这四列的基数较低，`ratecode_id`、`pickup_location_id`、`dropoff_location_id` 和 `vendor_id` 都很适合使用 `LowCardinality` 字段类型。
+
+<div id="optimize-data-type">
+  ### 优化数据类型
+</div>
+
+ClickHouse 支持大量数据类型。请务必根据你的使用场景选择尽可能小且合适的数据类型，以优化性能并减少磁盘存储占用。 
+
+对于数值类型，你可以查看数据集中的最小值和最大值，以确认当前的精度值是否符合数据集的实际情况。 
+
+```sql
+-- 查找 payment_type 字段的最小值/最大值
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+对于日期，应选择与你的数据集相匹配且最适合你计划执行的查询的精度。
+
+<div id="apply-the-optimizations">
+  ### 应用优化
+</div>
+
+创建一个新表来使用优化后的 schema，并重新摄取数据。
+
+```sql
+-- 创建使用优化数据结构的表
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- 插入数据
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+我们使用新表再次运行这些查询，检查是否有所改进。 
+
+| Name | 运行 1 - 耗时 | 耗时      | 处理的行数    | 峰值内存占用     |
+| ---- | --------- | ------- | -------- | ---------- |
+| 查询 1 | 1.699 秒   | 1.353 秒 | 3.2904 亿 | 337.12 MiB |
+| 查询 2 | 1.419 秒   | 1.171 秒 | 3.2904 亿 | 531.09 MiB |
+| 查询 3 | 1.414 秒   | 1.188 秒 | 3.2904 亿 | 265.05 MiB |
+
+可以看到，查询时间和内存占用都有所改善。得益于数据 schema 的优化，表示这些数据所需的总数据量减少了，从而降低了内存消耗并缩短了处理时间。 
+
+接下来检查这些表的大小，看看差异。 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+新表明显比之前的表更小。可以看到，该表占用的磁盘空间减少了约 34% (7.38 GiB 对比 4.89 GiB) 。
+
+<div id="the-importance-of-primary-keys">
+  ## 主键的重要性
+</div>
+
+ClickHouse 中的主键与大多数传统数据库系统中的主键工作方式不同。在那些系统中，主键用于保证唯一性和数据完整性。任何试图插入重复主键值的操作都会被拒绝，通常还会创建 B-tree 或基于哈希的索引来加快查找。 
+
+在 ClickHouse 中，主键的[作用](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)不同；它既不保证唯一性，也无助于维护数据完整性。相反，它的设计目的是优化查询性能。主键定义了数据在磁盘上的存储顺序，并以稀疏索引的形式实现，存储指向每个粒度首行的指针。
+
+> 在 ClickHouse 中，粒度是查询执行期间读取数据的最小单位。每个粒度最多包含固定数量的行，由 `index_granularity` 决定，默认值为 8192 行。粒度会按主键顺序连续存储。 
+
+选择一组合适的主键对性能至关重要。实际上，将相同的数据存储在不同的表中，并使用不同的主键组合来加速特定的一组查询，是一种很常见的做法。 
+
+ClickHouse 支持的其他选项 (例如 Projection 或 materialized view) 也允许你在同一份数据上使用不同的主键组合。本系列博客的第二部分将更详细地介绍这一点。 
+
+<div id="choose-primary-keys">
+  ### 选择主键
+</div>
+
+选择合适的一组主键是个复杂的话题，可能需要在多种方案之间权衡，并通过实验找出最佳组合。 
+
+这里我们先遵循几个简单原则： 
+
+* 使用大多数查询中会用作过滤器的字段
+* 优先选择基数较低的列 
+* 考虑在主键中加入时间相关的组件，因为在带有 timestamp 的数据集中按时间过滤非常常见。 
+
+在这个示例中，我们将尝试以下主键：`passenger_count`、`pickup_datetime` 和 `dropoff_datetime`。 
+
+`passenger_count` 的基数较低 (只有 24 个唯一值) ，而且会在慢查询中用到。我们还加入了 timestamp 字段 (`pickup_datetime` 和 `dropoff_datetime`) ，因为它们也经常作为过滤条件使用。
+
+创建一个包含这些主键的新表，并重新摄取数据。
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- 插入数据
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+然后，我们再次运行查询。我们汇总了这三次实验的结果，以查看执行时间、处理行数和内存占用方面的改进。 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">查询 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>第 1 次运行</th>
+      <th>第 2 次运行</th>
+      <th>第 3 次运行</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>耗时</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>处理的行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+    </tr>
+
+    <tr>
+      <td>峰值内存占用</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">查询 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>第 1 次运行</th>
+      <th>第 2 次运行</th>
+      <th>第 3 次运行</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>耗时</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>处理的行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>41.46 million</td>
+    </tr>
+
+    <tr>
+      <td>峰值内存占用</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">查询 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>运行 1</th>
+      <th>运行 2</th>
+      <th>运行 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>耗时</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>处理的行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>276.99 million</td>
+    </tr>
+
+    <tr>
+      <td>峰值内存占用</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+可以看到，执行时间和内存占用均有显著改善。 
+
+查询 2 从主键中受益最大。我们来看看其生成的查询计划与之前有何不同。
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+得益于主键，系统只需选择表中的部分粒度。这一点本身就能大幅提升查询性能，因为 ClickHouse 需要处理的数据明显更少。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+希望本指南能帮助你更好地了解如何使用 ClickHouse 排查慢查询，并进一步提升查询速度。若想深入了解这一主题，你可以继续阅读[查询分析器](/zh/guides/clickhouse/performance-and-monitoring/analyzer)和[性能分析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)的相关内容，更清楚地了解 ClickHouse 究竟是如何执行查询的。
+
+随着你对 ClickHouse 特性的进一步熟悉，建议你阅读[分区键](/zh/concepts/best-practices/partitioning-keys)和[数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)的相关内容，了解更多可用于加速查询的高级技术。

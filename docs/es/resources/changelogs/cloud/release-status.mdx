@@ -1,0 +1,123 @@
+---
+title: 'Página de estado de lanzamientos'
+sidebarTitle: 'Estado de lanzamientos'
+keywords: ['nube', 'estado de lanzamientos', 'despliegue', 'versión', 'actualización']
+description: 'Página con el estado de los lanzamientos para cada canal de lanzamiento'
+slug: /cloud/release-status
+doc_type: 'referencia'
+---
+
+import ReleaseSchedule from "/snippets/es/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+ClickHouse Cloud ofrece diferentes canales de lanzamiento para responder a las distintas necesidades de los usuarios en cuanto a estabilidad, acceso a nuevas funciones y previsibilidad de las actualizaciones. Cada canal tiene un calendario de actualizaciones distinto y está pensado para cubrir diferentes casos de uso: desde usuarios que quieren acceso inmediato a las nuevas versiones hasta quienes prefieren aplazar las actualizaciones para asegurarse de recibir la versión más estable.
+
+<div id="release-channel-details">
+  ## Detalles del canal de lanzamiento
+</div>
+
+<Accordion title="Más información sobre los canales de lanzamiento">
+  | Nombre del canal         | Descripción                                                                                                                                                                                                                                                                | Consideraciones clave                                                                                                                                           | Niveles compatibles                                    |
+  | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------- |
+  | **Fast (Early Release)** | Recomendado para entornos no productivos. Es el primer canal de lanzamiento para cada actualización de versión de la base de datos                                                                                                                                         | Acceso a nuevas funciones por encima de la estabilidad.<br />Posibilidad de probar versiones en entornos no productivos antes de la actualización en producción | Basic (predeterminado)<br />Niveles Scale y Enterprise |
+  | **Regular**              | Canal de lanzamiento predeterminado para todos los servicios con varias réplicas.<br />El despliegue en este canal suele comenzar dos semanas después de que se inicie el canal de lanzamiento Fast.                                                                   | Actualizaciones predeterminadas o en toda la flota.<br />Los servicios se actualizan gradualmente a lo largo de varias semanas                                  | Scale y Enterprise                                     |
+  | **Slow (Deferred)**      | Recomendado para los usuarios más reacios al riesgo que prefieren que sus servicios se actualicen hacia el final del calendario de lanzamientos.<br />El despliegue en este canal suele comenzar dos semanas después de que se inicie el canal de lanzamiento Regular. | Máxima estabilidad y previsibilidad.<br />Pensado para quienes necesitan probar más las nuevas versiones en el canal Fast o Regular                             | Enterprise                                             |
+
+  <br />
+
+  <br />
+
+  <Note>
+    Todos los servicios con una sola réplica se inscriben automáticamente en el canal de lanzamiento Fast.
+  </Note>
+</Accordion>
+
+Las ventanas de actualización programadas están disponibles para todos los canales de lanzamiento en los servicios del nivel Enterprise. Esta funcionalidad le permite configurar una franja horaria en un día determinado de la semana para las actualizaciones.
+
+<div id="release-schedule">
+  ## Calendario de lanzamientos
+</div>
+
+<Warning>
+  **Cómo interpretar las fechas de lanzamiento**
+
+  Las fechas que se muestran a continuación indican cuándo ClickHouse **inicia el despliegue** en cada canal de lanzamiento, no cuándo se actualizará tu servicio en particular.
+
+  * Los despliegues son automáticos y se realizan de forma gradual a lo largo de varias semanas
+  * Los servicios con ventanas de actualización programadas configuradas se actualizan durante su ventana programada en la semana siguiente a la finalización del despliegue del canal (a partir del lunes a las 00:00 UTC)
+  * La finalización del despliegue puede retrasarse debido a pausas en el despliegue (por ejemplo, bloqueos por festivos) o a la supervisión del estado del sistema
+
+  Para realizar pruebas por adelantado antes de las actualizaciones de producción, usa el canal Fast o Regular para los servicios que no sean de producción y el canal Slow para los servicios de producción.
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: 'Por determinar',
+   regular_start_date: 'Por determinar',
+   regular_end_date: 'Por determinar',
+   slow_start_date: 'Por determinar',
+   slow_end_date: 'Por determinar',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: '2026-04-03',
+   fast_end_date: '2026-04-14',
+   regular_start_date: '2026-05-06',
+   regular_end_date: '2026-06-17',
+   slow_start_date: '2026-07-01',
+   slow_end_date: 'Por determinar',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   fast_delay_note: 'Los servicios con ventanas de actualización se actualizarán a partir del 2026-04-15.',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: '2026-02-10',
+   fast_end_date: '2026-02-11',
+   regular_start_date: '2026-03-09',
+   regular_end_date: '2026-03-18',
+   slow_start_date: '2026-04-07',
+   slow_end_date: '2026-04-09',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   regular_delay_note: 'Los servicios con ventanas de actualización programadas recibirán 25.12 durante su ventana programada en la semana posterior al 23 de marzo',
+   slow_delay_note: 'Los servicios con ventanas de actualización programadas recibirán 25.12 durante su ventana programada en la semana posterior al 13 de abril',
+ },
+ {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+   version: '25.10',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+ },
+ {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+  version: '25.8',
+  fast_start_date: 'Completado',
+  fast_end_date: 'Completado',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+}
+]}
+/>

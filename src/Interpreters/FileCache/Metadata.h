@@ -11,6 +11,7 @@
 #include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
+#include <functional>
 
 #include <map>
 #include <memory>
@@ -233,7 +234,10 @@ public:
         bool is_initial_load = false);
 
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
-    void removeAllKeys(const UserID & user_id);
+
+    /// Returns true if the client was fully purged; false if any key kept
+    /// non-releasable (held) segments and survived — retry on a later sweep.
+    bool removeAllKeys(const UserID & user_id);
 
     void shutdown();
 
@@ -250,6 +254,8 @@ public:
 
     void fillStatVFS();
 
+    void setClientAccessCallback(std::function<void(const UserID &)> callback) { on_client_access = std::move(callback); }
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -261,6 +267,7 @@ private:
     /// Used to align file sizes when `use_real_disk_size` is enabled.
     std::atomic<size_t> fs_block_size{0};
     const bool use_real_disk_size;
+    std::function<void(const UserID &)> on_client_access;
 
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;
@@ -282,6 +289,11 @@ private:
     /// cache key, so each distinct origin is stored exactly once instead of being duplicated
     /// across the (much more numerous) key buckets.
     OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+
+    /// Drop every shared origin owned by this client from the dedup pool. Called once all of the
+    /// client's keys are removed (see removeAllKeys), so the pool does not leak entries for clients
+    /// that come and go, in particular under idle-client TTL eviction.
+    void removeSharedOrigins(const UserID & user_id);
 
     mutable FileCacheUtils::ShardedMap<OriginPoolKey, OriginInfoPtr> origins;
 
