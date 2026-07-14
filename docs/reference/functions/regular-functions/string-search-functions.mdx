@@ -38,12 +38,14 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-:::note Version dependent behavior
+<Note>
+**Version dependent behavior**
+
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-:::
+</Note>
 
     
 
@@ -442,10 +444,10 @@ Introduced in: v25.10.0
 
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -459,11 +461,11 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     
 
 **Syntax**
@@ -670,10 +672,10 @@ Introduced in: v25.10.0
 
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes
 - the `input` argument (always), and
@@ -687,11 +689,11 @@ If the text index has a [postprocessor](/reference/engines/table-engines/mergetr
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
     
 
 **Syntax**
@@ -886,20 +888,20 @@ Introduced in: v26.4.0
 
 Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
-:::note
+<Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
-:::
+</Note>
 
 Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
 
-:::note
+<Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
-:::
+</Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0
@@ -1161,10 +1163,10 @@ Introduced in: v20.1.0
 
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             
 
 **Syntax**
@@ -1187,10 +1189,10 @@ Introduced in: v23.1.0
 
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             
 
 **Syntax**
@@ -1353,9 +1355,9 @@ No automatic Unicode normalization is performed, you can use the `normalizeUTF8*
 To match against literal `%`, `_` and `\` (which are `LIKE` metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 
-:::note
+<Note>
 ClickHouse requires backslashes in strings [to be quoted as well](/reference/syntax#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
-:::
+</Note>
 
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
 All other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
@@ -1441,12 +1443,14 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-:::note Version dependent behavior
+<Note>
+**Version dependent behavior**
+
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-:::
+</Note>
     
 
 **Syntax**
@@ -1599,9 +1603,9 @@ Like [`multiMatchAny`](#multiMatchAny) but returns 1 if any pattern matches the 
 This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some edge cases.
 The performance depends on the edit distance value and patterns used, but it's always more expensive compared to non-fuzzy variants.
 
-:::note
+<Note>
 `multiFuzzyMatch*()` function family do not support UTF-8 regular expressions (it treats them as a sequence of bytes) due to restrictions of hyperscan.
-:::
+</Note>
     
 
 **Syntax**
