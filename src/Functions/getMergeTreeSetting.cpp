@@ -26,11 +26,18 @@ public:
     static constexpr auto name = "getMergeTreeSetting";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMergeTreeSetting>(context_); }
-    explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_), is_distributed(context_->isDistributed()) {}
 
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+
+    bool isServerConstant() const override { return true; }
+
+    /// The value is server-local: each shard may have a different config or `compatibility`
+    /// value, so the initiator of a distributed query must not fold the call into a literal
+    /// computed from its own value (same as `getServerSetting`).
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -74,6 +81,8 @@ private:
 
         return getContext()->getMergeTreeSettings().get(setting_name);
     }
+
+    bool is_distributed;
 };
 
 }
