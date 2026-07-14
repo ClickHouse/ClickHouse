@@ -110,9 +110,11 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
                 if (marks_collected >= need_marks)
                     break;
 
-                cut_ranges.clear();
-                if (!cutMoreRangesToRead(thread_idx, part_idx, need_marks - marks_collected, cut_ranges))
+                MarkRanges more_ranges;
+                if (!cutMoreRangesToRead(thread_idx, part_idx, need_marks - marks_collected, more_ranges))
                     break;
+
+                cut_ranges = std::move(more_ranges);
             }
         }
 
