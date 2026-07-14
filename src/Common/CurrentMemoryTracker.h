@@ -16,6 +16,13 @@ struct CurrentMemoryTracker
     /// is `noexcept` and must keep using `allocNoThrow`.
     [[nodiscard]] static AllocationTrace allocThrow(Int64 size);
 
+    /// Like alloc (the memory limit is enforced), but exceeding the limit is
+    /// reported through `memory_limit_exceeded` (with the accounting reverted)
+    /// instead of throwing MEMORY_LIMIT_EXCEEDED. For C allocation functions,
+    /// which cannot throw: the caller must fail the allocation (nullptr/ENOMEM)
+    /// instead of overcommitting.
+    [[nodiscard]] static AllocationTrace allocFromC(Int64 size, bool & memory_limit_exceeded);
+
     /// This function should be called after memory deallocation.
     [[nodiscard]] static AllocationTrace free(Int64 size);
     static void check();
@@ -34,5 +41,5 @@ struct CurrentMemoryTracker
     static UInt64 getMinAllocationSizeBytesToThrow();
 
 private:
-    [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit);
+    [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, bool * memory_limit_exceeded = nullptr);
 };
