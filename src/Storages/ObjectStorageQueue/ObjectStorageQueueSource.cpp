@@ -1187,10 +1187,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 sleepForSeconds(5);
             });
 
-            /// Simulates a pipeline stuck inside a blocking call: parks mid-file until
-            /// the pipeline is cancelled or the failpoint is disabled. The `shutdown_called`
-            /// chunk-boundary checks above never run while parked, so shutdown can only
-            /// proceed via executor-level cancellation.
+            /// Test-only scaffolding: simulates a pipeline stuck inside a blocking call,
+            /// parking mid-file until the pipeline is cancelled or the failpoint is disabled.
+            /// The `shutdown_called` chunk-boundary checks above never run while parked,
+            /// so shutdown can only proceed via executor-level cancellation.
+            /// No-op unless the failpoint is enabled (the loop exits on the first iteration).
             {
                 bool was_parked = false;
                 while (!isCancelled())
