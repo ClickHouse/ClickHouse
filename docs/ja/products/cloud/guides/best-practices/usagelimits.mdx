@@ -1,0 +1,44 @@
+---
+slug: /cloud/bestpractices/usage-limits
+sidebarTitle: 'サービス制限'
+title: '使用制限'
+description: 'ClickHouse Cloud における推奨使用制限について説明します'
+doc_type: 'reference'
+keywords: ['使用制限', 'クォータ', 'ベストプラクティス', 'リソース管理', 'Cloud 機能']
+---
+
+ClickHouse はその高速性と信頼性で知られていますが、最適なパフォーマンスを得るには
+一定の運用条件を満たす必要があります。たとえば、テーブル、
+データベース、パーツが多すぎると、パフォーマンスに悪影響を及ぼす可能性があります。
+これを防ぐため、ClickHouse
+Cloud では複数の運用面にわたって制限を設けています。
+これらのガードレールの詳細を以下に示します。
+
+<Tip>
+  これらのガードレールのいずれかに達している場合は、
+  ユースケースの実装が十分に最適化されていない可能性があります。サポートチームまでご連絡ください。
+  ガードレールを超えないようユースケースを改善するお手伝いを喜んで行います。
+  また、必要に応じて、制限を適切に引き上げる方法についても一緒に検討できます。
+</Tip>
+
+| Dimension                     | Limit                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Databases**                 | 1000                                                                                                     |
+| **Tables**                    | 5000                                                                                                     |
+| **Columns**                   | ∼1000 (compact よりワイド形式を推奨)                                                                               |
+| **Partitions**                | 50k                                                                                                      |
+| **Parts**                     | 10k ([`max_parts_in_total`](/ja/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000) 設定を参照)  |
+| **Part size**                 | 150 GB                                                                                                   |
+| **Services per organization** | 20 (ソフト制限)                                                                                               |
+| **Services per warehouse**    | 5 (ソフト制限)                                                                                                |
+| **Replicas per service**      | 20 (ソフト制限)                                                                                               |
+| **Low cardinality**           | 10k 以下                                                                                                   |
+| **Primary keys in a table**   | データを十分に絞り込める 4～5 個                                                                                       |
+| **Query concurrency**         | 1000 (レプリカごと)                                                                                            |
+| **Batch ingest**              | 1M を超えるものは、システムによって 100 万行単位のブロックに分割されます                                                                 |
+
+<Note>
+  Single Replica Services の場合、データベースの最大数は
+  100、テーブルの最大数は 500 に制限されます。さらに、Basic ティアのサービスのストレージは
+  1 TB に制限されます。
+</Note>

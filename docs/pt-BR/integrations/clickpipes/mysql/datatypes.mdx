@@ -1,0 +1,36 @@
+---
+title: 'Tipos de dados suportados'
+slug: /integrations/clickpipes/mysql/datatypes
+description: 'Página que descreve o mapeamento de tipos de dados do MySQL para o ClickHouse no ClickPipe do MySQL'
+doc_type: 'reference'
+keywords: ['tipos de dados do MySQL ClickPipe', 'tipos de dados do MySQL para o ClickHouse', 'mapeamento de tipos de dados do ClickPipe', 'conversão de tipos MySQL ClickHouse', 'compatibilidade de tipos de banco de dados']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Este é o mapeamento de tipos de dados compatíveis para o MySQL ClickPipe:
+
+| Tipo do MySQL                        | Tipo do ClickHouse     | Observações                                                                                             |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                                         |
+| Set                                  | String                 |                                                                                                         |
+| Decimal                              | Decimal                |                                                                                                         |
+| TinyInt                              | Int8                   | Suporta unsigned.                                                                                       |
+| SmallInt                             | Int16                  | Suporta unsigned.                                                                                       |
+| MediumInt, Int                       | Int32                  | Suporta unsigned.                                                                                       |
+| BigInt                               | Int64                  | Suporta unsigned.                                                                                       |
+| Year                                 | Int16                  |                                                                                                         |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                                         |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                                         |
+| Char, Varchar                        | String                 |                                                                                                         |
+| Binary, VarBinary                    | String                 |                                                                                                         |
+| TinyInt(1)                           | Bool                   |                                                                                                         |
+| JSON                                 | String                 | Somente MySQL; `json` no MariaDB é apenas um alias de `text` com uma restrição.                         |
+| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text). O WKT pode sofrer pequena perda de precisão.                                     |
+| Vector                               | Array(Float32)         | Somente MySQL; o MariaDB deve adicionar suporte em breve.                                               |
+| Float                                | Float32                | A precisão no ClickHouse pode diferir da do MySQL durante a carga inicial devido ao protocolo de texto. |
+| Double                               | Float64                | A precisão no ClickHouse pode diferir da do MySQL durante a carga inicial devido ao protocolo de texto. |
+| Date                                 | Date32                 | Dia/mês 00 mapeado para 01.                                                                             |
+| Time                                 | DateTime64(6)          | Deslocamento de tempo em relação à época Unix.                                                          |
+| Datetime, Timestamp                  | DateTime64(6)          | Dia/mês 00 mapeado para 01.                                                                             |

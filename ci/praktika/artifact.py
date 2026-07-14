@@ -21,6 +21,11 @@ class Artifact:
         type: str
         path: Union[str, List[str]]
         compress_zst: bool = False
+        # When True, a providing job whose output file(s) are missing at upload
+        # time does not fail. The job that already ran non-blocking (e.g. LLVM
+        # coverage merge) stays green; only the artifact is skipped. Consumers
+        # of an optional artifact must tolerate its absence.
+        optional: bool = False
         _provided_by: str = ""
         ext: Dict[str, Any] = field(default_factory=dict)
 

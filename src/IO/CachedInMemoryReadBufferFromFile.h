@@ -4,13 +4,14 @@
 #include <mutex>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadSettings.h>
 #include <Common/PageCache.h>
 
 namespace DB
 {
 
-class CachedInMemoryReadBufferFromFile : public ReadBufferFromFileBase
+class CachedInMemoryReadBufferFromFile : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     /// `in_` must support using external buffer. I.e. we assign its internal_buffer before
@@ -32,6 +33,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
+    std::optional<Field> getMetadata(const String & name) const override;
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
     bool supportsReadAt() override { return innerSupportsReadAt(); }

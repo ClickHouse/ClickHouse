@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Alertas de gasto'
+slug: /cloud/manage/billing/spend-alerts
+title: 'Configurar las alertas de gasto de la organización'
+description: 'Configura alertas de gasto para supervisar el uso de ClickHouse Cloud en relación con los umbrales dentro de un período de facturación.'
+keywords: ['facturación', 'alertas de gasto', 'umbrales de uso', 'notificaciones', 'supervisión de costos', 'facturación de la organización']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Las alertas de gasto le notifican cuando el consumo de su organización alcanza los umbrales configurados durante un período de facturación, para que pueda evitar cargos inesperados. Solo envían notificaciones; para los umbrales que activan la facturación automática, consulte [Umbrales de pago](/es/products/cloud/reference/billing/payment-thresholds).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Debe tener uno de los roles **Organization Admin** o **Billing Admin** para configurar y ver las alertas de gasto.
+
+<div id="how-spend-alerts-work">
+  ## Cómo funcionan las alertas de gasto
+</div>
+
+* Las alertas se basan en el uso total dentro de un período de facturación y se restablecen al inicio de cada nuevo ciclo.
+* Las alertas se activan cada hora según el uso total calculado en ese momento, por lo que se disparan una vez que se supera un umbral.
+
+<Info>
+  **Las alertas de gasto no limitan el uso**
+
+  Alcanzar el 100% de tu alerta de gasto no restringe ni limita tu uso; el gasto sigue acumulándose más allá del umbral del 100%.
+</Info>
+
+<div id="set-up-spend-alert">
+  ## Configura una alerta de gasto
+</div>
+
+<Steps>
+  <Step>
+    ### Abre el cuadro de diálogo de alertas de gasto
+
+    1. Ve a **Organization &gt; Billing** en la consola de ClickHouse Cloud.
+    2. Haz clic en **Actions &gt; Add spend alerts**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Página de Billing con el menú Actions abierto y Add spend alerts resaltado" size="lg" />
+  </Step>
+
+  <Step>
+    ### Configura y guarda la alerta
+
+    1. Introduce un importe para la alerta de gasto en dólares o créditos por período de facturación.
+    2. Selecciona tus canales de notificación: **Email**, **UI** y/o **Slack**.
+    3. Haz clic en **Save**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="Cuadro de diálogo de alertas de gasto de la organización con límite de gasto, alertas automáticas de umbral y canales de notificación" size="md" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## Alertas automáticas por umbral
+</div>
+
+Se crean y se activan automáticamente tres alertas en función del importe de gasto configurado para la alerta:
+
+| Umbral   | Activación                    | Ejemplo (alerta de $10) |
+| -------- | ----------------------------- | ----------------------- |
+| **50%**  | Se alcanza la mitad del gasto | $5                      |
+| **75%**  | Se alcanza el 75% del gasto   | $7.50                   |
+| **100%** | Se alcanza el gasto total     | $10                     |
+
+<div id="notification-channels">
+  ## Canales de notificación
+</div>
+
+| Canal     | Descripción                                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Email** | Envía alertas a la dirección de correo electrónico configurada. Haz clic en el icono de edición para cambiar el destinatario. |
+| **UI**    | Muestra alertas en la consola de ClickHouse Cloud.                                                                            |
+| **Slack** | Envía alertas a un canal de Slack. Haz clic en el icono de edición para configurarlo.                                         |

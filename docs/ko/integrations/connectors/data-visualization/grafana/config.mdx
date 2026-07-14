@@ -1,0 +1,349 @@
+---
+sidebarTitle: '플러그인 구성'
+slug: /integrations/grafana/config
+description: 'Grafana의 ClickHouse 데이터 소스 플러그인 구성 옵션'
+title: 'Grafana에서 ClickHouse 데이터 소스 구성'
+doc_type: 'guide'
+keywords: ['Grafana 플러그인 구성', '데이터 소스 설정', '연결 매개변수', '인증 설정', '플러그인 옵션']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+구성을 수정하는 가장 쉬운 방법은 Grafana UI의 플러그인 구성 페이지에서 작업하는 것이지만, 데이터 소스는 [YAML 파일로 프로비저닝할 수도 있습니다](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources).
+
+이 페이지에는 ClickHouse 플러그인에서 구성할 수 있는 옵션 목록과, YAML로 데이터 소스를 프로비저닝하는 경우 사용할 수 있는 구성 스니펫이 나와 있습니다.
+
+모든 옵션을 빠르게 살펴보려면 전체 구성 옵션 목록을 [여기](#all-yaml-options)에서 확인할 수 있습니다.
+
+<div id="common-settings">
+  ## 공통 설정
+</div>
+
+예시 구성 화면:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="보안 네이티브 구성 예시" border />
+
+공통 설정 예시 YAML:
+
+```yaml
+jsonData:
+  host: 127.0.0.1 # (필수) 서버 주소.
+  port: 9000      # (필수) 서버 포트. 네이티브 프로토콜의 경우 보안 연결 기본값은 9440, 비보안 연결 기본값은 9000입니다. HTTP의 경우 보안 연결 기본값은 8443, 비보안 연결 기본값은 8123입니다.
+
+  protocol: native # (필수) 연결에 사용할 프로토콜. "native" 또는 "http"로 설정할 수 있습니다.
+  secure: false    # 보안 연결을 사용하는 경우 true로 설정하십시오.
+
+  username: default # 인증에 사용할 사용자 이름.
+
+  tlsSkipVerify:     <boolean> # true로 설정하면 TLS 검증을 건너뜁니다.
+  tlsAuth:           <boolean> # TLS 클라이언트 인증을 활성화하려면 true로 설정하십시오.
+  tlsAuthWithCACert: <boolean> # CA 인증서가 제공된 경우 true로 설정하십시오. 자체 서명된 TLS 인증서 검증 시 필요합니다.
+
+secureJsonData:
+  password: secureExamplePassword # 인증에 사용할 비밀번호.
+
+  tlsCACert:     <string> # TLS CA 인증서
+  tlsClientCert: <string> # TLS 클라이언트 인증서
+  tlsClientKey:  <string> # TLS 클라이언트 키
+```
+
+구성을 UI에서 저장하면 `version` 속성이 추가된다는 점에 유의하십시오. 이는 해당 구성을 저장할 때 사용된 플러그인의 버전을 나타냅니다.
+
+<div id="http-protocol">
+  ### HTTP protocol
+</div>
+
+HTTP protocol로 연결을 선택하면 추가 설정이 표시됩니다.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="추가 HTTP 구성 옵션" border />
+
+<div id="http-path">
+  #### HTTP 경로
+</div>
+
+HTTP 서버가 다른 URL 경로에 노출되어 있는 경우, 여기에서 해당 경로를 추가할 수 있습니다.
+
+```yaml
+jsonData:
+  # 첫 번째 슬래시 제외
+  path: additional/path/example
+```
+
+<div id="custom-http-headers">
+  #### 사용자 지정 HTTP 헤더
+</div>
+
+서버로 전송되는 요청에 사용자 지정 헤더를 추가할 수 있습니다.
+
+헤더는 일반 텍스트 또는 보안 값으로 설정할 수 있습니다.
+모든 헤더 키는 일반 텍스트로 저장되며, 보안 헤더 값은 보안 구성에 저장됩니다(`password` 필드와 유사함).
+
+<Warning>
+  **HTTP를 통한 보안 값**
+
+  보안 헤더 값은 구성에 안전하게 저장되지만, 보안 연결이 비활성화되어 있으면 해당 값은 여전히 HTTP를 통해 전송됩니다.
+</Warning>
+
+일반/보안 헤더용 YAML 예시:
+
+```yaml
+jsonData:
+  httpHeaders:
+  - name: X-Example-Plain-Header
+    value: plain text value
+    secure: false
+  - name: X-Example-Secure-Header
+    # "value"는 제외됨
+    secure: true
+secureJsonData:
+  secureHttpHeaders.X-Example-Secure-Header: secure header value
+```
+
+<div id="additional-settings">
+  ## 추가 설정
+</div>
+
+이 추가 설정은 선택 사항입니다.
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="추가 설정 예시" border />
+
+예시 YAML:
+
+```yaml
+jsonData:
+  defaultDatabase: default # 쿼리 빌더에서 로드되는 기본 데이터베이스. 기본값은 "default".
+  defaultTable: <string>   # 쿼리 빌더에서 로드되는 기본 테이블.
+
+  dialTimeout: 10    # 서버 연결 시 다이얼 타임아웃(초). 기본값은 "10".
+  queryTimeout: 60   # 쿼리 실행 시 쿼리 타임아웃(초). 기본값은 60. 사용자에게 권한이 필요합니다. 권한 오류가 발생하면 "0"으로 설정하여 비활성화하십시오.
+  validateSql: false # true로 설정하면 SQL Editor에서 SQL 유효성을 검사합니다.
+```
+
+<div id="opentelemetry">
+  ### OpenTelemetry
+</div>
+
+OpenTelemetry (OTel)는 플러그인에 깊이 통합되어 있습니다.
+OpenTelemetry 데이터는 [exporter plugin](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)을 사용해 ClickHouse로 내보낼 수 있습니다.
+가장 효과적으로 사용하려면 [로그](#logs)와 [트레이스](#traces) 모두에 대해 OTel을 구성하는 것이 좋습니다.
+
+또한 강력한 관측성 워크플로를 지원하는 [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links) 기능을 활성화하려면 이러한 기본값도 구성해야 합니다.
+
+<div id="logs">
+  ### 로그
+</div>
+
+[로그용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#logs) 속도를 높이기 위해 로그 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 쿼리 빌더에 실행 가능한 로그 쿼리가 미리 로드되어 관측성 워크플로에서 Explore 페이지를 더 빠르게 탐색할 수 있습니다.
+
+OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활성화하고 **기본 로그 테이블**을 `otel_logs`로 설정해야 합니다.
+이렇게 하면 선택한 OTel 스키마 버전에 맞게 기본 컬럼이 자동으로 재정의됩니다.
+
+로그에 OpenTelemetry가 필수는 아니지만, 단일 로그/트레이스 데이터셋을 사용하면 [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)을 통해 더 원활한 관측성 워크플로를 구현하는 데 도움이 됩니다.
+
+로그 구성 화면 예시:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="로그 구성" border />
+
+로그 구성 YAML 예시:
+
+```yaml
+jsonData:
+  logs:
+    defaultDatabase: default # 기본 로그 데이터베이스.
+    defaultTable: otel_logs  # 기본 로그 테이블. OTel을 사용하는 경우 "otel_logs"로 설정하십시오.
+
+    otelEnabled: false  # OTel이 활성화된 경우 true로 설정하십시오.
+    otelVersion: latest # 사용할 OTel collector 스키마 버전입니다. 버전은 UI에 표시되며, "latest"로 설정하면 plugin에서 사용 가능한 최신 버전이 사용됩니다.
+
+    # 새 로그 쿼리를 열 때 기본으로 선택할 컬럼입니다. OTel이 활성화된 경우 무시됩니다.
+    timeColumn:       <string> # 로그의 기본 시간 컬럼입니다.
+    levelColumn:   <string> # 로그의 로그 레벨/심각도입니다. 값은 일반적으로 "INFO", "error", "Debug" 등의 형태입니다.
+    messageColumn: <string> # 로그의 메시지/내용입니다.
+```
+
+<div id="traces">
+  ### 트레이스
+</div>
+
+[트레이스용 쿼리 작성](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
+
+OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활성화하고, **기본 트레이스 테이블**을 `otel_traces`로 설정해야 합니다.
+이렇게 하면 선택한 OTel 스키마 버전을 사용하도록 기본 컬럼이 자동으로 재정의됩니다.
+OpenTelemetry가 필수는 아니지만, 트레이스에 OpenTelemetry 스키마를 사용할 때 이 기능이 가장 잘 작동합니다.
+
+트레이스 구성 화면 예시:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="트레이스 구성" border />
+
+트레이스 구성 YAML 예시:
+
+```yaml
+jsonData:
+  traces:
+    defaultDatabase: default  # 기본 트레이스 데이터베이스.
+    defaultTable: otel_traces # 기본 트레이스 테이블. OTel을 사용하는 경우 "otel_traces"로 설정하십시오.
+
+    otelEnabled: false  # OTel을 사용하는 경우 true로 설정하십시오.
+    otelVersion: latest # 사용할 OTel collector 스키마 버전. 버전은 UI에 표시되며, "latest"로 설정하면 plugin에서 사용 가능한 최신 버전이 적용됩니다.
+
+    # 새 트레이스 쿼리를 열 때 기본으로 선택할 컬럼. OTel이 활성화된 경우 무시됩니다.
+    traceIdColumn:       <string>    # 트레이스 ID 컬럼.
+    spanIdColumn:        <string>    # 스팬 ID 컬럼.
+    operationNameColumn: <string>    # 작업 이름 컬럼.
+    parentSpanIdColumn:  <string>    # 상위 스팬 ID 컬럼.
+    serviceNameColumn:   <string>    # 서비스 이름 컬럼.
+    durationTimeColumn:  <string>    # 소요 시간 컬럼.
+    durationUnitColumn:  <time unit> # 소요 시간 단위. "seconds", "milliseconds", "microseconds", "nanoseconds" 중 하나로 설정할 수 있습니다. OTel의 기본값은 "nanoseconds"입니다.
+    startTimeColumn:     <string>    # 시작 시간 컬럼. 트레이스 스팬의 기본 시간 컬럼입니다.
+    tagsColumn:          <string>    # 태그 컬럼. 맵(Map) 타입이어야 합니다.
+    serviceTagsColumn:   <string>    # 서비스 태그 컬럼. 맵(Map) 타입이어야 합니다.
+```
+
+<div id="column-aliases">
+  ### 컬럼 별칭
+</div>
+
+컬럼 별칭은 데이터를 서로 다른 이름과 타입으로 쿼리할 수 있게 해주는 편리한 기능입니다.
+별칭을 사용하면 중첩된 스키마를 평탄화하여 Grafana에서 쉽게 선택할 수 있습니다.
+
+다음에 해당하면 별칭이 유용할 수 있습니다:
+
+* 스키마와 대부분의 중첩 속성/타입을 알고 있습니다
+* 데이터를 맵(Map) 타입에 저장합니다
+* JSON을 문자열로 저장합니다
+* 선택한 컬럼을 변환하기 위해 함수를 자주 적용합니다
+
+<div id="table-defined-alias-columns">
+  #### 테이블에 정의된 ALIAS 컬럼
+</div>
+
+ClickHouse는 컬럼 별칭 기능을 기본으로 제공하며 Grafana와도 바로 사용할 수 있습니다.
+ALIAS 컬럼은 테이블에 직접 정의할 수 있습니다.
+
+```sql
+CREATE TABLE alias_example (
+  TimestampNanos DateTime(9),
+  TimestampDate ALIAS toDate(TimestampNanos)
+)
+```
+
+위 예시에서는 나노초 타임스탬프를 `Date` 유형으로 변환하는 `TimestampDate` 별칭을 생성합니다.
+이 데이터는 첫 번째 컬럼처럼 디스크에 저장되지 않으며, 쿼리 시점에 계산됩니다.
+테이블에 정의된 별칭은 `SELECT *`로 반환되지 않지만, 이는 서버 설정에서 구성할 수 있습니다.
+
+자세한 내용은 [ALIAS](/ko/reference/statements/create/table#alias) 컬럼 유형 문서를 참조하십시오.
+
+<div id="column-alias-tables">
+  #### 컬럼 별칭 테이블
+</div>
+
+기본적으로 Grafana는 `DESC table`의 응답을 바탕으로 컬럼 추천을 제공합니다.
+경우에 따라 Grafana에 표시되는 컬럼을 완전히 재정의해야 할 수 있습니다.
+이렇게 하면 컬럼을 선택할 때 Grafana에서 스키마를 숨길 수 있어, 테이블의 복잡도에 따라 사용자 경험을 개선할 수 있습니다.
+
+이 방식의 장점은 테이블에 정의된 별칭보다 테이블을 변경하지 않고도 더 쉽게 업데이트할 수 있다는 점입니다. 일부 스키마에서는 이런 항목이 수천 개에 이를 수 있으며, 이로 인해 기본 테이블 정의가 복잡해질 수 있습니다. 또한 사용자가 무시해야 하는 컬럼을 숨길 수도 있습니다.
+
+Grafana에서 별칭 테이블은 다음과 같은 컬럼 구조를 가져야 합니다:
+
+```sql
+CREATE TABLE aliases (
+  `alias` String,  -- Grafana 컬럼 셀렉터에 표시되는 별칭 이름
+  `select` String, -- SQL 생성기에서 사용할 SELECT 구문
+  `type` String    -- 결과 컬럼의 유형으로, 플러그인이 데이터 타입에 맞게 UI 옵션을 수정할 때 사용됩니다.
+)
+```
+
+다음은 alias table을 사용해 `ALIAS` 컬럼의 동작을 재현하는 방법입니다:
+
+```sql
+CREATE TABLE example_table (
+  TimestampNanos DateTime(9)
+);
+
+CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
+
+INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- 테이블의 원래 컬럼 유지(선택 사항)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- TimestampNanos를 Date로 변환하는 새 컬럼 추가
+```
+
+이제 이 테이블을 Grafana에서 사용하도록 구성할 수 있습니다. 이름은 자유롭게 지정할 수 있으며, 별도의 데이터베이스에 정의해도 됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="예시 별칭 테이블 구성" border />
+
+이제 Grafana는 `DESC example_table`의 결과 대신 alias table의 결과를 확인합니다:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="예시 별칭 테이블 선택" border />
+
+두 가지 alias 방식 모두 복잡한 타입 변환이나 JSON 필드 추출에 사용할 수 있습니다.
+
+<div id="all-yaml-options">
+  ## 모든 YAML 옵션
+</div>
+
+다음은 이 플러그인에서 제공하는 모든 YAML 구성 옵션입니다.
+일부 필드에는 예시 값이 포함되어 있고, 다른 필드는 유형만 표시합니다.
+
+YAML로 데이터 소스를 프로비저닝하는 방법에 대한 자세한 내용은 [Grafana 문서](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources)를 참조하십시오.
+
+```yaml
+datasources:
+  - name: Example ClickHouse
+    uid: clickhouse-example
+    type: grafana-clickhouse-datasource
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      tlsSkipVerify: <boolean>
+      tlsAuth: <boolean>
+      tlsAuthWithCACert: <boolean>
+      defaultDatabase: default
+      defaultTable: <string>
+      dialTimeout: 10
+      queryTimeout: 60
+      validateSql: false
+      httpHeaders:
+      - name: X-Example-Plain-Header
+        value: plain text value
+        secure: false
+      - name: X-Example-Secure-Header
+        secure: true
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: false
+        otelVersion: latest
+        timeColumn: <string>
+        levelColumn: <string>
+        messageColumn: <string>
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: false
+        otelVersion: latest
+        traceIdColumn: <string>
+        spanIdColumn: <string>
+        operationNameColumn: <string>
+        parentSpanIdColumn: <string>
+        serviceNameColumn: <string>
+        durationTimeColumn: <string>
+        durationUnitColumn: <time unit>
+        startTimeColumn: <string>
+        tagsColumn: <string>
+        serviceTagsColumn: <string>
+    secureJsonData:
+      tlsCACert:     <string>
+      tlsClientCert: <string>
+      tlsClientKey:  <string>
+      secureHttpHeaders.X-Example-Secure-Header: secure header value
+```

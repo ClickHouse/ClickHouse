@@ -77,7 +77,11 @@ if __name__ == "__main__":
             master_parent_commits = [
                 s.strip()
                 for s in Shell.get_output(
-                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
+                    # 100 commits gives enough range to find 5-6 recent master coverage
+                # .info files even when coverage runs are sparse (only some master
+                # commits publish coverage). 30 was too few — the 6th baseline could
+                # be 80+ commits back with a meaningfully different test set.
+                f"git rev-list --first-parent --max-count=100 {master_parent}", verbose=True
                 ).splitlines()
                 if s.strip()
             ]
