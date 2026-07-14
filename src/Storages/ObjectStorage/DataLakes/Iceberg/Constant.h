@@ -141,8 +141,6 @@ DEFINE_ICEBERG_FIELD_ALIAS(removed_position_deletes, removed-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_equality_delete_files, removed-equality-delete-files);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_equality_deletes, removed-equality-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_files_size, removed-files-size);
-DEFINE_ICEBERG_FIELD_ALIAS(deleted_data_files, deleted-data-files);
-DEFINE_ICEBERG_FIELD_ALIAS(deleted_records, deleted-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_delete_files, total-delete-files);
 DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
