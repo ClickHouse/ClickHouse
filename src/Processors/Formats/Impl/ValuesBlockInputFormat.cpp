@@ -314,9 +314,26 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
 bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
-    std::optional<bool> read = shouldUseStreamingParserWithExceptions(column_idx)
-        ? tryReadValueStreamingWithExceptions(column, column_idx)
-        : tryReadValueStreaming(column, column_idx);
+    if (!buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_'))
+    {
+        bool is_plain_value = checkStringCaseInsensitive("DEFAULT", *buf) && checkDelimiterAfterValue(column_idx);
+        buf->rollbackToCheckpoint();
+
+        if (!is_plain_value)
+        {
+            String field;
+            is_plain_value = tryReadQuotedField(field, *buf) && checkDelimiterAfterValue(column_idx);
+            buf->rollbackToCheckpoint();
+        }
+
+        if (!is_plain_value)
+            return parseExpression(column, column_idx);
+    }
+
+    bool retry_with_exceptions = false;
+    std::optional<bool> read = tryReadValueStreaming(column, column_idx, true, retry_with_exceptions);
+    if (!read && retry_with_exceptions)
+        read = tryReadValueStreamingWithExceptions(column, column_idx, true);
 
     if (read)
         return *read;
@@ -350,22 +367,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     return parseExpression(column, column_idx);
 }
 
-bool ValuesBlockInputFormat::shouldUseStreamingParserWithExceptions(size_t column_idx) const
-{
-    bool use_exceptions_for_decimal_overflow = column_nests_decimal[column_idx];
-    if (use_exceptions_for_decimal_overflow && !buf->eof())
-    {
-        WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
-        const char first_char = *buf->position();
-        if ((which.isArray() && first_char != '[')
-            || (which.isMap() && first_char != '{')
-            || (which.isTuple() && first_char != '('))
-            use_exceptions_for_decimal_overflow = false;
-    }
-
-    return use_exceptions_for_decimal_overflow;
-}
-
 /// The streaming parser that does not create exceptions for values it cannot read.
 /// A failure to read a value here is not an error: it just means that the value is not
 /// a plain literal and has to be processed by the SQL expression parser. Exceptions are
@@ -373,8 +374,10 @@ bool ValuesBlockInputFormat::shouldUseStreamingParserWithExceptions(size_t colum
 /// is very slow), but also because every created exception is counted in system.errors
 /// and system.error_log even when it is caught and handled, which produces confusing
 /// error records for perfectly successful queries.
-std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(IColumn & column, size_t column_idx)
+std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
+    IColumn & column, size_t column_idx, bool use_null_as_default, bool & retry_with_exceptions)
 {
+    retry_with_exceptions = false;
     bool read = true;
     bool parsed = true;
 
@@ -393,7 +396,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(IColumn & colu
         const auto & type = types[column_idx];
         const auto & serialization = serializations[column_idx];
         /// Let Enum conversion functions handle the null value.
-        if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+        if (use_null_as_default && format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
         {
             bool is_null = false;
             parsed = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, is_null);
@@ -414,6 +417,21 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(IColumn & colu
         /// of an expression like `1 + 1`. Remove the read value and let the SQL parser handle it.
         column.popBack(1);
     }
+    else if (column_nests_decimal[column_idx]
+        && !WhichDataType(removeNullable(removeLowCardinality(types[column_idx]))).isVariant())
+    {
+        /// A failed Decimal parse at a digit or literal delimiter can be an overflow. Retry it with
+        /// exceptions so a raw overflowing literal still reports ARGUMENT_OUT_OF_BOUND. Other
+        /// failure positions indicate an expression inside a composite value.
+        skipWhitespaceIfAny(*buf);
+        retry_with_exceptions = buf->eof()
+            || (*buf->position() >= '0' && *buf->position() <= '9')
+            || *buf->position() == ','
+            || *buf->position() == ')'
+            || *buf->position() == ']'
+            || *buf->position() == '}'
+            || *buf->position() == ':';
+    }
 
     buf->rollbackToCheckpoint();
     return std::nullopt;
@@ -423,7 +441,8 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(IColumn & colu
 /// deserialization: an overflowing decimal literal must fail the query with ARGUMENT_OUT_OF_BOUND
 /// instead of being passed to the SQL expression parser, which would read it as a Float64 literal
 /// and silently lose precision.
-std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx)
+std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(
+    IColumn & column, size_t column_idx, bool use_null_as_default)
 {
     bool rollback_on_exception = false;
     try
@@ -445,7 +464,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             /// Let Enum conversion functions handle the null value.
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+            if (use_null_as_default && format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -594,14 +613,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     ++(*token_iterator);
 
-    if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
+    WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+    const bool starts_with_identifier = !buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_');
+    if (parser_type_for_column[column_idx] != ParserType::Streaming
+        && dynamic_cast<const ASTLiteral *>(ast.get())
+        && (!starts_with_identifier || which.isDynamic() || which.isVariant()))
     {
         /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
         /// but it still can parse the following rows
         /// Check if we can use fast streaming parser instead if using templates
-        std::optional<bool> read = shouldUseStreamingParserWithExceptions(column_idx)
-            ? tryReadValueStreamingWithExceptions(column, column_idx)
-            : tryReadValueStreaming(column, column_idx);
+        bool retry_with_exceptions = false;
+        std::optional<bool> read = tryReadValueStreaming(column, column_idx, false, retry_with_exceptions);
+        if (!read && retry_with_exceptions)
+            read = tryReadValueStreamingWithExceptions(column, column_idx, false);
         if (read)
         {
             parser_type_for_column[column_idx] = ParserType::Streaming;

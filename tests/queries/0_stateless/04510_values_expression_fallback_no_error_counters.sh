@@ -28,7 +28,12 @@ function get_parse_error_counters()
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_fallback (x UInt64, s String, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal (d Decimal32(2)) ENGINE = MergeTree ORDER BY d"
 $CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE TABLE t_values_dynamic (d Dynamic) ENGINE = Memory"
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE TABLE t_values_dynamic_literal_retry (id UInt8, d Dynamic) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_nested_decimal (a Array(Decimal32(2)), m Map(String, Decimal32(2))) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_variant_decimal (v Variant(Decimal32(2), String)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_variant_array_decimal (v Variant(Array(Decimal32(2)), String)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal_map_key (m Map(Decimal64(2), UInt8)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_json (j JSON) ENGINE = Memory"
 
 counters_before=$(get_parse_error_counters)
 
@@ -46,9 +51,28 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_dynamic_type=1" --data-binary \
     "INSERT INTO t_values_dynamic VALUES (toDate('2021-01-01')), (toIPv4('192.168.0.1'))"
 
+# Once a Dynamic column switches to expression parsing, retrying a later literal must preserve
+# the previous literal semantics and not apply NULL-as-default handling from the initial probe.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_dynamic_type=1" --data-binary \
+    "INSERT INTO t_values_dynamic_literal_retry VALUES (1, 42::UInt64), (2, NULL)"
+${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&allow_experimental_dynamic_type=1&input_format_values_deduce_templates_of_expressions=0" \
+    --data-binary "INSERT INTO t_values_dynamic_literal_retry VALUES (3, 42::UInt64), (4, NULL)"
+
 # Composite Decimal function expressions and quoted complex values must skip the throwing literal probe.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
-    "INSERT INTO t_values_nested_decimal VALUES (array(1.20 + 0.03), map('k', divide(9, 3))), ('[2.34]', '{\'q\':4.56}')"
+    "INSERT INTO t_values_nested_decimal VALUES ([3.40 + 0.05], {}), (array(1.20 + 0.03), map('k', divide(9, 3))), ('[2.34]', '{\'q\':4.56}')"
+
+# A Variant containing Decimal has no single raw-literal delimiter. Obvious function expressions
+# must use the non-throwing probe while numeric literals retain Decimal overflow handling.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_variant_decimal VALUES (toDecimal32(1.23, 2))"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_variant_array_decimal VALUES ([1.20 + 0.03])"
+
+# Serializations without a native non-throwing probe must not see obvious SQL function expressions.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_json VALUES (CAST('{\"a\":1}', 'JSON')), (NULL)"
 
 counters_after=$(get_parse_error_counters)
 
@@ -66,8 +90,19 @@ fi
 echo '--- dynamic data ---'
 $CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "SELECT d, dynamicType(d) FROM t_values_dynamic ORDER BY dynamicType(d)"
 
+echo '--- dynamic literal retry data ---'
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 \
+    -q "SELECT id, d, dynamicType(d) FROM t_values_dynamic_literal_retry ORDER BY id"
+
 echo '--- nested decimal data ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t_values_nested_decimal ORDER BY a"
+
+echo '--- variant decimal data ---'
+$CLICKHOUSE_CLIENT -q "SELECT v, variantType(v) FROM t_values_variant_decimal"
+$CLICKHOUSE_CLIENT -q "SELECT v, variantType(v) FROM t_values_variant_array_decimal"
+
+echo '--- JSON data ---'
+$CLICKHOUSE_CLIENT -q "SELECT j FROM t_values_json ORDER BY toString(j)"
 
 # Decimal columns keep the old behavior: an overflowing decimal literal must fail the query
 # instead of being read as a Float64 expression that would silently lose precision.
@@ -76,6 +111,10 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_d
 
 echo '--- nested decimal overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_nested_decimal VALUES ([12345678.91], {})" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
+
+echo '--- decimal map key overflow still fails ---'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_decimal_map_key VALUES ({10000000000000000.00:1})" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 
 echo '--- decimal data ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t_values_decimal ORDER BY d"

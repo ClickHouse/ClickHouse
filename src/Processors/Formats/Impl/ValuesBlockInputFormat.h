@@ -69,9 +69,9 @@ private:
     /// Streaming parser helpers for tryReadValue. On success they return whether the value was read
     /// (false means a default value was inserted). On failure they return std::nullopt with the column
     /// unchanged and the buffer rolled back to the checkpoint at the beginning of the value.
-    std::optional<bool> tryReadValueStreaming(IColumn & column, size_t column_idx);
-    std::optional<bool> tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx);
-    bool shouldUseStreamingParserWithExceptions(size_t column_idx) const;
+    std::optional<bool> tryReadValueStreaming(
+        IColumn & column, size_t column_idx, bool use_null_as_default, bool & retry_with_exceptions);
+    std::optional<bool> tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx, bool use_null_as_default);
 
     bool parseExpression(IColumn & column, size_t column_idx);
 
