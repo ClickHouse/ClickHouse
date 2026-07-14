@@ -9,6 +9,8 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ParallelGzipDeflatingWriteBuffer.h>
+#include <IO/LibdeflateDeflatingWriteBuffer.h>
+#include <IO/LibdeflateInflatingReadBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Lz4DeflatingWriteBuffer.h>
@@ -128,6 +130,14 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
             return {1, 22};
         case CompressionMethod::Lz4:
             return {1, 12};
+#if USE_LIBDEFLATE
+        case CompressionMethod::Gzip:
+        case CompressionMethod::Zlib:
+            /// libdeflate compresses up to level 12; keep the `INTO OUTFILE ... COMPRESSION ... LEVEL`
+            /// validation in line with the writer in `createWriteCompressedWrapper` and with the
+            /// `output_format_compression_level` / `http_zlib_compression_level` paths.
+            return {1, 12};
+#endif
         default:
             return {1, 9};
     }
@@ -137,7 +147,14 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+    {
+#if USE_LIBDEFLATE
+        /// libdeflate is faster than zlib for decompression.
+        return std::make_unique<LibdeflateInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
+#else
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
+#endif
+    }
 #if USE_BROTLI
     if (method == CompressionMethod::Brotli)
         return std::make_unique<BrotliReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
@@ -181,6 +198,13 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
         /// response path with compress_empty=false, keep the serial buffer.
         if (method == CompressionMethod::Gzip && compression_threads > 1 && compress_empty)
             return std::make_unique<ParallelGzipDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, compression_threads);
+#if USE_LIBDEFLATE
+        /// libdeflate is faster and compresses better; it produces a single valid gzip/zlib member.
+        /// Levels outside libdeflate's [1, 12] range (e.g. 0 = store) keep using zlib.
+        if (level >= 1 && level <= 12)
+            return std::make_unique<LibdeflateDeflatingWriteBuffer>(
+                std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
+#endif
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
     }
 

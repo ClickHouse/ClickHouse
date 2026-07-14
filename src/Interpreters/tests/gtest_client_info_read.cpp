@@ -67,6 +67,7 @@ String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & a
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// script_line_number
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_jwt = no (>= 54476)
     writeBinary(String(""), buf);                              /// client_agent (>= 54485)
+    writeBinary(false, buf);                                   /// is_internal (>= 54486)
     buf.finalize();
     return buf.str();
 }
