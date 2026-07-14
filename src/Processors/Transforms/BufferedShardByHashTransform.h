@@ -117,7 +117,12 @@ private:
     /// every scatter and admission decisions cannot overshoot by a whole chunk. When the chunk is split the
     /// same charge is carried over as the block's charge (no discharge/re-charge), so the counter is
     /// continuous across the split.
-    void chargePendingInput();
+    ///
+    /// `already_reserved` bytes were added to the counter before the pull as a conservative reservation (see
+    /// the admission path in prepare()); chargePendingInput adds only the difference to the chunk's exact
+    /// `allocatedBytes()`, so the reservation is reconciled rather than double-charged. It also records the
+    /// chunk's size as `reservation_estimate` to reserve before the next pull.
+    void chargePendingInput(Int64 already_reserved);
     void dischargePendingInput();
 
     size_t num_shards;
@@ -129,8 +134,10 @@ private:
     /// Bytes currently queued across all transforms sharing this counter (never null).
     std::shared_ptr<std::atomic<Int64>> total_buffered_bytes;
 
-    /// Set in prepare() when the shared budget is already exhausted, or when the just-pulled chunk pushes it
-    /// past max_buffered_bytes; work() then throws before the chunk is split, so nothing over-budget buffers.
+    /// Set in prepare() when the shared budget is already exhausted, when the reservation for the next chunk
+    /// would not fit (so the chunk is not even pulled), or when the just-pulled chunk pushes the counter past
+    /// max_buffered_bytes; work() then throws before the chunk is split (or before it is pulled at all), so
+    /// nothing over-budget buffers.
     bool budget_exceeded = false;
 
     /// Input chunk that was pulled in prepare() and will be split in work().
@@ -139,6 +146,15 @@ private:
     /// Bytes charged against the shared budget for `pending_input_chunk`. Carried over as the block's charge
     /// when the chunk is split, or released if the chunk is dropped before it is split.
     Int64 pending_input_bytes = 0;
+
+    /// Pre-split `allocatedBytes()` of the last chunk this scatter pulled. Reserved against the shared budget
+    /// *before* the next pull so concurrent scatters (each prepare() runs under its own node mutex, not a
+    /// stage-wide lock) serialize their admission through the counter and cannot each materialize a chunk while
+    /// it still reads below the cap. 0 until the first pull, so the first chunk per scatter can still be pulled
+    /// before the estimate warms up - inherent to measuring a chunk's size only after reading it; the post-pull
+    /// re-check in prepare() and the post-split re-check in work() still catch that first chunk. Chunks from one
+    /// input stream are ~uniform, so this converges after a single pull.
+    Int64 reservation_estimate = 0;
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<QueuedChunk>> output_queues;

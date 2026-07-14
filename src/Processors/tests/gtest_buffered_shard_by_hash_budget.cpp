@@ -22,9 +22,15 @@
 #include <Processors/Chunk.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int TOO_MANY_ROWS_OR_BYTES;
+}
 
 namespace
 {
@@ -152,6 +158,122 @@ std::pair<Int64, Int64> portResidentThenConsumedBytes(
     return {while_parked, after_consumed};
 }
 
+struct SecondPullOutcome
+{
+    bool second_chunk_pulled;        /// The second input chunk was pulled (consumed from the input port).
+    bool work_threw_budget_error;    /// work() threw TOO_MANY_ROWS_OR_BYTES for the shared buffer budget.
+};
+
+/// Drive one scatter to the point where it would pull a *second* input chunk while the first is still buffered,
+/// under a shared budget of `max_buffered_bytes` bytes. Priming the first block warms `reservation_estimate`
+/// and leaves the block's charge resident in the output ports; draining one lane makes that output starve so
+/// the transform wants to pull again. Returns whether the second chunk was pulled and whether work() then threw
+/// the buffer-budget error. With reservation-before-pull admission, a second chunk whose reserved estimate does
+/// not fit the shared budget is refused *before* it is pulled (the input chunk is left in place and work()
+/// throws); without the reservation the transform would materialize the chunk first and only then throw.
+SecondPullOutcome attemptSecondPull(size_t num_rows, size_t num_shards, size_t max_buffered_bytes)
+{
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+    auto counter = std::make_shared<std::atomic<Int64>>(0);
+
+    /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
+    BufferedShardByHashTransform transform(
+        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, max_buffered_bytes, counter);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    /// Prime: push the first block and split it into the ports (parked, charged; estimate warmed).
+    source_output.push(Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows));
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+
+    /// The downstream merge consumes one lane, so that output starves for more data on the next prepare(). The
+    /// block's charge stays resident (its other shard chunks are still parked), so the shared counter still
+    /// holds the first block's bytes when the second pull is considered.
+    if (sinks.front()->hasData())
+        sinks.front()->pull();
+
+    /// Present a second block and run one admission cycle on the now-starving lane.
+    source_output.push(Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows));
+    const auto status = transform.prepare();
+    const bool second_chunk_pulled = !source_output.hasData();
+
+    bool work_threw_budget_error = false;
+    if (status == IProcessor::Status::Ready)
+    {
+        try
+        {
+            transform.work();
+        }
+        catch (const Exception & e)
+        {
+            work_threw_budget_error = e.code() == ErrorCodes::TOO_MANY_ROWS_OR_BYTES;
+        }
+    }
+
+    return {second_chunk_pulled, work_threw_budget_error};
+}
+
+}
+
+/// The shared buffer budget must be a real stage-wide cap, not merely a post-hoc tripwire. Several scatters run
+/// prepare() concurrently, each under its own node mutex rather than a stage-wide lock, so if admission only
+/// read the counter before pulling and charged the chunk afterwards, every scatter could pass the check and
+/// pull one chunk each before any of them throws - overshooting `aggregation_in_order_shuffle_max_buffered_bytes`
+/// by up to one chunk per scatter. The transform instead reserves a conservative estimate of the next chunk
+/// (its last pulled size) against the shared counter *before* pulling, so a chunk that would not fit is refused
+/// before it is materialized. This drives one scatter to the point of a second pull whose reserved estimate
+/// does not fit the budget and checks the pull is refused, versus a control budget with room for it.
+TEST(BufferedShardByHashTransform, ReservationRefusesOverBudgetChunkBeforePulling)
+{
+    const size_t num_rows = 4000;
+    const size_t num_shards = 8;
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    /// Bytes actually resident after one block is split (what the counter holds while the block is parked)...
+    const Int64 resident_after_split = bufferedBytesAfterSplit(
+        header, Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_shards, ColumnNumbers{0});
+    ASSERT_GT(resident_after_split, 0);
+    /// ...and the pre-split size of the next chunk, which is what the transform reserves before pulling it.
+    const Int64 reservation = static_cast<Int64>(
+        Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows).allocatedBytes());
+    ASSERT_GT(reservation, 0);
+
+    /// Budget large enough to hold the first block but not the first block plus the reserved second chunk: the
+    /// second pull's reservation crosses the cap, so it must be refused before the chunk is pulled. (The budget
+    /// exceeds `resident_after_split`, so priming the first block never trips it.)
+    const auto tight = attemptSecondPull(num_rows, num_shards, static_cast<size_t>(resident_after_split + reservation / 2));
+    EXPECT_FALSE(tight.second_chunk_pulled);
+    EXPECT_TRUE(tight.work_threw_budget_error);
+
+    /// Budget with room for both: the reservation fits, so the second chunk is pulled normally (control).
+    const auto loose = attemptSecondPull(num_rows, num_shards, static_cast<size_t>(resident_after_split + 2 * reservation));
+    EXPECT_TRUE(loose.second_chunk_pulled);
+    EXPECT_FALSE(loose.work_threw_budget_error);
 }
 
 /// The canonical shuffle buffer-budget regression: `ColumnLowCardinality::scatter` shares one dictionary

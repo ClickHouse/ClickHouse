@@ -139,15 +139,21 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
     }
 }
 
-void BufferedShardByHashTransform::chargePendingInput()
+void BufferedShardByHashTransform::chargePendingInput(Int64 already_reserved)
 {
     /// Charge a provisional estimate the moment the chunk is pulled, before it is split: this bounds the
     /// in-flight read-ahead of every scatter so an admission decision cannot overshoot by a whole chunk. The
     /// pre-split `allocatedBytes()` is only an estimate of the post-split resident bytes - `scatter` can grow
     /// per-shard buffers beyond the source (e.g. `ColumnString` regrows each shard's `chars`) - so once the
     /// split is done `generateOutputChunks` reconciles this charge to the exact bytes actually buffered.
+    ///
+    /// `already_reserved` bytes were added to the counter before the pull as a conservative reservation (see
+    /// the admission path in prepare()), so add only the difference to reconcile the reservation to the chunk's
+    /// exact size rather than double-charging it. Record that size as the estimate to reserve before the next
+    /// pull.
     pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
-    total_buffered_bytes->fetch_add(pending_input_bytes, std::memory_order_relaxed);
+    total_buffered_bytes->fetch_add(pending_input_bytes - already_reserved, std::memory_order_relaxed);
+    reservation_estimate = pending_input_bytes;
 }
 
 void BufferedShardByHashTransform::dischargePendingInput()
@@ -301,18 +307,42 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         input.setNeeded();
         if (input.hasData())
         {
+            Int64 reserved = 0;
+            if (budget_enabled)
+            {
+                /// Reserve a conservative estimate of this chunk's footprint against the shared budget BEFORE
+                /// pulling it, so concurrent scatters serialize their admission through the counter: a scatter
+                /// cannot materialize a new pending chunk unless stage-wide budget is available for it. Each
+                /// prepare() runs under its own node mutex, not a stage-wide lock, so without reserving up front
+                /// several scatters could all read the counter below the cap, pull, and only then charge/throw -
+                /// overshooting by up to one chunk per scatter before any work() throws. The estimate is this
+                /// scatter's last pulled size (chunks from one input stream are ~uniform); chargePendingInput
+                /// reconciles it to the chunk's exact size right after the pull. If the reservation itself does
+                /// not fit, throw here without pulling. The first pull has no estimate yet (reserved == 0), so
+                /// one chunk per scatter can still be pulled before the counter warms up - inherent to measuring
+                /// a chunk's size only after reading it; the post-pull re-check below then catches that chunk.
+                reserved = reservation_estimate;
+                const Int64 prev = total_buffered_bytes->fetch_add(reserved, std::memory_order_relaxed);
+                if (prev + reserved > static_cast<Int64>(max_buffered_bytes))
+                {
+                    total_buffered_bytes->fetch_sub(reserved, std::memory_order_relaxed);
+                    budget_exceeded = true;
+                    return Status::Ready;
+                }
+            }
+
             pending_input_chunk = input.pull();
             has_pending_input_chunk = true;
-            /// Charge the pulled chunk against the shared budget right away, before it is split in work().
-            chargePendingInput();
+            /// Reconcile the reservation to the pulled chunk's exact size, before it is split in work().
+            chargePendingInput(reserved);
 
-            /// Re-check the budget *after* charging, so the counter now includes the chunk we just pulled (and
-            /// any in-flight charges from concurrent scatters). This rejects the chunk that itself crosses the
-            /// cap on the same admission path - the short-circuit above only sees charges that landed on earlier
-            /// cycles, so without this the very chunk that overshoots would still be admitted and split, and if
-            /// it were the last chunk (input then reaches EOF, budget never re-checked) or several scatters
-            /// admitted concurrently, the stage could exceed `max_buffered_bytes` and finish without ever
-            /// throwing. work() throws before splitting the chunk, so no over-budget data is buffered.
+            /// Re-check the budget *after* charging, so the counter now reflects the chunk's exact size (the
+            /// reservation may have under-estimated it - a bigger-than-expected chunk, or the first pull with no
+            /// estimate) plus any in-flight charges from concurrent scatters. This rejects the chunk that itself
+            /// crosses the cap on the same admission path: without it the very chunk that overshoots would still
+            /// be split, and if it were the last chunk (input then reaches EOF, budget never re-checked) or
+            /// several scatters admitted concurrently, the stage could exceed `max_buffered_bytes` and finish
+            /// without ever throwing. work() throws before splitting the chunk, so no over-budget data buffers.
             if (budget_enabled && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
                 budget_exceeded = true;
 
