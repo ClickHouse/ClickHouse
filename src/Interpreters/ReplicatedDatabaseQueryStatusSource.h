@@ -22,6 +22,7 @@ public:
 
 protected:
     ExecutionStatus checkStatus(const String & host_id) override;
+    bool wantsFinishedNodeData() const override { return true; }
     Chunk generateChunkWithUnfinishedHosts() const override;
     Strings getNodesToWait() override;
     Chunk handleTimeoutExceeded() override;

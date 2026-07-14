@@ -51,7 +51,23 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
 #ifdef DEBUG_OR_SANITIZER_BUILD
     fs::path status_path = fs::path(node_path) / "finished" / host_id;
     bool node_exists = true;
-    ExecutionStatus status = getExecutionStatus(status_path, &node_exists);
+    ExecutionStatus status(-1, "Cannot obtain error message");
+    if (finished_node_data_available)
+    {
+        /// generate() already listed finished/<host_id> together with its payload atomically, so read the
+        /// status from that snapshot instead of a separate get that could race the cleaner. Absence from the
+        /// snapshot means the node is gone; a present payload is deserialized atomically (a corrupt one keeps
+        /// the sentinel).
+        auto it = finished_node_data.find(host_id);
+        node_exists = it != finished_node_data.end();
+        if (node_exists)
+            status.tryDeserializeText(it->second);
+    }
+    else
+    {
+        /// The connected Keeper does not advertise LIST_WITH_STAT_AND_DATA, fall back to the per-host get.
+        status = getExecutionStatus(status_path, &node_exists);
+    }
     /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
     fiu_do_on(FailPoints::replicated_database_status_finished_node_missing,
     {
