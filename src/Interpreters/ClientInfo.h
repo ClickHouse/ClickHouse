@@ -1,9 +1,10 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
-
+#include <map>
 #include <time.h>
+#include <base/types.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 namespace Poco::Net
 {
@@ -123,7 +124,7 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    std::unordered_map<String, String> http_headers;
+    std::map<String, String, HTTPFieldLess> http_headers;
     /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query (empty otherwise). Kept in
     /// ClientInfo so that `currentHandler()` and the query_log report it on remote shards of a distributed query.
     String http_handler_name;

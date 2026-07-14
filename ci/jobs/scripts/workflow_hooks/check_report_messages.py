@@ -9,6 +9,8 @@ the merge.  After the issue is reviewed and fixed, re-running CI will post
 a new OK status once the error/warning is no longer produced.
 """
 
+import sys
+
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -37,12 +39,25 @@ def check():
             if warnings:
                 parts.append(f"{len(warnings)} warning(s)")
             description = ", ".join(parts)
+            # Link the status to the workflow report page, where the error and
+            # warning messages are listed in the notification panels at the top.
+            try:
+                url = info.get_report_url()
+            except Exception as e:
+                print(f"WARNING: failed to build report url: {e}")
+                url = ""
             GH.post_commit_status(
-                name=STATUS_NAME, status=Result.Status.FAIL, description=description, url=""
+                name=STATUS_NAME,
+                status=Result.Status.FAIL,
+                description=description,
+                url=url,
             )
+            return False
     except Exception as e:
         print(f"WARNING: check_report_messages failed: {e}")
+    return True
 
 
 if __name__ == "__main__":
-    check()
+    if not check():
+        sys.exit(1)
