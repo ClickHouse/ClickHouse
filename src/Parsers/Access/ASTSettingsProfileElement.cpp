@@ -148,7 +148,15 @@ void ASTSettingsProfileElement::updateTreeHashImpl(SipHash & hash_state, bool ig
     hash_state.update(writability_value);
 
     hash_state.update(id_mode);
-    hash_state.update(use_inherit_keyword);
+
+    /// `use_inherit_keyword` is intentionally NOT folded. It only records whether the user wrote
+    /// `INHERIT x` or `PROFILE x` (two spellings of the same profile reference), so it carries no
+    /// semantic meaning for the rewrite-rule matcher. More importantly, it does not survive the
+    /// format -> parse round-trip inside an `ALTER`: `formatSettingsProfileElementsForAlter` always
+    /// emits the profile reference as `ADD PROFILE x` (via `formatProfileNameOrID`), regardless of
+    /// how it was originally written, so `ALTER SETTINGS PROFILE p SETTINGS INHERIT 'default'`
+    /// re-parses with `use_inherit_keyword = false` and folding it would trip the debug-build AST
+    /// consistency check.
 }
 
 
