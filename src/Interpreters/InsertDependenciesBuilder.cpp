@@ -891,15 +891,19 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
 
     /// `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
     /// buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this
-    /// query's context), so this query's deduplication settings never reach that write. Disabling
-    /// deduplication for this `INSERT` therefore does not make the write fan-out safe.
-    if (dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// query's context), so this query's deduplication settings never reach that write. `Distributed`
+    /// forwards the write to a remote shard whose table is not cheaply known here and may itself be (or
+    /// forward to) such a `Buffer`: this query's settings do travel to the shard, but the shard's `Buffer`
+    /// would then flush in its own context. In both cases disabling deduplication for this `INSERT` does
+    /// not make the write fan-out safe, so fail closed.
+    if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
         return true;
 
     /// `Alias` / `MaterializedView` / proxies run their nested `INSERT` in this query's context (the
     /// `AliasSink` copies the context passed to `StorageAlias::write`), so this query's deduplication
     /// settings do reach their write - the separate-context switch only happens if the chain ends in a
-    /// `Buffer`. Follow the chain, failing closed when a forwarded-to target cannot be resolved.
+    /// `Buffer` or a `Distributed`. Follow the chain, failing closed when a forwarded-to target cannot be
+    /// resolved.
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
@@ -913,9 +917,8 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return storageForwardsInsertToSeparateContext(proxy->getNested(), depth + 1);
 
-    /// `Distributed` forwards the query together with its settings to the shard, so this query's
-    /// deduplication settings reach the remote write; no separate-context treatment is needed. Every other
-    /// engine writes in this query's context.
+    /// Every other engine writes in this query's context, so this query's deduplication settings reach the
+    /// write and no separate-context treatment is needed.
     return false;
 }
 

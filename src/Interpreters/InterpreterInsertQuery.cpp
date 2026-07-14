@@ -840,14 +840,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     // A `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
     // buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this
-    // query's context), so this query's `deduplicate_insert` / `insert_deduplicate` /
-    // `deduplicate_blocks_in_dependent_materialized_views` settings never reach that write. Disabling
-    // deduplication for this `INSERT` therefore does not make the write fan-out safe: the buffer's
-    // background (or threshold-triggered) flush can still deduplicate on its destination while each parallel
-    // branch restarts the source block numbering from zero, so identical blocks on different branches
-    // collide and rows are silently dropped. Fail closed and keep such inserts single-stream regardless of
-    // the deduplication settings on this query. (Unlike an `Alias`, whose `AliasSink` runs its nested
-    // `INSERT` in this query's context and so does observe a `deduplicate_insert = disable` here.)
+    // query's context), and a `Distributed` forwards the write to a remote shard whose table is not cheaply
+    // known here and may itself be (or forward to) such a `Buffer`. In both cases this query's
+    // `deduplicate_insert` / `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views`
+    // settings do not govern the final write. Disabling deduplication for this `INSERT` therefore does not
+    // make the write fan-out safe: the downstream flush can still deduplicate on its destination while each
+    // parallel branch restarts the source block numbering from zero, so identical blocks on different
+    // branches collide and rows are silently dropped. Fail closed and keep such inserts single-stream
+    // regardless of the deduplication settings on this query. (Unlike an `Alias`, whose `AliasSink` runs its
+    // nested `INSERT` in this query's context and so does observe a `deduplicate_insert = disable` here.)
     const bool forwards_to_separate_context =
         InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
 

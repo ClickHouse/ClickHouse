@@ -48,7 +48,10 @@ $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
     "EXPLAIN PIPELINE INSERT INTO fwd_dedup_dist VALUES (1)" | grep -c "DistributedSink"
 
-# Deduplication disabled for the session: the INSERT into the Distributed table fans out.
+# Deduplication disabled for the outer query does NOT let the Distributed table fan out either: the
+# remote shard table is not known here and may be (or forward to) a Buffer, whose flush runs in its
+# own context and can re-enable deduplication while each parallel branch restarts the source block
+# numbering from zero. So the fan-out fails closed regardless of the outer deduplicate_insert.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
     "EXPLAIN PIPELINE INSERT INTO fwd_dedup_dist VALUES (1)" | grep -c "DistributedSink"
 
