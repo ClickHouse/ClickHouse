@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
@@ -14,8 +15,11 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <Formats/EscapingRuleUtils.h>
+
+#include <array>
 
 namespace DB
 {
@@ -24,6 +28,72 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+const String * tryGetOneByteEncodedTypeName(std::string_view value)
+{
+    if (value.empty())
+        return nullptr;
+
+    static const auto names = []
+    {
+        std::array<String, BINARY_TYPE_INDEX_SIZE> result;
+        result[static_cast<size_t>(BinaryTypeIndex::Nothing)] = "Nothing";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt8)] = "UInt8";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt16)] = "UInt16";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt32)] = "UInt32";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt64)] = "UInt64";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt128)] = "UInt128";
+        result[static_cast<size_t>(BinaryTypeIndex::UInt256)] = "UInt256";
+        result[static_cast<size_t>(BinaryTypeIndex::Int8)] = "Int8";
+        result[static_cast<size_t>(BinaryTypeIndex::Int16)] = "Int16";
+        result[static_cast<size_t>(BinaryTypeIndex::Int32)] = "Int32";
+        result[static_cast<size_t>(BinaryTypeIndex::Int64)] = "Int64";
+        result[static_cast<size_t>(BinaryTypeIndex::Int128)] = "Int128";
+        result[static_cast<size_t>(BinaryTypeIndex::Int256)] = "Int256";
+        result[static_cast<size_t>(BinaryTypeIndex::Float32)] = "Float32";
+        result[static_cast<size_t>(BinaryTypeIndex::Float64)] = "Float64";
+        result[static_cast<size_t>(BinaryTypeIndex::Date)] = "Date";
+        result[static_cast<size_t>(BinaryTypeIndex::Date32)] = "Date32";
+        result[static_cast<size_t>(BinaryTypeIndex::DateTimeUTC)] = "DateTime";
+        result[static_cast<size_t>(BinaryTypeIndex::String)] = "String";
+        result[static_cast<size_t>(BinaryTypeIndex::UUID)] = "UUID";
+        result[static_cast<size_t>(BinaryTypeIndex::IPv4)] = "IPv4";
+        result[static_cast<size_t>(BinaryTypeIndex::IPv6)] = "IPv6";
+        result[static_cast<size_t>(BinaryTypeIndex::Bool)] = "Bool";
+        result[static_cast<size_t>(BinaryTypeIndex::BFloat16)] = "BFloat16";
+        result[static_cast<size_t>(BinaryTypeIndex::Time)] = "Time";
+        return result;
+    }();
+
+    size_t index = static_cast<size_t>(static_cast<UInt8>(value[0]));
+    if (index >= names.size() || names[index].empty())
+        return nullptr;
+
+    return &names[index];
+}
+
+const String & getTypeNameFromSharedVariantValue(
+    std::string_view value,
+    UnorderedMapWithMemoryTracking<std::string_view, String> & decoded_type_names)
+{
+    if (const auto * simple_type_name = tryGetOneByteEncodedTypeName(value))
+        return *simple_type_name;
+
+    auto cache_it = decoded_type_names.find(value);
+    if (cache_it == decoded_type_names.end())
+    {
+        ReadBufferFromMemory buf(value);
+        auto type = decodeDataType(buf);
+        cache_it = decoded_type_names.emplace(value, type->getName()).first;
+    }
+
+    return cache_it->second;
+}
+
 }
 
 UInt128 SerializationDynamic::getHash(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_)
@@ -559,6 +629,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
         const auto & shared_variant = column_dynamic.getSharedVariant();
         if (!shared_variant.empty())
         {
+            UnorderedMapWithMemoryTracking<std::string_view, String> decoded_type_names;
             const auto & local_discriminators = variant_column->getLocalDiscriminators();
             const auto & offsets = variant_column->getOffsets();
             const auto shared_variant_discr = variant_column->localDiscriminatorByGlobal(column_dynamic.getSharedVariantDiscriminator());
@@ -568,9 +639,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
                 if (local_discriminators[i] == shared_variant_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value);
-                    auto type = decodeDataType(buf);
-                    auto type_name = type->getName();
+                    const auto & type_name = getTypeNameFromSharedVariantValue(value, decoded_type_names);
                     if (auto it = dynamic_state->statistics.shared_variants_statistics.find(type_name); it != dynamic_state->statistics.shared_variants_statistics.end())
                         ++it->second;
                     else if (dynamic_state->statistics.shared_variants_statistics.size() < ColumnDynamic::Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
