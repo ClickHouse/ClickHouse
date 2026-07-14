@@ -348,7 +348,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
-        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
