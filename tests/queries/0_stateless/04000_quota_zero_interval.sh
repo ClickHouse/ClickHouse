@@ -22,6 +22,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 0 SECOND MAX queries = 1
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 0.4 SECOND MAX queries = 1000 TO ${U}" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 # A negative interval must be rejected, not wrapped to a huge positive duration by an unsigned cast.
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL -1 SECOND MAX queries = 1000 TO ${U}" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+# A huge interval that overflows Int64 seconds must be rejected, not cast (UB) into a wrapped duration.
+${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 1e19 SECOND MAX queries = 1000 TO ${U}" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
 # A positive interval still works: run the query AS ${U} so it consumes the quota and
 # exercises the previously-crashing getEndOfInterval path, then confirm usage was accounted.
