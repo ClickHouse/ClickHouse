@@ -69,6 +69,8 @@ struct SelectQueryOptions
     /// bind live storages into the plan) are not used. Distributed and parallel-replicas
     /// logical plans do not set this flag and are unaffected.
     bool cacheable_logical_plan = false;
+
+    bool is_local_shard_plan = false;
     bool ignore_rename_columns = false;
 
     size_t max_step_description_length = 0;
@@ -101,6 +103,7 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
+        out.is_local_shard_plan = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
