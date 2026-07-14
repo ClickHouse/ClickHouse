@@ -30,6 +30,12 @@ SELECT arrayPackBitGroupsToFixedString(x -> x, 1, 4, [3, 0, 3, 1]); -- only the 
 SELECT hex(arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0])); -- zero-padded to 2 bytes
 SELECT length(arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0]));
 
+-- Wide-integer lambda results are supported: the bit (getBool) and group (getUInt) values are read from the full
+-- value, so a wide result behaves like its native counterpart and a group keeps its low `g` bits.
+SELECT arrayPackBitsToUInt64(x -> toUInt128(x), [1, 0, 0, 0, 0, 0]);
+SELECT arrayPackBitsToUInt64(x -> x, [toUInt128('18446744073709551616'), 0, 0, 0, 0, 0, 0, 0]); -- 2^64 is truthy even though its low 64 bits are zero
+SELECT arrayPackBitGroupsToUInt64(x -> toUInt256(x), 4, [1, 2, 3]);
+
 -- invalid fixed parameters are rejected.
 SELECT arrayPackBitsToFixedString(x -> x, 0, [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayPackBitGroupsToUInt64(x -> x, 0, [1]); -- { serverError BAD_ARGUMENTS }
