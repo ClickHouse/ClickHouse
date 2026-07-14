@@ -112,6 +112,12 @@ public:
             return;
         }
 
+        if (path == "/v1/oauth/tokens")
+        {
+            writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-access-token"})");
+            return;
+        }
+
         if (path == "/v1/namespaces")
         {
             const auto parent = getParent(params);
@@ -312,7 +318,7 @@ TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
 }
 
-TEST(RestCatalog, ApplySettingsChangesNotSupported)
+TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
 {
     RestCatalogTestServer server(CatalogShape::Empty);
     auto context = DB::Context::createCopy(getContext().context);
@@ -329,8 +335,78 @@ TEST(RestCatalog, ApplySettingsChangesNotSupported)
         context);
 
     DB::SettingsChanges changes;
-    changes.emplace_back("onelake_bearer_token", "token");
-    expectThrowsCode([&] { catalog.applySettingsChanges(changes); }, DB::ErrorCodes::NOT_IMPLEMENTED);
+    changes.emplace_back("catalog_credential", "id:secret");
+    expectThrowsCode([&] { catalog.applySettingsChanges(changes); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ApplySettingsChangesCredentialMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"client-1:secret-1",
+        /* auth_scope */"scope",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "client-2:secret-2");
+    catalog.applySettingsChanges(changes);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    EXPECT_EQ(snapshot->client_id, "client-2");
+    EXPECT_EQ(snapshot->client_secret, "secret-2");
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    DB::SettingsChanges unknown_setting;
+    unknown_setting.emplace_back("warehouse", "other");
+    expectThrowsCode([&] { catalog.applySettingsChanges(unknown_setting); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// Malformed credential (no `:` separator) fails the ALTER atomically.
+    DB::SettingsChanges malformed;
+    malformed.emplace_back("catalog_credential", "no-separator");
+    expectThrowsCode([&] { catalog.applySettingsChanges(malformed); }, DB::ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-2");
+}
+
+TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"Authorization: Bearer token-1",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("auth_header", "Authorization: Bearer token-2");
+    catalog.applySettingsChanges(changes);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    ASSERT_TRUE(snapshot->auth_header.has_value());
+    EXPECT_EQ(snapshot->auth_header->value, " Bearer token-2");
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("catalog_credential", "id:secret");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)

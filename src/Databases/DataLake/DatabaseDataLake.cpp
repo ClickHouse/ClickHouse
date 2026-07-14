@@ -1144,12 +1144,9 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         auto & stored_changes = storage->settings->changes;
         for (const auto & change : settings_changes)
         {
-            auto it = std::find_if(stored_changes.begin(), stored_changes.end(),
-                                   [&](const auto & prev) { return prev.name == change.name; });
-            if (it != stored_changes.end())
-                it->value = change.value;
-            else
-                stored_changes.push_back(change);
+            /// cleanup duplicates
+            std::erase_if(stored_changes, [&](const auto & prev) { return prev.name == change.name; });
+            stored_changes.push_back(change);
         }
     }
     else
