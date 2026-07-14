@@ -1,31 +1,29 @@
 """
 Correctness tests for `enable_group_by_top_k_optimization` under non-final
-(partial) aggregation.
+(partial) aggregation - distributed tables and parallel replicas.
 
-The optimization is currently gated to FINAL aggregating steps (see
-`validateAggregatingStep` in `optimizeGroupByLimitPushdown.cpp`).  In
-distributed and parallel-replicas scenarios the shards run partial
-aggregation, so as written the optimization never kicks in there.
+Partial aggregation gets its top-K parameters from the Planner hook
+`applyTopKPushdownToPartialAggregation`, which only applies when each node
+plans the query text itself (not with `serialize_query_plan`) and only for
+queries with a real ORDER BY over a leading prefix of the GROUP BY keys:
 
-These tests pin the behaviour from the coordinator's perspective:
-the result with the optimization enabled must equal the result with it
-disabled, for both:
+  * with ORDER BY (`GROUP BY ... ORDER BY <prefix> LIMIT N`) - safe on the
+    partial side: a key rejected by a shard-local heap cannot be in the
+    global top-N, and the initiator's final sort + LIMIT discards any group
+    a remote eviction left incomplete.
+  * without ORDER BY (`GROUP BY ... LIMIT N`) - stays final-only: the
+    synthesized sort that makes this shape safe cannot be placed above the
+    initiator's merge, so the pushdown must never fire on followers.
 
-  * Pattern 1 (`GROUP BY ... ORDER BY <prefix> LIMIT N`) - which the analysis
-    in `optimizeGroupByLimitPushdown.cpp` argues would still be safe if the
-    gate were relaxed to partial aggregation.
-  * Pattern 2 (`GROUP BY ... LIMIT N`) - which is NOT safe on the partial
-    side because the coordinator's final `LIMIT` has no ORDER BY to discard
-    keys with corrupted partial state.
+The data is deliberately skewed so a heap would actually filter rows:
+shard 1 has many distinct small keys (fills an N=10 heap on its own),
+shard 2 has a few large-key rows whose aggregates must remain complete to
+produce the correct global answer.
 
-The data is deliberately skewed so the heap would actually filter rows if
-allowed: shard 1 has many distinct small keys (would fill an N=10 heap with
-small-key entries on its own), shard 2 has a few large-key rows whose
-aggregates must remain complete to produce the correct global answer.
-
-If anyone relaxes the `!getFinal()` guard incorrectly, these tests should
-catch the regression by observing diverging values between
-`enable_group_by_top_k_optimization = 0` and `= 1`.
+The result with the optimization enabled must always equal the result with
+it disabled; the EXPLAIN tests additionally pin where the `Top-K`
+annotation may and may not appear, and the profile-event test proves the
+follower-side heap actually runs on the text-planned path.
 """
 
 import json
@@ -99,7 +97,7 @@ def _make_local_shards():
 
 
 def _create_replicated_shards(table):
-    """Create a replicated table on both nodes for the parallel-replicas pattern."""
+    """Create a replicated table on both nodes for the parallel-replicas tests."""
     for node in (node1, node2):
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node1.query(
@@ -172,13 +170,13 @@ def _assert_same_result(node, query):
 # ---------------------------------------------------------------------------
 
 
-def test_distributed_remote_pattern1_order_by_prefix(start_cluster):
+def test_distributed_remote_order_by_prefix(start_cluster):
     """`GROUP BY k ORDER BY k LIMIT N` over a Distributed table.
 
-    Analysis says relaxing the gate would still be correct here, because a
-    key filtered by a shard's local heap cannot be in the global top-N.
-    This is the pattern the optimization is most likely to be extended to,
-    so it gets the strongest assertion.
+    The shards plan the query text themselves, so the partial-aggregation
+    pushdown applies there: a key filtered by a shard's local heap cannot be
+    in the global top-N.  This is the shape the pushdown targets, so it gets
+    the strongest assertion (exact expected result).
     """
     _make_local_shards()
     query = (
@@ -234,7 +232,7 @@ def _make_sharded_distributed_table():
     )
 
 
-def test_sharded_distributed_pattern1_with_push_down_limit(start_cluster):
+def test_sharded_distributed_order_by_with_push_down_limit(start_cluster):
     """Sanity-check that the optimization, applied on shards in stage 4
     (sharding-key-aligned GROUP BY with `distributed_push_down_limit = 1`),
     produces the same result as without it.
@@ -294,8 +292,8 @@ def test_explain_plan_shows_no_aggregating_step_with_limit(start_cluster):
     )
 
 
-def test_distributed_remote_pattern1_order_by_desc(start_cluster):
-    """`GROUP BY k ORDER BY k DESC LIMIT N` - DESC path of Pattern 1."""
+def test_distributed_remote_order_by_desc(start_cluster):
+    """`GROUP BY k ORDER BY k DESC LIMIT N` - the DESC direction."""
     _make_local_shards()
     query = (
         "SELECT k, sum(v) "
@@ -307,8 +305,8 @@ def test_distributed_remote_pattern1_order_by_desc(start_cluster):
     _assert_same_result(node1, query)
 
 
-def test_distributed_remote_pattern1_composite_prefix(start_cluster):
-    """`GROUP BY (k, v) ORDER BY k LIMIT N` - prefix-mode of Pattern 1."""
+def test_distributed_remote_composite_prefix(start_cluster):
+    """`GROUP BY (k, v) ORDER BY k LIMIT N` - prefix mode."""
     _make_local_shards()
     query = (
         "SELECT k, v, count() "
@@ -320,13 +318,13 @@ def test_distributed_remote_pattern1_composite_prefix(start_cluster):
     _assert_same_result(node1, query)
 
 
-def test_distributed_remote_pattern2_no_order_by(start_cluster):
+def test_distributed_remote_no_order_by(start_cluster):
     """`GROUP BY k LIMIT N` (no ORDER BY) over a Distributed table.
 
-    Pattern 2 is the one the gate definitively protects: there is no ORDER
-    BY at the coordinator to evict tuples with corrupted partial state, so
-    if the gate were ever wrongly relaxed for partial aggregation this
-    would diverge.
+    The no-ORDER-BY shape is the one the gate definitively protects: there
+    is no ORDER BY at the coordinator to evict tuples with corrupted partial
+    state, so if the gate were ever wrongly relaxed for partial aggregation
+    this would diverge.
 
     To make the comparison deterministic regardless of LIMIT's arbitrary
     tie-breaking, we compare a deterministic aggregate over the LIMIT'd
@@ -350,7 +348,7 @@ def test_distributed_remote_pattern2_no_order_by(start_cluster):
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])
-def test_parallel_replicas_pattern1(start_cluster, max_parallel_replicas):
+def test_parallel_replicas_order_by(start_cluster, max_parallel_replicas):
     """Parallel replicas exercise a different partial -> final split than
     `Distributed` but produce the same shape of plan: shards run partial
     aggregation, coordinator merges.  The optimization must give the same
@@ -466,7 +464,7 @@ def test_remote_partial_aggregation_follower_heap_engaged(start_cluster):
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])
-def test_parallel_replicas_pattern1_serialize_query_plan(
+def test_parallel_replicas_order_by_serialize_query_plan(
     start_cluster, max_parallel_replicas
 ):
     """With `serialize_query_plan = 1` the initiator ships a serialized
@@ -548,9 +546,9 @@ def test_remote_partial_aggregation_no_top_k_with_post_aggregation_clauses(
 ):
     """QUALIFY, window functions (inline and via a named WINDOW clause) and
     DISTINCT all consume the full set of groups on the coordinator, so the
-    AST-driven pushdown in `createRemotePlanForParallelReplicas` must skip
-    them - the plan-shape optimizer never matches these cases, and the
-    mirror must not be more permissive."""
+    partial-aggregation pushdown (`applyTopKPushdownToPartialAggregation`)
+    must skip them - the plan-shape optimizer never matches these cases, and
+    the Planner hook must not be more permissive."""
     table = "t_pr"
     _create_replicated_shards(table)
     queries = [
@@ -614,9 +612,9 @@ def test_remote_partial_aggregation_no_top_k_with_exact_rows_before_limit(
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])
-def test_parallel_replicas_pattern2(start_cluster, max_parallel_replicas):
-    """Parallel replicas, no ORDER BY (Pattern 2).  Compared via a stable
-    outer aggregation as in `test_distributed_remote_pattern2_no_order_by`."""
+def test_parallel_replicas_no_order_by(start_cluster, max_parallel_replicas):
+    """Parallel replicas, no ORDER BY.  Compared via a stable
+    outer aggregation as in `test_distributed_remote_no_order_by`."""
     table = "t_pr"
     _create_replicated_shards(table)
     inner = f"SELECT k, sum(v) AS s FROM {table} GROUP BY k LIMIT 100"

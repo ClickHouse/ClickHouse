@@ -1,5 +1,5 @@
 -- The top-K heap must reach the *partial* aggregation of a distributed query
--- (Pattern 1 only: `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N`).  Each
+-- (only with a real ORDER BY: `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N`).  Each
 -- shard plans the query text locally at stage `WithMergeableState`; the plan
 -- has no LimitStep/SortingStep there, so the parameters are derived from the
 -- analyzed query in `Planner.cpp` (`applyTopKPushdownToPartialAggregation`).
