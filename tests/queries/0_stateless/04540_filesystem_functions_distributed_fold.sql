@@ -12,11 +12,12 @@ SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0, log_comment = '04540
 
 SYSTEM FLUSH LOGS query_log;
 
--- Both shard queries must still contain the function calls, not folded literals
--- (when folded, the shipped query starts with `SELECT _CAST(<initiator value>, ...`).
--- The shard-side entries do not run in the test database, so they are anchored to the
--- initial query, which does.
-SELECT count() = 2, countIf(query LIKE 'SELECT filesystemAvailable(), filesystemCapacity(), filesystemUnreserved()%') = 2
+-- Both shard queries must still contain the function calls, not folded literals.
+-- The shipped query aliases every expression (`SELECT filesystemAvailable() AS ...`),
+-- so match the first call as a prefix and require that no `_CAST(<initiator value>, ...`
+-- literal replaced any of the three calls. The shard-side entries do not run in the test
+-- database, so they are anchored to the initial query, which does.
+SELECT count() = 2, countIf(query LIKE 'SELECT filesystemAvailable(%' AND query NOT LIKE '%_CAST(%') = 2
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
     AND initial_query_id =
