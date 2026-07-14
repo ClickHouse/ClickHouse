@@ -933,3 +933,48 @@ def test_catch_all_handler():
             response = cluster.instance.http_request(path, method="GET")
             assert response.status_code == 200, f"{path} -> {response.status_code}"
             assert response.content == b"catch-all matched", path
+
+
+def test_predefined_handler_header_column_mappings():
+    """predefined_query_handler with <header_column_mappings> injects HTTP header
+    values as INSERT columns without exposing them as URL parameters."""
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_http_columns",
+            "test_predefined_handler_http_columns",
+        )
+    ) as cluster:
+        cluster.instance.query(
+            "CREATE TABLE http_column_test "
+            "(event_type String, signature String, payload String) "
+            "ENGINE = MergeTree ORDER BY tuple()"
+        )
+
+        # Inject two header values into separate INSERT columns.
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            headers={"X-Event-Type": "push", "X-Signature": "sha256=abc"},
+            data=b'{"payload":"hello"}',
+        )
+        assert response.status_code == 200, response.content
+
+        result = cluster.instance.query(
+            "SELECT event_type, signature, payload FROM http_column_test"
+        )
+        assert result == "push\tsha256=abc\thello\n"
+
+        # A missing header produces an empty string.
+        cluster.instance.query("TRUNCATE TABLE http_column_test")
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            data=b'{"payload":"no-headers"}',
+        )
+        assert response.status_code == 200, response.content
+
+        result = cluster.instance.query(
+            "SELECT event_type, signature, payload FROM http_column_test"
+        )
+        assert result == "\t\tno-headers\n"

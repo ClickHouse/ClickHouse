@@ -925,12 +925,14 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regexp_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    NameToNameMap header_column_mappings_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
+    , header_column_mappings(std::move(header_column_mappings_))
 {
 }
 
@@ -1001,6 +1003,19 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         copyDataMaxBytes(body, value, settings[Setting::http_max_request_param_data_size]);
         context->setQueryParameter("_request_body", value.str());
     }
+
+    /// Resolve config-declared header→column mappings.
+    /// Values are sourced from ClientInfo::http_headers (already filtered for sensitive headers).
+    /// First occurrence wins — same semantics as http_column_* in the dynamic handler.
+    if (!header_column_mappings.empty())
+    {
+        const auto & http_headers = context->getClientInfo().http_headers;
+        for (const auto & [header_name, column_name] : header_column_mappings)
+        {
+            auto it = http_headers.find(header_name);
+            context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
+        }
+    }
 }
 
 std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
@@ -1068,6 +1083,22 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
+    /// Parse optional <header_column_mappings> block.
+    /// Each child tag is treated as <HeaderName>column_name</HeaderName>.
+    NameToNameMap header_column_mappings;
+    const std::string mappings_key = config_prefix + ".handler.header_column_mappings";
+    if (config.has(mappings_key))
+    {
+        Poco::Util::AbstractConfiguration::Keys header_names;
+        config.keys(mappings_key, header_names);
+        for (const auto & header_name : header_names)
+        {
+            const String column_name = config.getString(mappings_key + "." + header_name);
+            if (!header_name.empty() && !column_name.empty())
+                header_column_mappings.emplace(header_name, column_name);
+        }
+    }
+
     auto creator = [
         &server,
         analyze_receive_params,
@@ -1075,7 +1106,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         url_regexp = regexps.url_regexp,
         headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
         http_response_headers_override,
-        connection_config]
+        connection_config,
+        hdr_col_mappings = std::move(header_column_mappings)]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
@@ -1085,7 +1117,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             predefined_query,
             url_regexp,
             headers_name_with_regexp,
-            http_response_headers_override);
+            http_response_headers_override,
+            hdr_col_mappings);
     };
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
