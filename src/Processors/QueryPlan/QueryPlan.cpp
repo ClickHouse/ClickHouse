@@ -1096,6 +1096,14 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
             new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
     }
 
+    /// A subplan extracted from this plan inherits the same execution limits and resource holder.
+    /// The splice above moves only the node tree; without this the extracted subplan would run with the
+    /// default thread fan-out and no concurrency control instead of this plan's caps. append copies the
+    /// shared handles, so ownership is only shared, never moved out of this plan.
+    new_plan.max_threads = max_threads;
+    new_plan.concurrency_control = concurrency_control;
+    new_plan.resources.append(resources);
+
     return new_plan;
 }
 
