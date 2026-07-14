@@ -4169,6 +4169,8 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, aggregation_in_order_shuffle_max_buffered_bytes, 536870912, R"(
 The maximum total number of bytes buffered by the repartitioning stage of [aggregation_in_order_shuffle](#aggregation_in_order_shuffle), shared across all of its scatter transforms. Repartitioning has to read ahead when a shard waits for rows that appear much later in the input (e.g. on long runs of a single set of `GROUP BY` keys); when the buffered data exceeds this limit, the query fails with a `TOO_MANY_ROWS_OR_BYTES` exception instead of buffering without limit. 0 means unlimited.
+
+The limit is enforced at block granularity: it is checked against measured sizes when a block is admitted into the buffer and re-checked after the block is split into per-shard chunks (a block's size cannot be known before it is read, and the split can grow it), so the buffered bytes can transiently exceed the limit by up to one block's post-split footprint per scatter transform before the query fails. It is a guardrail against unbounded read-ahead, not an exact memory cap; the memory used by the query is still limited by [max_memory_usage](#max_memory_usage).
 )", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
