@@ -218,8 +218,9 @@ void HealthMonitor::superviseLoop()
         {
             if (silk::FiberScheduler::run(runCheck, CheckTask(tasks[i]), &futures[i]) != 0)
             {
-                /// Out of fibers: check inline instead.
-                runCheck(&tasks[i]);
+                /// Out of fibers: check inline instead. A failed run never attaches the future,
+                /// so deliver the result manually, or the unconditional wait below would suspend forever.
+                futures[i].set(runCheck(&tasks[i]));
             }
         }
         for (auto & future : futures)
