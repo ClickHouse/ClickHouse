@@ -53,6 +53,16 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     if (!limit)
         return 0;
 
+    /// A LIMIT directly above a UNION can be satisfied by any branch. The `max_streams_for_union_step*`
+    /// cap narrows the union by concatenating branches through a `ConcatProcessor`, which drains
+    /// branch 0 fully before reading branch 1. If branch 0 never terminates (e.g. an infinite
+    /// never-matching scan), the LIMIT short-circuit is defeated and the query hangs. Disable
+    /// narrowing so query termination cannot depend on the memory cap. `always_read_till_end` limits
+    /// read every branch regardless, so narrowing stays safe for them. Placed before the `WITH TIES`
+    /// early-return so it also guards a `WITH TIES` limit sitting directly above a union. See issue #110382.
+    if (auto * union_step = typeid_cast<UnionStep *>(child.get()); union_step && !limit->alwaysReadTillEnd())
+        union_step->disableNarrowing();
+
     /// Skip LIMIT WITH TIES by now.
     if (limit->withTies())
         return 0;
