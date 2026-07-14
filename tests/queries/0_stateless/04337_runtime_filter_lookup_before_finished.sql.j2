@@ -1,3 +1,8 @@
+-- Tags: long
+-- long: the race needs many JOIN repetitions, which pushes a single debug run over the
+-- `flaky check` 180s per-run limit; `long` exempts that limit and runs the test fewer times
+-- under flaky check, without weakening the reproducer (all pins and the 8-part build side stay).
+
 -- Regression test for the LOGICAL_ERROR "Trying to lookup values in runtime filter before
 -- building it was finished" (server abort in debug/sanitizer builds).
 --
