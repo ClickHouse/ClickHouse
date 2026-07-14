@@ -253,6 +253,19 @@ void StorageMergeTree::startup()
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
+
+        /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
+        /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
+        /// we observe it here — after arming — we must deactivate the tasks we just re-armed; otherwise a
+        /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
+        if (shutdown_called.load())
+        {
+            if (refresh_parts_task)
+                refresh_parts_task->deactivate();
+            if (refresh_stats_task)
+                refresh_stats_task->deactivate();
+            stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        }
     }
     catch (...)
     {
@@ -294,19 +307,23 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
 void StorageMergeTree::shutdown(bool)
 {
-    /// Deactivate the periodic refresh tasks unconditionally, before the `shutdown_called` guard.
-    /// A `startup()` racing with `shutdown()` (e.g. when a table is detached while its async startup is
-    /// still in flight) can call `startStatisticsCache` and re-arm `refresh_stats_task` after `shutdown()`
-    /// already ran and set `shutdown_called`. Without deactivating here, the destructor's `shutdown(false)`
-    /// would early-return and leave `refreshStatistics` running concurrently with `~MergeTreeData` destroying
-    /// `cached_estimator`, which is a data race. Deactivation is idempotent, so running it on every call is safe.
+    /// Publish the shutdown intent *before* deactivating the periodic tasks below. This, together with
+    /// the matching re-check at the end of `startup()`, closes a `startup()`/`shutdown()` race (e.g. when a
+    /// table is detached while its async startup is still in flight): whatever the interleaving, the tasks
+    /// end up deactivated. If `startup()` arms them before this deactivate runs, this deactivate stops them;
+    /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
+    const bool already_called = shutdown_called.exchange(true);
+
+    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would early-return and leave `refreshStatistics` running concurrently with
+    /// `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 
-    if (shutdown_called.exchange(true))
+    if (already_called)
     {
         /// The same race applies to the outdated/unexpected data parts loading tasks: a racing `startup()`
         /// can re-arm them via `startOutdatedAndUnexpectedDataPartsLoadingTask` after the first `shutdown()`
