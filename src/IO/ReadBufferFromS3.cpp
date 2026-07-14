@@ -142,6 +142,15 @@ bool ReadBufferFromS3::nextImpl()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
+    /// The position the read is expected to reach before a legitimate EOF: the requested right
+    /// bound when set, otherwise the full object size when it is known. Used to tell a premature
+    /// connection close (more bytes were expected) apart from a clean EOF. Callers such as
+    /// `S3ObjectStorage::readObject` and `BackupWriterS3::readFile` read the whole object with
+    /// `read_until_position == 0` but a known `file_size`, so relying on `read_until_position`
+    /// alone would let a mid-stream close silently truncate a full-object read.
+    const std::optional<size_t> expected_read_end
+        = read_until_position ? std::make_optional<size_t>(read_until_position.load()) : file_size;
+
     if (impl)
     {
         fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
@@ -153,9 +162,9 @@ bool ReadBufferFromS3::nextImpl()
 
         if (impl->isResultReleased())
         {
-            if (read_until_position && offset < read_until_position)
+            if (expected_read_end && offset < static_cast<off_t>(*expected_read_end))
             {
-                /// The server closed the stream before sending the whole requested range
+                /// The server closed the stream before sending the whole expected range
                 /// (premature EOF). Reconnect and resume from the current offset: the retry
                 /// loop below will issue a fresh ranged GET. Returning false here would
                 /// silently truncate the read: the caller would see EOF while the range is
@@ -165,9 +174,9 @@ bool ReadBufferFromS3::nextImpl()
                 LOG_INFO(
                     log,
                     "Stream ended prematurely while reading S3 object. Bucket: {}, Key: {}, Version: {}, "
-                    "offset: {}, end offset: {}. Reconnecting from the current offset",
+                    "offset: {}, expected end: {}. Reconnecting from the current offset",
                     bucket, key, version_id.empty() ? "Latest" : version_id,
-                    offset.load(), read_until_position.load());
+                    offset.load(), *expected_read_end);
 
                 resetWorkingBuffer();
                 impl.reset();
@@ -268,18 +277,18 @@ bool ReadBufferFromS3::nextImpl()
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
 
-        /// With read_until_position set we quit before impl->next() once the range is finished,
-        /// so an empty response here means the object ended before the requested range did.
-        /// Do not resume from the current offset (the response we just got proves a fresh
-        /// request makes no progress) and do not return a silent EOF that would truncate
-        /// the read - fail loudly instead.
-        if (read_until_position && offset < read_until_position)
+        /// When the expected end is known (a requested range or the full object size) we know
+        /// how many bytes the read still owes, so an empty response here means the object ended
+        /// before that point. Do not resume from the current offset (the response we just got
+        /// proves a fresh request makes no progress) and do not return a silent EOF that would
+        /// truncate the read - fail loudly instead.
+        if (expected_read_end && offset < static_cast<off_t>(*expected_read_end))
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all data from S3 object. Bucket: {}, Key: {}, Version: {}, "
                 "position: {}/{}, expected object size: {}",
                 bucket, key, version_id.empty() ? "Latest" : version_id,
-                offset.load(), read_until_position.load(), file_size_str);
+                offset.load(), *expected_read_end, file_size_str);
 
         read_all_range_successfully = true;
         return false;
@@ -303,8 +312,8 @@ bool ReadBufferFromS3::nextImpl()
     fiu_do_on(FailPoints::s3_read_buffer_force_premature_eof,
     {
         const size_t truncated_size = working_buffer.size() / 2;
-        if (read_until_position && impl->offset() == 0 && truncated_size > 0
-            && offset.load() + static_cast<off_t>(truncated_size) < read_until_position)
+        if (expected_read_end && impl->offset() == 0 && truncated_size > 0
+            && offset.load() + static_cast<off_t>(truncated_size) < static_cast<off_t>(*expected_read_end))
         {
             BufferBase::set(impl->buffer().begin(), truncated_size, impl->offset());
             force_premature_eof = true;
