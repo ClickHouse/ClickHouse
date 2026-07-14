@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
 
@@ -31,6 +32,10 @@ public:
     /// The alias, if any, or an empty string.
     String alias;
 
+    /// Quoting of the alias as written in the query. Double quotes pin the alias to
+    /// exact-case matching under `standard` name matching.
+    IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
+
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
     bool preferAliasToColumnName() const { return flags<ASTWithAliasFlags>().prefer_alias_to_column_name; }
@@ -45,7 +50,19 @@ public:
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const final;
     String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
     String tryGetAlias() const override { return alias; }
-    void setAlias(const String & to) override { alias = to; }
+
+    /// The quote flag is always updated together with the alias string.
+    void setAlias(const String & to) override
+    {
+        alias = to;
+        alias_quote = IdentifierPartQuote::Unquoted;
+    }
+
+    void setAlias(const String & to, IdentifierPartQuote quote)
+    {
+        alias = to;
+        alias_quote = quote;
+    }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -63,6 +80,19 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 {
     ast->setAlias(alias);
     return ast;
+}
+
+/// Quoting of the node's alias, or `Unquoted` for nodes that cannot carry an alias.
+inline IdentifierPartQuote tryGetAliasQuote(const IAST * ast)
+{
+    if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(ast))
+        return ast_with_alias->alias_quote;
+    return IdentifierPartQuote::Unquoted;
+}
+
+inline IdentifierPartQuote tryGetAliasQuote(const ASTPtr & ast)
+{
+    return tryGetAliasQuote(ast.get());
 }
 
 

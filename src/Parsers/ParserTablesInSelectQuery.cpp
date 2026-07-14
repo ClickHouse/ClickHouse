@@ -4,6 +4,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -68,7 +69,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 ParserAlias alias_parser(allow_alias_without_as_keyword);
                 ASTPtr alias_node;
                 if (alias_parser.parse(pos, alias_node, expected))
-                    res->subquery->setAlias(alias_node->getColumnName());
+                    res->subquery->as<ASTSubquery &>().setAlias(alias_node->getColumnName(), identifierPartQuoteFromAST(alias_node));
             }
             else
             {

@@ -298,7 +298,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             continue;
 
         node_clone->original_ast = node_to_clone->original_ast;
-        node_clone->setAlias(node_to_clone->alias);
+        node_clone->setAlias(node_to_clone->alias, node_to_clone->alias_quote);
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
@@ -365,8 +365,8 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
-        converted_node->setAlias(alias);
+    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+        ast_with_alias->setAlias(alias, alias_quote);
 
     converted_node->setParenthesized(parenthesized);
 

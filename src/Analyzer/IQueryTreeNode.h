@@ -4,6 +4,7 @@
 #include <vector>
 #include <deque>
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
@@ -181,19 +182,27 @@ public:
         return original_alias.empty() ? alias : original_alias;
     }
 
-    /// Set node alias
-    void setAlias(String alias_value)
+    /// Get quoting of the alias as written in the query
+    IdentifierPartQuote getAliasQuote() const
+    {
+        return alias_quote;
+    }
+
+    /// Set node alias. The quote flag is always updated together with the alias string.
+    void setAlias(String alias_value, IdentifierPartQuote alias_quote_value = IdentifierPartQuote::Unquoted)
     {
         if (original_alias.empty())
             original_alias = std::move(alias);
 
         alias = std::move(alias_value);
+        alias_quote = alias_quote_value;
     }
 
     /// Remove node alias
     void removeAlias()
     {
         alias = {};
+        alias_quote = IdentifierPartQuote::Unquoted;
     }
 
     /// Returns true if the expression was parenthesized in the original query
@@ -317,6 +326,9 @@ protected:
 
 private:
     String alias;
+    /// Quoting of the alias as written in the query. Double quotes pin the alias to
+    /// exact-case matching under `standard` name matching.
+    IdentifierPartQuote alias_quote = IdentifierPartQuote::Unquoted;
     /// An alias from query. Alias can be replaced by query passes,
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;

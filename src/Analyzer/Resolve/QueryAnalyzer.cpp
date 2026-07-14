@@ -38,6 +38,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <Core/IdentifierName.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTSelectQuery.h>
@@ -83,6 +84,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsBool asterisk_include_virtual_columns;
+    extern const SettingsNameMatchMode column_and_query_name_matching;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_materialized_cte;
@@ -221,6 +223,13 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// TODO: remove when standard matching is implemented for query-scope names.
+void checkNameMatchModeIsImplemented(const ContextPtr & context)
+{
+    if (context->getSettingsRef()[Setting::column_and_query_name_matching] != NameMatchMode::Sensitive)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting 'column_and_query_name_matching = standard' is not implemented yet");
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -239,6 +248,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
     if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
         scope.disableIdentifierCachePermanently();
+
+    checkNameMatchModeIsImplemented(scope.context);
 
     auto node_type = node->getNodeType();
 
@@ -324,6 +335,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
 
     if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
         scope.disableIdentifierCachePermanently();
+
+    checkNameMatchModeIsImplemented(scope.context);
 
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)

@@ -19,6 +19,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -666,13 +667,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
-        auto identifier = Identifier(ast_identifier->name_parts.spellings());
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(ast_identifier->name_parts);
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
-        auto identifier = Identifier(table_identifier->name_parts.spellings());
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(table_identifier->name_parts);
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
@@ -857,7 +856,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             expression->formatForErrorMessage());
     }
 
-    result->setAlias(expression->tryGetAlias());
+    result->setAlias(expression->tryGetAlias(), tryGetAliasQuote(expression));
     result->setOriginalAST(expression);
     result->setParenthesized(expression->isParenthesized());
 
@@ -991,15 +990,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
-                auto storage_identifier = Identifier(table_identifier_typed.name_parts.spellings());
                 QueryTreeNodePtr table_identifier_node;
 
                 if (table_expression_modifiers)
-                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
+                    table_identifier_node = std::make_shared<IdentifierNode>(table_identifier_typed.name_parts, *table_expression_modifiers);
                 else
-                    table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
+                    table_identifier_node = std::make_shared<IdentifierNode>(table_identifier_typed.name_parts);
 
-                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
+                table_identifier_node->setAlias(table_identifier_typed.tryGetAlias(), table_identifier_typed.alias_quote);
                 table_identifier_node->setOriginalAST(table_element.table_expression);
 
                 table_expressions.push_back(std::move(table_identifier_node));
@@ -1010,7 +1008,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 const auto & select_with_union_query = subquery_expression.children[0];
 
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
-                node->setAlias(subquery_expression.tryGetAlias());
+                node->setAlias(subquery_expression.tryGetAlias(), subquery_expression.alias_quote);
                 node->setOriginalAST(select_with_union_query);
 
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
@@ -1076,7 +1074,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression_modifiers)
                     node->setTableExpressionModifiers(*table_expression_modifiers);
-                node->setAlias(table_expression.table_function->tryGetAlias());
+                node->setAlias(table_expression.table_function->tryGetAlias(), tryGetAliasQuote(table_expression.table_function));
                 node->setOriginalAST(table_expression.table_function);
 
                 table_expressions.push_back(std::move(node));
