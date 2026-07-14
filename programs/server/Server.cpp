@@ -298,6 +298,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
     extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
+    extern const ServerSettingsString puffin_files_cache_policy;
+    extern const ServerSettingsUInt64 puffin_files_cache_size;
+    extern const ServerSettingsUInt64 puffin_files_cache_max_entries;
+    extern const ServerSettingsDouble puffin_files_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -2392,6 +2396,16 @@ try
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
+    String puffin_files_cache_policy = server_settings[ServerSetting::puffin_files_cache_policy];
+    size_t puffin_files_cache_size = server_settings[ServerSetting::puffin_files_cache_size];
+    size_t puffin_files_cache_max_entries = server_settings[ServerSetting::puffin_files_cache_max_entries];
+    double puffin_files_cache_size_ratio = server_settings[ServerSetting::puffin_files_cache_size_ratio];
+    if (puffin_files_cache_size > max_cache_size)
+    {
+        puffin_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Puffin files cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(puffin_files_cache_size));
+    }
+    global_context->setPuffinFilesCache(puffin_files_cache_policy, puffin_files_cache_size, puffin_files_cache_max_entries, puffin_files_cache_size_ratio);
 
     Names allowed_disks_table_engines;
     splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
@@ -2871,6 +2885,7 @@ try
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
+                global_context->updatePuffinFilesCacheConfiguration(config(), max_cache_size_in_bytes);
             }
 
 #if USE_SSL
