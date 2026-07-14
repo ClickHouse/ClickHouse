@@ -1,0 +1,23 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE iceberg_manifest_entries (c0 Int64)
+        ENGINE = IcebergLocal('/var/lib/clickhouse/user_files/iceberg_manifest_entries/')
+    </create_query>
+
+    <!-- One row per data file, so a single insert produces one snapshot whose manifest
+         contains 10000 entries. Planning a query iterates all of them. -->
+    <fill_query>
+        INSERT INTO iceberg_manifest_entries SELECT number FROM numbers(10000)
+        SETTINGS allow_experimental_insert_into_iceberg = 1, iceberg_insert_max_rows_in_data_file = 1
+    </fill_query>
+
+    <!-- The filter matches nothing, so the query is dominated by manifest entry
+         processing (pruning) rather than by reading data files. -->
+    <query>SELECT count() FROM iceberg_manifest_entries WHERE c0 &lt; 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS iceberg_manifest_entries</drop_query>
+</test>
