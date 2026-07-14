@@ -1466,7 +1466,8 @@ static void collectJoinGraphRelationHeaders(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     bool merge_filters_into_join,
-    std::vector<SharedHeader> & relation_headers);
+    std::vector<SharedHeader> & relation_headers,
+    Names & chain_introduced_names);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
 /// that the join order optimizer would produce for it (descending into flattenable child joins).
@@ -1476,7 +1477,8 @@ static void collectJoinGraphRelationHeadersForJoin(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     bool merge_filters_into_join,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    Names & chain_introduced_names)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
     if (!join_step || join_node.children.size() != 2)
@@ -1493,14 +1495,14 @@ static void collectJoinGraphRelationHeadersForJoin(
     const size_t lhs_before = relation_headers.size();
     collectJoinGraphRelationHeaders(
         join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join,
-        merge_filters_into_join, relation_headers);
+        merge_filters_into_join, relation_headers, chain_introduced_names);
     const size_t lhs_count = relation_headers.size() - lhs_before;
 
     const bool allow_right_subgraph
         = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
     collectJoinGraphRelationHeaders(
         join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings,
-        merge_expression_into_join, merge_filters_into_join, relation_headers);
+        merge_expression_into_join, merge_filters_into_join, relation_headers, chain_introduced_names);
 }
 
 /// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
@@ -1511,7 +1513,8 @@ static void collectJoinGraphRelationHeaders(
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
     bool merge_filters_into_join,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    Names & chain_introduced_names)
 {
     /// Look through a chain of mergeable Expression/Filter steps to find a flattenable join below,
     /// the same way `addChildQueryGraph` does. The header of the original node is used when the
@@ -1529,7 +1532,29 @@ static void collectJoinGraphRelationHeaders(
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
-            collectJoinGraphRelationHeadersForJoin(*join_candidate, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join, relation_headers);
+            collectJoinGraphRelationHeadersForJoin(*join_candidate, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join, relation_headers, chain_introduced_names);
+
+            /// The surviving outputs of the peeled chain (kept filter columns, aliases, computed
+            /// expressions) are merged into the flattened graph too, and the parent join's inputs
+            /// are matched against them by name. Record the names the chain introduces on top of
+            /// the child join's own columns, so a collision with any relation's column is detected.
+            const auto & chain_top_header = node->step->getOutputHeader();
+            const auto & child_join_header = join_candidate->step->getOutputHeader();
+            if (node != join_candidate && chain_top_header)
+            {
+                std::unordered_map<std::string_view, size_t> child_name_counts;
+                if (child_join_header)
+                    for (const auto & column : *child_join_header)
+                        ++child_name_counts[column.name];
+
+                for (const auto & column : *chain_top_header)
+                {
+                    if (auto it = child_name_counts.find(column.name); it != child_name_counts.end() && it->second > 0)
+                        --it->second;
+                    else
+                        chain_introduced_names.push_back(column.name);
+                }
+            }
             return;
         }
     }
@@ -1552,7 +1577,10 @@ static bool joinGraphHasOverlappingColumnNames(
     bool merge_filters_into_join)
 {
     std::vector<SharedHeader> relation_headers;
-    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join, relation_headers);
+    Names chain_introduced_names;
+    collectJoinGraphRelationHeadersForJoin(
+        join_node, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join,
+        relation_headers, chain_introduced_names);
 
     std::unordered_set<std::string_view> seen_names;
     for (const auto & header : relation_headers)
@@ -1564,6 +1592,11 @@ static bool joinGraphHasOverlappingColumnNames(
             if (!seen_names.insert(column.name).second)
                 return true;
         }
+    }
+    for (const auto & name : chain_introduced_names)
+    {
+        if (!seen_names.insert(name).second)
+            return true;
     }
     return false;
 }
