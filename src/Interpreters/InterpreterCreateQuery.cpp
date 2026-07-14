@@ -1982,6 +1982,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
+        throwIfCaseSiblingTable(database, create, getContext());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
     }
@@ -1989,6 +1990,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.cluster.empty())
     {
         chassert(!ddl_guard);
+        /// Workers replay with exact matching; enforce the case-sibling policy on the initiator.
+        throwIfCaseSiblingTable(database, create, getContext());
         return executeQueryOnCluster(create);
     }
 
@@ -2850,9 +2853,13 @@ BlockIO InterpreterCreateQuery::execute()
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
         /// Validate against the initiator's catalog before dispatch; workers replay the DDL log
-        /// with exact matching and cannot re-run the case-sibling policy themselves.
+        /// with exact matching and cannot re-run the case-sibling policy themselves. Access is
+        /// checked first so the name policy cannot leak the existence of unrelated objects.
         if (is_create_database)
+        {
+            getContext()->checkAccess(getRequiredAccess());
             throwIfCaseSiblingDatabase(create, getContext());
+        }
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
