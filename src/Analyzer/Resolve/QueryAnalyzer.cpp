@@ -3238,7 +3238,30 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
+                            /// Forbid resolving `test1` to this CTE again while its own body is
+                            /// being resolved, so a `FROM test1` inside the body binds to the base
+                            /// table (recursive CTEs are handled elsewhere). The guard in
+                            /// `tryResolveIdentifierFromCTE` checks the node stored in
+                            /// `cte_name_to_query_node`, so we must insert that exact node - not the
+                            /// TableNode placeholder/clone `resolved_identifier_node`, which the
+                            /// guard never sees. Without this, a set-operation body (e.g.
+                            /// `(SELECT ... FROM test1) EXCEPT ALL (SELECT ... FROM test1)`) lets a
+                            /// later branch self-reference the unmaterialized CTE, producing a read
+                            /// with no `DelayedPortsProcessor` gate.
+                            const auto & cte_name = materialized_cte_ptr->cte_name;
+                            QueryTreeNodePtr cte_map_node;
+                            for (auto * s = &scope; s; s = s->parent_scope)
+                            {
+                                auto it = s->cte_name_to_query_node.find(cte_name);
+                                if (it != s->cte_name_to_query_node.end())
+                                {
+                                    cte_map_node = it->second;
+                                    break;
+                                }
+                            }
+
+                            if (cte_map_node)
+                                ctes_in_resolve_process.insert(cte_map_node);
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -3248,7 +3271,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             else
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
+                            if (cte_map_node)
+                                ctes_in_resolve_process.erase(cte_map_node);
 
                             const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
                                 ? mat_subquery->as<QueryNode>()->isCorrelated()
