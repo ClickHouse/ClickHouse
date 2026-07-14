@@ -15,6 +15,7 @@ from typing import List
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -308,6 +309,7 @@ class ClickHouseProc:
         print("Starting ClickHouse server")
         # check binary available and do decompression in the meantime
         assert Shell.check("clickhouse --version", verbose=True)
+        kill_leftover_server_processes()
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
         self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
         print("Command: ", self.start_cmd)
@@ -452,6 +454,7 @@ profiles:
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
             Shell.check("dmesg --clear", verbose=True)
+            kill_leftover_server_processes()
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
@@ -560,14 +563,26 @@ profiles:
         # False). Every step MUST stay non-strict: a strict=True step would
         # raise before we can record the reason and signal failure. Record the
         # concrete failing sub-step so it reaches CIDB test_context_raw.
+        # storage_policy = 'default' pins these diagnostic tables to local disk.
+        # On s3 storage runs the default merge_tree policy is S3
+        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
+        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
+        # thereby generates more audit events (a feedback loop that inflates the
+        # table), and (2) the post-run `select * ... into outfile` dump reads all
+        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
+        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
+        # failing the "Scraping system tables" check. These are diagnostics ABOUT
+        # S3 activity; there is no reason to store them ON S3. 'default' is a
+        # local policy on every stateless config (no config remaps it), so this
+        # is a no-op on non-s3 runs.
         setup_steps = [
             (
                 "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "set clickminio logger_webhook config",
@@ -740,7 +755,10 @@ profiles:
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
-        attempts = 30
+        # A debug or sanitizer server can legitimately take over a minute from
+        # fork to listening; the loop below exits early on success and detects a
+        # dead server via proc.poll(), so a generous deadline costs nothing.
+        attempts = 60
         delay = 2
         if replica_num == 1:
             pid_file = self.pid_file_replica_1

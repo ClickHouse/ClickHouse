@@ -496,7 +496,7 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
     {
         /// These headers can contain authentication info and shouldn't be accessible by the user.
         String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
+        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication" || key_lowercase == "authorization")
             continue;
         http_headers[header.first] = header.second;
     }
