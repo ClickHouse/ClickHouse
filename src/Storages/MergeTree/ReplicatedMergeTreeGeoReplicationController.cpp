@@ -4,6 +4,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace DB
 {
@@ -40,6 +41,11 @@ void ReplicatedMergeTreeGeoReplicationController::onLeader()
 
 void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
 {
+    /// Destroying the ephemeral node holders and the leader election object issues `remove` requests to ZooKeeper.
+    /// This is called from the schedule pool thread (via `threadFunction`), from the shutdown path (via `stop`) and
+    /// from the destructor - none of which establish a ZooKeeper component otherwise - so set one here to satisfy
+    /// the mandatory component tracking (`enforce_component_tracking`).
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm");
     region_holder.reset();
     leader_lease_holder.reset();
     leader_election.reset();
@@ -96,6 +102,9 @@ void ReplicatedMergeTreeGeoReplicationController::start()
 
 void ReplicatedMergeTreeGeoReplicationController::threadFunction()
 {
+    /// This runs on the background schedule pool and touches ZooKeeper (region node, leader election), so it must
+    /// set a component for the mandatory ZooKeeper component tracking.
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::threadFunction");
     try
     {
         resetPreviousTerm();
@@ -221,6 +230,9 @@ private:
 
     void threadFunction()
     {
+        /// Runs on the background schedule pool and issues ZooKeeper requests (both directly and through the
+        /// `before_election` / `on_leader` callbacks), so it must set a component for the mandatory tracking.
+        auto component_guard = Coordination::setCurrentComponent("LeaderElection::threadFunction");
         bool success = false;
 
         try
