@@ -38,6 +38,10 @@ public:
     size_t getMinMarksPerRequest() const { return min_marks_per_request; }
 
 private:
+    /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
+    /// when the buffer has nothing for the part). Returns nullopt if there is no more work.
+    std::optional<MarkRanges> cutRangesToRead(size_t task_idx, MergeTreeReadTask * previous_task);
+
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
     const CoordinationMode mode;

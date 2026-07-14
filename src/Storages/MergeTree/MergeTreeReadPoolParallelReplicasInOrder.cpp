@@ -78,6 +78,25 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
+    while (true)
+    {
+        auto mark_ranges = cutRangesToRead(task_idx, previous_task);
+        if (!mark_ranges)
+            return nullptr;
+
+        /// Refinement may block (e.g. building a projection index bitmap on the first use
+        /// for the part), so it happens outside of the mutex.
+        auto refined = refineReadRanges(*per_part_infos[task_idx], std::move(*mark_ranges));
+        if (refined.empty())
+            continue;
+
+        return createTask(per_part_infos[task_idx], std::move(refined), previous_task);
+    }
+}
+
+std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToRead(size_t task_idx, MergeTreeReadTask * previous_task)
+{
     std::lock_guard lock(mutex);
 
     if (task_idx >= per_part_infos.size())
@@ -182,13 +201,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     };
 
     if (auto result = get_from_buffer())
-        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
+        return result;
 
     if (no_more_tasks)
-        return nullptr;
+        return std::nullopt;
 
     if (failed_to_get_task)
-        return nullptr;
+        return std::nullopt;
 
     std::optional<ParallelReadResponse> response;
     try
@@ -213,7 +232,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     }
 
     if (no_more_tasks)
-        return nullptr;
+        return std::nullopt;
 
     /// Fill the buffer — match response parts to buffered_tasks by part info,
     /// not by position, because the coordinator may return parts in a different order.
@@ -238,9 +257,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     }
 
     if (auto result = get_from_buffer())
-        return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
+        return result;
 
-    return nullptr;
+    return std::nullopt;
 }
 
 }

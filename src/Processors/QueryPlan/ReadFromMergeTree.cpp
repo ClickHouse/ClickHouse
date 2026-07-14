@@ -535,6 +535,21 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         replica_number);
 }
 
+/// Returns nullptr when no part is filtered by a projection index or the feature is disabled.
+static MergeTreeReadRangesRefinerPtr createProjectionIndexRangesRefiner(
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings)
+{
+    if (!index_build_context || index_build_context->projection_read_ranges.empty())
+        return nullptr;
+
+    if (!settings[Setting::use_projection_index_in_read_pools])
+        return nullptr;
+
+    return std::make_shared<ProjectionIndexReadRangesRefiner>(index_build_context, metadata_snapshot);
+}
+
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -565,6 +580,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         pool_settings,
         block_size,
         context);
+
+    pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
     /// reading where we split the table into multiple streams.
@@ -599,21 +616,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-
-/// Returns nullptr when no part is filtered by a projection index or the feature is disabled.
-static MergeTreeReadRangesRefinerPtr createProjectionIndexRangesRefiner(
-    const MergeTreeIndexBuildContextPtr & index_build_context,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Settings & settings)
-{
-    if (!index_build_context || index_build_context->projection_read_ranges.empty())
-        return nullptr;
-
-    if (!settings[Setting::use_projection_index_in_read_pools])
-        return nullptr;
-
-    return std::make_shared<ProjectionIndexReadRangesRefiner>(index_build_context, metadata_snapshot);
-}
 
 Pipe ReadFromMergeTree::readFromPool(
     RangesInDataParts parts_with_range,
@@ -807,6 +809,9 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context);
+
+        in_order_pool->setReadRangesRefiner(
+            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.

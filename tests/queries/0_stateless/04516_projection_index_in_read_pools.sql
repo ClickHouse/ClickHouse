@@ -4,8 +4,8 @@
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET use_projection_index_in_read_pools = 1;
--- Parallel replicas pools do not apply the refiner; pin the plain pools by default
--- (the prefetched pool is enabled explicitly in a dedicated query below).
+-- Pin the plain pools by default (the prefetched and parallel-replicas pools are
+-- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 
@@ -39,6 +39,12 @@ SELECT /* refiner_query_in_order_pool */ id, region, value FROM t_proj_pools WHE
 -- Prefetched read pool: the refine-and-prefetch job never prefetches dropped ranges.
 SELECT /* refiner_query_prefetched_pool */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
 SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', optimize_read_in_order = 0;
+
+-- Parallel replicas over localhost: MergeTreeReadPoolParallelReplicas on every participant.
+SELECT /* refiner_query_parallel_replicas */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
+SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, optimize_read_in_order = 0,
+    enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Correctness on a value that does not exist at all.
 SELECT count() FROM t_proj_pools WHERE region = 'nonexistent';
@@ -75,5 +81,18 @@ WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%refiner_query_prefetched_pool%'
     AND query NOT LIKE '%query_log%';
+
+-- Under parallel replicas the marks are spread over the participants, so sum the events
+-- over all queries initiated by the marked one.
+SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 200 AS dropped_marks
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND type = 'QueryFinish'
+            AND is_initial_query
+            AND query LIKE '%refiner_query_parallel_replicas%'
+            AND query NOT LIKE '%query_log%');
 
 DROP TABLE t_proj_pools;
