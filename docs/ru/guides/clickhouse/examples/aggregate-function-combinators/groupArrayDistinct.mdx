@@ -1,0 +1,48 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'Пример использования комбинатора groupArrayDistinct'
+keywords: ['groupArray', 'Distinct', 'комбинатор', 'примеры', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`groupArrayDistinct`](/ru/reference/functions/aggregate-functions/combinators#-foreach)
+можно применить к агрегатной функции [`groupArray`](/ru/reference/functions/aggregate-functions/sum), чтобы создать массив
+уникальных значений аргумента.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+В этом примере мы будем использовать набор данных `hits`, доступный в нашей [Песочнице ClickHouse](https://sql.clickhouse.com/).
+
+Представьте, что вы хотите узнать, какие уникальные коды ОС из User Agent (`OS`) были зафиксированы
+для посетителей, попавших на ваш сайт через каждый уникальный домен целевой страницы (`URLDomain`).
+Это поможет понять, какие операционные системы взаимодействуют с разными частями сайта.
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- Учитываем только hits с указанным доменом
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`groupArray`](/ru/reference/functions/aggregate-functions/groupArray)
+* [`комбинатор Distinct`](/ru/reference/functions/aggregate-functions/combinators#-distinct)

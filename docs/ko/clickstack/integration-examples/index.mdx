@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'ClickStack용 데이터 수집 - ClickHouse Observability Stack'
+title: '통합 가이드'
+doc_type: 'landing-page'
+keywords: ['ClickStack 데이터 수집', '관측성 데이터 수집', 'ClickStack 통합 가이드']
+---
+
+ClickStack는 관측성 데이터를 ClickHouse 인스턴스로 수집하는 여러 방법을 제공합니다. 이 섹션에는 다양한 로그, 트레이스, 메트릭 소스를 위한 빠른 시작 가이드가 포함되어 있습니다.
+
+<Note>
+  이 통합 가이드 중 일부는 빠른 테스트와 평가를 위해 ClickStack Open Source에 기본 포함된 OpenTelemetry Collector를 사용합니다.
+
+  프로덕션 환경에 배포할 때는 워크로드 가까이에서 통합을 OpenTelemetry Collector agent로 실행하는 것이 좋습니다. 이러한 agent는 OTLP를 통해 텔레메트리 데이터를 ClickStack OpenTelemetry collector로 전달해야 하며, 이후 해당 collector가 데이터를 ClickStack Open Source 배포판용 자가 관리형 ClickHouse 인스턴스 또는 Managed ClickStack으로 전송합니다. 프로덕션 구성에 대해서는 [&quot;OpenTelemetry 데이터 전송&quot;](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+</Note>
+
+| Section                                                                  | Description              |
+| ------------------------------------------------------------------------ | ------------------------ |
+| [일반 호스트 로그](/ko/clickstack/integration-examples/host-logs)                  | 호스트 시스템 로그 수집            |
+| [EC2 호스트 로그](/ko/clickstack/integration-examples/host-logs/ec2)             | EC2 인스턴스 로그 모니터링         |
+| [Rotel을 사용하는 AWS Lambda 로그](/ko/clickstack/integration-examples/aws-lambda) | Rotel로 Lambda 로그 전달      |
+| [AWS CloudWatch](/ko/clickstack/integration-examples/cloudwatch)            | CloudWatch 로그 그룹 전달      |
+| [JVM 메트릭](/ko/clickstack/integration-examples/jvm-metrics)                  | JVM 성능 모니터링              |
+| [Kafka 로그](/ko/clickstack/integration-examples/kafka-logs)                  | Kafka 브로커 로그 수집          |
+| [Kafka 메트릭](/ko/clickstack/integration-examples/kafka-metrics)              | Kafka 성능 모니터링            |
+| [Kubernetes](/ko/clickstack/integration-examples/kubernetes)                | K8s 클러스터 모니터링            |
+| [MongoDB 로그](/ko/clickstack/integration-examples/mongodb-logs)              | MongoDB 서버 로그 수집         |
+| [MySQL 로그](/ko/clickstack/integration-examples/mysql)                       | MySQL 느린 쿼리/오류 로그 수집     |
+| [Nginx 로그](/ko/clickstack/integration-examples/nginx-logs)                  | Nginx access/error 로그 수집 |
+| [Nginx 트레이스](/ko/clickstack/integration-examples/nginx-traces)              | Nginx HTTP 요청 추적         |
+| [Node.js 트레이스](/ko/clickstack/integration-examples/nodejs-traces)           | Node.js HTTP 요청 추적       |
+| [PostgreSQL 로그](/ko/clickstack/integration-examples/postgres-logs)          | PostgreSQL 로그 수집         |
+| [PostgreSQL 메트릭](/ko/clickstack/integration-examples/postgres-metrics)      | PostgreSQL 성능 모니터링       |
+| [Redis 로그](/ko/clickstack/integration-examples/redis-logs)                  | Redis 서버 로그 수집           |
+| [Redis 메트릭](/ko/clickstack/integration-examples/redis-metrics)              | Redis 성능 모니터링            |
+| [Systemd 로그](/ko/clickstack/integration-examples/systemd)                   | Systemd/Journald 로그 수집   |
+| [Temporal 메트릭](/ko/clickstack/integration-examples/temporal)                | Temporal Cloud 메트릭 모니터링  |

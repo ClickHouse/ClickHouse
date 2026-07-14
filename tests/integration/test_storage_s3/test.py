@@ -61,6 +61,7 @@ def started_cluster():
         cluster.add_instance(
             "restricted_dummy",
             main_configs=["configs/config_for_test_remote_host_filter.xml"],
+            user_configs=["configs/allow_server_credentials.xml"],
             with_minio=True,
         )
         cluster.add_instance(
@@ -81,6 +82,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/s3_retry.xml",
                 "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
             ],
         )
         cluster.add_instance(
@@ -104,11 +106,13 @@ def started_cluster():
                 "configs/s3_max_redirects.xml",
                 "configs/s3_retry.xml",
                 "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
             ],
         )
         cluster.add_instance(
             "s3_non_default",
             with_minio=True,
+            user_configs=["configs/allow_server_credentials.xml"],
         )
         cluster.add_instance(
             "s3_with_environment_credentials",
@@ -118,7 +122,52 @@ def started_cluster():
                 "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml", "configs/allow_server_credentials.xml"],
+        )
+        # Same as above (ambient/environment credentials available, global <s3> use_environment_credentials),
+        # but WITHOUT allow_server_credentials.xml, so the default restriction applies. Used to exercise the
+        # anonymous metadata-load fallback on restart. stay_alive lets the test restart the server.
+        cluster.add_instance(
+            "s3_environment_credentials_restricted",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=["configs/use_environment_credentials.xml"],
             user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
+        )
+        # Dedicated node for the dynamic S3 disk reload test. A MergeTree table on a disk that loses access on
+        # restart cannot attach (it reads its parts at attach time) and stays in a failed-load state that cannot
+        # be dropped without the credentials, so it is kept off the shared restricted node to avoid affecting
+        # other tests.
+        cluster.add_instance(
+            "s3_environment_credentials_restricted_disk",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
+        )
+        # Like s3_environment_credentials_restricted, but with the server setting that exempts
+        # `system`-database S3 disks from the restriction (server-internal system-table infrastructure).
+        cluster.add_instance(
+            "s3_system_table_disk",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=[
+                "configs/use_environment_credentials.xml",
+                "configs/allow_system_table_disk_server_credentials.xml",
+            ],
+            user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
         )
         cluster.add_instance(
             "dummy2",
@@ -727,33 +776,35 @@ def test_s3_glob_scheherazade(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
-    jobs = []
-    for night in range(0, 1001, nights_per_job):
 
-        def add_tales(start, end):
-            for i in range(start, end):
-                path = "night_{}/tale.csv".format(i)
-                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-                    started_cluster.minio_ip,
-                    MINIO_INTERNAL_PORT,
-                    bucket,
-                    path,
-                    table_format,
-                    values,
-                )
-                run_query(instance, query)
-
-        jobs.append(
-            threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
-            )
+    # Write all 1001 night_<i>/tale.csv objects with one server-side partitioned insert
+    # per batch. column1 carries the night index, so each object gets a distinct value.
+    # Batched to bound the number of concurrently open partition write buffers.
+    batch = 100
+    for start in range(0, 1001, batch):
+        count = min(start + batch, 1001) - start
+        run_query(
+            instance,
+            "insert into table function s3('http://{}:{}/{}/night_{{_partition_id}}/tale.csv', 'CSV', '{}') "
+            "partition by column1 select number, 1, 1 from numbers({}, {}) settings s3_truncate_on_insert=1".format(
+                started_cluster.minio_ip,
+                MINIO_INTERNAL_PORT,
+                bucket,
+                table_format,
+                start,
+                count,
+            ),
         )
-        jobs[-1].start()
 
-    for job in jobs:
-        job.join()
+    # Assert object cardinality directly: the point of scheherazade is that the glob
+    # lists MORE than 1000 separate objects. A row-level count alone would still pass
+    # if partitioned writes coalesced several partitions into fewer objects.
+    night_objects = list(
+        started_cluster.minio_client.list_objects(
+            bucket, prefix="night_", recursive=True
+        )
+    )
+    assert len(night_objects) == 1001
 
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/night_*/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
@@ -761,7 +812,8 @@ def test_s3_glob_scheherazade(started_cluster):
         bucket,
         table_format,
     )
-    assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
+    # sum(column1) = 0 + 1 + ... + 1000 = 500500 confirms all 1001 distinct files exist.
+    assert run_query(instance, query).splitlines() == ["1001\t500500\t1001\t1001"]
 
 
 def test_s3_enum_glob_should_not_list(started_cluster):
@@ -834,38 +886,48 @@ def test_s3_glob_many_objects_under_selection(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    values = "(1, 1, 1)"
-    jobs = []
-    for thread_num in range(16):
 
-        def create_files(thread_num):
-            for f_num in range(thread_num * 63, thread_num * 63 + 63):
-                path = f"folder1/file{f_num}.csv"
-                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
-                    started_cluster.minio_ip,
-                    MINIO_INTERNAL_PORT,
-                    bucket,
-                    path,
-                    table_format,
-                    values,
-                )
-                run_query(instance, query)
+    # Write 1008 folder1/file<i>.csv objects with server-side partitioned inserts.
+    # column1 carries the file index, so each object gets a distinct value and the
+    # file name in the path is _partition_id. Batched to bound the number of
+    # concurrently open partition write buffers.
+    batch = 100
+    for start in range(0, 1008, batch):
+        count = min(start + batch, 1008) - start
+        run_query(
+            instance,
+            "insert into table function s3('http://{}:{}/{}/folder1/file{{_partition_id}}.csv', 'CSV', '{}') "
+            "partition by column1 select number, 1, 1 from numbers({}, {}) settings s3_truncate_on_insert=1".format(
+                started_cluster.minio_ip,
+                MINIO_INTERNAL_PORT,
+                bucket,
+                table_format,
+                start,
+                count,
+            ),
+        )
 
-        jobs.append(threading.Thread(target=create_files, args=(thread_num,)))
-        jobs[-1].start()
-
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
-        started_cluster.minio_ip,
-        MINIO_INTERNAL_PORT,
-        bucket,
-        "folder2/file0.csv",
-        table_format,
-        values,
+    run_query(
+        instance,
+        "insert into table function s3('http://{}:{}/{}/folder2/file0.csv', 'CSV', '{}') "
+        "settings s3_truncate_on_insert=1 values (1, 1, 1)".format(
+            started_cluster.minio_ip,
+            MINIO_INTERNAL_PORT,
+            bucket,
+            table_format,
+        ),
     )
-    run_query(instance, query)
 
-    for job in jobs:
-        job.join()
+    # Assert object cardinality directly: the point of this test is that the glob
+    # lists MORE than 1000 separate objects under folder1. A row-level count alone
+    # would still pass if partitioned writes coalesced several partitions into
+    # fewer objects.
+    folder1_objects = list(
+        started_cluster.minio_client.list_objects(
+            bucket, prefix="folder1/", recursive=True
+        )
+    )
+    assert len(folder1_objects) == 1008
 
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/folder{{1,2}}/file*.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
@@ -873,7 +935,9 @@ def test_s3_glob_many_objects_under_selection(started_cluster):
         bucket,
         table_format,
     )
-    assert run_query(instance, query).splitlines() == ["1009\t1009\t1009\t1009"]
+    # sum(column1) = (0 + 1 + ... + 1007) + 1 = 507528 + 1 = 507529 confirms all
+    # 1008 distinct folder1 files plus the single folder2 file exist.
+    assert run_query(instance, query).splitlines() == ["1009\t507529\t1009\t1009"]
 
 
 def run_s3_mocks(started_cluster):
@@ -2148,6 +2212,169 @@ def test_environment_credentials(started_cluster):
         assert "HTTP response code: 403" in ei.value.stderr
 
 
+def test_s3_server_credentials_anonymous_on_reload(started_cluster):
+    # A stored `S3` table whose definition resolves the server's own (environment) credentials must, after a
+    # restart, be loaded with an anonymous client instead of silently regaining the server identity -- and
+    # the server must still start. This exercises the metadata-load fallback in `getClient`, governed by the
+    # server setting `s3_load_table_anonymously_if_credentials_restricted` (default 1), which depends on
+    # `is_loading_from_existing_metadata` being propagated through the storage constructor.
+    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    bucket = started_cluster.minio_restricted_bucket
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/server_credentials_reload.jsonl"
+
+    # Creating the table resolves the server credentials (the bare URL uses the global <s3>
+    # use_environment_credentials), so it requires opting in; the default is to refuse such user queries.
+    allow = {"s3_allow_server_credentials_in_user_queries": 1, "s3_truncate_on_insert": 1}
+
+    instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_server_credentials_reload (number UInt64) ENGINE = S3('{url}', 'JSONEachRow')"
+    )
+    instance.query(
+        f"CREATE TABLE t_server_credentials_reload (number UInt64) ENGINE = S3('{url}', 'JSONEachRow')",
+        settings=allow,
+    )
+    instance.query(
+        "INSERT INTO t_server_credentials_reload SELECT * FROM numbers(100)",
+        settings=allow,
+    )
+    # The client built at creation uses the server credentials. Reading back must opt in too: the create-time
+    # client is only reused by sessions with the same restriction mode, so a non-opted-in read rebuilds the
+    # client anonymously and would not see the data.
+    assert (
+        instance.query(
+            "SELECT count() FROM t_server_credentials_reload", settings=allow
+        ).strip()
+        == "100"
+    )
+
+    # On restart the table is loaded from existing metadata under the default restriction. The server must
+    # still start (the table must not abort startup) and the table is loaded with an anonymous client.
+    instance.restart_clickhouse()
+
+    assert instance.query("SELECT 1").strip() == "1"
+    assert "t_server_credentials_reload" in instance.query("SHOW TABLES")
+
+    # A default (non-opted-in) read keeps the anonymous client built at load time, so it cannot read the
+    # private bucket and must not silently fall back to the server identity.
+    with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query("SELECT count() FROM t_server_credentials_reload")
+
+    # An opted-in read rebuilds the client from the stored definition (the bare URL resolves the server's
+    # environment credentials), which is the operator escape hatch, so it reads the data back.
+    assert (
+        instance.query(
+            "SELECT count() FROM t_server_credentials_reload", settings=allow
+        ).strip()
+        == "100"
+    )
+
+    instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
+
+
+def test_dynamic_s3_disk_persisted_opt_in_survives_reload(started_cluster):
+    # A dynamic `disk(type = s3, ...)` created with the credential opt-in records the allowance in its stored
+    # definition (a `_server_credentials_allowed` marker), so on restart it keeps using the server credentials
+    # instead of being downgraded to anonymous. The table stays readable across restart without re-opting in.
+    instance = started_cluster.instances["s3_environment_credentials_restricted_disk"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/dynamic_disk_reload/"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS t_dynamic_disk SYNC")
+    # Creating the table requires opting in -- the disk resolves the server's environment credentials.
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_dynamic_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
+    instance.query(
+        f"CREATE TABLE t_dynamic_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}",
+        settings=allow,
+    )
+    instance.query("INSERT INTO t_dynamic_disk SELECT * FROM numbers(100)", settings=allow)
+    assert instance.query("SELECT count() FROM t_dynamic_disk").strip() == "100"
+
+    # The opt-in is persisted in the disk definition, so after a restart (no session opt-in in the reload
+    # context) the disk keeps its server credentials and the table is still readable -- no anonymous downgrade.
+    instance.restart_clickhouse()
+    assert instance.query("SELECT count() FROM t_dynamic_disk").strip() == "100"
+
+    instance.query("DROP TABLE t_dynamic_disk SYNC")
+
+
+def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
+    # The `_server_credentials_allowed` marker is an internal mechanism written by the server only for a disk
+    # that needed server credentials while the session opted in. A user must not be able to pre-seed it in a
+    # disk definition to bypass the restriction on a later reload, so any user-supplied marker is stripped.
+    instance = started_cluster.instances["s3_environment_credentials_restricted_disk"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/user_marker/"
+
+    # A disk that resolves the server credentials is still refused at create time even if the marker is
+    # pre-seeded: the marker is ignored on a fresh create (it is only honored when loading from metadata).
+    instance.query("DROP TABLE IF EXISTS t_user_marker SYNC")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1, "
+        f"_server_credentials_allowed = 1)"
+    )
+
+    # A disk with explicit keys is allowed (it does not rely on server credentials), but the pre-seeded marker
+    # is stripped from the stored definition, so it cannot be trusted to relax the check on a later reload.
+    instance.query(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
+        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', _server_credentials_allowed = 1)"
+    )
+    create_query = instance.query(
+        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
+    )
+    assert "_server_credentials_allowed" not in create_query, create_query
+
+    instance.query("DROP TABLE t_user_marker SYNC")
+
+
+def test_system_table_s3_disk_uses_server_credentials_with_server_setting(started_cluster):
+    # A dynamic S3 disk of a `system`-database table is server-internal infrastructure (the cloud operator
+    # attaches system tables to S3 with the server's identity). With the server setting
+    # s3_allow_server_credentials_for_system_table_disks = 1 it may use the server's ambient credentials despite
+    # the default user-query restriction, and -- unlike the session opt-in -- this survives a restart, because
+    # the exemption is re-evaluated from server config on metadata reload. In production a regular user cannot
+    # create a `system` table (the permission is removed), so only the operator reaches this exemption.
+    instance = started_cluster.instances["s3_system_table_disk"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/system_disk/"
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS system.t_sys_s3 SYNC")
+    instance.query(
+        f"CREATE TABLE system.t_sys_s3 (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
+    instance.query("INSERT INTO system.t_sys_s3 SELECT * FROM numbers(100)")
+    assert instance.query("SELECT count() FROM system.t_sys_s3").strip() == "100"
+
+    # The exemption is server-level, so the disk keeps the server credentials after a restart (no anonymous
+    # downgrade) and the table is still readable.
+    instance.restart_clickhouse()
+    assert instance.query("SELECT count() FROM system.t_sys_s3").strip() == "100"
+
+    instance.query("DROP TABLE system.t_sys_s3 SYNC")
+
+
+def test_system_table_s3_disk_restricted_without_server_setting(started_cluster):
+    # Without the server setting, a `system`-database S3 disk that resolves the server credentials is still
+    # refused, so the exemption is genuinely opt-in per service.
+    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/system_disk_norestr/"
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS system.t_sys_s3_norestr SYNC")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE system.t_sys_s3_norestr (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
+
+
 def test_s3_list_objects_failure(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
@@ -3031,9 +3258,13 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
+    # Explicit credentials: this table is queried again after `restart_with_latest_version`, and a bare-URL S3
+    # table would resolve the server's environment credentials, which are restricted for user queries by
+    # default and would make it inaccessible after the restart. The old version has no way to enable the
+    # override (the setting does not exist there), so use explicit keys instead.
     node_old.query(
         f"""
-    CREATE TABLE {table_name}_3 (a Int32) ENGINE = S3('{url}/**', 'Parquet')
+    CREATE TABLE {table_name}_3 (a Int32) ENGINE = S3('{url}/**', 'minio', '{minio_secret_key}', 'Parquet')
     """
     )
     assert 5 == int(
@@ -3211,9 +3442,13 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
     if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
+    # Explicit credentials: this table is queried again after `restart_with_latest_version`, and a bare-URL S3
+    # table would resolve the server's environment credentials, which are restricted for user queries by
+    # default and would make it inaccessible after the restart. The old version has no way to enable the
+    # override (the setting does not exist there), so use explicit keys instead.
     node_old.query(
         f"""
-    CREATE TABLE {table_name}_1 (a Int32, d Int32) ENGINE = S3('{url}/**', 'Parquet')
+    CREATE TABLE {table_name}_1 (a Int32, d Int32) ENGINE = S3('{url}/**', 'minio', '{minio_secret_key}', 'Parquet')
     """
     )
     query_id = f"{table_name}_query_1"
@@ -3380,6 +3615,97 @@ def test_query_condition_cache(started_cluster):
     )
     assert misses_after_drop > 0, f"Expected cache misses after drop, got {misses_after_drop}"
     assert hits_after_drop == 0, f"Expected no hits after drop, got {hits_after_drop}"
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_query_condition_cache_overwrite_invalidation(started_cluster):
+    # The Query Condition Cache keys object-storage entries by path plus the ETag content-version
+    # token, so overwriting an object in place (same path, new content, new ETag) must miss the
+    # cache and return the new rows instead of reusing stale row-group information.
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    table_name = f"test_qcc_overwrite_{generate_random_string()}"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.parquet"
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int64, val String)
+        ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'Parquet')
+        SETTINGS output_format_parquet_row_group_size = 1
+        """
+    )
+
+    # First version of the object: every matching row carries val = 'v1'.
+    # Keep the row count small: with output_format_parquet_row_group_size = 1 each row is its own
+    # row group, so numbers(200) still produces enough row groups for the WHERE id < 100 filter to
+    # prune half of them (real cache misses and hits) while staying lighter than a single-write test
+    # like test_query_condition_cache. This test writes twice (v1 then the v2 overwrite), so a large
+    # count would make it the slowest, most memory-hungry test in the module and it would time out /
+    # get OOM-killed when the flaky check runs the whole module 3x concurrently under ASan.
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, 'v1' AS val
+        FROM numbers(200)
+        """
+    )
+
+    instance.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
+    settings = {
+        "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
+    }
+
+    def profile_event(query_id, event):
+        return int(
+            instance.query(
+                f"SELECT ProfileEvents['{event}'] "
+                f"FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    # First read: populates the cache (miss), returns the v1 content.
+    query_id_first = f"qcc_ow_first_{generate_random_string()}"
+    result_first = instance.query(select_query, query_id=query_id_first, settings=settings)
+    assert result_first.strip() == "v1", f"Expected v1 rows, got {result_first!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    misses_first = profile_event(query_id_first, "QueryConditionCacheMisses")
+    assert misses_first > 0, f"Expected cache misses on first run, got {misses_first}"
+
+    # Second read: served from the cache.
+    query_id_second = f"qcc_ow_second_{generate_random_string()}"
+    result_second = instance.query(select_query, query_id=query_id_second, settings=settings)
+    assert result_second.strip() == "v1", f"Expected v1 rows, got {result_second!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    hits_second = profile_event(query_id_second, "QueryConditionCacheHits")
+    assert hits_second > 0, f"Expected cache hits on second run, got {hits_second}"
+
+    # Overwrite the same object in place with new content (same path, new ETag).
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, 'v2' AS val
+        FROM numbers(200)
+        """,
+        settings={"s3_truncate_on_insert": 1},
+    )
+
+    # Third read: the ETag changed, so the cache must miss (no stale hit) and return the new rows.
+    query_id_third = f"qcc_ow_third_{generate_random_string()}"
+    result_third = instance.query(select_query, query_id=query_id_third, settings=settings)
+    assert result_third.strip() == "v2", f"Expected new (v2) rows after overwrite, got {result_third!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    misses_third = profile_event(query_id_third, "QueryConditionCacheMisses")
+    hits_third = profile_event(query_id_third, "QueryConditionCacheHits")
+    assert misses_third > 0, f"Expected cache miss after overwrite, got {misses_third}"
+    assert hits_third == 0, f"Expected no stale cache hit after overwrite, got {hits_third}"
 
     instance.query(f"DROP TABLE {table_name}")
 

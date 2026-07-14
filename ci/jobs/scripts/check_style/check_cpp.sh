@@ -83,6 +83,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementNoTrace
+    ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -100,6 +101,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::checkCPUOverload
     ProfileEvents::getDocumentation
     ProfileEvents::NAME
+    ProfileEvents::setUserPerCPUEnabled
 
     CurrentMetrics::add
     CurrentMetrics::max

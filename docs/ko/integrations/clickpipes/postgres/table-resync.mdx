@@ -1,0 +1,40 @@
+---
+title: '특정 테이블 resync'
+description: 'Postgres ClickPipe에서 특정 테이블 resync'
+slug: /integrations/clickpipes/postgres/table_resync
+sidebarTitle: '테이블 resync'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+파이프의 특정 테이블을 resync해야 하는 상황이 있을 수 있습니다. 예를 들어 Postgres에서 대규모 스키마 변경이 발생했거나, ClickHouse에서 데이터 모델을 다시 설계한 경우가 이에 해당합니다.
+
+버튼 클릭만으로 개별 테이블을 resync하는 기능은 현재 개발 중이지만, 이 가이드에서는 지금 바로 Postgres ClickPipe에서 이를 수행하는 방법을 안내합니다.
+
+<div id="removing-table">
+  ### 1. 파이프에서 테이블 제거
+</div>
+
+이 작업은 [테이블 제거 가이드](/ko/integrations/clickpipes/postgres/remove-table)를 따라 수행할 수 있습니다.
+
+<div id="truncate-drop-table">
+  ### 2. ClickHouse에서 테이블을 TRUNCATE하거나 삭제합니다
+</div>
+
+이 단계는 다음 단계에서 이 테이블을 다시 추가할 때 데이터 중복을 방지하기 위한 것입니다. ClickHouse Cloud의 **SQL 콘솔** 탭으로 이동해 쿼리를 실행하면 됩니다.
+테이블이 이미 ClickHouse에 존재하고 비어 있지 않은 경우, 테이블 추가를 차단하는 검증이 적용된다는 점에 유의하십시오.
+
+또는 기존 테이블을 유지해야 한다면 이름만 변경하면 됩니다. 테이블이 매우 커서 삭제 작업에 다소 시간이 걸릴 수 있는 경우에도 이 방법이 유용합니다.
+
+```sql
+RENAME TABLE table_A TO table_A_bak;
+```
+
+<div id="add-table-again">
+  ### 3. 테이블을 ClickPipe에 다시 추가
+</div>
+
+이 작업은 [테이블 추가 가이드](/ko/integrations/clickpipes/postgres/add-table)를 따르면 됩니다.

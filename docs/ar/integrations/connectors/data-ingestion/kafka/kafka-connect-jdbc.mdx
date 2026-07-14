@@ -1,0 +1,170 @@
+---
+sidebarTitle: 'موصل JDBC في Kafka Connect'
+slug: /integrations/kafka/kafka-connect-jdbc
+description: 'استخدام JDBC Connector Sink مع Kafka Connect وClickHouse'
+title: 'موصل JDBC'
+doc_type: 'guide'
+keywords: ['kafka', 'kafka connect', 'jdbc', 'تكامل', 'مسار بيانات']
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<Note>
+  يجب استخدام هذا connector فقط إذا كانت بياناتك بسيطة وتتكون من data types بدائية، مثل `int`. أما الأنواع الخاصة بـ ClickHouse، مثل maps، فهي غير مدعومة.
+</Note>
+
+في أمثلتنا، نستخدم توزيعة Confluent الخاصة بـ Kafka Connect.
+
+فيما يلي نشرح عملية تثبيت بسيطة، تتضمن سحب الرسائل من موضوع Kafka واحد وإدراج rows في ClickHouse table. نوصي باستخدام Confluent Cloud، إذ توفّر فئة مجانية سخية لمن لا يملكون بيئة Kafka.
+
+لاحظ أن وجود مخطط مطلوب لاستخدام موصل JDBC (فلا يمكنك استخدام JSON أو CSV عاديَّين مع JDBC connector). ورغم أنه يمكن ترميز مخطط داخل كل رسالة، فإنه [يُنصح بشدة باستخدام Confluent schema registry](https://www.confluent.io/blog/kafka-connect-deep-dive-converters-serialization-explained/#json-schemas) لتجنّب الـ overhead المرتبط بذلك. يقوم برنامج الإدراج النصي المرفق تلقائيًا باستنتاج مخطط من الرسائل وإدراجها في registry، لذا يمكن إعادة استخدام هذا البرنامج النصي مع datasets أخرى. ويُفترض أن keys في Kafka هي من النوع Strings. ويمكن العثور على مزيد من التفاصيل حول schemas في Kafka [هنا](https://docs.confluent.io/platform/current/schema-registry/index.html).
+
+<div id="license">
+  ### الترخيص
+</div>
+
+يُوزَّع موصل JDBC بموجب [Confluent Community License](https://www.confluent.io/confluent-community-license)
+
+<div id="steps">
+  ### الخطوات
+</div>
+
+<div id="gather-your-connection-details">
+  #### اجمع بيانات الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="1-install-kafka-connect-and-connector">
+  #### 1. تثبيت Kafka Connect والموصل
+</div>
+
+نفترض أنك قمت بتنزيل حزمة Confluent وتثبيتها محليًا. اتبع تعليمات التثبيت الخاصة بالموصل كما هو موثّق [هنا](https://docs.confluent.io/kafka-connect-jdbc/current/#install-the-jdbc-connector).
+
+إذا كنت تستخدم أسلوب التثبيت `confluent-hub`، فسيتم تحديث ملفات التكوين المحلية لديك.
+
+لإرسال البيانات من Kafka إلى ClickHouse، نستخدم مكوّن Sink الخاص بالموصل.
+
+<div id="2-download-and-install-the-jdbc-driver">
+  #### 2. تنزيل وتثبيت برنامج تشغيل JDBC
+</div>
+
+نزّل وثبّت برنامج تشغيل ClickHouse JDBC ‏`clickhouse-jdbc-<version>-shaded.jar` من [هنا](https://github.com/ClickHouse/clickhouse-java/releases). ثبّت هذا ضمن Kafka Connect باتباع الإرشادات الواردة [هنا](https://docs.confluent.io/kafka-connect-jdbc/current/#installing-jdbc-drivers). قد تعمل برامج تشغيل أخرى، لكنها لم تُختبر.
+
+<Note>
+  مشكلة شائعة: تقترح الوثائق نسخ ملف jar إلى `share/java/kafka-connect-jdbc/`. إذا واجهت مشكلات في عثور Connect على برنامج التشغيل، فانسخ برنامج التشغيل إلى `share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/`. أو عدّل `plugin.path` ليشمل برنامج التشغيل — انظر أدناه.
+</Note>
+
+<div id="3-prepare-configuration">
+  #### 3. إعداد التهيئة
+</div>
+
+اتبع [هذه التعليمات](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install) لإعداد Connect بما يناسب نوع التثبيت لديك، مع الانتباه إلى الفروق بين عنقود مستقل وعنقود موزّع. وإذا كنت تستخدم Confluent Cloud، فالإعداد الموزّع هو المناسب.
+
+المعلمات التالية مهمة عند استخدام موصل JDBC مع ClickHouse. ويمكن العثور على قائمة كاملة بالمعلمات [هنا](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/index.html):
+
+* `_connection.url_` - يجب أن يكون بالصيغة `jdbc:clickhouse://&lt;clickhouse host>:&lt;clickhouse http port>/&lt;target database>`
+* `connection.user` - مستخدم لديه صلاحية الكتابة إلى قاعدة البيانات الهدف
+* `table.name.format`- جدول ClickHouse الذي ستُدرج البيانات فيه. يجب أن يكون موجودًا.
+* `batch.size` - عدد الصفوف التي تُرسل في batch واحد. احرص على ضبطه على قيمة كبيرة بما يكفي. ووفقًا [لتوصيات](/ar/reference/statements/insert-into#performance-considerations) ClickHouse، ينبغي اعتبار القيمة 1000 حدًا أدنى.
+* `tasks.max` - يدعم موصل JDBC Sink تشغيل task واحد أو أكثر. ويمكن استخدام ذلك لتحسين الأداء. وإلى جانب حجم batch، يُعد هذا وسيلتك الأساسية لتحسين الأداء.
+* `value.converter.schemas.enable` - اضبطه على false إذا كنت تستخدم مخطط registry، وعلى true إذا كنت تضمن مخططات داخل الرسائل.
+* `value.converter` - اضبطه وفقًا لنوع بياناتك، فمثلًا بالنسبة إلى JSON استخدم `io.confluent.connect.json.JsonSchemaConverter`.
+* `key.converter` - اضبطه على `org.apache.kafka.connect.storage.StringConverter`. نحن نستخدم مفاتيح String.
+* `pk.mode` - غير ذي صلة بـ ClickHouse. اضبطه على none.
+* `auto.create` - غير مدعوم ويجب أن تكون قيمته false.
+* `auto.evolve` - نوصي باستخدام false لهذا الإعداد، رغم أنه قد يصبح مدعومًا مستقبلًا.
+* `insert.mode` - اضبطه على &quot;insert&quot;. الأوضاع الأخرى غير مدعومة حاليًا.
+* `key.converter` - اضبطه وفقًا لأنواع مفاتيحك.
+* `value.converter` - اضبطه بناءً على نوع البيانات في topic لديك. ويجب أن تكون هذه البيانات ذات مخطط مدعوم — بتنسيقات JSON أو Avro أو Protobuf.
+
+إذا كنت تستخدم dataset التجريبي الخاص بنا للاختبار، فتأكد من ضبط ما يلي:
+
+* `value.converter.schemas.enable` - اضبطه على false لأننا نستخدم مخطط registry. واضبطه على true إذا كنت تضمن مخطط داخل كل رسالة.
+* `key.converter` - اضبطه على &quot;org.apache.kafka.connect.storage.StringConverter&quot;. نحن نستخدم مفاتيح String.
+* `value.converter` - اضبطه على &quot;io.confluent.connect.json.JsonSchemaConverter&quot;.
+* `value.converter.schema.registry.url` - اضبط URL لخادم مخطط، إلى جانب بيانات الاعتماد الخاصة به، عبر المعلمة `value.converter.schema.registry.basic.auth.user.info`.
+
+يمكن العثور على ملفات تهيئة نموذجية لبيانات Github التجريبية [هنا](https://github.com/ClickHouse/kafka-samples/tree/main/github_events/jdbc_sink)، على افتراض أن Connect يعمل في وضع مستقل وأن Kafka مستضاف في Confluent Cloud.
+
+<div id="4-create-the-clickhouse-table">
+  #### 4. أنشئ جدول ClickHouse
+</div>
+
+تأكد من إنشاء الجدول، واحذفه إذا كان موجودًا بالفعل من أمثلة سابقة. يرد أدناه مثال متوافق مع مجموعة بيانات GitHub المصغّرة. لاحظ عدم وجود أي أنواع Array أو Map غير مدعومة حاليًا:
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+```
+
+<div id="5-start-kafka-connect">
+  #### 5. شغّل Kafka Connect
+</div>
+
+شغّل Kafka Connect إما في وضع [مستقل](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#standalone-cluster) أو وضع [موزع](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#distributed-cluster).
+
+```bash
+./bin/connect-standalone connect.properties.ini github-jdbc-sink.properties.ini
+```
+
+<div id="6-add-data-to-kafka">
+  #### 6. أضف البيانات إلى Kafka
+</div>
+
+أرسِل الرسائل إلى Kafka باستخدام [البرنامج النصي والإعدادات](https://github.com/ClickHouse/kafka-samples/tree/main/producer) المتوفَّرين. ستحتاج إلى تعديل github.config ليتضمن بيانات اعتماد Kafka الخاصة بك. البرنامج النصي مُعَدّ حاليًا للاستخدام مع Confluent Cloud.
+
+```bash
+python producer.py -c github.config
+```
+
+يمكن استخدام هذا البرنامج النصي لإدراج أي ملف ndjson في موضوع Kafka. وسيحاول استنتاج مخطط لك تلقائيًا. لن تُدرج التهيئة النموذجية المقدمة سوى 10 آلاف رسالة فقط - [عدّل هنا](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/producer/github.config#L25) إذا لزم الأمر. كما تزيل هذه التهيئة أي حقول Array غير متوافقة من مجموعة البيانات أثناء إدخالها إلى Kafka.
+
+وهذا مطلوب لكي يتمكن موصل JDBC من تحويل الرسائل إلى تعليمات INSERT. إذا كنت تستخدم بياناتك الخاصة، فتأكد إما من إدراج مخطط مع كل رسالة (بضبط &#95;value.converter.schemas.enable &#95;على true) أو من أن العميل لديك ينشر رسائل تشير إلى مخطط في السجل.
+
+يجب أن يبدأ Kafka Connect في استهلاك الرسائل وإدراج صفوف في ClickHouse. لاحظ أن التحذيرات المتعلقة بـ &quot;[JDBC Compliant Mode] Transaction isn&#39;t supported.&quot; متوقعة ويمكن تجاهلها.
+
+ينبغي أن تؤكد قراءة بسيطة للجدول الهدف &quot;Github&quot; إدراج البيانات.
+
+```sql
+SELECT count() FROM default.github;
+```
+
+```response
+| count\(\) |
+| :--- |
+| 10000 |
+```
+
+<div id="recommended-further-reading">
+  ### قراءات إضافية موصى بها
+</div>
+
+* [معلمات إعداد Kafka Sink](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/sink_config_options.html#sink-config-options)
+* [نظرة متعمقة على Kafka Connect – موصل مصدر JDBC](https://www.confluent.io/blog/kafka-connect-deep-dive-jdbc-source-connector)
+* [نظرة متعمقة على Kafka Connect JDBC Sink: العمل مع المفاتيح الأساسية](https://rmoff.net/2021/03/12/kafka-connect-jdbc-sink-deep-dive-working-with-primary-keys/)
+* [Kafka Connect عمليًا: JDBC Sink](https://www.youtube.com/watch?v=b-3qN_tlYR4\&t=981s) - لمن يفضّلون المشاهدة بدلًا من القراءة.
+* [نظرة متعمقة على Kafka Connect – شرح المحوّلات والتسلسل](https://www.confluent.io/blog/kafka-connect-deep-dive-converters-serialization-explained/#json-schemas)

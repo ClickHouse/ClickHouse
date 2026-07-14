@@ -1,0 +1,309 @@
+---
+slug: /data-compression/compression-in-clickhouse
+title: 'الضغط في ClickHouse'
+description: 'اختيار خوارزميات الضغط في ClickHouse'
+keywords: ['ضغط', 'codec', 'ترميز']
+doc_type: 'reference'
+---
+
+من أسرار أداء الاستعلامات في ClickHouse الضغط.
+
+فكلما قلّت كمية البيانات على القرص، انخفضت عمليات I/O وتسارعت الاستعلامات وعمليات insert. وفي معظم الحالات، يفوق تقليل IO العبء الإضافي الذي تفرضه أي خوارزمية ضغط على CPU. لذلك، ينبغي أن يكون تحسين ضغط البيانات هو الأولوية الأولى عند العمل على ضمان سرعة استعلامات ClickHouse.
+
+> لمعرفة سبب كفاءة ClickHouse العالية في ضغط البيانات، نوصي بقراءة [هذه المقالة](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). باختصار، تكتب قاعدة البيانات العمودية لدينا القيم بحسب الأعمدة. وعندما تكون هذه القيم مرتبة، تتموضع القيم المتطابقة بجوار بعضها، فتستفيد خوارزميات الضغط من الأنماط المتجاورة في البيانات. وإضافةً إلى ذلك، يوفّر ClickHouse مرمّزات وأنواع بيانات دقيقة تتيح لك تحسين الضغط بسهولة وبدرجة أكبر.
+
+يتأثر الضغط في ClickHouse بثلاثة عوامل أساسية:
+
+* مفتاح الترتيب
+* أنواع البيانات
+* المرمّزات المستخدمة
+
+تُضبط جميع هذه العناصر من خلال المخطط.
+
+<div id="choose-the-right-data-type-to-optimize-compression">
+  ## اختر نوع البيانات المناسب لتحسين الضغط
+</div>
+
+لنستخدم مجموعة بيانات Stack Overflow كمثال. لنقارن إحصاءات الضغط للمخططات التالية للجدول `posts`:
+
+* `posts` - مخطط غير مُحسَّن من حيث أنواع البيانات، ولا يحتوي على مفتاح ترتيب.
+* `posts_v3` - مخطط مُحسَّن من حيث أنواع البيانات، مع النوع المناسب وحجم البت المناسب لكل عمود، وبمفتاح ترتيب `‎(PostTypeId, toDate(CreationDate), CommentCount)`.
+
+باستخدام الاستعلامات التالية، يمكننا قياس الحجم المضغوط وغير المضغوط الحالي لكل عمود. لنتفحّص حجم المخطط الأولي `posts` من دون مفتاح ترتيب.
+
+```sql
+SELECT name,
+   formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+   formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+   round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio────┐
+│ Body                  │ 46.14 GiB       │ 127.31 GiB        │ 2.76       │
+│ Title                 │ 1.20 GiB        │ 2.63 GiB          │ 2.19       │
+│ Score                 │ 84.77 MiB       │ 736.45 MiB        │ 8.69       │
+│ Tags                  │ 475.56 MiB      │ 1.40 GiB          │ 3.02       │
+│ ParentId              │ 210.91 MiB      │ 696.20 MiB        │ 3.3        │
+│ Id                    │ 111.17 MiB      │ 736.45 MiB        │ 6.62       │
+│ AcceptedAnswerId      │ 81.55 MiB       │ 736.45 MiB        │ 9.03       │
+│ ClosedDate            │ 13.99 MiB       │ 517.82 MiB        │ 37.02      │
+│ LastActivityDate      │ 489.84 MiB      │ 964.64 MiB        │ 1.97       │
+│ CommentCount          │ 37.62 MiB       │ 565.30 MiB        │ 15.03      │
+│ OwnerUserId           │ 368.98 MiB      │ 736.45 MiB        │ 2          │
+│ AnswerCount           │ 21.82 MiB       │ 622.35 MiB        │ 28.53      │
+│ FavoriteCount         │ 280.95 KiB      │ 508.40 MiB        │ 1853.02    │
+│ ViewCount             │ 95.77 MiB       │ 736.45 MiB        │ 7.69       │
+│ LastEditorUserId      │ 179.47 MiB      │ 736.45 MiB        │ 4.1        │
+│ ContentLicense        │ 5.45 MiB        │ 847.92 MiB        │ 155.5      │
+│ OwnerDisplayName      │ 14.30 MiB       │ 142.58 MiB        │ 9.97       │
+│ PostTypeId            │ 20.93 MiB       │ 565.30 MiB        │ 27         │
+│ CreationDate          │ 314.17 MiB      │ 964.64 MiB        │ 3.07       │
+│ LastEditDate          │ 346.32 MiB      │ 964.64 MiB        │ 2.79       │
+│ LastEditorDisplayName │ 5.46 MiB        │ 124.25 MiB        │ 22.75      │
+│ CommunityOwnedDate    │ 2.21 MiB        │ 509.60 MiB        │ 230.94     │
+└───────────────────────┴─────────────────┴───────────────────┴────────────┘
+```
+
+<Accordion title="ملاحظة حول الأجزاء compact مقابل wide">
+  إذا كنت ترى أن قيم `compressed_size` أو `uncompressed_size` تساوي `0`، فقد يرجع ذلك إلى أن نوع
+  الأجزاء هو `compact` وليس `wide` (راجع الوصف الخاص بـ `part_type` في [`system.parts`](/ar/reference/system-tables/parts)).
+  يتحكم الإعدادان [`min_bytes_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  و[`min_rows_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_rows_for_wide_part) في تنسيق الجزء؛
+  وهذا يعني أنه إذا نتج عن البيانات المُدرجة جزء لا يتجاوز قيم الإعدادات المذكورة أعلاه، فسيكون الجزء `compact` بدلًا
+  من `wide`، ولن تظهر لك قيم `compressed_size` أو `uncompressed_size`.
+
+  للتوضيح:
+
+  ```sql title="استعلام"
+  -- أنشئ جدولًا بأجزاء compact
+  CREATE TABLE compact (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number 
+  AS SELECT * FROM numbers(100000); -- ليست كبيرة بما يكفي لتجاوز القيمة الافتراضية لـ min_bytes_for_wide_part = 10485760
+
+  -- تحقّق من نوع الأجزاء
+  SELECT table, name, part_type from system.parts where table = 'compact';
+
+  -- احصل على الأحجام المضغوطة وغير المضغوطة للأعمدة في الجدول compact
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'compact'
+  GROUP BY name;
+
+  -- أنشئ جدولًا بأجزاء wide 
+  CREATE TABLE wide (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number
+  SETTINGS min_bytes_for_wide_part=0
+  AS SELECT * FROM numbers(100000);
+
+  -- تحقّق من نوع الأجزاء
+  SELECT table, name, part_type from system.parts where table = 'wide';
+
+  -- احصل على الأحجام المضغوطة وغير المضغوطة للجدول wide
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'wide'
+  GROUP BY name;
+  ```
+
+  ```response title="الاستجابة"
+     ┌─table───┬─name──────┬─part_type─┐
+  1. │ compact │ all_1_1_0 │ Compact   │
+     └─────────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 0.00 B          │ 0.00 B            │   nan │
+     └────────┴─────────────────┴───────────────────┴───────┘
+     ┌─table─┬─name──────┬─part_type─┐
+  1. │ wide  │ all_1_1_0 │ Wide      │
+     └───────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 392.31 KiB      │ 390.63 KiB        │     1 │
+     └────────┴─────────────────┴───────────────────┴───────┘
+  ```
+</Accordion>
+
+نعرض هنا كلاً من الحجم المضغوط وغير المضغوط، وكلاهما مهم. فالحجم المضغوط يمثّل ما نحتاج إلى قراءته من disk، وهو ما نريد تقليله لتحسين query performance (وتكلفة التخزين). وبعد ذلك يجب فك ضغط هذه البيانات قبل قراءتها. أما الحجم غير المضغوط في هذه الحالة فيعتمد على نوع البيانات المستخدم. ويساعد تقليل هذا الحجم على خفض overhead الذاكرة في queries وتقليل كمية البيانات التي يجب على query معالجتها، مما يحسّن الاستفادة من cache ويؤدي في النهاية إلى تقليل زمن الاستعلام.
+
+> يعتمد الاستعلام أعلاه على table ‏`columns` في system database. تُدار هذه database بواسطة ClickHouse، وهي كنز من المعلومات المفيدة، بدءًا من metrics الخاصة بـ query performance وصولًا إلى logs الخلفية الخاصة بـ cluster. نوصي بقراءة [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) والمقالات المصاحبة[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) للقارئ المهتم.
+
+لتلخيص الحجم الإجمالي للـ table، يمكننا تبسيط الاستعلام أعلاه:
+
+```sql
+SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 50.16 GiB       │ 143.47 GiB        │  2.86 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+عند تكرار هذا الاستعلام على `posts_v3`، وهو الجدول الذي يستخدم نوع بيانات ومفتاح ترتيب مُحسَّنين، يمكننا ملاحظة انخفاض كبير في الأحجام غير المضغوطة والمضغوطة.
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 25.15 GiB       │ 68.87 GiB         │  2.74 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+يوضح التحليل الكامل للأعمدة وفورات كبيرة في الأعمدة `Body` و`Title` و`Tags` و`CreationDate`، وقد تحققت هذه الوفورات من خلال ترتيب البيانات قبل الضغط واستخدام الأنواع المناسبة.
+
+```sql
+SELECT
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio─┐
+│ Body                  │ 23.10 GiB       │ 63.63 GiB         │    2.75 │
+│ Title                 │ 614.65 MiB      │ 1.28 GiB          │    2.14 │
+│ Score                 │ 40.28 MiB       │ 227.38 MiB        │    5.65 │
+│ Tags                  │ 234.05 MiB      │ 688.49 MiB        │    2.94 │
+│ ParentId              │ 107.78 MiB      │ 321.33 MiB        │    2.98 │
+│ Id                    │ 159.70 MiB      │ 227.38 MiB        │    1.42 │
+│ AcceptedAnswerId      │ 40.34 MiB       │ 227.38 MiB        │    5.64 │
+│ ClosedDate            │ 5.93 MiB        │ 9.49 MiB          │     1.6 │
+│ LastActivityDate      │ 246.55 MiB      │ 454.76 MiB        │    1.84 │
+│ CommentCount          │ 635.78 KiB      │ 56.84 MiB         │   91.55 │
+│ OwnerUserId           │ 183.86 MiB      │ 227.38 MiB        │    1.24 │
+│ AnswerCount           │ 9.67 MiB        │ 113.69 MiB        │   11.76 │
+│ FavoriteCount         │ 19.77 KiB       │ 147.32 KiB        │    7.45 │
+│ ViewCount             │ 45.04 MiB       │ 227.38 MiB        │    5.05 │
+│ LastEditorUserId      │ 86.25 MiB       │ 227.38 MiB        │    2.64 │
+│ ContentLicense        │ 2.17 MiB        │ 57.10 MiB         │   26.37 │
+│ OwnerDisplayName      │ 5.95 MiB        │ 16.19 MiB         │    2.72 │
+│ PostTypeId            │ 39.49 KiB       │ 56.84 MiB         │ 1474.01 │
+│ CreationDate          │ 181.23 MiB      │ 454.76 MiB        │    2.51 │
+│ LastEditDate          │ 134.07 MiB      │ 454.76 MiB        │    3.39 │
+│ LastEditorDisplayName │ 2.15 MiB        │ 6.25 MiB          │    2.91 │
+│ CommunityOwnedDate    │ 824.60 KiB      │ 1.34 MiB          │    1.66 │
+└───────────────────────┴─────────────────┴───────────────────┴─────────┘
+```
+
+<div id="choosing-the-right-column-compression-codec">
+  ## اختيار مرمّز ضغط الأعمدة المناسب
+</div>
+
+باستخدام مرمّزات ضغط الأعمدة، يمكننا تغيير الخوارزمية (وإعداداتها) المستخدمة لترميز كل عمود وضغطه.
+
+يعمل الترميز والضغط بطريقة مختلفة قليلًا، لكن الهدف واحد: تقليل حجم بياناتنا. يطبّق الترميز تحويلًا على بياناتنا، فيغيّر القيم استنادًا إلى دالة من خلال استغلال خصائص نوع البيانات. أما الضغط، فيستخدم خوارزمية عامة لضغط البيانات على مستوى البايت.
+
+عادةً ما يُطبَّق الترميز أولًا ثم يُستخدم الضغط. وبما أن أساليب الترميز المختلفة وخوارزميات الضغط تختلف فعاليتها باختلاف توزيعات القيم، فعلينا فهم بياناتنا جيدًا.
+
+يدعم ClickHouse عددًا كبيرًا من المرمّزات وخوارزميات الضغط. وفيما يلي بعض التوصيات مرتبة حسب الأهمية:
+
+| التوصية                                          | المبررات                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ZSTD` هو الخيار الأفضل عمومًا**               | يوفّر `ZSTD` أفضل معدلات الضغط. وينبغي أن يكون `ZSTD(1)` الخيار الافتراضي لمعظم الأنواع الشائعة. ويمكن تجربة معدلات ضغط أعلى عبر تعديل القيمة الرقمية. ونادرًا ما نرى فائدة كافية من القيم الأعلى من 3 تبرّر الكلفة الإضافية للضغط (بطء `insertion`).                                                                                                                                                                                             |
+| **`Delta` لتسلسلات التاريخ والأعداد الصحيحة**    | تعمل المرمّزات المعتمدة على `Delta` جيدًا عندما تكون لديك تسلسلات رتيبة أو فروق صغيرة بين القيم المتتالية. وبشكل أدق، يعمل مرمّز ‏`Delta` جيدًا إذا كانت الفروق الناتجة أعدادًا صغيرة. وإذا لم يكن الأمر كذلك، فقد يكون من المفيد تجربة `DoubleDelta` (وهذا لا يضيف عادةً الكثير إذا كان الفرق من المستوى الأول الناتج عن `Delta` صغيرًا جدًا بالفعل). كما أن التسلسلات التي يكون فيها التزايد الرتيب منتظمًا تُضغط بصورة أفضل، مثل حقول `DateTime`. |
+| **`Delta` يحسّن `ZSTD`**                         | يُعد `ZSTD` مرمّزًا فعّالًا مع البيانات المعتمدة على الفروق، وبالمقابل يمكن لترميز delta أن يحسّن ضغط `ZSTD`. وعند وجود `ZSTD`، نادرًا ما تقدّم المرمّزات الأخرى تحسنًا إضافيًا.                                                                                                                                                                                                                                                                       |
+| **`LZ4` بدلًا من `ZSTD` إن أمكن**                | إذا حصلت على مستوى ضغط متقارب بين `LZ4` و`ZSTD`، ففضّل الأول لأنه يوفّر فك ضغط أسرع ويستهلك CPU أقل. ومع ذلك، سيتفوّق `ZSTD` على `LZ4` بفارق كبير في معظم الحالات. وقد تعمل بعض هذه المرمّزات بسرعة أكبر عند دمجها مع `LZ4` مع توفير ضغط مشابه مقارنةً بـ `ZSTD` من دون مرمّز. لكن ذلك يعتمد على البيانات ويتطلب الاختبار.                                                                                                                           |
+| **`T64` للبيانات المتناثرة أو النطاقات الصغيرة** | يمكن أن يكون `T64` فعّالًا مع البيانات المتناثرة أو عندما يكون النطاق داخل `block` صغيرًا. تجنّب `T64` مع الأعداد العشوائية.                                                                                                                                                                                                                                                                                                                      |
+| **`Gorilla` و`T64` للأنماط غير المعروفة؟**       | إذا كان نمط البيانات غير معروف، فقد يكون من المفيد تجربة `Gorilla` و`T64`.                                                                                                                                                                                                                                                                                                                                                                        |
+| **`Gorilla` لبيانات Gauge**                      | يمكن أن يكون `Gorilla` فعّالًا مع بيانات الفاصلة العائمة، وخصوصًا تلك التي تمثل قراءات Gauge، أي الارتفاعات العشوائية.                                                                                                                                                                                                                                                                                                                            |
+
+اطّلع على [هذا الرابط](/ar/reference/statements/create/table#column_compression_codec) لمزيد من الخيارات.
+
+فيما يلي نحدّد مرمّز ‏`Delta` لكل من `Id` و`ViewCount` و`AnswerCount`، على افتراض أن هذه الحقول ستكون مترابطة خطيًا مع مفتاح الترتيب، وبالتالي ينبغي أن تستفيد من ترميز Delta.
+
+```sql
+CREATE TABLE posts_v4
+(
+        `Id` Int32 CODEC(Delta, ZSTD),
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta, ZSTD),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC'),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta, ZSTD),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+تظهر أدناه تحسينات الضغط لهذه الأعمدة:
+
+```sql
+SELECT
+    `table`,
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE (name IN ('Id', 'ViewCount', 'AnswerCount')) AND (`table` IN ('posts_v3', 'posts_v4'))
+GROUP BY
+    `table`,
+    name
+ORDER BY
+    name ASC,
+    `table` ASC
+```
+
+```response
+┌─table────┬─name────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ posts_v3 │ AnswerCount │ 9.67 MiB        │ 113.69 MiB        │ 11.76 │
+│ posts_v4 │ AnswerCount │ 10.39 MiB       │ 111.31 MiB        │ 10.71 │
+│ posts_v3 │ Id          │ 159.70 MiB      │ 227.38 MiB        │  1.42 │
+│ posts_v4 │ Id          │ 64.91 MiB       │ 222.63 MiB        │  3.43 │
+│ posts_v3 │ ViewCount   │ 45.04 MiB       │ 227.38 MiB        │  5.05 │
+│ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
+└──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
+
+6 rows in set. Elapsed: 0.008 sec
+```
+
+<div id="compression-in-clickhouse-cloud">
+  ### الضغط في ClickHouse Cloud
+</div>
+
+في ClickHouse Cloud، نستخدم خوارزمية الضغط `ZSTD` (بقيمة افتراضية تبلغ 1) بشكل افتراضي. ورغم أن سرعات الضغط قد تختلف لهذه الخوارزمية بحسب مستوى الضغط (كلما ارتفع المستوى زادت البطء)، فإن ميزتها أنها تظل سريعة باستمرار عند فك الضغط (بتفاوت يقارب 20%)، كما أنها تستفيد أيضًا من إمكانية تنفيذها بالتوازي. وتشير اختباراتنا السابقة أيضًا إلى أن هذه الخوارزمية تكون فعّالة بما يكفي في كثير من الحالات، بل وقد تتفوّق حتى على `LZ4` عند استخدامه مع مرمّز. وهي فعّالة مع معظم أنواع البيانات وتوزيعات المعلومات، لذا تُعد خيارًا افتراضيًا مناسبًا للأغراض العامة، وهذا يفسّر لماذا يكون الضغط الأولي لدينا ممتازًا بالفعل حتى من دون تحسين.
