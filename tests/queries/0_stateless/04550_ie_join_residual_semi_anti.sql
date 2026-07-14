@@ -3,7 +3,9 @@
 -- residual passing for one late candidate, for none, or yielding NULL for all) exercise the
 -- bounded mini-batch evaluation inside the operator.
 
-SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
+-- `ie_join` goes first: the ON section has an equality, so listed last IEJoin would never
+-- claim these joins.
+SET join_algorithm = 'ie_join,hash';
 SET cross_to_inner_join_rewrite = 0;
 
 DROP TABLE IF EXISTS tsl;
@@ -22,6 +24,11 @@ CREATE TABLE tsr (id UInt32, v Int32, w Int32, tag Nullable(Int32)) ENGINE = Mer
 INSERT INTO tsl VALUES (1, -1, 100000, 42), (2, -1, 100000, 7), (3, -1, 100000, -5), (4, -1, 100000, NULL), (5, 100, 110, 8);
 
 INSERT INTO tsr SELECT number + 1, toInt32(number), toInt32(-1 - number), if(number = 2999, 42, if(number % 8 = 0, NULL, toInt32(number % 10))) FROM numbers(3000);
+
+-- The joins must run as IEJoin with the equality as an in-operator residual
+SELECT 'routed', count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM tsl l LEFT SEMI JOIN tsr r ON l.lo < r.v AND l.hi > r.w AND l.sel = r.tag) WHERE explain LIKE '%IEJoin%';
+SELECT 'residual', count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM tsl l LEFT SEMI JOIN tsr r ON l.lo < r.v AND l.hi > r.w AND l.sel = r.tag) WHERE explain LIKE '%Residual filter%';
+SELECT 'routed right', count() > 0 FROM (EXPLAIN actions = 1 SELECT r.id FROM tsl l RIGHT ANTI JOIN tsr r ON l.lo < r.v AND l.hi > r.w AND l.sel = r.tag) WHERE explain LIKE '%IEJoin%';
 
 SELECT 'semi', l.id FROM tsl l LEFT SEMI JOIN tsr r ON l.lo < r.v AND l.hi > r.w AND l.sel = r.tag ORDER BY ALL;
 SELECT 'anti', l.id FROM tsl l LEFT ANTI JOIN tsr r ON l.lo < r.v AND l.hi > r.w AND l.sel = r.tag ORDER BY ALL;

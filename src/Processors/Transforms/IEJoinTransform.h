@@ -159,7 +159,8 @@ private:
     /// exhausted; an empty chunk alone is not a completion signal.
     bool producePairsBatch(Chunk & chunk);
     /// Fill up to max_block_size rows of the side without a set bit in the matched bitmap,
-    /// padding the other side. Returns true when all rows of the side were examined.
+    /// padding the other side; bounded also by the work budget. Returns true when all rows
+    /// of the side were examined.
     bool produceUnmatchedBatch(size_t side, Chunk & chunk);
 
     /// Evaluate the residual over the pending candidate pairs, set the matched bits of the
@@ -189,8 +190,11 @@ private:
 
     void setBit(size_t pos);
     bool testBit(size_t pos) const;
-    /// Position of the first set bit >= from, or num_union_entries if there is none.
-    size_t findNextSetBit(size_t from);
+    /// Position of the first set bit at or after `scan_pos` (advancing `scan_pos` past it),
+    /// or num_union_entries if there is none. Returns nothing when the work budget stops the
+    /// scan first; `scan_pos` then points at the first uninspected position, so the next call
+    /// resumes there.
+    std::optional<size_t> findNextSetBit();
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
     bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
@@ -302,10 +306,11 @@ private:
     Int64 current_left_row_id = 0;
     bool has_current_left = false;
 
-    /// Bound on the cursor advances plus bit-array words inspected by one producePairsBatch
-    /// call, so that control regularly returns to the executor, which observes cancellation.
+    /// Bound on the work of one produceBatch call - cursor advances, bit-array words inspected,
+    /// residual candidates evaluated, unmatched rows examined - so that control regularly
+    /// returns to the executor, which observes cancellation.
     static constexpr size_t produce_work_budget = 1 << 20;
-    /// Work spent by the current producePairsBatch call.
+    /// Work spent by the current produceBatch call (reset at the start of its pair-scan phase).
     size_t produce_work = 0;
     /// Bound on the candidates of one left row accumulated before a residual evaluation in the
     /// SEMI/ANTI scan: the first passing candidate decides the row, so small batches restore

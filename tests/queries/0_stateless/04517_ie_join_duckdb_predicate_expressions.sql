@@ -36,6 +36,10 @@ SELECT (
 );
 
 -- First key an expression over a nullable column
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT dt, count() FROM scd2 JOIN calendar_scd2 ON dt <= ifNull(range_end, toDate('2099-01-01')) AND range_start <= dt GROUP BY dt
+) WHERE explain LIKE '%IEJoin%';
 SELECT (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt <= ifNull(range_end, toDate('2099-01-01')) AND range_start <= dt GROUP BY dt ORDER BY dt)
 ) = (
@@ -44,6 +48,10 @@ SELECT (
 );
 
 -- Second key an expression over a nullable column
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT dt, count() FROM scd2 JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt
+) WHERE explain LIKE '%IEJoin%';
 SELECT (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt ORDER BY dt)
 ) = (

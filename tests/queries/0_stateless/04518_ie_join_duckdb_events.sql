@@ -23,7 +23,7 @@ SELECT (
     SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
--- With an additional `<>` condition (three conditions fall back, the result must stay correct)
+-- With an additional `<>` condition (IEJoin still applies, the extra condition becomes a filter)
 SELECT (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s AND r.id <> s2.id
 ) = (

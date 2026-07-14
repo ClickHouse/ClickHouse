@@ -1,7 +1,7 @@
 -- SEMI/ANTI with a few wide ranges against many narrow ranges, so that every matched left row
 -- has thousands of matching right rows: SEMI must emit each matched row once; ANTI must emit
 -- the rows before the narrow window plus the NULL-keyed rows. Shapes with a third (tail)
--- predicate stay unsupported (see 04522).
+-- predicate are covered by 04522 and 04554 (it becomes a residual condition).
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 

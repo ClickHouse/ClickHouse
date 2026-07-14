@@ -174,7 +174,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 ## JOIN with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
+Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`. A `JOIN` whose `ON` section has two inequality comparisons between the tables can also be executed by the IEJoin algorithm — see [JOIN with only inequality conditions](#join-with-only-inequality-conditions).
 
 **Example**
 
@@ -227,6 +227,8 @@ key4    f    2    3    4            0    0    \N
 A `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables can be executed with the sort-based IEJoin algorithm when `ie_join` is added to the [`join_algorithm`](/operations/settings/settings#join_algorithm) setting. Supported kinds are `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`; the join appears as an `IEJoin` step in `EXPLAIN`.
 
 The position of `ie_join` in the list sets its priority. Listed after other algorithms, IEJoin is used only when they do not apply, that is, when the `ON` section has no equality conditions. Listed first, it takes any join with two inequality conditions. The remaining conditions of the `ON` section (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and for the other kinds they are evaluated inside the operator as a residual condition: a pair of rows matches only when it also passes them, and rows without any matching pair are emitted as unmatched. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+
+IEJoin accumulates both inputs in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode). The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
 **Example**
 

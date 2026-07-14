@@ -3,6 +3,10 @@
 -- residual condition and the result must match the hash join executing the same query.
 -- Listed after hash, joins with equality conditions stay on the hash path.
 
+-- Pin the setting (it is randomized in tests): with `ie_join` first the runtime-filter pass
+-- must leave the join alone instead of pinning it to a hash-family algorithm.
+SET enable_join_runtime_filters = 1;
+
 DROP TABLE IF EXISTS prl;
 DROP TABLE IF EXISTS prr;
 

@@ -721,25 +721,35 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
     return (bit_array[pos / 64] >> (pos % 64)) & 1;
 }
 
-size_t IEJoinAlgorithm::findNextSetBit(size_t from)
+std::optional<size_t> IEJoinAlgorithm::findNextSetBit()
 {
     /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
     /// common case where all matches of the current entry sit right after its own position
     /// (e.g. band joins): without it every scan would walk empty words to the end of the array.
-    if (from >= bit_array_end)
+    if (scan_pos >= bit_array_end)
         return num_union_entries;
 
-    size_t word_index = from / 64;
+    size_t word_index = scan_pos / 64;
     const size_t word_end = (bit_array_end + 63) / 64;
-    UInt64 word = bit_array[word_index] & (~UInt64(0) << (from % 64));
+    UInt64 word = bit_array[word_index] & (~UInt64(0) << (scan_pos % 64));
     while (true)
     {
         ++produce_work;
         if (word)
-            return word_index * 64 + std::countr_zero(word);
+        {
+            size_t pos = word_index * 64 + std::countr_zero(word);
+            scan_pos = pos + 1;
+            return pos;
+        }
         ++word_index;
         if (word_index >= word_end)
             return num_union_entries;
+        if (produce_work >= produce_work_budget)
+        {
+            /// Yield mid-scan: all inspected words were clear, resume at the first uninspected one.
+            scan_pos = word_index * 64;
+            return std::nullopt;
+        }
         word = bit_array[word_index];
     }
 }
@@ -885,8 +895,10 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             has_current_left = true;
         }
 
-        size_t found = findNextSetBit(scan_pos);
-        if (found >= num_union_entries)
+        std::optional<size_t> found = findNextSetBit();
+        if (!found)
+            break;
+        if (*found >= num_union_entries)
         {
             /// The current left row's scan is exhausted; for SEMI/ANTI decide it on the
             /// candidates accumulated so far.
@@ -896,9 +908,8 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             ++l2_cursor;
             continue;
         }
-        scan_pos = found + 1;
 
-        Int64 right_row_id = l1_row_ids[found];
+        Int64 right_row_id = l1_row_ids[*found];
         /// Bits are set only at positions of right-side entries.
         chassert(current_left_row_id > 0 && right_row_id < 0);
 
@@ -1031,8 +1042,11 @@ bool IEJoinAlgorithm::produceUnmatchedBatch(size_t side, Chunk & chunk)
     auto & row_cursor = unmatched_row_cursor[side];
     auto indexes = ColumnUInt64::create();
     auto & data = indexes->getData();
-    while (row_cursor < num_side_rows[side] && data.size() < max_block_size)
+    /// Bounded by the work budget as well: when (nearly) every row is matched the block never
+    /// fills and one call would otherwise walk the whole side.
+    while (row_cursor < num_side_rows[side] && data.size() < max_block_size && produce_work < produce_work_budget)
     {
+        ++produce_work;
         if (!matched[side][row_cursor])
             data.push_back(row_cursor);
         ++row_cursor;

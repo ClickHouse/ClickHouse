@@ -5,6 +5,10 @@
 -- a filter over the join result (ALL INNER) or as a residual condition inside the operator
 -- (the other kinds), so both routes must produce the same result.
 
+-- Pin the setting (it is randomized in tests): with `ie_join` first the runtime-filter pass
+-- must leave the join alone instead of pinning it to a hash-family algorithm.
+SET enable_join_runtime_filters = 1;
+
 DROP TABLE IF EXISTS prio_l;
 DROP TABLE IF EXISTS prio_r;
 
