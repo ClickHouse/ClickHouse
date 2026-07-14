@@ -34,21 +34,16 @@
 namespace
 {
 
+bool silk_scheduler_initialized = false;
+
 class SilkEnvironment : public ::testing::Environment
 {
 public:
-    void SetUp() override
-    {
-        /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
-        silk::initialize();
-        silk::FiberScheduler::Options options;
-        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
-        options.fiberStackSize = 320 * 1024;
-        silk::FiberScheduler::initialize(&options);
-    }
-
     void TearDown() override
     {
+        if (!silk_scheduler_initialized)
+            return;
+
         silk::FiberScheduler::destroy();
         silk::destroy();
     }
@@ -86,6 +81,21 @@ template <typename Policy>
 class SilkFiberSocketTest : public ::testing::Test
 {
 protected:
+    static void SetUpTestSuite()
+    {
+        if (silk_scheduler_initialized)
+            return;
+
+        /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
+        silk::initialize();
+        silk::FiberScheduler::Options options;
+        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
+        options.fiberStackSize = 320 * 1024;
+        silk::FiberScheduler::initialize(&options);
+
+        silk_scheduler_initialized = true;
+    }
+
     Policy policy;
 };
 
