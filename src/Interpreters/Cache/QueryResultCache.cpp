@@ -349,6 +349,12 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+
+            /// `SETTINGS x = DEFAULT` resets are stored separately in `default_settings`, but a reset
+            /// can target a query-cache-related setting just as well (e.g. `query_cache_ttl = DEFAULT`,
+            /// `log_comment = DEFAULT`). Normalize them with the same predicate, otherwise the reset would
+            /// keep a non-empty SETTINGS clause and hash differently from the equivalent query without it.
+            std::erase_if(set_clause->default_settings, [](const String & name) { return isSettingIgnoredInQueryResultCache(name); });
         };
 
         if (auto * select_clause = ast->as<ASTSelectQuery>())
@@ -363,9 +369,9 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                /// Keep it when `default_settings` (i.e. `SETTINGS x = DEFAULT`) is non-empty: such
-                /// overrides are never query-cache-related, are not stripped above, and must remain
-                /// part of the cache key (see `ASTSetQuery::updateTreeHashImpl`).
+                /// `default_settings` (i.e. `SETTINGS x = DEFAULT`) is normalized above too, so any reset
+                /// that survives targets a setting which does affect the result and must remain part of the
+                /// cache key (see `ASTSetQuery::updateTreeHashImpl`).
                 if (set_clause->changes.empty() && set_clause->default_settings.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
