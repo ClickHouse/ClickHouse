@@ -67,6 +67,11 @@ for version in "" "&client_protocol_version=54487"; do
 done
 rm -f "${CLICKHOUSE_TMP}/04512_rt.buffers"
 
+# A raised protocol version on the request applies to the INSERT body only: a file written at
+# revision 0 still parses at revision 0 inside such a request (file(), s3(), url() reads).
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('04512_${CLICKHOUSE_DATABASE}.native', 'Native', 's String') SELECT 'rev0 file' SETTINGS engine_file_truncate_on_insert = 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+*+FROM+file('04512_${CLICKHOUSE_DATABASE}.native',+'Native',+'s+String')"
+
 # A corrupted size stream is reported as a regular error (INCORRECT_DATA), not as a logical error
 # that aborts debug and sanitizer builds.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+'abcdefgh'+AS+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"

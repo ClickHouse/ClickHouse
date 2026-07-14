@@ -67,7 +67,7 @@ Block BuffersReader::read()
         /// Symmetric with BuffersWriter: the serialization follows the same revision-dependent
         /// choice as Native (type-level versions only; there are no serialization kinds in Buffers).
         auto serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations(
-            format_settings.client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+            format_settings.native.input_client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
         const size_t before = istr.count();
 

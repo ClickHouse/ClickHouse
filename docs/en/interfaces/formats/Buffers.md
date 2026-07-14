@@ -19,7 +19,7 @@ doc_type: 'reference'
 
 Unlike [Native](./Native.md), it does **not** store column names, column types, or any extra metadata.
 
-In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](./Native.md) format and respects the same Native format settings, including `client_protocol_version`: a raised protocol version selects the same revision-dependent column encodings as in Native (for example, the size-stream `String` layout), and the reader has to be given the same version. Unlike Native, Buffers never uses per-column serialization kinds (such as Sparse), because there is no place for them in the framing.
+In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](./Native.md) format and respects the same Native format settings, including `client_protocol_version`: a raised protocol version selects the same revision-dependent column encodings as in Native (for example, the size-stream `String` layout), and the reader has to be given the same version. As with Native, the version applies to the query output and to the body of an `INSERT ... FORMAT Buffers`; table-function reads of `Buffers` data always parse at revision `0`. Unlike Native, Buffers never uses per-column serialization kinds (such as Sparse), because there is no place for them in the framing.
 
 For each block, the following sequence is written:
 1. Number of columns (UInt64, little-endian).
