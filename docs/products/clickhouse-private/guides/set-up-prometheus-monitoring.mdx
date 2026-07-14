@@ -18,9 +18,7 @@ Configure Prometheus to scrape ClickHouse metrics and visualize them with prebui
 
 <Steps>
 
-<Step>
-
-### 1. Install kube-prometheus-stack
+<Step title="1. Install kube-prometheus-stack" id="1-install-kube-prometheus-stack">
 
 Add the Prometheus community Helm repository to your local Helm client and pull the chart:
 
@@ -45,9 +43,7 @@ helm install kube-prometheus-stack \
 
 </Step>
 
-<Step>
-
-### 2. Enable PodMonitors in the ClickHouse Operator
+<Step title="2. Enable PodMonitors in the ClickHouse Operator" id="2-enable-podmonitors-in-the-clickhouse-operator">
 
 The ClickHouse operator Helm chart includes PodMonitor definitions for ClickHouse Server and Keeper. Enable them in your operator Helm values:
 
@@ -84,9 +80,7 @@ Both PodMonitors carry the label `release: kube-prometheus-stack`, which matches
 
 </Step>
 
-<Step>
-
-### 3. Enable the Custom Metrics Handler (Optional)
+<Step title="3. Enable the Custom Metrics Handler (Optional)" id="3-enable-the-custom-metrics-handler-optional">
 
 ClickHouse Server exposes additional `ClickHouse_CustomMetric_*` metrics through a dedicated HTTP handler on port 3123. This endpoint requires authentication. To enable scraping:
 
@@ -110,9 +104,7 @@ For the full list of custom metrics and their recommended alert thresholds, see 
 
 </Step>
 
-<Step>
-
-### 4. Verify Prometheus Targets
+<Step title="4. Verify Prometheus Targets" id="4-verify-prometheus-targets">
 
 After deploying, confirm that Prometheus discovers and scrapes the ClickHouse targets:
 
@@ -130,9 +122,7 @@ up{job="clickhouse-server-metrics"}
 
 </Step>
 
-<Step>
-
-### 5. Import the ClickHouse Grafana Mixin Dashboards
+<Step title="5. Import the ClickHouse Grafana Mixin Dashboards" id="5-import-the-clickhouse-grafana-mixin-dashboards">
 
 The [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) provides prebuilt dashboards for ClickHouse server and keeper metrics. In an airgapped environment, import the dashboard JSON files manually.
 
@@ -177,9 +167,7 @@ The Grafana sidecar automatically picks up ConfigMaps with the `grafana_dashboar
 
 </Step>
 
-<Step>
-
-### 6. Configure Alert Rules (Optional)
+<Step title="6. Configure Alert Rules (Optional)" id="6-configure-alert-rules-optional">
 
 Import the recommended ClickHouse alert rules into Prometheus by creating a `PrometheusRule` resource. See [Configure alerting](/products/clickhouse-private/guides/configure-alerting-for-clickhouse) and [Metrics and alerts reference](/products/clickhouse-private/reference/metrics-and-alerts-reference) for the full set of alert definitions.
 
