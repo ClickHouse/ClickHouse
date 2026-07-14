@@ -851,6 +851,22 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     node.query("INSERT INTO mt_kill_txn_race SELECT number, 0 FROM numbers(100)")
 
     node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+
+    # system.transactions is global to the server and may list unrelated background
+    # transactions, so snapshot the transactions that already exist before starting the
+    # ALTER. The ALTER's own transaction is the one that appears afterwards; we identify
+    # and act on exactly that one, instead of assuming the table contains only our ALTER.
+    tids_before = [
+        line
+        for line in node.query("SELECT tid_hash FROM system.transactions")
+        .strip()
+        .splitlines()
+        if line
+    ]
+    not_in_before = (
+        " AND tid_hash NOT IN (" + ", ".join(tids_before) + ")" if tids_before else ""
+    )
+
     alter_thread = None
     try:
         # The ALTER runs in an implicit transaction (as in the original report)
@@ -877,12 +893,29 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
             "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
         )
 
+        # Identify the ALTER's own transaction: exactly one transaction must have
+        # appeared since the snapshot above (SYSTEM WAIT FAILPOINT ... PAUSE guarantees
+        # it is already registered when the handshake returns).
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM system.transactions WHERE 1" + not_in_before,
+            "1",
+        )
+        tid_hash = node.query(
+            "SELECT tid_hash FROM system.transactions WHERE 1" + not_in_before
+        ).strip()
+        assert tid_hash, "The implicit transaction is not in system.transactions"
+
         # Kill the transaction while the ALTER is paused.  The rollback's
         # killMutation sweep runs now and finds nothing to remove.
-        tid_hash = node.query("SELECT tid_hash FROM system.transactions").strip()
-        assert tid_hash, "The implicit transaction is not in system.transactions"
         node.query(f"KILL TRANSACTION WHERE tid_hash = {tid_hash}")
-        assert_eq_with_retry(node, "SELECT count() FROM system.transactions", "0")
+        # Assert that our specific transaction disappears, not that the whole
+        # (server-global) system.transactions table becomes empty.
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.transactions WHERE tid_hash = {tid_hash}",
+            "0",
+        )
     finally:
         # Resume the ALTER: it now registers the orphaned mutation entry.
         node.query(
