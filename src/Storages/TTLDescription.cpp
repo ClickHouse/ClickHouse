@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVariant.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -24,6 +25,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -86,6 +88,12 @@ namespace
 /// `FunctionCapture`. Executing the outer node on a synthetic empty array would reduce the lambda over
 /// zero rows and never reach the body, so we recurse into the lambda DAG instead. Only the type error
 /// is translated into a clear message; all other exceptions are rethrown.
+///
+/// A synthetic default value catches a top-level AggregateFunction argument, but not one that is only an
+/// alternative of a `Variant` column: the default `Variant` row is NULL, so the `Variant` function
+/// adaptor short-circuits (returns NULL) and never runs the consumer on the AggregateFunction
+/// alternative. To exercise it we additionally probe with a single-row `Variant` column whose only value
+/// is that alternative (e.g. `toDateTime(v)` with `v Variant(AggregateFunction(max, DateTime64(3)), String)`).
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     for (const auto & node : actions_dag.getNodes())
@@ -128,17 +136,50 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
         if (!consumes_aggregate_state || has_lambda_argument)
             continue;
 
-        try
+        /// Translate the "cannot consume an AggregateFunction state" type error into a clear TTL message;
+        /// rethrow anything else (e.g. a data-dependent error raised by a perfectly valid consumer).
+        auto probe = [&](const ColumnsWithTypeAndName & probe_arguments)
         {
-            node.function_base->execute(arguments, node.result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
-        }
-        catch (Exception & e)
+            try
+            {
+                node.function_base->execute(probe_arguments, node.result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                        "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
+                        "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
+                throw;
+            }
+        };
+
+        /// Default values cover a top-level AggregateFunction argument.
+        probe(arguments);
+
+        /// Additionally exercise every AggregateFunction alternative hidden inside a `Variant` argument,
+        /// which the all-NULL default column above would otherwise skip (see the note above the function).
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                    "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
-                    "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
-            throw;
+            if (!WhichDataType(arguments[i].type).isVariant())
+                continue;
+
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[i].type);
+            const auto & variant_types = variant_type.getVariants();
+            for (size_t discr = 0; discr < variant_types.size(); ++discr)
+            {
+                if (!hasAggregateFunctionType(variant_types[discr]))
+                    continue;
+
+                auto variant_column = variant_type.createColumn();
+                ColumnPtr alternative = variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+                assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
+                    static_cast<ColumnVariant::Discriminator>(discr), *alternative, 0);
+
+                ColumnsWithTypeAndName probe_arguments = arguments;
+                probe_arguments[i].column = std::move(variant_column);
+                probe(probe_arguments);
+            }
         }
     }
 }
