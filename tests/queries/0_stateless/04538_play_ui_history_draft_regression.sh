@@ -17,10 +17,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     (no draft) keeps restoring entries verbatim;
 #   - the preserved draft carries its parameter bindings too: Back must not restore the
 #     older entry's params under the newer draft query (with a clean editor, entry params
-#     keep restoring verbatim).
+#     keep restoring verbatim);
+#   - the reload path (persist -> reconcileStartup): once any debounced save flushes an
+#     unrun draft that diverges from the URL (the onpopstate save after a preserved-draft
+#     Back/Forward, or persistColorModes over a draft), a reload restores that draft as
+#     editor text but NEVER auto-runs it (the stale-reload branch drops the URL's run=1);
+#     a clean run, by contrast, is both restored and re-run on reload.
 # The harness extracts the real tab/history functions from the served /play page and
-# drives them under node with stub DOM/history objects, asserting on the observable
-# state: history entries, the active tab, and the editor.
+# drives them under node with stub DOM/history objects (including a minimal in-memory
+# IndexedDB), asserting on the observable state: history entries, the active tab, the
+# editor, the persisted workspace, and whether a reload auto-runs the restored query.
 
 html="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_play.html"
 harness="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_play_history_harness.js"
@@ -54,7 +60,9 @@ function extractTopLevel(header_re, name)
 const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getActiveTab',
     'captureActiveTab', 'invalidateInFlight', 'activateTab', 'closeTab', 'scheduleSave',
     'buildHistoryParams', 'writeHistoryEntry', 'tabReflectsRun', 'refreshCurrentHistoryEntry',
-    'saveHistory', 'syncHistory', 'resolveTabForState'];
+    'saveHistory', 'syncHistory', 'resolveTabForState',
+    /// The persistence + startup-reconciliation surface exercised by the reload cases below.
+    'loadFromDb', 'persist', 'persistColorModes', 'reconcileStartup'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
 
@@ -98,21 +106,71 @@ const sandbox = {
     },
 };
 sandbox.url_elem = { value: sandbox.location.origin };
+/// `new URL(window.location)` (persistColorModes) coerces the location to its href.
+sandbox.location.toString = function() { return this.href; };
 sandbox.window = sandbox;
 /// Browser-history stub: a stack of entries; Back/Forward fire `onpopstate` with the
-/// state of the entry navigated to, exactly like a browser.
+/// state of the entry navigated to, exactly like a browser. Navigating (push/replace/
+/// back/forward) also syncs `location.href` to the current entry's URL, as a real browser
+/// does — persistColorModes and the onpopstate restamp read `window.location` back.
 sandbox.history = {
     stack: [], idx: -1,
     get state() { return this.idx >= 0 ? this.stack[this.idx].state : null; },
-    pushState(state, title, url) { this.stack.length = this.idx + 1; this.stack.push({ state, url }); this.idx++; },
+    _sync() { if (this.idx >= 0) sandbox.location.href = new URL(this.stack[this.idx].url, sandbox.location.origin).href; },
+    pushState(state, title, url) { this.stack.length = this.idx + 1; this.stack.push({ state, url }); this.idx++; this._sync(); },
     replaceState(state, title, url)
     {
         if (this.idx < 0) { this.stack.push({ state, url }); this.idx = 0; }
         else this.stack[this.idx] = { state, url };
+        this._sync();
     },
-    back() { if (this.idx <= 0) throw new Error('nothing to go back to'); this.idx--; sandbox.window.onpopstate({ state: this.stack[this.idx].state }); },
-    forward() { if (this.idx >= this.stack.length - 1) throw new Error('nothing to go forward to'); this.idx++; sandbox.window.onpopstate({ state: this.stack[this.idx].state }); },
+    back() { if (this.idx <= 0) throw new Error('nothing to go back to'); this.idx--; this._sync(); sandbox.window.onpopstate({ state: this.stack[this.idx].state }); },
+    forward() { if (this.idx >= this.stack.length - 1) throw new Error('nothing to go forward to'); this.idx++; this._sync(); sandbox.window.onpopstate({ state: this.stack[this.idx].state }); },
 };
+
+/// Persistence + startup-reconciliation surface, so the reload path (persist -> reload ->
+/// reconcileStartup) can be driven for real. The reconciliation functions that touch the DOM
+/// tokenizer / auto-run are stubbed; the draft-vs-URL decision itself runs from the real code.
+sandbox.TAB_STORE = 'tabs';
+sandbox.META_STORE = 'meta';
+sandbox.currentQueryParams = [];
+sandbox.bootstrap_dirty = false;
+sandbox.bootstrap_settled = false;
+sandbox.has_url_query = false;
+sandbox.url_tab_name = null;
+sandbox.url_query = '';
+sandbox.current_url = new URL(sandbox.location.href);
+sandbox.defer_run_for_reconcile = false;
+sandbox.postAllCalled = false;
+sandbox.updateQueryParams = async () => true;
+sandbox.setParamValues = values => { if (values) for (const [k, v] of Object.entries(values)) sandbox.param_inputs[k] = v; };
+/// The auto-run on a still-authoritative URL. The reload cases assert this fires for a clean
+/// run but never for a restored unrun draft.
+sandbox.postAll = async () => { sandbox.postAllCalled = true; };
+/// Minimal in-memory IndexedDB supporting exactly what `persist`/`loadFromDb` call.
+const idb_stores = {};
+function fakeObjectStore(name)
+{
+    if (!idb_stores[name]) idb_stores[name] = new Map();
+    const map = idb_stores[name];
+    const keyOf = v => (v.id !== undefined ? v.id : v.key);
+    return {
+        clear() { map.clear(); },
+        put(v) { map.set(keyOf(v), v); },
+        getAll() { return { result: [...map.values()] }; },
+        get(k) { return { result: map.get(k) }; },
+    };
+}
+sandbox.dbReady = Promise.resolve({
+    objectStoreNames: { contains: () => true },
+    transaction()
+    {
+        const tx = { objectStore: fakeObjectStore };
+        /// Resolve the read/write transaction after the synchronous calls, like the real API.
+        Promise.resolve().then(() => { if (tx.oncomplete) tx.oncomplete(); });
+        return tx;
+    },
+});
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox, { filename: 'play-extract.js' });
 
@@ -173,9 +231,40 @@ function reset()
     sandbox.query_area.value = '';
     sandbox.param_inputs = {};
     sandbox.document.title = '';
+    /// Simulate a session opened from a `run=1` URL so a genuine run stamps `run=1` into its entry
+    /// and the reload cases can observe that a restored unrun draft has it dropped. A real reload
+    /// starts a fresh JS context; here `reconcileStartup` mutates this global, so restore it.
+    sandbox.run_immediately = true;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
     sandbox.activeTabId = tab.id;
+}
+
+/// Simulate a full page reload of the current history entry. The debounced workspace save is
+/// forced to fire (the sandbox `setTimeout` never does) by calling `persist` explicitly — as a
+/// real >400 ms wait would — then `reconcileStartup` reads the saved workspace back from the fake
+/// IndexedDB and reconciles it against the URL, exactly the path a real reload takes. The URL the
+/// browser reloads is the current history entry's; a fresh document has the editor seeded from the
+/// hash and empty parameter inputs. `postAllCalled` records whether the restored query was auto-run.
+async function reload()
+{
+    await sandbox.persist();
+    const cur = sandbox.history.stack[sandbox.history.idx];
+    sandbox.current_url = new URL(cur.url, sandbox.location.origin);
+    sandbox.url_query = (cur.state && cur.state.query) || '';
+    sandbox.url_tab_name = sandbox.current_url.searchParams.get('tab');
+    sandbox.has_url_query = sandbox.url_query.length > 0;
+    sandbox.run_immediately = sandbox.current_url.searchParams.has('run');
+    sandbox.defer_run_for_reconcile = sandbox.run_immediately && sandbox.has_url_query;
+    sandbox.query_area.value = sandbox.url_query;
+    sandbox.param_inputs = {};
+    sandbox.bootstrap_dirty = false;
+    sandbox.bootstrap_settled = false;
+    sandbox.postAllCalled = false;
+    sandbox.request_num = 0;
+    sandbox.save_timer = null;
+    await sandbox.reconcileStartup();
+    await drain();
 }
 
 (async () =>
@@ -256,6 +345,46 @@ function reset()
     sandbox.history.forward();
     await drain();
     assert_eq('forward with a clean editor: the entry query is restored', active().query, 'SELECT 1');
+
+    /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
+    /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
+    /// the reload restores the draft as editor text — but the stale-reload branch drops the URL's
+    /// run=1, so the unrun draft is NOT auto-executed. This is the path the earlier harness could
+    /// not reach, since its `setTimeout` stub never let `persist` run.
+    reset();
+    await run('SELECT 0');
+    await run('SELECT 1');
+    type('SELECT 2');
+    sandbox.history.back();
+    await drain();
+    sandbox.history.forward();
+    await drain();
+    await reload();
+    assert_eq('reload after a preserved draft: the draft is restored as editor text', active().query, 'SELECT 2');
+    assert_eq('reload after a preserved draft: the draft is not auto-run', sandbox.postAllCalled, false);
+
+    /// Reload after a color-mode toggle over an unrun draft. persistColorModes is a result-only
+    /// change, but its debounced save snapshots the live editor (`captureActiveTab`), so the draft
+    /// is persisted and restored on reload — again only as editor text, never auto-run.
+    reset();
+    await run('SELECT 1');
+    type('SELECT 2');
+    sandbox.column_color_modes = { c: 'heatmap' };
+    sandbox.persistColorModes();
+    await reload();
+    sandbox.column_color_modes = {};
+    assert_eq('reload after a color toggle over a draft: the draft is restored as editor text', active().query, 'SELECT 2');
+    assert_eq('reload after a color toggle over a draft: the draft is not auto-run', sandbox.postAllCalled, false);
+
+    /// Control: reloading a clean run (no draft) restores the run's query AND re-runs it — the URL
+    /// is still authoritative (run=1 preserved) — which is the "reload re-runs what you ran"
+    /// behavior the draft cases above deliberately do not trigger.
+    reset();
+    await run('SELECT 0');
+    await run('SELECT 1');
+    await reload();
+    assert_eq('reload of a clean run: the run query is restored', active().query, 'SELECT 1');
+    assert_eq('reload of a clean run: the run query is auto-run', sandbox.postAllCalled, true);
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
