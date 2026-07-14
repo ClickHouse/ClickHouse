@@ -229,14 +229,24 @@ StorageBigQuery::StorageBigQuery(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_)
+    ContextPtr context_,
+    std::shared_ptr<BigQueryTokenProvider> token_provider_,
+    std::optional<BigQueryFields> prefetched_fields_)
     : IStorage(table_id_)
     , configuration(std::move(configuration_))
-    , token_provider(std::make_shared<BigQueryTokenProvider>(configuration))
+    , token_provider(token_provider_ ? std::move(token_provider_) : std::make_shared<BigQueryTokenProvider>(configuration))
     , log(getLogger("StorageBigQuery (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-    if (columns_.empty())
+    if (prefetched_fields_)
+    {
+        /// The `bigquery` table function already fetched the schema during analysis; reuse that snapshot
+        /// so that analysis and execution see the same schema and no second `tables.get` is issued.
+        storage_metadata.setColumns(columns_.empty() ? columnsDescriptionFromBigQuerySchema(*prefetched_fields_) : columns_);
+        std::lock_guard lock(fields_mutex);
+        fields = std::move(*prefetched_fields_);
+    }
+    else if (columns_.empty())
     {
         /// CREATE TABLE without a column list: infer the structure right away.
         auto schema = fetchTableSchema(configuration, context_, token_provider);
@@ -359,9 +369,9 @@ SinkToStoragePtr StorageBigQuery::write(
     return std::make_shared<BigQuerySink>(std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block));
 }
 
-BigQueryConfiguration StorageBigQuery::getConfiguration(ASTs & engine_args, ContextPtr context)
+BigQueryConfiguration StorageBigQuery::getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id)
 {
-    return BigQueryConfiguration::fromArguments(engine_args, context);
+    return BigQueryConfiguration::fromArguments(engine_args, context, table_id);
 }
 
 void registerStorageBigQuery(StorageFactory & factory);
@@ -371,7 +381,7 @@ void registerStorageBigQuery(StorageFactory & factory)
         "BigQuery",
         [](const StorageFactory::Arguments & args)
         {
-            auto configuration = StorageBigQuery::getConfiguration(args.engine_args, args.getLocalContext());
+            auto configuration = StorageBigQuery::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
             return std::make_shared<StorageBigQuery>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, args.getLocalContext());
         },

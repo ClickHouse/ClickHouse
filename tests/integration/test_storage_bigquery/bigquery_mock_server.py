@@ -216,7 +216,12 @@ def reset_tables():
     }
 
 
-STATS = {"data_requests": [], "insert_requests": [], "token_requests": []}
+STATS = {
+    "data_requests": [],
+    "insert_requests": [],
+    "token_requests": [],
+    "schema_requests": [],
+}
 FAIL_INSERTS = [False]
 
 
@@ -365,6 +370,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             STATS["data_requests"].clear()
             STATS["insert_requests"].clear()
             STATS["token_requests"].clear()
+            STATS["schema_requests"].clear()
             FAIL_INSERTS[0] = False
             self.send_json(200, {})
             return
@@ -381,6 +387,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if suffix is None:
+            STATS["schema_requests"].append({"path": parsed.path})
             self.send_json(
                 200,
                 {

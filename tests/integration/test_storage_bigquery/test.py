@@ -367,6 +367,52 @@ def test_named_collection():
     )
 
 
+def test_named_collection_dependency():
+    # A permanent BigQuery table created from a named collection registers a dependency, so the
+    # named collection cannot be dropped while the table still uses it.
+    node.query("DROP TABLE IF EXISTS bq_nc_dep")
+    node.query("DROP NAMED COLLECTION IF EXISTS bq_dep")
+    node.query(
+        "CREATE NAMED COLLECTION bq_dep AS "
+        f"project = '{PROJECT}', dataset = '{DATASET}', table = 'test_paging', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}'"
+    )
+    node.query("CREATE TABLE bq_nc_dep ENGINE = BigQuery(bq_dep)")
+
+    error = node.query_and_get_error("DROP NAMED COLLECTION bq_dep")
+    assert "is used by tables" in error
+    assert "bq_nc_dep" in error
+
+    # Once the table is dropped, the dependency is gone and the collection can be dropped.
+    node.query("DROP TABLE bq_nc_dep")
+    node.query("DROP NAMED COLLECTION bq_dep")
+
+
+def test_table_function_reuses_schema_snapshot():
+    # The table function fetches the schema once during analysis and hands that snapshot (and the
+    # token provider) to the storage, so a single query does not issue a second tables.get at
+    # execution time (and does not mint a second OAuth token).
+    mock_reset()
+    assert (
+        node.query(f"SELECT * FROM {bq('test_paging')} ORDER BY i LIMIT 1 FORMAT TSV")
+        == "0\tvalue0\n"
+    )
+    assert len(mock_stats()["schema_requests"]) == 1
+
+    # The same holds for a refreshable credential: the token is minted once and reused for both
+    # schema inference and execution.
+    creds = (
+        "client_id = 'test-client-id.apps.googleusercontent.com', "
+        "client_secret = 'test-client-secret', "
+        "refresh_token = 'test-refresh-token', "
+        f"token_url = '{BASE_URL}/token'"
+    )
+    mock_reset()
+    assert node.query(f"SELECT count() FROM {bq('test_paging', creds=creds)}") == "10\n"
+    assert len(mock_stats()["schema_requests"]) == 1
+    assert len(mock_stats()["token_requests"]) == 1
+
+
 def test_table_engine():
     node.query("DROP TABLE IF EXISTS bq_engine")
     node.query(

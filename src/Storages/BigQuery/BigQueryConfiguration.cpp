@@ -130,11 +130,11 @@ BigQueryConfiguration fromNamedCollection(const NamedCollection & collection)
 
 }
 
-BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextPtr context)
+BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id)
 {
     BigQueryConfiguration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/ true, nullptr, table_id))
     {
         configuration = fromNamedCollection(*named_collection);
     }

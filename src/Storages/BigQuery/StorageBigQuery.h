@@ -25,7 +25,12 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_);
+        ContextPtr context_,
+        /// The `bigquery` table function fetches the schema during analysis; it passes the resulting
+        /// snapshot (and the token provider used to fetch it) so that execution reuses the same schema
+        /// and access token instead of issuing a second `tables.get` and minting a second token.
+        std::shared_ptr<BigQueryTokenProvider> token_provider_ = nullptr,
+        std::optional<BigQueryFields> prefetched_fields_ = std::nullopt);
 
     std::string getName() const override { return "BigQuery"; }
     bool isRemote() const override { return true; }
@@ -45,7 +50,7 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
-    static BigQueryConfiguration getConfiguration(ASTs & engine_args, ContextPtr context);
+    static BigQueryConfiguration getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id = nullptr);
 
     /// Fetches the table schema from BigQuery (`tables.get`). An optional token provider lets the
     /// caller reuse a cached access token across requests.

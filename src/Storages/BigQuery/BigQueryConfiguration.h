@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct StorageID;
+
 /// Connection and credential settings shared by the `bigquery` table function and the `BigQuery` table engine.
 struct BigQueryConfiguration
 {
@@ -46,7 +48,9 @@ struct BigQueryConfiguration
     /// Parses arguments of the table function or the table engine:
     ///   bigquery('project', 'dataset', 'table'[, 'access_token'][, key = value, ...])
     ///   bigquery(named_collection[, key = value, ...])
-    static BigQueryConfiguration fromArguments(ASTs & args, ContextPtr context);
+    /// When `table_id` is provided (the persistent table engine), the table is registered as a dependency
+    /// of the named collection so that `DROP NAMED COLLECTION` is blocked while the table exists.
+    static BigQueryConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
 };
 
 }
