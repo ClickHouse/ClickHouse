@@ -52,10 +52,15 @@ namespace DB
 /// `O(total_directories)`: a wide hierarchical layout (e.g. `year=*/month=*/day=*/file.csv`) whose upper
 /// pages return only common prefixes — and so never trip the buffered-object backpressure, since they
 /// produce no leaf objects for the consumer to drain — no longer lets the frontier grow with the total
-/// directory count and burn per-query memory unrelated to `s3_list_object_keys_size`. The frontier is
-/// bounded without ever blocking a producer on it: because the pending ranges are consumed only by the
-/// same worker pool (unlike buffered objects, which an external consumer drains), blocking a producer on
-/// the frontier size could deadlock, so overflow is carried depth-first instead of waited on.
+/// directory count and burn per-query memory unrelated to `s3_list_object_keys_size`. A single directory
+/// that itself spans many pages of common prefixes is not paginated in place either: once a page has
+/// produced child ranges, the parent's *continuation* is re-enqueued as its own range (walked depth-first
+/// / stealable like any other) so a worker descends into a child before collecting the next page of
+/// siblings, keeping the frontier to at most one page of siblings per active parent regardless of how many
+/// sub-directories the parent has. The frontier is bounded without ever blocking a producer on it: because
+/// the pending ranges are consumed only by the same worker pool (unlike buffered objects, which an external
+/// consumer drains), blocking a producer on the frontier size could deadlock, so overflow is carried
+/// depth-first instead of waited on.
 ///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
@@ -124,6 +129,11 @@ private:
         bool use_delimiter = true; /// List with the '/' delimiter to discover (and prune) sub-directories.
                                    /// Kept true even for keyspace-split slices, so a mixed prefix that
                                    /// only looked flat on its first page is never scanned recursively.
+        std::string continuation_token; /// Resumes a hierarchical parent whose pages of common prefixes are
+                                   /// walked as separate ranges (so a directory with more immediate
+                                   /// sub-directories than fit in one page does not buffer one child range
+                                   /// per sub-directory before descending). Empty for a fresh range; when
+                                   /// set, it resumes pagination and `start_after` is not re-applied.
     };
 
     void worker();

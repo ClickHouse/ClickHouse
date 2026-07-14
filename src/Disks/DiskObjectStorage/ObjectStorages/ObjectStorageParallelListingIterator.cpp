@@ -289,11 +289,11 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     result.reserve(boundaries.size() + 1);
     for (auto & boundary : boundaries)
     {
-        ListRange sub{range.prefix, prev, boundary, pos + 1, range.split_budget - 1, /* use_delimiter */ true};
+        ListRange sub{range.prefix, prev, boundary, pos + 1, range.split_budget - 1, /* use_delimiter */ true, /* continuation_token */ {}};
         result.push_back(std::move(sub));
         prev = std::move(boundary);
     }
-    result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ true});
+    result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ true, /* continuation_token */ {}});
     return result;
 }
 
@@ -324,9 +324,11 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
 bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, std::deque<ListRange> & local_frontier)
 {
     const std::string delimiter = range.use_delimiter ? "/" : "";
-    std::string continuation_token;
+    /// A re-enqueued hierarchical parent carries a continuation token that resumes its pagination; a fresh
+    /// range has an empty token and (on its first page) resumes strictly after `range.start_after` instead.
+    std::string continuation_token = range.continuation_token;
     std::string last_key = range.start_after;
-    bool first = true;
+    bool first = continuation_token.empty();
     /// Whether a flat keyspace split may still be attempted. We attempt it at most once per range:
     /// once we decide a flat range cannot be usefully split, we paginate it serially without probing
     /// again on every page (which would otherwise issue one wasted probe request per page).
@@ -390,7 +392,21 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             if (!reached_end && result.is_truncated)
             {
                 continuation_token = result.next_continuation_token;
-                if (had_common_prefixes || !may_split)
+                if (had_common_prefixes)
+                {
+                    /// Do not paginate a hierarchical parent in place: that would append one child range per
+                    /// sub-directory to the frontier before we descend into any of them, so a directory with
+                    /// more immediate sub-directories than fit in one page would grow the pending-range
+                    /// frontier to `O(total sub-directories)`. Instead, re-enqueue the parent's continuation
+                    /// as its own range (walked depth-first / stealable like any other) and descend now. The
+                    /// continuation is placed *before* this page's children so the depth-first walk (which
+                    /// pops the newest range first) descends into a child before fetching the next page of
+                    /// siblings; the frontier then holds at most one page of siblings per active parent.
+                    ListRange continuation = range;
+                    continuation.continuation_token = continuation_token;
+                    follow_up.insert(follow_up.begin(), std::move(continuation));
+                }
+                else if (!may_split)
                 {
                     keep_paginating = true;
                 }

@@ -422,6 +422,44 @@ TEST(ObjectStorageParallelListing, PendingRangeFrontierStaysBoundedOnWideTree)
     }
 }
 
+TEST(ObjectStorageParallelListing, PaginatedParentDirectoryFrontierStaysBounded)
+{
+    /// Regression test: a single directory whose common prefixes span *many pages* (far more immediate
+    /// sub-directories than fit in one listing page), with no leaf objects until a deeper level, must not
+    /// let the pending-range frontier grow with the number of siblings. Fully paginating that parent in
+    /// place before descending would append one child range per sub-directory to the frontier — here
+    /// ~8000 — reproducing the very `O(total_directories)` memory blow-up the depth-first walk is meant to
+    /// remove; the earlier `PendingRangeFrontierStaysBoundedOnWideTree` fixture misses it because each of
+    /// its directories fits in a single page. Re-enqueuing the parent's continuation as its own range keeps
+    /// the frontier bounded to at most one page of siblings per active worker instead.
+    FakeS3 s3;
+    s3.page_size = 50;
+    constexpr int width = 8000; /// one directory with 8000 immediate sub-directories = 160 pages of prefixes
+    for (int a = 0; a < width; ++a)
+        s3.add(fmt::format("w/d={:05}/f.dat", a)); /// the only leaf object lives one level below `w/`
+    s3.finalize();
+
+    /// The single wide directory has `width` immediate sub-directories, one leaf file each; a walk that
+    /// paginates it in place would reach ~`width` pending ranges.
+    const size_t total_directories = width;
+
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "w/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expectedUnder(s3, "w/")) << "threads=" << threads;
+
+        /// Bounded by ~threads * page_size (at most one page of siblings per active worker), which is far
+        /// below the `O(total_directories)` an in-place pagination of the parent would reach.
+        const size_t peak = iterator.getPeakOutstandingRanges();
+        EXPECT_LT(peak, total_directories / 4)
+            << "pending-range frontier grew to " << peak << " of " << total_directories
+            << " sibling sub-directories (threads=" << threads << ")";
+    }
+}
+
 TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)
 {
     /// A '/'-partitioned tree where each leaf directory is itself a big flat directory (needs both
