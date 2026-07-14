@@ -172,11 +172,14 @@ public:
     }
 
     /// Whether the join emits left rows in their original stream order (interleaving the added
-    /// right columns). Joins that stream the left side through once preserve it (hash, direct).
-    /// PartialMergeJoin does not: it re-scans left key ranges once per right block, so equal
-    /// left-key values are no longer contiguous once the right side has more than one block.
-    /// The read-in-order-through-join optimization relies on this to keep the left sort property.
-    virtual bool preservesLeftBlockOrder() const { return true; }
+    /// right columns). The read-in-order-through-join optimization relies on this to keep the
+    /// left sort property, so the default is fail-closed: a join preserves the order only if it
+    /// opts in by overriding this to `true`. Joins that stream the left side through once
+    /// (`HashJoin`, `DirectKeyValueJoin`, `PasteJoin`) opt in. Joins that re-scan or scatter the
+    /// left side do not: `MergeJoin` / `FullSortingMergeJoin` re-sort or re-scan left key ranges,
+    /// `GraceHashJoin` / `SpillingHashJoin` bucket by hash, and `JoinSwitcher` may become any of
+    /// them, so all inherit the `false` default.
+    virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.

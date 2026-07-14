@@ -33,6 +33,10 @@ public:
     std::string getName() const override { return "DirectKeyValueJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    /// DirectKeyValueJoin looks up each left row's key once and emits it in input order, so the
+    /// left block order is preserved.
+    bool preservesLeftBlockOrder() const override { return true; }
+
     bool addBlockToJoin(const Block &, bool) override;
     void checkTypesOfKeys(const Block &) const override;
 

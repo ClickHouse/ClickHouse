@@ -37,9 +37,8 @@ public:
 
     std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    /// Matches the left stream against the right side per right block, re-emitting left key ranges
-    /// for each right block, so it does not preserve the left input stream order.
-    bool preservesLeftBlockOrder() const override { return false; }
+    /// PartialMergeJoin re-scans left key ranges per right block, so it does not preserve the left
+    /// input stream order and inherits the fail-closed `IJoin::preservesLeftBlockOrder() == false`.
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
