@@ -18,7 +18,11 @@ CREATE TABLE t_mut_all_hardlink
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         packed_skip_index_max_bytes = 0,
+         replace_long_file_name_to_hash = 0,
+         index_granularity = 1024;
 
 INSERT INTO t_mut_all_hardlink SELECT number, number * 7, number::Dynamic FROM numbers(4000);
 
