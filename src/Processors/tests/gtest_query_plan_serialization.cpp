@@ -53,7 +53,7 @@ TEST(QueryPlanSerialization, ReadFromTableVersionZeroKeepsLegacyParallelReplicas
     plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     ReadBufferFromString in(out.str());
-    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context);
+    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/ 0);
     ASSERT_TRUE(in.eof());
 
     const auto & step = getReadFromTableStep(plan_and_sets.plan);
@@ -68,7 +68,7 @@ TEST(QueryPlanSerialization, ReadFromTableVersionZeroWithoutParallelReplicasHasN
     plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     ReadBufferFromString in(out.str());
-    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context);
+    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/ 0);
     ASSERT_TRUE(in.eof());
 
     const auto & step = getReadFromTableStep(plan_and_sets.plan);
