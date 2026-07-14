@@ -81,3 +81,30 @@ DROP ROW POLICY 03500_p_flag4 ON 03500_t4;
 DROP TABLE 03500_m3;
 DROP TABLE 03500_t4;
 DROP TABLE 03500_t3;
+
+-- A query-level column alias equal to the helper name (e.g. SELECT flag AS __row_policy_filter)
+-- is applied in the outer plan above the Merge child read, so it never enters the child stream
+-- the row-policy filter operates on. The query returns correctly filtered rows and does not throw
+-- AMBIGUOUS_COLUMN_NAME, both with and without plan optimizations, single and multiple children.
+DROP TABLE IF EXISTS 03500_t5;
+DROP TABLE IF EXISTS 03500_t6;
+DROP TABLE IF EXISTS 03500_m5;
+
+CREATE TABLE 03500_t5 (a Int32, flag UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t5 VALUES (1, 1), (2, 0), (3, 1), (4, 0);
+CREATE TABLE 03500_t6 (a Int32, flag UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t6 VALUES (1, 1), (2, 0), (3, 1), (4, 0);
+CREATE TABLE 03500_m5 AS 03500_t5 ENGINE = Merge(currentDatabase(), '03500_t5|03500_t6');
+
+CREATE ROW POLICY 03500_p_alias5 ON 03500_t5 USING a > 1 AS PERMISSIVE TO ALL;
+CREATE ROW POLICY 03500_p_alias6 ON 03500_t6 USING flag AS PERMISSIVE TO ALL;
+SELECT 'query alias equal to helper name';
+SELECT flag AS __row_policy_filter FROM 03500_m5 ORDER BY a, flag;
+SELECT 'query alias equal to helper name, no optimizations';
+SELECT flag AS __row_policy_filter FROM 03500_m5 ORDER BY a, flag SETTINGS query_plan_enable_optimizations = 0;
+DROP ROW POLICY 03500_p_alias5 ON 03500_t5;
+DROP ROW POLICY 03500_p_alias6 ON 03500_t6;
+
+DROP TABLE 03500_m5;
+DROP TABLE 03500_t6;
+DROP TABLE 03500_t5;

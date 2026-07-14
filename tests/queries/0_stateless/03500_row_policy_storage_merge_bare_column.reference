@@ -27,3 +27,15 @@ no optimizations, single column
 4
 no leaked predicate column in the plan
 0
+query alias equal to helper name
+1
+0
+1
+1
+0
+query alias equal to helper name, no optimizations
+1
+0
+1
+1
+0
