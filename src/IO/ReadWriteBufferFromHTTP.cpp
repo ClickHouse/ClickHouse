@@ -825,13 +825,12 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & b
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
-    /// A bearer token and HTTP Basic credentials occupy the same `Authorization`
-    /// header, so a request carries one or the other: a non-empty token takes
-    /// precedence and the Basic credentials are not applied. The buffer keeps a
-    /// reference to the credentials, hence the immutable static for the empty case.
+    /// A non-empty bearer token takes precedence: it and the Basic credentials occupy the
+    /// same `Authorization` header. The buffer keeps a reference to the credentials, hence
+    /// the immutable static for the bearer case (the fallback is then unused).
     static const Poco::Net::HTTPBasicCredentials no_credentials;
 
-    /// Append the bearer header to a local copy so `create` does not mutate the builder:
+    /// Append the bearer header to a local copy so this does not mutate the builder:
     /// the same builder can be reused without carrying over a stale `Authorization` header.
     HTTPHeaderEntries header_entries = http_header_entries;
     if (!bearer_token_.empty())
@@ -845,7 +844,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & b
         proxy_configuration,
         read_settings,
         timeouts,
-        bearer_token_.empty() ? credentials_ : no_credentials,
+        bearer_token_.empty() ? fallback_credentials_ : no_credentials,
         remote_host_filter,
         buffer_size,
         max_redirects,

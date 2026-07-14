@@ -33,8 +33,6 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         url.setQueryParameters(params);
 
     /// Catalogs authenticate with a bearer token; there are no HTTP Basic credentials
-    /// (the buffer keeps a reference to them, hence the immutable static).
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
 
     return DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -46,7 +44,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         .withSkipNotFound(false)
         .withMethod(method)
         .withOutCallback(out_stream_callaback)
-        .create(bearer_token, no_credentials);
+        .createWithBearerToken(bearer_token);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
