@@ -163,6 +163,22 @@ private:
 
     void checkNewReplica();
 
+    /// Register/unregister hedged_connections_factory.getFileDescriptor() in the outer `epoll`,
+    /// keeping `factory_fd_registered` in sync. registerFactoryFd() is a no-op if already
+    /// registered; unregisterFactoryFd() is a no-op if not registered. This keeps the outer
+    /// epoll add/remove balanced without relying on HedgedConnectionsFactory::numberOfProcessingReplicas().
+    void registerFactoryFd();
+
+    void unregisterFactoryFd();
+
+    /// Cancellation-path shutdown of the factory: unregister its descriptor from the outer
+    /// `epoll` and then stop it choosing new replicas. These two steps must always go together
+    /// on the cancel/disconnect paths, so keep them in one place. This is a no-op if the factory
+    /// has no events in process. Note this is distinct from checkNewReplica()/startNewReplica(),
+    /// which (un)register the descriptor on their own as the factory naturally starts/finishes
+    /// replicas, without stopping it.
+    void stopFactory();
+
     void processNewReplicaState(HedgedConnectionsFactory::State state, Connection * connection);
 
     void finishProcessReplica(ReplicaState & replica, bool disconnect);
@@ -217,6 +233,15 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+
+    /// Whether hedged_connections_factory.getFileDescriptor() is currently registered in
+    /// the outer `epoll`. This cannot be derived from
+    /// HedgedConnectionsFactory::numberOfProcessingReplicas(), which is
+    /// requested_connections_count - ready_replicas_count and keeps counting earlier failed
+    /// attempts - so it can be greater than 1 while only one replica is in flight and the
+    /// descriptor was never (re-)added. Tracking registration explicitly keeps the add/remove
+    /// balanced and avoids EPOLL_CTL_DEL on an unregistered descriptor during cancellation.
+    bool factory_fd_registered = false;
 
     ReplicaInfo replica_info;
 
