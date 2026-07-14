@@ -1,8 +1,9 @@
 -- The position of `ie_join` in the `join_algorithm` list sets its priority over the
 -- equality-based algorithms. Listed last, it takes only joins that hash cannot execute
--- (no equality conditions in the ON section). Listed first, it takes any INNER join with
--- two inequality conditions: the remaining conditions (including equalities) are applied
--- as a filter over the join result, so both routes must produce the same result.
+-- (no equality conditions in the ON section). Listed first, it takes any join with two
+-- inequality conditions: the remaining conditions (including equalities) are applied as
+-- a filter over the join result (ALL INNER) or as a residual condition inside the operator
+-- (the other kinds), so both routes must produce the same result.
 
 DROP TABLE IF EXISTS prio_l;
 DROP TABLE IF EXISTS prio_r;
@@ -38,10 +39,12 @@ SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN
 -- A single inequality is not enough for IEJoin even when it is listed first
 SELECT 'single inequality', count() FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x) WHERE explain LIKE '%IEJoin%';
 
--- For non-INNER kinds the ON conditions affect matching and cannot be applied as a filter
--- over the result, so extra conditions keep the join on the hash path
-SELECT 'left outer with equality', count() FROM (EXPLAIN SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+-- For non-INNER kinds the extra ON conditions affect matching and cannot be applied as a
+-- filter over the result: forced IEJoin evaluates them as a residual condition inside the
+-- operator, producing the same result as hash
+SELECT 'left outer with equality', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
+SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y SETTINGS join_algorithm = 'hash';
 
 -- IEJoin alone cannot execute a join without inequality conditions
 SET join_algorithm = 'ie_join';

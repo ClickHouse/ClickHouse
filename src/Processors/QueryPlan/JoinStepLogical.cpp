@@ -828,11 +828,11 @@ struct IEJoinPlanDescription
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
 /// so that the caller falls back to the generic handling (a CROSS join with a filter).
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
-/// to common types and registered in `used_expressions`.
-/// When ON conditions of the join are equivalent to a filter over its result (ALL INNER),
-/// extra conjuncts (including equalities) are left in `join_expression` to be applied as such
-/// a filter. For the other kinds the ON conditions affect matching (unmatched rows are emitted
-/// padded, not dropped), so the expression must consist of exactly the two conditions.
+/// to common types and registered in `used_expressions`. Extra conjuncts (including equalities)
+/// are left in `join_expression`; the caller applies them as a filter over the join result when
+/// that is equivalent (ALL INNER), and as a residual condition inside the operator otherwise
+/// (the ON conditions of the other kinds affect matching: unmatched rows are emitted padded,
+/// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
@@ -846,10 +846,6 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         return {};
 
     if (planning_context.is_storage_join)
-        return {};
-
-    bool allow_residual_conditions = canPushDownFromOn(join_operator);
-    if (!allow_residual_conditions && join_expression.size() != 2)
         return {};
 
     auto try_get_inequality_condition = [&](const JoinActionRef & condition)
@@ -893,8 +889,6 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
             : std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>{};
         if (!inequality)
         {
-            if (!allow_residual_conditions)
-                return {};
             residual_conditions.push_back(condition);
             continue;
         }
@@ -930,9 +924,6 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
         return false;
 
     if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
-        return false;
-
-    if (!canPushDownFromOn(join_operator) && join_operator.expression.size() != 2)
         return false;
 
     size_t inequality_conditions = 0;
@@ -1227,6 +1218,7 @@ static void constructIEJoinStep(
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     IEJoinPlanDescription description,
+    ExpressionActionsPtr residual_condition,
     JoinKind kind,
     JoinStrictness strictness,
     const JoinSettings & join_settings,
@@ -1277,7 +1269,7 @@ static void constructIEJoinStep(
 
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<IEJoinStep>(
-        left_header, right_header, conditions, kind, strictness,
+        left_header, right_header, conditions, std::move(residual_condition), kind, strictness,
         /*inputs_sorted_by_first_key=*/ true, size_limits, join_settings.max_block_size);
 
     node.children = {join_left_node, join_right_node};
@@ -1367,8 +1359,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         /// The position of `ie_join` in the `join_algorithm` list sets its priority: listed first,
         /// it claims the join before the equality conditions are claimed as hash join keys
-        /// (they are applied as a filter over the join result instead); listed after other
-        /// algorithms, it is used only when no equality conditions are found.
+        /// (they become a filter over the join result for ALL INNER, or a residual condition
+        /// inside the operator for the other kinds); listed after other algorithms, it is used
+        /// only when no equality conditions are found.
         if (isIEJoinPreferred(join_operator, join_settings))
             ie_join_description = tryExtractIEJoinDescription(
                 join_expression, join_operator, used_expressions, join_settings, planning_context);
@@ -1454,7 +1447,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     /// For IEJoin there is no join clause to attach single-side conditions to; conditions
-    /// remaining in `join_expression` are applied as a filter over the join result below.
+    /// remaining in `join_expression` become a filter over the join result (ALL INNER) or the
+    /// operator's residual condition (the other kinds) below. Attaching eligible single-side
+    /// conditions as pre-join filters for IEJoin is a possible follow-up optimization.
     if (!ie_join_description)
     {
         if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
@@ -1525,11 +1520,17 @@ static QueryPlanNode buildPhysicalJoinImpl(
     collect_required_input_nodes(on_clause_condition);
     collect_required_input_nodes(residual_filter_condition);
 
+    ExpressionActionsPtr ie_join_residual_condition;
     if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
-        ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
+        /// mixed join expression is consumed only by the hash-family algorithms.
+        if (ie_join_description)
+            ie_join_residual_condition = std::move(on_clause_expression);
+        else
+            table_join->getMixedJoinExpression() = std::move(on_clause_expression);
         on_clause_condition = JoinActionRef(nullptr);
     }
 
@@ -1654,7 +1655,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         constructIEJoinStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
             std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
-            std::move(*ie_join_description), join_operator.kind, join_operator.strictness,
+            std::move(*ie_join_description), std::move(ie_join_residual_condition),
+            join_operator.kind, join_operator.strictness,
             join_settings, sorting_settings,
             optimization_settings.max_step_description_length, nodes);
         return node;

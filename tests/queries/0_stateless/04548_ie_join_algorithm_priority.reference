@@ -10,5 +10,6 @@ one-sided, ie_join first	1
 630	13950741495220601353
 630	13950741495220601353
 single inequality	0
-left outer with equality	0
+left outer with equality	1
+275
 275

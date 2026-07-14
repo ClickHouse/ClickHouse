@@ -1,0 +1,11 @@
+routed	1
+residual in step	1
+inner pairs	16841
+matched left rows	304
+matched right rows	207
+left	1
+right	1
+full	1
+one-sided left	1
+both-sides expression	1
+join_use_nulls equality residual	1

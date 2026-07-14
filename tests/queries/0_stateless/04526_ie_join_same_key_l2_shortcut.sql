@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- `x BETWEEN a AND b` shapes: when both left keys are the same column and the operator
 -- families are opposite (exactly then the L1 and L2 directions coincide for the left side),
 -- the operator builds L2 by merging the already-ordered left entries with the sorted right

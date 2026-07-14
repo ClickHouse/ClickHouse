@@ -1,7 +1,8 @@
--- SEMI/ANTI/LEFT/RIGHT/FULL joins with exactly two inequality conditions route through
--- IEJoin; more than two inequality conjuncts or an OR of inequalities stays error-locked.
--- `join_use_nulls` is enabled so that unmatched rows are padded with NULLs; the rows with
--- NULL keys (ids 4 and 5) never match but are emitted as unmatched, not dropped.
+-- SEMI/ANTI/LEFT/RIGHT/FULL joins with two inequality conditions route through IEJoin;
+-- extra conjuncts become a residual condition inside the operator; an OR of inequalities
+-- stays error-locked. `join_use_nulls` is enabled so that unmatched rows are padded with
+-- NULLs; the rows with NULL keys (ids 4 and 5) never match but are emitted as unmatched,
+-- not dropped.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET join_use_nulls = 1;
@@ -44,12 +45,16 @@ SELECT l.id, r.id FROM left_small l RIGHT JOIN right_small r ON l.start < r.stop
 SELECT 'full';
 SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
 
--- More than two inequality conditions stay unsupported for every kind: for non-INNER kinds the
--- ON conditions affect matching, so an extra conjunct cannot be split off into a filter over the
--- join result. Same for a disjunction of inequality conditions.
-SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+-- An extra conjunct beyond the two inequalities affects matching for non-INNER kinds (it cannot
+-- be split off into a filter over the join result), so it is evaluated inside the operator as a
+-- residual condition. A disjunction of inequality conditions stays unsupported.
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300) WHERE explain LIKE '%Residual filter%';
+SELECT 'semi residual';
+SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
+SELECT 'anti residual';
+SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
+SELECT 'full residual';
+SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
 SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON (l.start < r.stop AND r.start < l.stop) OR (l.start > r.stop AND r.start > l.stop); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 DROP TABLE left_small;

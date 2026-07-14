@@ -11,6 +11,8 @@ namespace DB
 /// The step speaks the query terms: conditions and join type refer to the query's left and
 /// right tables. Right-side SEMI/ANTI are executed as the left-side mirror internally: the
 /// step swaps the input pipelines, reverses the operators, and restores the column order.
+/// An optional residual condition (the ON conjuncts beyond the two inequalities, a single
+/// boolean expression over columns of both inputs) gates candidate pairs inside the operator.
 class IEJoinStep : public IQueryPlanStep
 {
 public:
@@ -18,6 +20,7 @@ public:
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
         IEJoinConditions conditions_,
+        ExpressionActionsPtr residual_condition_,
         JoinKind kind_,
         JoinStrictness strictness_,
         bool inputs_sorted_by_first_key_,
@@ -43,6 +46,9 @@ private:
 
     /// Conditions in the query orientation (`left` refers to the query's left table).
     IEJoinConditions conditions;
+    /// The residual ON condition with its inputs resolved against the query-orientation
+    /// headers, if any.
+    std::optional<IEJoinResidualCondition> residual;
 
     /// The executed join type and whether to swap the input pipelines for it,
     /// derived from the query kind/strictness.

@@ -1,8 +1,11 @@
 #include <optional>
 
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
@@ -57,6 +60,7 @@ IEJoinStep::IEJoinStep(
     const SharedHeader & left_header_,
     const SharedHeader & right_header_,
     IEJoinConditions conditions_,
+    ExpressionActionsPtr residual_condition_,
     JoinKind kind_,
     JoinStrictness strictness_,
     bool inputs_sorted_by_first_key_,
@@ -72,6 +76,31 @@ IEJoinStep::IEJoinStep(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin does not support {} {} JOIN", toString(strictness_), toString(kind_));
     kind = ie_kind->first;
     swap_inputs = ie_kind->second;
+
+    if (residual_condition_)
+    {
+        const auto & sample = residual_condition_->getSampleBlock();
+        if (sample.columns() != 1
+            || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
+                sample.dumpStructure());
+
+        IEJoinResidualCondition prepared;
+        prepared.actions = std::move(residual_condition_);
+        for (const auto & required_column : prepared.actions->getRequiredColumnsWithTypes())
+        {
+            bool in_left = left_header_->has(required_column.name);
+            bool in_right = right_header_->has(required_column.name);
+            if (in_left == in_right)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition input {} must come from exactly one input, found in {}",
+                    required_column.name, in_left ? "both" : "neither");
+            if (in_left)
+                prepared.inputs.push_back({.side = 0, .position = left_header_->getPositionByName(required_column.name)});
+            else
+                prepared.inputs.push_back({.side = 1, .position = right_header_->getPositionByName(required_column.name)});
+        }
+        residual = std::move(prepared);
+    }
 
     updateInputHeaders({left_header_, right_header_});
 }
@@ -107,8 +136,15 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
 
     SharedHeaders inputs = {pipelines[0]->getSharedHeader(), pipelines[1]->getSharedHeader()};
     auto executed_conditions = swap_inputs ? reverseIEJoinConditions(conditions) : conditions;
+    auto executed_residual = residual;
+    if (swap_inputs && executed_residual)
+    {
+        /// The expression and positions are orientation-independent, only the source sides flip.
+        for (auto & source : executed_residual->inputs)
+            source.side = 1 - source.side;
+    }
     auto joining = std::make_shared<IEJoinTransform>(
-        kind, executed_conditions, inputs_sorted_by_first_key, inputs, concatHeaders(inputs), size_limits, max_block_size);
+        kind, executed_conditions, std::move(executed_residual), inputs_sorted_by_first_key, inputs, concatHeaders(inputs), size_limits, max_block_size);
     auto pipeline = QueryPipelineBuilder::joinPipelinesPaired(std::move(pipelines[0]), std::move(pipelines[1]), std::move(joining), &processors);
 
     if (swap_inputs)
@@ -151,6 +187,8 @@ void IEJoinStep::describeActions(FormatSettings & settings) const
 {
     settings.out << settings.detail_prefix << "Type: " << toString(kind) << '\n';
     settings.out << settings.detail_prefix << "Conditions: " << formatConditions() << '\n';
+    if (residual)
+        settings.out << settings.detail_prefix << "Residual filter: " << residual->actions->getSampleBlock().getByPosition(0).name << '\n';
     if (swap_inputs)
         settings.out << settings.detail_prefix << "Swapped: true\n";
 }
@@ -159,6 +197,8 @@ void IEJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));
     map.add("Conditions", formatConditions());
+    if (residual)
+        map.add("Residual filter", residual->actions->getSampleBlock().getByPosition(0).name);
     if (swap_inputs)
         map.add("Swapped", true);
 }

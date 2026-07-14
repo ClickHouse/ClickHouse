@@ -11,6 +11,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/assert_cast.h>
 #include <Processors/Transforms/IEJoinTransform.h>
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
@@ -140,6 +144,7 @@ const char * toString(IEJoinKind kind)
 IEJoinAlgorithm::IEJoinAlgorithm(
     IEJoinKind kind_,
     const IEJoinConditions & conditions_,
+    std::optional<IEJoinResidualCondition> residual_,
     bool inputs_sorted_by_first_key_,
     const SharedHeaders & input_headers_,
     const SizeLimits & size_limits_,
@@ -148,6 +153,7 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     , max_block_size(std::max<size_t>(1, max_block_size_))
     , kind(kind_)
     , conditions(conditions_)
+    , residual(std::move(residual_))
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
     , size_limits(size_limits_)
 {
@@ -169,6 +175,37 @@ IEJoinAlgorithm::IEJoinAlgorithm(
         if (!left_type->equals(*right_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin key types do not match: {} and {}",
                 left_type->getName(), right_type->getName());
+    }
+
+    if (residual)
+    {
+        const auto & sample = residual->actions->getSampleBlock();
+        if (sample.columns() != 1
+            || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
+                sample.dumpStructure());
+
+        const auto & required_columns = residual->actions->getRequiredColumnsWithTypes();
+        if (residual->inputs.size() != required_columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition requires {} columns, {} sources given",
+                required_columns.size(), residual->inputs.size());
+
+        size_t i = 0;
+        for (const auto & required_column : required_columns)
+        {
+            const auto & source = residual->inputs[i++];
+            if (source.side >= 2 || source.position >= input_headers[source.side]->columns())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition source ({}, {}) is out of range",
+                    source.side, source.position);
+
+            const auto & input_column = input_headers[source.side]->getByPosition(source.position);
+            if (!input_column.type->equals(*required_column.type))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition input {} has type {}, expected {}",
+                    required_column.name, input_column.type->getName(), required_column.type->getName());
+
+            residual_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
+        }
+        residual_input_positions = residual->actions->getInputPositions(residual_input_header);
     }
 }
 
@@ -663,7 +700,7 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
 
 size_t IEJoinAlgorithm::findNextSetBit(size_t from)
 {
-    /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
+    /// No bit at or past bit_array_end is set, so tfhe scan can stop there. This bounds the
     /// common case where all matches of the current entry sit right after its own position
     /// (e.g. band joins): without it every scan would walk empty words to the end of the array.
     if (from >= bit_array_end)
@@ -796,14 +833,77 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
     auto & left_data = left_indexes->getData();
     auto & right_data = right_indexes->getData();
 
-    /// The work budget bounds the cursor advances and bit-array words inspected by one call,
-    /// so control returns to the executor (which observes cancellation) even when a long
-    /// stretch of the scan emits nothing, e.g. an ANTI join. All loop state is resumable:
-    /// an exhausted budget just yields an incomplete (possibly empty) non-final chunk.
+    const bool is_semi_or_anti = kind == IEJoinKind::LeftSemi || kind == IEJoinKind::LeftAnti;
+
+    /// With a residual condition candidate pairs are not emitted directly: they accumulate in
+    /// these local arrays and a flush evaluates the residual over them in one batch. Nothing
+    /// survives the call: both arrays are flushed before every return, so all resumable state
+    /// stays exactly the scan cursors.
+    auto pending_left = ColumnUInt64::create();
+    auto pending_right = ColumnUInt64::create();
+    auto & pending_left_data = pending_left->getData();
+    auto & pending_right_data = pending_right->getData();
+
+    /// Keep only the passing pairs; the matched bits are deferred to this point.
+    auto flush_pending = [&]
+    {
+        if (pending_left_data.empty())
+            return;
+        IColumn::Filter mask = evaluateResidualMask(*pending_left, *pending_right);
+        for (size_t i = 0; i < mask.size(); ++i)
+        {
+            if (!mask[i])
+                continue;
+            if (!matched[0].empty())
+                matched[0][pending_left_data[i]] = 1;
+            if (!matched[1].empty())
+                matched[1][pending_right_data[i]] = 1;
+            left_data.push_back(pending_left_data[i]);
+            right_data.push_back(pending_right_data[i]);
+        }
+        pending_left_data.clear();
+        pending_right_data.clear();
+    };
+
+    /// The first passing candidate decides the current left row: SEMI emits the pair, ANTI only
+    /// marks. Returns whether the row is decided; an undecided row continues its scan (deciding
+    /// on a prefix of the row's candidates is sound - scanning continues only when the whole
+    /// prefix failed).
+    auto flush_scratch = [&]
+    {
+        if (pending_left_data.empty())
+            return false;
+        IColumn::Filter mask = evaluateResidualMask(*pending_left, *pending_right);
+        size_t first_passing = mask.size();
+        for (size_t i = 0; i < mask.size() && first_passing == mask.size(); ++i)
+            if (mask[i])
+                first_passing = i;
+
+        bool decided = first_passing != mask.size();
+        if (decided)
+        {
+            if (kind == IEJoinKind::LeftSemi)
+            {
+                left_data.push_back(pending_left_data[first_passing]);
+                right_data.push_back(pending_right_data[first_passing]);
+            }
+            else
+                matched[0][pending_left_data[first_passing]] = 1;
+        }
+        pending_left_data.clear();
+        pending_right_data.clear();
+        return decided;
+    };
+
+    /// The work budget bounds the cursor advances, bit-array words inspected, and residual
+    /// candidates evaluated by one call, so control returns to the executor (which observes
+    /// cancellation) even when a long stretch of the scan emits nothing, e.g. an ANTI join.
+    /// All loop state is resumable: an exhausted budget just yields an incomplete (possibly
+    /// empty) non-final chunk.
     produce_work = 0;
 
     bool done = false;
-    while (left_data.size() < max_block_size && produce_work < produce_work_budget)
+    while (left_data.size() + pending_left_data.size() < max_block_size && produce_work < produce_work_budget)
     {
         if (!has_current_left)
         {
@@ -818,6 +918,10 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
         size_t found = findNextSetBit(scan_pos);
         if (found >= n_union)
         {
+            /// The current left row's scan is exhausted; for SEMI/ANTI decide it on the
+            /// candidates accumulated so far.
+            if (residual && is_semi_or_anti)
+                flush_scratch();
             has_current_left = false;
             ++l2_cursor;
             continue;
@@ -835,6 +939,20 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
         chassert(checkEmittedPair(0, left_row, right_row));
         chassert(checkEmittedPair(1, left_row, right_row));
 
+        if (residual)
+        {
+            pending_left_data.push_back(left_row);
+            pending_right_data.push_back(right_row);
+            /// SEMI/ANTI evaluate per bounded mini-batch of the row's candidates: a passing
+            /// candidate decides the row and skips the rest of its scan.
+            if (is_semi_or_anti && pending_left_data.size() >= residual_scratch_max_size && flush_scratch())
+            {
+                has_current_left = false;
+                ++l2_cursor;
+            }
+            continue;
+        }
+
         /// The matched bitmaps are allocated exactly for the sides that emit unmatched rows
         /// in a post-phase.
         if (!matched[0].empty())
@@ -844,7 +962,7 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
 
         /// For SEMI/ANTI one pair decides the fate of the left row (its matches are contiguous):
         /// skip the rest of its scan. SEMI emits the first pair, ANTI only marks.
-        if (kind == IEJoinKind::LeftSemi || kind == IEJoinKind::LeftAnti)
+        if (is_semi_or_anti)
         {
             has_current_left = false;
             ++l2_cursor;
@@ -855,6 +973,20 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             left_data.push_back(left_row);
             right_data.push_back(right_row);
         }
+    }
+
+    if (residual)
+    {
+        if (is_semi_or_anti)
+        {
+            if (flush_scratch() && has_current_left)
+            {
+                has_current_left = false;
+                ++l2_cursor;
+            }
+        }
+        else
+            flush_pending();
     }
 
     if (!left_data.empty())
@@ -900,6 +1032,38 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
 {
     for (const auto & column : side_columns[side])
         chunk.addColumn(column->index(indexes, 0));
+}
+
+IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
+{
+    size_t num_rows = left_rows.size();
+    chassert(num_rows == right_rows.size());
+    produce_work += num_rows;
+
+    Columns expression_columns;
+    expression_columns.reserve(residual->inputs.size());
+    for (const auto & source : residual->inputs)
+        expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
+
+    Columns results = residual->actions->executeOnColumns(
+        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows);
+    ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+    IColumn::Filter mask(num_rows);
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        const auto & null_map = nullable->getNullMapData();
+        const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+        for (size_t row = 0; row < num_rows; ++row)
+            mask[row] = !null_map[row] && values[row];
+    }
+    else
+    {
+        const auto & values = assert_cast<const ColumnUInt8 &>(*result).getData();
+        for (size_t row = 0; row < num_rows; ++row)
+            mask[row] = values[row] ? 1 : 0;
+    }
+    return mask;
 }
 
 void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) const
@@ -980,6 +1144,7 @@ IMergingAlgorithm::MergedStats IEJoinAlgorithm::getMergedStats() const
 IEJoinTransform::IEJoinTransform(
     IEJoinKind kind,
     const IEJoinConditions & conditions,
+    std::optional<IEJoinResidualCondition> residual,
     bool inputs_sorted_by_first_key,
     SharedHeaders & input_headers,
     SharedHeader output_header,
@@ -994,6 +1159,7 @@ IEJoinTransform::IEJoinTransform(
         /* empty_chunk_on_finish_= */ true,
         kind,
         conditions,
+        std::move(residual),
         inputs_sorted_by_first_key,
         input_headers,
         size_limits,
