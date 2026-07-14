@@ -117,9 +117,11 @@ protected:
 
     MergeTreeReadTask::Extras getExtras() const;
 
-    /// Applies the refiner (if any) to ranges cut from a part right before creating a read task.
-    /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
-    MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
+    /// Applies a task-local refinement session to ranges cut from a part right before creating
+    /// a read task. The session is created outside the scheduling mutex and reused while a task
+    /// collects more surviving marks from the same part.
+    MarkRanges
+    refineReadRanges(const MergeTreeReadTaskInfo & info, IMergeTreeReadRangesRefinementSession & refinement, MarkRanges ranges) const;
 
     MergeTreeReadRangesRefinerPtr ranges_refiner;
 

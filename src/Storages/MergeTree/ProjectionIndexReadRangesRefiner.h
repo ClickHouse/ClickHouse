@@ -19,15 +19,17 @@ using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext
 /// so fully pruned ranges never become read tasks. Row-level filtering of the surviving
 /// granules still happens in `MergeTreeReaderIndex`.
 ///
-/// The first `refine` call for a part builds the bitmap (reads the projection), which is the
-/// same work the first reading thread for the part would have done; subsequent calls reuse the
-/// per-part cached result from `MergeTreeIndexReadResultPool`.
+/// Starting the first refinement for a part builds the bitmap (reads the projection), which is
+/// the same work the first reading thread for the part would have done. The resulting bitmap is
+/// shared through `MergeTreeIndexReadResultPool`; each task-local session keeps direction-aware
+/// cursors over it and reuses them across consecutive cuts.
 class ProjectionIndexReadRangesRefiner : public IMergeTreeReadRangesRefiner
 {
 public:
     ProjectionIndexReadRangesRefiner(MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_);
 
-    MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
+    MergeTreeReadRangesRefinementSessionPtr
+    createSession(const MergeTreeReadTaskInfo & info, MergeTreeReadRangesRefinementDirection direction) const override;
 
 private:
     const MergeTreeIndexBuildContextPtr index_build_context;

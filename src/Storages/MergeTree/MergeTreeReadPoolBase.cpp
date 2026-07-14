@@ -449,13 +449,14 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
     };
 }
 
-MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
+MarkRanges MergeTreeReadPoolBase::refineReadRanges(
+    const MergeTreeReadTaskInfo & info, IMergeTreeReadRangesRefinementSession & refinement, MarkRanges ranges) const
 {
-    if (!ranges_refiner || ranges.empty())
+    if (ranges.empty())
         return ranges;
 
     size_t marks_before = ranges.getNumberOfMarks();
-    auto refined = ranges_refiner->refine(info, std::move(ranges));
+    auto refined = refinement.refine(std::move(ranges));
     size_t marks_after = refined.getNumberOfMarks();
 
     if (marks_after > marks_before)

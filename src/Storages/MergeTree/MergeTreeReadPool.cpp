@@ -83,8 +83,12 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges))
             return nullptr;
 
+        auto refinement = ranges_refiner
+            ? ranges_refiner->createSession(*per_part_infos[part_idx], MergeTreeReadRangesRefinementDirection::Forward)
+            : nullptr;
+
         MarkRanges task_ranges;
-        if (!ranges_refiner)
+        if (!refinement)
         {
             task_ranges = std::move(cut_ranges);
         }
@@ -92,12 +96,13 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         {
             /// Marks dropped by the refiner do not count towards the task size: keep cutting
             /// more marks from the same part until the task reaches its intended size in
-            /// surviving marks or the part has nothing more to cut. Refinement may block
-            /// (e.g. building a projection index bitmap on the first use for the part),
-            /// so it always happens outside of the mutex.
+            /// surviving marks or the part has nothing more to cut. Starting the refinement
+            /// may block (e.g. building a projection index bitmap on first use for the part),
+            /// so it always happens outside of the mutex. The same session and its cursors are
+            /// reused for every consecutive cut collected into this task.
             while (true)
             {
-                auto refined = refineReadRanges(*per_part_infos[part_idx], std::move(cut_ranges));
+                auto refined = refineReadRanges(*per_part_infos[part_idx], *refinement, std::move(cut_ranges));
                 for (const auto & range : refined)
                 {
                     if (!task_ranges.empty() && task_ranges.back().end == range.begin)

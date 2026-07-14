@@ -58,8 +58,15 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
             task_idx, per_part_infos.size());
 
     auto & all_mark_ranges = per_part_mark_ranges[task_idx];
+    if (all_mark_ranges.empty())
+        return nullptr;
+
+    auto direction = read_type == MergeTreeReadType::InReverseOrder ? MergeTreeReadRangesRefinementDirection::Reverse
+                                                                    : MergeTreeReadRangesRefinementDirection::Forward;
+    auto refinement = ranges_refiner ? ranges_refiner->createSession(*per_part_infos[task_idx], direction) : nullptr;
 
     /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
+    /// Reuse the same direction-aware session while walking consecutive ranges of the part.
     while (!all_mark_ranges.empty())
     {
         MarkRanges mark_ranges_for_task;
@@ -86,7 +93,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
             all_mark_ranges = MarkRanges{};
         }
 
-        mark_ranges_for_task = refineReadRanges(*per_part_infos[task_idx], std::move(mark_ranges_for_task));
+        if (refinement)
+            mark_ranges_for_task = refineReadRanges(*per_part_infos[task_idx], *refinement, std::move(mark_ranges_for_task));
+
         if (mark_ranges_for_task.empty())
             continue;
 
