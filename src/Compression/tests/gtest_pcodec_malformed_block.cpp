@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 
 /** The `PCO` codec writes the per-column block `[1 byte: W][1 byte: B][B raw leading bytes][standalone .pco]`,
-  * where `W` is the element width and `B = uncompressed_size mod W`. Its method byte `0x9d` is dispatched by the
+  * where `W` is the element width and `B = uncompressed_size mod W`. Its method byte `0x9e` is dispatched by the
   * shared `CompressedReadBuffer`, so a malformed block can reach `doDecompressData` from unchecked external
   * framed input (the HTTP `decompress=1` path). These tests pin the fail-closed header contract: a valid block
   * round-trips, but an unsupported `W`, a stored `B` that disagrees with the output size, or a partial-only body
@@ -108,7 +108,7 @@ std::vector<uint8_t> buildIntMultStandaloneU32(uint32_t base_latent, uint32_t pr
 /// Splices a standalone `.pco` stream into a real `PCO` frame for a one-`UInt32` column: the real
 /// 9-byte block header (correct method byte and `decompressed_size == 4`) plus `[W = 4][B = 0]` are
 /// reused from `valid_frame` and only the trailing standalone stream is replaced. This is exactly the
-/// external `0x9d` frame a client can send through the shared `CompressedReadBuffer`.
+/// external `0x9e` frame a client can send through the shared `CompressedReadBuffer`.
 std::vector<char> spliceStandalone(const std::vector<char> & valid_frame, const std::vector<uint8_t> & standalone)
 {
     std::vector<char> frame(valid_frame.begin(), valid_frame.begin() + HEADER_SIZE + 2);

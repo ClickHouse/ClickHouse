@@ -1,0 +1,302 @@
+---
+slug: /use-cases/observability/clickstack/integrations/temporal-metrics
+title: 'مراقبة مقاييس Temporal Cloud باستخدام ClickStack'
+sidebarTitle: 'مقاييس Temporal Cloud'
+description: 'مراقبة مقاييس Temporal Cloud باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['Temporal', 'المقاييس', 'OTEL', 'ClickStack']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **تحذير**
+
+  يتوفر دعم OpenMetrics في منصة Temporal ضمن [المعاينة العامة](https://docs.temporal.io/evaluate/development-production-features/release-stages#public-preview). راجع [وثائقهم](https://docs.temporal.io/cloud/metrics/openmetrics) لمزيد من المعلومات.
+</Info>
+
+توفّر Temporal طبقة تجريد لبناء تطبيقات بسيطة ومتقدمة وقادرة على التحمّل.
+
+<Info>
+  **الخلاصة السريعة**
+
+  راقب مقاييس Temporal Cloud في ClickStack باستخدام Prometheus receiver في OTel. يتضمن ذلك لوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-temporal">
+  ## التكامل مع Temporal Cloud القائم
+</div>
+
+يتناول هذا القسم كيفية تهيئة ClickStack عبر إعداد ClickStack OTel collector باستخدام Prometheus receiver.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* حساب Temporal Cloud حالي
+* إمكانية وصول عبر شبكة HTTP من ClickStack إلى Temporal Cloud الخاص بك
+
+<Steps>
+  <Step>
+    #### إنشاء مفتاح Temporal Cloud
+
+    تأكد من أن لديك مفتاح واجهة برمجة تطبيقات لـ Temporal Cloud. يمكنك إنشاؤه باتباع [دليل المصادقة](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication) في وثائق Temporal.
+
+    <Warning>
+      **ملف المفتاح**
+
+      تأكد من تخزين بيانات الاعتماد هذه في ملف `temporal.key` داخل الدليل نفسه الذي يوجد فيه ملف الإعدادات الذي ستنشئه أدناه. يجب تخزين هذا المفتاح كنص فقط، من دون أي مسافات قبله أو بعده.
+    </Warning>
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector
+
+    يتيح لك ClickStack توسيع تهيئة OpenTelemetry collector الأساسية من خلال إرفاق ملف تهيئة مخصص وضبط متغير بيئة. وتُدمج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
+
+    أنشئ ملفًا باسم `temporal-metrics.yaml` بالتكوين التالي:
+
+    ```yaml title="temporal-metrics.yaml"
+    receivers:
+      prometheus/temporal:
+        config:
+          scrape_configs:
+          - job_name: 'temporal-cloud'
+            scrape_interval: 60s
+            scrape_timeout: 30s
+            honor_timestamps: true
+            scheme: https
+            authorization:
+              type: Bearer
+              credentials_file: /etc/otelcol-contrib/temporal.key
+            static_configs:
+              - targets: ['metrics.temporal.io']
+            metrics_path: '/v1/metrics'
+
+    processors:
+      resource:
+        attributes:
+          - key: service.name
+            value: "temporal"
+            action: upsert
+
+    service:
+      pipelines:
+        metrics/temporal:
+          receivers: [prometheus/temporal]
+          processors:
+            - resource
+            - memory_limiter
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    هذا الإعداد:
+
+    * يتصل بـ Temporal Cloud عند `metrics.temporal.io`
+    * يجمع المقاييس كل 60 ثانية
+    * يجمع [مقاييس الأداء الرئيسية](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/metrics-reference)
+    * **يعيّن سمة المورد `service.name` المطلوبة** وفقًا لـ [الاتفاقيات الدلالية في OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/resource/#service)
+    * يوجّه المقاييس إلى مُصدِّر ClickHouse عبر مسار معالجة مخصص
+
+    <Note>
+      - لا تُعرِّف في التهيئة المخصصة سوى المستقبلات والمعالجات ومسارات المعالجة الجديدة
+      - المعالجان `memory_limiter` و`batch` ومُصدِّر `clickhouse` معرّفة بالفعل في تهيئة ClickStack الأساسية — ما عليك سوى الإشارة إليها بالاسم
+      - يعيّن المعالج `resource` سمة `service.name` المطلوبة وفقًا للاتفاقيات الدلالية في OpenTelemetry
+      - إذا كانت لديك عدة حسابات Temporal Cloud، فخصِّص `service.name` للتمييز بينها (مثل: `"temporal-prod"` و`"temporal-dev"`)
+    </Note>
+  </Step>
+
+  <Step>
+    #### تهيئة ClickStack لتحميل إعدادات مخصصة
+
+    لتمكين إعدادات مخصصة للمجمّع في عملية نشر ClickStack الحالية، يجب عليك:
+
+    1. تركيب ملف الإعدادات المخصص على المسار `/etc/otelcol-contrib/custom.config.yaml`
+    2. تعيين متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. تركيب ملف `temporal.key` على المسار `/etc/otelcol-contrib/temporal.key`
+    4. التأكد من وجود اتصال شبكي بين ClickStack وTemporal
+
+    تفترض جميع الأوامر أنها تُنفَّذ من دليل العينة نفسه الذي يُخزَّن فيه كل من `temporal-metrics.yaml` و`temporal.key`.
+
+    ##### الخيار 1: Docker Compose
+
+    حدّث إعدادات نشر ClickStack لديك:
+
+    ```yaml
+    services:
+      clickstack:
+        # ... existing configuration ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+        volumes:
+          - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
+          # ... other volumes ...
+    ```
+
+    ##### الخيار 2: تشغيل Docker (`docker run`) (الصورة المتكاملة)
+
+    إذا كنت تستخدم الصورة المتكاملة مع `docker run`:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/temporal.key:/etc/otelcol-contrib/temporal.key:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من المقاييس في HyperDX
+
+    بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من تدفّق المقاييس:
+
+    1. انتقل إلى مستكشف المقاييس
+    2. ابحث عن المقاييس التي تبدأ بـ `temporal` (مثل: `temporal_cloud_v1_workflow_success_count`، `temporal_cloud_v1_poll_timeout_count`)
+    3. يُفترض أن ترى نقاط بيانات المقاييس تظهر وفق فاصل التجميع الزمني الذي أعددته
+
+    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="مقاييس Temporal" size="md" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات المرئية
+</div>
+
+لمساعدتك على بدء مراقبة Temporal Cloud باستخدام ClickStack، نوفر بعض التصورات المرئية النموذجية لـ Temporal Metrics.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">تنزيل</TrackedLink> ملف إعداد لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استيراد لوحة المعلومات المُعدّة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم Dashboards
+    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع ملف `temporal-metrics-dashboard.json` ثم انقر على **Finish Import**
+
+    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### عرض لوحة المعلومات
+
+    سيتم إنشاء لوحة المعلومات مع إعداد جميع التصورات المرئية مسبقًا:
+
+    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="لوحة معلومات Temporal Metrics" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### عدم تحميل ملف الإعدادات المخصّص
+</div>
+
+تحقّق من ضبط متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE` بشكل صحيح:
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+تحقّق من أن ملف الإعدادات المخصّص مُحمَّل على المسار `/etc/otelcol-contrib/custom.config.yaml`:
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+# usually, docker exec clickstack ls -lh /etc/otelcol-contrib/custom.config.yaml
+```
+
+اعرض محتوى الإعداد المخصص للتحقق من إمكانية قراءته:
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+# usually, docker exec clickstack cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+تأكد من أن `temporal.key` مركّب داخل الحاوية:
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/temporal.key
+# usually, docker exec clickstack cat /etc/otelcol-contrib/temporal.key
+# This should output your temporal.key
+```
+
+<div id="no-metrics">
+  ### عدم ظهور أي مقاييس في HyperDX
+</div>
+
+تحقق من إمكانية وصول الـ collector إلى Temporal Cloud:
+
+```bash
+# From the ClickStack container
+docker exec <container-name> curl -H "Authorization: Bearer <API_KEY>" https://metrics.temporal.io/v1/metrics
+```
+
+من المفترض أن ترى مجموعة من مقاييس Prometheus مطبوعة، مثلًا.
+
+```text
+temporal_cloud_v1_workflow_success_count{operation="CompletionStats",region="aws-us-east-2",temporal_account="l2c4n",temporal_namespace="clickpipes-aws-prd-apps-us-east-2.l2c4n",temporal_task_queue="clickpipes-svc-dc118d12-b397-4975-a33e-c2888ac12ac4-peer-flow-task-queue",temporal_workflow_type="QRepPartitionWorkflow"} 0.067 1765894320
+```
+
+تحقّق من أن الإعداد الفعّال يتضمّن Prometheus receiver الخاص بك:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "Prometheus:"
+## usually, docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
+```
+
+تحقّق من وجود أخطاء في سجلات وكيل collector:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
+# Look for connection errors or authentication failures
+# docker exec clickstack cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
+```
+
+تحقّق من سجلات الـ collector:
+
+```bash
+docker exec <container> cat /var/log/otel-collector.log | grep -i error
+# Look for config parsing errors - early supervisor.opamp-client can be ignored 
+# docker exec clickstack cat /var/log/otel-collector.log | grep -i error
+```
+
+<div id="auth-errors">
+  ### أخطاء المصادقة
+</div>
+
+إذا ظهرت أخطاء مصادقة في السجلات، فتحقق من مفتاح API الخاص بك.
+
+<div id="network-issues">
+  ### مشكلات الاتصال بالشبكة
+</div>
+
+إذا تعذّر على ClickStack الوصول إلى Temporal Cloud، فتأكّد من أن ملف Docker Compose أو أوامر `docker run` تسمح [بالاتصال الخارجي عبر الشبكة](https://docs.docker.com/engine/network/#drivers).
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) للمقاييس المهمة (معدلات فشل سير العمل، تزايد تراكم المهام، زمن الانتقال من الجدولة إلى البدء)
+* أنشئ لوحات معلومات إضافية لحالات استخدام محددة (المراقبة على مستوى مساحة الاسم، وأداء أنواع سير العمل)
+* راقب عدة حسابات Temporal Cloud من خلال تكرار تهيئة المستقبِل باستخدام نقاط نهاية وأسماء خدمات مختلفة
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

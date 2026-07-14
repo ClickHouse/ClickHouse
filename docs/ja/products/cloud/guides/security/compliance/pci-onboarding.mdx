@@ -1,0 +1,93 @@
+---
+sidebarTitle: 'PCI オンボーディング'
+slug: /cloud/security/compliance/pci-onboarding
+title: 'PCI オンボーディング'
+description: 'PCI 準拠サービスのオンボーディングについて詳しく説明します'
+doc_type: 'guide'
+keywords: ['pci', 'コンプライアンス', '決済セキュリティ', 'データ保護', 'セキュリティ']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="PCI コンプライアンス" />
+
+ClickHouse は、Payment Card Industry Data Security Standard (PCI-DSS) に準拠したサービスを提供しており、Level 1 Service Provider 要件について監査を受けています。お客様は、この機能を有効にし、準拠リージョンにサービスをデプロイすることで、これらのサービス内でプライマリアカウント番号 (PAN) を処理できます。
+
+ClickHouse のコンプライアンスプログラムおよびサードパーティ監査レポートの提供状況の詳細については、[コンプライアンス概要](/ja/products/cloud/reference/security/compliance-overview)をご確認ください。PCI の責任共有文書のコピーについては、[Trust Center](https://trust.clickhouse.com) をご覧ください。さらに、お客様は自社のワークロードに適したセキュリティ制御を選択して実装するために、[セキュリティ機能](/ja/products/cloud/features/security) ページもご確認ください。
+
+このページでは、ClickHouse Cloud で PCI 準拠サービスをデプロイできるようにする手順について説明します。
+
+<Steps>
+  <Step>
+    ### Enterprise サービスに申し込む
+
+    1. コンソールの左下で組織名を選択します。
+    2. **Billing** をクリックします。
+    3. 左上で **Plan** を確認します。
+    4. **Plan** が **Enterprise** の場合は、次のセクションに進みます。そうでない場合は、**Change plan** をクリックします。
+    5. **Switch to Enterprise** を選択します。
+  </Step>
+
+  <Step>
+    ### 組織で PCI を有効にする
+
+    1. コンソールの左下で組織名を選択します。
+    2. **Organization details** をクリックします。
+    3. **Enable PCI** をオンにします。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="PCI を有効化" background="black" />
+
+    <br />
+
+    4. 有効にすると、その組織内で PCI サービスをデプロイできるようになります。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI が有効" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### サービスを PCI 準拠リージョンにデプロイする
+
+    1. コンソールのホーム画面左上で **New service** を選択します
+    2. **Region type** を **HIPAA compliant** に変更します
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="PCI リージョンにデプロイ" background="black" />
+
+    <br />
+
+    3. サービス名を入力し、残りの情報を入力します
+
+    PCI 準拠のクラウドプロバイダーとサービスの一覧については、[Supported cloud regions](/ja/products/cloud/reference/supported-regions) ページをご確認ください。
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## 既存のサービスを移行する
+</div>
+
+必要に応じて、準拠環境にサービスをデプロイすることを強く推奨します。サービスを標準リージョンから PCI 準拠リージョンに移行するには、バックアップからの復元が必要であり、一定のダウンタイムが発生する場合があります。
+
+標準リージョンから PCI 準拠リージョンへの移行が必要な場合は、次の手順でセルフサービス移行を実行してください。
+
+1. 移行するサービスを選択します。
+2. 左側の **Backups** をクリックします。
+3. 復元するバックアップの左側にある三点メニューを選択します。
+4. **Region type** を選択し、バックアップを PCI 準拠リージョンに復元します。
+5. 復元が完了したら、いくつかクエリを実行して、スキーマとレコード数が想定どおりであることを確認します。
+6. 古いサービスを削除します。
+
+<Info>
+  **制限事項**
+
+  サービスは、同じクラウドプロバイダーおよび同じ地理的リージョン内にとどめる必要があります。このプロセスでは、同じクラウドプロバイダーおよびリージョン内の準拠環境にサービスを移行します。
+</Info>

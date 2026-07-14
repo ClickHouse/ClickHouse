@@ -1,0 +1,53 @@
+---
+description: 'Permite consultar dados armazenados em um banco de dados SQLite.'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+Permite consultar dados armazenados em um banco de dados [SQLite](/pt-BR/reference/engines/database-engines/sqlite).
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+* `db_path` — Caminho para um arquivo de banco de dados SQLite. [String](/pt-BR/reference/data-types/string).
+* `table_name` — Nome de uma tabela no banco de dados SQLite. [String](/pt-BR/reference/data-types/string).
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+* Um objeto de tabela com as mesmas colunas da tabela `SQLite` original.
+
+<div id="example">
+  ## Exemplo
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [SQLite](/pt-BR/reference/engines/table-engines/integrations/sqlite) mecanismo de tabela
+* [Mecanismo de banco de dados SQLite](/pt-BR/reference/engines/database-engines/sqlite) — seção de suporte a tipos de dados

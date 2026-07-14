@@ -220,7 +220,7 @@ T decodeSingle(const std::vector<uint8_t> & stream)
 /// A malformed `IntMult` stream must fail closed rather than fabricate a value by wrapping. The
 /// decomposition `value = primary * base + secondary` is only valid when `base != 0`,
 /// `secondary < base`, and `primary * base + secondary` fits the latent width; the decoder rejects a
-/// stream that violates any of these instead of returning the modular wrap. A checksummed `0x9d`
+/// stream that violates any of these instead of returning the modular wrap. A checksummed `0x9e`
 /// frame reaches this decoder through the shared `CompressedReadBuffer`, so this is a current
 /// fail-closed boundary. The overflow test itself stays defined even for sub-word latents
 /// (`U16`/`I16`): `primary * base` for `primary = base = 65535` is `0xFFFE0001`, which would overflow
@@ -257,7 +257,7 @@ TEST(CodecPcoEncodeBounds, IntMultDecompositionFailsClosed)
 /// splits a latent `u` as `primary = u >> k` (fitting `latentBits - k` bits) and a remainder `m` in
 /// `[0, (1 << k) - 1]`; the decoder rejects an oversized `primary` (whose `primary << k` drops its
 /// high bits) or an out-of-range `m` (whose `lowest_k_bits_max - m` underflows) instead of returning
-/// a wrapped value. Reachable today: a checksummed `0x9d` frame reaches this decoder through the
+/// a wrapped value. Reachable today: a checksummed `0x9e` frame reaches this decoder through the
 /// shared `CompressedReadBuffer`.
 TEST(CodecPcoEncodeBounds, FloatQuantDecompositionFailsClosed)
 {

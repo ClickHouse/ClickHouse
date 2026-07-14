@@ -437,7 +437,13 @@ These codecs are designed to make compression more effective by exploiting speci
 
 <ExperimentalBadge/>
 
-`ALP()` — Adaptive lossless compression for floating-point data based on decimal scaling. ALP attempts to represent each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Values that cannot be represented exactly are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, currency). Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+The codec accepts an optional variant argument:
+
+- `ALP()` or `ALP(AUTO)` (default) — Uses STD and falls back to RD based on the estimated compressed size.
+- `ALP(STD)` — Standard ALP variant. Represents each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Non-representable values are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, prices).
+- `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 :::note
 This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
@@ -450,6 +456,16 @@ This codec is experimental and requires `SET allow_experimental_codecs = 1` to u
 #### PCO {#pco}
 
 `PCO(level)` — A native C++ port of [pcodec](https://github.com/pcodec/pcodec), a codec specialized for sequences of fixed-width numbers. It decomposes each value into latent variables, optionally applies delta encoding, then bins the values by magnitude and entropy-codes them with an interleaved tANS coder. It typically achieves substantially better compression ratios than general-purpose codecs on numeric columns (integers, floats, and types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4` and `Enum`), at comparable speed. Only numeric representations of 1, 2, 4 or 8 bytes are supported, so wider decimals (`Decimal128`, `Decimal256`) are not. The optional `level` controls the compression effort and ranges from 0 to 12 (the default is 8). The embedded standalone pcodec payload is bit-for-bit compatible with the reference pcodec implementation (a ClickHouse compressed block additionally prepends its own element-width and partial-tail header). `PCO` is experimental and requires the `allow_experimental_codecs` setting. Because the codec needs to know the column type, it can only be specified per column; untyped compression settings such as `marks_compression_codec`, `primary_key_compression_codec` and `default_compression_codec` reject it. For a description of the algorithm, see [Pcodec: Better Compression for Numerical Sequences](https://arxiv.org/abs/2502.06112).
+
+#### SZ3 {#sz3}
+
+<ExperimentalBadge/>
+
+`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
 
 #### T64 {#t64}
 

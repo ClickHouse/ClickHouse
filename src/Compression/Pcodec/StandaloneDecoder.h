@@ -200,7 +200,7 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
         // reconstruction always reproduces `u` and never exceeds the latent width. A malformed stream
         // can lie — `base == 0`, `secondary >= base`, or a `primary * base + secondary` that overflows
         // the latent width — and would then fabricate a value by wrapping modularly. Because the shared
-        // `CompressedReadBuffer` dispatches external frames by method byte alone, a checksummed `0x9d`
+        // `CompressedReadBuffer` dispatches external frames by method byte alone, a checksummed `0x9e`
         // frame reaches this decoder without `allow_experimental_codecs`, so this is a current
         // fail-closed boundary, not only a future raw-`.pco` concern. Validate the decomposition and
         // throw instead; these checks never reject a valid stream.
@@ -273,7 +273,7 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
                     // so `primary` occupies at most `latentBits - k` bits. A malformed stream can lie:
                     // an oversized `primary` makes `y << k` drop its high bits, and an `m` above the
                     // `k`-bit range underflows the `lowest_k_bits_max - m` branch — either fabricates a
-                    // float instead of failing closed (a checksummed `0x9d` frame reaches this decoder
+                    // float instead of failing closed (a checksummed `0x9e` frame reaches this decoder
                     // through the shared `CompressedReadBuffer`). Reject both; these checks never reject
                     // a valid stream. `(y << k) >> k == y` stays defined because `k <= PRECISION_BITS`
                     // is strictly less than the latent width.

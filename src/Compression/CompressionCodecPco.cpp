@@ -246,7 +246,7 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
 
     /// Block layout written by `doCompressData` (documented in `docs/en/interfaces/specs/NativeFormat.md`):
     /// `[1 byte: W][1 byte: B][B raw leading bytes][standalone .pco stream]`, where `W` is the element
-    /// width and `B = uncompressed_size mod W`. The `PCO` method byte `0x9d` is dispatched by the shared
+    /// width and `B = uncompressed_size mod W`. The `PCO` method byte `0x9e` is dispatched by the shared
     /// `CompressedReadBuffer` and can therefore reach this decoder from unchecked external framed input
     /// (notably the HTTP `decompress=1` path). So validate the stored header fields strictly and fail
     /// closed rather than silently recomputing or ignoring them.

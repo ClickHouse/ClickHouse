@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'Cloud 사용자 관리'
+slug: /cloud/security/manage-cloud-users
+title: 'Cloud 사용자 관리'
+description: '이 페이지에서는 관리자가 사용자를 추가하고, 할당을 관리하며, 사용자를 제거하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['Cloud 사용자', '액세스 관리', '보안', '권한', '팀 관리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+이 가이드는 ClickHouse Cloud에서 관리자 역할을 가진 사용자를 대상으로 합니다.
+
+<div id="add-users">
+  ## 조직에 사용자 추가하기
+</div>
+
+<div id="invite-users">
+  ### 사용자 초대
+</div>
+
+관리자는 한 번에 여러 사용자를 초대하고, 초대할 때 하나 이상의 역할을 할당할 수 있습니다.
+
+<Steps>
+  <Step>
+    ### organization settings로 이동하여 Users and roles를 선택합니다
+
+    services 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 왼쪽 상단에서 &#39;Invite members&#39;를 선택합니다
+
+    왼쪽 상단의 `Invite members` 버튼을 클릭합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 새 구성원의 이메일 주소를 입력하고 역할을 할당합니다
+
+    초대 화면 상단에 이메일 주소를 입력합니다. 사용자에게 할당할 하나 이상의 역할을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### `Send invites`를 클릭합니다
+
+    화면 하단에서 `Send invites`를 클릭합니다. 사용자는 조직에 참여할 수 있는 링크가 포함된 이메일을 받게 됩니다. 초대 수락에 대한 자세한 내용은 [내 계정 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account)를 참조하십시오.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### SAML IdP(Identity Provider)를 통해 사용자 추가
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+조직이 [SAML SSO](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)로 구성되어 있으면, 다음 단계에 따라 조직에 사용자를 추가하십시오.
+
+1. IdP(Identity Provider)에서 SAML 애플리케이션에 사용자를 추가하십시오. 사용자는 한 번 로그인하기 전까지 ClickHouse에 표시되지 않습니다.
+2. 사용자가 ClickHouse Cloud에 로그인하면 SAML 구성에서 선택한 기본 역할이 자동으로 할당됩니다.
+3. 권한을 부여하려면 아래의 `사용자 역할 할당 관리` 안내를 따르십시오.
+
+<div id="enforce-saml">
+  ### SAML 전용 인증 적용
+</div>
+
+조직에 관리자 역할이 할당된 SAML 사용자가 최소 1명 이상 있으면, 조직 전체에 SAML 전용 인증을 적용할 수 있도록 다른 인증 방법을 사용하는 사용자를 조직에서 제거하십시오.
+
+<div id="manage-role-assignments">
+  ## 사용자 역할 할당 관리
+</div>
+
+관리자 역할이 할당된 사용자는 언제든지 다른 사용자의 권한을 업데이트할 수 있습니다.
+
+<Steps>
+  <Step>
+    ### organization settings로 이동한 다음 Users and roles를 선택합니다
+
+    services 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 업데이트할 사용자를 선택한 다음 Edit를 선택합니다
+
+    액세스를 수정할 사용자의 행 끝에 있는 메뉴 항목을 선택합니다. 팝업 메뉴에서 `Edit`를 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 권한을 업데이트합니다
+
+    `Roles` 상자를 클릭하여 메뉴를 펼칩니다. 확인란을 선택해 사용자 역할을 추가하거나 제거합니다. 역할과 관련 권한 목록은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)을 참조하십시오.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 변경 사항을 저장합니다
+
+    탭 하단의 `Save changes` 버튼을 클릭하여 변경 사항을 저장합니다.
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## 사용자 제거
+</div>
+
+<Info>
+  **SAML 사용자 제거**
+
+  IdP(Identity Provider)에서 ClickHouse 애플리케이션 할당이 해제된 SAML 사용자는 ClickHouse Cloud에 로그인할 수 없습니다. 계정은 콘솔에서 자동으로 제거되지 않으므로 수동으로 제거해야 합니다.
+</Info>
+
+아래 단계에 따라 사용자를 제거하세요.
+
+1. 왼쪽 하단에서 조직 이름을 선택합니다
+2. `Users and roles`를 클릭합니다
+3. 사용자 이름 옆의 점 3개를 클릭한 다음 `Remove`를 선택합니다
+4. `Remove user` 버튼을 클릭하여 작업을 확인합니다
