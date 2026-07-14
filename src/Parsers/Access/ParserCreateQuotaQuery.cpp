@@ -228,7 +228,8 @@ namespace
             if (!parseIntervalKind(pos, expected, interval_kind))
                 return false;
 
-            limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
+            /// Signed cast: a negative interval must stay negative so validation rejects it (casting to UInt64 is UB).
+            limits.duration = std::chrono::seconds(static_cast<Int64>(num_intervals * interval_kind.toAvgSeconds()));
             std::vector<std::pair<QuotaType, QuotaValue>> new_limits;
 
             if (ParserKeyword{Keyword::NO_LIMITS}.ignore(pos, expected))
