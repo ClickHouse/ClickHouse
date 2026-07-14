@@ -100,10 +100,12 @@ public:
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
 
-        return result.first->excluded_rows;
+        return cloneExcludedRows(result.first->excluded_rows);
     }
 
 private:
+    static DataLakeObjectMetadata::ExcludedRowsPtr cloneExcludedRows(const DataLakeObjectMetadata::ExcludedRowsPtr & source);
+
     LoggerPtr log;
 
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;

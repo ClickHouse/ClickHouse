@@ -17,6 +17,16 @@ extern const Event PuffinFilesCacheWeightLost;
 namespace DB
 {
 
+DataLakeObjectMetadata::ExcludedRowsPtr PuffinFilesCache::cloneExcludedRows(const DataLakeObjectMetadata::ExcludedRowsPtr & source)
+{
+    if (!source)
+        return nullptr;
+
+    auto cloned = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+    cloned->merge(*source);
+    return cloned;
+}
+
 bool PuffinFilesCacheKey::operator==(const PuffinFilesCacheKey & other) const
 {
     return file_path == other.file_path
