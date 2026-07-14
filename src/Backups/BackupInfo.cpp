@@ -587,14 +587,21 @@ namespace
             if (isCredentialArgForNormalizedIdentity(info.backup_engine_name, has_named_collection, i))
                 continue;
 
+            String arg = getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
+            if (info.backup_engine_name == "S3" && has_named_collection && i == 0)
+            {
+                if (arg.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot normalize an empty S3 named collection filename without resolving the collection");
+                if (fs::path(arg).is_absolute())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup S3 named collection filename must be relative");
+            }
+
             appendNormalizedIdentityComponent(
                 result,
                 first,
-                normalizeArgForIdentity(
-                    info.backup_engine_name,
-                    has_named_collection,
-                    i,
-                    getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i)));
+                normalizeArgForIdentity(info.backup_engine_name, has_named_collection, i, std::move(arg)));
         }
 
         /// Direct backup engines ignore key-value arguments. Include overrides only
@@ -630,6 +637,16 @@ namespace
                         "Backup engine '{}' key-value argument {} must have a string value for normalized backup identity",
                         info.backup_engine_name,
                         kv->formatForErrorMessage());
+
+                if (info.backup_engine_name == "S3" && *key == "filename")
+                {
+                    if (value->empty())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot normalize an empty S3 named collection filename without resolving the collection");
+                    if (fs::path(*value).is_absolute())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup S3 named collection filename must be relative");
+                }
 
                 kv_strings.push_back(*key + "=" + normalizeKeyValueArgForIdentity(info.backup_engine_name, *key, *value));
             }

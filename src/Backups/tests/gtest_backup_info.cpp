@@ -569,6 +569,52 @@ TEST(BackupInfo, NormalizedStringIncludesOnlyEffectiveNamedCollectionOverrides)
     EXPECT_EQ(ignored_non_locator.toNormalizedString().find("STANDARD_IA"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringValidatesUnresolvedS3NamedCollectionFilename)
+{
+    auto base = BackupInfo::fromString("S3(collection)");
+    auto empty_positional = BackupInfo::fromString("S3(collection, '')");
+    auto empty_override = BackupInfo::fromString("S3(collection, filename='')");
+    auto absolute_positional = BackupInfo::fromString("S3(collection, '/backup')");
+    auto absolute_override = BackupInfo::fromString("S3(collection, filename='/backup')");
+
+    EXPECT_NO_THROW((void)base.toNormalizedString());
+    EXPECT_THROW((void)empty_positional.toNormalizedString(), Exception);
+    EXPECT_THROW((void)empty_override.toNormalizedString(), Exception);
+    EXPECT_THROW((void)absolute_positional.toNormalizedString(), Exception);
+    EXPECT_THROW((void)absolute_override.toNormalizedString(), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringResolvesEmptyS3NamedCollectionFilename)
+{
+    auto archive = BackupInfo::fromString("S3(collection)");
+    auto archive_with_empty_filename = BackupInfo::fromString("S3(collection, '')");
+    archive.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/backup.zip"}});
+    archive_with_empty_filename.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/backup.zip"}});
+
+    EXPECT_NE(archive.toNormalizedString(), archive_with_empty_filename.toNormalizedString());
+
+    const String collection_name = "backup_info_empty_filename_override";
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("url", Field("s3://bucket/base"));
+    create_query->changes.emplace_back("filename", Field("stored"));
+    create_query->overridability.emplace("filename", true);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    SCOPE_EXIT({
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    });
+
+    auto context = getContext().context;
+    auto stored_filename = BackupInfo::fromString("S3(" + collection_name + ")");
+    auto empty_override = BackupInfo::fromString("S3(" + collection_name + ", filename='')");
+
+    EXPECT_NE(stored_filename.toNormalizedString(context), empty_override.toNormalizedString(context));
+}
+
 TEST(BackupInfo, NormalizedStringIgnoresCaseInsensitiveAndGoogleAdcCredentialOverrides)
 {
     auto base = BackupInfo::fromString("S3(collection)");
