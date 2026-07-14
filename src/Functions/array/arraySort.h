@@ -39,11 +39,10 @@ struct ArraySortImpl
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected fixed arguments to get the limit for partial array sort");
 
-        WhichDataType which(fixed_arguments[0].type.get());
-        if (!which.isUInt() && !which.isInt())
+        if (!isNativeInteger(*fixed_arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of limit argument of function {} (must be UInt or Int)",
+                "Illegal type {} of limit argument of function {} (must be a native integer: UInt8/16/32/64 or Int8/16/32/64)",
                 fixed_arguments[0].type->getName(),
                 name);
     }
