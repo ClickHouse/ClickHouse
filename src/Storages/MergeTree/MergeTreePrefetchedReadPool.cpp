@@ -356,15 +356,22 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         /// Account for the effective buffer each prefetched reader actually allocates, so
         /// `filesystem_prefetch_max_memory_usage` bounds real memory. The pool serves both remote and
         /// local parts (the latter when `allow_prefetched_read_pool_for_local_filesystem` is enabled),
-        /// and the two paths allocate from different settings: a remote reader uses
-        /// `max(buffer_size, large_buffer_size)` (`DiskObjectStorage` may raise the buffer to the larger
-        /// of the two), while a local reader uses `local_fs_settings.buffer_size`. Charge each part by
-        /// the buffer its own storage will allocate, otherwise a local prefetch could be admitted on a
-        /// smaller remote estimate while allocating a larger local buffer (or vice versa).
+        /// and the two paths allocate from different settings. A local reader uses
+        /// `local_fs_settings.buffer_size`. A remote reader normally allocates exactly
+        /// `remote_fs_settings.buffer_size`; only when a filesystem-cache stage that prefers a bigger
+        /// buffer is active does `DiskObjectStorage::prepareRead` raise the buffer to `large_buffer_size`
+        /// (to avoid cache fragmentation). Mirror that predicate here, otherwise with the cache off (e.g.
+        /// `enable_filesystem_cache = 0`, small `max_read_buffer_size_remote_fs`, large `prefetch_buffer_size`)
+        /// the admission estimate would charge `large_buffer_size` and reject prefetches that in reality fit.
         const auto & read_settings = reader_settings.read_settings;
-        const size_t effective_buffer_size = is_part_on_remote_disk[i]
-            ? std::max(read_settings.remote_fs_settings.buffer_size, read_settings.remote_fs_settings.large_buffer_size)
-            : read_settings.local_fs_settings.buffer_size;
+        const auto & remote_fs = read_settings.remote_fs_settings;
+        const bool remote_prefers_bigger_buffer = read_settings.enable_filesystem_cache
+            && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
+            && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass;
+        const size_t remote_buffer_size
+            = remote_prefers_bigger_buffer ? std::max(remote_fs.buffer_size, remote_fs.large_buffer_size) : remote_fs.buffer_size;
+        const size_t effective_buffer_size
+            = is_part_on_remote_disk[i] ? remote_buffer_size : read_settings.local_fs_settings.buffer_size;
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
