@@ -3,6 +3,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 
@@ -21,9 +22,16 @@ namespace
 /// Hive declares maps as MAP<primitive_type, data_type>: a map key cannot be a nested
 /// (ARRAY/MAP/STRUCT) type, so no Hive schema could read such values back. ClickHouse allows
 /// composite Map keys whose elements would serialize fine on their own, so reject them upfront.
+/// The walk must descend through every wrapper whose serializeTextHive is a transparent
+/// pass-through (Nullable), otherwise a composite-key Map hidden inside, e.g.,
+/// Nullable(Tuple(Map(Array(UInt8), UInt8))) would slip past the check and still be written.
 void assertMapKeysArePrimitive(const DataTypePtr & type)
 {
-    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        assertMapKeysArePrimitive(type_nullable->getNestedType());
+    }
+    else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
         assertMapKeysArePrimitive(type_array->getNestedType());
     }

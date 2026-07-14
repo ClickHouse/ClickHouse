@@ -20,5 +20,11 @@ do
         | grep -o -m1 "Type Map(.*) is not supported by the HiveText output format: Hive supports only primitive types as Map keys"
 done
 
+# A composite-key Map hidden inside a supported wrapper must be rejected too: the validator has to
+# unwrap Nullable before descending into Tuple, otherwise the check is bypassed and the file is written.
+${CLICKHOUSE_CLIENT} --enable_nullable_tuple_type 1 \
+    --query "SELECT CAST((map([1], 2),), 'Nullable(Tuple(Map(Array(UInt8), UInt8)))') FORMAT HiveText" 2>&1 \
+    | grep -o -m1 "Type Map(.*) is not supported by the HiveText output format: Hive supports only primitive types as Map keys"
+
 # Maps with primitive keys are supported, including maps whose values are of nested types.
 ${CLICKHOUSE_CLIENT} --query "SELECT map('a', [1, 2], 'b', [3]) FORMAT HiveText" | tr '\002\003\004' ';:|'
