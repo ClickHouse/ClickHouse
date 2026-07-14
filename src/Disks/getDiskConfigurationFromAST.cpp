@@ -98,7 +98,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
-            || k == "role_session_name" || k == "use_environment_credentials" || k == "http_client"
+            || k == "role_session_name" || k == "external_id" || k == "use_environment_credentials" || k == "http_client"
             || k == "service_account" || k == "metadata_service" || k == "request_token_path"
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
