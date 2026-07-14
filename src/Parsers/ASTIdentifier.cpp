@@ -116,6 +116,9 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
     /// Part boundaries are semantic and survive the format/reparse round-trip, so mix them in.
     /// Quote styles do NOT survive formatting (presentation honors identifier_quoting_style) and
     /// must stay out of the hash; resolution reads them from the AST parts, not from the hash.
+    /// This cannot poison hash-keyed caches: analysis (which applies quote semantics) runs before
+    /// any cache read, and under `standard` matching two same-text queries that differ only in
+    /// quoting can never both succeed against different objects.
     if (name_parts.size() > 1)
     {
         for (const auto & part : name_parts)
