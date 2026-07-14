@@ -4992,6 +4992,11 @@ function persistColorModes() {
             /// History manipulation is not allowed for the 'file:' protocol.
         }
     }
+    /// A color-mode toggle is a result-only change, but the `persist` this schedules snapshots the
+    /// LIVE editor (`captureActiveTab`), so if an unrun draft is currently in the editor it is
+    /// persisted alongside the color modes and restored as editor text on a plain reload. This is
+    /// the same harmless outcome as any other debounced save flushing a draft (see the comment on
+    /// the editor `input` handler and on `scheduleSave`): the draft is only shown, never auto-run.
     scheduleSave();
 }
 
@@ -5931,8 +5936,16 @@ window.onpopstate = function(event) {
     /// reload (while the URL still holds this entry) would be misread by startup reconciliation
     /// as a fresh external URL and overwrite the edit (`lastSavedQuery` would still point at the
     /// newer entry that `writeHistoryEntry` last recorded, not at this one). `lastSavedQuery`
-    /// tracks the URL, not the editor, so it stays aligned with the entry even when a draft is
-    /// preserved above (a subsequent reload still restores the entry's query, per the contract).
+    /// tracks the URL, not the editor. When a draft is preserved above, `tab.query` (the draft)
+    /// diverges from it, so the `scheduleSave` at the end of this handler persists the pair
+    /// `{ query: <draft>, lastSavedQuery: <entry query> }` — exactly the shape `reconcileStartup`
+    /// treats as a stale reload of an edited-but-unresynced tab, so a later reload restores the
+    /// DRAFT as editor text, not the entry query. That is the same harmless outcome as any other
+    /// unrun draft a debounced save happens to flush (see the `scheduleSave` comment): it is only
+    /// shown, never auto-executed — the workspace store carries no `run` flag and the editor-only
+    /// history writers never stamp `run=1` for an unrun edit, so the reload's `run=1` (if any) is
+    /// dropped on the stale-reload branch. The guaranteed reload invariant is "an unrun draft is
+    /// never auto-run", not "reload always restores the entry query".
     tab.lastSavedQuery = event.state.query;
     /// The preserved draft keeps its own parameter bindings too: `captureActiveTab` above
     /// snapshotted the live `param_*` inputs into `tab.params` together with the draft query.
@@ -8173,11 +8186,17 @@ query_area.addEventListener('input', (e) =>
     /// recorded only when a query is successfully run (`saveHistory`) or on a structural tab
     /// change — switch/add/close/rename — which capture the editor and call `syncHistory` /
     /// `scheduleSave` themselves. A consequence is that an unrun edit is generally not restored
-    /// across a reload if no run or tab change happened after it. Two narrow paths may still fold a
-    /// later draft into a save/URL entry — a debounced `persist` firing after fresh typing (see
-    /// `scheduleSave`) and a parameter edit calling `syncHistory` (see the `param-` input handler);
-    /// both are intentional and harmless, restoring the draft only as editor text, never as an
-    /// auto-run (an unrun edit never carries `run=1`).
+    /// across a reload if no run or tab change happened after it. Several paths may still fold a
+    /// later draft into a saved/URL entry, and this is intentional and harmless — the draft is
+    /// restored only as editor text, never as an auto-run (an unrun edit never carries `run=1`;
+    /// `reconcileStartup` also drops the URL's `run=1` on the stale-reload branch it takes for such
+    /// a draft). Any debounced `persist` that fires while the editor holds a draft diverging from
+    /// the URL snapshots that draft (via `captureActiveTab`), so a plain reload restores it: a save
+    /// debounced after fresh typing (see `scheduleSave`), the `scheduleSave` at the end of
+    /// `window.onpopstate` after a preserved-draft Back/Forward, and a color-mode toggle
+    /// (`persistColorModes`) all reach it. A parameter edit likewise folds the draft in by calling
+    /// `syncHistory` (see the `param-` input handler). The guaranteed reload invariant is only that
+    /// an unrun draft is never auto-run, not that reload always restores the last run's query.
     const tab = getActiveTab();
     if (tab) {
         tab.query = query_area.value;
