@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: 'الفهارس الأساسية'
+description: 'كيف يعمل الفهرس الأساسي المتناثر في ClickHouse'
+keywords: ['الفهرس الأساسي المتناثر', 'الفهرس الأساسي', 'الفهرس']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Tip>
+  **هل تبحث عن تفاصيل متقدمة حول الفهرسة؟**
+
+  تقدّم هذه الصفحة الفهرس الأساسي المتناثر في ClickHouse، وكيفية بنائه، وآلية عمله، وكيف يساعد في تسريع الاستعلامات.
+
+  للاطلاع على استراتيجيات فهرسة متقدمة وتفاصيل تقنية أعمق، راجع [شرحًا معمقًا عن الفهارس الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## كيف يعمل الفهرس الأساسي المتناثر في ClickHouse؟
+</div>
+
+<br />
+
+يساعد الفهرس الأساسي المتناثر في ClickHouse على تحديد [الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)—وهي كتل من الصفوف—التي يُحتمل أن تحتوي على بيانات تطابق شرط query على أعمدة primary key للجدول، وذلك بكفاءة. في القسم التالي، نشرح كيفية إنشاء هذا الفهرس من القيم الموجودة في تلك الأعمدة.
+
+<div id="sparse-primary-index-creation">
+  ### إنشاء الفهرس الأساسي المتناثر
+</div>
+
+لتوضيح كيفية بناء الفهرس الأساسي المتناثر، نستخدم جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) مع بعض الرسوم المتحركة.
+
+وللتذكير [بما سبق](/ar/concepts/core-concepts/parts)، في ① جدول المثال لدينا ذي المفتاح الأساسي (town, street)، تُخزَّن ② البيانات المُدرجة ③ على القرص، مرتبةً حسب قيم أعمدة المفتاح الأساسي، ومضغوطةً، في ملفات منفصلة لكل عمود:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+لأغراض المعالجة، تُقسَّم بيانات كل عمود ④ منطقيًا إلى حبيبات—تغطي كل منها 8,192 صفًا—وهي أصغر الوحدات التي تعمل عليها آليات معالجة البيانات في ClickHouse.
+
+وهذا التقسيم إلى حبيبات هو أيضًا ما يجعل الفهرس الأساسي **متناثرًا**: فبدلًا من فهرسة كل صف، يخزّن ClickHouse ⑤ قيم المفتاح الأساسي من صف واحد فقط لكل حبيبة—وتحديدًا الصف الأول. وينتج عن ذلك مُدخل فهرس واحد لكل حبيبة:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+وبفضل هذا التبعثر، يكون الفهرس الأساسي صغيرًا بما يكفي ليتسع بالكامل في الذاكرة، مما يتيح تصفيةً سريعةً للاستعلامات التي تتضمن شروطًا على أعمدة المفتاح الأساسي. في القسم التالي، نوضح كيف يساعد ذلك في تسريع مثل هذه الاستعلامات.
+
+<div id="primary-index-usage">
+  ### استخدام الفهرس الأساسي
+</div>
+
+نوضح بإيجاز كيف يُستخدم الفهرس الأساسي المتناثر لتسريع الاستعلام من خلال رسم متحرك آخر:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① يتضمن استعلام المثال شرطًا على كلٍّ من عمودَي المفتاح الأساسي: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② لتسريع الاستعلام، يحمّل ClickHouse الفهرس الأساسي للجدول إلى الذاكرة.
+
+③ ثم يفحص إدخالات الفهرس لتحديد الحبيبات التي قد تحتوي على صفوف تطابق الشرط، أي الحبيبات التي لا يمكن تخطيها.
+
+④ بعد ذلك، تُحمَّل هذه الحبيبات التي يُحتمل أن تكون ذات صلة وتُ[عالَج](/ar/concepts/core-concepts/query-parallelism) في الذاكرة، إلى جانب الحبيبات المقابلة من أي أعمدة أخرى مطلوبة للاستعلام.
+
+<div id="monitoring-primary-indexes">
+  ## مراقبة الفهارس الأساسية
+</div>
+
+لكل [جزء بيانات](/ar/concepts/core-concepts/parts) في الجدول فهرسه الأساسي الخاص به. ويمكننا فحص محتويات هذه الفهارس باستخدام الدالة الجدولية [mergeTreeIndex](/ar/reference/functions/table-functions/mergeTreeIndex).
+
+يعرض الاستعلام التالي عدد المدخلات في الفهرس الأساسي لكل جزء بيانات في جدول المثال لدينا:
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+يعرض هذا الاستعلام أول 10 إدخالات من الفهرس الأساسي لأحد أجزاء البيانات الحالية. لاحظ أن هذه الأجزاء [تُدمَج](/ar/concepts/core-concepts/merges) باستمرار في الخلفية لتشكيل أجزاء أكبر:
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+أخيرًا، نستخدم عبارة [EXPLAIN](/ar/reference/statements/explain) لمعرفة كيف تُستخدَم الفهارس الأساسية لجميع أجزاء البيانات لتجاوز الحبيبات التي لا يمكن أن تحتوي على صفوف تطابق شروط الاستعلام الوارد في المثال. وتُستبعد هذه الحبيبات من التحميل والمعالجة:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+لاحظ كيف يُظهر الصف 13 من مخرجات EXPLAIN أعلاه أن 3 فقط من أصل 3,609 حبيبات من جميع أجزاء البيانات قد حددها تحليل الفهرس الأساسي للمعالجة. أما الحبيبات المتبقية، فقد جرى تخطيها بالكامل.
+
+ويمكننا أيضًا ملاحظة أنه جرى تخطي معظم البيانات بمجرد تشغيل الاستعلام:
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 263.10 million
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+كما هو موضح أعلاه، لم تُعالَج سوى نحو 25,000 صف من أصل ما يقارب 30 مليون صف في جدول المثال:
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 29.56 million
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## النقاط الرئيسية
+</div>
+
+* تساعد **الفهارس الأساسية المتناثرة** ClickHouse على تخطي البيانات غير الضرورية عبر تحديد الحبيبات التي قد تحتوي على صفوف تطابق شروط الاستعلام على أعمدة المفتاح الأساسي.
+
+* يخزّن كل فهرس قيم المفتاح الأساسي من **الصف الأول فقط في كل حبيبة** (تحتوي الحبيبة افتراضيًا على 8,192 صفًا)، مما يجعله مدمجًا بما يكفي ليوضع في الذاكرة.
+
+* لكل **جزء بيانات** في جدول MergeTree **فهرسه الأساسي الخاص**، ويُستخدم هذا الفهرس بشكل مستقل أثناء تنفيذ الاستعلامات.
+
+* أثناء تنفيذ الاستعلامات، يتيح الفهرس لـ ClickHouse **تخطي الحبيبات**، مما يقلل من عمليات I/O واستخدام الذاكرة ويُسرّع الأداء.
+
+* يمكنك **فحص محتويات الفهرس** باستخدام الدالة الجدولية ‏`mergeTreeIndex` ومراقبة استخدام الفهرس باستخدام clause ‏`EXPLAIN`.
+
+<div id="where-to-find-more-information">
+  ## أين تجد مزيدًا من المعلومات
+</div>
+
+للتعمق أكثر في كيفية عمل الفهارس الأساسية المتناثرة في ClickHouse، بما في ذلك اختلافها عن فهارس قواعد البيانات التقليدية وأفضل الممارسات لاستخدامها، اطّلع على [الشرح التفصيلي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) حول الفهرسة.
+
+إذا كنت مهتمًا بكيفية معالجة ClickHouse للبيانات التي يحددها مسح الفهرس الأساسي بدرجة عالية من التوازي، فراجع دليل توازي الاستعلام [هنا](/ar/concepts/core-concepts/query-parallelism).

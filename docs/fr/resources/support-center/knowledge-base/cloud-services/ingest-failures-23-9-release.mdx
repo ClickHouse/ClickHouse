@@ -1,0 +1,35 @@
+---
+title: Comment résoudre les échecs d'ingestion après la sortie de ClickHouse 23.9 ?
+description: "Découvrez comment résoudre les échecs d'ingestion provoqués par un contrôle plus strict des privilèges, introduit dans ClickHouse 23.9 pour les tables utilisant `async_inserts`. Mettez à jour les privilèges pour corriger les erreurs."
+date: 2022-11-17
+tags: ['Erreurs et exceptions']
+keywords: ['GRANT', "Erreurs d'autorisation"]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## Résoudre les échecs d’ingestion après la sortie de ClickHouse 23.9
+</div>
+
+La cause de ces erreurs d’autorisation a été identifiée : elles sont dues à une vérification plus stricte des privilèges dans la nouvelle version pour [`async_inserts`](/fr/concepts/features/operations/insert/asyncinserts).
+
+Pour corriger ce problème, vous devez mettre à jour les privilèges afin que votre service fonctionne. Vérifiez le message d’erreur indiquant les privilèges manquants et ajoutez manuellement ceux qui sont nécessaires. Les privilèges supplémentaires requis pour les tables utilisant `async_inserts` seront soit le privilège `SELECT`, soit le privilège `dictGet`.
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## Ajoutez les privilèges GRANT nécessaires sur les tables et dictionnaires concernés
+</div>
+
+```
+-- Add SELECT grant permissions
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- Add dictGet grant permissions
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+Pour en savoir plus sur la commande `GRANT`, veuillez consulter [cette page](/fr/reference/statements/grant).
+
+Si vous ne pouvez pas effectuer cette modification, veuillez contacter [ClickHouse Support](https://clickhouse.com/support/program) pour obtenir de l&#39;aide.

@@ -1,0 +1,15 @@
+---
+title: 2 Conexão
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step2.webp" alt="Preencha os detalhes da conexão" size="lg" border />
+
+* **Método de autenticação**: o S3 ClickPipe oferece suporte a [credenciais do IAM](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) e [autenticação baseada em IAM role](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`). Consulte a [documentação de referência](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#access-control) para orientações sobre autenticação e permissões.
+
+  * **Caminho do arquivo no S3**: o S3 ClickPipe usa uma [URI no estilo virtual-hosted](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access).
+
+    ```bash
+    https://bucket-name.s3.region-code.amazonaws.com/key-name
+    ```
+
+    Você pode usar curingas POSIX para corresponder a vários arquivos ou prefixos. Consulte a [documentação de referência](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching) para orientações sobre os padrões compatíveis.

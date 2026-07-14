@@ -1,0 +1,43 @@
+---
+title: مصادقة GCS وحاوية GCS
+---
+
+<Accordion title="إنشاء حاويات GCS ومفتاح HMAC">
+  ### ch&#95;bucket&#95;us&#95;east1
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="إنشاء حاوية GCS في US East 1" border />
+
+  ### ch&#95;bucket&#95;us&#95;east4
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="إنشاء حاوية GCS في US East 4" border />
+
+  ### إنشاء مفتاح وصول
+
+  ### إنشاء مفتاح HMAC وقيمة سرية لحساب خدمة
+
+  افتح **Cloud Storage &gt; Settings &gt; Interoperability** ثم اختر إما **Access key** موجودًا أو **CREATE A KEY FOR A SERVICE ACCOUNT**. يشرح هذا الدليل مسار إنشاء مفتاح جديد لحساب خدمة جديد.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="إنشاء مفتاح HMAC لحساب خدمة في GCS" border />
+
+  ### إضافة حساب خدمة جديد
+
+  إذا كان هذا مشروعًا لا يحتوي على أي حساب خدمة موجود، فاختر **CREATE NEW ACCOUNT**.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="إضافة حساب خدمة جديد في GCS" border />
+
+  هناك ثلاث خطوات لإنشاء حساب الخدمة. في الخطوة الأولى، امنح الحساب اسمًا مناسبًا ومعرّفًا ووصفًا.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="تحديد اسم حساب خدمة جديد ومعرّفه في GCS" border />
+
+  في مربع حوار إعدادات Interoperability، يُوصى بدور IAM **Storage Object Admin**؛ حدّد هذا الدور في الخطوة الثانية.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="تحديد دور IAM ‏Storage Object Admin في GCS" border />
+
+  الخطوة الثالثة اختيارية ولا تُستخدم في هذا الدليل. يمكنك منح المستخدمين هذه الامتيازات وفقًا لسياساتك.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="تهيئة إعدادات إضافية لحساب الخدمة الجديد في GCS" border />
+
+  سيُعرض مفتاح HMAC الخاص بحساب الخدمة. احفظ هذه المعلومات، إذ ستُستخدم في إعداد ClickHouse.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="استرداد مفتاح HMAC الذي تم إنشاؤه لـ GCS" border />
+</Accordion>

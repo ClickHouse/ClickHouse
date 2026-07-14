@@ -1,0 +1,53 @@
+---
+date: 2025-01-10
+title: Pourquoi la journalisation de ClickHouse est-elle aussi verbeuse par défaut ?
+description: "Découvrez pourquoi les développeurs de ClickHouse ont choisi de définir par défaut un niveau de journalisation verbeux."
+tags: ['Paramètres']
+keywords: ['Journalisation par défaut']
+---
+
+<div id="verbose-logging">
+  ## Journalisation verbeuse
+</div>
+
+Les nouveaux utilisateurs sont souvent surpris de constater que ClickHouse génère beaucoup de messages de journalisation, même avec une faible charge.
+
+Cela s’explique par le fait que le niveau de journalisation par défaut, pour des raisons historiques, est `trace` (au lieu de `warning`, qui serait la valeur par défaut dans d’autres bases de données).
+
+Les développeurs de ClickHouse font valoir que `trace` fournit de nombreuses informations utiles en cas de problème.
+
+En revanche, des volumes importants de journalisation signifient que la table système `system.text_log` se remplit rapidement et doit faire l’objet de fusions en arrière-plan.
+
+Si la base de données fonctionne de manière stable, les utilisateurs peuvent reconfigurer le niveau de journalisation, comme nous l’expliquons ci-dessous.
+
+<div id="change-the-log-level">
+  ## Modifier le niveau de journalisation
+</div>
+
+Les différents niveaux de journalisation disponibles sont documentés [ici](/fr/reference/settings/server-settings/settings#logger)
+
+Vous devez modifier le fichier de configuration du serveur ClickHouse (`/etc/clickhouse-server/config.xml`) pour changer le niveau de journalisation.
+
+La valeur par défaut est `trace`, mais vous pouvez la définir sur le niveau souhaité. Voir le commentaire ci-dessous :
+
+```
+<clickhouse>
+    <logger>
+        {/* Possible levels [1]:
+
+          - none (turns off logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (not for production usage)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... Rest of the configuration file
+</clickhouse>
+```

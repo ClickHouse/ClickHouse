@@ -1,0 +1,229 @@
+---
+slug: /use-cases/AI_ML/AIChat/semantic-layer
+sidebarTitle: 'Personalizando o chat do ClickHouse Assistant com uma camada semântica'
+title: 'Otimizando as conversas do ClickHouse Assistant com uma camada semântica'
+description: 'Guia para usar o AGENTS.md e fornecer regra de negócio personalizada e instruções específicas dos dados ao agente de chat do ClickHouse Assistant'
+keywords: ['AI', 'ClickHouse Cloud', 'Agente', 'AGENTS.md', 'Camada Semântica', 'Instruções Personalizadas', 'Prompt de Sistema']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+O agente de chat do ClickHouse Assistant pode ser personalizado para entender a regra de negócio específica, as estruturas de dados e o conhecimento de domínio da sua organização por meio do **AGENTS.md** — uma consulta salva especial que atua como uma camada semântica sobre o prompt de sistema do agente.
+
+Ao criar um arquivo AGENTS.md, você pode fornecer instruções personalizadas que são injetadas no início de cada conversa para orientar a geração de consultas SQL e a análise de dados com base nos requisitos, cálculos e convenções exclusivos da sua organização.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+Quando você salva uma consulta chamada &quot;AGENTS.md&quot; (sensível a maiúsculas e minúsculas) no Cloud Console:
+
+1. O agente de chat do ClickHouse Assistant carrega esse arquivo automaticamente quando uma mensagem é enviada
+2. O conteúdo é inserido em uma tag de conteúdo estruturado e injetado no `prompt de sistema` do agente
+3. As instruções são aplicadas a todas as conversas do ClickHouse Assistant chat nesse serviço
+
+<div id="creating-agents-md">
+  ## Criando AGENTS.md
+</div>
+
+<Steps>
+  <Step>
+    ### Crie a consulta salva
+
+    1. No Cloud Console, crie uma nova consulta
+    2. Dê a ela exatamente este nome: **&quot;AGENTS.md&quot;** (diferencia maiúsculas de minúsculas)
+    3. Escreva suas instruções personalizadas no editor de texto da consulta (não SQL de fato)
+    4. Salve a consulta
+  </Step>
+
+  <Step>
+    ### Adicione suas instruções
+
+    Estruture suas instruções com uma linguagem clara e objetiva. Inclua:
+
+    * Regras de negócio e cálculos
+    * Orientações sobre a estrutura de dados
+    * Terminologia específica do domínio
+    * Padrões comuns de consulta
+    * Regras de otimização de desempenho
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## Boas práticas
+</div>
+
+<div id="finite-resource">
+  ### Trate o contexto como um recurso finito
+</div>
+
+O contexto é precioso — cada token consome o &quot;orçamento de atenção&quot; do agente. Assim como os humanos têm memória de trabalho limitada, os modelos de linguagem sofrem degradação de desempenho à medida que o contexto cresce. Isso significa encontrar o **menor conjunto possível de tokens mais informativos** que maximize a probabilidade do resultado desejado.
+
+<div id="right-altitude">
+  ### Encontre o nível certo de detalhe
+</div>
+
+Busque um equilíbrio entre dois extremos:
+
+* **Específico demais**: Codificar de forma rígida uma lógica if-else frágil, que gera instabilidade e aumenta a complexidade de manutenção
+* **Vago demais**: Orientações genéricas que não fornecem sinais concretos ou pressupõem, de forma equivocada, um contexto compartilhado
+
+O nível ideal de detalhe é específico o suficiente para orientar o comportamento com eficácia, mas flexível o bastante para que o modelo aplique heurísticas robustas. Comece com um prompt mínimo no melhor modelo disponível e, em seguida, adicione instruções claras com base nos modos de falha observados.
+
+<div id="structured-sections">
+  ### Organize em seções estruturadas
+</div>
+
+Use tags XML ou cabeçalhos Markdown para criar seções distintas e fáceis de consultar:
+
+```xml
+<background_information>
+Context about your data and domain
+</background_information>
+
+<calculation_rules>
+Specific formulas and business logic
+</calculation_rules>
+
+<tool_guidance>
+How to use specific ClickHouse features
+</tool_guidance>
+```
+
+<div id="canonical-examples">
+  ### Forneça exemplos diversos e canônicos
+</div>
+
+Os exemplos são como “imagens que valem mais que mil palavras”. Em vez de abarrotar seu prompt com todos os casos extremos, selecione um conjunto enxuto e diverso de exemplos que represente com clareza o comportamento esperado.
+
+<div id="minimal-complete">
+  ### Mantenha o mínimo, mas sem deixar de ser completo
+</div>
+
+* Inclua apenas instruções necessárias com frequência
+* Seja conciso — contexto demais prejudica o desempenho devido à &quot;deterioração do contexto&quot;
+* Remova regras desatualizadas ou raramente usadas
+* Garanta informações suficientes para orientar o comportamento desejado
+
+<Tip>
+  Mínimo não significa necessariamente curto. Você precisa de detalhes suficientes para garantir que o agente siga o comportamento esperado, apenas evite verbosidade desnecessária.
+</Tip>
+
+<div id="example-calculated-metrics">
+  ## Exemplo: Métricas calculadas a partir de dados brutos
+</div>
+
+Oriente o agente quando as métricas exigirem cálculos específicos, em vez de acesso direto à coluna:
+
+```xml
+<metric_calculations>
+IMPORTANT: "active_sessions" is NOT a column. It must be calculated.
+
+To calculate active sessions:
+COUNT(DISTINCT session_id || '|' || user_id) AS active_sessions
+
+This counts unique combinations of session and user identifiers.
+
+When the user asks for "active sessions" or "session count", always use this formula:
+SELECT
+    date,
+    COUNT(DISTINCT session_id || '|' || user_id) AS active_sessions
+FROM events
+GROUP BY date;
+
+</metric_calculations>
+```
+
+<div id="example-business-logic">
+  ## Exemplo: Regras de negócio
+</div>
+
+Defina cálculos e classificações específicos do domínio:
+
+```xml
+<business_rules>
+Revenue Calculation:
+- Exclude refunded transactions: WHERE transaction_status != 'refunded'
+- Apply regional tax rates using CASE expressions
+- Use MRR for subscriptions:
+  SUM(CASE
+    WHEN billing_cycle = 'monthly' THEN amount
+    WHEN billing_cycle = 'yearly' THEN amount / 12
+    ELSE 0
+  END) AS mrr
+
+Traffic Source Classification:
+Use CASE expression to categorize:
+CASE
+  WHEN traffic_source IN ('google', 'bing', 'organic') THEN 'Organic Search'
+  WHEN traffic_source IN ('facebook', 'instagram', 'social') THEN 'Social Media'
+  WHEN traffic_source = 'direct' THEN 'Direct'
+  ELSE 'Other'
+END AS source_category
+
+Customer Segmentation:
+- Enterprise: annual_contract_value >= 100000
+- Mid-Market: annual_contract_value >= 10000 AND annual_contract_value < 100000
+- SMB: annual_contract_value < 10000
+
+Always include these categorizations when generating traffic or revenue reports.
+</business_rules>
+```
+
+<div id="example-data-quirks">
+  ## Exemplo: peculiaridades da estrutura de dados
+</div>
+
+Documente formatos de dados não convencionais ou decisões herdadas relacionadas ao schema:
+
+```xml
+<data_structure_notes>
+The user_status column uses numeric codes, not strings:
+- 1 = 'active'
+- 2 = 'inactive'
+- 3 = 'suspended'
+- 99 = 'deleted'
+
+When filtering or displaying user status, always use:
+CASE user_status
+  WHEN 1 THEN 'active'
+  WHEN 2 THEN 'inactive'
+  WHEN 3 THEN 'suspended'
+  WHEN 99 THEN 'deleted'
+END AS status_label
+
+The product_metadata column contains JSON strings that must be parsed:
+SELECT
+    product_id,
+    JSONExtractString(product_metadata, 'category') AS category,
+    JSONExtractInt(product_metadata, 'inventory_count') AS inventory
+FROM products;
+</data_structure_notes>
+```
+
+<div id="example-terminology">
+  ## Exemplo: terminologia do domínio
+</div>
+
+Relacione os termos de negócio à implementação técnica:
+
+```xml
+<terminology>
+When users refer to "conversions", they mean:
+- For e-commerce: transactions WHERE transaction_type = 'purchase'
+- For SaaS: subscriptions WHERE subscription_status = 'active' AND first_payment_date IS NOT NULL
+
+"Churn" is calculated as:
+COUNT(DISTINCT user_id) WHERE last_active_date < today() - INTERVAL 90 DAY
+AND previous_subscription_status = 'active'
+
+"DAU" (Daily Active Users) means:
+COUNT(DISTINCT user_id) WHERE activity_date = today()
+
+"Qualified leads" must meet ALL criteria:
+- lead_score >= 70
+- company_size >= 50
+- budget_confirmed = true
+- contact_role IN ('Director', 'VP', 'C-Level')
+</terminology>
+```

@@ -1,0 +1,170 @@
+---
+slug: /cloud/managed-postgres/scaling
+sidebarTitle: 'Escalonamento'
+title: 'Escalonamento'
+description: 'Escale verticalmente sua instância do Postgres managed by ClickHouse com tipos de VM flexíveis e escalonamento independente de recursos'
+keywords: ['escalonamento do Postgres', 'escalonamento vertical', 'tipos de VM', 'escalonamento NVMe', 'tipos de instância', 'escalonamento de desempenho']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
+
+O Managed Postgres oferece opções de escalonamento flexível para atender às exigências da sua carga de trabalho. Com mais de 50 tipos de instância com NVMe à disposição, você pode dimensionar CPU, memória e armazenamento de forma independente para otimizar o desempenho e o custo do seu caso de uso específico.
+
+<div id="instance-types">
+  ## Tipos de instância e flexibilidade
+</div>
+
+O Managed Postgres oferece uma ampla variedade de tipos de instância, cada um otimizado para diferentes características de carga de trabalho:
+
+* **Mais de 50 tipos de instância** disponíveis em configurações otimizadas para compute, memória e armazenamento
+* **Armazenamento baseado em NVMe** em todos os tipos de instância para E/S de disco consistente e de alto desempenho
+* **Escalonamento independente de recursos**: escolha o equilíbrio ideal entre CPU, memória e armazenamento com base na sua carga de trabalho
+
+<Image img="/images/managed-postgres/instance-types.webp" alt="Tipos de instância" size="md" border />
+
+<div id="choosing-instance">
+  ### Como escolher o tipo de instância certo
+</div>
+
+Diferentes cargas de trabalho se beneficiam de diferentes configurações de recursos:
+
+| Tipo de carga de trabalho                                                | CPU   | Memória | Armazenamento | Instância recomendada                               |
+| ------------------------------------------------------------------------ | ----- | ------- | ------------- | --------------------------------------------------- |
+| **Otimizada para compute**                                               | Alta  | Média   | Médio         | Otimizada para compute (alto número de vCPUs)       |
+| **Otimizada para memória** (grande conjunto ativo)                       | Média | Alta    | Médio         | Otimizada para memória (alta proporção memória/CPU) |
+| **Otimizada para armazenamento** (grandes volumes de dados, E/S intensa) | Média | Média   | Alta          | Otimizada para armazenamento (alta capacidade NVMe) |
+
+<Tip>
+  Por motivos de segurança, talvez você não consiga mudar para tipos de instância cujo armazenamento esteja próximo da sua capacidade de armazenamento atualmente em uso. Sempre escolha tipos de instância com margem acima da sua capacidade atualmente em uso para evitar problemas.
+</Tip>
+
+<div id="how-scaling-works">
+  ## Como o escalonamento funciona
+</div>
+
+Quando você altera os tipos de instância, o Managed Postgres realiza uma operação de escalonamento vertical que provisiona uma nova infraestrutura e migra seu banco de dados com o mínimo de indisisponibilidade.
+
+<Image img="/images/managed-postgres/scaling-settings.webp" alt="Configurações de escalonamento" size="md" border />
+
+<div id="scaling-process">
+  ### Processo de escalonamento
+</div>
+
+O fluxo de escalonamento cria um novo standby a partir de backups e realiza um failover controlado:
+
+1. **Provisioning do standby**: Uma nova instância standby é criada com o tipo de instância de destino (CPU, memória e configuração de armazenamento)
+
+2. **Restauração a partir de backups no S3**: O standby é inicializado restaurando o backup mais recente armazenado no S3
+
+3. **Reaplicação paralela de WAL**: O standby aplica todas as alterações do Write-Ahead Log (WAL) desde o backup usando mecanismos de restauração paralela com tecnologia [WAL-G](https://github.com/wal-g/wal-g)
+   * O WAL-G permite operações de restauração rápidas e paralelizadas
+   * O criador do WAL-G faz parte da equipe da Ubicloud, com a qual temos parceria, garantindo ampla expertise e otimização
+
+4. **Sincronização da replicação**: O standby alcança a instância primária transmitindo e aplicando continuamente as alterações de WAL em andamento
+
+5. **Failover**: Assim que o standby estiver totalmente sincronizado, um failover controlado promove o standby à nova instância primária
+   * **Esta é a única etapa que causa indisponibilidade** (~30 segundos)
+   * Todas as conexões ativas são interrompidas durante o failover
+   * Os clientes precisam se reconectar após a conclusão do failover
+
+6. **Desativação da instância antiga**: A instância original é desativada após a conclusão do failover
+
+<div id="scaling-duration">
+  ### Duração do escalonamento
+</div>
+
+O tempo total necessário para o escalonamento depende principalmente do tamanho do seu banco de dados e do volume de dados de WAL que precisam ser reaplicados a partir dos backups:
+
+* **Restauração do backup**: Tempo para restaurar o backup completo mais recente do S3 na nova instância
+* **Reaplicação do WAL**: Tempo para reaplicar as mudanças incrementais do WAL desde o último backup completo
+* **Restauração paralela**: Os mecanismos de restauração paralela do WAL-G aceleram significativamente o processo
+
+O tempo de restauração pode variar de alguns minutos a algumas horas, mas a janela de manutenção/indisponibilidade é muito pequena (apenas ~30 segundos).
+
+<Warning>
+  **Indisponibilidade mínima**
+
+  Sua aplicação terá aproximadamente 30 segundos de indisponibilidade durante o failover, independentemente de quanto tempo leve o processo geral de escalonamento. Todo o trabalho de restauração e sincronização acontece em segundo plano na instância standby.
+</Warning>
+
+<div id="parallel-restore">
+  ### Restauração em paralelo com WAL-G
+</div>
+
+O Managed Postgres usa [WAL-G](https://github.com/wal-g/wal-g) para acelerar a restauração de backups durante operações de escalonamento. Vale destacar que o criador do WAL-G faz parte da equipe da Ubicloud, com quem temos parceria, trazendo ampla expertise para o processo de restauração.
+
+O WAL-G oferece:
+
+* **Download e descompressão em paralelo**: vários segmentos de backup são baixados do S3 e descomprimidos simultaneamente
+* **Reaplicação eficiente de WAL**: alterações incrementais de WAL são aplicadas em paralelo sempre que possível
+* **Streaming otimizado**: streaming direto do armazenamento S3, sem cópias intermediárias
+* **Restauração rápida**: embora o tempo total dependa do volume de dados, a abordagem paralelizada torna o processo bastante rápido
+
+Essas otimizações reduzem significativamente o tempo necessário para colocar a nova instância em standby em funcionamento. Mais importante ainda, a restauração acontece totalmente em segundo plano — sua aplicação só fica indisponível durante a breve janela de failover de ~30 segundos.
+
+<div id="initiating-scaling">
+  ### Iniciando uma operação de escalonamento
+</div>
+
+Para escalar sua instância do Managed Postgres:
+
+1. Acesse a aba **Configurações** da sua instância
+2. Na seção **Escalonamento**, vá até **Tamanho do serviço**
+3. Selecione o tipo de instância desejado
+4. Revise as alterações e clique em &quot;Aplicar alterações&quot;
+
+<div id="scaling-strategies">
+  ## Estratégias de escalonamento
+</div>
+
+<div id="vertical-scaling">
+  ### Escalonamento vertical
+</div>
+
+O escalonamento vertical (mudança de tipos de instância) é o principal método para ajustar recursos no Managed Postgres. Essa abordagem oferece:
+
+* **Controle granular**: Escolha entre mais de 50 tipos de instância para ajustar com precisão CPU, memória e armazenamento
+* **Otimização da carga de trabalho**: Selecione configurações otimizadas para sua carga de trabalho específica (intensiva em computação, memória ou armazenamento)
+* **Eficiência de custo**: Pague apenas pelos recursos de que você precisa, sem provisionar recursos em excesso
+
+<div id="read-replicas">
+  ### Réplicas de leitura para escalabilidade horizontal
+</div>
+
+Para cargas de trabalho com muitas leituras, considere usar [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) para escalar horizontalmente a capacidade de leitura:
+
+* Direcione as consultas de leitura para instâncias dedicadas de réplica de leitura
+* Cada réplica de leitura é uma instância do Postgres totalmente independente, com sua própria capacidade de processamento e memória
+* As réplicas de leitura transmitem alterações de WAL a partir do armazenamento de objetos para garantir uma replicação eficiente
+
+Essa abordagem é ideal para aplicações com alta proporção de leituras em relação a gravações, como painéis de relatórios, consultas analíticas ou endpoints de API com uso intensivo de leitura.
+
+<div id="cdc-scaling">
+  ### Escalonamento de CDC para a integração com o ClickHouse
+</div>
+
+Se você estiver replicando dados para o ClickHouse usando [ClickPipes](/pt-BR/products/managed-postgres/clickhouse-integration), poderá escalar de forma independente o pipeline de CDC (captura de alterações de dados):
+
+* Escalone os workers de CDC de 1 a 24 núcleos de CPU
+* A memória é ajustada automaticamente para 4x o número de núcleos de CPU
+* Ajuste o escalonamento por meio da [OpenAPI do ClickPipes](/pt-BR/integrations/clickpipes/postgres/scaling)
+
+Isso permite otimizar a taxa de transferência da replicação separadamente dos recursos da sua instância do Postgres.
+
+<div id="autoscaling">
+  ## Escalonamento automático
+</div>
+
+Quando o uso do disco atingir 90%, o tipo da sua instância será ajustado para um tipo de instância maior.
+
+<div id="resources">
+  ## Recursos adicionais
+</div>
+
+* [Configurações e configuração](/pt-BR/products/managed-postgres/settings)
+* [Réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas)
+* [Alta disponibilidade](/pt-BR/products/managed-postgres/high-availability)
