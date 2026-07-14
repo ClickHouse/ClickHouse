@@ -218,6 +218,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// plus input columns the DAG does not consume), counting occurrences
     /// per name, because both `updateHeader` and `mergeInplace` match
     /// duplicate names by multiplicity.
+    ///
+    /// NB: `ActionsDAG::hasArrayJoin()` on the key sub-DAGs cannot be used to
+    /// gate this — an `arrayJoin` in a JOIN ON key is not represented as an
+    /// `ARRAY_JOIN` DAG node here, so `hasArrayJoin()` returns false and the
+    /// dangling input would slip through. The header-resolution check below is
+    /// what actually detects the consumed column.
     {
         auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
         const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
