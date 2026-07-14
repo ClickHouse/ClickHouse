@@ -68,6 +68,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/CanonicalizeTableReferencesVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
@@ -153,6 +154,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
     extern const SettingsNameMatchMode database_and_table_name_matching;
+    extern const SettingsNameMatchMode column_and_query_name_matching;
 }
 
 namespace ServerSetting
@@ -1269,6 +1271,48 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     }
 }
 
+void InterpreterCreateQuery::validateViewSelectColumnSpellings(const ASTCreateQuery & create) const
+{
+    auto analyze_select = [&](bool sensitive)
+    {
+        auto context = Context::createCopy(getContext());
+        context->setQueryKindInitial();
+        if (sensitive)
+            context->setSetting("column_and_query_name_matching", String("sensitive"));
+        /// For refreshable materialized views, unqualified references resolve in the MV's database.
+        if (create.refresh_strategy)
+            context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
+        else
+            InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context,
+                /*is_subquery=*/ false, /*is_create_parameterized_view=*/ create.refresh_strategy != nullptr);
+    };
+
+    try
+    {
+        analyze_select(/*sensitive=*/ true);
+    }
+    catch (const Exception & e)
+    {
+        /// A body that does not analyze in the creating session's mode either is handled (or
+        /// deliberately tolerated) by the regular checks; reject only bodies that need folding.
+        try
+        {
+            analyze_select(/*sensitive=*/ false);
+        }
+        catch (...)
+        {
+            return;
+        }
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The stored query of a view must use exact column spellings: {}. "
+            "Rewrite the column references with their exact names",
+            e.message());
+    }
+}
+
 namespace
 {
     void checkTemporaryTableEngineName(const String & name)
@@ -1902,6 +1946,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
+
+        /// Store canonical table spellings, so the persisted body and the dependencies
+        /// registered from it keep working in sessions with any name matching mode.
+        if (!create.attach && getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
+            CanonicalizeTableReferencesVisitor::visit(*create.select, getContext());
     }
 
     if (create.refresh_strategy)
@@ -1937,6 +1986,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties, database);
     }
+
+    /// A body stored with folded column spellings would break in sensitive-mode sessions; reject it.
+    if (create.select && create.isView() && !create.isParameterizedView() && mode <= LoadingStrictnessLevel::CREATE
+        && getContext()->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+        validateViewSelectColumnSpellings(create);
 
     bool is_storage_replicated = false;
     if (create.storage && isReplicated(*create.storage))
