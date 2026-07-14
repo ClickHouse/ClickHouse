@@ -41,6 +41,13 @@ struct WriteBufferFromAzureBlobStorage::PartData
 
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
+    /// Validate the multipart upload settings here rather than in `getRequestSettings`: this is the
+    /// single point where the settings are actually consumed, and it is only reached for the blob
+    /// multipart writer. Endpoints that route to `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 /
+    /// OneLake) never construct this buffer, so an otherwise-invalid setting such as
+    /// `azure_min_upload_part_size = 0` is not rejected for a backend that does not use it.
+    settings.validateUploadSettings();
+
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
     allocation_settings.min_size = settings.min_upload_part_size;

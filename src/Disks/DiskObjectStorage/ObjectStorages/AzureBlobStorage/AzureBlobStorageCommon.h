@@ -52,6 +52,9 @@ struct RequestSettings
 
     /// Reject upload size settings that would otherwise produce an internal error
     /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
+    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
+    /// constructed, so it is never applied to endpoints that route to
+    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
     void validateUploadSettings() const;
 };
 
