@@ -2,6 +2,8 @@
 
 #include <array>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -123,10 +125,10 @@ private:
         size_t num_valid = 0;
     };
 
-    /// Concatenate the side's accumulated chunks into `side_columns`, prepare the key columns
-    /// and allocate the matched bitmap if the side needs one. Returns the validity mask that
-    /// excludes rows with NULL or NaN keys: they cannot match, never enter the union, and are
-    /// emitted by the post-phases as unmatched.
+    /// Move the side's accumulated chunks into the per-chunk store `side_chunks`, build the
+    /// global-row lookup arrays, prepare the key columns and allocate the matched bitmap if the
+    /// side needs one. Returns the validity mask that excludes rows with NULL or NaN keys: they
+    /// cannot match, never enter the union, and are emitted by the post-phases as unmatched.
     SideValidity materializeSide(size_t side);
 
     /// Encode both conditions' keys into fixed-width values in union-entry order
@@ -189,6 +191,32 @@ private:
     bool decideSemiAntiRow(
         ColumnUInt64 & pending_left, ColumnUInt64 & pending_right,
         ColumnUInt64::Container & left_out, ColumnUInt64::Container & right_out);
+
+    /// Decomposition of a batch's global row indexes over one side's chunk store: maximal runs
+    /// of rows from the same chunk, each with its in-chunk positions. Computed once per batch
+    /// and reused for every gathered column of the side. `runs` is empty when the side has at
+    /// most one chunk: the global indexes then address the single chunk directly.
+    struct SideGather
+    {
+        struct Run
+        {
+            UInt32 chunk_no = 0;
+            ColumnPtr positions; /// ColumnUInt32 of in-chunk positions
+        };
+        const ColumnUInt64 * indexes = nullptr;
+        std::vector<Run> runs;
+    };
+    SideGather prepareGather(size_t side, const ColumnUInt64 & indexes) const;
+    /// Gather one column of the side (position in the input header) by the decomposition.
+    ColumnPtr gatherColumn(size_t side, size_t position, const SideGather & gather) const;
+
+    /// Physical location of a side's row in the chunked store.
+    std::pair<UInt32, UInt32> resolveRow(size_t side, size_t row) const
+    {
+        if (row_to_chunk[side].empty())
+            return {0, static_cast<UInt32>(row)};
+        return {row_to_chunk[side][row], row_to_pos[side][row]};
+    }
 
     /// Append the side's columns gathered by `indexes`.
     void appendGathered(Chunk & chunk, size_t side, const ColumnUInt64 & indexes) const;
@@ -263,21 +291,29 @@ private:
 
     /// Populated by the build stages (see `runBuildStage`):
 
-    /// All columns of each side, result rows are gathered from them.
-    std::array<Columns, 2> side_columns;
+    /// All columns of each side kept as the original chunks (full, non-replicated, never empty),
+    /// result rows are gathered from them. Global row numbers resolve to a chunk and an in-chunk
+    /// position through the lookup arrays below.
+    std::array<std::vector<Columns>, 2> side_chunks;
+    /// Global row -> chunk number / position in that chunk; empty when the side has at most one
+    /// chunk (then chunk 0, position == row). UInt32 to halve the footprint: the chunk count and
+    /// every chunk's row count are guarded in materializeSide (total rows per side may exceed 4B,
+    /// only the per-chunk quantities may not).
+    std::array<PaddedPODArray<UInt32>, 2> row_to_chunk;
+    std::array<PaddedPODArray<UInt32>, 2> row_to_pos;
 
     /// One byte per row of the side, set by the pair scan; allocated only for sides that need it
     std::array<IColumn::Filter, 2> matched;
 
     /// Both sides' key column of one condition, prepared for comparisons
-    /// (from `side_columns`, with `LowCardinality` stripped).
+    /// (one column per stored chunk of `side_chunks`, with `LowCardinality` stripped).
     struct ConditionKeyColumns
     {
-        ColumnPtr left;
-        ColumnPtr right;
+        std::vector<ColumnPtr> left;
+        std::vector<ColumnPtr> right;
 
-        ColumnPtr & bySide(size_t side) { return side == 0 ? left : right; }
-        const ColumnPtr & bySide(size_t side) const { return side == 0 ? left : right; }
+        std::vector<ColumnPtr> & bySide(size_t side) { return side == 0 ? left : right; }
+        const std::vector<ColumnPtr> & bySide(size_t side) const { return side == 0 ? left : right; }
     };
 
     /// Prepared key columns, one entry per condition.
@@ -332,6 +368,9 @@ private:
     /// SEMI/ANTI scan: the first passing candidate decides the row, so small batches restore
     /// the first-match short-circuit at batch granularity.
     static constexpr size_t semi_anti_residual_batch_size = 1024;
+    /// Gather runs shorter than this copy row by row instead of through a temporary
+    /// index()-produced column.
+    static constexpr size_t gather_small_run_threshold = 8;
 
     /// Post-phase state, per side: the row cursor and the number of unmatched rows emitted
     /// (for the final invariant check).

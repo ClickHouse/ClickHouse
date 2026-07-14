@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <bit>
+#include <limits>
 #include <optional>
 #include <type_traits>
 
@@ -287,7 +288,9 @@ int IEJoinAlgorithm::compareKeysAt(size_t key_index, size_t union_a, size_t unio
     size_t side_b = union_b < num_side_rows[0] ? 0 : 1;
     size_t row_b = union_b - (side_b ? num_side_rows[0] : 0);
     const auto & keys = key_columns[key_index];
-    return keys.bySide(side_a)->compareAt(row_a, row_b, *keys.bySide(side_b), /* nan_direction_hint */ 1);
+    auto [chunk_a, pos_a] = resolveRow(side_a, row_a);
+    auto [chunk_b, pos_b] = resolveRow(side_b, row_b);
+    return keys.bySide(side_a)[chunk_a]->compareAt(pos_a, pos_b, *keys.bySide(side_b)[chunk_b], /* nan_direction_hint */ 1);
 }
 
 bool IEJoinAlgorithm::sideNeedsUnmatchedRows(size_t side) const
@@ -340,109 +343,111 @@ void IEJoinAlgorithm::runBuildStage()
     }
 }
 
-/// Concatenate the accumulated chunks into full (non-replicated) columns of the header's layout.
-static Columns concatenateChunks(const Block & header, Chunks chunks)
-{
-    const size_t num_columns = header.columns();
-
-    Columns columns;
-    if (chunks.empty())
-    {
-        columns.reserve(num_columns);
-        for (const auto & column_with_type : header)
-            columns.push_back(column_with_type.type->createColumn());
-    }
-    else if (chunks.size() == 1)
-    {
-        columns = chunks.front().detachColumns();
-        for (auto & column : columns)
-            column = column->convertToFullColumnIfReplicated();
-    }
-    else
-    {
-        size_t total_rows = 0;
-        for (const auto & chunk : chunks)
-            total_rows += chunk.getNumRows();
-
-        MutableColumns mutable_columns;
-        mutable_columns.reserve(num_columns);
-        for (const auto & column_with_type : header)
-        {
-            auto column = column_with_type.type->createColumn();
-            column->reserve(total_rows);
-            mutable_columns.push_back(std::move(column));
-        }
-
-        for (auto & chunk : chunks)
-        {
-            auto chunk_columns = chunk.detachColumns();
-            for (size_t i = 0; i < num_columns; ++i)
-            {
-                auto full_column = chunk_columns[i]->convertToFullColumnIfReplicated();
-                mutable_columns[i]->insertRangeFrom(*full_column, 0, full_column->size());
-            }
-        }
-
-        columns.reserve(num_columns);
-        for (auto & column : mutable_columns)
-            columns.push_back(std::move(column));
-    }
-    return columns;
-}
-
 IEJoinAlgorithm::SideValidity IEJoinAlgorithm::materializeSide(size_t side)
 {
-    Columns columns = concatenateChunks(*input_headers[side], std::move(accumulated_chunks[side]));
+    Chunks chunks = std::move(accumulated_chunks[side]);
     accumulated_chunks[side].clear();
 
-    const size_t rows = columns.empty() ? 0 : columns.front()->size();
+    if (chunks.size() > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin accumulated too many chunks: {}", chunks.size());
+
+    auto & store = side_chunks[side];
+    store.reserve(chunks.size());
+    size_t rows = 0;
+    for (auto & chunk : chunks)
+    {
+        const size_t chunk_rows = chunk.getNumRows();
+        /// consume() stores only non-empty chunks.
+        chassert(chunk_rows > 0);
+        if (chunk_rows > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin accumulated a chunk with too many rows: {}", chunk_rows);
+        Columns columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfReplicated();
+        rows += chunk_rows;
+        store.push_back(std::move(columns));
+    }
+    chunks.clear();
+    num_side_rows[side] = rows;
+
+    /// The lookup arrays resolve a global row to its chunk in O(1); a single chunk needs none
+    /// (chunk 0, position == row).
+    if (store.size() > 1)
+    {
+        auto & to_chunk = row_to_chunk[side];
+        auto & to_pos = row_to_pos[side];
+        to_chunk.resize(rows);
+        to_pos.resize(rows);
+        size_t row = 0;
+        for (size_t chunk_no = 0; chunk_no < store.size(); ++chunk_no)
+        {
+            const size_t chunk_rows = store[chunk_no].front()->size();
+            for (size_t pos = 0; pos < chunk_rows; ++pos, ++row)
+            {
+                to_chunk[row] = static_cast<UInt32>(chunk_no);
+                to_pos[row] = static_cast<UInt32>(pos);
+            }
+        }
+        chassert(row == rows);
+    }
 
     /// The two conditions may read the same column (e.g. `x BETWEEN a AND b`), prepare it once.
     const bool side_key_shared = conditions[0].keyPosition(side) == conditions[1].keyPosition(side);
-    std::array<ColumnPtr, 2> comparison_keys;
+    std::array<std::vector<ColumnPtr>, 2> comparison_keys;
     for (size_t key_index = 0; key_index < 2; ++key_index)
     {
         if (key_index == 1 && side_key_shared)
+        {
             comparison_keys[1] = comparison_keys[0];
-        else
-            comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
+            continue;
+        }
+        auto & keys = comparison_keys[key_index];
+        keys.reserve(store.size());
+        for (const auto & chunk_columns : store)
+            keys.push_back(chunk_columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality());
     }
 
     /// Rows with NULL in any key never enter the union: a NULL fails every inequality, so
     /// they cannot produce matches. Rows with a NaN key are excluded for the same reason:
     /// the operator matches by the `compareAt` total order, where NaN is an ordinary greatest
     /// value, but the predicates the join implements follow IEEE semantics, under which every
-    /// comparison involving NaN is false. The rows stay in `side_columns`, their matched bits
+    /// comparison involving NaN is false. The rows stay in `side_chunks`, their matched bits
     /// are never set, and the post-phases emit them as unmatched naturally.
     SideValidity validity;
     auto & valid = validity.mask;
-    auto exclude_rows = [&](auto && is_excluded)
-    {
-        if (valid.empty())
-            valid.resize_fill(rows, 1);
-        for (size_t row = 0; row < rows; ++row)
-            valid[row] &= !is_excluded(row);
-    };
     for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
     {
-        const IColumn * key = comparison_keys[key_index].get();
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
+        size_t offset = 0;
+        for (const auto & chunk_key : comparison_keys[key_index])
         {
-            const auto & null_map = nullable->getNullMapData();
-            exclude_rows([&](size_t row) { return null_map[row] != 0; });
-            key = &nullable->getNestedColumn();
+            const size_t chunk_rows = chunk_key->size();
+            auto exclude_rows = [&](auto && is_excluded)
+            {
+                if (valid.empty())
+                    valid.resize_fill(rows, 1);
+                for (size_t row = 0; row < chunk_rows; ++row)
+                    valid[offset + row] &= !is_excluded(row);
+            };
+            const IColumn * key = chunk_key.get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
+            {
+                const auto & null_map = nullable->getNullMapData();
+                exclude_rows([&](size_t row) { return null_map[row] != 0; });
+                key = &nullable->getNestedColumn();
+            }
+            auto exclude_nan_rows = [&](const auto & typed_key)
+            {
+                const auto & data = typed_key.getData();
+                exclude_rows([&](size_t row) { return isNaN(data[row]); });
+            };
+            if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
+                exclude_nan_rows(*float64_key);
+            else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
+                exclude_nan_rows(*float32_key);
+            else if (const auto * bfloat16_key = checkAndGetColumn<ColumnBFloat16>(key))
+                exclude_nan_rows(*bfloat16_key);
+            offset += chunk_rows;
         }
-        auto exclude_nan_rows = [&](const auto & typed_key)
-        {
-            const auto & data = typed_key.getData();
-            exclude_rows([&](size_t row) { return isNaN(data[row]); });
-        };
-        if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
-            exclude_nan_rows(*float64_key);
-        else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
-            exclude_nan_rows(*float32_key);
-        else if (const auto * bfloat16_key = checkAndGetColumn<ColumnBFloat16>(key))
-            exclude_nan_rows(*bfloat16_key);
     }
 
     validity.num_valid = rows;
@@ -453,10 +458,8 @@ IEJoinAlgorithm::SideValidity IEJoinAlgorithm::materializeSide(size_t side)
             valid.clear();
     }
 
-    side_columns[side] = std::move(columns);
     for (size_t key_index = 0; key_index < 2; ++key_index)
         key_columns[key_index].bySide(side) = std::move(comparison_keys[key_index]);
-    num_side_rows[side] = rows;
 
     if (sideNeedsUnmatchedRows(side))
         matched[side].resize_fill(num_side_rows[side], 0);
@@ -476,10 +479,10 @@ std::array<PaddedPODArray<UInt64>, 2> IEJoinAlgorithm::encodeKeys() const
         encoded.reserve(num_side_rows[0] + num_side_rows[1]);
         for (size_t side = 0; side < 2; ++side)
         {
-            const auto & key = key_columns[key_index].bySide(side);
             /// The side may read one column in both conditions (the `BETWEEN` shape): derive the
             /// second encoding from the first instead of encoding the column twice.
-            if (key_index == 1 && key == key_columns[0].bySide(side) && !encoded_keys[0].empty())
+            const bool side_key_shared = conditions[0].keyPosition(side) == conditions[1].keyPosition(side);
+            if (key_index == 1 && side_key_shared && !encoded_keys[0].empty())
             {
                 const UInt64 reorient = direction_mask[0] ^ direction_mask[1];
                 const size_t offset = side ? num_side_rows[0] : 0;
@@ -489,7 +492,16 @@ std::array<PaddedPODArray<UInt64>, 2> IEJoinAlgorithm::encodeKeys() const
                     encoded[old_size + row] = encoded_keys[0][offset + row] ^ reorient;
                 continue;
             }
-            if (!tryAppendEncodedKeys(*key, direction_mask[key_index], encoded))
+            bool encodable = true;
+            for (const auto & chunk_key : key_columns[key_index].bySide(side))
+            {
+                if (!tryAppendEncodedKeys(*chunk_key, direction_mask[key_index], encoded))
+                {
+                    encodable = false;
+                    break;
+                }
+            }
+            if (!encodable)
             {
                 encoded = {};
                 break;
@@ -1087,10 +1099,75 @@ bool IEJoinAlgorithm::produceUnmatchedBatch(size_t side, Chunk & chunk)
     return row_cursor >= num_side_rows[side];
 }
 
+IEJoinAlgorithm::SideGather IEJoinAlgorithm::prepareGather(size_t side, const ColumnUInt64 & indexes) const
+{
+    SideGather gather;
+    gather.indexes = &indexes;
+    if (side_chunks[side].size() <= 1)
+        return gather;
+
+    const auto & rows = indexes.getData();
+    const auto & to_chunk = row_to_chunk[side];
+    const auto & to_pos = row_to_pos[side];
+    ColumnUInt32::MutablePtr positions;
+    UInt32 current_chunk = 0;
+    for (UInt64 row : rows)
+    {
+        UInt32 chunk_no = to_chunk[row];
+        if (!positions || chunk_no != current_chunk)
+        {
+            if (positions)
+                gather.runs.push_back({current_chunk, std::move(positions)});
+            positions = ColumnUInt32::create();
+            current_chunk = chunk_no;
+        }
+        positions->getData().push_back(to_pos[row]);
+    }
+    if (positions)
+        gather.runs.push_back({current_chunk, std::move(positions)});
+    return gather;
+}
+
+ColumnPtr IEJoinAlgorithm::gatherColumn(size_t side, size_t position, const SideGather & gather) const
+{
+    const auto & chunks = side_chunks[side];
+    if (chunks.empty())
+    {
+        chassert(gather.indexes->empty());
+        return input_headers[side]->getByPosition(position).type->createColumn();
+    }
+    /// A single stored chunk is addressed by the global indexes directly (position == row).
+    if (gather.runs.empty())
+        return chunks.front()[position]->index(*gather.indexes, 0);
+    if (gather.runs.size() == 1)
+        return chunks[gather.runs.front().chunk_no][position]->index(*gather.runs.front().positions, 0);
+
+    auto result = input_headers[side]->getByPosition(position).type->createColumn();
+    result->reserve(gather.indexes->size());
+    for (const auto & run : gather.runs)
+    {
+        const auto & chunk_column = *chunks[run.chunk_no][position];
+        const auto & positions = assert_cast<const ColumnUInt32 &>(*run.positions).getData();
+        if (positions.size() < gather_small_run_threshold)
+        {
+            for (UInt32 pos : positions)
+                result->insertFrom(chunk_column, pos);
+        }
+        else
+        {
+            auto indexed = chunk_column.index(*run.positions, 0);
+            result->insertRangeFrom(*indexed, 0, indexed->size());
+        }
+    }
+    return result;
+}
+
 void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUInt64 & indexes) const
 {
-    for (const auto & column : side_columns[side])
-        chunk.addColumn(column->index(indexes, 0));
+    const SideGather gather = prepareGather(side, indexes);
+    const size_t num_columns = input_headers[side]->columns();
+    for (size_t position = 0; position < num_columns; ++position)
+        chunk.addColumn(gatherColumn(side, position, gather));
 }
 
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
@@ -1101,8 +1178,14 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
 
     Columns expression_columns;
     expression_columns.reserve(residual->inputs.size());
+    /// At most one decomposition per side, reused by all of the side's source columns.
+    std::array<std::optional<SideGather>, 2> gathers;
     for (const auto & source : residual->inputs)
-        expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
+    {
+        if (!gathers[source.side])
+            gathers[source.side] = prepareGather(source.side, source.side == 0 ? left_rows : right_rows);
+        expression_columns.push_back(gatherColumn(source.side, source.position, *gathers[source.side]));
+    }
 
     Columns results = residual->actions->executeOnColumns(
         std::move(expression_columns), residual_input_header, residual_input_positions, num_rows);
@@ -1150,7 +1233,9 @@ void IEJoinAlgorithm::checkFinalInvariants() const
 bool IEJoinAlgorithm::checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const
 {
     const auto & keys = key_columns[key_index];
-    int cmp = keys.left->compareAt(left_row, right_row, *keys.right, /* nan_direction_hint */ 1);
+    auto [left_chunk, left_pos] = resolveRow(0, left_row);
+    auto [right_chunk, right_pos] = resolveRow(1, right_row);
+    int cmp = keys.left[left_chunk]->compareAt(left_pos, right_pos, *keys.right[right_chunk], /* nan_direction_hint */ 1);
     switch (conditions[key_index].op)
     {
         case JoinConditionOperator::Less:
