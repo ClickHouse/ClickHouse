@@ -1,0 +1,262 @@
+---
+description: 'Documentación del tipo de dato Map en ClickHouse'
+sidebarTitle: 'Map(K, V)'
+slug: /sql-reference/data-types/map
+title: 'Map(K, V)'
+doc_type: 'reference'
+---
+
+El tipo de dato `Map(K, V)` almacena pares clave-valor.
+
+A diferencia de otras bases de datos, los valores de tipo Map no tienen claves únicas en ClickHouse; es decir, un Map puede contener dos elementos con la misma clave.
+(Esto se debe a que los Map se implementan internamente como `Array(Tuple(K, V))`.)
+
+Puede usar la sintaxis `m[k]` para obtener el valor de la clave `k` en el Map `m`.
+Además, `m[k]` recorre el Map; es decir, el tiempo de ejecución de la operación es lineal con respecto al tamaño del Map.
+
+**Parámetros**
+
+* `K` — El tipo de las claves del Map. Cualquier tipo, excepto [Nullable](/es/reference/data-types/nullable) y [LowCardinality](/es/reference/data-types/lowcardinality) anidado con tipos [Nullable](/es/reference/data-types/nullable).
+* `V` — El tipo de los valores del Map. Cualquier tipo.
+
+**Ejemplos**
+
+Cree una tabla con una columna de tipo Map:
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
+INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
+```
+
+Para seleccionar los valores de `key2`:
+
+```sql title="Query"
+SELECT m['key2'] FROM tab;
+```
+
+```text title="Response"
+┌─arrayElement(m, 'key2')─┐
+│                      10 │
+│                      20 │
+│                      30 │
+└─────────────────────────┘
+```
+
+Si la clave solicitada `k` no está en el mapa, `m[k]` devuelve el valor por defecto del tipo de valor; por ejemplo, `0` para los tipos enteros y `''` para los tipos de cadena.
+Para comprobar si existe una clave en un mapa, puede usar la función [mapContains](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsKey).
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
+INSERT INTO tab VALUES ({'key1':100}), ({});
+SELECT m['key1'] FROM tab;
+```
+
+```text title="Response"
+┌─arrayElement(m, 'key1')─┐
+│                     100 │
+│                       0 │
+└─────────────────────────┘
+```
+
+<div id="converting-tuple-to-map">
+  ## Conversión de Tuple a Map
+</div>
+
+Los valores de tipo `Tuple()` pueden convertirse en valores de tipo `Map()` mediante la función [CAST](/es/reference/functions/regular-functions/type-conversion-functions#CAST):
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
+```
+
+```text title="Response"
+┌─map───────────────────────────┐
+│ {1:'Ready',2:'Steady',3:'Go'} │
+└───────────────────────────────┘
+```
+
+<div id="reading-subcolumns-of-map">
+  ## Lectura de las subcolumnas de Map
+</div>
+
+Para evitar leer el Map completo, puede usar las subcolumnas `keys` y `values` en algunos casos.
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
+INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
+
+SELECT m.keys FROM tab; --   igual que mapKeys(m)
+SELECT m.values FROM tab; -- igual que mapValues(m)
+```
+
+```text title="Response"
+┌─m.keys─────────────────┐
+│ ['key1','key2','key3'] │
+└────────────────────────┘
+
+┌─m.values─┐
+│ [1,2,3]  │
+└──────────┘
+```
+
+<div id="bucketed-map-serialization">
+  ## Serialización en buckets de Map en MergeTree
+</div>
+
+De forma predeterminada, una columna `Map` en MergeTree se almacena como un único flujo `Array(Tuple(K, V))`.
+Leer una sola clave con `m['key']` requiere escanear toda la columna —todos los pares clave-valor de cada fila—, incluso si solo se necesita una clave.
+En los `Map` con muchas claves distintas, esto se convierte en un cuello de botella.
+
+La serialización en buckets (`with_buckets`) divide los pares clave-valor en varios subflujos independientes (buckets) aplicando un hash a la clave.
+Cuando una consulta accede a `m['key']`, solo se lee del disco el bucket que contiene esa clave, omitiendo todos los demás buckets.
+
+<div id="enabling-bucketed-serialization">
+  ### Activar la serialización en buckets
+</div>
+
+```sql
+CREATE TABLE tab (id UInt64, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    map_serialization_version = 'with_buckets',
+    max_buckets_in_map = 32,
+    map_buckets_strategy = 'sqrt';
+```
+
+Para no ralentizar las inserciones, puedes mantener la serialización `basic` para las partes de nivel cero (creadas durante `INSERT`) y usar `with_buckets` solo para las partes fusionadas:
+
+```sql
+CREATE TABLE tab (id UInt64, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    map_serialization_version = 'with_buckets',
+    map_serialization_version_for_zero_level_parts = 'basic',
+    max_buckets_in_map = 32,
+    map_buckets_strategy = 'sqrt';
+```
+
+<div id="how-it-works">
+  ### Cómo funciona
+</div>
+
+Cuando una parte de datos se escribe con la serialización `with_buckets`:
+
+1. El número medio de claves por fila se calcula a partir de las estadísticas del bloque.
+2. El número de buckets se determina según la estrategia configurada (consulta [Configuración](#bucketed-map-settings)).
+3. Cada par clave-valor se asigna a un bucket aplicando un hash a la clave: `bucket = hash(key) % num_buckets`.
+4. Cada bucket se almacena como un subflujo independiente con sus propias claves, valores y offsets.
+5. Un flujo de metadatos `buckets_info` registra el número de buckets y sus estadísticas.
+
+Cuando una consulta lee una clave específica (`m['key']`), el optimizador reescribe la expresión como una subcolumna de clave (`m.key_<serialized_key>`).
+La capa de serialización calcula a qué bucket pertenece la clave solicitada y lee solo ese bucket desde el disco.
+
+Cuando se lee el mapa completo (por ejemplo, `SELECT m`), se leen todos los buckets y se reconstruye el mapa original. Esto es más lento que la serialización `basic` debido a la sobrecarga de leer y fusionar varios subflujos.
+
+<Note>
+  El orden de las claves dentro de un valor de mapa puede diferir del orden de inserción original al usar la serialización `with_buckets`. Las claves se distribuyen entre buckets mediante hash y se reconstruyen en orden de bucket, no en orden de inserción. Con la serialización `basic`, se conserva el orden de las claves de los mapas insertados.
+</Note>
+
+El número de buckets puede variar entre partes. Cuando se fusionan partes con distintos números de buckets, el número de buckets de la nueva parte se vuelve a calcular a partir de las estadísticas fusionadas. Las partes con serialización `basic` y `with_buckets` pueden coexistir en la misma tabla y se fusionan de forma transparente.
+
+<div id="bucketed-map-settings">
+  ### Configuración
+</div>
+
+| Configuración                                    | Predeterminado | Descripción                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `map_serialization_version`                      | `basic`        | Formato de serialización para columnas `Map`. `basic` almacena los datos como un único flujo de Array. `with_buckets` divide las claves en buckets para acelerar las lecturas de una sola clave.                                                                                                        |
+| `map_serialization_version_for_zero_level_parts` | `basic`        | Formato de serialización para partes de nivel cero (creadas por `INSERT`). Permite mantener `basic` para las inserciones y evitar la sobrecarga de escritura, mientras que las partes fusionadas usan `with_buckets`.                                                                                   |
+| `max_buckets_in_map`                             | `32`           | Límite superior del número de buckets. La cantidad real depende de `map_buckets_strategy`. El valor máximo permitido es 256.                                                                                                                                                                            |
+| `map_buckets_strategy`                           | `sqrt`         | Estrategia para calcular la cantidad de buckets a partir del tamaño promedio del mapa: `constant` — usar siempre `max_buckets_in_map`; `sqrt` — usar `round(coefficient * sqrt(avg_size))`; `linear` — usar `round(coefficient * avg_size)`. El resultado se limita al rango `[1, max_buckets_in_map]`. |
+| `map_buckets_coefficient`                        | `1.0`          | Multiplicador para las estrategias `sqrt` y `linear`. Se ignora cuando la estrategia es `constant`.                                                                                                                                                                                                     |
+| `map_buckets_min_avg_size`                       | `32`           | Cantidad mínima promedio de claves por fila para habilitar el uso de buckets. Si el promedio está por debajo de este umbral, se usa un único bucket independientemente de las demás configuraciones. Establézcalo en `0` para desactivar este umbral.                                                   |
+
+<div id="performance-trade-offs">
+  ### Compensaciones de rendimiento
+</div>
+
+La siguiente tabla resume el impacto en el rendimiento de `with_buckets` frente a la serialización `basic` con distintos tamaños de Map (de 10 a 10.000 claves por fila). El número de buckets se determinó mediante la estrategia `sqrt`, con un máximo de 32. Los valores exactos dependen de los tipos de clave/valor, la distribución de los datos y el hardware.
+
+| Operación                                      | 10 claves           | 100 claves          | 1.000 claves        | 10.000 claves       | Notas                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | ------------------- | ------------------- | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Búsqueda de una sola clave** (`m['key']`)    | 1,6–3,2x más rápido | 4,5–7,7x más rápido | 16–39x más rápido   | 21–49x más rápido   | Lee solo un bucket en lugar de toda la columna.                                                                                                                                                                                             |
+| **5 búsquedas de claves**                      | ~1x                 | 1,5–3,1x más rápido | 2,9–8,3x más rápido | 4,5–6,7x más rápido | Cada clave lee su propio bucket; algunos buckets pueden solaparse.                                                                                                                                                                          |
+| **PREWHERE** (`SELECT m WHERE m['key'] = ...`) | 1,5–3,0x más rápido | 2,9–7,3x más rápido | 5,3–31x más rápido  | 20–45x más rápido   | El filtro PREWHERE lee solo un bucket; la lectura completa del Map solo se realiza para las filas que coinciden. La mejora de rendimiento depende de la selectividad: cuantos menos gránulos coincidan, menor será la E/S del Map completo. |
+| **Escaneo completo del Map** (`SELECT m`)      | ~2x más lento       | ~2x más lento       | ~2x más lento       | ~2x más lento       | Debe leer y volver a ensamblar todos los buckets.                                                                                                                                                                                           |
+| **INSERT**                                     | 1,5–2,5x más lento  | 1,5–2,5x más lento  | 1,5–2,5x más lento  | 1,5–2,5x más lento  | Sobrecarga de aplicar hash a las claves y escribir en varios subflujos.                                                                                                                                                                     |
+
+<div id="recommendations">
+  ### Recomendaciones
+</div>
+
+* **Mapas pequeños (&lt; 32 claves de media):** Mantén la serialización `basic`. La sobrecarga de usar buckets no se justifica en mapas pequeños. El valor predeterminado `map_buckets_min_avg_size = 32` lo aplica automáticamente.
+* **Mapas medianos (32–100 claves):** Usa `with_buckets` con la estrategia `sqrt` si las consultas acceden con frecuencia a claves individuales. La mejora de velocidad es de 4–8x en búsquedas de una sola clave.
+* **Mapas grandes (100+ claves):** Usa `with_buckets`. Las búsquedas de una sola clave son entre 16 y 49 veces más rápidas. Considera `map_serialization_version_for_zero_level_parts = 'basic'` para mantener la velocidad de `insert` cerca del valor de referencia.
+* **Los escaneos completos del mapa dominan la carga de trabajo:** Mantén `basic`. La serialización con buckets añade una sobrecarga de ~2x en los escaneos completos.
+* **Carga de trabajo mixta (algunas búsquedas de claves y algunos escaneos completos):** Usa `with_buckets` con las partes de nivel cero configuradas en `basic`. La optimización `PREWHERE` lee solo el bucket relevante para el filtro y luego lee el mapa completo únicamente para las filas coincidentes, lo que aporta una mejora neta significativa.
+
+<div id="map-alternatives">
+  ### Enfoques alternativos
+</div>
+
+Si la serialización de `Map` en buckets no se adapta a tu caso de uso, hay dos enfoques alternativos para mejorar el rendimiento del acceso por clave:
+
+<div id="using-the-json-data-type">
+  #### Uso del tipo de datos JSON
+</div>
+
+El tipo de datos [JSON](/es/reference/data-types/newjson) almacena cada ruta frecuente como una subcolumna dinámica independiente. Las rutas que superan el límite de `max_dynamic_paths` pasan a una [estructura de datos compartida](/es/reference/data-types/newjson#shared-data-structure), que puede usar la serialización `advanced` para optimizar las lecturas de una sola ruta. Consulta la [entrada del blog](https://clickhouse.com/blog/json-data-type-gets-even-better) para obtener una descripción detallada de la serialización `advanced`.
+
+| Aspecto                               | `Map` con buckets                                                                                    | `JSON`                                                                                                                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lectura de una sola clave             | Lee un bucket (puede contener otras claves). Todos los pares clave-valor del bucket se deserializan. | Las rutas frecuentes se leen directamente desde subcolumnas dinámicas. Las rutas poco frecuentes pasan a datos compartidos; con la serialización `advanced`, solo se leen los datos de la ruta exacta. |
+| Tipos de valor                        | Todos los valores comparten el mismo tipo `V`                                                        | Cada ruta puede tener su propio tipo. Las rutas sin una indicación de tipo usan `Dynamic`.                                                                                                             |
+| Compatibilidad con índices de omisión | Funciona con algunos tipos de índice creados sobre `mapKeys`/`mapValues`                             | Los índices de omisión solo pueden crearse sobre subcolumnas de rutas específicas, no sobre todas las rutas/valores a la vez.                                                                          |
+| Lectura de columna completa           | ~2x más lenta que `basic` debido al reensamblado de buckets                                          | Sobrecarga debida a la codificación del tipo `Dynamic` y a la reconstrucción de rutas.                                                                                                                 |
+| Sobrecarga de almacenamiento          | Metadatos adicionales mínimos                                                                        | Mayor debido a la codificación del tipo `Dynamic`, al almacenamiento de nombres de rutas y a los metadatos adicionales de la serialización `advanced`.                                                 |
+| Flexibilidad del esquema              | Tipos de clave y valor fijos al crear la tabla                                                       | Totalmente dinámico: las claves y los tipos de valor pueden variar por fila. Se pueden declarar indicaciones de tipo para rutas conocidas.                                                             |
+
+Usa `JSON` cuando distintas claves necesiten distintos tipos de valor, cuando el conjunto de claves varíe significativamente entre filas o cuando las claves a las que se accede con frecuencia se conozcan de antemano y puedan declararse como rutas tipadas para acceder directamente a las subcolumnas.
+
+<div id="manual-sharding-into-multiple-map-columns">
+  #### Fragmentación manual en varias columnas de tipo `Map`
+</div>
+
+Puede dividir manualmente un único `Map` en varias columnas según el hash de la clave a nivel de la aplicación:
+
+```sql
+CREATE TABLE tab (
+    id UInt64,
+    m0 Map(String, UInt64),
+    m1 Map(String, UInt64),
+    m2 Map(String, UInt64),
+    m3 Map(String, UInt64)
+) ENGINE = MergeTree ORDER BY id;
+```
+
+Durante la inserción, dirija cada par clave-valor a la columna `m{hash(key) % 4}`. Durante las consultas, lea de la columna específica: `m{hash('target_key') % 4}['target_key']`.
+
+| Aspecto                 | `Map` con buckets                                               | Segmentación manual                                                                   |
+| ----------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Facilidad de uso        | Transparente — lo gestiona el motor de almacenamiento           | Requiere lógica de enrutamiento en la aplicación para inserciones y consultas         |
+| Fusión vertical         | No compatible — todos los buckets pertenecen a una sola columna | Compatible — cada columna `Map` es independiente y puede fusionarse verticalmente     |
+| Cambios de esquema      | El número de buckets se adapta automáticamente en cada parte    | Cambiar el número de segmentos requiere reescribir los datos o añadir columnas nuevas |
+| Sintaxis de consulta    | `m['key']` funciona directamente                                | Debe calcular la columna correcta: `m0['key']`, `m1['key']`, etc.                     |
+| Granularidad del bucket | Por parte, se adapta a las estadísticas de los datos            | Fija al crear la tabla                                                                |
+
+La segmentación manual resulta útil cuando las fusiones verticales son importantes para reducir el uso de memoria durante las fusiones de tablas con muchas columnas, o cuando el número de segmentos debe permanecer fijo y controlarse explícitamente. Para la mayoría de los casos de uso, la serialización automática en buckets es más sencilla y suficiente.
+
+**Véase también**
+
+* función [map()](/es/reference/functions/regular-functions/tuple-map-functions#map)
+* función [CAST()](/es/reference/functions/regular-functions/type-conversion-functions#CAST)
+* [combinador -Map para el tipo de dato Map](/es/reference/functions/aggregate-functions/combinators#-map)
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Cómo crear una solución de observabilidad con ClickHouse - Parte 2 - Trazas](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

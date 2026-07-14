@@ -21,7 +21,7 @@ void CountingTransform::onConsume(Chunk chunk)
     auto written_bytes = chunk.bytes();
 
     if (quota)
-        quota->used(QuotaType::WRITTEN_BYTES, written_bytes);
+        quota->usedForQuery(normalized_query_hash, QuotaType::WRITTEN_BYTES, written_bytes);
 
     Progress local_progress{WriteProgress(chunk.getNumRows(), written_bytes)};
 

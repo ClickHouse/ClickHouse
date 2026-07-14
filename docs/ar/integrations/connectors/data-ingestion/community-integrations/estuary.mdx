@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Estuary'
+slug: /integrations/estuary
+description: 'أدخِل مجموعة متنوعة من المصادر إلى ClickHouse عبر تكامل Estuary'
+title: 'توصيل Estuary بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'إدخال البيانات', 'etl', 'مسار معالجة', 'تكامل البيانات', 'clickpipes']
+---
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Estuary](https://estuary.dev/) هي منصة بيانات تعمل في الوقت المناسب وتجمع بمرونة بين البيانات في الوقت الفعلي وبيانات الدُفعات ضمن مسارات ETL سهلة الإعداد. وبفضل الأمان بمستوى المؤسسات وخيارات النشر المتاحة، تتيح Estuary تدفقات بيانات موثوقة من مصادر SaaS وقواعد البيانات ومصادر البث إلى مجموعة متنوعة من الوجهات، بما في ذلك ClickHouse.
+
+يتكامل Estuary مع ClickHouse عبر Kafka ClickPipe. ولا تحتاج مع هذا التكامل إلى إدارة منظومة Kafka الخاصة بك.
+
+<div id="setup-guide">
+  ## دليل الإعداد
+</div>
+
+**المتطلبات الأساسية**
+
+* [حساب Estuary](https://dashboard.estuary.dev/register)
+* [**عمليتا capture**](https://docs.estuary.dev/concepts/captures/) أو أكثر في Estuary لسحب البيانات من المصادر التي تريدها
+* حساب ClickHouse Cloud مع أذونات ClickPipe
+
+<Steps>
+  <Step>
+    ### إنشاء materialization في Estuary
+
+    لنقل البيانات من مجموعات المصدر في Estuary إلى ClickHouse، ستحتاج أولاً إلى إنشاء **materialization**.
+
+    1. في لوحة معلومات Estuary، انتقل إلى صفحة [Destinations](https://dashboard.estuary.dev/materializations).
+
+    2. انقر على **+ New Materialization**.
+
+    3. اختر موصل **ClickHouse**.
+
+    4. املأ التفاصيل في أقسام Materialization وEndpoint وSource Collections:
+
+       * **Materialization Details:** أدخِل اسماً فريداً لـ materialization الخاصة بك، واختر مستوى بيانات (موفّر السحابة والمنطقة)
+
+       * **Endpoint Config:** أدخِل **Auth Token** آمنة
+
+       * **Source Collections:** اربط **capture** موجودة أو اختر مجموعات البيانات التي تريد إتاحتها لـ ClickHouse
+
+    5. انقر على **Next** ثم **Save and Publish**.
+
+    6. في صفحة تفاصيل materialization، دوّن الاسم الكامل لـ materialization الخاصة بـ ClickHouse. سيبدو بالشكل التالي تقريباً: `your-tenant/your-unique-name/dekaf-clickhouse`.
+
+    ستبدأ Estuary في بث مجموعات البيانات المحددة كرسائل Kafka. ويمكن لـ ClickHouse الوصول إلى هذه البيانات عبر Kafka ClickPipe باستخدام تفاصيل broker الخاصة بـ Estuary وauth token التي أدخلتها.
+  </Step>
+
+  <Step>
+    ### إدخال تفاصيل اتصال Kafka
+
+    أنشئ Kafka ClickPipe جديدة في ClickHouse وأدخِل تفاصيل الاتصال:
+
+    1. في لوحة معلومات ClickHouse Cloud، اختر **Data sources**.
+
+    2. أنشئ **ClickPipe** جديدة.
+
+    3. اختر **Apache Kafka** كمصدر بيانات.
+
+    4. أدخِل تفاصيل اتصال Kafka باستخدام معلومات broker وregistry الخاصة بـ Estuary:
+
+       * أدخِل اسماً لـ ClickPipe الخاصة بك
+       * بالنسبة إلى broker، استخدم: `dekaf.estuary-data.com:9092`
+       * اترك authentication على الخيار الافتراضي `SASL/PLAIN`
+       * بالنسبة إلى المستخدم، أدخِل الاسم الكامل لـ materialization من Estuary (مثل `your-tenant/your-unique-name/dekaf-clickhouse`)
+       * بالنسبة إلى password، أدخِل auth token التي أدخلتها لـ materialization الخاصة بك
+
+    5. فعِّل خيار schema registry
+
+       * بالنسبة إلى schema URL، استخدم: `https://dekaf.estuary-data.com`
+       * سيكون schema key هو نفسه مستخدم broker (اسم materialization الخاص بك)
+       * سيكون secret هو نفسه password الخاص بـ broker (auth token الخاصة بك)
+  </Step>
+
+  <Step>
+    ### تهيئة البيانات الواردة
+
+    1. اختر أحد Kafka **topics** لديك (إحدى مجموعات البيانات من Estuary).
+
+    2. اختر **offset**.
+
+    3. سيكتشف ClickHouse رسائل topic. يمكنك بعد ذلك المتابعة إلى قسم **Parse information** لتهيئة معلومات table الخاصة بك.
+
+    4. اختر إنشاء table جديدة أو تحميل البيانات إلى table موجودة ومطابقة.
+
+    5. اربط حقول المصدر بأعمدة table، مع تأكيد اسم العمود والنوع وما إذا كان قابلاً للقيم NULL.
+
+    6. في قسم **Details and settings** الأخير، يمكنك اختيار الأذونات لمستخدم database المخصص لك.
+
+    عندما تنتهي من التهيئة، أنشئ ClickPipe الخاصة بك.
+
+    سيقوم ClickHouse بتجهيز مصدر البيانات الجديد ويبدأ في استهلاك الرسائل من Estuary. أنشئ العدد الذي تحتاجه من ClickPipes للبث من جميع مجموعات البيانات التي تريدها.
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+لمزيد من المعلومات حول إعداد تكامل مع Estuary، راجع وثائق Estuary:
+
+* راجع [وثائق ClickHouse materialization](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/) في Estuary.
+
+* يوفّر Estuary البيانات على هيئة رسائل Kafka باستخدام **Dekaf**. يمكنك معرفة المزيد عن Dekaf [هنا](https://docs.estuary.dev/guides/dekaf_reading_collections_from_kafka/).
+
+* للاطلاع على قائمة بالمصادر التي يمكنك تدفّقها إلى ClickHouse باستخدام Estuary، راجع [موصلات capture في Estuary](https://docs.estuary.dev/reference/Connectors/capture-connectors/).

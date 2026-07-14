@@ -1,0 +1,216 @@
+---
+description: '包含 LAION 5B 数据集中 1 亿个向量的数据集'
+sidebarTitle: 'LAION 5B 数据集'
+slug: /getting-started/example-datasets/laion-5b-dataset
+title: 'LAION 5B 数据集'
+keywords: ['语义搜索', '向量相似性', '近似最近邻', '嵌入向量']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="introduction">
+  ## 简介
+</div>
+
+[LAION 5b 数据集](https://laion.ai/blog/laion-5b/)包含 58.5 亿个图像-文本嵌入向量及
+相关的图像元数据。这些嵌入向量由 `Open AI CLIP` 模型 [ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14) 生成。每个嵌入向量的
+维度均为 `768`。
+
+该数据集可用于对大规模真实世界向量搜索应用的设计、容量规划和性能进行建模。该数据集既可用于文本到图像搜索，也可用于
+图像到图像搜索。
+
+<div id="dataset-details">
+  ## 数据集详情
+</div>
+
+完整数据集以 `npy` 和 `Parquet` 文件混合的形式提供，可在 [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/) 获取。
+
+ClickHouse 在一个 `S3` bucket 中提供了包含 1 亿个向量的子集。
+该 `S3` bucket 包含 10 个 `Parquet` 文件，每个 `Parquet` 文件都有 1000 万行。
+
+我们建议用户先参考[文档](/zh/reference/engines/table-engines/mergetree-family/annindexes)进行容量评估，以估算该数据集所需的存储和内存。
+
+<div id="steps">
+  ## 步骤
+</div>
+
+<Steps>
+  <Step>
+    ### 创建表
+
+    创建 `laion_5b_100m` 表，用于存储嵌入向量及其相关属性：
+
+    ```sql
+    CREATE TABLE laion_5b_100m
+    (
+        id UInt32,
+        image_path String,
+        caption String,
+        NSFW Nullable(String) default 'unknown',
+        similarity Float32,
+        LICENSE Nullable(String),
+        url String,
+        key String,
+        status LowCardinality(String),
+        width Int32,
+        height Int32,
+        original_width Int32,
+        original_height Int32,
+        exif Nullable(String),
+        md5 String,
+        vector Array(Float32) CODEC(NONE)
+    ) ENGINE = MergeTree ORDER BY (id)
+    ```
+
+    `id` 只是一个递增的整数。附加属性可在谓词中使用，以帮助理解
+    如[文档](/zh/reference/engines/table-engines/mergetree-family/annindexes)所述，与后过滤/前过滤结合使用的向量相似性搜索
+  </Step>
+
+  <Step>
+    ### 加载数据
+
+    要从所有 `Parquet` 文件中加载数据集，请执行以下 SQL 语句：
+
+    ```sql
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+    ```
+
+    将 1 亿行数据加载到表中需要几分钟。
+
+    或者，也可以运行单独的 SQL 语句，以加载指定数量的文件/行。
+
+    ```sql
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
+    ⋮
+    ```
+  </Step>
+
+  <Step>
+    ### 执行暴力向量相似性搜索
+
+    KNN (k 近邻) 搜索或暴力搜索，通过计算数据集中每个向量与目标嵌入向量之间的距离，并对距离排序来获取最近邻。我们可以使用数据集中的某个向量作为搜索向量。例如：
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_100m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    id = 9999 的行中的向量是一张熟食店图片的嵌入向量。
+    ```
+
+    ```response title="Response" highlight={24}
+    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+     1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
+     2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
+     3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
+     4. │ 51559839 │ https://img1.mashed.com/img/gallery/how-rich-is-the-mcalisters-deli-ceo-and-whats-the-average-pay-of-its-employees/intro-1619793841.jpg                                                                                           │
+     5. │ 22104014 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/04/Largest-McAlisters-Deli-Franchisee-to-Expand-into-Nebraska.jpg                                                                                                      │
+     6. │ 54337236 │ http://www.restaurantnews.com/wp-content/uploads/2015/11/McAlisters-Deli-Giving-Away-Gift-Cards-With-Win-One-Gift-One-Holiday-Promotion.jpg                                                                                       │
+     7. │ 20770867 │ http://www.restaurantnews.com/wp-content/uploads/2016/04/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Florida-as-Chain-Enters-New-Markets.jpg                                                                               │
+     8. │ 22493966 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/06/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Columbus-Ohio-as-Chain-Expands-feature.jpg                                                                       │
+     9. │  2224351 │ https://holttribe.com/wp-content/uploads/2019/10/60880046-879A-49E4-8E13-1EE75FB24980-900x675.jpeg                                                                                                                                │
+    10. │ 30779663 │ https://www.gannett-cdn.com/presto/2018/10/29/PMUR/685f3e50-cce5-46fb-9a66-acb93f6ea5e5-IMG_6587.jpg?crop=2166,2166,x663,y0&amp;width=80&amp;height=80&amp;fit=bounds                                                             │
+    11. │ 54939148 │ https://www.priceedwards.com/sites/default/files/styles/staff_property_listing_block/public/for-lease/images/IMG_9674%20%28Custom%29_1.jpg?itok=sa8hrVBT                                                                          │
+    12. │ 95371605 │ http://www.restaurantmagazine.com/wp-content/uploads/2015/08/McAlisters-Deli-Signs-Development-Agreement-with-Kingdom-Foods-to-Grow-in-Southern-Mississippi.jpg                                                                   │
+    13. │ 79564563 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/05/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Denver-as-Chain-Expands.jpg                                                                                      │
+    14. │ 76429939 │ http://www.restaurantnews.com/wp-content/uploads/2016/08/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Pennsylvania-as-Chain-Expands.jpg                                                                                     │
+    15. │ 96680635 │ https://img.claz.org/tc/400x320/9w3hll-UQNHGB9WFlhSGAVCWhheBQkeWh5SBAkUWh9SBgsJFxRcBUMNSR4cAQENXhJARwgNTRYcBAtDWh5WRQEJXR5SR1xcFkYKR1tYFkYGR1pVFiVyP0ImaTA                                                                        │
+    16. │ 48716846 │ http://tse2.mm.bing.net/th?id=OIP.nN2qJqGUJs_fVNdTiFyGnQHaEc                                                                                                                                                                      │
+    17. │  4472333 │ https://sgi.offerscdn.net/i/zdcs-merchants/05lG0FpXPIvsfiHnT3N8FQE.h200.w220.flpad.v22.bffffff.png                                                                                                                                │
+    18. │ 82667887 │ https://irs2.4sqi.net/img/general/200x200/11154479_OEGbrkgWB5fEGrrTkktYvCj1gcdyhZn7TSQSAqN2Yqw.jpg                                                                                                                                │
+    19. │ 57525607 │ https://knoji.com/images/logo/mcalistersdelicom.jpg                                                                                                                                                                               │
+    20. │ 15785896 │ https://www.groupnimb.com/mimg/merimg/mcalister-s-deli_1446088739.jpg                                                                                                                                                             │
+        └──────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+    20 rows in set. Elapsed: 3.968 sec. Processed 100.38 million rows, 320.81 GB (25.30 million rows/s., 80.84 GB/s.)
+    ```
+
+    记录查询延迟，以便与使用向量索引的 ANN 查询延迟进行对比。
+    在 1 亿行数据的情况下，上述未使用向量索引的查询可能需要数秒乃至数分钟才能完成。
+  </Step>
+
+  <Step>
+    ### 构建向量相似度索引
+
+    运行以下 SQL，在 `laion_5b_100m` 表的 `vector` 列上创建并构建向量相似度索引：
+
+    ```sql
+    ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+
+    ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ```
+
+    有关索引创建和搜索的参数及性能注意事项，请参见[文档](/zh/reference/engines/table-engines/mergetree-family/annindexes)。
+    上述语句中，HNSW 超参数 `M` 和 `ef_construction` 分别使用了 64 和 512。
+    你需要根据所选参数对应的索引构建时间和搜索结果质量进行评估，
+    从而仔细选择这些参数的最佳取值。
+
+    对于完整的 1 亿条数据集，构建并保存索引甚至可能需要数小时，具体取决于可用的 CPU 核心数量和存储带宽。
+  </Step>
+
+  <Step>
+    ### 执行 ANN 搜索
+
+    向量相似度索引构建完成后，向量搜索查询会自动使用该索引：
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_100m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    ```
+
+    首次将向量索引加载到内存时，可能需要几秒到几分钟。
+  </Step>
+
+  <Step>
+    ### 为搜索查询生成嵌入向量
+
+    `LAION 5b` 数据集的嵌入向量是使用 `OpenAI CLIP` 的 `ViT-L/14` 模型生成的。
+
+    下面提供了一个 Python 示例脚本，演示如何通过编程方式使用 `CLIP` API 生成
+    嵌入向量。随后，搜索嵌入向量
+    会作为参数传递给 `SELECT` 查询中的 [`cosineDistance()`](/zh/reference/functions/regular-functions/distance-functions#cosineDistance) 函数。
+
+    如需安装 `clip` 包，请参阅 [OpenAI GitHub 仓库](https://github.com/openai/clip)。
+
+    ```python
+    import torch
+    import clip
+    import numpy as np
+    import sys
+    import clickhouse_connect
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-L/14", device=device)
+
+    # 搜索同时包含狗和猫的图片
+    text = clip.tokenize(["a dog and a cat"]).to(device)
+
+    with torch.no_grad():
+        text_features = model.encode_text(text)
+        np_arr = text_features.detach().cpu().numpy()
+
+        # 在此处填入 ClickHouse 凭据
+        chclient = clickhouse_connect.get_client()
+
+        params = {'v1': list(np_arr[0])}
+        result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+                                parameters=params)
+
+        # 将结果写入一个简单的 HTML 页面，可在浏览器中打开。部分 URL 可能已失效。
+        print("<html>")
+        for r in result.result_rows:
+            print("<img src = ", r[1], 'width="200" height="200">')
+        print("</html>")
+    ```
+
+    上述搜索结果如下：
+
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="向量相似搜索结果" size="md" />
+  </Step>
+</Steps>

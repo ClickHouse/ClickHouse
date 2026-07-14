@@ -1,0 +1,80 @@
+---
+sidebarTitle: 'Get started'
+description: 'Step-by-step guide to create your first BigQuery ClickPipe.'
+slug: /integrations/clickpipes/bigquery/get-started
+title: 'Creating your first BigQuery ClickPipe'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/_intro.mdx';
+
+import { Image } from "/snippets/components/Image.jsx";
+
+<IntroClickPipe/>
+
+## Pre-requisites {#pre-requisites}
+
+* You must have privileges to manage [service accounts](https://docs.cloud.google.com/iam/docs/service-account-overview) and [IAM roles](https://docs.cloud.google.com/iam/docs/roles-overview) in your GCP project, or get assistance from an administrator. We recommend creating a dedicated service account with the minimum required set of [permissions](/integrations/clickpipes/bigquery/overview#permissions) following the [official documentation](https://docs.cloud.google.com/iam/docs/service-accounts-create).
+
+* The initial load process requires a user-provided Google Cloud Storage (GCS) bucket for staging. We recommend creating a dedicated bucket for your ClickPipe following the [official documentation](https://docs.cloud.google.com/storage/docs/creating-buckets). In the future, the intermediary bucket will be provided and managed by ClickPipes.
+
+<Steps>
+<Step title="Select the data source" id="1-select-the-data-source">
+
+**1.** In ClickHouse Cloud, select **Data sources** in the main navigation menu and click **Create ClickPipe**.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+
+**2.** Click the **BigQuery** tile.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Select BigQuery tile" size="lg" border/>
+</Step>
+<Step title="Set up your ClickPipe connection" id="2-setup-your-clickpipe-connection">
+
+To set up a new ClickPipe, you must provide details on how to connect to and authenticate with your BigQuery data warehouse, as well as a staging GCS bucket.
+
+**1.** Upload the `.json` key for the service account you created for ClickPipes. Ensure the service account has the minimum required set of [permissions](/integrations/clickpipes/bigquery/overview#permissions).
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Upload service account key" size="lg" border/>    
+
+**2.** Select the **Replication method**. In Private Preview, the only supported option is [**Initial load only**](/integrations/clickpipes/bigquery/overview#initial-load).
+
+**3.** Provide the path to the GCS bucket for staging data during the initial load.
+
+**4.** Click **Next** to validate.
+</Step>
+<Step title="Configure your ClickPipe" id="3-configure-your-clickpipe">
+
+Depending on the size of your BigQuery dataset, or the total size of the tables you want to sync, you might need to adjust the default ingestion settings for the ClickPipe.
+</Step>
+<Step title="Configure tables" id="4-configure-tables">
+
+**1.** Select the ClickHouse database where you want the BigQuery tables to be replicated to. You can select an existing database or create a new one.
+
+**2.** Select the tables and, optionally, the columns you want to replicate. Only datasets that the provided service account has access to will be listed.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permissions" size="lg" border/>
+
+**3.** For each selected table, make sure to define a custom sorting key under **Advanced settings** > **Use a custom sorting key**. In the future, the sorting key will be automatically inferred based on existing clustering or partitioning keys in the upstream database.
+
+<Warning>
+    You **must** define a [sorting key](/concepts/best-practices/choosing-a-primary-key) for the replicated tables in order to optimize query performance in ClickHouse. Otherwise, the sorting key will be set as `tuple()`, which means no primary index will be created and ClickHouse will perform full table scans for all queries on the table.
+</Warning>
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permissions" size="lg" border/>
+</Step>
+<Step title="Configure permissions" id="6-configure-permissions">
+
+Finally, you can configure permissions for the internal ClickPipes user.
+
+**Permissions:** ClickPipes will create a dedicated user for writing data into a destination table. You can select a role for this internal user using a custom role or one of the predefined roles:
+- `Full access`: full access to the cluster. Required if you use materialized views or dictionary with the destination table.
+- `Only destination`: insert permissions to the destination table only.
+</Step>
+<Step title="Complete setup" id="7-complete-setup">
+
+Click **Create ClickPipe** to complete the setup. You'll be redirected to the overview page, where you can the progress of the initial load and click through to see the details for your BigQuery ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissions" size="lg" border/>
+</Step>
+</Steps>

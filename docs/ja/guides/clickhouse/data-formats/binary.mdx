@@ -1,0 +1,269 @@
+---
+sidebarTitle: 'バイナリとネイティブ'
+slug: /integrations/data-formats/binary-native
+title: 'ClickHouseでNative フォーマットとバイナリ形式を使う'
+description: 'ClickHouseでNative フォーマットとバイナリ形式を使う方法を説明するページ'
+keywords: ['バイナリ形式', 'Native フォーマット', 'rowbinary', 'rawblob', 'messagepack', 'protobuf', 'capn proto', 'データフォーマット', 'パフォーマンス', '圧縮']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+ClickHouse は複数のバイナリ形式をサポートしており、これによりパフォーマンスと容量効率が向上します。バイナリ形式ではデータがバイナリで保存されるため、文字エンコーディングの面でも安全です。
+
+ここではデモ用に some&#95;data の[テーブル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.sql)と[データ](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.tsv)を使用します。必要に応じて、ご自身の ClickHouse インスタンスで再現してみてください。
+
+<div id="exporting-in-a-native-clickhouse-format">
+  ## ClickHouseNative フォーマットでのエクスポート
+</div>
+
+ClickHouseノード間でデータをエクスポートおよびインポートする際に最も効率的なデータフォーマットは、[Native](/ja/reference/formats/Native)フォーマットです。エクスポートは`INTO OUTFILE`句を使用して行います。
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse' FORMAT Native
+```
+
+これにより、[data.clickhouse](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.clickhouse) ファイルがNative フォーマットで作成されます。
+
+<div id="importing-from-a-native-format">
+  ### Native フォーマット からのインポート
+</div>
+
+データをインポートするには、小さなファイルや確認用途であれば、[file()](/ja/reference/functions/table-functions/file) を使用できます:
+
+```sql
+DESCRIBE file('data.clickhouse', Native);
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<Tip>
+  `file()` 関数を使用する場合、ClickHouse Cloud では、ファイルがあるマシン上の `clickhouse client` でコマンドを実行する必要があります。別の方法として、[`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) を使ってローカルでファイルを調査することもできます。
+</Tip>
+
+本番環境では、データのインポートに `FROM INFILE` を使用します。
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+FORMAT Native
+```
+
+<div id="native-format-compression">
+  ### Native フォーマットでの圧縮
+</div>
+
+`COMPRESSION` 句を使用すると、データをNative フォーマット (およびそのほかのほとんどのフォーマット) でエクスポートする際にも圧縮を有効にできます。
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+エクスポートにはLZ4圧縮を使用しました。データをインポートする際にも、これを指定する必要があります。
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+<div id="exporting-to-rowbinary">
+  ## RowBinary へのエクスポート
+</div>
+
+サポートされている別のバイナリ形式として、[RowBinary](/ja/reference/formats/RowBinary/RowBinary) があります。これを使用すると、データをバイナリ表現の行としてインポートおよびエクスポートできます。
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.binary' FORMAT RowBinary
+```
+
+これにより、[data.binary](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.binary) ファイルがバイナリ行形式で生成されます。
+
+<div id="exploring-rowbinary-files">
+  ### RowBinary ファイルの内容確認
+</div>
+
+このフォーマットでは自動スキーマ推論がサポートされていないため、読み込む前に内容を確認するには、スキーマを明示的に定義する必要があります。
+
+```sql
+SELECT *
+FROM file('data.binary', RowBinary, 'path String, month Date, hits UInt32')
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+[RowBinaryWithNames](/ja/reference/formats/RowBinary/RowBinaryWithNames) の使用も検討してください。これを使うと、カラム一覧を含むヘッダー行も追加されます。[RowBinaryWithNamesAndTypes](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) を使うと、さらにカラムの型を含むヘッダー行も追加されます。
+
+<div id="importing-from-rowbinary-files">
+  ### RowBinaryファイルからのインポート
+</div>
+
+RowBinaryファイルからデータを読み込むには、`FROM INFILE`句を使用します。
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.binary'
+FORMAT RowBinary
+```
+
+<div id="importing-single-binary-value-using-rawblob">
+  ## RawBLOB を使用した単一のバイナリ値のインポート
+</div>
+
+バイナリファイル全体を読み取り、テーブル内の1つのフィールドに保存したいとします。
+このような場合に使用できるのが、[RawBLOB フォーマット](/ja/reference/formats/RawBLOB)です。このフォーマットは、単一カラムのテーブルでのみ直接使用できます。
+
+```sql
+CREATE TABLE images(data String) ENGINE = Memory
+```
+
+画像ファイルを `images` テーブルに保存しましょう。
+
+```bash
+cat image.jpg | clickhouse-client -q "INSERT INTO images FORMAT RawBLOB"
+```
+
+元のファイルサイズと一致する `data` フィールドの長さを確認できます:
+
+```sql
+SELECT length(data) FROM images
+```
+
+```response
+┌─length(data)─┐
+│         6121 │
+└──────────────┘
+```
+
+<div id="exporting-rawblob-data">
+  ### RawBLOBデータのエクスポート
+</div>
+
+このフォーマットでは、`INTO OUTFILE`句を使ってデータをエクスポートすることもできます。
+
+```sql
+SELECT * FROM images LIMIT 1
+INTO OUTFILE 'out.jpg'
+FORMAT RawBLOB
+```
+
+複数の値をエクスポートするとファイルが破損してしまうため、`LIMIT 1` を使用する必要があった点に注意してください。
+
+<div id="messagepack">
+  ## MessagePack
+</div>
+
+ClickHouse は、[MsgPack](/ja/reference/formats/MsgPack) を使用した [MessagePack](https://msgpack.org/) 形式のインポートとエクスポートをサポートしています。MessagePack フォーマットでエクスポートするには:
+
+```sql
+SELECT *
+FROM some_data
+INTO OUTFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+[MessagePackファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.msgpk) からデータをインポートするには、
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+<div id="protocol-buffers">
+  ## Protocol Buffers
+</div>
+
+<CloudNotSupportedBadge />
+
+[Protocol Buffers](/ja/reference/formats/Protobuf/Protobuf) を扱うには、まず [スキーマファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.proto) を定義します。
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string path = 1;
+  date month = 2;
+  uint32 hits = 3;
+};
+```
+
+このスキーマファイル (この場合は `schema.proto`) へのパスは、[Protobuf](/ja/reference/formats/Protobuf/Protobuf)フォーマットの`format_schema`設定オプションで指定します。
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'proto.bin'
+FORMAT Protobuf
+SETTINGS format_schema = 'schema:MessageType'
+```
+
+これにより、データは [proto.bin](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/proto.bin) ファイルに保存されます。ClickHouse では、ネストされたメッセージに加えて、Protobuf データのインポートもサポートしています。単一の Protocol Buffer メッセージを扱う場合は、[ProtobufSingle](/ja/reference/formats/Protobuf/ProtobufSingle) の使用を検討してください (この場合、長さを示す区切り文字は省略されます) 。
+
+<div id="capn-proto">
+  ## Cap&#39;n Proto
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse がサポートする、もう 1 つの一般的なバイナリシリアライゼーションフォーマットとして、[Cap&#39;n Proto](https://capnproto.org/) があります。`Protobuf` 形式と同様に、この例でもスキーマファイル ([`schema.capnp`](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.capnp)) を定義する必要があります。
+
+```response
+@0xec8ff1a10aa10dbe;
+
+struct PathStats {
+  path @0 :Text;
+  month @1 :UInt32;
+  hits @2 :UInt32;
+}
+```
+
+これで、[CapnProto](/ja/reference/formats/CapnProto)フォーマットとこのスキーマを使用して、インポートとエクスポートができるようになりました。
+
+```sql
+SELECT
+    path,
+    CAST(month, 'UInt32') AS month,
+    hits
+FROM some_data
+INTO OUTFILE 'capnp.bin'
+FORMAT CapnProto
+SETTINGS format_schema = 'schema:PathStats'
+```
+
+`Date` カラムは、[対応する型に合わせる](/ja/reference/formats/CapnProto#data_types-matching-capnproto)ために `UInt32` にキャストする必要があった点に注意してください。
+
+<div id="other-formats">
+  ## その他のフォーマット
+</div>
+
+ClickHouse は、さまざまな用途やプラットフォームに対応するため、テキスト形式とバイナリ形式の両方を含む多くのフォーマットをサポートしています。さらに多くのフォーマットやその扱い方については、以下の記事を参照してください。
+
+* [CSV と TSV フォーマット](/ja/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ja/guides/clickhouse/data-formats/parquet)
+* [JSON フォーマット](/ja/guides/clickhouse/data-formats/json/intro)
+* [Regex と Template](/ja/guides/clickhouse/data-formats/templates-regex)
+* **Native およびバイナリ形式**
+* [SQL フォーマット](/ja/guides/clickhouse/data-formats/sql)
+
+あわせて、[clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) もご覧ください。これは、ClickHouse server を起動せずにローカル/リモートファイルを扱える、持ち運び可能なフル機能ツールです。

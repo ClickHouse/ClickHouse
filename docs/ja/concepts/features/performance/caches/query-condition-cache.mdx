@@ -1,0 +1,80 @@
+---
+description: 'ClickHouse で クエリ条件キャッシュ 機能を使用および設定するためのガイド'
+sidebarTitle: 'クエリ条件キャッシュ'
+slug: /operations/query-condition-cache
+title: 'クエリ条件キャッシュ'
+doc_type: 'guide'
+---
+
+<Note>
+  クエリ条件キャッシュ は、デフォルト値である [enable&#95;analyzer](/ja/reference/settings/session-settings#enable_analyzer) が true に設定されている場合にのみ動作します。
+</Note>
+
+実運用の workload の多くでは、同じデータ、またはほぼ同じデータ (たとえば既存データに新しいデータを追加したもの) に対して、クエリが繰り返し実行されます。
+ClickHouse には、このような query patterns に対応するためのさまざまな最適化手法があります。
+1 つは、索引構造 (例: 主キー索引、skipping indexes、projections) や事前計算 (materialized views) を利用して、物理的なデータ layout を調整する方法です。
+もう 1 つは、ClickHouse の [query cache](/ja/concepts/features/performance/caches/query-cache) を使って、クエリの再評価を避ける方法です。
+最初の方法の欠点は、データベース管理者による手動での調整や監視が必要になることです。
+2 番目の方法では、用途によっては許容できる場合もできない場合もありますが、古い結果が返る可能性があります (query cache にはトランザクション整合性がないためです) 。
+
+クエリ条件キャッシュ は、これら 2 つの問題に対する洗練された解決策を提供します。
+これは、同じデータに対してフィルタ条件 (例: `WHERE col = 'xyz'`) を評価すれば、常に同じ結果になるという考え方に基づいています。
+より具体的には、クエリ条件キャッシュ は、評価された各フィルタと各 granule (= デフォルトでは 8192 行の block) について、その granule 内にフィルタ条件を満たす行が 1 行もないかどうかを記憶します。
+この情報は 1 ビットで記録されます。0 ビットはフィルタに一致する行がないことを表し、1 ビットは少なくとも 1 行は一致する行があることを意味します。
+前者の場合、ClickHouse はフィルタの評価時に対応する granule をスキップできます。後者の場合、その granule は読み込んで評価する必要があります。
+
+クエリ条件キャッシュ が効果を発揮するには、3 つの prerequisites が満たされている必要があります。
+
+* 第 1 に、workload が同じフィルタ条件を繰り返し評価する必要があります。これは同じクエリが複数回実行される場合には自然に起こりますが、2 つのクエリが同じフィルタを共有している場合にも起こりえます。たとえば `SELECT product FROM products WHERE quality > 3` と `SELECT vendor, count() FROM products WHERE quality > 3` のような場合です。
+* 第 2 に、データの大部分が不変である必要があります。つまり、クエリ間で変更されないということです。これは ClickHouse では一般的に当てはまります。parts は不変であり、INSERT によってのみ作成されるためです。
+* 第 3 に、フィルタは選択性が高くなければなりません。つまり、フィルタ条件を満たす行が比較的少ないということです。フィルタ条件に一致する行が少ないほど、0 ビット (一致する行なし) で記録される granules が増え、後続のフィルタ評価で「刈り込み」できるデータも増えます.
+
+<div id="memory-consumption">
+  ## メモリ消費量
+</div>
+
+クエリ条件キャッシュは、フィルタ条件とグラニュールごとに 1 ビットしか保存しないため、消費するメモリはごくわずかです。
+クエリ条件キャッシュの最大サイズは、サーバー設定 [`query_condition_cache_size`](/ja/reference/settings/server-settings/settings#query_condition_cache_size) で設定できます (デフォルト: 100 MB) 。
+キャッシュサイズ 100 MB は、100 * 1024 * 1024 * 8 = 838,860,800 エントリに相当します。
+各エントリは 1 つのマーク (デフォルトでは 8192 行) を表すため、このキャッシュは単一のカラムの最大 6,871,947,673,600 (6.8 兆) 行をカバーできます。
+実際には、フィルタは複数のカラムに対して評価されるため、この数はフィルタ対象のカラム数で割る必要があります。
+
+<div id="configuration-settings-and-usage">
+  ## 設定と使用方法
+</div>
+
+Setting [use&#95;query&#95;condition&#95;cache](/ja/reference/settings/session-settings#use_query_condition_cache) は、特定のクエリ、または現在のセッション内のすべてのクエリでクエリ条件キャッシュを使用するかどうかを制御します。
+
+たとえば、次のクエリを最初に実行すると
+
+```sql
+SELECT col1, col2
+FROM table
+WHERE col1 = 'x'
+SETTINGS use_query_condition_cache = true;
+```
+
+述語を満たさないテーブルの範囲が保存されます。
+同じクエリを後続で実行する際も、parameter `use_query_condition_cache = true` を指定すると、クエリ条件キャッシュを利用してスキャンするデータ量を減らせます。
+
+<div id="administration">
+  ## 管理
+</div>
+
+ClickHouse を再起動すると、クエリ条件キャッシュは保持されません。
+
+クエリ条件キャッシュをクリアするには、[`SYSTEM CLEAR QUERY CONDITION CACHE`](/ja/reference/statements/system#drop-query-condition-cache) を実行します。
+
+キャッシュの内容は、システムテーブル [system.query&#95;condition&#95;cache](/ja/reference/system-tables/query_condition_cache) に表示されます。
+現在のクエリ条件キャッシュのサイズを MB 単位で計算するには、`SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache` を実行します。
+個々のフィルタ条件を調査したい場合は、`system.query_condition_cache` のフィールド `condition` を確認できます。なお、このフィールドはデバッグビルドでのみ使用できます。
+
+データベースの起動以降のクエリ条件キャッシュのヒット数とミス数は、システムテーブル [system.events](/ja/reference/system-tables/events) に &quot;QueryConditionCacheHits&quot; および &quot;QueryConditionCacheMisses&quot; というイベントとして表示されます。
+これらのカウンターは、設定 `use_query_condition_cache = true` を指定して実行された `SELECT` クエリに対してのみ更新され、その他のクエリは &quot;QueryCacheMisses&quot; に影響しません。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [Query Condition Cache の紹介](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
+* [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)
