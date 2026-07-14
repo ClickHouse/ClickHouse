@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -88,7 +87,6 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
-        Documentation documentation;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -118,16 +116,16 @@ public:
         .supports_unique_key = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-    }, Documentation documentation = {});
+    });
 
     const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;

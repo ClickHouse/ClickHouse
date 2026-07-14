@@ -61,12 +61,6 @@ public:
         return writer->getNumberOfOpenStreams();
     }
 
-    /// See IMergeTreeDataPartWriter::getSkipIndicesPackedWriter.
-    class PackedFilesWriter * getSkipIndicesPackedWriter()
-    {
-        return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
-    }
-
 protected:
     /// Remove all columns in @empty_columns. Also, clears checksums
     /// and columns array. Return set of removed files names.

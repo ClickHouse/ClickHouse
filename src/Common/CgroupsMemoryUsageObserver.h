@@ -5,7 +5,6 @@
 
 #include <chrono>
 #include <mutex>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -40,7 +39,7 @@ private:
     std::mutex memory_amount_available_changed_mutex;
     OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(memory_amount_available_changed_mutex);
 
-    uint64_t last_available_memory_amount{}; /// how much memory can the process use
+    uint64_t last_available_memory_amount; /// how much memory can the process use
 
     void stopThread();
 

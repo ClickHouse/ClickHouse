@@ -181,9 +181,9 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::note Beta Feature
-Requires `SET enable_nullable_tuple_type = 1`
-This is a Beta feature.
+:::warning Experimental Feature
+Requires `SET allow_experimental_nullable_tuple_type = 1`
+This is an experimental feature and may change in future versions.
 :::
 
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
@@ -196,7 +196,7 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
+SET allow_experimental_nullable_tuple_type = 1;
 
 CREATE TABLE test (
     id UInt32,

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveTags(group, ['tag_name_1', 'tag_name_2', ...]) removes specified tags from a tags group,
 /// and returns the new tags group.
-class FunctionTimeSeriesRemoveTags final : public IFunction
+class FunctionTimeSeriesRemoveTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTags";

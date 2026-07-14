@@ -1,8 +1,6 @@
 #pragma once
 
-#include <deque>
 #include <list>
-#include <mutex>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
@@ -46,8 +44,6 @@ public:
         size_t max_elements_,
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
-
-    ~LRUFileCachePriority() override;
 
     Type getType() const override { return Type::LRU; }
 
@@ -97,7 +93,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -131,19 +127,19 @@ public:
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(getQueueType(), max_size, max_elements, description, state); }
 
     /// See a comment near eviction_pos.
-    void resetEvictionPos(EvictionCursor cursor) override
+    void resetEvictionPos() override
     {
         std::lock_guard lock(eviction_pos_mutex);
-        evictionPos(cursor) = LRUQueue::iterator{};
+        eviction_pos = LRUQueue::iterator{};
     }
 
     /// Used only for unit test.
-    size_t getEvictionPosCount(EvictionCursor cursor)
+    size_t getEvictionPosCount()
     {
         std::lock_guard lock(eviction_pos_mutex);
-        if (evictionPos(cursor) == LRUQueue::iterator{})
+        if (eviction_pos == LRUQueue::iterator{})
             return 0;
-        return std::distance(queue.begin(), evictionPos(cursor));
+        return std::distance(queue.begin(), eviction_pos);
     }
 
 protected:
@@ -170,31 +166,17 @@ private:
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
 
-    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override;
-
     LRUQueue queue;
     const std::string description;
     LoggerPtr log;
     StatePtr state;
-    /// Where the last collectCandidatesForEviction stopped, so a pass resumes instead of
-    /// rescanning from the head
-    LRUQueue::iterator reserve_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
-    LRUQueue::iterator background_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
+    /// Eviction position is a pointer used in collectCandidatesForEviction
+    /// to track where the last collectCandidatesForEviction stopped.
+    /// This is an optimization for concurrently made eviction attempts,
+    /// which allows us not to iterate the queue from scratch,
+    /// skipping elements which are likely in non-evictable state.
+    LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
-
-    /// Select the cursor member for `cursor`. `FromHead` has no cursor and must not be passed.
-    LRUQueue::iterator & evictionPos(EvictionCursor cursor) TSA_REQUIRES(eviction_pos_mutex);
-    const LRUQueue::iterator & evictionPos(EvictionCursor cursor) const TSA_REQUIRES(eviction_pos_mutex);
-    struct InvalidatedRef
-    {
-        std::weak_ptr<Entry> entry;
-        LRUQueue::iterator iterator;
-    };
-    std::deque<InvalidatedRef> invalidated_refs TSA_GUARDED_BY(invalidated_mutex);
-    mutable std::mutex invalidated_mutex;
-    /// Size of `invalidated_refs`, kept as an atomic so the background cleanup can skip
-    /// this queue without taking `invalidated_mutex` when there is nothing to clean up.
-    std::atomic<size_t> invalidated_count = 0;
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
@@ -216,9 +198,6 @@ private:
         const size_t * max_elements_ = nullptr) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
-
-    /// Record an entry that invalidate() left in the queue for the background cleanup to remove.
-    void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(
         IterateFunc func,
@@ -247,9 +226,8 @@ private:
 
     std::string getApproxStateInfoForLog() const;
 
-    LRUQueue::iterator getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const;
-    void setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
-    /// Advance every cursor that points at `it` (which is about to be removed/spliced out).
+    LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;
+    void setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 };
 
@@ -273,8 +251,6 @@ public:
 
     void invalidate() noexcept override;
 
-    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
-
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
@@ -286,9 +262,7 @@ public:
 private:
     bool assertValid() const;
 
-    void invalidateImpl() noexcept;
-
-    LRUFileCachePriority * cache_priority{};
+    LRUFileCachePriority * cache_priority;
 
     LRUQueue::iterator iterator;
     /// We store entry separately from iterator,

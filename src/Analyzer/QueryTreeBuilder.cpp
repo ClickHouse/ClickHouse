@@ -23,10 +23,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Core/Streaming/CursorTree.h>
-
 #include <Parsers/ASTSampleRatio.h>
-#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -228,7 +225,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     if (select_lists.size() == 1)
         return buildSelectExpression(select_lists[0], is_subquery, cte_data, nullptr /*aliases*/, context);
 
-    SelectUnionMode union_mode = {};
+    SelectUnionMode union_mode;
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
         union_mode = SelectUnionMode::INTERSECT_ALL;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)
@@ -958,12 +955,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
-            if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)
+            if (table_expression.final || table_expression.sample_size)
             {
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -977,15 +973,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                 }
 
-                if (table_expression.stream_settings)
-                {
-                    stream_settings = TableExpressionModifiers::StreamSettings{};
-                    const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    if (ast_stream_settings.settings.cursor_tree.has_value())
-                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
-                }
-
-                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
+                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio);
             }
 
             if (table_expression.database_and_table_name)
@@ -1142,7 +1130,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
             {
-                CrossJoinNode * cross_join = nullptr;
+                CrossJoinNode * cross_join;
                 if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
                     cross_join = left_cross_join;
                 else

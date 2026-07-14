@@ -49,8 +49,7 @@ public:
     ~QueryPipelineBuilder() = default;
     QueryPipelineBuilder(QueryPipelineBuilder &&) = default;
     QueryPipelineBuilder(const QueryPipelineBuilder &) = delete;
-    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
-    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default;
     QueryPipelineBuilder & operator= (const QueryPipelineBuilder & rhs) = delete;
 
     /// All pipes must have same header.
@@ -72,7 +71,7 @@ public:
 
     /// Note: this two methods do not care about resources inside the chain.
     /// You should attach them yourself.
-    void addChains(VectorWithMemoryTracking<Chain> chains);
+    void addChains(std::vector<Chain> chains);
     void addChain(Chain chain);
 
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
@@ -107,7 +106,7 @@ public:
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
-            VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 

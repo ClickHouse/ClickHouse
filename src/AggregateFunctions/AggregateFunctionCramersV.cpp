@@ -55,7 +55,6 @@ struct CramersVWindowData : CrossTabPhiSquaredWindowData
 
 }
 
-void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

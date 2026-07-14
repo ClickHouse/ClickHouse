@@ -32,8 +32,7 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-        bool keep_lowcardinality = false);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
     bool isRowFiltered(size_t i) const
     {
@@ -159,7 +158,7 @@ public:
 
         if (is_asof_join)
         {
-            chassert(join_on_keys.size() == 1);
+            assert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();

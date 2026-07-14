@@ -141,9 +141,7 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        /// Aggregate function states have no meaningful default representation, so they are never considered default.
-        /// This is consistent with getNumberOfDefaultRows returning 0.
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
     std::string_view getDataAt(size_t n) const override;
@@ -183,7 +181,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 

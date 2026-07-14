@@ -177,7 +177,7 @@ static inline auto createHandlersFactoryFromConfig(
             {
                 main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
-            else if (handler_type.starts_with("prometheus"))
+            else if (handler_type == "prometheus")
             {
                 main_handler_factory->addHandler(
                     createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));
@@ -227,12 +227,6 @@ static inline auto createHandlersFactoryFromConfig(
             else if (handler_type == "jemalloc")
             {
                 auto handler = createWebUIHandlerFactory<JemallocWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
-                handler->addFiltersFromConfig(config, prefix + "." + key);
-                main_handler_factory->addHandler(std::move(handler));
-            }
-            else if (handler_type == "schema")
-            {
-                auto handler = createWebUIHandlerFactory<SchemaWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
@@ -399,12 +393,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/jemalloc");
     factory.addHandler(jemalloc_handler);
 
-    auto schema_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<SchemaWebUIRequestHandler>>(server);
-    schema_handler->attachNonStrictPath("/schema");
-    schema_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/schema");
-    factory.addHandler(schema_handler);
-
     auto processors_profile_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ProcessorsProfileWebUIRequestHandler>>(server);
     processors_profile_handler->attachNonStrictPath("/processors-profile");
     processors_profile_handler->allowGetAndHeadRequest();
@@ -446,7 +434,7 @@ void addDefaultHandlersFactory(
     /// builds via `addCommonDefaultHandlersFactory`). The interserver port has a
     /// different (HMAC) trust model and is typically less-firewalled inside the
     /// cluster, so exposing an interactive PTY shell there would punch a hole
-    /// through that boundary even when `enable_webterminal` is set.
+    /// through that boundary even when the experimental gate is open.
     auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
     webterminal_handler->attachNonStrictPath("/webterminal");
     webterminal_handler->allowGetAndHeadRequest();

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
-class FunctionTimeSeriesIdToGroup final : public IFunction
+class FunctionTimeSeriesIdToGroup : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToGroup";

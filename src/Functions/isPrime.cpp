@@ -19,7 +19,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionIsPrime final : public IFunction
+class FunctionIsPrime : public IFunction
 {
 public:
     static constexpr auto name = "isPrime";

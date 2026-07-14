@@ -30,7 +30,10 @@ RocksDBSettings::RocksDBSettings(const RocksDBSettings & settings) : impl(std::m
 {
 }
 
-RocksDBSettings::RocksDBSettings(RocksDBSettings && settings) noexcept = default;
+RocksDBSettings::RocksDBSettings(RocksDBSettings && settings) noexcept
+    : impl(std::make_unique<RocksDBSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 RocksDBSettings::~RocksDBSettings() = default;
 
@@ -62,10 +65,5 @@ void RocksDBSettings::loadFromQuery(const ASTStorage & storage_def)
 bool RocksDBSettings::hasBuiltin(std::string_view name)
 {
     return RocksDBSettingsImpl::hasBuiltin(name);
-}
-
-void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
-{
-    RocksDBSettingsImpl::checkCanSet(name, value);
 }
 }

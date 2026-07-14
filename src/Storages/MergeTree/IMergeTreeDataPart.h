@@ -3,7 +3,6 @@
 #include <atomic>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
@@ -23,7 +22,6 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
 #include <base/defines.h>
@@ -59,9 +57,6 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
-
-class DeleteBitmapCache;
-using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
 class VersionMetadata;
 enum class DataPartRemovalState : uint8_t
@@ -362,7 +357,7 @@ public:
     struct MinMaxIndex
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        Ranges hyperrectangle;
+        std::vector<Range> hyperrectangle;
         bool initialized = false;
 
     public:
@@ -413,7 +408,7 @@ public:
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version{};
+    int32_t metadata_version;
 
     /// The number of temporary projection block.
     /// It is set while rebuilding projections in merges or mutations.
@@ -536,14 +531,6 @@ public:
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
-
-    /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
-    /// UUID when set (stable across ATTACH / rename); falls back to
-    /// disk:path otherwise (unique within the process, sufficient for an
-    /// in-process cache). Every cache-aware reader of this part's
-    /// bitmaps must use the same identity when composing cache keys via
-    /// `DeleteBitmapCache::makeKey`.
-    std::string getDeleteBitmapCacheIdentity() const;
 
     /// File with compression codec name which was used to compress part columns
     /// by default. Some columns may have their own compression codecs, but

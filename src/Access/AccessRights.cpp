@@ -427,7 +427,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child = nullptr;
+        Node * child;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -464,7 +464,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child = nullptr;
+        Node * child;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -1358,8 +1358,8 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 template <bool with_grant_option, bool wildcard>
 void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
-    chassert(!element.is_partial_revoke);
-    chassert(!element.grant_option || with_grant_option);
+    assert(!element.is_partial_revoke);
+    assert(!element.grant_option || with_grant_option);
 
     if (element.isGlobalWithParameter())
     {
@@ -1461,7 +1461,7 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 template <bool grant_option, bool wildcard>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
-    chassert(!element.grant_option || grant_option);
+    assert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1606,7 +1606,7 @@ bool AccessRights::containsImpl(const AccessRights & other) const
 template <bool grant_option, bool wildcard>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
-    chassert(!element.grant_option || grant_option);
+    assert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1771,8 +1771,8 @@ void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
     if (!root)
         return;
 
-    bool flags_added = false;
-    bool flags_removed = false;
+    bool flags_added;
+    bool flags_removed;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);

@@ -91,11 +91,8 @@ def _wait_for_trino_ready(cluster: ClickHouseCluster, timeout_seconds: int) -> N
     last_err: Exception | None = None
     while time.time() < deadline:
         try:
-            out = _trino_exec(
-                cluster,
-                "SELECT count(*) FROM system.runtime.nodes WHERE state = 'active'",
-            )
-            if out.strip().isdigit() and int(out.strip()) >= 1:
+            out = _trino_exec(cluster, "SELECT 1")
+            if out.strip() == "1":
                 return
         except Exception as e:
             last_err = e

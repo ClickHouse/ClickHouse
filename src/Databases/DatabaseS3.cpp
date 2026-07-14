@@ -317,7 +317,6 @@ DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const Filter
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseS3(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -339,10 +338,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,
-    }, Documentation{
-        .description = "A read-only database that exposes objects in Amazon S3 (or S3-compatible storage) as tables.",
-        .syntax = "ENGINE = S3([config_or_url[, access_key_id, secret_access_key]])",
-        .related = {"Filesystem", "HDFS"}});
+    });
 }
 }
 #endif

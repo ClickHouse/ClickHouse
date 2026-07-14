@@ -36,8 +36,6 @@ public:
 private:
     using Interval = EnabledQuota::Interval;
     using Intervals = EnabledQuota::Intervals;
-    using SingleQuota = EnabledQuota::SingleQuota;
-    using Quotas = EnabledQuota::Quotas;
 
     struct QuotaInfo
     {

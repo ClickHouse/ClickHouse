@@ -1,5 +1,4 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
-#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {

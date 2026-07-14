@@ -60,7 +60,7 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -194,10 +194,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
-
-    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
-    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
-    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 

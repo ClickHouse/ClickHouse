@@ -44,7 +44,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!ParserKeyword{Keyword::MOVE}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type = {};
+    AccessEntityType type;
     if (!parseEntityType(pos, expected, type))
         return false;
 

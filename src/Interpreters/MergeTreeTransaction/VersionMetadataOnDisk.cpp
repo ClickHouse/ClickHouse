@@ -41,13 +41,13 @@ VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_dat
 {
     log = ::getLogger("VersionMetadataOnDisk");
     is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
-    LOG_TEST(
+    LOG_DEBUG(
         log, "Object {}, can_write_metadata {}, is_persist_deferrable {}", getObjectName(), can_write_metadata, is_persist_deferrable);
 }
 
 VersionInfo VersionMetadataOnDisk::loadMetadata()
 {
-    LOG_TRACE(log, "Object {}, loading metadata", getObjectName());
+    LOG_DEBUG(log, "Object {}, loading metadata", getObjectName());
     std::optional<VersionInfo> loading_info = std::nullopt;
     bool has_tmp_metadata_file = false;
     auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
@@ -65,7 +65,7 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         return *loading_info;
     }
 
-    LOG_TEST(log, "Object {}, no metadata", getObjectName());
+    LOG_DEBUG(log, "Object {}, no metadata", getObjectName());
 
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
@@ -106,7 +106,7 @@ void VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID(const Transact
 
 bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
-    LOG_TEST(
+    LOG_DEBUG(
         log,
         "Object {}, tryLockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -140,7 +140,7 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const T
 
 void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(
+    LOG_DEBUG(
         log,
         "Object {}, unlockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -185,7 +185,7 @@ bool VersionMetadataOnDisk::hasPersistedMetadata() const
 
 std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(VersionInfo new_info)
 {
-    LOG_TEST(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
+    LOG_DEBUG(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
 
     bool involved_in_transaction = new_info.wasInvolvedInTransaction();
     if (!can_write_metadata)
@@ -204,7 +204,7 @@ std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(Vers
 
     if (!involved_in_transaction && is_persist_deferrable)
     {
-        LOG_TEST(log, "Object {}, pending store metadata", getObjectName());
+        LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
         deferred_persist_info = new_info;
         return ++(*deferred_persist_info).storing_version;
     }
@@ -265,7 +265,7 @@ std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlocked()
     size_t small_file_size = 4096;
     auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
     /// Avoid cannot allocated thread error. No need in threadpool read method here.
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto buf = data_part_storage.readFile(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
 
     String content;

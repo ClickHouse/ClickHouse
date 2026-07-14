@@ -6,7 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -115,8 +114,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        bool use_two_level_maps_ = false);
 
     ~HashJoin() override;
 
@@ -215,19 +213,13 @@ public:
         M(key64)                       \
         M(key_string)                  \
         M(key_fixed_string)            \
-        M(keys32)                      \
-        M(keys64)                      \
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
-        M(low_cardinality_key_string)       \
-        M(low_cardinality_key_fixed_string) \
         M(two_level_key32)             \
         M(two_level_key64)             \
         M(two_level_key_string)        \
         M(two_level_key_fixed_string)  \
-        M(two_level_keys32)            \
-        M(two_level_keys64)            \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
         M(two_level_hashed)            \
@@ -240,18 +232,14 @@ public:
         M(range17_key64)               \
         M(range18_key64)
 
-    /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
-    /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
-    /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
         M(key32)                               \
         M(key64)                               \
         M(key_string)                          \
-        M(key_fixed_string)                    \
-        M(low_cardinality_key_string)          \
-        M(low_cardinality_key_fixed_string)
+        M(key_fixed_string)
 
     /// Used in ConcurrentHashJoin
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
@@ -259,8 +247,6 @@ public:
         M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
         M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
         M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
-        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
-        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
@@ -290,20 +276,6 @@ public:
         }
     }
 
-    /// True for the single-LowCardinality-column maps, whose key getter consumes the live
-    /// ColumnLowCardinality (so the key column must not be materialized for them).
-    static bool isLowCardinalityType(Type type)
-    {
-        switch (type)
-        {
-            case Type::low_cardinality_key_string:
-            case Type::low_cardinality_key_fixed_string:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     /** Different data structures, that are used to perform JOIN.
       */
     template <typename Mapped>
@@ -317,19 +289,13 @@ public:
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -423,7 +389,7 @@ public:
 
     struct NullMapHolder
     {
-        const ScatteredColumns * columns{};
+        const ScatteredColumns * columns;
         ColumnPtr column;
         size_t selector_rows = 0;
 
@@ -535,8 +501,6 @@ public:
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
-    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
-
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
@@ -599,7 +563,6 @@ private:
     size_t max_joined_block_bytes = 0;
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
-    bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
@@ -608,12 +571,6 @@ private:
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
-
-    /// Track if shared runtime filters were already published to keep publication one-shot.
-    bool shared_runtime_filters_publish_attempted = false;
-
-    const StatsCollectingParams stats_collecting_params;
-    bool build_phase_finished = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -648,10 +605,6 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
-
-    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
-    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
-    void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>

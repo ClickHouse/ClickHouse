@@ -6,6 +6,7 @@
 #include <limits>
 #include <bit>
 #include <span>
+
 #include <type_traits>
 
 #include <Common/FramePointers.h>
@@ -24,13 +25,11 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/Concepts.h>
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/IsTriviallySerializable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -101,31 +100,23 @@ inline void readChar(char & x, ReadBuffer & buf)
 }
 
 
-/// Read bytes from buffer
-inline void readNBytes(char * output, size_t size, ReadBuffer & buf)
-{
-    /// If the whole value fits in buffer do not call readStrict and copy with
-    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    /// Use a difference-based check to avoid pointer overflow UB when `size` is large
-    /// (e.g. when reading a whole vector at once via readVectorBinary).
-    if (buf.position() && size <= static_cast<size_t>(buf.buffer().end() - buf.position())) [[likely]]
-    {
-        __builtin_memcpy(output, buf.position(), size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.readStrict(output, size);
-    }
-}
-
-
 /// Read POD-type in native format
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
     static constexpr size_t size = sizeof(T); /// NOLINT
-    readNBytes(reinterpret_cast<char *>(&x), size, buf);
+
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(reinterpret_cast<char *>(&x), size);
+    }
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -186,11 +177,9 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <StdVector V>
-void readVectorBinary(V & v, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
 {
-    using T = typename V::value_type;
-
     size_t size = 0;
     readVarUInt(size, buf);
 
@@ -199,13 +188,8 @@ void readVectorBinary(V & v, ReadBuffer & buf)
                         "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
-
-    /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
-    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
-        readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
-    else
-        for (size_t i = 0; i < size; ++i)
-            readBinary(v[i], buf);
+    for (size_t i = 0; i < size; ++i)
+        readBinary(v[i], buf);
 }
 
 
@@ -217,7 +201,7 @@ void assertNotEOF(ReadBuffer & buf);
 
 inline bool checkChar(char c, ReadBuffer & buf)
 {
-    char a = 0;
+    char a;
     if (!buf.peek(a) || a != c)
         return false;
     buf.ignore();
@@ -235,7 +219,7 @@ inline void assertChar(char symbol, ReadBuffer & buf)
 
 inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
 {
-    char a = 0;
+    char a;
     if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
         return false;
     buf.ignore();
@@ -566,8 +550,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             return error();
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
-        UInt8 month = 0;
-        UInt8 day = 0;
+        UInt8 month;
+        UInt8 day;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
@@ -1474,9 +1458,9 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    int16_t hours = 0;
-    int16_t minutes = 0;
-    int16_t seconds = 0;
+    int16_t hours;
+    int16_t minutes;
+    int16_t seconds;
 
     readIntText(hours, buf);
 
@@ -1509,7 +1493,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 template <typename ReturnType>
 inline ReturnType readTimeTextImpl(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 {
-    time_t whole = 0;
+    time_t whole;
     if (!readTimeTextImpl<bool>(whole, buf))
     {
         return ReturnType(false);
@@ -1561,7 +1545,8 @@ inline void readTime64Text(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 }
 
 /// Generic methods to read value in native binary format.
-template <is_trivially_serializable T>
+template <typename T>
+requires is_arithmetic_v<T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(bool & x, ReadBuffer & buf)
@@ -1574,6 +1559,13 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
+inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(UUID & x, ReadBuffer & buf)
 {
@@ -1660,7 +1652,7 @@ inline bool tryReadText(LocalDate & x, ReadBuffer & buf) { return tryReadDateTex
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline bool tryReadText(LocalDateTime & x, ReadBuffer & buf)
 {
-    time_t time = 0;
+    time_t time;
     if (!tryReadDateTimeText(time, buf))
         return false;
     x = LocalDateTime(time, DateLUT::instance());
@@ -1865,8 +1857,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <StdVector V>
-void readBinary(V & x, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1879,8 +1871,8 @@ void readBinary(V & x, ReadBuffer & buf)
         readBinary(x[i], buf);
 }
 
-template <StdVector V>
-void readQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1896,14 +1888,14 @@ void readQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readDoubleQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1919,14 +1911,14 @@ void readDoubleQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readText(V & x, ReadBuffer & buf)
+template <typename T>
+void readText(std::vector<T> & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }
@@ -1972,7 +1964,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 template <typename T>
 inline T parse(const char * data, size_t size)
 {
-    T res{};
+    T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     assertEOF(buf);
