@@ -160,6 +160,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
+        concurrency_control = concurrency_control || plan->concurrency_control;
         resources = std::move(plan->resources);
     }
 }
