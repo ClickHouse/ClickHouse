@@ -371,6 +371,10 @@ where `web` is from the server configuration file:
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/integrations/gcs).
 :::
 
+:::note S3-compatible providers
+The `s3` disk type works with any S3-compatible object storage endpoint, not just Amazon S3. This includes providers such as Alibaba Cloud OSS, MinIO, Cloudflare R2, and others. Point `endpoint` at the provider's S3-compatible URL (including the bucket and root path) and supply the corresponding `access_key_id` and `secret_access_key`. Provider-specific behavior may require additional tuning — for example, set `support_batch_delete` to `false` for providers that do not support batch deletes (as noted above for GCS).
+:::
+
 ### Using Plain Storage {#plain-storage}
 
 In `22.10` a new disk type `s3_plain` was introduced, which provides a write-once storage.
