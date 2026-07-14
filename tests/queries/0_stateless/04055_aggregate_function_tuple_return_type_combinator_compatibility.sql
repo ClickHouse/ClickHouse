@@ -12,6 +12,7 @@ SELECT finalizeAggregation(CAST(unhex('03000000000000000000000000002640000000000
 SELECT hex(simpleLinearRegressionIfState(x, y, x > 1))
 FROM values('x Nullable(Float64), y Nullable(Float64)', (1, 3), (2, 5), (NULL, 7), (4, 9), (5, 11));
 
+-- The nullable `-If` state includes an adapter representation and must not be reinterpreted as the bare aggregate state.
 SELECT CAST(
     simpleLinearRegressionIfState(x, y, x > 1),
     'AggregateFunction(simpleLinearRegression, Nullable(Float64), Nullable(Float64))')

@@ -17,3 +17,7 @@ SELECT quantileIfArrayArray(0.5)([[1,2,3]], [[1,1,1]]);
 -- Before the fix, AggregateFunctionNothing dropped parameters, producing
 -- 'nothingNullArrayArray' without '(0.5)'. This check works on release builds too.
 SELECT toTypeName(quantileIfArrayArrayState(0.5)([[NULL]], [[1]])) LIKE '%(0.5)%';
+
+-- Parsing an `AggregateFunction` type must preserve its declared parameters even when
+-- the implementation does not return them from `getParameters`.
+SELECT toTypeName(CAST(groupArrayMovingSumState(2)(toUInt64(number)), 'AggregateFunction(groupArrayMovingSum(2), UInt64)')) FROM numbers(1);

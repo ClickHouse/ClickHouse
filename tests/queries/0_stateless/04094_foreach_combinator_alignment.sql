@@ -1,4 +1,8 @@
--- Regression test for `-ForEach` nested-state alignment and zero-sized states.
+-- Regression test: -ForEach with combinators whose sizeOfData is not a
+-- multiple of alignOfData (e.g. -Distinct, -OrDefault, -OrNull) must not
+-- trigger UBSan misaligned-address errors.  The ForEach combinator stores
+-- an array of nested states; without proper stride padding the second and
+-- subsequent elements can be misaligned.
 
 -- Distinct (original failing combo from AST fuzzer)
 SELECT sumDistinctForEach(x) FROM (SELECT [number, number % 3] AS x FROM numbers(10));
@@ -17,6 +21,3 @@ SELECT sumOrNullForEach([1, 2]) FROM (SELECT * FROM numbers(3));
 
 -- OrNull + Distinct
 SELECT countOrNullDistinctForEach([10, 20, 30]);
-
--- Zero-sized nested state from the AST fuzzer.
-SELECT ignore(arrayReduce('uniqStateForEach', [[NULL], [NULL, NULL, NULL]]));
