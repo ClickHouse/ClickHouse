@@ -44,11 +44,6 @@ public:
         process_elem = elem;
     }
 
-    void setInsertSource(InsertSource source_)
-    {
-        source = source_;
-    }
-
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
