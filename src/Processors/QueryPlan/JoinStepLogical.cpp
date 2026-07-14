@@ -847,13 +847,14 @@ struct IEJoinPlanDescription
 
 /// Whether SQL comparison of the type diverges from the `IColumn::compareAt` total order the
 /// IEJoin operator matches by: comparison of `Tuple` decomposes elementwise (IEEE NaN, NULL
-/// propagation), and comparison of `Dynamic` unwraps the underlying values. Other types
-/// (including `Array`) compare via `compareAt` itself; the operator handles the top-level
-/// NULL/NaN divergence by excluding such rows from matching.
+/// propagation), and comparison of `Dynamic` and `Variant` unwraps the underlying values
+/// (NULL values and mismatched alternatives yield NULL or throw, while `compareAt` orders them).
+/// Other types (including `Array`) compare via `compareAt` itself; the operator handles the
+/// top-level NULL/NaN divergence by excluding such rows from matching.
 static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
 {
     bool result = false;
-    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t); };
+    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
     check(*type);
     type->forEachChild(check);
     return result;
