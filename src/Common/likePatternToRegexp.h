@@ -40,4 +40,12 @@ bool likePatternIsSubstring(std::string_view pattern, String & res);
 /// Example: with escape_char='#': "50#%off" -> "50\%off"
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char);
 
+/// Rewrites a SIMILAR TO pattern with a custom escape character into a SIMILAR TO pattern with the
+/// standard escape character (backslash), so it can then be fed to `similarToPatternToRegexp`.
+/// The escape character makes the following character a literal (removing any special meaning).
+/// Example: with escape_char='#': "a#_%|b" -> "a\_.*|b" is produced in two steps — here this
+/// function yields "a\_%|b" (the `#_` becomes a literal `_`), which `similarToPatternToRegexp`
+/// then translates to re2.
+String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view pattern, char escape_char);
+
 }

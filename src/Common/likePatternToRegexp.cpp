@@ -432,4 +432,69 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
     return res;
 }
 
+String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view pattern, char escape_char)
+{
+    /// Does `\c` denote a literal `c` in the standard (backslash-escape) SIMILAR TO grammar as
+    /// processed by `similarToPatternToRegexp`? True for the LIKE metacharacters (`%`, `_`), the
+    /// SIMILAR TO metacharacters excluded from LIKE (`| * + ? { } ( ) [ ]`), the characters that
+    /// SIMILAR TO always quotes for re2 (`^ $ .`), and backslash itself. For any other character a
+    /// leading backslash is not consumed as an escape, so the character is already a literal on its
+    /// own and must be emitted unescaped.
+    const auto needs_backslash_to_be_literal = [](char c) -> bool
+    {
+        switch (c)
+        {
+            case '%':
+            case '_':
+            case '^':
+            case '$':
+            case '.':
+            case '\\':
+                return true;
+#define CASES(x) case x:
+            SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    String res;
+    res.reserve(pattern.size() * 2);
+
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+
+    while (pos < end)
+    {
+        if (*pos == escape_char)
+        {
+            ++pos;
+            if (pos == end)
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of SIMILAR TO pattern '{}'", pattern);
+
+            /// The escape character makes the following character a literal. Represent that literal
+            /// in the standard grammar: `\c` for characters that would otherwise be special, or the
+            /// bare character otherwise.
+            if (needs_backslash_to_be_literal(*pos))
+                res += '\\';
+            res += *pos;
+        }
+        else if (*pos == '\\' && escape_char != '\\')
+        {
+            /// When a custom escape character is used, a bare backslash is a literal (backslash is no
+            /// longer the escape). Emit `\\` so `similarToPatternToRegexp` keeps it as a literal backslash.
+            res += "\\\\";
+        }
+        else
+        {
+            res += *pos;
+        }
+        ++pos;
+    }
+
+    return res;
+}
+
 }

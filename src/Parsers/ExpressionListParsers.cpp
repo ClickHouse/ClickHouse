@@ -3776,12 +3776,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
-    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
+    /// 'ESCAPE' can follow a LIKE or SIMILAR TO expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
     {
         /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
         /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
-        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE`/`SIMILAR TO`/`NOT SIMILAR TO` itself.
         constexpr int like_priority = 9;
         while (layers.back()->previousPriority() > like_priority)
         {
@@ -3801,11 +3801,13 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         Operator top_op;
         bool popped = layers.back()->popOperator(top_op);
 
-        bool is_like = popped
+        /// LIKE and SIMILAR TO both accept a trailing `ESCAPE 'char'` clause.
+        bool supports_escape = popped
             && (top_op.function_name == "like" || top_op.function_name == "ilike"
-                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
+                || top_op.function_name == "notLike" || top_op.function_name == "notILike"
+                || top_op.function_name == "similarTo" || top_op.function_name == "notSimilarTo");
 
-        if (is_like)
+        if (supports_escape)
         {
             auto saved_pos = pos;
 
