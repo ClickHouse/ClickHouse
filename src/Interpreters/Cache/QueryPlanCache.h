@@ -192,10 +192,25 @@ private:
     mutable std::mutex per_user_mutex;
     std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
 
+    /// Accounting for one entry, tracked per key by `entry_weights`.
+    struct EntryWeight
+    {
+        std::optional<UUID> user_id;
+        size_t weight = 0;
+
+        /// Identity of the entry this record accounts for, compared (never dereferenced) so that
+        /// `remove` releases the charge only while `entry_weights[key]` still refers to the exact
+        /// entry it evicted. Between `remove`'s residency check and its accounting a concurrent
+        /// same-key `set` may have replaced both the resident plan and this record; that fresh
+        /// plan's charge must survive. `set` holds the entry alive for the whole call, so the
+        /// address can never be reused underneath a live comparison.
+        const QueryPlanCacheEntry * entry = nullptr;
+    };
+
     /// Per-key weight tracker. `LRUCachePolicy::set` and `SLRUCachePolicy::set` overwrite
     /// existing cells silently (without invoking `onEntryRemoval`), so `set` cannot rely on
     /// the eviction hook to compensate the previous weight on a same-key replacement.
-    std::unordered_map<QueryPlanCacheKey, std::pair<std::optional<UUID>, size_t>, QueryPlanCacheKeyHasher>
+    std::unordered_map<QueryPlanCacheKey, EntryWeight, QueryPlanCacheKeyHasher>
         entry_weights TSA_GUARDED_BY(per_user_mutex);
 };
 

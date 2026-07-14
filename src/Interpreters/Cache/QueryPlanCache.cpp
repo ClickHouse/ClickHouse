@@ -177,9 +177,13 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
         /// Same-key replacement is silent in `LRU/SLRUCachePolicy::set`: it overwrites
         /// the existing cell without invoking `onEntryRemoval`. Account the prior
         /// entry's weight ourselves so `per_user_bytes` and `entry_weights` stay in sync.
+        /// This is keyed only by `key` (no entry-identity check) on purpose: `set` is the
+        /// authoritative writer of the new state, so whatever record is present for `key`
+        /// is being superseded and its charge must be released regardless of which entry it
+        /// belonged to.
         if (auto it = entry_weights.find(key); it != entry_weights.end())
         {
-            decrementUserBytes(it->second.first, it->second.second);
+            decrementUserBytes(it->second.user_id, it->second.weight);
             entry_weights.erase(it);
         }
 
@@ -193,7 +197,7 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
         /// or the cache is cleared.
         if (key.user_id.has_value())
             per_user_bytes[*key.user_id] += entry_weight;
-        entry_weights[key] = {key.user_id, entry_weight};
+        entry_weights[key] = {key.user_id, entry_weight, entry_ptr.get()};
     }
 
     try
@@ -204,11 +208,13 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     {
         /// `Base::set` threw without leaving the entry resident. If the entry was evicted
         /// synchronously before the throw, `onEntryRemoval` already cleared its record, so roll back
-        /// only what is still charged.
+        /// only what is still charged. Release only while the record still identifies *this* entry:
+        /// a concurrent same-key `set` may have already released our charge (its own replacement
+        /// bookkeeping) and installed its own record, whose charge must not be dropped here.
         std::lock_guard lock(per_user_mutex);
-        if (auto it = entry_weights.find(key); it != entry_weights.end())
+        if (auto it = entry_weights.find(key); it != entry_weights.end() && it->second.entry == entry_ptr.get())
         {
-            decrementUserBytes(it->second.first, it->second.second);
+            decrementUserBytes(it->second.user_id, it->second.weight);
             entry_weights.erase(it);
         }
         throw;
@@ -224,12 +230,21 @@ void QueryPlanCache::remove(const QueryPlanCacheKey & key, const MappedPtr & ent
 
     /// `LRUCachePolicy::remove` / `SLRUCachePolicy::remove` bypass `onEntryRemoval` (only LRU/SLRU
     /// eviction runs it), so release the per-user charge and the weight record here, mirroring the
-    /// same-key replacement bookkeeping in `set`. Like the admission check, this accounting is
-    /// best-effort under a concurrent `set` of the same key.
+    /// same-key replacement bookkeeping in `set`.
+    ///
+    /// Release only while `entry_weights[key]` still identifies the exact entry we just evicted.
+    /// `removeIfMatches` above dropped the residency of `entry` outside `per_user_mutex`; between
+    /// that and this lock a concurrent `set` of the same key can run to completion - releasing our
+    /// record's charge (its own replacement bookkeeping), charging its fresh plan, and installing a
+    /// new record. Keyed only by `key`, we would then release the fresh plan's charge and leave it
+    /// resident but unaccounted, undercounting `query_plan_cache_size_in_bytes_quota` until the key
+    /// is re-inserted or the cache is cleared. The identity check makes the release a no-op in that
+    /// race: the fresh plan keeps its accounting, and our entry's charge was already released by the
+    /// concurrent `set`.
     std::lock_guard lock(per_user_mutex);
-    if (auto it = entry_weights.find(key); it != entry_weights.end())
+    if (auto it = entry_weights.find(key); it != entry_weights.end() && it->second.entry == entry.get())
     {
-        decrementUserBytes(it->second.first, it->second.second);
+        decrementUserBytes(it->second.user_id, it->second.weight);
         entry_weights.erase(it);
     }
 }
@@ -298,7 +313,7 @@ bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryP
     /// resident, and every later execution re-pays `validate` + replanning without ever
     /// updating the cache.
     if (auto weight_it = entry_weights.find(key); weight_it != entry_weights.end())
-        current_size_for_user -= std::min(weight_it->second.second, current_size_for_user);
+        current_size_for_user -= std::min(weight_it->second.weight, current_size_for_user);
 
     return current_size_for_user + new_entry_size <= max_size_in_bytes_for_user;
 }
@@ -312,12 +327,17 @@ void QueryPlanCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped
 
     decrementUserBytes(mapped_ptr->inserter_user_id, weight_loss);
 
-    /// LRU/SLRU eviction is the only path that reaches `onEntryRemoval`: same-key
-    /// replacement bypasses it (handled in `set` directly). Erase the tracking
-    /// record so a future `set` for this key does not see a stale weight and
-    /// double-decrement.
+    /// LRU/SLRU eviction is the only path that reaches `onEntryRemoval`: same-key replacement
+    /// overwrites the cell without a callback (handled in `set` directly) and `removeIfMatches`
+    /// bypasses it too (handled in `remove`). The evicted entry is therefore still the resident of
+    /// record, so its `entry_weights` record matches it. Erase that record - guarded by identity so
+    /// a fresh same-key entry's record is never dropped - to keep a future `set`/`remove` for this
+    /// key from seeing a stale weight and double-decrementing.
     if (mapped_ptr->cache_key.has_value())
-        entry_weights.erase(*mapped_ptr->cache_key);
+    {
+        if (auto it = entry_weights.find(*mapped_ptr->cache_key); it != entry_weights.end() && it->second.entry == mapped_ptr.get())
+            entry_weights.erase(it);
+    }
 }
 
 UInt64 SemanticSettings::computeHash(const Settings & settings)
