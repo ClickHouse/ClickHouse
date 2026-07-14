@@ -397,7 +397,11 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     reclassifyGeneratedColumnsFromRemote(context_);
 
     Names explicitly_inserted_columns;
-    if (context_->getInsertionTable() == getStorageID())
+    /// An INSERT into the `sqlite` table function leaves the context's insertion table unset, and
+    /// `StorageID`'s comparison throws on an empty id, so check for emptiness first. Such an insert has no
+    /// explicitly named generated columns to preserve anyway.
+    const auto & insertion_table = context_->getInsertionTable();
+    if (!insertion_table.empty() && insertion_table == getStorageID())
     {
         const auto & insertion_column_names = context_->getInsertionTableColumnNames();
         if (insertion_column_names)
