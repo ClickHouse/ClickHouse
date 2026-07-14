@@ -402,7 +402,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    std::unordered_map<String, const ActionsDAG::Node *> key_column_inputs;
+    KeyColumnInputs key_column_inputs;
     const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node, key_column_inputs);
 
     auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
@@ -567,7 +567,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+    KeyColumnInputs & key_column_inputs) const
 {
     auto result_node_it = node_to_result_node.find(&node);
     if (result_node_it != node_to_result_node.end())
@@ -621,7 +621,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     return *result_node;
 }
 
-const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context, std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context, KeyColumnInputs & key_column_inputs) const
 {
     /// Function, literal or column
 
@@ -647,11 +647,6 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     auto column_name = tree_node.getColumnName();
     if (auto it_key = key_columns.find(column_name); it_key != key_columns.end())
     {
-        /// Check if we already created an INPUT for this key column
-        auto it = key_column_inputs.find(column_name);
-        if (it != key_column_inputs.end())
-            return it->second;
-
         /// Granule data is materialised at the storage column type recorded in `sample_block`.
         /// The predicate may instead reference the column at a different type — typically because
         /// a MaterializedView wrapped the storage column with a `_CAST` to its declared (e.g.
@@ -661,19 +656,39 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         /// type the predicate's pre-resolved functions expect, so executing the actions against
         /// `granule.block` keeps the function `result_type` invariant intact.
         const auto & storage_type = it_key->second;
-        const auto * result_node = node_to_check;
+        const auto & expected_type = node.result_type;
 
-        if (!storage_type->equals(*node.result_type))
+        /// The adapted node is keyed by (column name, expected type): one predicate can use the
+        /// same set-index expression at several types (e.g. `t % 19` and `t % toNullable(19)`,
+        /// which canonicalize to the same name), and each must reuse a node of its own type.
+        auto adapted_key = std::make_pair(column_name, expected_type->getName());
+        if (auto it_adapted = key_column_inputs.adapted.find(adapted_key); it_adapted != key_column_inputs.adapted.end())
+            return it_adapted->second;
+
+        const ActionsDAG::Node * result_node = nullptr;
+
+        if (!storage_type->equals(*expected_type))
         {
-            const auto * input_node = &result_dag.addInput(column_name, storage_type);
-            result_node = &result_dag.addCast(*input_node, node.result_type, column_name, context);
+            /// All types share the single storage-typed INPUT as their cast source.
+            auto it_raw = key_column_inputs.raw_inputs.find(column_name);
+            if (it_raw == key_column_inputs.raw_inputs.end())
+                it_raw = key_column_inputs.raw_inputs.emplace(column_name, &result_dag.addInput(column_name, storage_type)).first;
+            result_node = &result_dag.addCast(*it_raw->second, expected_type, column_name, context);
         }
         else if (node.type != ActionsDAG::ActionType::INPUT)
         {
-            result_node = &result_dag.addInput(column_name, node.result_type);
+            /// The predicate already sees the storage type; reuse (or create) the raw INPUT.
+            auto it_raw = key_column_inputs.raw_inputs.find(column_name);
+            if (it_raw == key_column_inputs.raw_inputs.end())
+                it_raw = key_column_inputs.raw_inputs.emplace(column_name, &result_dag.addInput(column_name, expected_type)).first;
+            result_node = it_raw->second;
+        }
+        else
+        {
+            result_node = node_to_check;
         }
 
-        key_column_inputs[column_name] = result_node;
+        key_column_inputs.adapted[adapted_key] = result_node;
         return result_node;
     }
 
@@ -700,7 +715,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+    KeyColumnInputs & key_column_inputs) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
 

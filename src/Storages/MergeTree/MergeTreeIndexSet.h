@@ -5,6 +5,10 @@
 
 #include <Interpreters/SetVariants.h>
 
+#include <map>
+#include <unordered_map>
+#include <utility>
+
 
 namespace DB
 {
@@ -115,22 +119,35 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 
 private:
+    /// Per-key-column nodes reused while rebuilding the predicate onto the granule block.
+    struct KeyColumnInputs
+    {
+        /// One storage-typed INPUT per key column, shared as the source of any casts below.
+        std::unordered_map<String, const ActionsDAG::Node *> raw_inputs;
+        /// Adapted node (raw INPUT or a CAST of it) memoized by (column name, expected type name).
+        /// The same set-index expression may appear in one predicate at several types (e.g. plain
+        /// `t % 19` and `t % toNullable(19)`, which canonicalize to the same column name); each
+        /// occurrence needs a node whose result_type matches the pre-resolved functions consuming
+        /// it, so keying by name alone would collapse them onto one wrong-typed node.
+        std::map<std::pair<String, String>, const ActionsDAG::Node *> adapted;
+    };
+
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        KeyColumnInputs & key_column_inputs) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        KeyColumnInputs & key_column_inputs) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        KeyColumnInputs & key_column_inputs) const;
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 

@@ -26,6 +26,15 @@ SELECT count() > 0 FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_04538 WHERE (t % toNullable(19)) = -2
 ) WHERE explain LIKE '%Granules: 0/%';
 
+-- 1b) Mixed plain and Nullable uses of the SAME set-index expression in one predicate.
+-- `t % 19` (plain UInt8) and `t % toNullable(19)` (Nullable(UInt8)) canonicalize to the same
+-- column name `modulo(t, 19)`, so the DAG rebuild must keep a separately-typed adapted node per
+-- occurrence — a name-only cache would reuse one branch's node for the other and re-trigger the
+-- `Unexpected return type from equals` logical error. Both AND/OR orders are exercised.
+SELECT 'mix_or', count() FROM t_04538 WHERE (t % 19) = 1 OR (t % toNullable(19)) = 2;
+SELECT 'mix_or_rev', count() FROM t_04538 WHERE (t % toNullable(19)) = 2 OR (t % 19) = 1;
+SELECT 'mix_and', count() FROM t_04538 WHERE (t % 19) = 1 AND (t % toNullable(19)) = 1;
+
 -- 2) MaterializedView-declared Nullable column over a non-Nullable set-index storage column,
 -- with query_plan_merge_expressions = 0 keeping the MV's _CAST separate from the WHERE filter.
 DROP TABLE IF EXISTS t_mv_04538;

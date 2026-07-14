@@ -4,6 +4,9 @@ qs_and	1
 qs_or	2
 qs_not	20
 1
+mix_or	2
+mix_or_rev	2
+mix_and	1
 mv_no_match	0
 mv_match	1
 mv_in	2
