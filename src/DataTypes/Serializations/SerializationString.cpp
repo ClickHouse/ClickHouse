@@ -820,6 +820,17 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         return;
     }
 
+    /// The bulk number deserialization tolerates a short stream and can append fewer than
+    /// rows_offset + limit sizes without throwing. Everything below subtracts rows_offset from
+    /// num_read_rows, so a truncated size stream must be reported here, before the subtraction
+    /// wraps around.
+    if (num_read_rows < rows_offset)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unexpected end of the size stream of String column: read {} sizes, while at least {} were expected",
+            num_read_rows,
+            rows_offset);
+
     /// Read string data.
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);

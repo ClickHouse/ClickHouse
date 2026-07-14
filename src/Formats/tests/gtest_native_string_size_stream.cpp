@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
@@ -155,6 +157,36 @@ TEST(NativeStringSizeStream, CorruptedSizeStreamWraparound)
     {
         reader.read();
         FAIL() << "expected INCORRECT_DATA for a wrapped-around size stream";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+TEST(NativeStringSizeStream, TruncatedSizeStreamWithRowsOffset)
+{
+    /// rows_offset is nonzero when a seeked read skips rows inside a granule. The size stream
+    /// here carries a single size, while rows_offset = 2 alone needs two: the reader must
+    /// report a parse error instead of wrapping num_read_rows - rows_offset around.
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    String stream_data("\x05\x00\x00\x00\x00\x00\x00\x00", 8);
+    ReadBufferFromString istr(stream_data);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.position_independent_encoding = false;
+    settings.native_format = true;
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr column = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/ 2, /*limit=*/ 2, settings, state, nullptr);
+        FAIL() << "expected INCORRECT_DATA for a truncated size stream";
     }
     catch (const Exception & e)
     {
