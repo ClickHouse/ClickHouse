@@ -39,10 +39,18 @@ SELECT * FROM t;
 INSERT INTO t VALUES (2);
 SELECT count() FROM t;
 EXISTS TABLE t;
-DESCRIBE TABLE t;
-EXPLAIN SYNTAX SELECT 1 FORMAT Null;
 SET max_threads = 1;
 "
+$CH -m -q "USE $DB.ns; DESCRIBE TABLE t" | cut -f1,2
+$CH -m -q "USE $DB.ns; EXPLAIN SYNTAX SELECT 1" | head -1
+
+echo "-- escapes through table functions and views are closed"
+$CH -m -q "USE $DB.ns; SELECT sum(x) FROM (SELECT * FROM loop(t) LIMIT 2)"
+reject "SELECT * FROM merge('^t\$')"
+$CH -q "CREATE VIEW $DB.\`ns.v\` AS SELECT {p:Int32} AS p"
+reject "SELECT * FROM v(p = 1)"
+reject "SHOW TABLES WHERE name = 't'"
+$CH -q "DROP VIEW $DB.\`ns.v\`"
 
 echo "-- outside the scope, DDL over an explicit path works and is deterministic"
 $CH -m -q "

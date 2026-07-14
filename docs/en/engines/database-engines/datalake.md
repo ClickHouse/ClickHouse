@@ -125,8 +125,12 @@ While a namespace is selected, statements that do not support namespace
 scoping - DDL (`CREATE`, `DROP`, `ALTER`, `RENAME`, `OPTIMIZE`, `TRUNCATE`),
 `ON CLUSTER` queries, `BACKUP`/`RESTORE`, access-control statements, `SYSTEM`
 commands, and similar - fail with an error instead of silently targeting the
-database without the namespace. Switch to the plain database with
-`USE catalog_name` and use quoted canonical names for those operations.
+database without the namespace. The same applies to unqualified parameterized
+views, the one-argument `merge` table function, `SHOW` statements with a
+`WHERE` clause (use `LIKE`), and to disabling
+`allow_experimental_table_namespaces` itself. Switch to the plain database with
+`USE catalog_name` and use quoted canonical names for those operations. The
+selected scope also requires the analyzer (`enable_analyzer`, on by default).
 
 A path component cannot contain a literal dot: a back-quoted component like
 `` catalog_name.`a.b`.table `` is rejected, because after parsing it would be

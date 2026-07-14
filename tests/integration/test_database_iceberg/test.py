@@ -2089,6 +2089,15 @@ def test_namespace_prefix_show_tables_scope(started_cluster):
     assert "scoped_table" in tables, f"missing namespace table: {tables}"
     assert ns_2 not in tables, f"SHOW TABLES FROM leaked other namespaces: {tables}"
 
+    # a LIKE/NOT LIKE pair that is NOT the scoped-SHOW shape must not take the
+    # direct-children shortcut: the nested table still matches the pattern
+    tables = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '{ns_1}.%table' AND name NOT LIKE '{ns_1}.%table.%'",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    )
+    assert f"{ns_1}.sub.nested_table" in tables, f"imperfect-prefix LIKE dropped a nested table: {tables}"
+
 
 def test_namespace_nested_sql_ddl(started_cluster):
     """

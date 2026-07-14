@@ -59,21 +59,34 @@ $CH -m -q "
 USE $DB.ns;
 EXISTS TABLE t;
 EXISTS TABLE nope;
-DESCRIBE TABLE t;
 "
+$CH -m -q "USE $DB.ns; DESCRIBE TABLE t" | cut -f1,2
 $CH -m -q "USE $DB.ns; SHOW CREATE TABLE t" | grep -m1 -c "ns.t"
+
+echo "-- explicit paths in EXISTS and SHOW CREATE"
+$CH -q "EXISTS TABLE $DB.ns.t"
+$CH -q "SHOW CREATE TABLE $DB.ns.t" | grep -m1 -c "ns.t"
 
 echo "-- qualified column references over a table path"
 $CH -q "SELECT $DB.ns.t.x FROM $DB.ns.t ORDER BY x"
 $CH -q "SELECT ns.t.x FROM $DB.ns.t ORDER BY x"
 $CH -q "SELECT a.x FROM $DB.ns.t AS a ORDER BY x"
 
-echo "-- a stale prefix is inert once the setting is off"
+echo "-- the scope cannot be escaped by changing the setting"
+$CH -m -q "USE $DB.ns; SET allow_experimental_table_namespaces = 0" 2>&1 | grep -m1 -c "SUPPORT_IS_DISABLED"
 $CH -m -q "
 USE $DB.ns;
-SET allow_experimental_table_namespaces = 0;
-SELECT * FROM t;
+INSERT INTO t SETTINGS allow_experimental_table_namespaces = 0 VALUES (3);
+SELECT count() FROM t;
 "
+$CH -q "SELECT count() FROM $DB.t"
+
+echo "-- a dotted unqualified name cannot be silently prefixed into a deeper path"
+$CH -m -q "USE $DB.ns; SELECT * FROM \`child.t2\`" 2>&1 | grep -m1 -c "BAD_ARGUMENTS"
+
+echo "-- multipart qualifier matching is gated by the setting"
+$CH -q "SELECT max(ns.t.x) FROM $DB.\`ns.t\`"
+$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "SELECT max(ns.t.x) FROM $DB.\`ns.t\`" 2>&1 | grep -m1 -c "UNKNOWN_IDENTIFIER\|Unknown expression\|INVALID_IDENTIFIER"
 
 echo "-- quoted components with literal dots cannot be smuggled into a path"
 $CH -q "SELECT * FROM $DB.\`ns.child\`.t2" 2>&1 | grep -m1 -c "SYNTAX_ERROR\|Syntax error"

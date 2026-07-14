@@ -455,6 +455,36 @@ ClientBase::ClientBase(
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
+void ClientBase::restoreTableNamespaceScopeAfterReconnect()
+{
+    if (default_database_table_namespace.empty())
+        return;
+
+    const String use_query = fmt::format("USE {}.{}",
+        backQuoteIfNeed(default_database), backQuoteIfNeed(default_database_table_namespace));
+    try
+    {
+        connection->sendQuery(connection_parameters.timeouts, use_query, {} /*query_parameters*/, "" /*query_id*/,
+            QueryProcessingStage::Complete, &client_context->getSettingsRef(), &client_context->getClientInfo(),
+            false /*with_pending_data*/, {} /*external_roles*/, nullptr);
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            if (packet.type == Protocol::Server::Exception)
+                packet.exception->rethrow();
+            if (packet.type == Protocol::Server::EndOfStream)
+                break;
+            /// Progress, ProfileEvents and Log packets are irrelevant for USE
+        }
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while restoring the table namespace scope ({}) after a reconnect; "
+            "run the USE statement again or select another database", use_query);
+        throw;
+    }
+}
+
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
 {
     std::unique_ptr<IParserBase> parser;
@@ -486,7 +516,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             if (dialect == Dialect::kusto)
                 res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             else
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length,
+                    settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true, /*allow_multipart_table_paths*/ true);
         }
         catch (const Exception & e)
         {
@@ -2514,7 +2545,10 @@ void ClientBase::processParsedSingleQuery(
         connection->setFormatSettings(getFormatSettings(client_context));
 
         if (!connection->checkConnected(connection_parameters.timeouts))
+        {
             connect();
+            restoreTableNamespaceScopeAfterReconnect();
+        }
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
@@ -2613,10 +2647,25 @@ void ClientBase::processParsedSingleQuery(
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->getDatabase();
+            String new_database = use_query->getDatabase();
+            String new_table_namespace;
+            /// `USE db.ns` selects a namespace inside a database (experimental). Track the
+            /// physical database and the namespace separately: folded into one string the
+            /// name would be ambiguous with a database whose name contains a dot, and a
+            /// reconnect could silently select such a database instead of the scope.
+            if (const auto * identifier = use_query->database->as<ASTIdentifier>();
+                identifier && identifier->name_parts.size() > 1)
+            {
+                new_database = identifier->name_parts[0];
+                new_table_namespace = identifier->name_parts[1];
+                for (size_t i = 2; i < identifier->name_parts.size(); ++i)
+                    new_table_namespace += "." + identifier->name_parts[i];
+            }
+
             /// If the client initiates the reconnection, it takes the settings from the config.
             /// TODO: Revisit
             default_database = new_database;
+            default_database_table_namespace = new_table_namespace;
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
@@ -3184,7 +3233,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
+                    {
                         connect();
+                        restoreTableNamespaceScopeAfterReconnect();
+                    }
                 }
 
                 // For INSERTs with inline data: use the end of inline data as
@@ -4335,7 +4387,10 @@ void ClientBase::runInteractive()
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
             if (!connection->checkConnected(connection_parameters.timeouts))
+            {
                 connect();
+                restoreTableNamespaceScopeAfterReconnect();
+            }
         }
     }
     while (true);

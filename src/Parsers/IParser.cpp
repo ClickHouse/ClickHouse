@@ -18,6 +18,7 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
     max_depth = rhs.max_depth;
     backtracks = std::max(backtracks, rhs.backtracks);
     max_backtracks = rhs.max_backtracks;
+    allow_multipart_table_paths = rhs.allow_multipart_table_paths;
 
     if (rhs < *this)
     {

@@ -16,7 +16,10 @@
 -- introspection under the scope
 1
 0
-x	Int32					
+x	Int32
+1
+-- explicit paths in EXISTS and SHOW CREATE
+1
 1
 -- qualified column references over a table path
 1
@@ -25,7 +28,14 @@ x	Int32
 2
 1
 2
--- a stale prefix is inert once the setting is off
-100
+-- the scope cannot be escaped by changing the setting
+1
+3
+1
+-- a dotted unqualified name cannot be silently prefixed into a deeper path
+1
+-- multipart qualifier matching is gated by the setting
+3
+1
 -- quoted components with literal dots cannot be smuggled into a path
 1

@@ -805,10 +805,15 @@ namespace
 /// How many identifier parts a (possibly dotted) table name consumes starting at `start`:
 /// table name "ns.t" consumes 2 parts of identifier ns.t.column. 0 if it does not match.
 /// A quoted part with a literal dot matches only a whole dotted component ("ns.t" as 1 part).
-size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name)
+/// With `allow_multipart` off (the experimental setting is disabled), only a single part
+/// may match, exactly as before the feature existed.
+size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name, bool allow_multipart)
 {
     if (table_name.empty())
         return 0;
+
+    if (!allow_multipart)
+        return (start < identifier.getPartsSize() && identifier[start] == table_name) ? 1 : 0;
 
     const auto & parts = identifier.getParts();
     size_t part = start;
@@ -852,17 +857,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
+        if (parts_size != 1 && parts_size != 2 && !allow_table_paths)
+            throw Exception(ErrorCodes::INVALID_IDENTIFIER,
+                "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
+                identifier_lookup.identifier.getFullName(),
+                table_expression_node->formatASTForErrorMessage());
 
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        if (numberOfPartsMatchingTableName(identifier, 0, table_name) == parts_size)
+        if (numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths) == parts_size)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         if (parts_size > 1 && !database_name.empty() && path_start == database_name
-            && numberOfPartsMatchingTableName(identifier, 1, table_name) + 1 == parts_size)
+            && numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths) + 1 == parts_size)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /// no eager error for longer identifiers: the caller falls through to CTE,
@@ -880,7 +892,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         && identifier.getPartsSize() > 1)
     {
         const auto & table_name_compat = table_expression_data.table_name;
-        const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name_compat);
+        const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name_compat, allow_table_paths);
         const bool prefix_matches_table_name = table_name_parts > 0 && table_name_parts < identifier.getPartsSize();
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
@@ -925,7 +937,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias())
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
-    if (size_t consumed = numberOfPartsMatchingTableName(identifier, 0, table_name);
+    if (size_t consumed = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
         consumed > 0 && consumed < identifier.getPartsSize())
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, consumed /*identifier_column_qualifier_parts*/);
 
@@ -942,7 +954,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name)
     {
-        if (size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name);
+        if (size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths);
             consumed > 0 && consumed + 1 < identifier.getPartsSize())
             return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, consumed + 1 /*identifier_column_qualifier_parts*/);
     }

@@ -2977,6 +2977,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     String database_name = getCurrentDatabase();
     String table_name = function->name;
 
+    bool view_name_is_qualified = false;
     if (function->isCompoundName())
     {
         std::vector<std::string> parts;
@@ -2986,8 +2987,16 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         {
             database_name = std::move(parts[0]);
             table_name = std::move(parts[1]);
+            view_name_is_qualified = true;
         }
     }
+
+    /// an unqualified (parameterized view) name would bind to the parent database,
+    /// ignoring the selected namespace
+    if (!view_name_is_qualified && !getCurrentDatabaseInfo().table_prefix.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Parameterized views and unqualified table functions are not supported while a table "
+            "namespace is selected; qualify the name with its database");
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -7826,9 +7835,24 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         }
         storage_id.database_name = current_database;
         /// Under `USE db.namespace` unqualified table names resolve within the selected
-        /// namespace. Disabling the experimental setting makes a stale prefix inert.
-        if (!current_table_prefix.empty() && getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        /// namespace. The prefix governs resolution regardless of the current setting
+        /// value: it can only be selected while the setting is on, and later setting
+        /// changes must not silently retarget names to the parent database.
+        if (!current_table_prefix.empty())
+        {
+            /// a dot inside the name would be indistinguishable from a deeper path
+            if (storage_id.table_name.find('.') != String::npos)
+            {
+                if (exception)
+                    exception->emplace(Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table name {} contains a dot and cannot be resolved inside namespace {}; "
+                        "select the database with USE {} and use a fully qualified name",
+                        backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(current_table_prefix),
+                        backQuoteIfNeed(current_database)));
+                return StorageID::createEmpty();
+            }
             storage_id.table_name = current_table_prefix + "." + storage_id.table_name;
+        }
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

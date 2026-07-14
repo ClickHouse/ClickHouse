@@ -24,13 +24,9 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_table_namespaces;
-}
-
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_DATABASE;
 }
@@ -62,10 +58,8 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
     if (const auto from = query.getFrom(); !from.empty())
         return {from, ""};
 
-    /// the session prefix is inert while the experimental setting is off
+    /// the selected prefix governs the scope regardless of the current setting value
     auto info = getContext()->getCurrentDatabaseInfo();
-    if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
-        info.table_prefix.clear();
     if (info.database.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return info;
@@ -227,6 +221,11 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// inside a namespace show names relative to it, and only direct children;
     /// the projection is a subquery so LIKE and WHERE both see the relative name
     const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
+
+    /// a user WHERE may contain subqueries, which would run outside the scope
+    if (scoped && query.where_expression)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SHOW TABLES with a WHERE clause is not supported over a table namespace; use LIKE");
 
     if (query.full)
         rewritten_query << (scoped ? "SELECT relative_name AS name, engine FROM " : "SELECT name, engine FROM ");

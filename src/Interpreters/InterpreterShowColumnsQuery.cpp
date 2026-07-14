@@ -15,6 +15,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 namespace Setting
 {
     extern const SettingsBool mysql_map_fixed_string_to_text_in_show_columns;
@@ -43,6 +48,11 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     WriteBufferFromOwnString buf_database;
     /// central resolution fills the namespace prefix under `USE db.namespace`
     auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+
+    /// a user WHERE may contain subqueries, which would run outside the scope
+    if (query.where_expression && !getContext()->getCurrentDatabaseInfo().table_prefix.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SHOW COLUMNS with a WHERE clause is not supported while a table namespace is selected; use LIKE");
     String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
     String table = escapeString(storage_id.table_name);

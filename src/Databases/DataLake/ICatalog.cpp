@@ -356,9 +356,12 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 
             /// `LIKE 'ns.%' AND NOT LIKE 'ns.%.%'` is the scoped SHOW TABLES shape:
             /// only the direct children of `ns`, so descendant namespaces need not be listed.
-            if (!filter.exclude.empty() && filter.exclude == filter.value + ".%"
-                && !fixed_prefix.empty() && fixed_prefix.back() == '.')
-                return listTablesInNamespaceDirect(fixed_prefix.substr(0, fixed_prefix.size() - 1));
+            /// The pattern must be a perfect prefix (nothing after the wildcard): a pattern
+            /// like `ns.%foo` also matches descendants, which this shortcut would drop.
+            const auto [perfect_prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ true);
+            if (is_perfect && !perfect_prefix.empty() && perfect_prefix.back() == '.'
+                && !filter.exclude.empty() && filter.exclude == filter.value + ".%")
+                return listTablesInNamespaceDirect(perfect_prefix.substr(0, perfect_prefix.size() - 1));
 
             /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
             /// Calling getTables() is better as its parallel.

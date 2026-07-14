@@ -15,8 +15,12 @@
 1
 2
 1
-x	Int32					
+x	Int32
 SELECT 1
-FROM system.one
+-- escapes through table functions and views are closed
+3
+1
+1
+1
 -- outside the scope, DDL over an explicit path works and is deterministic
 created_via_path

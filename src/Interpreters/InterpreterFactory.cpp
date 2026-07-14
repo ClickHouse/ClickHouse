@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -461,11 +462,20 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
 
-    if (context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
-        && !isAllowedUnderTableNamespaceScope(interpreter_name, context->getSettingsRef()[Setting::allow_experimental_analyzer]))
+    /// The scope is governed by the selected prefix, not by the current setting value:
+    /// otherwise a query-level or session-level `SETTINGS allow_experimental_table_namespaces = 0`
+    /// would silently retarget names to the parent database while the scope is active.
+    if (const auto database_info = context->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
     {
-        const auto database_info = context->getCurrentDatabaseInfo();
-        if (!database_info.table_prefix.empty())
+        if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
+            && interpreter_name != "InterpreterUseQuery" && interpreter_name != "InterpreterSetQuery")
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "allow_experimental_table_namespaces cannot be disabled while a table namespace is selected "
+                "(USE {}.{}); select the database itself with USE {} first",
+                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
+                backQuoteIfNeed(database_info.database));
+
+        if (!isAllowedUnderTableNamespaceScope(interpreter_name, context->getSettingsRef()[Setting::allow_experimental_analyzer]))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "This statement is not supported while a table namespace is selected (USE {}.{}); "
                 "select the database itself with USE {} and qualify table names with the full path",

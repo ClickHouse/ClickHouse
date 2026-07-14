@@ -157,7 +157,7 @@ protected:
     /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
     /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
     /// listing is skipped for them (see `parseNamespaces`).
-    bool hasFlatNamespaces() const override;
+    bool hasFlatNamespaces() const;
 
     /// List the immediate child namespaces directly under `base_namespace`
     /// (single level, not recursive). An empty base lists the root namespaces.

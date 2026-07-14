@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_)
@@ -27,6 +32,11 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
     /// central resolution fills the namespace prefix under `USE db.namespace`
     auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+
+    /// a user WHERE may contain subqueries, which would run outside the scope
+    if (query.where_expression && !getContext()->getCurrentDatabaseInfo().table_prefix.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SHOW INDEXES with a WHERE clause is not supported while a table namespace is selected; use LIKE");
     String table = escapeString(storage_id.table_name);
     String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);

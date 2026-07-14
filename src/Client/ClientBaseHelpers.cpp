@@ -698,7 +698,8 @@ String formatQuery(String query)
     while (pos < end)
     {
         const char * query_start = pos;
-        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", /*allow_multi_statements=*/ true, /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks);
+        const ASTPtr ast = parseQueryAndMovePosition(parser, pos, end, "query in editor", /*allow_multi_statements=*/ true,
+            /*max_query_size=*/ 0, max_parser_depth, max_parser_backtracks, /*allow_multipart_table_paths*/ true);
 
         std::string_view insert_query_payload;
         if (auto * insert_ast = ast->as<ASTInsertQuery>(); insert_ast && insert_ast->data)
