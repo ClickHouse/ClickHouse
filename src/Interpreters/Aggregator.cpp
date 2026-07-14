@@ -342,7 +342,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    bool enable_parallel_single_level_merge_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -366,6 +367,7 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
+    , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
@@ -2019,6 +2021,227 @@ void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
 }
 
+
+bool Aggregator::canMergeSingleLevelInPartitions(const AggregatedDataVariants & variants) const
+{
+    switch (variants.type)
+    {
+    #define M(NAME) \
+        case AggregatedDataVariants::Type::NAME: \
+            return true;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+        default:
+            return false;
+    }
+}
+
+Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChunk(
+    ManyAggregatedDataVariants & non_empty_data,
+    bool final,
+    size_t partition_index,
+    size_t num_partitions,
+    std::atomic<bool> & is_cancelled) const
+{
+    const AggregatedDataVariantsPtr & first = non_empty_data.at(0);
+
+    std::vector<AggregatedDataVariants *> sources;
+    sources.reserve(non_empty_data.size());
+    for (const auto & variants : non_empty_data)
+        sources.push_back(variants.get());
+
+    size_t max_table_size = 0;
+    for (const auto & source : sources)
+        max_table_size = std::max(max_table_size, source->sizeWithoutOverflowRow());
+
+    AggregatedDataVariants dst;
+    dst.aggregator = this;
+    dst.init(first->type, max_table_size / num_partitions);
+    dst.keys_size = params.keys_size;
+    dst.key_sizes = key_sizes;
+    dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());
+
+    #define M(NAME) \
+        else if (first->type == AggregatedDataVariants::Type::NAME) \
+            mergeSingleLevelPartitionImpl< \
+                decltype(dst.NAME)::element_type, \
+                decltype(dst.NAME ## _two_level)::element_type>( \
+                *dst.NAME, sources, dst.aggregates_pool, partition_index, num_partitions, is_cancelled);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+
+    if (is_cancelled.load(std::memory_order_seq_cst))
+        return {};
+
+    return prepareChunkAndFillSingleLevel<true /* return_single_block */>(dst, final);
+}
+
+template <typename Method, typename TwoLevelMethod>
+void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
+    Method & dst_method,
+    const std::vector<AggregatedDataVariants *> & sources,
+    Arena * arena,
+    size_t partition_index,
+    size_t num_partitions,
+    std::atomic<bool> & is_cancelled) const
+{
+    chassert(std::has_single_bit(num_partitions));
+    const size_t partition_mask = num_partitions - 1;
+
+    PaddedPODArray<AggregateDataPtr> dst_places;
+    PaddedPODArray<AggregateDataPtr> src_places;
+
+    /// Adopt or merge one source state into the destination cell it emplaced into.
+    auto adopt_or_collect = [&](bool inserted, AggregateDataPtr & dst_data, AggregateDataPtr & src_data)
+    {
+        if (inserted)
+        {
+            dst_data = src_data;
+        }
+        else if (is_simple_count)
+        {
+            getInlineCountState(dst_data) += getInlineCountState(src_data);
+        }
+        else
+        {
+            dst_places.push_back(dst_data);
+            src_places.push_back(src_data);
+        }
+        src_data = nullptr;
+    };
+
+    auto merge_cell = [&](const auto & key, AggregateDataPtr & src_data, size_t hash_value)
+    {
+        /// A source state can be null if its creation once failed mid-way (see `destroyImpl`).
+        if (!src_data)
+            return;
+
+        typename Method::Data::LookupResult it;
+        bool inserted = false;
+        dst_method.data.emplace(key, it, inserted, hash_value);
+        adopt_or_collect(inserted, it->getMapped(), src_data);
+    };
+
+    auto flush_merges = [&]
+    {
+        if (dst_places.empty())
+            return;
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            aggregate_functions[i]->mergeAndDestroyBatch(
+                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+        dst_places.clear();
+        src_places.clear();
+    };
+
+    /// The NULL key of the single-key nullable methods lives in a dedicated slot outside the cells,
+    /// so partition 0's worker merges it.
+    auto merge_null_slot = [&](auto & src_table)
+    {
+        if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        {
+            if (!src_table.hasNullKeyData())
+                return;
+
+            auto & dst_table = dst_method.data;
+            if (!dst_table.hasNullKeyData())
+            {
+                dst_table.hasNullKeyData() = true;
+                dst_table.getNullKeyData() = src_table.getNullKeyData();
+            }
+            else if (is_simple_count)
+            {
+                getInlineCountState(dst_table.getNullKeyData()) += getInlineCountState(src_table.getNullKeyData());
+            }
+            else
+            {
+                dst_places.push_back(dst_table.getNullKeyData());
+                src_places.push_back(src_table.getNullKeyData());
+            }
+            src_table.hasNullKeyData() = false;
+            src_table.getNullKeyData() = nullptr;
+        }
+    };
+
+    const bool owns_null_slot = partition_index == 0;
+
+    for (auto * source : sources)
+    {
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
+        auto & src = getDataVariant<Method>(*source).data;
+
+        if (owns_null_slot)
+            merge_null_slot(src);
+
+        if constexpr (requires { src.begin() != src.end(); })
+        {
+            for (auto it = src.begin(); it != src.end(); ++it)
+            {
+                const size_t hash_value = it.getHash();
+                if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
+                    continue;
+                merge_cell(it->getKey(), it->getMapped(), hash_value);
+            }
+        }
+        else if constexpr (requires { src.emptyStringSlot(); })
+        {
+            /// A string table dispatches keys over size-class sub-tables and has no unified cell
+            /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
+            /// so it belongs to partition 0 like the NULL key.
+            auto & dst_table = dst_method.data;
+
+            if (owns_null_slot)
+            {
+                auto & src_slot = src.emptyStringSlot();
+                if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
+                {
+                    auto & dst_slot = dst_table.emptyStringSlot();
+                    typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
+                    bool inserted = false;
+
+                    /// The empty-string slot ignores the key argument.
+                    dst_slot.emplace(0, slot_it, inserted, 0);
+                    adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
+                }
+            }
+
+            std::decay_t<decltype(src)>::forEachSubMapPair(
+                src,
+                dst_table,
+                [&](auto & src_sub, auto & dst_sub)
+                {
+                    for (auto it = src_sub.begin(); it != src_sub.end(); ++it)
+                    {
+                        const size_t hash_value = it.getHash();
+                        if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
+                            continue;
+
+                        AggregateDataPtr & src_data = it->getMapped();
+                        if (!src_data)
+                            continue;
+
+                        typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
+                        bool inserted = false;
+                        dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
+                        adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                    }
+                });
+        }
+        else
+        {
+            static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
+        }
+
+        flush_merges();
+    }
+}
 
 bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
 {
