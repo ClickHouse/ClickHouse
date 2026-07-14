@@ -2724,7 +2724,8 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
     const auto & origin = FileCache::getCommonOrigin();
