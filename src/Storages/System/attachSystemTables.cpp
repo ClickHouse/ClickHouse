@@ -332,11 +332,14 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
     {
-        if (context->getConfigRef().getString("query_log.database", "system") == "system"
-            && context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `query_log.table` server setting cannot be set to `user_query_log` when `query_log.database` is `system`: "
-                "`system.user_query_log` shows the query log records of the current user. "
+                "The `query_log.table` server setting cannot be set to `user_query_log`: "
+                "the query log table is always created in the `system` database, where `system.user_query_log` "
+                "shows the query log records of the current user. "
                 "Rename the query log table or set `query_log.enable_user_query_log` to 0");
 
         /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
