@@ -82,6 +82,7 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
+    REGULAR(distributed_cache_cancel_query_in_response_wait) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
@@ -100,6 +101,7 @@ static struct InitFiu
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    REGULAR(file_cache_background_eviction_push_fail) \
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
@@ -127,6 +129,7 @@ static struct InitFiu
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
+    ONCE(trigger_sanitizer_error) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
@@ -138,6 +141,7 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
+    ONCE(create_empty_part_inject_stale_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
@@ -158,6 +162,8 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     PAUSEABLE(database_replicated_stop_entry_execution) \
+    PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
+    PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
@@ -174,6 +180,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
+    PAUSEABLE(sc_state_fetch_pause_before_version_check) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
@@ -199,6 +206,7 @@ static struct InitFiu
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(prepared_sets_build_ordered_set_inplace_fail) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
@@ -218,6 +226,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    ONCE(mt_skip_scheduling_merge_once) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
