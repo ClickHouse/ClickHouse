@@ -140,7 +140,7 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including the output-only nature of `client_protocol_version`):
+Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including how `client_protocol_version` raises it on both the output and the input side over HTTP):
 
 - On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
 - The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
@@ -371,23 +371,23 @@ The `Native` *output* format defaults to revision **`0`**. This covers `SELECT .
 
 Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`. File exports and local `clickhouse-client` output have no such knob and stay at `0`.
 
-#### `FORMAT Native` input — always revision 0 {#revision-input}
+#### `FORMAT Native` input — revision 0 by default, raisable over HTTP {#revision-input}
 
-The `Native` *input* format goes the other way: it is **hardcoded to revision `0`** and pays no attention to `client_protocol_version` at all. Whether it is parsing the body of an `INSERT ... FORMAT Native` or reading a `Native` file, it builds its `NativeReader` with a literal `0`, so it never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization.
+The `Native` *input* format works symmetrically: it builds its `NativeReader` from `FormatSettings::client_protocol_version`, which defaults to **`0`**. At the default it never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization — whether it is parsing the body of an `INSERT ... FORMAT Native` or reading a `Native` file. Schema inference over `Native` data follows the same rule.
 
-So `client_protocol_version` is output-only. Putting a high `?client_protocol_version=` (for example `DBMS_TCP_PROTOCOL_VERSION`) on an `INSERT ... FORMAT Native` request does nothing to how the body is read — the body still has to be revision `0`. Feed in a body that does carry a `BlockInfo` prefix or a `has_custom_serialization` byte and the reader loses sync, which comes back as a parse error (`INCORRECT_DATA` or `CANNOT_READ_ALL_DATA`) rather than a successful insert.
+Over HTTP the same `?client_protocol_version=<n>` parameter raises the input revision too: an `INSERT ... FORMAT Native` request carrying it parses the body at that revision, expecting exactly the features the [gates](#what-the-revision-gates) enable there. This includes asynchronous inserts — the async-insert queue keys batches by the protocol version and re-parses the buffered data at the version of the inserting request, so entries written at different revisions are never parsed as one batch. Feed in a body whose actual revision does not match the requested one and the reader loses sync, which comes back as a parse error (`INCORRECT_DATA` or `CANNOT_READ_ALL_DATA`) rather than a successful insert. File reads and `clickhouse-local` have no such knob and stay at `0`.
 
 ### Round-trip implications {#revision-round-trip}
 
-For `FORMAT Native` the safe choice is revision `0` at both ends, which is what you get by default. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
+For `FORMAT Native` the default is revision `0` at both ends. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
 
-The trouble only starts if you raise the output revision on purpose. A `SELECT ... FORMAT Native` taken with `?client_protocol_version=<large>` produces a stream that carries `BlockInfo` and `has_custom_serialization` bytes, and the revision-`0` input path cannot read those back. If you need such data to round-trip, either leave `client_protocol_version` off the producing `SELECT`, or move the data over the native TCP protocol — where each direction uses the handshake-negotiated revision — instead of `FORMAT Native`.
+A stream produced at a raised revision (`?client_protocol_version=<n>` on the `SELECT`) carries `BlockInfo` and `has_custom_serialization` bytes and revision-gated encodings, and it does not read back at the default. Put the same `?client_protocol_version=<n>` on the consuming `INSERT ... FORMAT Native` request and the round trip works at any supported revision. For files there is no such knob, so file exports that need to be read back must stay at revision `0` — or move the data over the native TCP protocol, where each direction uses the handshake-negotiated revision.
 
 | Channel | Write revision | Read revision | `BlockInfo` / custom serialization |
 |---|---|---|---|
 | Native TCP Data packet | Peer's advertised revision (per direction) | Peer's advertised revision (per direction) | `BlockInfo` whenever revision `> 0`; `has_custom_serialization` at `≥ 54454` |
 | `SELECT ... FORMAT Native` over HTTP | `client_protocol_version` (default `0`) | n/a | Only if `client_protocol_version` raised |
-| `INSERT ... FORMAT Native` over HTTP | n/a | `0` (fixed, ignores `client_protocol_version`) | Never read |
+| `INSERT ... FORMAT Native` over HTTP | n/a | `client_protocol_version` (default `0`) | Only if `client_protocol_version` raised |
 | `INTO OUTFILE` / file / `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
 
 :::note Protocol revision vs serialization version
