@@ -13,16 +13,14 @@ import { Image } from "/snippets/components/Image.jsx";
 > This guide explains how to use the ClickHouse MCP server with [Jan.ai](https://jan.ai/docs).
 
 <Steps>
-<Step>
-## Install Jan.ai {#install-janai}
+<Step title="Install Jan.ai" id="install-janai">
 
 Jan.ai is an open source ChatGPT-alternative that runs 100% offline.
 You can download Jan.ai for [Mac](https://jan.ai/docs/desktop/mac), [Windows](https://jan.ai/docs/desktop/windows), or [Linux](https://jan.ai/docs/desktop/linux).
 
 It's a native app, so once it's downloaded, you can launch it.
 </Step>
-<Step>
-## Add LLM to Jan.ai {#add-llm-to-janai}
+<Step title="Add LLM to Jan.ai" id="add-llm-to-janai">
 
 We can enabled models via the settings menu. 
 
@@ -30,8 +28,7 @@ To enable OpenAI, we need to provide an API key, as shown below:
 
 <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="Enable OpenAI models" size="md"/>
 </Step>
-<Step>
-## Enable MCP servers {#enable-mcp-servers}
+<Step title="Enable MCP servers" id="enable-mcp-servers">
 
 At the time of writing, MCP servers are an experimental feature in Jan.ai.
 We can enable them by toggling experimental features:
@@ -40,8 +37,7 @@ We can enable them by toggling experimental features:
 
 Once that toggle is pressed, we'll see `MCP servers` on the left menu.
 </Step>
-<Step>
-## Configure ClickHouse MCP server {#configure-clickhouse-mcp-server}
+<Step title="Configure ClickHouse MCP server" id="configure-clickhouse-mcp-server">
 
 If we click on the `MCP servers` menu, we'll see a list of MCP servers that we can connect to:
 
@@ -61,8 +57,7 @@ The ClickHouse MCP server's tools will now be visible on the chat dialog:
 
 <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="ClickHouse MCP server tools" size="md"/>
 </Step>
-<Step>
-## Chat to ClickHouse MCP server with Jan.ai {#chat-to-clickhouse-mcp-server}
+<Step title="Chat to ClickHouse MCP server with Jan.ai" id="chat-to-clickhouse-mcp-server">
 
 It's time to have a conversation about some data stored in ClickHouse!
 Let's ask a question:

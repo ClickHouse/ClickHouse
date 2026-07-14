@@ -25,14 +25,12 @@ Other aspects of the deployment—such as [architecture](/products/bring-your-ow
 
 ## Onboarding {#onboarding}
 <Steps>
-<Step>
-### 1. Apply the Terraform module {#apply-terraform-module}
+<Step title="1. Apply the Terraform module" id="apply-terraform-module">
 To start BYOC Azure onboarding, apply the [Terraform module for Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provided by ClickHouse in your **target tenant and subscription**.
 
 Use the module's documentation for required variables and apply steps. After applying, the module will have set up the necessary identity and permissions in your Azure environment.
 </Step>
-<Step>
-### 2. Provide IDs to ClickHouse {#provide-ids}
+<Step title="2. Provide IDs to ClickHouse" id="provide-ids">
 Share the following with the ClickHouse team:
 
 - **Target subscription ID** — The Azure subscription where BYOC resources will be created
