@@ -206,6 +206,10 @@ namespace
 {
 
 /// `standard` matching: an unquoted new name must not be a case sibling of an existing object.
+/// Local creates re-check under a folded-name DDLGuard, making the policy race-free on one
+/// server. Dispatch-side checks (ON CLUSTER, Replicated databases) are snapshot-based: holding
+/// the folded guard across enqueue would deadlock against the local worker's own create, and
+/// concurrent creates from different initiators are best-effort for exact duplicates too.
 void throwIfCaseSiblingDatabase(const ASTCreateQuery & create, ContextPtr context)
 {
     if (create.attach || context->isInternalQuery()
@@ -2863,7 +2867,14 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            if (!is_create_database)
+            {
+                getContext()->checkAccess(getRequiredAccess());
+                throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), create, getContext());
+            }
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
