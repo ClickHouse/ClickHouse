@@ -181,11 +181,11 @@ struct AggregateFunctionGroupBloomFilterData
             case GROUP_BLOOM_FILTER_STATE_VERSION_V1:
                 writeVersion1(buf);
                 return;
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported resolved version {} of {} aggregate function serialization state",
+                    serialization_version, name);
         }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported resolved version {} of {} aggregate function serialization state",
-            serialization_version, name);
     }
 
     /// Deserialize the state, validating the header against the declared aggregate function
@@ -203,11 +203,11 @@ struct AggregateFunctionGroupBloomFilterData
             case GROUP_BLOOM_FILTER_STATE_VERSION_V1:
                 readVersion1(buf, expected_filter_size_bytes, expected_num_hashes, expected_seed);
                 return;
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported resolved version {} of {} aggregate function serialization state",
+                    serialization_version, name);
         }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported resolved version {} of {} aggregate function serialization state",
-            serialization_version, name);
     }
 
 private:
