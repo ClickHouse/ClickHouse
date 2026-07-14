@@ -389,21 +389,9 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         else if (timeout_fd_to_replica_location.contains(event_fd))
         {
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
-            OffsetState & offset_state = offset_states[location.offset];
-            offset_state.replicas[location.index].change_replica_timeout.reset();
-            offset_state.replicas[location.index].is_change_replica_timeout_expired = true;
-
-            /// If we have already committed to a replica for this offset (hedging is disabled),
-            /// just drain the timeout event instead of starting another replica. Starting one here
-            /// would give the offset a second active connection after can_change_replica became
-            /// false, so both replicas could keep streaming and duplicate the shard's data.
-            /// In practice change_replica_timeout.reset() drains the descriptor and the timer is
-            /// never re-armed once can_change_replica is false, so such an event should not arrive;
-            /// this guard makes that invariant explicit and robust to future changes.
-            if (!offset_state.can_change_replica)
-                continue;
-
-            offset_state.next_replica_in_process = true;
+            offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
+            offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
+            offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(static_cast<int>(location.offset));
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
