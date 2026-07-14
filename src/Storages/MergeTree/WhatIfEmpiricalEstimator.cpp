@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -127,7 +128,11 @@ bool tryEstimateEmpirical(
 
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
-            ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context)
+            ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+                )
             : std::make_shared<AlterConversions>();
 
         /// aggregate each skip-index granule and count how many

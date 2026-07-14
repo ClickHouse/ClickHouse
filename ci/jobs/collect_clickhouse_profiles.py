@@ -23,6 +23,8 @@ import time
 import xml.etree.ElementTree as ET
 
 from ci.defs.defs import ToolSet
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -215,15 +217,13 @@ def download_datasets():
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
     }
-    cmds = []
-    for dataset_path in dataset_paths.values():
-        cmds.append(
-            f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {PERF_DB_PATH}'
-        )
-    res = Shell.check_parallel(cmds, verbose=True)
-    if res:
-        Shell.check(f"touch {PERF_DB_PATH}/.done")
-    return res
+    errors = download_and_extract_datasets(dataset_paths.values(), PERF_DB_PATH)
+    for error in errors:
+        print(f"ERROR: {error}")
+    if errors:
+        return False
+    Shell.check(f"touch {PERF_DB_PATH}/.done")
+    return True
 
 
 def dump_log_tail(log_path, lines=200):
@@ -530,6 +530,14 @@ def parse_args():
 def main():
     args = parse_args()
     os.makedirs(temp_dir, exist_ok=True)
+
+    # This job starts its own servers below (the temporary dataset server in
+    # configure_datasets and the profiled server in start_server, once per PGO
+    # and BOLT pass) on fixed shared ports. Before the first of them, clear any
+    # clickhouse-server leaked by a previous CI job on this reused runner;
+    # otherwise its held ports make those starts fail
+    # (see kill_leftover_server_processes).
+    kill_leftover_server_processes()
 
     stages = list(JobStages)
     if args.param:

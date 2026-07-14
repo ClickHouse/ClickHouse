@@ -96,8 +96,9 @@ set(FLATBUFFERS_SRCS
   ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
 add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
-# Expose the headers as SYSTEM so that the (header-only) flexbuffers.h does not trip ClickHouse's
-# strict -Werror when included from clickhouse_common_io consumers (e.g. the Flatbuffers format).
+# SYSTEM so the FlatBuffers headers don't trip ClickHouse's -Werror -Weverything (e.g. -Wdocumentation)
+# in consumers that include them directly, such as the native Arrow IPC reader/writer and the
+# (header-only) flexbuffers.h used by the Flatbuffers output format in clickhouse_common_io.
 target_include_directories(_flatbuffers SYSTEM PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
 # PUBLIC (not PRIVATE): consumers of the header-only flexbuffers.h (e.g. the Flatbuffers output
 # format in clickhouse_common_io) must also disable the locale-independent parsing helpers, because
@@ -106,6 +107,17 @@ target_include_directories(_flatbuffers SYSTEM PUBLIC ${FLATBUFFERS_INCLUDE_DIR}
 # flatbuffers' own sources are compiled.
 target_compile_definitions(_flatbuffers PUBLIC -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 add_library (ch_contrib::flatbuffers ALIAS _flatbuffers)
+
+# Interface target exposing only the FlatBuffers-generated Arrow IPC metadata headers
+# (Message_generated.h, Schema_generated.h, File_generated.h) plus the FlatBuffers library.
+# The native Arrow IPC reader/writer (src/Processors/Formats/Impl/ArrowIPC) links this instead
+# of the Apache Arrow C++ runtime: it parses/builds the IPC metadata with FlatBuffers and decodes
+# the buffers directly to/from ClickHouse columns. The include base ".../cpp/src" lets the code
+# use <generated/Message_generated.h> while the generated headers' own relative includes resolve.
+add_library(_arrow_ipc_metadata INTERFACE)
+target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+target_link_libraries(_arrow_ipc_metadata INTERFACE _flatbuffers)
+add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"

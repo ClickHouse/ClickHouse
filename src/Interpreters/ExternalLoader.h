@@ -3,6 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <exception>
+#include <optional>
 #include <unordered_map>
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
@@ -157,11 +158,11 @@ public:
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout = WAIT) const;
 
-    /// Loads all objects.
+    /// Loads all objects except lazy-loadable ones.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
-    ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(FilterByNameFunction{}, timeout); }
+    ReturnType tryLoadAllExceptLazy(Duration timeout = WAIT) const;
 
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
@@ -230,6 +231,10 @@ protected:
     /// Updates the object from the configuration without reloading as much as possible.
     virtual void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
+
+    /// Returns whether the object's configuration overrides lazy loading, or no value to follow the loader-wide setting.
+    virtual std::optional<bool> isObjectLazy(
+        const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return {}; }
 
     Strings getAllTriedToLoadNames() const;
 
