@@ -1,0 +1,60 @@
+---
+description: '数据湖相关文档'
+sidebarTitle: '数据湖'
+slug: /sql-reference/datalakes
+title: '数据湖'
+doc_type: 'reference'
+---
+
+本节将介绍 ClickHouse 对数据湖的支持。
+ClickHouse 支持多种主流表格式和数据目录，包括 Iceberg、Delta Lake、Hudi、AWS Glue、REST Catalog、Unity Catalog 和 Microsoft OneLake。
+
+<div id="open-table-formats">
+  # 开放表存储格式
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+请参阅 [iceberg](/zh/reference/functions/table-functions/iceberg)，该函数支持从亚马逊 S3、兼容 S3 的服务、HDFS、Azure 以及本地文件系统中读取数据。[icebergCluster](/zh/reference/functions/table-functions/icebergCluster) 是 `iceberg` 函数的分布式版本。
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+请参阅 [deltaLake](/zh/reference/functions/table-functions/deltalake)，它支持从亚马逊 S3、兼容 S3 的服务、Azure 以及本地文件系统中读取数据。[deltaLakeCluster](/zh/reference/functions/table-functions/deltalakeCluster) 是 `deltaLake` 函数的分布式版本。
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+请参阅 [hudi](/zh/reference/functions/table-functions/hudi)，它支持从亚马逊 S3 和兼容 S3 的服务中读取数据。[hudiCluster](/zh/reference/functions/table-functions/hudiCluster) 是 `hudi` 函数的分布式版本。
+
+<div id="data-catalogs">
+  # 数据目录
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+AWS Glue 数据目录可与 Iceberg 表搭配使用。你可以将其与 `iceberg` 表引擎一起使用，或与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎一起使用。
+
+<div id="iceberg-rest-catalog">
+  ## Iceberg REST Catalog
+</div>
+
+Iceberg REST Catalog 可用于 Iceberg 表。你可以将其与 `iceberg` 表引擎一起使用，也可以与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎一起使用。
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+Unity Catalog 可用于 Delta Lake 和 Iceberg 表。你可以将其与 `iceberg` 或 `deltaLake` 表引擎配合使用，也可以与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎配合使用。
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+Microsoft OneLake 可与 Delta Lake 和 Iceberg 表配合使用。你还可以将其与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎结合使用。

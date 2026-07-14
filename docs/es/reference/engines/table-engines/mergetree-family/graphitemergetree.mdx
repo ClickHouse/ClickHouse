@@ -1,0 +1,289 @@
+---
+description: 'Diseñado para compactar y agregar/promediar datos de Graphite (rollup).'
+sidebarTitle: 'GraphiteMergeTree'
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'motor de tabla GraphiteMergeTree'
+doc_type: 'guide'
+---
+
+Este motor está diseñado para compactar y agregar/promediar datos de [Graphite](http://graphite.readthedocs.io/en/latest/index.html) (rollup). Puede ser útil para los desarrolladores que quieran usar ClickHouse como almacén de datos para Graphite.
+
+Puede usar cualquier motor de tabla de ClickHouse para almacenar datos de Graphite si no necesita rollup, pero si lo necesita, use `GraphiteMergeTree`. El motor reduce el volumen de almacenamiento y aumenta la eficiencia de las consultas de Graphite.
+
+El motor hereda propiedades de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
+
+<div id="creating-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    Path String,
+    Time DateTime,
+    Value Float64,
+    Version <Numeric_type>
+    ...
+) ENGINE = GraphiteMergeTree(config_section)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Consulte una descripción detallada de la consulta [CREATE TABLE](/es/reference/statements/create/table).
+
+Una tabla para los datos de Graphite debe tener las siguientes columnas para estos datos:
+
+* Nombre de la métrica (Graphite sensor). Tipo de dato: `String`.
+
+* Momento de medición de la métrica. Tipo de dato: `DateTime`.
+
+* Valor de la métrica. Tipo de dato: `Float64`.
+
+* Versión de la métrica. Tipo de dato: cualquier tipo numérico (ClickHouse conserva las filas con la versión más alta o la última escrita si las versiones son iguales. Las demás filas se eliminan durante la fusión de las partes de datos).
+
+Los nombres de estas columnas deben establecerse en la configuración de rollup.
+
+**Parámetros de GraphiteMergeTree**
+
+* `config_section` — Nombre de la sección del archivo de configuración en la que se establecen las reglas de rollup.
+
+**Cláusulas de la consulta**
+
+Al crear una tabla `GraphiteMergeTree`, se requieren las mismas [cláusulas](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) que al crear una tabla `MergeTree`.
+
+<details markdown="1">
+  <summary>Método obsoleto para crear una tabla</summary>
+
+  <Note>
+    No use este método en proyectos nuevos y, si es posible, cambie los proyectos antiguos al método descrito anteriormente.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      EventDate Date,
+      Path String,
+      Time DateTime,
+      Value Float64,
+      Version <Numeric_type>
+      ...
+  ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
+  ```
+
+  Todos los parámetros, excepto `config_section`, tienen el mismo significado que en `MergeTree`.
+
+  * `config_section` — Nombre de la sección del archivo de configuración en la que se establecen las reglas de rollup.
+</details>
+
+<div id="rollup-configuration">
+  ## Configuración de rollup
+</div>
+
+La configuración de rollup se define mediante el parámetro [graphite&#95;rollup](/es/reference/settings/server-settings/settings#graphite) en la configuración del servidor. El nombre del parámetro puede ser cualquiera. Puede crear varias configuraciones y usarlas con diferentes tablas.
+
+Estructura de la configuración de rollup:
+
+required-columns
+patterns
+
+<div id="required-columns">
+  ### Columnas requeridas
+</div>
+
+<div id="path_column_name">
+  #### `path_column_name`
+</div>
+
+`path_column_name` — El nombre de la columna donde se almacena el nombre de la métrica (Graphite sensor). Valor predeterminado: `Path`.
+
+<div id="time_column_name">
+  #### `time_column_name`
+</div>
+
+`time_column_name` — El nombre de la columna que almacena la hora de medición de la métrica. Valor predeterminado: `Time`.
+
+<div id="value_column_name">
+  #### `value_column_name`
+</div>
+
+`value_column_name` — El nombre de la columna que almacena el valor de la métrica en el momento indicado en `time_column_name`. Valor predeterminado: `Value`.
+
+<div id="version_column_name">
+  #### `version_column_name`
+</div>
+
+`version_column_name` — El nombre de la columna que almacena la versión de la métrica. Valor predeterminado: `Timestamp`.
+
+<div id="patterns">
+  ### Patrones
+</div>
+
+Estructura de la sección `patterns`:
+
+```text
+pattern
+    rule_type
+    regexp
+    function
+pattern
+    rule_type
+    regexp
+    age + precision
+    ...
+pattern
+    rule_type
+    regexp
+    function
+    age + precision
+    ...
+pattern
+    ...
+default
+    function
+    age + precision
+    ...
+```
+
+<Warning>
+  Los patrones deben estar estrictamente ordenados:
+
+  1. Patrones sin `function` ni `retention`.
+  2. Patrones con `function` y `retention`.
+  3. Patrón `default`.
+</Warning>
+
+Al procesar una fila, ClickHouse comprueba las reglas de las secciones `pattern`. Cada una de las secciones `pattern` (incluida `default`) puede contener el parámetro `function` para la aggregation, parámetros `retention` o ambos. Si el nombre de la métrica coincide con `regexp`, se aplican las reglas de la sección `pattern` (o de las secciones correspondientes); de lo contrario, se usan las reglas de la sección `default`.
+
+Campos de las secciones `pattern` y `default`:
+
+* `rule_type` - el tipo de regla. Se aplica solo a determinadas métricas. El motor lo usa para separar las métricas simples de las etiquetadas. Parámetro opcional. Valor predeterminado: `all`.
+  No es necesario cuando el rendimiento no es crítico o cuando solo se usa un tipo de métricas, por ejemplo, métricas simples. De forma predeterminada, solo se crea un conjunto de reglas. En caso contrario, si se define cualquiera de los tipos especiales, se crean dos conjuntos distintos. Uno para métricas simples (root.branch.leaf) y otro para métricas etiquetadas (root.branch.leaf;tag1=value1).
+  Las reglas predeterminadas acaban en ambos conjuntos.
+  Valores válidos:
+  * `all` (predeterminado) - una regla universal, usada cuando se omite `rule_type`.
+  * `plain` - una regla para métricas simples. El campo `regexp` se procesa como una expresión regular.
+  * `tagged` - una regla para métricas etiquetadas (las métricas se almacenan en DB con el formato `someName?tag1=value1&tag2=value2&tag3=value3`). La expresión regular debe estar ordenada por nombre de tag; la primera tag debe ser `__name__` si existe. El campo `regexp` se procesa como una expresión regular.
+  * `tag_list` - una regla para métricas etiquetadas; es un DSL sencillo para facilitar la descripción de métricas en formato Graphite: `someName;tag1=value1;tag2=value2`, `someName` o `tag1=value1;tag2=value2`. El campo `regexp` se traduce a una regla `tagged`. No es necesario ordenar por nombre de tag, ya que se hará automáticamente. El valor de una tag (pero no el nombre) puede establecerse como una expresión regular, por ejemplo, `env=(dev|staging)`.
+* `regexp` – Un pattern para el nombre de la métrica (expresión regular o DSL).
+* `age` – La antigüedad mínima de los datos en segundos.
+* `precision`– Con qué precisión definir la antigüedad de los datos en segundos. Debe ser un divisor de 86400 (segundos en un día).
+* `function` – El nombre de la función de aggregation que se aplicará a los datos cuya antigüedad esté dentro del rango `[age, age + precision]`. Funciones aceptadas: min / max / any / avg. La media se calcula de forma imprecisa, como la media de varias medias.
+
+<div id="configuration-example">
+  ### Ejemplo de configuración sin tipos de reglas
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<div id="configuration-typed-example">
+  ### Ejemplo de configuración con tipos de reglas
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <rule_type>plain</rule_type>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp>^((.*)|.)min\?</regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tag_list</rule_type>
+        <regexp>someName;tag2=value2</regexp>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<Note>
+  El rollup de datos se realiza durante las fusiones. Normalmente, no se inician fusiones para las particiones antiguas, por lo que, para realizar el rollup, es necesario forzar una fusión no programada mediante [optimize](/es/reference/statements/optimize). O bien, usar herramientas adicionales, por ejemplo [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
+</Note>

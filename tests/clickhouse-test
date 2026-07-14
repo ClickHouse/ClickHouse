@@ -1334,6 +1334,9 @@ class SettingsRandomizer:
         "max_insert_threads": lambda: (
             12 if random.random() < 0.03 else random.randint(1, 3)
         ),
+        # Exercise both the legacy "client converts inline data to native blocks" path
+        # and the new "server parses inline data" path (added in PR #101034).
+        "send_table_structure_on_insert_with_inline_data": lambda: random.randint(0, 1),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -1342,6 +1345,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -1515,6 +1524,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
@@ -1555,6 +1565,7 @@ class SettingsRandomizer:
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
@@ -1574,6 +1585,7 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
     }
@@ -1650,6 +1662,7 @@ class MergeTreeSettingsRandomizer:
         "ratio_of_defaults_for_sparse_serialization": threshold_generator(
             0.3, 0.5, 0.0, 1.0
         ),
+        "compute_exact_num_defaults_for_sparse_columns": lambda: random.randint(0, 1),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1712,6 +1725,8 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup": lambda: random.randint(0, 1),
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),

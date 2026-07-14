@@ -1,0 +1,14 @@
+---
+sidebarTitle: 'はじめに'
+description: '最初の Amazon S3 ClickPipe を作成するためのステップごとのガイド。'
+slug: /integrations/clickpipes/object-storage/s3/get-started
+title: '最初の Amazon S3 ClickPipe を作成する'
+doc_type: 'guide'
+---
+
+import CreateClickPipe from '/snippets/ja/_create_clickpipe.mdx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+S3 ClickPipe は、Amazon S3 および S3互換オブジェクトストアから ClickHouse Cloud にデータを取り込むための、フルマネージドで耐障害性に優れた仕組みです。**一回限り**と**継続的インジェスト**の両方に対応し、exactly-once セマンティクスを備えています。
+
+<CreateClickPipe provider="s3" />

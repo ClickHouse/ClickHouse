@@ -1,0 +1,178 @@
+---
+title: Fazer backup de uma partição específica
+description: Como fazer backup de uma partição específica no ClickHouse?
+date: 2024-02-14
+tags: ['Gerenciamento de dados']
+keywords: ['Backup', 'Partição']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso fazer backup de uma partição específica no ClickHouse?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Veja o exemplo abaixo. Ele usa a [configuração](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/ch-and-minio-S3/README.md) de disco S3(Minio) listada na nossa página de [exemplos de docker compose](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/README.md).
+
+<Note>
+  Isso NÃO se aplica ao ClickHouse Cloud
+</Note>
+
+Crie uma tabela:
+
+```sql
+ch_minio_s3 :) CREATE TABLE my_table
+               (
+                   `event_time` DateTime,
+                   `field_foo` String,
+                   `field_bar` String,
+                   `number` UInt256
+               )
+               ENGINE = MergeTree
+               PARTITION BY number % 2
+               ORDER BY tuple()
+
+CREATE TABLE my_table
+(
+    `event_time` DateTime,
+    `field_foo` String,
+    `field_bar` String,
+    `number` UInt256
+)
+ENGINE = MergeTree
+PARTITION BY number % 2
+ORDER BY tuple()
+
+Query id: a1a54a5a-eac0-477c-b847-b40acaa62780
+
+Ok.
+
+0 rows in set. Elapsed: 0.016 sec.
+```
+
+Adicione alguns dados que preencherão ambas as partições por igual:
+
+```sql
+ch_minio_s3 :) INSERT INTO my_table SELECT
+                   toDateTime(now() + number) AS event_time,
+                   randomPrintableASCII(10) AS field_foo,
+                   randomPrintableASCII(20) AS field_bar,
+                   number
+               FROM numbers(1000000)
+
+INSERT INTO my_table SELECT
+    toDateTime(now() + number) AS event_time,
+    randomPrintableASCII(10) AS field_foo,
+    randomPrintableASCII(20) AS field_bar,
+    number
+FROM numbers(1000000)
+
+Query id: bf6ef803-5747-4ea1-ad00-a17967e349b6
+
+Ok.
+
+0 rows in set. Elapsed: 0.282 sec. Processed 1.00 million rows, 8.00 MB (3.55 million rows/s., 28.39 MB/s.)
+```
+
+verifique os dados:
+
+```sql
+ch_minio_s3 :) SELECT
+                   _partition_id AS partition_id,
+                   cityHash64(sum(number)) AS hash,
+                   count() AS count
+               FROM my_table
+               GROUP BY partition_id
+
+SELECT
+    _partition_id AS partition_id,
+    cityHash64(sum(number)) AS hash,
+    count() AS count
+FROM my_table
+GROUP BY partition_id
+
+Query id: d8febfb0-5339-4f97-aefa-ef0003128526
+
+┌─partition_id─┬─cityHash64(sum(number))─┬──count─┐
+│ 0            │    15460940821314360342 │ 500000 │
+│ 1            │    11827822647069388611 │ 500000 │
+└──────────────┴─────────────────────────┴────────┘
+
+2 rows in set. Elapsed: 0.025 sec. Processed 1.00 million rows, 32.00 MB (39.97 million rows/s., 1.28 GB/s.)
+```
+
+faça backup da partição com id `1` para o disco `s3` configurado:
+
+```sql
+ch_minio_s3 :) BACKUP TABLE my_table PARTITION 1 TO Disk('s3','backups/');
+
+BACKUP TABLE my_table PARTITION  1 TO Disk('s3', 'backups/')
+
+Query id: 810f6144-e282-42e2-99d0-9a80c75a927d
+
+┌─id───────────────────────────────────┬─status─────────┐
+│ 4d1da197-c4c9-4b6e-966c-76202eadbd53 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+
+1 row in set. Elapsed: 0.095 sec.
+```
+
+Exclua a tabela:
+
+```sql
+ch_minio_s3 :) DROP TABLE my_table
+
+DROP TABLE my_table
+
+Query id: c3456044-4689-406e-82ac-8d08b8b618fe
+
+Ok.
+
+0 rows in set. Elapsed: 0.007 sec.
+```
+
+restaure apenas a partição com id `1` a partir do backup:
+
+```
+ch_minio_s3 :) RESTORE TABLE my_table PARTITION 1 FROM Disk('s3','backups/');
+
+RESTORE TABLE my_table PARTITION  1 FROM Disk('s3', 'backups/')
+
+Query id: ea306c73-83c5-479f-9c0c-391594facc69
+
+┌─id───────────────────────────────────┬─status───┐
+│ ec6841a8-0607-465e-bc4d-d446f960d40a │ RESTORED │
+└──────────────────────────────────────┴──────────┘
+
+1 row in set. Elapsed: 0.065 sec.
+```
+
+valide os dados restaurados:
+
+```sql
+ch_minio_s3 :) SELECT
+                   _partition_id AS partition_id,
+                   cityHash64(sum(number)) AS hash,
+                   count() AS count
+               FROM my_table
+               GROUP BY partition_id
+
+SELECT
+    _partition_id AS partition_id,
+    cityHash64(sum(number)) AS hash,
+    count() AS count
+FROM my_table
+GROUP BY partition_id
+
+Query id: a916176d-6a6e-47fc-ba7d-79bb33b152d8
+
+┌─partition_id─┬─────────────────hash─┬──count─┐
+│ 1            │ 11827822647069388611 │ 500000 │
+└──────────────┴──────────────────────┴────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 500.00 thousand rows, 16.00 MB (41.00 million rows/s., 1.31 GB/s.)
+```

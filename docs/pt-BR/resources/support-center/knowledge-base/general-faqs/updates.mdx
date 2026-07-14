@@ -1,0 +1,19 @@
+---
+title: 'O ClickHouse oferece suporte a atualizações em tempo real?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'O ClickHouse oferece suporte a atualizações leves em tempo real'
+doc_type: 'reference'
+keywords: ['updates', 'real-time']
+---
+
+O ClickHouse oferece suporte à instrução UPDATE e é capaz de executar atualizações em tempo real tão rapidamente quanto executa INSERTs.
+
+Isso é possível graças à [estrutura de dados patch parts](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way), que permite aplicar alterações rapidamente sem impactar significativamente o desempenho de SELECT.
+
+Além disso, devido ao MVCC (controle de concorrência multiversão) e ao isolamento de snapshot, as atualizações oferecem propriedades ACID.
+
+<Info>
+  As atualizações leves foram introduzidas pela primeira vez no ClickHouse 25.7.
+</Info>

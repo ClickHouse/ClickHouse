@@ -1,0 +1,110 @@
+---
+description: 'このエンジンを使用すると、Apache Arrow Flight 経由でリモートのデータセットにクエリを実行し、挿入できます。'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'ArrowFlight テーブルエンジン'
+doc_type: 'reference'
+---
+
+ArrowFlight テーブルエンジンを使用すると、ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) プロトコル経由でリモートのデータセットの読み取りと書き込みを行えます。
+このインテグレーションにより、ClickHouse は外部の Flight 対応サーバーと、列指向の Arrow フォーマットで高性能にやり取りできます。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**エンジンパラメータ**
+
+* `host:port` — リモート Arrow Flight サーバー のアドレス。ポートが省略された場合は、デフォルトのポート `8815` が使用されます。[String](/ja/reference/data-types/string)。
+* `dataset_name` — Flight server 上のデータセットの識別子 (`arrow_flight_request_descriptor_type` 設定に応じて、PATH ディスクリプタとして、または `SELECT *` クエリで使用されます) 。[String](/ja/reference/data-types/string)。
+* `username` — HTTP Basic 認証で使用するユーザー名。[String](/ja/reference/data-types/string)。
+* `password` — HTTP Basic 認証で使用するパスワード。[String](/ja/reference/data-types/string)。
+
+`username` と `password` が省略された場合、認証は使用されません (これは Arrow Flight サーバー 側で認証なしのアクセスが許可されている場合にのみ機能します) 。
+
+カラム一覧は省略可能です — 省略した場合、スキーマは `GetSchema` を介してリモート Arrow Flight サーバー から推論されます。
+
+<div id="named-collections">
+  ## 名前付きコレクション
+</div>
+
+このエンジンは、接続パラメータを保存するための[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)に対応しています。
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+名前付きコレクション のパラメータ:
+
+| Parameter                  | Required | Default | Description              |
+| -------------------------- | -------- | ------- | ------------------------ |
+| `host` or `hostname`       | いいえ      | `""`    | サーバーのホスト名。               |
+| `port`                     | はい       | —       | サーバーのポート。                |
+| `dataset`                  | はい       | —       | データセット名またはディスクリプタ。       |
+| `use_basic_authentication` | いいえ      | `true`  | Basic認証を有効にします。          |
+| `user` or `username`       | 認証が有効な場合 | —       | 認証に使用する username。        |
+| `password`                 | いいえ      | `""`    | 認証に使用するパスワード。            |
+| `enable_ssl`               | いいえ      | `false` | TLS 暗号化を有効にします。          |
+| `ssl_ca`                   | いいえ      | `""`    | TLS 検証用の CA証明書ファイルのパス。   |
+| `ssl_override_hostname`    | いいえ      | `""`    | TLS 検証時に確認するホスト名を上書きします。 |
+
+<div id="settings">
+  ## 設定
+</div>
+
+* `arrow_flight_request_descriptor_type` — データセット名を Flight server にどの形式で送信するかを制御します。設定可能な値: `path` (デフォルト。PATH ディスクリプタとして送信) または `command` (`SELECT * FROM <dataset>` を含む CMD ディスクリプタとして送信) 。SQL コマンドを受け取る Flight server (例: Dremio) の場合は、`command` を使用してください。
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+リモートの Arrow Flight サーバーからのデータの読み取り:
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+リモートの Arrow Flight サーバーにデータを挿入する:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## 注記
+</div>
+
+* `CREATE TABLE` ステートメントでカラムを指定する場合は、Flight server が返すスキーマと一致している必要があります。
+* カラムを省略した場合、スキーマはリモートサーバーから自動的に推論されます。
+* 読み取り (`SELECT`) と書き込み (`INSERT`) の両方をサポートしています。
+* `arrow_flight_request_descriptor_type` 設定では、データセット名を PATH ディスクリプタとして送信するか、`SELECT *` クエリをラップした CMD ディスクリプタとして送信するかを制御します。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [arrowFlight テーブル関数](/ja/reference/functions/table-functions/arrowflight)
+* [Arrow Flight インターフェイス](/ja/concepts/features/interfaces/arrowflight)
+* [Apache Arrow Flight SQL 仕様](https://arrow.apache.org/docs/format/FlightSql.html)
+* [ClickHouseのArrowフォーマット](/ja/reference/formats/Arrow/Arrow)
