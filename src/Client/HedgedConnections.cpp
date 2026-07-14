@@ -529,6 +529,13 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
     ++offsets_with_disabled_changing_replica;
     offset_state.can_change_replica = false;
 
+    /// Any replacement that was queued/in-flight for this offset before the commit will now be
+    /// discarded (processNewReplicaState) or cancelled (stopFactory) and will never attach, so it
+    /// is no longer "in process". Clear the flag now; otherwise, if the committed replica later
+    /// times out, the check in resumePacketReceiver() would wait for a replacement that never
+    /// arrives (leaving getReadyReplicaLocation() blocked) instead of raising SOCKET_TIMEOUT.
+    offset_state.next_replica_in_process = false;
+
     for (size_t i = 0; i != offset_state.replicas.size(); ++i)
     {
         if (i != replica_location.index && offset_state.replicas[i].connection)
@@ -625,10 +632,25 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
         {
             size_t offset = offsets_queue.front();
             offsets_queue.pop();
+            offset_states[offset].next_replica_in_process = false;
+
+            /// This replacement was started earlier (while hedging was still allowed for this
+            /// offset), but the offset may have committed to a replica in the meantime. Once
+            /// can_change_replica is false, attaching another connection would give the offset a
+            /// second active replica streaming the same data and duplicate the shard's data, so
+            /// discard the just-established connection instead. Unlike the timeout-branch guard in
+            /// getReadyReplicaLocation(), this covers a replacement that was already queued/in-flight
+            /// before the commit and only became ready afterwards (possible with multiple offsets,
+            /// where disableChangingReplica() does not stop the factory until every offset commits).
+            if (!offset_states[offset].can_change_replica)
+            {
+                if (connection)
+                    connection->disconnect();
+                break;
+            }
 
             offset_states[offset].replicas.emplace_back(connection);
             ++offset_states[offset].active_connection_count;
-            offset_states[offset].next_replica_in_process = false;
             ++active_connection_count;
 
             ReplicaState & replica = offset_states[offset].replicas.back();
