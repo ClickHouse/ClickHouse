@@ -10,6 +10,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace DB
+{
+class IDataType;
+}
+
 namespace DB::Parquet
 {
 
@@ -87,11 +92,12 @@ struct FixedSizeConverter
 
     /// Decodes min/max value from parquet Statistics or ColumnIndex.
     /// Called separately for min (with is_max=false) and max (is_max=true).
-    /// The caller pre-fills `out` with corresponding +-infinity, so this function can just leave
-    /// `out` unchanged if the value can't be decoded.
+    /// The caller passes a Null `out`, so this function can just leave `out` unchanged if the
+    /// value can't be decoded; the caller then keeps the corresponding range bound at +-infinity.
     /// Called only if PageDecoderInfo::allow_stats is true, which SchemaConverter sets only after
-    /// carefully checking that min/max stats are usable in this situation (e.g. no type conversion
-    /// is needed).
+    /// carefully checking that min/max stats are usable in this situation (either no type
+    /// conversion is needed, or the Field is converted afterwards -
+    /// see PageDecoderInfo::cast_stats_to_output_type).
     virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
@@ -136,11 +142,24 @@ struct PageDecoderInfo
     /// E.g. if the parquet file has column `x String`, but we read it as `file(..., 'x Int64')`, we
     /// silently auto-cast data from String to Int64 (by parsing number as text); but we can't do the
     /// same for min/max stats because String min/max is not the same as Int64 min/max (e.g. "10" < "9").
-    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter), and the
-    /// conversion is done together with decoding, by FixedSizeConverter/StringConverter.
-    /// In particular we don't call something like convertFieldToType because working through all
-    /// the cases would be a nightmare.
+    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
+
+    /// If true, we need to call tryConvertFieldToType on the output of
+    /// FixedSizeConverter/StringConverter's convertField.
+    /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
+    /// output block (the type that KeyCondition compares the Field against), as provided to
+    /// decodeField.
+    /// E.g. if the file has timestamps in ms, but the requested type is DateTime64(6), IntConverter
+    /// will output Decimal64 Field with scale 3, then tryConvertFieldToType will rescale it to scale 6.
+    ///
+    /// SchemaConverter sets this only for type pairs where tryConvertFieldToType was audited to
+    /// behave exactly like the castColumn that is later applied to the data: monotonic, with the
+    /// same rounding (so the converted min/max still bound the converted values), and returning
+    /// Null on overflow (then we leave the bound at infinity) rather than clamping or wrapping.
+    /// E.g. this wouldn't be correct for Time64 output type: its cast wraps values around by day,
+    /// non-monotonically, while tryConvertFieldToType just rescales.
+    bool cast_stats_to_output_type = false;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
     bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;
@@ -150,8 +169,9 @@ struct PageDecoderInfo
     std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
 
     /// Decode a min/max value from Statistics.
-    /// If not supported or allow_stats is false, leaves `out` unchanged.
-    void decodeField(std::span<const char> data, bool is_max, Field & out) const;
+    /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
+    /// `final_output_type` (see cast_stats_to_output_type), leaves `out` unchanged.
+    void decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
 };
 
 

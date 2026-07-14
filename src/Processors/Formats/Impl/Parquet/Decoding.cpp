@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
 #include <arrow/util/byte_stream_split_internal.h>
@@ -1012,17 +1013,37 @@ bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, s
     return false;
 }
 
-void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field & out) const
+void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
 {
     if (!allow_stats)
         return;
 
+    Field field;
     if (fixed_size_converter)
-        fixed_size_converter->convertField(data, is_max, out);
+        fixed_size_converter->convertField(data, is_max, field);
     else if (string_converter)
-        string_converter->convertField(data, is_max, out);
+        string_converter->convertField(data, is_max, field);
     else
         chassert(false);
+
+    /// The converter couldn't produce a usable bound (e.g. NaN); leave `out` unchanged.
+    if (field.isNull())
+        return;
+
+    if (cast_stats_to_output_type)
+    {
+        /// `convert_inexact_floats` opts into rounding Float64 to nearest Float32, matching the
+        /// castColumn that is applied to the values; it doesn't affect the other allowed
+        /// conversions (Decimal/DateTime64 rescaling).
+        field = tryConvertFieldToType(field, final_output_type, &decoded_type, /*format_settings=*/ {}, /*strict=*/ false, /*convert_inexact_floats=*/ true);
+
+        /// Conversion failed, e.g. the value overflows the output type. Leaving the bound at
+        /// infinity is always safe.
+        if (field.isNull())
+            return;
+    }
+
+    out = std::move(field);
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
