@@ -99,9 +99,39 @@ public:
     MergedStats getMergedStats() const override;
 
 private:
-    /// Materialize both sides, sort the union (skipping rows with NULL keys), build Li/P and
-    /// the bit array.
+    /// Materialize both sides and build the join state: the L1 union, the L2 permutation and
+    /// the bit array. Runs the stages below in order.
     void buildJoinState();
+
+    /// Rows admitted to the union: byte mask over the side's rows (empty when every row is
+    /// valid) and the count of valid rows.
+    struct SideValidity
+    {
+        IColumn::Filter mask;
+        size_t num_valid = 0;
+    };
+
+    /// Concatenate the side's accumulated chunks into `side_columns`, prepare the key columns
+    /// and allocate the matched bitmap if the side needs one. Returns the validity mask that
+    /// excludes rows with NULL or NaN keys: they cannot match, never enter the union, and are
+    /// emitted by the post-phases as unmatched.
+    SideValidity materializeSide(size_t side);
+
+    /// Encode both conditions' keys into fixed-width values in union-entry order
+    /// ([left rows..., right rows...]) with the sort direction folded in. An empty array means
+    /// the condition's type has no encoding and the generic comparator serves it instead;
+    /// the two conditions decide independently.
+    std::array<PaddedPODArray<UInt64>, 2> encodeKeys() const;
+
+    /// Build L1 (`l1_entries`, `l1_row_ids`): the union of both sides ordered by the first
+    /// condition so that any entry satisfies it with respect to all entries below.
+    /// `encoded_keys` is the first condition's encoding (may be empty).
+    void buildL1(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys);
+
+    /// Build L2 (`permutation`, `l2_keys_by_position`): L1 positions ordered by the second
+    /// condition so that any entry satisfies it with respect to all entries after it.
+    /// `encoded_keys` is the second condition's encoding (may be empty).
+    void buildL2(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys);
 
     /// Compare key values (key_index: 0 for L1 keys, 1 for L2 keys) of two union entries via the
     /// generic virtual comparator. This is the reference implementation: the encoded fixed-width
@@ -132,6 +162,21 @@ private:
     /// padding the other side. Returns true when all rows of the side were examined.
     bool produceUnmatchedBatch(size_t side, Chunk & chunk);
 
+    /// Evaluate the residual over the pending candidate pairs, set the matched bits of the
+    /// passing pairs and append them to the output row ids; the matched bits are deferred to
+    /// this point. Clears the pending columns.
+    void flushPendingPairs(
+        ColumnUInt64 & pending_left, ColumnUInt64 & pending_right,
+        ColumnUInt64::Container & left_out, ColumnUInt64::Container & right_out);
+    /// Decide the current left row on its pending residual candidates: the first passing one
+    /// decides it (SEMI appends the pair to the outputs, ANTI only marks). Returns whether the
+    /// row is decided; an undecided row continues its scan (deciding on a prefix of the row's
+    /// candidates is sound - scanning continues only when the whole prefix failed).
+    /// Clears the pending columns.
+    bool decideSemiAntiRow(
+        ColumnUInt64 & pending_left, ColumnUInt64 & pending_right,
+        ColumnUInt64::Container & left_out, ColumnUInt64::Container & right_out);
+
     /// Append the side's columns gathered by `indexes`.
     void appendGathered(Chunk & chunk, size_t side, const ColumnUInt64 & indexes) const;
     /// Append `num_rows` default values of the side's column types (NULL for a Nullable type).
@@ -144,7 +189,7 @@ private:
 
     void setBit(size_t pos);
     bool testBit(size_t pos) const;
-    /// Position of the first set bit >= from, or n_union if there is none.
+    /// Position of the first set bit >= from, or num_union_entries if there is none.
     size_t findNextSetBit(size_t from);
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
@@ -167,6 +212,17 @@ private:
 
     IEJoinKind kind;
     IEJoinConditions conditions;
+    /// Direction and strictness of each condition's sorted order, derived from its operator in
+    /// the constructor. The directions differ by construction: L1 is descending for {>, >=}
+    /// (a higher L1 position must satisfy the first condition against lower positions), L2 is
+    /// descending for {<, <=} (an earlier L2 entry must satisfy the second condition against
+    /// later entries); strict operators exclude equal keys.
+    struct KeyOrder
+    {
+        bool descending = false;
+        bool strict = false;
+    };
+    std::array<KeyOrder, 2> key_order;
     /// The residual ON condition gating candidate pairs, if any.
     std::optional<IEJoinResidualCondition> residual;
     /// Header of the residual's input columns (in its required-columns order) and the
@@ -211,15 +267,15 @@ private:
     /// Prepared key columns, one entry per condition.
     std::array<ConditionKeyColumns, 2> key_columns;
     std::array<size_t, 2> num_side_rows = {0, 0};
-    size_t n_union = 0;
+    size_t num_union_entries = 0;
 
     /// Union entry at each L1 position. Entry u is left row u if u < num_side_rows[0],
     /// otherwise right row u - num_side_rows[0].
-    PaddedPODArray<UInt64> l1_union;
+    PaddedPODArray<UInt64> l1_entries;
     /// Signed 1-based row ids per L1 position: +k for the k-th left row, -k for the k-th right row.
-    PaddedPODArray<Int64> li;
+    PaddedPODArray<Int64> l1_row_ids;
     /// L1 position of each L2 entry (the permutation array P).
-    PaddedPODArray<UInt64> permutation;
+    IColumn::Permutation permutation;
     /// Second-condition keys encoded into fixed-width values whose unsigned order is the L2 order,
     /// indexed by L1 position (the frontier reaches them through the `permutation` entry it
     /// loads for bit-marking anyway); empty when the condition's type has no encoding
@@ -236,7 +292,7 @@ private:
     size_t l2_cursor = 0;
     size_t frontier = 0;
     size_t scan_pos = 0;
-    Int64 current_left_rid = 0;
+    Int64 current_left_row_id = 0;
     bool has_current_left = false;
 
     /// Bound on the cursor advances plus bit-array words inspected by one producePairsBatch
@@ -247,7 +303,7 @@ private:
     /// Bound on the candidates of one left row accumulated before a residual evaluation in the
     /// SEMI/ANTI scan: the first passing candidate decides the row, so small batches restore
     /// the first-match short-circuit at batch granularity.
-    static constexpr size_t residual_scratch_max_size = 1024;
+    static constexpr size_t semi_anti_residual_batch_size = 1024;
 
     /// Post-phase state, per side: the row cursor and the number of unmatched rows emitted
     /// (for the final invariant check).

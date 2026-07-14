@@ -177,6 +177,14 @@ IEJoinAlgorithm::IEJoinAlgorithm(
                 left_type->getName(), right_type->getName());
     }
 
+    key_order[0].descending
+        = conditions[0].op == JoinConditionOperator::Greater || conditions[0].op == JoinConditionOperator::GreaterOrEquals;
+    key_order[1].descending
+        = conditions[1].op == JoinConditionOperator::Less || conditions[1].op == JoinConditionOperator::LessOrEquals;
+    for (size_t key_index = 0; key_index < 2; ++key_index)
+        key_order[key_index].strict
+            = conditions[key_index].op == JoinConditionOperator::Less || conditions[key_index].op == JoinConditionOperator::Greater;
+
     if (residual)
     {
         const auto & sample = residual->actions->getSampleBlock();
@@ -291,154 +299,158 @@ bool IEJoinAlgorithm::sideNeedsUnmatchedRows(size_t side) const
 
 bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
 {
-    const auto op2 = conditions[1].op;
-    const bool descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
-    const bool strict = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::Greater;
-
     /// The value of `l2_from` satisfies the second condition with respect to the value of `l2_current`
     /// exactly when it sorts strictly earlier in the L2 order (or non-strictly for a loose condition):
     /// L2 is ordered so that earlier entries satisfy the condition against all later ones.
-    int cmp = compareKeysAt(1, l1_union[permutation[l2_from]], l1_union[permutation[l2_current]]);
-    int oriented = descending ? cmp : -cmp;
-    return strict ? oriented > 0 : oriented >= 0;
+    int cmp = compareKeysAt(1, l1_entries[permutation[l2_from]], l1_entries[permutation[l2_current]]);
+    int oriented = key_order[1].descending ? cmp : -cmp;
+    return key_order[1].strict ? oriented > 0 : oriented >= 0;
 }
 
 void IEJoinAlgorithm::buildJoinState()
 {
     join_state_built = true;
 
-    /// Byte mask of the rows with non-NULL keys per side; left empty when every row is valid.
-    std::array<IColumn::Filter, 2> valid_mask;
-    std::array<size_t, 2> num_valid_rows = {0, 0};
-
+    std::array<SideValidity, 2> validity;
     for (size_t side = 0; side < 2; ++side)
+        validity[side] = materializeSide(side);
+    num_union_entries = validity[0].num_valid + validity[1].num_valid;
+
+    auto encoded_keys = encodeKeys();
+    buildL1(validity, encoded_keys[0]);
+    buildL2(validity, encoded_keys[1]);
+
+    bit_array.resize_fill((num_union_entries + 63) / 64);
+}
+
+/// Concatenate the accumulated chunks into full (non-replicated) columns of the header's layout.
+static Columns concatenateChunks(const Block & header, Chunks chunks)
+{
+    const size_t num_columns = header.columns();
+
+    Columns columns;
+    if (chunks.empty())
     {
-        const auto & header = *input_headers[side];
-        const size_t num_columns = header.columns();
+        columns.reserve(num_columns);
+        for (const auto & column_with_type : header)
+            columns.push_back(column_with_type.type->createColumn());
+    }
+    else if (chunks.size() == 1)
+    {
+        columns = chunks.front().detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfReplicated();
+    }
+    else
+    {
+        size_t total_rows = 0;
+        for (const auto & chunk : chunks)
+            total_rows += chunk.getNumRows();
 
-        Columns columns;
-        if (accumulated_chunks[side].empty())
+        MutableColumns mutable_columns;
+        mutable_columns.reserve(num_columns);
+        for (const auto & column_with_type : header)
         {
-            columns.reserve(num_columns);
-            for (const auto & column_with_type : header)
-                columns.push_back(column_with_type.type->createColumn());
+            auto column = column_with_type.type->createColumn();
+            column->reserve(total_rows);
+            mutable_columns.push_back(std::move(column));
         }
-        else if (accumulated_chunks[side].size() == 1)
+
+        for (auto & chunk : chunks)
         {
-            columns = accumulated_chunks[side].front().detachColumns();
-            for (auto & column : columns)
-                column = column->convertToFullColumnIfReplicated();
+            auto chunk_columns = chunk.detachColumns();
+            for (size_t i = 0; i < num_columns; ++i)
+            {
+                auto full_column = chunk_columns[i]->convertToFullColumnIfReplicated();
+                mutable_columns[i]->insertRangeFrom(*full_column, 0, full_column->size());
+            }
         }
+
+        columns.reserve(num_columns);
+        for (auto & column : mutable_columns)
+            columns.push_back(std::move(column));
+    }
+    return columns;
+}
+
+IEJoinAlgorithm::SideValidity IEJoinAlgorithm::materializeSide(size_t side)
+{
+    Columns columns = concatenateChunks(*input_headers[side], std::move(accumulated_chunks[side]));
+    accumulated_chunks[side].clear();
+
+    const size_t rows = columns.empty() ? 0 : columns.front()->size();
+
+    /// The two conditions may read the same column (e.g. `x BETWEEN a AND b`), prepare it once.
+    const bool side_key_shared = conditions[0].keyPosition(side) == conditions[1].keyPosition(side);
+    std::array<ColumnPtr, 2> comparison_keys;
+    for (size_t key_index = 0; key_index < 2; ++key_index)
+    {
+        if (key_index == 1 && side_key_shared)
+            comparison_keys[1] = comparison_keys[0];
         else
-        {
-            size_t total_rows = 0;
-            for (const auto & chunk : accumulated_chunks[side])
-                total_rows += chunk.getNumRows();
-
-            MutableColumns mutable_columns;
-            mutable_columns.reserve(num_columns);
-            for (const auto & column_with_type : header)
-            {
-                auto column = column_with_type.type->createColumn();
-                column->reserve(total_rows);
-                mutable_columns.push_back(std::move(column));
-            }
-
-            for (auto & chunk : accumulated_chunks[side])
-            {
-                auto chunk_columns = chunk.detachColumns();
-                for (size_t i = 0; i < num_columns; ++i)
-                {
-                    auto full_column = chunk_columns[i]->convertToFullColumnIfReplicated();
-                    mutable_columns[i]->insertRangeFrom(*full_column, 0, full_column->size());
-                }
-            }
-
-            columns.reserve(num_columns);
-            for (auto & column : mutable_columns)
-                columns.push_back(std::move(column));
-        }
-        accumulated_chunks[side].clear();
-
-        const size_t rows = columns.empty() ? 0 : columns.front()->size();
-
-        /// The two conditions may read the same column (e.g. `x BETWEEN a AND b`), prepare it once.
-        const bool side_key_shared = conditions[0].keyPosition(side) == conditions[1].keyPosition(side);
-        std::array<ColumnPtr, 2> comparison_keys;
-        for (size_t key_index = 0; key_index < 2; ++key_index)
-        {
-            if (key_index == 1 && side_key_shared)
-                comparison_keys[1] = comparison_keys[0];
-            else
-                comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
-        }
-
-        /// Rows with NULL in any key never enter the union: a NULL fails every inequality, so
-        /// they cannot produce matches. Rows with a NaN key are excluded for the same reason:
-        /// the operator matches by the `compareAt` total order, where NaN is an ordinary greatest
-        /// value, but the predicates the join implements follow IEEE semantics, under which every
-        /// comparison involving NaN is false. The rows stay in `side_columns`, their matched bits
-        /// are never set, and the post-phases emit them as unmatched naturally.
-        auto & valid = valid_mask[side];
-        auto exclude_rows = [&](auto && is_excluded)
-        {
-            if (valid.empty())
-                valid.resize_fill(rows, 1);
-            for (size_t row = 0; row < rows; ++row)
-                valid[row] &= !is_excluded(row);
-        };
-        for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
-        {
-            const IColumn * key = comparison_keys[key_index].get();
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
-            {
-                const auto & null_map = nullable->getNullMapData();
-                exclude_rows([&](size_t row) { return null_map[row] != 0; });
-                key = &nullable->getNestedColumn();
-            }
-            if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
-            {
-                const auto & data = float64_key->getData();
-                exclude_rows([&](size_t row) { return isNaN(data[row]); });
-            }
-            else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
-            {
-                const auto & data = float32_key->getData();
-                exclude_rows([&](size_t row) { return isNaN(data[row]); });
-            }
-        }
-
-        num_valid_rows[side] = rows;
-        if (!valid.empty())
-        {
-            num_valid_rows[side] = countBytesInFilter(valid);
-            if (num_valid_rows[side] == rows)
-                valid.clear();
-        }
-
-        side_columns[side] = std::move(columns);
-        for (size_t key_index = 0; key_index < 2; ++key_index)
-            key_columns[key_index].bySide(side) = std::move(comparison_keys[key_index]);
-        num_side_rows[side] = rows;
-
-        if (sideNeedsUnmatchedRows(side))
-            matched[side].resize_fill(num_side_rows[side], 0);
+            comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
     }
 
-    n_union = num_valid_rows[0] + num_valid_rows[1];
+    /// Rows with NULL in any key never enter the union: a NULL fails every inequality, so
+    /// they cannot produce matches. Rows with a NaN key are excluded for the same reason:
+    /// the operator matches by the `compareAt` total order, where NaN is an ordinary greatest
+    /// value, but the predicates the join implements follow IEEE semantics, under which every
+    /// comparison involving NaN is false. The rows stay in `side_columns`, their matched bits
+    /// are never set, and the post-phases emit them as unmatched naturally.
+    SideValidity validity;
+    auto & valid = validity.mask;
+    auto exclude_rows = [&](auto && is_excluded)
+    {
+        if (valid.empty())
+            valid.resize_fill(rows, 1);
+        for (size_t row = 0; row < rows; ++row)
+            valid[row] &= !is_excluded(row);
+    };
+    for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
+    {
+        const IColumn * key = comparison_keys[key_index].get();
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
+        {
+            const auto & null_map = nullable->getNullMapData();
+            exclude_rows([&](size_t row) { return null_map[row] != 0; });
+            key = &nullable->getNestedColumn();
+        }
+        if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
+        {
+            const auto & data = float64_key->getData();
+            exclude_rows([&](size_t row) { return isNaN(data[row]); });
+        }
+        else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
+        {
+            const auto & data = float32_key->getData();
+            exclude_rows([&](size_t row) { return isNaN(data[row]); });
+        }
+    }
 
-    const auto op1 = conditions[0].op;
-    const bool l1_descending = op1 == JoinConditionOperator::Greater || op1 == JoinConditionOperator::GreaterOrEquals;
-    const bool op1_strict = op1 == JoinConditionOperator::Less || op1 == JoinConditionOperator::Greater;
+    validity.num_valid = rows;
+    if (!valid.empty())
+    {
+        validity.num_valid = countBytesInFilter(valid);
+        if (validity.num_valid == rows)
+            valid.clear();
+    }
 
-    const auto op2 = conditions[1].op;
-    const bool l2_descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
+    side_columns[side] = std::move(columns);
+    for (size_t key_index = 0; key_index < 2; ++key_index)
+        key_columns[key_index].bySide(side) = std::move(comparison_keys[key_index]);
+    num_side_rows[side] = rows;
 
+    if (sideNeedsUnmatchedRows(side))
+        matched[side].resize_fill(num_side_rows[side], 0);
+
+    return validity;
+}
+
+std::array<PaddedPODArray<UInt64>, 2> IEJoinAlgorithm::encodeKeys() const
+{
     /// Encoded fixed-width keys per condition, in union-entry order ([left rows..., right rows...])
     /// with the L1/L2 direction folded in, so every hot-loop comparison is a plain `enc[a] < enc[b]`.
-    /// An empty array means the condition's type has no encoding and the generic comparator runs;
-    /// the two conditions decide independently.
-    const std::array<UInt64, 2> direction_mask = {l1_descending ? ~UInt64(0) : 0, l2_descending ? ~UInt64(0) : 0};
+    const std::array<UInt64, 2> direction_mask = {key_order[0].descending ? ~UInt64(0) : 0, key_order[1].descending ? ~UInt64(0) : 0};
     std::array<PaddedPODArray<UInt64>, 2> encoded_keys;
     for (size_t key_index = 0; key_index < 2; ++key_index)
     {
@@ -466,6 +478,13 @@ void IEJoinAlgorithm::buildJoinState()
             }
         }
     }
+    return encoded_keys;
+}
+
+void IEJoinAlgorithm::buildL1(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys)
+{
+    const bool l1_descending = key_order[0].descending;
+    const bool op1_strict = key_order[0].strict;
 
     /// The L1 order: the first condition's keys in the direction of the operator family, with
     /// ties resolved on the origin side so that for every left entry its own L1 position is the
@@ -488,7 +507,7 @@ void IEJoinAlgorithm::buildJoinState()
 
     /// L1: the union of both sides in the L1 order, so that for any two entries the one at the
     /// higher position satisfies the condition with respect to the lower one.
-    l1_union.resize(n_union);
+    l1_entries.resize(num_union_entries);
     if (inputs_sorted_by_first_key)
     {
         /// Each input arrives pre-sorted ascending by its first-condition key (skipping NULL-key
@@ -502,9 +521,9 @@ void IEJoinAlgorithm::buildJoinState()
         /// Advance the cursor to a row with non-NULL keys in the iteration direction.
         auto skip_invalid = [&](size_t side)
         {
-            if (valid_mask[side].empty())
+            if (validity[side].mask.empty())
                 return;
-            while (in_range(side) && !valid_mask[side][cursor[side]])
+            while (in_range(side) && !validity[side].mask[cursor[side]])
                 cursor[side] += step;
         };
         for (size_t side = 0; side < 2; ++side)
@@ -516,7 +535,7 @@ void IEJoinAlgorithm::buildJoinState()
         size_t out = 0;
         auto take = [&](size_t side)
         {
-            l1_union[out++] = (side ? num_side_rows[0] : 0) + cursor[side];
+            l1_entries[out++] = (side ? num_side_rows[0] : 0) + cursor[side];
             cursor[side] += step;
             skip_invalid(side);
         };
@@ -530,12 +549,12 @@ void IEJoinAlgorithm::buildJoinState()
             while (in_range(1))
                 take(1);
         };
-        if (!encoded_keys[0].empty())
+        if (!encoded_keys.empty())
         {
             merge_sides([&]
             {
-                UInt64 left_key = encoded_keys[0][cursor[0]];
-                UInt64 right_key = encoded_keys[0][num_side_rows[0] + cursor[1]];
+                UInt64 left_key = encoded_keys[cursor[0]];
+                UInt64 right_key = encoded_keys[num_side_rows[0] + cursor[1]];
                 return left_key != right_key ? left_key < right_key : !op1_strict;
             });
         }
@@ -549,7 +568,7 @@ void IEJoinAlgorithm::buildJoinState()
                 return cmp != 0 ? cmp < 0 : !op1_strict;
             });
         }
-        chassert(out == n_union);
+        chassert(out == num_union_entries);
     }
     else
     {
@@ -557,17 +576,18 @@ void IEJoinAlgorithm::buildJoinState()
         for (size_t side = 0; side < 2; ++side)
         {
             const size_t offset = side ? num_side_rows[0] : 0;
+            const auto & mask = validity[side].mask;
             for (size_t row = 0; row < num_side_rows[side]; ++row)
-                if (valid_mask[side].empty() || valid_mask[side][row])
-                    l1_union[out++] = offset + row;
+                if (mask.empty() || mask[row])
+                    l1_entries[out++] = offset + row;
         }
-        chassert(out == n_union);
-        if (!encoded_keys[0].empty())
+        chassert(out == num_union_entries);
+        if (!encoded_keys.empty())
         {
-            ::sort(l1_union.begin(), l1_union.end(), [&](UInt64 a, UInt64 b)
+            ::sort(l1_entries.begin(), l1_entries.end(), [&](UInt64 a, UInt64 b)
             {
-                if (encoded_keys[0][a] != encoded_keys[0][b])
-                    return encoded_keys[0][a] < encoded_keys[0][b];
+                if (encoded_keys[a] != encoded_keys[b])
+                    return encoded_keys[a] < encoded_keys[b];
                 bool a_from_left = a < num_side_rows[0];
                 bool b_from_left = b < num_side_rows[0];
                 if (a_from_left != b_from_left)
@@ -576,52 +596,57 @@ void IEJoinAlgorithm::buildJoinState()
             });
         }
         else
-            ::sort(l1_union.begin(), l1_union.end(), l1_order_less);
+            ::sort(l1_entries.begin(), l1_entries.end(), l1_order_less);
     }
 
 #ifndef NDEBUG
     /// Both L1 build paths must produce exactly an order the generic comparator accepts; with
     /// encoded keys this cross-validates the encoding against `compareAt`.
-    for (size_t pos = 1; pos < n_union; ++pos)
-        chassert(!l1_order_less(l1_union[pos], l1_union[pos - 1]));
+    for (size_t pos = 1; pos < num_union_entries; ++pos)
+        chassert(!l1_order_less(l1_entries[pos], l1_entries[pos - 1]));
 #endif
 
-    li.resize(n_union);
-    for (size_t pos = 0; pos < n_union; ++pos)
+    l1_row_ids.resize(num_union_entries);
+    for (size_t pos = 0; pos < num_union_entries; ++pos)
     {
-        UInt64 entry = l1_union[pos];
+        UInt64 entry = l1_entries[pos];
         /// Row ids are 1-based so that the sign always carries the side.
         if (entry < num_side_rows[0])
-            li[pos] = static_cast<Int64>(entry) + 1;
+            l1_row_ids[pos] = static_cast<Int64>(entry) + 1;
         else
-            li[pos] = -(static_cast<Int64>(entry - num_side_rows[0]) + 1);
+            l1_row_ids[pos] = -(static_cast<Int64>(entry - num_side_rows[0]) + 1);
     }
+}
+
+void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys)
+{
+    const bool l2_descending = key_order[1].descending;
 
     /// L2: L1 positions ordered by the second condition's keys, so that every entry satisfies
     /// the condition with respect to all entries after it. No tie-break is needed: the frontier
     /// advances by comparing values, so the order within a run of equal keys is irrelevant.
-    auto l2_order_less = [&](UInt64 pos_a, UInt64 pos_b)
+    auto l2_order_less = [&](size_t pos_a, size_t pos_b)
     {
-        int cmp = compareKeysAt(1, l1_union[pos_a], l1_union[pos_b]);
+        int cmp = compareKeysAt(1, l1_entries[pos_a], l1_entries[pos_b]);
         return l2_descending ? cmp > 0 : cmp < 0;
     };
 
     /// The encoded second-condition keys gathered by L1 position, so the L2 sort comparator
     /// needs no union-entry resolution at all.
-    if (!encoded_keys[1].empty())
+    if (!encoded_keys.empty())
     {
-        l2_keys_by_position.resize(n_union);
-        for (size_t pos = 0; pos < n_union; ++pos)
-            l2_keys_by_position[pos] = encoded_keys[1][l1_union[pos]];
+        l2_keys_by_position.resize(num_union_entries);
+        for (size_t pos = 0; pos < num_union_entries; ++pos)
+            l2_keys_by_position[pos] = encoded_keys[l1_entries[pos]];
     }
 
-    permutation.resize(n_union);
+    permutation.resize(num_union_entries);
     /// The side whose entries are already in L2 order within L1 order: it reads the same column
     /// in both conditions and the operator families are opposite - exactly then the L1 and L2
     /// directions coincide (entries with equal first keys have equal second keys). This is the
     /// `x BETWEEN a AND b` shape with `x` on either side of the join.
     std::optional<size_t> in_order_side;
-    if (l1_descending == l2_descending)
+    if (key_order[0].descending == l2_descending)
     {
         if (conditions[0].left_key_position == conditions[1].left_key_position)
             in_order_side = 0;
@@ -636,24 +661,24 @@ void IEJoinAlgorithm::buildJoinState()
             /// Build L2 by sorting only the other side's entries by the second key and merging the
             /// two runs, instead of sorting the whole union.
             const bool in_order_from_left = *in_order_side == 0;
-            PaddedPODArray<UInt64> sorted_positions;
-            sorted_positions.reserve(num_valid_rows[1 - *in_order_side]);
+            IColumn::Permutation sorted_positions;
+            sorted_positions.reserve(validity[1 - *in_order_side].num_valid);
             size_t num_in_order = 0;
-            for (size_t pos = 0; pos < n_union; ++pos)
+            for (size_t pos = 0; pos < num_union_entries; ++pos)
             {
-                if ((li[pos] > 0) == in_order_from_left)
+                if ((l1_row_ids[pos] > 0) == in_order_from_left)
                     permutation[num_in_order++] = pos;
                 else
                     sorted_positions.push_back(pos);
             }
-            chassert(num_in_order == num_valid_rows[*in_order_side]);
+            chassert(num_in_order == validity[*in_order_side].num_valid);
             ::sort(sorted_positions.begin(), sorted_positions.end(), less);
 
             /// Merge the two runs in place from the back; a prefix of the in-order run that is never
             /// displaced stays where it is.
             size_t in_order_remaining = num_in_order;
             size_t sorted_remaining = sorted_positions.size();
-            size_t write = n_union;
+            size_t write = num_union_entries;
             while (in_order_remaining > 0 && sorted_remaining > 0)
             {
                 if (less(permutation[in_order_remaining - 1], sorted_positions[sorted_remaining - 1]))
@@ -667,24 +692,22 @@ void IEJoinAlgorithm::buildJoinState()
         }
         else
         {
-            iota(permutation.data(), n_union, UInt64(0));
+            iota(permutation.data(), num_union_entries, size_t(0));
             ::sort(permutation.begin(), permutation.end(), less);
         }
     };
 
     if (!l2_keys_by_position.empty())
-        build_l2_order([&](UInt64 pos_a, UInt64 pos_b) { return l2_keys_by_position[pos_a] < l2_keys_by_position[pos_b]; });
+        build_l2_order([&](size_t pos_a, size_t pos_b) { return l2_keys_by_position[pos_a] < l2_keys_by_position[pos_b]; });
     else
         build_l2_order(l2_order_less);
 
 #ifndef NDEBUG
     /// Both L2 build paths must produce an order the general comparator accepts; with encoded
     /// keys this cross-validates the encoding against `compareAt`.
-    for (size_t i = 1; i < n_union; ++i)
+    for (size_t i = 1; i < num_union_entries; ++i)
         chassert(!l2_order_less(permutation[i], permutation[i - 1]));
 #endif
-
-    bit_array.resize_fill((n_union + 63) / 64);
 }
 
 void IEJoinAlgorithm::setBit(size_t pos)
@@ -700,11 +723,11 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
 
 size_t IEJoinAlgorithm::findNextSetBit(size_t from)
 {
-    /// No bit at or past bit_array_end is set, so tfhe scan can stop there. This bounds the
+    /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
     /// common case where all matches of the current entry sit right after its own position
     /// (e.g. band joins): without it every scan would walk empty words to the end of the array.
     if (from >= bit_array_end)
-        return n_union;
+        return num_union_entries;
 
     size_t word_index = from / 64;
     const size_t word_end = (bit_array_end + 63) / 64;
@@ -716,7 +739,7 @@ size_t IEJoinAlgorithm::findNextSetBit(size_t from)
             return word_index * 64 + std::countr_zero(word);
         ++word_index;
         if (word_index >= word_end)
-            return n_union;
+            return num_union_entries;
         word = bit_array[word_index];
     }
 }
@@ -725,25 +748,25 @@ void IEJoinAlgorithm::checkFrontierInvariant() const
 {
     /// The set of L2 entries qualifying against the current entry is a prefix of L2, and the frontier
     /// has processed exactly that prefix: a bit is set iff its entry is right-side and qualifies.
-    for (size_t i = 0; i < n_union; ++i)
+    for (size_t i = 0; i < num_union_entries; ++i)
     {
         bool qualifies = frontierAdvances(i, l2_cursor);
-        bool is_right_side = li[permutation[i]] < 0;
+        bool is_right_side = l1_row_ids[permutation[i]] < 0;
         chassert(testBit(permutation[i]) == (is_right_side && qualifies));
     }
 }
 
 bool IEJoinAlgorithm::nextLeftRow()
 {
-    while (l2_cursor < n_union)
+    while (l2_cursor < num_union_entries)
     {
         if (produce_work >= produce_work_budget)
             return false;
         ++produce_work;
 
-        UInt64 pos = permutation[l2_cursor];
-        Int64 rid = li[pos];
-        if (rid < 0)
+        size_t pos = permutation[l2_cursor];
+        Int64 row_id = l1_row_ids[pos];
+        if (row_id < 0)
         {
             /// Right-side entry: nothing to do here, it is marked when the frontier passes it.
             ++l2_cursor;
@@ -752,12 +775,12 @@ bool IEJoinAlgorithm::nextLeftRow()
 
         auto advance_frontier_while = [&](auto && qualifies)
         {
-            while (frontier < n_union && produce_work < produce_work_budget && qualifies(frontier))
+            while (frontier < num_union_entries && produce_work < produce_work_budget && qualifies(frontier))
             {
                 ++produce_work;
-                UInt64 frontier_pos = permutation[frontier];
+                size_t frontier_pos = permutation[frontier];
                 /// Mark right-side entries only, so that a row can never match same-side rows.
-                if (li[frontier_pos] < 0)
+                if (l1_row_ids[frontier_pos] < 0)
                     setBit(frontier_pos);
                 ++frontier;
             }
@@ -766,10 +789,8 @@ bool IEJoinAlgorithm::nextLeftRow()
         {
             /// An entry qualifies when its key sorts before the current entry's in the L2 order,
             /// non-strictly for a loose condition; the encoding reproduces equality exactly.
-            const auto op2 = conditions[1].op;
-            const bool op2_strict = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::Greater;
             const UInt64 current_key = l2_keys_by_position[pos];
-            if (op2_strict)
+            if (key_order[1].strict)
                 advance_frontier_while([&](size_t from) { return l2_keys_by_position[permutation[from]] < current_key; });
             else
                 advance_frontier_while([&](size_t from) { return l2_keys_by_position[permutation[from]] <= current_key; });
@@ -779,23 +800,23 @@ bool IEJoinAlgorithm::nextLeftRow()
             advance_frontier_while([&](size_t from) { return frontierAdvances(from, l2_cursor); });
         }
         /// The frontier is monotone and never exceeds the union size.
-        chassert(frontier <= n_union);
+        chassert(frontier <= num_union_entries);
 
         /// The frontier advance may have stopped on the work budget instead of on the first
         /// non-qualifying entry: yield and re-enter at the same L2 position, the frontier
         /// continues from where it stopped.
-        if (frontier < n_union && produce_work >= produce_work_budget)
+        if (frontier < num_union_entries && produce_work >= produce_work_budget)
             return false;
 
-        current_left_rid = rid;
+        current_left_row_id = row_id;
         /// The tie-break in the L1 order guarantees that the entry's own position is the exact scan
         /// boundary: every set bit at a position >= pos is a match. The bit at pos itself can never
         /// be set because pos holds a left-side entry.
         scan_pos = pos;
 
 #ifndef NDEBUG
-        /// O(n_union) per left row, affordable only on small inputs.
-        if (n_union <= 1024)
+        /// O(num_union_entries) per left row, affordable only on small inputs.
+        if (num_union_entries <= 1024)
             checkFrontierInvariant();
 #endif
 
@@ -836,64 +857,13 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
     const bool is_semi_or_anti = kind == IEJoinKind::LeftSemi || kind == IEJoinKind::LeftAnti;
 
     /// With a residual condition candidate pairs are not emitted directly: they accumulate in
-    /// these local arrays and a flush evaluates the residual over them in one batch. Nothing
-    /// survives the call: both arrays are flushed before every return, so all resumable state
+    /// these local columns and a flush evaluates the residual over them in one batch. Nothing
+    /// survives the call: both columns are flushed before every return, so all resumable state
     /// stays exactly the scan cursors.
     auto pending_left = ColumnUInt64::create();
     auto pending_right = ColumnUInt64::create();
     auto & pending_left_data = pending_left->getData();
     auto & pending_right_data = pending_right->getData();
-
-    /// Keep only the passing pairs; the matched bits are deferred to this point.
-    auto flush_pending = [&]
-    {
-        if (pending_left_data.empty())
-            return;
-        IColumn::Filter mask = evaluateResidualMask(*pending_left, *pending_right);
-        for (size_t i = 0; i < mask.size(); ++i)
-        {
-            if (!mask[i])
-                continue;
-            if (!matched[0].empty())
-                matched[0][pending_left_data[i]] = 1;
-            if (!matched[1].empty())
-                matched[1][pending_right_data[i]] = 1;
-            left_data.push_back(pending_left_data[i]);
-            right_data.push_back(pending_right_data[i]);
-        }
-        pending_left_data.clear();
-        pending_right_data.clear();
-    };
-
-    /// The first passing candidate decides the current left row: SEMI emits the pair, ANTI only
-    /// marks. Returns whether the row is decided; an undecided row continues its scan (deciding
-    /// on a prefix of the row's candidates is sound - scanning continues only when the whole
-    /// prefix failed).
-    auto flush_scratch = [&]
-    {
-        if (pending_left_data.empty())
-            return false;
-        IColumn::Filter mask = evaluateResidualMask(*pending_left, *pending_right);
-        size_t first_passing = mask.size();
-        for (size_t i = 0; i < mask.size() && first_passing == mask.size(); ++i)
-            if (mask[i])
-                first_passing = i;
-
-        bool decided = first_passing != mask.size();
-        if (decided)
-        {
-            if (kind == IEJoinKind::LeftSemi)
-            {
-                left_data.push_back(pending_left_data[first_passing]);
-                right_data.push_back(pending_right_data[first_passing]);
-            }
-            else
-                matched[0][pending_left_data[first_passing]] = 1;
-        }
-        pending_left_data.clear();
-        pending_right_data.clear();
-        return decided;
-    };
 
     /// The work budget bounds the cursor advances, bit-array words inspected, and residual
     /// candidates evaluated by one call, so control returns to the executor (which observes
@@ -909,31 +879,31 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
         {
             if (!nextLeftRow())
             {
-                done = l2_cursor >= n_union;
+                done = l2_cursor >= num_union_entries;
                 break;
             }
             has_current_left = true;
         }
 
         size_t found = findNextSetBit(scan_pos);
-        if (found >= n_union)
+        if (found >= num_union_entries)
         {
             /// The current left row's scan is exhausted; for SEMI/ANTI decide it on the
             /// candidates accumulated so far.
             if (residual && is_semi_or_anti)
-                flush_scratch();
+                decideSemiAntiRow(*pending_left, *pending_right, left_data, right_data);
             has_current_left = false;
             ++l2_cursor;
             continue;
         }
         scan_pos = found + 1;
 
-        Int64 right_rid = li[found];
+        Int64 right_row_id = l1_row_ids[found];
         /// Bits are set only at positions of right-side entries.
-        chassert(current_left_rid > 0 && right_rid < 0);
+        chassert(current_left_row_id > 0 && right_row_id < 0);
 
-        size_t left_row = current_left_rid - 1;
-        size_t right_row = -right_rid - 1;
+        size_t left_row = current_left_row_id - 1;
+        size_t right_row = -right_row_id - 1;
 
         /// Every found pair must satisfy both conditions, re-verify by direct evaluation.
         chassert(checkEmittedPair(0, left_row, right_row));
@@ -945,7 +915,8 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             pending_right_data.push_back(right_row);
             /// SEMI/ANTI evaluate per bounded mini-batch of the row's candidates: a passing
             /// candidate decides the row and skips the rest of its scan.
-            if (is_semi_or_anti && pending_left_data.size() >= residual_scratch_max_size && flush_scratch())
+            if (is_semi_or_anti && pending_left_data.size() >= semi_anti_residual_batch_size
+                && decideSemiAntiRow(*pending_left, *pending_right, left_data, right_data))
             {
                 has_current_left = false;
                 ++l2_cursor;
@@ -979,14 +950,14 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
     {
         if (is_semi_or_anti)
         {
-            if (flush_scratch() && has_current_left)
+            if (decideSemiAntiRow(*pending_left, *pending_right, left_data, right_data) && has_current_left)
             {
                 has_current_left = false;
                 ++l2_cursor;
             }
         }
         else
-            flush_pending();
+            flushPendingPairs(*pending_left, *pending_right, left_data, right_data);
     }
 
     if (!left_data.empty())
@@ -995,6 +966,62 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
         appendGathered(chunk, 1, *right_indexes);
     }
     return done;
+}
+
+void IEJoinAlgorithm::flushPendingPairs(
+    ColumnUInt64 & pending_left, ColumnUInt64 & pending_right,
+    ColumnUInt64::Container & left_out, ColumnUInt64::Container & right_out)
+{
+    auto & pending_left_data = pending_left.getData();
+    auto & pending_right_data = pending_right.getData();
+    if (pending_left_data.empty())
+        return;
+
+    IColumn::Filter mask = evaluateResidualMask(pending_left, pending_right);
+    for (size_t i = 0; i < mask.size(); ++i)
+    {
+        if (!mask[i])
+            continue;
+        if (!matched[0].empty())
+            matched[0][pending_left_data[i]] = 1;
+        if (!matched[1].empty())
+            matched[1][pending_right_data[i]] = 1;
+        left_out.push_back(pending_left_data[i]);
+        right_out.push_back(pending_right_data[i]);
+    }
+    pending_left_data.clear();
+    pending_right_data.clear();
+}
+
+bool IEJoinAlgorithm::decideSemiAntiRow(
+    ColumnUInt64 & pending_left, ColumnUInt64 & pending_right,
+    ColumnUInt64::Container & left_out, ColumnUInt64::Container & right_out)
+{
+    auto & pending_left_data = pending_left.getData();
+    auto & pending_right_data = pending_right.getData();
+    if (pending_left_data.empty())
+        return false;
+
+    IColumn::Filter mask = evaluateResidualMask(pending_left, pending_right);
+    size_t first_passing = mask.size();
+    for (size_t i = 0; i < mask.size() && first_passing == mask.size(); ++i)
+        if (mask[i])
+            first_passing = i;
+
+    bool decided = first_passing != mask.size();
+    if (decided)
+    {
+        if (kind == IEJoinKind::LeftSemi)
+        {
+            left_out.push_back(pending_left_data[first_passing]);
+            right_out.push_back(pending_right_data[first_passing]);
+        }
+        else
+            matched[0][pending_left_data[first_passing]] = 1;
+    }
+    pending_left_data.clear();
+    pending_right_data.clear();
+    return decided;
 }
 
 bool IEJoinAlgorithm::produceUnmatchedBatch(size_t side, Chunk & chunk)
