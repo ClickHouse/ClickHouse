@@ -15,7 +15,7 @@ class ReaderExecutor;
 class PipelineReadBuffer : public ReadBufferFromFileBase
 {
 public:
-    explicit PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor);
+    explicit PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor, size_t hold_consumed_ = 0);
 
     String getFileName() const override;
     off_t seek(off_t off, int whence) override;

@@ -94,6 +94,13 @@ public:
     size_t clampReach(size_t predicted_end, size_t phys_off) const { return ex.clampReach(predicted_end, phys_off); }
     size_t scheduleLookaheadReach(size_t phys_off) const { return ex.scheduleLookaheadReach(phys_off); }
 
+    /// The producer's led-run merge (private static).
+    static VectorWithMemoryTracking<ByteRange> mergeRanges(
+        const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap)
+    {
+        return ReaderExecutor::mergeRanges(ranges, min_gap);
+    }
+
     /// Counters.
     UInt64 incompleteConnections() const { return ex.stats.get(ReaderExecutor::Stats::IncompleteConnections); }
     UInt64 sourceRequests() const { return ex.stats.get(ReaderExecutor::Stats::SourceRequests); }

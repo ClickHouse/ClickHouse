@@ -15,10 +15,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_)
+PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_, size_t hold_consumed_)
     : ReadBufferFromFileBase(0, nullptr, 0)
     , executor(std::move(executor_))
-    , hold_consumed(executor->holdConsumed())
+    , hold_consumed(hold_consumed_)
     , read_position(executor->getPosition())
 {
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);

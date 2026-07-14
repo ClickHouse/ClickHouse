@@ -72,15 +72,16 @@ namespace DB
 /// CONSUMER (top of the model, inverted in file order):
 ///   `readNextWindow` -> `serveWindow` (the consumer loop) -> `pump` (in the
 ///   Schedule-driven interpreter region) -> `finishWindow`.
-/// PLAN BUILD, three spans: `preparePlan` (the epoch scheduler, in Read path),
-///   `mergeRanges`, and `observeAndSchedule` + its extract* helpers.
+/// PLAN BUILD, two spans: `preparePlan` (the epoch scheduler, in Read path)
+///   and `observeAndSchedule` + its extract* helpers.
 /// COLLECT, three spans: `collectInFlightInto`; the put pair `collectFillTargets` /
 ///   `runPutStep`; and teardown's `cancelMachine` / `drainAbandonedMachines`.
 /// DISPLAY read surface, two spans: the `Display` methods, plus the plan-view
 ///   hit serve `readHitFromView` they join at `Display::read`.
-/// PRODUCER: `coordinatedPrefetch` (machine fetch step) -> `fetchGapsFromSource`
-///   -> `readFromSource` / the Long connection region; fills land through
-///   `writeSliceToWriter`; deferred puts run at collect.
+/// PRODUCER: `coordinatedPrefetch` (machine fetch step, with its led-run merge
+///   `mergeRanges`) -> `fetchWindowFromSource` -> `readFromSource` / the Long
+///   connection region; fills land through `writeSliceToWriter`; deferred puts
+///   run at collect.
 /// ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -109,7 +110,6 @@ ReaderExecutor::ReaderExecutor(
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
-    , hold_consumed(options.hold_consumed)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
     , local_runner(std::make_unique<LocalFetchMachineRunner>())
@@ -288,7 +288,7 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
     /// and the executor stalls at `plan_end` - a premature interior EOF. Collecting commits the
     /// machine's cells (so the replan below sees them resident) and clears `machine`.
     if (machine && at_plan_end)
-        collectInFlightInto(machine->retrieve_index);
+        collectInFlightInto();
 
     /// The consumer/producer role split is the declaration's contract; the mechanics here:
     /// the post-collect gap above is the ONE instant a mid-plan replan is legal, a replan
@@ -480,7 +480,7 @@ void ReaderExecutor::initDecryption()
 
     ChainedBuffers header_chain = fetchEncryptionHeader();
 
-    /// Under size-unknown sources `fetchGapsFromSource` latches `reached_eof`
+    /// Under size-unknown sources `fetchWindowFromSource` latches `reached_eof`
     /// on short returns instead of throwing, so an empty chain means
     /// "empty object" (same as the size-known empty branch above) and a
     /// partial chain means corrupted/truncated.
@@ -571,9 +571,9 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     /// Miss: one one-shot source read (no long connection, no plan exists yet).
     if (fetched.empty())
     {
-        fetched = fetchGapsFromSource(header_range,
+        fetched = fetchWindowFromSource(header_range,
             /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*extent_advertised=*/true,
-            /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
+            /*lc=*/nullptr, /*stop=*/nullptr, stats);
         if (encryption_header_cache && pieces.size() == 1 && fetched.totalBytes() == data_start_offset)
         {
             String header_bytes(data_start_offset, '\0');
@@ -643,48 +643,11 @@ size_t ReaderExecutor::totalSize() const
     return physical > data_start_offset ? physical - data_start_offset : 0;
 }
 
-// ─── Plan build (cont. at observeAndSchedule) ──────────────────────────────
-
-VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap)
-{
-    if (ranges.empty() || min_gap == 0)
-        return ranges;
-
-    VectorWithMemoryTracking<ByteRange> sorted = ranges;
-    std::sort(sorted.begin(), sorted.end(),
-        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
-
-    VectorWithMemoryTracking<ByteRange> merged;
-    merged.push_back(sorted[0]);
-
-    for (size_t i = 1; i < sorted.size(); ++i)
-    {
-        auto & prev = merged.back();
-        /// Saturating subtraction: overlapping ranges (sorted[i].offset < prev.end())
-        /// collapse to gap = 0 and merge via the same branch as adjacent ranges.
-        size_t gap = sorted[i].offset > prev.end() ? sorted[i].offset - prev.end() : 0;
-
-        /// Strict `<`: a gap exactly `min_gap` wide is NOT bridged - reopening past it
-        /// costs about the same as over-reading it, and if it is resident in a faster
-        /// tier it is filled down from there rather than re-fetched.
-        if (gap < min_gap)
-        {
-            size_t new_end = std::max(prev.end(), sorted[i].end());
-            prev.size = new_end - prev.offset;
-        }
-        else
-        {
-            merged.push_back(sorted[i]);
-        }
-    }
-
-    return merged;
-}
-
 // ─── Window serve path - collect ────────────────────────────────────────────
 
-void ReaderExecutor::collectInFlightInto(size_t ri)
+void ReaderExecutor::collectInFlightInto()
 {
+    const size_t ri = machine->retrieve_index;
     const auto & r = read_plan.schedule.retrieves[ri];
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
@@ -743,7 +706,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     const bool interrupted = m->state.load() == MachineState::Interrupted;
     /// Reconcile the worker's one-way EOF latch - ONLY here (its bytes are kept); the
     /// cancel paths must not, or a wasted read-ahead's EOF strands us at false EOF.
-    /// (An interrupt-short return never latches it - see `fetchGapsFromSource`.)
+    /// (An interrupt-short return never latches it - see `fetchWindowFromSource`.)
     reached_eof |= m->reached_eof;
     stats += m->stats;
     HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
@@ -780,7 +743,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// read as a false EOF upstream.
         if (fetched_end <= toPhys(position))
         {
-            runPutStep(m, m->fetched);
+            runPutStep(*m, m->fetched);
             return;
         }
         stats.add(Stats::PartialCollects);
@@ -813,7 +776,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         fill_lane.pin.reset();
 
     ChainedBuffers residue = std::move(m->fetched);
-    runPutStep(m, residue);   /// `m` stays alive - the still-refused scan below reads its views
+    runPutStep(*m, residue);   /// `m` stays alive - the still-refused scan below reads its views
 
     /// The still-refused residue, sliced exactly-once per uncommitted sub-range (the put
     /// above may have landed parts of it). A bypass window has no views, so everything
@@ -900,6 +863,42 @@ ChainedBuffers ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamp
 }
 
 // ─── Machine fetch step ────────────────────────────────────────────────────
+
+VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap)
+{
+    if (ranges.empty() || min_gap == 0)
+        return ranges;
+
+    VectorWithMemoryTracking<ByteRange> sorted = ranges;
+    std::sort(sorted.begin(), sorted.end(),
+        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
+
+    VectorWithMemoryTracking<ByteRange> merged;
+    merged.push_back(sorted[0]);
+
+    for (size_t i = 1; i < sorted.size(); ++i)
+    {
+        auto & prev = merged.back();
+        /// Saturating subtraction: overlapping ranges (sorted[i].offset < prev.end())
+        /// collapse to gap = 0 and merge via the same branch as adjacent ranges.
+        size_t gap = sorted[i].offset > prev.end() ? sorted[i].offset - prev.end() : 0;
+
+        /// Strict `<`: a gap exactly `min_gap` wide is NOT bridged - reopening past it
+        /// costs about the same as over-reading it, and if it is resident in a faster
+        /// tier it is filled down from there rather than re-fetched.
+        if (gap < min_gap)
+        {
+            size_t new_end = std::max(prev.end(), sorted[i].end());
+            prev.size = new_end - prev.offset;
+        }
+        else
+        {
+            merged.push_back(sorted[i]);
+        }
+    }
+
+    return merged;
+}
 
 void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
 {
@@ -1012,9 +1011,8 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         for (size_t off = led.offset; off < run_hi && !m.reached_eof; off += step)
         {
             const ByteRange piece{off, std::min(step, run_hi - off)};
-            ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
-                m.extent_advertised, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m,
-                /*may_open_long=*/m.inline_serve, m.stats);
+            ChainedBuffers run = fetchWindowFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
+                m.extent_advertised, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats);
             if (!run.empty())
                 m.fetched_end = std::max(m.fetched_end, run.range().end());
@@ -1041,10 +1039,12 @@ static bool stopRequested(const MachineBase * stop)
     return stop && stop->interrupt_requested.load(std::memory_order_relaxed);
 }
 
-ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
+ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, bool extent_advertised,
-    std::optional<LongConnection> * lc, const MachineBase * stop, bool may_open_long, Stats & out_stats)
+    std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
 {
+    /// FOREGROUND context iff the caller passed the LANE's slot (see the header doc).
+    const bool may_open_long = lc == &fill_lane.conn;
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
     /// `lookup`/`get`/`put`, no plan - this is all a machine fetch step runs (it
@@ -1064,7 +1064,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
     size_t file_pos = physical_window.offset;
     for (const auto & pr : physical_ranges)
     {
-        LOG_TRACE(log, "fetchGapsFromSource: source read object={}, offset={}, size={}",
+        LOG_TRACE(log, "fetchWindowFromSource: source read object={}, offset={}, size={}",
             pr.object.remote_path, pr.object_offset, pr.size);
 
         /// The IN-FETCH opener: at each OBJECT-piece start, open a long connection
@@ -1115,25 +1115,6 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         }
     }
     return result;
-}
-
-bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const
-{
-    /// A MACHINE fill target: only the `Remote` jobs' cells - the handed kinds
-    /// (`UpperCacheRead`/`HandedChain`) fill their cells from served bytes on the serve front
-    /// (`runHandedFills`), never from a fetch (the pc fill trails the serve cursor, it does not
-    /// ride the fetch lead).
-    for (const auto & r : read_plan.schedule.retrieves)
-    {
-        if (r.source != PlanSchedule::Source::Remote)
-            continue;
-        if (!(r.range.offset < window.end() && window.offset < r.range.end()))
-            continue;  /// retrieve does not cover this window
-        for (const auto & t : r.into)
-            if (t.entry == entry && t.cell.offset == cell.offset && t.cell.size == cell.size)
-                return true;
-    }
-    return false;
 }
 
 void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
@@ -1348,7 +1329,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
         /// No interrupt point: a one-shot GET, once issued, is read to its bound -
         /// cutting it mid-response would forfeit the request and make the remainder
         /// pay a fresh one. The stop lands BETWEEN connections (see
-        /// `fetchGapsFromSource`), where nothing is in flight.
+        /// `fetchWindowFromSource`), where nothing is in flight.
         size_t chunk = block->size();
         size_t got = readIntoBlock(buf, block->data(), chunk);
 
@@ -1611,25 +1592,22 @@ void ReaderExecutor::releaseLongAtBound(std::optional<LongConnection> & conn) co
 void ReaderExecutor::collectFillTargets(FetchMachine & m)
 {
     /// Record NON-OWNING views of the window's fill-target writers in the shared
-    /// `read_plan.bufs`: the cells the plan SCHEDULE designates as REMOTE fill targets for a
-    /// retrieve overlapping this window (`buildSchedule`'s `into` - the bottom tier and
-    /// same-tier slower layers; the faster tiers fill by handed jobs on the serve front). Done
-    /// at launch so the worker can write the led segments inline during its fetch; the writers
-    /// stay in `read_plan.bufs` (the plan is stable while a machine is in flight).
-    for (size_t i = 0; i < read_plan.bufs.size(); ++i)
+    /// `read_plan.bufs`: the machine's own retrieve's `into` cells overlapping this window
+    /// (`buildSchedule` already designated them - the bottom tier and same-tier slower
+    /// layers; the faster tiers fill by handed jobs on the serve front). Done at launch so
+    /// the worker can write the led segments inline during its fetch; the writers stay in
+    /// `read_plan.bufs` (the plan is stable while a machine is in flight).
+    for (const auto & t : read_plan.schedule.retrieves[m.retrieve_index].into)
     {
-        auto & buf = read_plan.bufs[i];
-        for (auto & w : buf.writers)
-        {
-            const bool overlaps_window = w.writer && w.range.offset < m.physical_window.end()
-                && m.physical_window.offset < w.range.end();
-            if (overlaps_window && isScheduledFillTarget(m.physical_window, i, w.range))
+        if (!(t.cell.offset < m.physical_window.end() && m.physical_window.offset < t.cell.end()))
+            continue;
+        for (auto & w : read_plan.bufs[t.entry].writers)
+            if (w.writer && w.range.offset == t.cell.offset && w.range.size == t.cell.size)
                 m.writer_views.push_back({w.writer.get(), w.range});
-        }
     }
 }
 
-void ReaderExecutor::runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
+void ReaderExecutor::runPutStep(const FetchMachine & m, const ChainedBuffers & assembled)
 {
     /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
     /// window's fill-target writers in the shared `read_plan.bufs`, written in place on THIS
@@ -1637,22 +1615,22 @@ void ReaderExecutor::runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBu
     /// so the fill accounts straight into the executor `stats`. Runs AFTER the collect pinned
     /// at the fetch frontier. A failed fill is logged, never thrown: a read must not fail
     /// because cache population did.
-    if (m->writer_views.empty())
+    if (m.writer_views.empty())
         return;  /// nothing to fill for this window
 
     try
     {
         const size_t fill_end = assembled.empty()
-            ? m->physical_window.offset
-            : std::min(m->physical_window.end(), assembled.range().end());
-        pushChainToWriters(m->writer_views, m->physical_window, assembled, stats);
+            ? m.physical_window.offset
+            : std::min(m.physical_window.end(), assembled.range().end());
+        pushChainToWriters(m.writer_views, m.physical_window, assembled, stats);
         /// Pin the partial segment under the just-written frontier (the lane's slot):
         /// the collect pinned BEFORE this fill landed, so a fresh segment was not pinnable
         /// there. A `readBigAt` transient reads its bounded extent once and is destroyed,
         /// so it pins NOTHING (mirrors the collect's `!is_transient` guard) - else its
         /// cell survives an eviction sweep that should drop it.
         if (!is_transient)
-            for (const auto & view : m->writer_views)
+            for (const auto & view : m.writer_views)
                 if (auto pin = pinIfCovering(view.writer, fill_end))
                 {
                     fill_lane.pin = std::move(pin);
@@ -1925,7 +1903,7 @@ void ReaderExecutor::advanceAhead()
         const bool lead_consumed = atEnd() || cursor_phys >= machine->physical_window.end();
         if (!lead_consumed && !machineReleased())
             return;  /// still filling ahead of the cursor
-        collectInFlightInto(machine->retrieve_index);
+        collectInFlightInto();
     }
     if (atEnd())
         return;
@@ -2024,7 +2002,7 @@ void ReaderExecutor::interruptAndCollectMachine()
     /// of holding the cursor for the whole remaining lead (a released one no-ops); the
     /// un-fetched tail stays un-attempted and relaunches.
     collectRunner().requestInterrupt(*machine);
-    collectInFlightInto(machine->retrieve_index);
+    collectInFlightInto();
 }
 
 bool ReaderExecutor::waitSiblingFills(ByteRange window)
@@ -2139,7 +2117,7 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     const size_t piece_covered_before = display.coverage(piece).totalBytes();
     if (!launchMachineForWindow(ri, piece, *local_runner))
         return false;
-    collectInFlightInto(ri);
+    collectInFlightInto();
     /// The ahead cursor to the window end: attempted, whether the cells took the bytes or
     /// the overflow bank did - the background never re-launches it.
     fill_lane.advanceAttempted(window.end());
@@ -2164,9 +2142,9 @@ bool ReaderExecutor::bankDirectRead(ByteRange window)
     /// the consuming trim retires it. The heal verb for state no planned job can produce:
     /// a hung sibling leader (the election keeps losing) or a raced shrink/detach that staled
     /// the committed truth at the cursor. Empty = nothing there (EOF for this extent).
-    ChainedBuffers direct = fetchGapsFromSource(window, /*from_prefetch=*/false, reached_eof,
+    ChainedBuffers direct = fetchWindowFromSource(window, /*from_prefetch=*/false, reached_eof,
         read_plan.geometry()->pressure_level, read_extent_end.has_value(), &fill_lane.conn, /*stop=*/nullptr,
-        /*may_open_long=*/true, stats);
+        stats);
     if (direct.empty())
         return false;
     fill_lane.bank.append(std::move(direct));
@@ -2333,11 +2311,11 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
                 covered.add(g);
             }
         }
-    /// Serving CONSUMES, but only what the caller DELIVERS: trim every bank below the window's
-    /// contiguous covered prefix (`serveFromDisplay` slices exactly that prefix). Banked bytes
-    /// beyond the first uncovered hole stay banked - they serve a later window once the hole is
-    /// fetched - while bytes below the prefix are delivered or held by a faster holder, so the
-    /// banked footprint still stays ~one window.
+    /// Serving CONSUMES the contiguous covered prefix - the display's contract is that a read
+    /// DELIVERS exactly that prefix, so the bank trims below it. Banked bytes beyond the first
+    /// uncovered hole stay banked - they serve a later window once the hole is fetched - while
+    /// bytes below the prefix are delivered or held by a faster holder, so the banked footprint
+    /// still stays ~one window.
     const size_t prefix_end_phys = coveredPrefixEnd(covered, window_phys);
     if (prefix_end_phys > window_phys.offset && !bank.empty())
     {

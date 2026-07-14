@@ -99,10 +99,11 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
-    /// Gap bound for `mergeRanges` / `buildSchedule`: a gap strictly smaller than
-    /// this is coalesced (over-read) into one source request rather than read
-    /// separately; a gap at or above it reopens, and if a faster tier holds it the
-    /// bytes are filled down from there. Near the bandwidth/request cost breakeven.
+    /// Gap bound for `buildSchedule`'s bridge threshold and the producer's led-run
+    /// merge (`mergeRanges`): a gap strictly smaller than this is coalesced
+    /// (over-read) into one source request rather than read separately; a gap at or
+    /// above it reopens, and if a faster tier holds it the bytes are filled down
+    /// from there. Near the bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     /// Drain bound: if only a tail of at most this many bytes remains to a long
     /// connection's read bound, drain it so the connection completes pool-reusable
@@ -149,9 +150,6 @@ public:
         size_t long_connection_max_bound = DEFAULT_LONG_CONNECTION_MAX_BOUND;
         /// Fill-ahead lead for a disk bottom tier (see `DEFAULT_FILL_AHEAD_LEAD`).
         size_t fill_ahead_lead = DEFAULT_FILL_AHEAD_LEAD;
-        /// Consumed bytes `PipelineReadBuffer` keeps behind its position for cheap
-        /// backward seeks (the chain's trailing retention); 0 = release on consume.
-        size_t hold_consumed = 0;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         /// Null unless a random-object-key encrypted disk allowed caching this
@@ -226,10 +224,6 @@ public:
 
     size_t getPosition() const { return position; }
 
-    /// The configured trailing-retention size for the consumer's chain
-    /// (`Options::hold_consumed`); the buffer layer applies it.
-    size_t holdConsumed() const { return hold_consumed; }
-
     /// Logical object path for diagnostics; empty when no objects are configured.
     String getFileName() const { return log_file_path; }
 
@@ -246,9 +240,6 @@ public:
     /// in the `ReaderExecutorInspector` friend, kept out of this production class.
     /// See `src/IO/tests/ReaderExecutorInspector.h`.
     friend class ReaderExecutorInspector;
-
-    /// Merge ranges separated by less than `min_gap`, to reduce request count.
-    static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
 private:
     // ─── Nested types ────────────────────────────────────────────────────
@@ -368,14 +359,14 @@ private:
     /// EOF-short one and must neither latch EOF nor throw (the flag is checked FIRST).
     /// `lc` (nullable) is the long connection to DRAIN if it can serve a piece - the
     /// worker passes its machine's payload, never the foreground's.
-    /// `may_open_long` gates the IN-FETCH opener: at each object-piece start, open a
-    /// long connection when convenient (`openLongConnectionIfWarranted`) and reuse it for what
-    /// follows. True only in FOREGROUND context (the foreground and inline machines, which run
-    /// on the serve thread) - a pool worker never opens in-fetch; it carries what its LAUNCH
-    /// gave it (`launchMachineForWindow` is the other opener site).
-    ChainedBuffers fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
+    /// The IN-FETCH opener (`openLongConnectionIfWarranted` at each object-piece start) engages
+    /// only when `lc` IS the lane's slot - the FOREGROUND context (the foreground and inline
+    /// machines, which run on the serve thread). A pool worker passes its machine's own payload
+    /// and never opens in-fetch; it carries what its LAUNCH gave it (`launchMachineForWindow`
+    /// is the other opener site).
+    ChainedBuffers fetchWindowFromSource(ByteRange physical_window, bool from_prefetch,
         bool & eof_latch, MemoryPressureLevel pressure_level, bool extent_advertised,
-        std::optional<LongConnection> * lc, const MachineBase * stop, bool may_open_long, Stats & out_stats);
+        std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats);
 
     /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
     /// over the window's fill-target `writer_views`, fetch the LED runs from the source via
@@ -385,6 +376,10 @@ private:
     /// `m.fetched` ONLY the residue no cell accepted (see the field doc), capped at one
     /// window; `m.fetched_end` records the fetch frontier.
     void coordinatedPrefetch(FetchMachine & m);
+
+    /// Merge ranges separated by less than `min_gap` (the producer's led-run
+    /// coalescing - reading through a small hole is cheaper than reopening).
+    static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
     /// Sub-ranges of `range` not committed in ANY of the `views`' cells - the bytes that
     /// would be lost if dropped from memory. With no views (a bypass window) the whole
@@ -403,13 +398,6 @@ private:
     /// nested claim when the calling worker already holds the cells' roles.
     void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
         Stats & out_stats);
-
-    /// Whether the plan schedule designates `(entry, cell)` a fill target for a
-    /// retrieve overlapping `window`. A cell holding the request is a target in
-    /// every missing tier (promotion); a slack-only cell is a target only in
-    /// its owning lower tier - never promoted into a faster tier.
-    bool isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const;
-
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
     /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
@@ -497,7 +485,7 @@ private:
     /// Turn a just-collected machine into its cache fill: using the `writer_views` recorded at
     /// launch, hand it the assembled chain and run the fill INLINE on the read thread (a failed
     /// fill logged, never thrown).
-    void runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
+    void runPutStep(const FetchMachine & m, const ChainedBuffers & assembled);
 
     /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
     /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
@@ -639,11 +627,12 @@ private:
     /// handed fills from the served bytes. The serve tail shared by the hit step and the
     /// banked bypass step; physical like all serve verbs (`finishWindow` rebases to logical).
     ChainedBuffers serveFromDisplay(ByteRange window);
-    /// THE collect verb for the in-flight machine of retrieve `ri`: a still-queued step is
-    /// revoked (the caller reads synchronously); a started/finished one is joined - reclaim
-    /// its connection, pin at the fetch frontier, put-retry the refused residue, bank what
-    /// is still homeless, and advance the lane's attempted cursor to the fetch reach.
-    void collectInFlightInto(size_t ri);
+    /// THE collect verb for the in-flight machine (of its own `retrieve_index`): a
+    /// still-queued step is revoked (the caller reads synchronously); a started/finished
+    /// one is joined - reclaim its connection, pin at the fetch frontier, put-retry the
+    /// refused residue, bank what is still homeless, and advance the lane's attempted
+    /// cursor to the fetch reach.
+    void collectInFlightInto();
     void advanceAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
     /// pool runner and the future inline runner.
@@ -814,7 +803,6 @@ private:
     size_t long_connection_max_bound;
     /// Fill-ahead lead for a disk bottom tier (Options).
     size_t fill_ahead_lead;
-    size_t hold_consumed = 0;
 
     /// Cursor state.
     size_t position = 0;

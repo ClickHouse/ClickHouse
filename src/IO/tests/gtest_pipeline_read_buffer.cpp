@@ -372,10 +372,9 @@ TEST(PipelineReadBuffer, HoldConsumedServesBackwardSeekFromMemory)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 8 * 1024;
     executor_options.block_size = 4 * 1024;
-    executor_options.hold_consumed = 16 * 1024;
     auto executor = std::make_unique<ReaderExecutor>(
         counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
-    PipelineReadBuffer buf(std::move(executor));
+    PipelineReadBuffer buf(std::move(executor), /*hold_consumed_=*/16 * 1024);
 
     std::vector<char> data(24 * 1024);
     buf.readStrict(data.data(), data.size());
@@ -418,10 +417,9 @@ TEST(PipelineReadBuffer, HoldConsumedClearedByFarSeek)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 8 * 1024;
     executor_options.block_size = 4 * 1024;
-    executor_options.hold_consumed = 16 * 1024;
     auto executor = std::make_unique<ReaderExecutor>(
         counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
-    PipelineReadBuffer buf(std::move(executor));
+    PipelineReadBuffer buf(std::move(executor), /*hold_consumed_=*/16 * 1024);
 
     std::vector<char> head(16 * 1024);
     buf.readStrict(head.data(), head.size());

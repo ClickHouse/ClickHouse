@@ -447,7 +447,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     executor_options.block_size = settings.reader_executor.block_size;
     executor_options.log_file_path = std::move(log_file_path);
     executor_options.max_tail_for_drain = settings.reader_executor.max_tail_for_drain;
-    executor_options.hold_consumed = settings.reader_executor.hold_consumed;
     executor_options.fill_ahead_lead = settings.reader_executor.fill_ahead_lead;
     executor_options.prefetch_pool = prefetch_pool;
     executor_options.long_connection_limit = long_connection_limit;
@@ -473,7 +472,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         executor->addDecryptionLayer(dec.path, dec.key_finder);
     executor->initDecryption();
 
-    return std::make_unique<PipelineReadBuffer>(std::move(executor));
+    return std::make_unique<PipelineReadBuffer>(std::move(executor), settings.reader_executor.hold_consumed);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const

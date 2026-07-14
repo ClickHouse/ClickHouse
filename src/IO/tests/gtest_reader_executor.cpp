@@ -929,7 +929,7 @@ TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {100, 100}, {200, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 50);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
     EXPECT_EQ(merged[0].size, 300);
@@ -939,7 +939,7 @@ TEST(ReaderExecutor, MergeRangesSmallGap)
 {
     /// Small gap (10 bytes) < min_gap (100) — merge
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {110, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 100);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
     EXPECT_EQ(merged[0].size, 210);
@@ -949,7 +949,7 @@ TEST(ReaderExecutor, MergeRangesLargeGap)
 {
     /// Large gap (500 bytes) > min_gap (100) — don't merge
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {600, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 100);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
     EXPECT_EQ(merged[0].size, 100);
@@ -961,7 +961,7 @@ TEST(ReaderExecutor, MergeRangesMixed)
 {
     /// Three ranges: first two close, third far away
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {120, 100}, {1000, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 50);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
     EXPECT_EQ(merged[0].size, 220);
@@ -973,7 +973,7 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
 {
     /// min_gap=0 — no merging
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {100, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 0);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 0);
     ASSERT_EQ(merged.size(), 2);
 }
 
@@ -1413,7 +1413,7 @@ TEST(ReaderExecutor, MergeRangesOverlapping)
     /// underflows on overlap and the merge branch is skipped, leaving overlapping
     /// ranges in the output.
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {50, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 10);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 10);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0u);
     EXPECT_EQ(merged[0].size, 150u);  /// [0, 100) ∪ [50, 150) = [0, 150)
@@ -1424,7 +1424,7 @@ TEST(ReaderExecutor, MergeRangesContained)
     /// One range fully contained in another. The union is the wider range;
     /// without the fix the underflow path emits both ranges.
     VectorWithMemoryTracking<ByteRange> ranges = {{0, 200}, {50, 100}};
-    auto merged = ReaderExecutor::mergeRanges(ranges, 10);
+    auto merged = ReaderExecutorInspector::mergeRanges(ranges, 10);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0u);
     EXPECT_EQ(merged[0].size, 200u);  /// [0, 200) ∪ [50, 150) = [0, 200)
