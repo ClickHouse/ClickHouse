@@ -264,3 +264,91 @@ ORDER BY key1
 TTL d + INTERVAL 1 DAY;
 
 DROP TABLE test_ttl_normal;
+
+-- Variant column carrying an AggregateFunction alternative: the all-NULL default probe column would let
+-- the Variant function adaptor short-circuit, so this used to pass CREATE TABLE and only fail at insert.
+-- Table-level TTL: toDateTime cannot consume the AggregateFunction alternative of the Variant.
+CREATE TABLE test_ttl_agg_variant
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(v) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Column-level TTL on the Variant: same issue.
+CREATE TABLE test_ttl_agg_variant_col
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), String) TTL toDateTime(v) + INTERVAL 1 DAY
+)
+ENGINE = MergeTree()
+ORDER BY key; -- { serverError BAD_TTL_EXPRESSION }
+
+-- TTL DELETE WHERE using the Variant alternative.
+CREATE TABLE test_ttl_agg_variant_where
+(
+    key UInt64,
+    d DateTime,
+    v Variant(AggregateFunction(max, DateTime64(3)), String)
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE toDateTime(v) > toDateTime(0); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Every AggregateFunction alternative is probed, so a Variant of two different states is also rejected.
+CREATE TABLE test_ttl_agg_variant_two
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), AggregateFunction(sum, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(v) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a state-aware consumer (`finalizeAggregation`) reaching the AggregateFunction alternative of a
+-- Variant must still be accepted - only the aggregate-carrying alternative is probed, not the consumer.
+CREATE TABLE test_ttl_agg_variant_finalize
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3))),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(assumeNotNull(finalizeAggregation(v))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_variant_finalize;
+
+-- Valid: a Variant with an AggregateFunction alternative that is not referenced in the TTL is accepted.
+CREATE TABLE test_ttl_agg_variant_not_referenced
+(
+    key UInt64,
+    d DateTime,
+    v Variant(AggregateFunction(max, DateTime64(3)), String)
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_variant_not_referenced;
+
+-- Valid: the escape hatch `allow_suspicious_ttl_expressions` still lets the rejected expression through.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_variant_suspicious
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(v) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_variant_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
