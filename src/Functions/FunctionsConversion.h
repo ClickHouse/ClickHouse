@@ -2165,15 +2165,45 @@ struct ConvertImpl
                 if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
 
+                /// Split the ORIGINAL DateTime64 into floor-aligned whole seconds and a
+                /// non-negative sub-second fraction BEFORE any rescale. Rescaling the full epoch
+                /// value first (as convertDecimals does) throws DECIMAL_OVERFLOW for extreme
+                /// inputs (e.g. INT64_MIN) even though the wall-clock time-of-day is always
+                /// representable. Flooring (not truncating toward zero) keeps pre-epoch fractional
+                /// values on the correct wall-clock day and lets timezoneOffset() read the floor second.
+                const UInt32 from_scale = col_from->getScale();
+                const UInt32 to_scale = col_to->getScale();
+                const Int64 from_scale_mult = DecimalUtils::scaleMultiplier<Time64>(from_scale);
+
+                Int64 whole_seconds = vec_from[i].value / from_scale_mult;
+                Int64 fraction = vec_from[i].value % from_scale_mult;
+                if (fraction < 0)
+                {
+                    --whole_seconds;
+                    fraction += from_scale_mult;
+                }
+
+                /// Reduce the whole seconds modulo 86400 before adding the offset so the sum cannot
+                /// overflow Int64 for extreme values.
+                const Int64 offset = time_zone->timezoneOffset(whole_seconds);
+                Int64 local_seconds = (whole_seconds % 86400 + offset) % 86400;
+                if (local_seconds < 0)
+                    local_seconds += 86400;
+
+                /// Rescale the bounded sub-second fraction from the source scale to the target scale,
+                /// then reassemble. multiplyAdd throws (or, for accurateOrNull, nulls) on overflow.
+                Int64 to_fraction;
+                if (to_scale >= from_scale)
+                    to_fraction = fraction * DecimalUtils::scaleMultiplier<Time64>(to_scale - from_scale);
+                else
+                    to_fraction = fraction / DecimalUtils::scaleMultiplier<Time64>(from_scale - to_scale);
+
+                const Int64 to_scale_mult = DecimalUtils::scaleMultiplier<Time64>(to_scale);
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
-                    ToFieldType result;
-                    bool convert_result = false;
-
-                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-
-                    if (convert_result)
-                        vec_to[i] = result;
+                    Int64 value = 0;
+                    if (DecimalUtils::tryMultiplyAdd<Int64>(local_seconds, to_scale_mult, to_fraction, value))
+                        vec_to[i] = value;
                     else
                     {
                         vec_to[i] = static_cast<ToFieldType>(0);
@@ -2181,25 +2211,7 @@ struct ConvertImpl
                     }
                 }
                 else
-                {
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-                }
-
-                auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
-
-                // Get the UTC seconds (the integer part) from the input value
-                auto utc_seconds = vec_to[i] / scale_mult;
-                auto fraction = vec_to[i] % scale_mult;
-
-                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions).
-                /// Reduce modulo 86400 before adding the offset so the sum cannot overflow for extreme values (e.g. INT64_MIN).
-                Int64 offset = time_zone->timezoneOffset(utc_seconds);
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) % 86400 + offset) % 86400;
-                if (local_seconds < 0)
-                    local_seconds += 86400;
-
-                // Reassemble the result
-                vec_to[i] = local_seconds * scale_mult + fraction;
+                    vec_to[i] = DecimalUtils::multiplyAdd<Int64>(local_seconds, to_scale_mult, to_fraction);
             }
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)

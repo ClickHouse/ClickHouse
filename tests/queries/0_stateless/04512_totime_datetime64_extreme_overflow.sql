@@ -16,6 +16,17 @@ SELECT toTime(reinterpret(CAST(9223372036854775807 AS Int64), 'DateTime64(0, ''E
 -- DateTime64 -> Time64 (equal-scale path)
 SELECT CAST(reinterpret(CAST(-9223372036854775808 AS Int64), 'DateTime64(0, ''Etc/GMT+12'')') AS Time64(0));
 
+-- DateTime64 -> Time64 scale-changing path: rescaling the full epoch value first threw
+-- DECIMAL_OVERFLOW for extreme inputs before the day-modulo ran. Split-then-rescale avoids it.
+SELECT CAST(reinterpret(CAST(-9223372036854775808 AS Int64), 'DateTime64(0, ''Etc/GMT+12'')') AS Time64(9));
+SELECT CAST(reinterpret(CAST(9223372036854775807 AS Int64), 'DateTime64(0, ''Etc/GMT-14'')') AS Time64(9));
+
+-- Pre-epoch fractional values must land on the correct wall-clock day. Truncate-toward-zero
+-- produced a negative Time64 on the wrong day; floor-aligned split keeps the fraction positive.
+SELECT CAST(toDateTime64('1969-12-31 23:59:59.250', 3, 'Etc/GMT+0') AS Time64(3));
+SELECT CAST(toDateTime64('1969-12-31 23:59:59.250', 3, 'Etc/GMT+0') AS Time64(9));
+SELECT CAST(toDateTime64('1969-12-31 23:59:59.5', 1, 'Etc/GMT+0') AS Time64(9));
+
 -- Sanity: ordinary values keep the expected wall-clock time-of-day.
 SELECT toTime(toDateTime64('2024-06-15 14:30:17', 0, 'Etc/GMT+3'));
 SELECT toTime(toDateTime64('2024-06-15 14:30:17', 0, 'Etc/GMT-3'));
