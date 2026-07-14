@@ -21,3 +21,19 @@ SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
 SELECT count(DISTINCT queryID()) > 1
 FROM clusterAllReplicas('test_cluster_two_shards', system.one)
 SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
+
+-- `currentQueryID` reads the same `client_info.current_query_id` and must follow the same
+-- non-folding behavior: the inner distributed branch must not collapse to the initiator's query id.
+SELECT count(DISTINCT q) > 1
+FROM
+(
+    SELECT currentQueryID() AS q
+    UNION ALL
+    SELECT currentQueryID() AS q
+    FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+)
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
+
+SELECT count(DISTINCT currentQueryID()) > 1
+FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;

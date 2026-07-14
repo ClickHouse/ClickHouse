@@ -35,9 +35,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// The result must not be a constant column, otherwise the analyzer folds it on the initiator
+    /// of a distributed query and every shard receives the initiator's query id (same as `queryID`).
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, query_id);
+        return DataTypeString().createColumnConst(input_rows_count, query_id)->convertToFullColumnIfConst();
     }
 
 private:
