@@ -1120,6 +1120,155 @@ def test_mysql_reading_clone(started_cluster):
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
+def test_query_passing_table_function(started_cluster):
+    table_name = "table_function_query"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    # Populate via the plain (table-name) form of the table function.
+    plain = f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {plain} (id, name, money) "
+        "SELECT number, concat('name_', toString(number)), 3 FROM numbers(100)"
+    )
+
+    # query('...') form: the WHERE is executed on the MySQL side.
+    q_func = f"mysql('mysql80:3306', 'clickhouse', query('SELECT * FROM {table_name} WHERE id % 2 = 0'), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_func}").rstrip() == "50"
+    assert node1.query(f"SELECT sum(money) FROM {q_func}").rstrip() == "150"
+
+    # subquery form.
+    q_subq = f"mysql('mysql80:3306', 'clickhouse', (SELECT id, name FROM {table_name} WHERE id < 10), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_subq}").rstrip() == "10"
+    assert node1.query(f"SELECT name FROM {q_subq} ORDER BY id LIMIT 1").rstrip() == "name_0"
+    # Only the columns produced by the query are visible (id, name).
+    row = node1.query(f"SELECT * FROM {q_subq} ORDER BY id LIMIT 1").rstrip()
+    assert len(row.split("\t")) == 2
+
+    # The external_table_functions_use_nulls setting is honoured by the query-backed schema inference,
+    # exactly as it is by the table-name path: a nullable MySQL column is exposed as Nullable(T) by
+    # default and as plain T when the setting is disabled.
+    null_table = "table_function_query_null"
+    drop_mysql_table(conn, null_table)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{null_table} "
+            f"(id INT NOT NULL, money INT NULL DEFAULT NULL, PRIMARY KEY (id)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{null_table} VALUES (1, 10), (2, NULL)")
+        conn.commit()
+
+    q_null = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, money FROM {null_table}'), 'root', '{mysql_pass}')"
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 1"
+        ).rstrip()
+        == "Nullable(Int32)"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 0"
+        ).rstrip()
+        == "Int32"
+    )
+    drop_mysql_table(conn, null_table)
+
+    # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
+    # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
+    q_strict = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, name FROM {table_name}'), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_strict} WHERE id = 1").rstrip() == "1"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_strict} WHERE id = 1 SETTINGS external_table_strict_query = 1"
+    )
+
+    # INSERT into a query-backed table function is rejected with INCORRECT_QUERY before the storage is
+    # constructed, so the remote schema-inference query is never run against MySQL.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {q_strict} (id, name) VALUES (1, 'x')"
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_query_passing_engine(started_cluster):
+    table_name = "engine_query"
+    second_table = "engine_query_dim"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, second_table)
+    create_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{second_table} (id INT PRIMARY KEY, factor INT NOT NULL) ENGINE=InnoDB;"
+        )
+        conn.commit()
+
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "(id, name, money) SELECT number, concat('name_', toString(number)), number FROM numbers(10)"
+    )
+    with conn.cursor() as cursor:
+        cursor.execute(f"INSERT INTO clickhouse.{second_table} VALUES (1, 10), (2, 100)")
+        conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS mysql_engine_query")
+    node1.query(
+        f"""
+        CREATE TABLE mysql_engine_query (id UInt32, name String, calculated Int64)
+        ENGINE = MySQL('mysql80:3306', 'clickhouse',
+            query('SELECT a.id, a.name, a.money * b.factor AS calculated
+                   FROM {table_name} AS a JOIN {second_table} AS b ON a.id = b.id'),
+            'root', '{mysql_pass}')
+        """
+    )
+    assert node1.query("SELECT count() FROM mysql_engine_query").rstrip() == "2"
+    assert (
+        node1.query("SELECT sum(calculated) FROM mysql_engine_query").rstrip()
+        == str(1 * 10 + 2 * 100)
+    )
+
+    # Writing into a query-backed table is not allowed.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "INSERT INTO mysql_engine_query VALUES (5, 'x', 0)"
+    )
+
+    node1.query("DROP TABLE mysql_engine_query")
+    drop_mysql_table(conn, table_name)
+    drop_mysql_table(conn, second_table)
+    conn.close()
+
+
+def test_query_passing_type_mismatch(started_cluster):
+    # A declared structure whose types disagree with the passed query must surface as a query error, never
+    # abort the server.
+    table_name = "query_passing_mismatch"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, b VARCHAR(50) NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name} VALUES (1, 'name_1'), (2, 'name_2')"
+        )
+        conn.commit()
+
+    # Column b holds text but is declared Int32. MySQL's typed accessor reports a query error instead of
+    # crashing.
+    node1.query("DROP TABLE IF EXISTS mysql_type_mismatch")
+    node1.query(
+        f"CREATE TABLE mysql_type_mismatch (a Int32, b Int32) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', query('SELECT a, b FROM {table_name}'), 'root', '{mysql_pass}')"
+    )
+    assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
+    node1.query("DROP TABLE mysql_type_mismatch")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

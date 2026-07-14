@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "ClickHouse prend-il en charge la sécurité au niveau des lignes et des colonnes ?"
+description: "Découvrez les restrictions d’accès au niveau des lignes et des colonnes dans ClickHouse et ClickHouse Cloud, ainsi que la mise en œuvre d’un contrôle d’accès basé sur les rôles (RBAC) à l’aide de politiques."
+tags: ['Sécurité et authentification']
+keywords: ['Niveau ligne', 'Niveau colonne', 'Sécurité']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## ClickHouse et ClickHouse Cloud prennent tous deux en charge les restrictions d’accès au niveau des lignes et des colonnes
+</div>
+
+ClickHouse et ClickHouse Cloud prennent tous deux en charge les restrictions d’accès au niveau des lignes et des colonnes pour les utilisateurs en lecture seule, nécessaires à la mise en œuvre d’un modèle de contrôle d’accès basé sur les rôles (RBAC).
+
+Les [politiques de lignes](/fr/concepts/features/security/access-rights#row-policy-management) permettent de préciser quelles lignes seront renvoyées à un utilisateur en lecture seule lorsqu’il interroge une table. ClickHouse Cloud est configuré pour activer par défaut ce workflow piloté par SQL. Pour utiliser ce workflow, [CREATE](/fr/reference/statements/create/user) un utilisateur, [GRANT](/fr/reference/statements/grant) à cet utilisateur les privilèges sur une table, puis définissez la [ROW POLICY](/fr/concepts/features/security/access-rights#row-policy-management) appropriée. Lorsque l’utilisateur exécute un `SELECT * FROM table`, seules les lignes autorisées par la politique sont affichées.
+
+Les restrictions au niveau des colonnes peuvent être définies directement à l’aide de l’[instruction GRANT](/fr/reference/statements/grant) afin d’activer un accès au niveau de la table pour les utilisateurs et les rôles. Les utilisateurs *ne peuvent inclure* dans une requête que les colonnes auxquelles ils ont accès. Si une requête sélectionne des colonnes restreintes dans une table alors que l’utilisateur n’a pas accès à toutes les colonnes spécifiées, comme avec `SELECT * FROM table`, une erreur indiquera que l’utilisateur ne dispose pas des permissions suffisantes.

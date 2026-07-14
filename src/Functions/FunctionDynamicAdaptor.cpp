@@ -593,7 +593,7 @@ FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFu
         }
     }
 
-    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic())
+    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
         return_type = makeNullableSafe(type);
     else
         return_type = std::make_shared<DataTypeDynamic>(result_max_dynamic_type);

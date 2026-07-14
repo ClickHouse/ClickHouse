@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: 'Metabase هي أداة UI سهلة الاستخدام ومفتوحة المصدر لطرح الأسئلة حول بياناتك.'
+title: 'توصيل Metabase بـ ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase هي أداة واجهة مستخدم سهلة الاستخدام ومفتوحة المصدر لطرح الأسئلة حول بياناتك. Metabase هو تطبيق Java يمكن تشغيله بسهولة عبر <a href="https://www.metabase.com/start/oss/jar" target="_blank">تنزيل ملف JAR</a> ثم تشغيله باستخدام `java -jar metabase.jar`. ويتصل Metabase بـ ClickHouse باستخدام برنامج تشغيل JDBC تقوم بتنزيله ووضعه في المجلد `plugins`:
+
+<div id="goal">
+  ## الهدف
+</div>
+
+في هذا الدليل، ستطرح بعض الأسئلة على بيانات ClickHouse باستخدام Metabase وتعرض الإجابات بصريًا. وستبدو إحدى هذه الإجابات كما يلي:
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse" border />
+
+<p />
+
+<Tip>
+  **أضف بعض البيانات**
+
+  إذا لم تكن لديك مجموعة بيانات تعمل عليها، يمكنك إضافة إحدى مجموعات البيانات التجريبية. يستخدم هذا الدليل مجموعة بيانات [UK Price Paid](/ar/get-started/sample-datasets/uk-price-paid)، لذا يمكنك اختيارها. وهناك عدة مجموعات أخرى يمكنك الاطلاع عليها ضمن فئة التوثيق نفسها.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. اجمع تفاصيل الاتصال
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2.  نزّل المكوّن الإضافي لـ ClickHouse في Metabase
+</div>
+
+1. إذا لم يكن لديك مجلد `plugins`، فأنشئه كمجلد فرعي في الموقع الذي حفظت فيه `metabase.jar`.
+
+2. المكوّن الإضافي عبارة عن ملف JAR باسم `clickhouse.metabase-driver.jar`. نزّل أحدث إصدار من ملف JAR من <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+
+3. احفظ `clickhouse.metabase-driver.jar` في مجلد `plugins`.
+
+4. شغّل Metabase (أو أعد تشغيله) لكي يتم تحميل برنامج التشغيل بشكل صحيح.
+
+5. افتح Metabase على <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. عند التشغيل لأول مرة، ستظهر لك شاشة ترحيب وسيتعيّن عليك الإجابة عن مجموعة من الأسئلة. إذا طُلب منك اختيار قاعدة بيانات، فاختر &quot;**سأضيف بياناتي لاحقًا**&quot;:
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  توصيل Metabase بـ ClickHouse
+</div>
+
+1. انقر على أيقونة الترس في الزاوية العلوية اليمنى، ثم اختر **إعدادات المسؤول** للانتقال إلى <a href="http://localhost:3000/admin/settings/setup" target="_blank">صفحة إدارة Metabase</a>.
+
+2. انقر على **إضافة قاعدة بيانات**. أو يمكنك بدلًا من ذلك النقر على علامة التبويب **قواعد البيانات** ثم اختيار زر **إضافة قاعدة بيانات**.
+
+3. إذا تم تثبيت برنامج التشغيل بنجاح، فسترى **ClickHouse** في القائمة المنسدلة الخاصة بـ **نوع قاعدة البيانات**:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات" border />
+
+4. امنح قاعدة البيانات **اسمًا معروضًا**، وهو إعداد في Metabase، لذا يمكنك استخدام أي اسم تريده.
+
+5. أدخِل تفاصيل الاتصال لقاعدة بيانات ClickHouse. فعِّل اتصالًا آمنًا إذا كان ClickHouse server مُعدًّا لاستخدام SSL. على سبيل المثال:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse" border />
+
+6. انقر على زر **حفظ**، وسيقوم Metabase بفحص قاعدة البيانات بحثًا عن الجداول.
+
+<div id="4-run-a-sql-query">
+  ## 4. تشغيل استعلام SQL
+</div>
+
+1. اخرج من **إعدادات المسؤول** بالنقر على زر **Exit admin** في الزاوية العلوية اليمنى.
+
+2. في الزاوية العلوية اليمنى، انقر على قائمة **+ New** ولاحظ أنه يمكنك طرح أسئلة وتشغيل استعلامات SQL وإنشاء لوحة معلومات:
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="قائمة New في Metabase تعرض خيارات لإنشاء أسئلة واستعلامات SQL ولوحات معلومات" border />
+
+3. على سبيل المثال، إليك استعلام SQL يُشغَّل على جدول باسم `uk_price_paid` ويُرجع متوسط السعر المدفوع حسب السنة من 1995 إلى 2022:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="محرر SQL في Metabase يعرض استعلامًا على بيانات أسعار العقارات المدفوعة في المملكة المتحدة" border />
+
+<div id="5-ask-a-question">
+  ## 5. اطرح سؤالًا
+</div>
+
+1. انقر على **+ New** وحدد **Question**. لاحظ أنه يمكنك إنشاء سؤال بدءًا من قاعدة بيانات وجدول. على سبيل المثال، يوجَّه السؤال التالي إلى جدول باسم `uk_price_paid` في قاعدة البيانات `default`. إليك سؤالًا بسيطًا يحسب متوسط السعر حسب المدينة، ضمن مقاطعة Greater Manchester:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="واجهة منشئ الأسئلة في Metabase مع بيانات أسعار المملكة المتحدة" border />
+
+2. انقر على زر **Visualize** لرؤية النتائج في عرض جدولي.
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب المدينة" border />
+
+3. أسفل النتائج، انقر على زر **تصور** لتغيير التصور إلى مخطط شريطي (أو أي خيار آخر من الخيارات المتاحة):
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="تصور مخطط دائري في Metabase لمتوسط الأسعار حسب المدينة في Greater Manchester" border />
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+يمكنك العثور على مزيد من المعلومات حول Metabase وكيفية إنشاء لوحات المعلومات من خلال <a href="https://www.metabase.com/docs/latest/" target="_blank">الاطلاع على وثائق Metabase</a>.

@@ -1,0 +1,67 @@
+---
+slug: /community-wisdom/creative-use-cases
+sidebarTitle: '成功案例'
+doc_type: 'guide'
+keywords: [
+  'clickhouse creative use cases',
+  'clickhouse success stories',
+  'unconventional database uses',
+  'clickhouse rate limiting',
+  'analytics database applications',
+  'clickhouse mobile analytics',
+  'customer-facing analytics',
+  'database innovation',
+  'clickhouse real-time applications',
+  'alternative database solutions',
+  'breaking database conventions',
+  'production success stories'
+]
+title: '经验分享：创意用例'
+description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢、内存报错、连接问题和配置问题。'
+---
+
+*本指南是社区交流活动经验总结系列的一部分。若想了解更多来自真实场景的解决方案和实践洞见，你可以[按具体问题浏览](/zh/resources/support-center/tips-and-tricks/community-wisdom)。*
+*需要在生产环境中调试问题的实用建议？欢迎查看社区指南 [Debugging Insights](/zh/resources/support-center/tips-and-tricks/debugging-insights)。*
+
+这些案例展示了各家公司如何通过将 ClickHouse 用于自身场景而取得成功，其中一些甚至打破了传统的数据库分类，也证明了有时看似“不对路”的工具，恰恰就是最合适的解决方案。
+
+<div id="clickhouse-rate-limiter">
+  ## 将 ClickHouse 用作限流器
+</div>
+
+当 Craigslist 需要加入一级限流来保护用户时，他们面临着每个工程团队都会遇到的同样抉择——是遵循惯常做法使用 Redis，还是尝试一些不同的方案。Brad Lhotsky 当时在 Craigslist 工作，他知道 Redis 是标准选择——网上几乎所有限流教程和示例都会使用 Redis，这并非没有道理。它为限流操作提供了丰富的原语，拥有成熟的模式，也有久经验证的可靠性。但 Craigslist 使用 Redis 的实际体验，却和教科书式示例并不相符。*&quot;我们使用 Redis 的体验并不像你在电影里看到的那样……我们遇到了很多奇怪的维护问题，比如在 Redis 集群里重启一个节点时，前端就会出现延迟尖峰。&quot;* 对于一个重视维护简洁性的小团队来说，这些运维上的麻烦正逐渐变成真正的问题。
+
+于是，当 Brad 接到限流需求时，他换了一种思路：*&quot;我问老板，‘你觉得这个想法怎么样？也许我可以试着用 ClickHouse 来做？’&quot;* 这个想法并不寻常——用分析型数据库来解决通常属于缓存层的问题——但它正好满足了他们的核心需求：故障时默认放行、不增加延迟负担，而且对小团队来说维护起来也更省心。这个方案利用了他们现有的基础设施，因为访问日志本来就已经通过 Kafka 流入 ClickHouse。他们不必再维护一个独立的 Redis 集群，而是可以直接分析访问日志数据中的请求模式，并将限流规则注入现有的 ACL API。这种方法的延迟确实比 Redis 略高，因为 Redis *“某种程度上算是通过预先把那份数据集准备好来取巧”*，而不是执行实时聚合查询，但这些查询依然能在 100 毫秒内完成。
+
+**关键结果：**
+
+* 相比 Redis 基础设施，效果有了显著提升
+* 内置生存时间 (TTL) 自动清理机制，消除了维护开销
+* SQL 的灵活性支持超越简单计数器的复杂限流规则
+* 利用现有数据管道，无需额外的基础设施
+
+<div id="customer-analytics">
+  ## ClickHouse 用于客户分析
+</div>
+
+当 ServiceNow 需要升级其移动分析平台时，他们面临着一个简单的问题：*&quot;为什么要替换一个已经运转良好的系统？&quot;* ServiceNow 的 Amir Vaza 知道，他们现有的系统很可靠，但客户需求已经超出了它的处理能力。Amir 解释道：*&quot;推动替换现有可靠模型的动力，其实来自产品需求。&quot;* ServiceNow 将移动分析作为其 Web、移动端和聊天机器人解决方案的一部分提供，但客户希望获得超越预聚合数据的分析灵活性。
+
+他们之前的系统使用了大约 30 个不同的表，其中的数据按固定维度 (应用程序、应用版本和平台) 进行预聚合。对于客户可发送的自定义属性——键值对——他们为每个分组单独创建 Counter。这种方法带来了很快的 dashboard 性能，但也有一个重大局限。Amir 指出：*&quot;虽然这非常适合快速拆分数值，但正如我提到的，这种限制会导致大量分析上下文丢失。&quot;* 客户无法进行复杂的客户旅程分析，也无法提出类似“有多少个 session 是以搜索词 ‘research RSA token’ 开始的”，然后再分析这些用户接下来做了什么这样的问题。这种预聚合结构破坏了多步分析所需的时序上下文，而且每增加一个新的分析维度，都需要工程团队额外做预聚合和存储。
+
+因此，当这些局限变得越来越明显后，ServiceNow 迁移到了 ClickHouse，并彻底消除了这类预计算约束。他们不再预先计算每个变量，而是将元数据拆分为数据点，并将所有内容直接插入 ClickHouse。他们使用了 ClickHouse 的 async insert 队列，Amir 称其 *“真的非常惊艳”*，以高效处理数据摄取。这种方法意味着客户现在可以创建自己的分段，自由地按任意维度切分数据，并执行以前无法实现的复杂客户旅程分析。
+
+**关键成果：**
+
+* 无需预计算，即可跨任意维度进行动态分段
+* 复杂的客户旅程分析成为可能
+* 客户可以创建自己的分段，并自由切分数据
+* 新的分析需求不再受工程瓶颈限制
+
+<div id="video-sources">
+  ## 视频资源
+</div>
+
+* **[打破常规——使用 ClickHouse 构建限流器](https://www.youtube.com/watch?v=wRwqrbUjRe4)** - Brad Lhotsky (Craigslist)
+* **[ClickHouse 在 ServiceNow 中的分析解决方案应用](https://www.youtube.com/watch?v=b4Pmpx3iRK4)** - Amir Vaza (ServiceNow)
+
+*这些案例表明，挑战传统数据库观念，能够带来突破性的解决方案，并重新定义分析型数据库的可能边界。*
