@@ -812,10 +812,18 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
 {
-    return create(/*bearer_token_=*/ "", credentials_);
+    return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
 }
 
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & credentials_)
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
+{
+    /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
+    return createWithBearerToken(bearer_token_, no_credentials);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
+    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
