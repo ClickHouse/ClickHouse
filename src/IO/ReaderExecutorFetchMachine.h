@@ -37,20 +37,22 @@ struct ReaderExecutorFetchMachine : MachineBase
     /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
     ReaderExecutorFetchMachine();
 
-    /// The PHYSICAL cache-aligned window the fetch step reads (`fetchWindowAt`
-    /// widened), committing cells per tile as it goes. The LOGICAL requested
-    /// range (the space `position` works in) is this shifted down by
-    /// `data_start_offset`.
+    /// The PHYSICAL cache-aligned window the fetch step reads (cut by the
+    /// schedule's fetch grids at launch), committing cells per tile as it
+    /// goes. The LOGICAL requested range (the space `position` works in) is
+    /// this shifted down by `data_start_offset`.
     ByteRange physical_window;
     /// The plan's memory-pressure level, snapshotted at launch - the only
     /// geometry field the worker reads (sizes the fetch block / suppresses
     /// read-ahead). A future stage needing other geometry fields on the
     /// worker must re-add a snapshot rather than reach into shared state.
     MemoryPressureLevel pressure_snapshot{};
-    /// The advertised read extent at launch: the worker bounds its source
-    /// connection with THIS, never the live `read_extent_end` member - a
-    /// soft-cancelled machine must not race `setReadExtent`.
-    std::optional<size_t> extent_snapshot;
+    /// Whether a read extent was advertised at launch: the worker reads THIS,
+    /// never the live `read_extent_end` member - a soft-cancelled machine must
+    /// not race `setReadExtent`. Only the bit matters: it lets a one-shot read
+    /// on an unknown-size source be bounded (`readFromSource`); the serve is
+    /// bounded by the live extent separately (`clampToExtent`).
+    bool extent_advertised = false;
     /// The schedule retrieve this machine fulfills (index into the launch-time plan's
     /// `schedule.retrieves`). Set at launch; read live by `machineFor` (is a machine
     /// running for this retrieve). Meaningful only while this machine is the live

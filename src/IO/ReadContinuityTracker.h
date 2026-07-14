@@ -68,6 +68,10 @@ public:
     size_t estimate() const { return static_cast<size_t>(expected_run); }
 
 private:
+    /// The estimator's single defining formula: the EWMA fold of the live run into
+    /// the carried estimate, `alpha * currentRun + (1 - alpha) * expected_run`.
+    double foldedEstimate() const;
+
     /// Fold the current run span into the EWMA estimate WITHOUT ending the run -
     /// the positive-signal checkpoint for exact continuations and gapless seeks.
     void checkpointRun();

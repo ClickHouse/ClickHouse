@@ -19,7 +19,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorSourceReadMicroseconds;
     extern const Event ReaderExecutorDecryptMicroseconds;
     extern const Event ReaderExecutorPrefetchWaitMicroseconds;
-    extern const Event ReaderExecutorSyncReadMicroseconds;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorPrefetchHits;
     extern const Event ReaderExecutorPrefetchCancelled;
@@ -80,7 +79,6 @@ void ReaderExecutorStats::add(Counter c, UInt64 value)
         case SourceReadMicroseconds:    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceReadMicroseconds, value); break;
         case DecryptMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorDecryptMicroseconds, value); break;
         case PrefetchWaitMicroseconds:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWaitMicroseconds, value); break;
-        case SyncReadMicroseconds:      ProfileEvents::increment(ProfileEvents::ReaderExecutorSyncReadMicroseconds, value); break;
         case WorkMicroseconds:          ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value); break;
         case PrefetchHits:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, value); break;
         case PrefetchCancelled:         ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, value); break;

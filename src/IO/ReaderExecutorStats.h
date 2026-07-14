@@ -36,7 +36,6 @@ struct ReaderExecutorStats
         SourceReadMicroseconds,
         DecryptMicroseconds,
         PrefetchWaitMicroseconds,
-        SyncReadMicroseconds,
         WorkMicroseconds,
         PrefetchHits,
         PrefetchCancelled,

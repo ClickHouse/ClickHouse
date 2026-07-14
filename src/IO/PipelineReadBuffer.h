@@ -23,9 +23,9 @@ public:
     std::optional<size_t> tryGetFileSize() override;
 
     /// Advertise the read boundary to the executor. `MergeTreeReaderStream`
-    /// drives this per mark range (`adjustRightMark`); the executor bounds its
-    /// long connection to it so it stays drained and reusable, and keeps
-    /// prefetches within it.
+    /// drives this per mark range (`adjustRightMark`); the executor serves and
+    /// EOFs at it, while its producer may fetch past it by the consumed run's
+    /// earned reach (see `ReaderExecutor::setReadExtent`).
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 

@@ -543,10 +543,8 @@ TEST_F(ReaderExecutorCacheChain, InlineFillPopulatesCacheFully)
 /// NO prefetch pool: every foreground window is served by a one-window FetchMachine run INLINE on
 /// the read thread (LocalRunner). Asserts the cold scan (a) serves every byte, (b) counts NO
 /// prefetch hits (an inline collect is a synchronous fetch, not a prefetch - the counter must
-/// stay meaningful with `remote_filesystem_read_prefetch = 0`), (c) served from the committed
-/// cells rather than a raw source read (SyncReadMicroseconds == 0 - with no pool only the inline
-/// machine path produces that), and (d) populated the cache fully, so the warm re-read hits the
-/// source 0 times.
+/// stay meaningful with `remote_filesystem_read_prefetch = 0`), and (c) populated the cache
+/// fully, so the warm re-read hits the source 0 times.
 TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMachine)
 {
     constexpr size_t segment_size = 64;
@@ -572,12 +570,10 @@ TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMac
 
     const size_t src_before_cold = sourceRequestsSoFar();
     UInt64 cold_prefetch_hits = 0;
-    UInt64 cold_sync_micros = 0;
     {
         ReaderExecutor cold(source, objects, caches, opts);
         EXPECT_EQ(drainAll(cold), content) << "cold inline scan serves all bytes";
         cold_prefetch_hits = inspect(cold).prefetchHits();
-        cold_sync_micros = inspect(cold).syncReadMicros();
     }
     const size_t cold_source = sourceRequestsSoFar() - src_before_cold;
 
@@ -591,8 +587,6 @@ TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMac
     EXPECT_GT(cold_source, 0u) << "cold inline scan must hit the source";
     EXPECT_EQ(cold_prefetch_hits, 0u)
         << "an inline collect is a synchronous fetch, not a prefetch hit";
-    EXPECT_EQ(cold_sync_micros, 0u)
-        << "the inline serve reads the committed cells; it must not fall back to the legacy sync read";
     EXPECT_EQ(warm_source, 0u)
         << "the inline FetchMachine fills the cache fully, so the warm re-read touches source 0 times";
 }

@@ -197,8 +197,8 @@ PlanSchedule buildSchedule(
     const auto fill = fillRegion(geometry, request);
 
     /// --- ranges: typed decomposition of request ∪ fill closure ---
-    /// Decompose request ∪ fill, breaking at every residency boundary (mirroring
-    /// `serveCacheBlock`/`coverWindow` granularity) and at the request boundaries
+    /// Decompose request ∪ fill, breaking at every residency boundary (the
+    /// granularity `Display::read` serves at) and at the request boundaries
     /// (where purpose flips between FillOnly and User).
     {
         VectorWithMemoryTracking<ByteRange> walk_parts;
@@ -397,9 +397,10 @@ PlanSchedule buildSchedule(
     {
         const auto res = geometry.residentAt(cursor);
         /// A resident step spans the maximal CONTIGUOUS resident region across ALL tiers
-        /// (`nextGapStart`), matching `serveCacheBlock`, which streams adjacent resident
-        /// runs of different tiers into one window. `res.run_end` stops at the tier-run
-        /// boundary and would split one served window into several steps.
+        /// (`nextGapStart`) - the serve (`serveFromDisplay`/`Display::read`) streams
+        /// adjacent resident runs of different tiers into one window. `res.run_end`
+        /// stops at the tier-run boundary and would split one served window into
+        /// several steps.
         size_t out_end = res.resident() ? geometry.nextGapStart(cursor) : geometry.gapEnd(cursor);
         out_end = std::min(out_end, request_end);
         const ByteRange out{cursor, out_end - cursor};

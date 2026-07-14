@@ -43,7 +43,6 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"source_read_microseconds", std::make_shared<DataTypeUInt64>(), "Time spent in source reads (foreground and prefetch worker combined)."},
         {"decrypt_microseconds", std::make_shared<DataTypeUInt64>(), "Time spent in decryption layers."},
         {"prefetch_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time the consumer blocked on a not-yet-ready prefetch. Contributes directly to query latency."},
-        {"sync_read_microseconds", std::make_shared<DataTypeUInt64>(), "Time the consumer spent in an in-line synchronous read because no usable prefetch was available. Contributes directly to query latency."},
 
         {"prefetch_hits", std::make_shared<DataTypeUInt64>(), "Number of windows served by an in-flight prefetch."},
         {"prefetch_cancelled", std::make_shared<DataTypeUInt64>(), "Number of prefetches cancelled before their worker ran."},
@@ -82,7 +81,6 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_read_us);
     columns[i++]->insert(decrypt_us);
     columns[i++]->insert(prefetch_wait_us);
-    columns[i++]->insert(sync_read_us);
 
     columns[i++]->insert(prefetch_hits);
     columns[i++]->insert(prefetch_cancelled);

@@ -187,10 +187,10 @@ public:
 
     /// Advertise the read extent (from `ReadBuffer::setReadUntilPosition`,
     /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`). The
-    /// executor bounds each one-shot source read and every prefetch within it,
-    /// so the borrowed connection is read to a known end and returned to the
-    /// pool reusable. `nullopt` clears it. Drains an in-flight prefetch when the
-    /// extent changes.
+    /// extent is the CONSUMER's serve/EOF bound; the producer may fetch past it
+    /// by the consumed run's earned reach (`fetchAllowance`). `nullopt` clears
+    /// it. A backward shrink cancels the in-flight machine; an advance or a
+    /// clear keeps it running.
     void setReadExtent(std::optional<size_t> logical_end);
 
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
@@ -352,7 +352,9 @@ private:
 
     /// Serve a clamped resident sub-range from a view's hit buffers, clamping
     /// each read to the buffer's live `readable()` and recording it for the
-    /// deferred LRU bump. The caller checks `covers`.
+    /// deferred LRU bump. The result is contiguous from `clamped.offset` and
+    /// may be short only at the TAIL (`Display::read` marks `range().size`
+    /// bytes covered, so a mid-range hole would over-mark coverage).
     static ChainedBuffers readHitFromView(CacheView & view, ByteRange clamped);
 
     // ─── Gap fetch + backfill ────────────────────────────────────────────
@@ -360,17 +362,19 @@ private:
     /// PURE source fetch: read the WHOLE `physical_window` from the source as
     /// one contiguous physical ChainedBuffers (short at EOF), no cache/plan/pin. This is
     /// ALL a machine fetch step runs. `stop` (nullable) carries the machine's
-    /// cooperative stop flag, polled BETWEEN connections only - a one-shot GET
-    /// is never cut mid-response. A stop-short return has the same shape as an
+    /// cooperative stop flag: a one-shot GET is never cut mid-response (polled
+    /// between connections), while a long-connection drain stops at block
+    /// granularity. A stop-short return has the same shape as an
     /// EOF-short one and must neither latch EOF nor throw (the flag is checked FIRST).
     /// `lc` (nullable) is the long connection to DRAIN if it can serve a piece - the
     /// worker passes its machine's payload, never the foreground's.
-    /// `may_open_long` is the ONE connection-policy point: at each object-piece start, open a
-    /// long connection when convenient (`openLongConnectionIfWarranted`) and reuse it for what follows.
-    /// True only in FOREGROUND context (the foreground and inline machines, which run on the
-    /// serve thread) - a pool worker never opens; it carries what its launch gave it.
+    /// `may_open_long` gates the IN-FETCH opener: at each object-piece start, open a
+    /// long connection when convenient (`openLongConnectionIfWarranted`) and reuse it for what
+    /// follows. True only in FOREGROUND context (the foreground and inline machines, which run
+    /// on the serve thread) - a pool worker never opens in-fetch; it carries what its LAUNCH
+    /// gave it (`launchMachineForWindow` is the other opener site).
     ChainedBuffers fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
-        bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
+        bool & eof_latch, MemoryPressureLevel pressure_level, bool extent_advertised,
         std::optional<LongConnection> * lc, const MachineBase * stop, bool may_open_long, Stats & out_stats);
 
     /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
@@ -388,11 +392,9 @@ private:
     static VectorWithMemoryTracking<ByteRange> uncommittedIn(
         const VectorWithMemoryTracking<WriterView> & views, ByteRange range);
 
-    /// The per-writer-list body shared by the put step and the parked-inline
-    /// write: write `chain ∩ writer-range ∩ window` into each (already
-    /// schedule-filtered) writer. `interrupt` (nullable) is polled between
-    /// writers - the put step's stop point; remaining writers are left untouched
-    /// for the caller's abandon path.
+    /// The per-writer-list body shared by the fetch step's per-tile commit and
+    /// the collect's put step: write `chain ∩ writer-range ∩ window` into each
+    /// (already schedule-filtered) writer.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
         const ChainedBuffers & chain, Stats & out_stats);
 
@@ -417,12 +419,10 @@ private:
     ChainedBuffers readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
-        std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
+        bool extent_advertised, std::optional<LongConnection> * lc,
         const MachineBase * stop, Stats & out_stats);
 
     /// Allocate OwnedChainedBuffers covering `size` bytes, each <= `block_size`.
-    /// `splits` (sorted, relative) forces block boundaries so user-window and
-    /// over-read bytes land in separate buffers, releasable independently.
     static VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> allocateBlocks(size_t size, size_t block_size);
 
     // ─── Long connection ─────────────────────────────────────────────────
@@ -498,10 +498,6 @@ private:
     /// launch, hand it the assembled chain and run the fill INLINE on the read thread (a failed
     /// fill logged, never thrown).
     void runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
-
-    /// After the inline fill: fold the segment pin and stats in, and mark the retrieve
-    /// `Done` once its whole job is fetched (logging a failed step - never the client's
-    /// error).
 
     /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
     /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
@@ -610,8 +606,8 @@ private:
 
 
     /// The end of the CONTIGUOUS committed run from `window_phys.offset` (== offset when nothing
-    /// is committed there). The inline populatable serve narrows to this prefix: the first
-    /// sibling-led byte bounds it short, so the serve returns the led prefix as a short window.
+    /// is committed there). Feeds `jobFrontier`: the committed-cell frontier is the
+    /// producer's launch-progress measure for a job.
     size_t committedCellPrefixEnd(ByteRange window_phys) const;
     /// The display-derived DATA progress of job `ri`: the first byte of its `fetch_runs` not
     /// yet committed to the cells (`range.end()` when all are). The serve-side piece derivation
@@ -673,8 +669,10 @@ private:
     void feedScheduleToContinuity(const PlanSchedule & schedule);
 
     /// TRIM phase of the plan: the look-ahead span starting at
-    /// `physical_start`, clamped to the physical file end and the advertised
-    /// read extent. Empty when the start sits at/past a bound. The single
+    /// `physical_start`, clamped to the physical file end ONLY - the plan is
+    /// independent of `read_extent_end` (which clamps the serve), so it
+    /// survives mark-range advances. Exception: a transient's span is its
+    /// bounded request. Empty when the start sits at/past a bound. The single
     /// place the plan is bounded.
     ByteRange boundedPlanSpan(size_t physical_start) const;
 
@@ -752,7 +750,8 @@ private:
     /// How far the in-order fill front runs ahead of the serve cursor: one uniform lead
     /// (`fill_ahead_lead`), self-limited by cell acceptance - a bottom that accepts nothing
     /// hits the worker's one-window residue cap and stops (see `coordinatedPrefetch`).
-    size_t fillAheadLead(MemoryPressureLevel level) const;
+    /// Pressure suppresses prefetch upstream (`prefetchEnabled`), not the lead depth.
+    size_t fillAheadLead() const;
 
     /// Shrink `win_size` so the read does not pass `read_extent_end`.
     /// Saturates to 0 once `position` reaches the extent (recoverable:
@@ -760,9 +759,14 @@ private:
     size_t clampToExtent(size_t win_size) const;
 
     /// PRODUCER-side allowance: physical bytes a fetch may take from `phys_from`,
-    /// bounded by the file end and by `max(extent, predicted reach)` - see the
-    /// definition for the past-extent rationale.
+    /// bounded by the file end and by `reachPastExtent` - see the definition for
+    /// the past-extent rationale.
     size_t fetchAllowance(size_t phys_from) const;
+
+    /// `max(extent, reach)` - except for a `readBigAt` transient, whose extent IS
+    /// its request and is never crossed. The single statement of the transient
+    /// rule, shared by `fetchAllowance` and `longConnectionBound`.
+    size_t reachPastExtent(size_t extent_phys, size_t reach) const;
 
     /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
     /// within it, though the file may continue. `readNextWindow` uses this (not the file end)
@@ -837,8 +841,10 @@ private:
     /// thread. Also the fallback collect-runner when there is no pool - its verbs no-op on a
     /// settled inline machine (null `current_step`).
     std::unique_ptr<IFetchMachineRunner> local_runner;
-    /// The display (see the class doc): holds only a back-reference, safe to initialize here.
+    /// The producer's lane (see `ReaderExecutorFillLane.h`): owns the long
+    /// connection, the in-flight pin, the ahead cursor and the bank.
     FillLane fill_lane;
+    /// The display (see the class doc): holds only back-references, safe to initialize here.
     Display display{read_plan, fill_lane};
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY

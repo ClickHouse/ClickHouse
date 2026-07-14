@@ -37,7 +37,6 @@ struct ReaderExecutorLogElement
     UInt64 source_read_us = 0;
     UInt64 decrypt_us = 0;
     UInt64 prefetch_wait_us = 0;
-    UInt64 sync_read_us = 0;
 
     UInt64 prefetch_hits = 0;
     UInt64 prefetch_cancelled = 0;

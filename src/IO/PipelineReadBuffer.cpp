@@ -161,8 +161,8 @@ size_t PipelineReadBuffer::readBigAt(
     const size_t want = std::min(n, total - offset);
 
     /// Drive a fresh, isolated `ReaderExecutor` through the regular
-    /// `readNextWindow` path. The transient owns its own position / live_buffer
-    /// / prefetch state so concurrent `readBigAt` calls don't interfere with
+    /// `readNextWindow` path. The transient owns its own position, plan/display
+    /// and fill lane, so concurrent `readBigAt` calls don't interfere with
     /// each other or with the main reader. Reusing the existing pipeline avoids
     /// duplicating the cache-walk + source-read logic.
     auto sub = executor->makeTransientForReadAt(offset, want);

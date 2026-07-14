@@ -219,13 +219,12 @@ public:
     /// Read-only residency probe over a (typically large) look-ahead range:
     /// hit read buffers (pinning their resident segments) + writer-null
     /// cache-aligned misses. MUST NOT mutate the cache - a fully-resident
-    /// range costs only the probe. Default throws until implemented.
+    /// range costs only the probe.
     virtual CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) = 0;
 
     /// Open ONLY the write buffers for already-known cache-aligned miss
     /// ranges, without re-probing residency. Empty when `!populatesOnMiss()`.
-    /// Default throws until implemented.
     virtual VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,
         const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) = 0;

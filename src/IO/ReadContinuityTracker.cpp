@@ -54,10 +54,15 @@ void ReadContinuityTracker::recordSeek(size_t new_pos)
     last_pos = new_pos;
 }
 
+double ReadContinuityTracker::foldedEstimate() const
+{
+    return options.ewma_alpha * static_cast<double>(currentRun())
+        + (1.0 - options.ewma_alpha) * expected_run;
+}
+
 void ReadContinuityTracker::checkpointRun()
 {
-    expected_run = options.ewma_alpha * static_cast<double>(currentRun())
-        + (1.0 - options.ewma_alpha) * expected_run;
+    expected_run = foldedEstimate();
 }
 
 size_t ReadContinuityTracker::currentRun() const
@@ -69,20 +74,16 @@ size_t ReadContinuityTracker::predictedEnd() const
 {
     if (!last_pos)
         return 0;
-    /// `alpha * run + (1 - alpha) * estimate` is the same fold `checkpointRun` applies:
-    /// the prediction is "the estimate as if the live run checkpointed right now",
-    /// floored at the estimate (via the max) so live evidence never talks history
-    /// down before the run outgrows it.
+    /// The prediction is "the estimate as if the live run checkpointed right now"
+    /// (`foldedEstimate`), floored at the estimate (via the max) so live evidence
+    /// never talks history down before the run outgrows it.
     return *last_pos + std::max<size_t>(
-        static_cast<size_t>(options.ewma_alpha * static_cast<double>(currentRun())
-            + (1.0 - options.ewma_alpha) * expected_run),
-        static_cast<size_t>(expected_run));
+        static_cast<size_t>(foldedEstimate()), static_cast<size_t>(expected_run));
 }
 
 void ReadContinuityTracker::closeRun()
 {
-    expected_run = options.ewma_alpha * static_cast<double>(currentRun())
-        + (1.0 - options.ewma_alpha) * expected_run;
+    checkpointRun();
     run_start = 0;
     last_pos.reset();
 }
