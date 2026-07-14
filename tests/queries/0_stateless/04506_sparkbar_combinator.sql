@@ -112,6 +112,19 @@ SELECT countSparkbar(2, toDateTime64('2024-01-01 00:00:00.300', 3), toDateTime64
 SELECT 'quantileSparkbar with range:';
 SELECT quantileSparkbar(0.9, 5, 0, 4)(number % 5, number) FROM numbers(20);
 
+-- Nullable-returning nested function: `avgOrNull` returns `Nullable(Float64)`. The combinator
+-- strips the `Nullable` wrapper before its numeric-type check, so the composition is accepted;
+-- reverting that `removeNullable` step would reject it with ILLEGAL_TYPE_OF_ARGUMENT. The result
+-- of any `-Sparkbar` function is always a String.
+SELECT 'avgOrNullSparkbar result type (String):';
+SELECT toTypeName(avgOrNullSparkbar(3, 0, 2)(number, number)) FROM numbers(3);
+
+-- A bucket whose nested result is NULL renders as a blank. Here the middle bucket (key = 1)
+-- receives only NULL values, so `avgOrNull` returns NULL for it and it is drawn as a space
+-- between the two rendered bars. This exercises the `isNullAt` path in `insertResultInto`.
+SELECT 'avgOrNullSparkbar with a NULL-only bucket (blank):';
+SELECT avgOrNullSparkbar(3, 0, 2)(intDiv(number, 2), if(intDiv(number, 2) = 1, NULL, toInt64(number) * 10)) FROM numbers(6);
+
 -- Error: too few parameters
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 

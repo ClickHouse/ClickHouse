@@ -43,3 +43,7 @@ countSparkbar with DateTime64 sub-tick empty range (col=0, params=3):
 
 quantileSparkbar with range:
 ▆▆▇▇█
+avgOrNullSparkbar result type (String):
+String
+avgOrNullSparkbar with a NULL-only bucket (blank):
+▁ █
