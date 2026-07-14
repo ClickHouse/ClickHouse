@@ -30,6 +30,7 @@ public:
         , disk_map(context_->getDisksMap())
         , function_name(name_)
         , get_func(get_func_)
+        , is_distributed(context_->isDistributed())
     {
     }
 
@@ -51,6 +52,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
+
+    bool isServerConstant() const override { return true; }
+
+    /// The value is server-local: each shard reports its own filesystem state, so the
+    /// initiator of a distributed query must not fold the call into a literal computed
+    /// from its own disks (same as `getServerSetting`). This covers both the zero-argument
+    /// form and the constant `disk_name` form (folded via `useDefaultImplementationForConstants`).
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -97,6 +106,7 @@ private:
     DisksMap disk_map;
     const char * function_name;
     GetFunc get_func;
+    bool is_distributed;
 };
 
 UInt64 filesystemAvailable(const DiskPtr & disk) { return disk->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()); }
