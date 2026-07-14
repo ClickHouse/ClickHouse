@@ -956,6 +956,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * every table expression, so counting them would make an unaliased table function collide with every
       * sibling (`SELECT number FROM t, numbers(3)`). We therefore drop only those two from the unaliased
       * side; siblings still contribute them, so the reverse orientation stays covered.
+      *
+      * Sibling table expressions are not the only bare-identifier binders: in-scope expression aliases
+      * (`WITH` and projection aliases, pre-registered before the join tree is resolved) shadow join-tree
+      * columns by default (`prefer_column_name_to_alias = 0`). In `WITH 1 AS x SELECT x FROM numbers(1),
+      * (SELECT 2 AS x)` the bare `x` binds to the scope alias, so the subquery output is unreachable
+      * unless the subquery gets an alias to qualify it with. A collision with a scope alias therefore
+      * requires the table expression alias just like a sibling-column collision does. This is checked
+      * regardless of `prefer_column_name_to_alias`, matching the strictness of the old unconditional
+      * behavior for such queries.
       */
     NameSet table_expression_columns;
     NameSet sibling_columns;
@@ -990,7 +999,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             /// Sub-columns (e.g. `x.size0`) are addressed with a dot and cannot collide with a bare identifier.
             if (column_name.find('.') != std::string::npos)
                 continue;
-            if (sibling_columns.contains(column_name))
+            if (sibling_columns.contains(column_name) || scope.aliases.alias_name_to_expression_node.contains(column_name))
             {
                 has_name_collision = true;
                 break;

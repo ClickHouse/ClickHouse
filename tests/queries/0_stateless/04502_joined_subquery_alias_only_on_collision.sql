@@ -82,6 +82,23 @@ SELECT m.z FROM merge(currentDatabase(), '^mt_alias$') AS m, (SELECT 1 AS z) AS 
 -- No collision with the forwarded ALIAS column: still allowed without an alias.
 SELECT z FROM merge(currentDatabase(), '^mt_alias$'), (SELECT 1 AS not_z) AS rhs ORDER BY z;
 
+-- Sibling table expressions are not the only bare-identifier binders: an in-scope expression alias
+-- (`WITH` or projection alias) shadows join-tree columns by default, so a subquery output colliding
+-- with such an alias is unreachable unless the subquery is aliased. The alias is therefore required.
+WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x); -- { serverError ALIAS_REQUIRED }
+
+-- With the subquery aliased, the shadowed column becomes reachable again via qualification.
+WITH 1 AS x SELECT x, rhs.x FROM numbers(1), (SELECT 2 AS x) AS rhs;
+
+-- A projection alias shadows the same way as a `WITH` alias.
+SELECT number + 10 AS y FROM numbers(1), (SELECT 2 AS y); -- { serverError ALIAS_REQUIRED }
+
+-- No collision with the scope alias: still allowed without an alias.
+WITH 1 AS x SELECT x, not_x FROM numbers(1), (SELECT 2 AS not_x);
+
+-- ... and the restriction can still be disabled entirely.
+WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS joined_subquery_requires_alias = 0;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
