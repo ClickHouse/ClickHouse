@@ -82,8 +82,49 @@ ${CLIENT_STANDARD} --query 'SELECT count() OVER w FROM t_col_group WINDOW "W" AS
 ${CLIENT_STANDARD} --query "SELECT 1 FROM t_col_group WINDOW w AS (), W AS ()" 2>&1 | grep -oF 'BAD_ARGUMENTS' | uniq
 ${CLICKHOUSE_CLIENT} --query "SELECT count() OVER W FROM t_col_group WINDOW w AS (PARTITION BY Category)" 2>&1 | grep -oF 'BAD_ARGUMENTS' | uniq
 
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_join_l (Id Int32, a Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_col_join_l VALUES (1, 10)"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_join_r (ID Int32, b Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_col_join_r VALUES (1, 20)"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_join_sib (Id Int32, ID Int32, c Int32) ENGINE = Memory"
+
+echo '--- standard: JOIN USING folds per side, merged key named as written, quoted key pins'
+${CLIENT_STANDARD} --query "SELECT * FROM t_col_join_l JOIN t_col_join_r USING (id) FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query "SELECT id, a, b FROM t_col_join_l JOIN t_col_join_r USING (id)"
+${CLIENT_STANDARD} --query 'SELECT * FROM t_col_join_l JOIN t_col_join_r USING ("Id")' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query "SELECT * FROM t_col_join_l JOIN t_col_join_sib USING (id)" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_col_join_l JOIN t_col_join_r USING (id)" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+echo '--- standard: NATURAL JOIN intersects by folded class, case siblings are ambiguous'
+${CLIENT_STANDARD} --query "SELECT * FROM t_col_join_l NATURAL JOIN t_col_join_r FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query "SELECT * FROM t_col_join_l NATURAL JOIN t_col_join_sib" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+# In sensitive mode there are no exact common columns, so NATURAL JOIN degrades to CROSS JOIN
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_col_join_l NATURAL JOIN t_col_join_r FORMAT TSVWithNames"
+
+echo '--- standard: qualified matcher qualifier folds against table aliases and names, quoted qualifier pins'
+${CLIENT_STANDARD} --query "SELECT t.* FROM t_col_match AS T FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query 'SELECT "t".* FROM t_col_match AS T' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query "SELECT T_COL_MATCH.* FROM t_col_match FORMAT TSVWithNames"
+${CLICKHOUSE_CLIENT} --query "SELECT t.* FROM t_col_match AS T" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+echo '--- standard: EXCEPT targets fold, quoted targets pin, case siblings are ambiguous'
+${CLIENT_STANDARD} --query "SELECT * EXCEPT (category) FROM t_col_group ORDER BY amount FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query 'SELECT * EXCEPT ("category") FROM t_col_group ORDER BY amount LIMIT 1 FORMAT TSVWithNames'
+${CLIENT_STANDARD} --query "SELECT * EXCEPT (val) FROM t_col_siblings" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+
+echo '--- standard: REPLACE targets fold, case siblings are ambiguous'
+${CLIENT_STANDARD} --query "SELECT * REPLACE (a + 5 AS A) FROM t_col_join_l FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query "SELECT * REPLACE (1 AS val) FROM t_col_siblings" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+
+echo '--- standard: COLUMNS list entries fold, case siblings are ambiguous'
+${CLIENT_STANDARD} --query "SELECT COLUMNS(firstname) FROM t_col_match FORMAT TSVWithNames"
+${CLIENT_STANDARD} --query "SELECT COLUMNS(val) FROM t_col_siblings" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_match"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_siblings"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_tuple"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_group"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_prec"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_join_l"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_join_r"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_join_sib"

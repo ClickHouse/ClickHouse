@@ -161,6 +161,27 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
 }
 
+/// Compare quote structures the way IdentifierNode does: only double-quoted parts pin matching,
+/// so two names are equal unless their double-quoted-part patterns differ.
+static bool identifierNameQuotesEqual(const IdentifierName & lhs, const IdentifierName & rhs)
+{
+    if (!lhs.anyPartDoubleQuoted() && !rhs.anyPartDoubleQuoted())
+        return true;
+
+    if (lhs.size() != rhs.size())
+        return false;
+
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        bool lhs_double_quoted = lhs[i].quote == IdentifierPartQuote::DoubleQuoted;
+        bool rhs_double_quoted = rhs[i].quote == IdentifierPartQuote::DoubleQuoted;
+        if (lhs_double_quoted != rhs_double_quoted)
+            return false;
+    }
+
+    return true;
+}
+
 bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
@@ -169,6 +190,18 @@ bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         columns_identifiers != rhs_typed.columns_identifiers ||
         columns_identifiers_set != rhs_typed.columns_identifiers_set)
         return false;
+
+    if (!identifierNameQuotesEqual(qualified_identifier_name, rhs_typed.qualified_identifier_name))
+        return false;
+
+    /// Missing quote structure (a synthesized matcher) compares as all-unquoted.
+    size_t columns_identifier_names_size = std::max(columns_identifier_names.size(), rhs_typed.columns_identifier_names.size());
+    for (size_t i = 0; i < columns_identifier_names_size; ++i)
+    {
+        auto name_at = [i](const std::vector<IdentifierName> & names) { return i < names.size() ? names[i] : IdentifierName{}; };
+        if (!identifierNameQuotesEqual(name_at(columns_identifier_names), name_at(rhs_typed.columns_identifier_names)))
+            return false;
+    }
 
     const auto & rhs_columns_matcher = rhs_typed.columns_matcher;
 
@@ -189,6 +222,17 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     const auto & qualified_identifier_full_name = qualified_identifier.getFullName();
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
+
+    /// Mix quote flags only when a double-quoted part is present, to keep the hash
+    /// of all-unquoted matchers unchanged (mirrors IdentifierNode).
+    if (qualified_identifier_name.anyPartDoubleQuoted())
+        for (const auto & part : qualified_identifier_name)
+            hash_state.update(static_cast<UInt8>(part.quote == IdentifierPartQuote::DoubleQuoted));
+
+    for (const auto & columns_identifier_name : columns_identifier_names)
+        if (columns_identifier_name.anyPartDoubleQuoted())
+            for (const auto & part : columns_identifier_name)
+                hash_state.update(static_cast<UInt8>(part.quote == IdentifierPartQuote::DoubleQuoted));
 
     for (const auto & identifier : columns_identifiers)
     {
@@ -211,7 +255,9 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
 
     matcher_node->matcher_type = matcher_type;
     matcher_node->qualified_identifier = qualified_identifier;
+    matcher_node->qualified_identifier_name = qualified_identifier_name;
     matcher_node->columns_identifiers = columns_identifiers;
+    matcher_node->columns_identifier_names = columns_identifier_names;
     matcher_node->columns_matcher = columns_matcher;
     matcher_node->columns_identifiers_set = columns_identifiers_set;
 

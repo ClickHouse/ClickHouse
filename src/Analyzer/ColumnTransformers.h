@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Core/IdentifierName.h>
 #include <Core/Names.h>
 
 namespace re2
@@ -205,6 +206,18 @@ public:
         return except_column_names;
     }
 
+    /// Per-name quotes as written in the query, mirroring `except_column_names`.
+    /// Empty when the transformer was synthesized; such names match exactly.
+    const std::vector<IdentifierPartQuote> & getExceptColumnNamesQuotes() const
+    {
+        return except_column_names_quotes;
+    }
+
+    void setExceptColumnNamesQuotes(std::vector<IdentifierPartQuote> except_column_names_quotes_)
+    {
+        except_column_names_quotes = std::move(except_column_names_quotes_);
+    }
+
     ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::EXCEPT;
@@ -224,6 +237,7 @@ protected:
 private:
     ExceptColumnTransformerType except_transformer_type;
     Names except_column_names;
+    std::vector<IdentifierPartQuote> except_column_names_quotes;
     std::shared_ptr<re2::RE2> column_matcher;
     bool is_strict = false;
 
@@ -275,6 +289,18 @@ public:
         return replacements_names;
     }
 
+    /// Per-name quotes as written in the query, mirroring `replacements_names`.
+    /// Empty when the transformer was synthesized; such names match exactly.
+    const std::vector<IdentifierPartQuote> & getReplacementsNamesQuotes() const
+    {
+        return replacements_names_quotes;
+    }
+
+    void setReplacementsNamesQuotes(std::vector<IdentifierPartQuote> replacements_names_quotes_)
+    {
+        replacements_names_quotes = std::move(replacements_names_quotes_);
+    }
+
     /// Returns true if replace column transformer is strict, false otherwise
     bool isStrict() const
     {
@@ -304,6 +330,7 @@ private:
     }
 
     Names replacements_names;
+    std::vector<IdentifierPartQuote> replacements_names_quotes;
     bool is_strict = false;
 
     static constexpr size_t replacements_child_index = 0;

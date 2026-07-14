@@ -42,6 +42,30 @@ inline IdentifierName getFoldableSingleName(const String & spelling, IdentifierP
     return IdentifierName({IdentifierPart{spelling, quote}});
 }
 
+/// Whether one identifier part matches the canonical name `canonical` under `standard`
+/// matching. A `pinned` (double-quoted) definition is excluded from folded matching and
+/// can only be found by a double-quoted exact-spelling reference.
+inline bool identifierPartMatchesName(const IdentifierPart & part, const String & canonical, bool pinned = false)
+{
+    if (!part.isCaseFoldable())
+        return part.spelling == canonical;
+    if (pinned)
+        return false;
+    return foldIdentifierCaseASCII(part.spelling) == foldIdentifierCaseASCII(canonical);
+}
+
+/// Sorted canonical names from `names` matching `name` under `standard` folding with quoted pins.
+template <typename Range>
+std::vector<String> collectFoldedNameMatchesInNames(const Range & names, const IdentifierName & name)
+{
+    std::vector<String> matches;
+    for (const auto & candidate : names)
+        if (name.matchesFolded(candidate))
+            matches.push_back(candidate);
+    std::sort(matches.begin(), matches.end());
+    return matches;
+}
+
 /// Scan a definition map keyed by name for entries matching `name` under `standard` folding.
 /// `is_pinned(key, value)` excludes double-quoted definitions from folded matching. Returns the
 /// sorted canonical names of all matches; more than one means the reference is ambiguous.

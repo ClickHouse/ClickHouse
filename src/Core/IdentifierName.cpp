@@ -65,6 +65,11 @@ bool IdentifierName::quotedPartsMatch(std::string_view candidate) const
     return true;
 }
 
+bool IdentifierName::matchesFolded(std::string_view candidate) const
+{
+    return foldIdentifierCaseASCII(candidate) == foldedFullKey() && quotedPartsMatch(candidate);
+}
+
 String IdentifierName::toString() const
 {
     String result;

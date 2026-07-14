@@ -85,6 +85,10 @@ struct IdentifierName
     /// the fold maps bytes one to one, so part boundaries stay at the same offsets.
     bool quotedPartsMatch(std::string_view candidate) const;
 
+    /// Whether this name matches the canonical name `candidate` under `standard` matching:
+    /// folded whole-string equality with every double-quoted part pinned to its exact spelling.
+    bool matchesFolded(std::string_view candidate) const;
+
     /// Flattened form for display and error messages only. Never re-split it.
     String toString() const;
 

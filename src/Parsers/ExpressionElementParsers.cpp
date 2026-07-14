@@ -1988,6 +1988,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
+            replacement->name_quote = identifierPartQuoteFromAST(ident);
             replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;

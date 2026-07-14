@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST.h>
 
 
@@ -105,6 +106,8 @@ public:
         void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
         String name;
+        /// How the replacement name was written; pins exact matching under `standard` name matching.
+        IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
 
     protected:
         void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

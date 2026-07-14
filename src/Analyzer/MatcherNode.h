@@ -3,6 +3,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ColumnTransformers.h>
+#include <Core/IdentifierName.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Common/re2.h>
 
@@ -100,6 +101,29 @@ public:
         return qualified_identifier;
     }
 
+    /// Quote-structured qualified identifier as written in the query.
+    /// Empty when the matcher was synthesized internally; such matchers match exactly.
+    const IdentifierName & getQualifiedIdentifierName() const
+    {
+        return qualified_identifier_name;
+    }
+
+    void setQualifiedIdentifierName(IdentifierName qualified_identifier_name_)
+    {
+        qualified_identifier_name = std::move(qualified_identifier_name_);
+    }
+
+    /// Quote-structured COLUMNS list entries, mirroring `columns_identifiers`. Empty when synthesized.
+    const std::vector<IdentifierName> & getColumnsIdentifierNames() const
+    {
+        return columns_identifier_names;
+    }
+
+    void setColumnsIdentifierNames(std::vector<IdentifierName> columns_identifier_names_)
+    {
+        columns_identifier_names = std::move(columns_identifier_names_);
+    }
+
     /// Get columns matcher. Valid only if this matcher has type COLUMNS_REGEXP.
     const std::shared_ptr<re2::RE2> & getColumnsMatcher() const
     {
@@ -152,7 +176,9 @@ private:
 
     MatcherNodeType matcher_type;
     Identifier qualified_identifier;
+    IdentifierName qualified_identifier_name;
     Identifiers columns_identifiers;
+    std::vector<IdentifierName> columns_identifier_names;
     std::shared_ptr<re2::RE2> columns_matcher;
     std::unordered_set<std::string> columns_identifiers_set;
 

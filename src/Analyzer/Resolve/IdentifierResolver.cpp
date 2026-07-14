@@ -688,6 +688,38 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
+/// Whether lookup part `index` matches the canonical `name`: quote-aware folding under
+/// `standard` matching when the lookup carries quote structure, exact spelling otherwise.
+/// `pinned` marks a double-quoted definition, excluded from folded matching.
+static bool lookupPartMatchesName(
+    const IdentifierLookup & identifier_lookup,
+    size_t index,
+    const String & name,
+    NameMatchMode name_match_mode,
+    bool pinned = false)
+{
+    if (name.empty())
+        return false;
+
+    const auto & structured_name = identifier_lookup.identifier_name;
+    if (name_match_mode == NameMatchMode::Standard && structured_name.size() == identifier_lookup.identifier.getPartsSize())
+        return identifierPartMatchesName(structured_name[index], name, pinned);
+
+    return identifier_lookup.identifier.getParts()[index] == name;
+}
+
+static bool lookupMatchesTableExpressionAlias(
+    const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_node,
+    NameMatchMode name_match_mode)
+{
+    if (!table_expression_node->hasAlias())
+        return false;
+
+    bool alias_pinned = table_expression_node->getAliasQuote() == IdentifierPartQuote::DoubleQuoted;
+    return lookupPartMatchesName(identifier_lookup, 0, table_expression_node->getAlias(), name_match_mode, alias_pinned);
+}
+
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
@@ -704,12 +736,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         scope.scope_node->formatASTForErrorMessage());
 
     const auto & identifier = identifier_lookup.identifier;
-    const auto & path_start = identifier.getParts().front();
 
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
+
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
 
     if (identifier_lookup.isTableExpressionLookup())
     {
@@ -720,14 +753,15 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && path_start == table_name)
+        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode))
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
+            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
             return true;
         return false;
     }
 
-    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, name_match_mode);
     if (!foldable_name.empty())
     {
         if (table_expression_data.canBindIdentifierStandard(foldable_name))
@@ -739,13 +773,15 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode)
+        || lookupMatchesTableExpressionAlias(identifier_lookup, table_expression_node, name_match_mode))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
+        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
         return true;
 
     return false;
@@ -979,6 +1015,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -991,9 +1029,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        if (parts_size == 1 && path_start == table_name)
+        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
+            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else
             return {};
@@ -1028,7 +1067,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+    auto foldable_name = getFoldableIdentifierSuffix(identifier_lookup, 0 /*qualifier_parts*/, name_match_mode);
     if (!foldable_name.empty())
     {
         /// Standard matching: a single binding gate; the folded lookup inside
@@ -1060,11 +1099,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & table_name = table_expression_data.table_name;
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode)
+        || lookupMatchesTableExpressionAlias(identifier_lookup, table_expression_node, name_match_mode))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
+        /// Materialized CTE names stay exact under `standard` matching for now (fail-close).
         auto * table_node = table_expression_node->as<TableNode>();
         if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
             return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
@@ -1074,7 +1115,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & database_name = table_expression_data.database_name;
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
+        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1471,14 +1513,36 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         std::unordered_map<QueryTreeNodePtr, ProjectionName> & projection_name_mapping)
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
-        auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
-        if (using_column_node_it == using_column_name_to_column_node.end())
-            return;
-
-        const auto & using_column_list = using_column_node_it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
         auto matches_using_column = [&](const auto & node) { return node->isEqual(*resolved_identifier_candidate); };
-        if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
-            return;
+
+        auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
+        if (using_column_node_it != using_column_name_to_column_node.end())
+        {
+            const auto & using_column_list = using_column_node_it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
+            if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
+                return;
+        }
+        else
+        {
+            /// Standard matching: the USING key is named by its spelling as written, which can
+            /// differ from the canonical per-side column names. Detect the key by membership
+            /// of the resolved column in a key's per-side column list instead.
+            if (current_scope.context->getSettingsRef()[Setting::column_and_query_name_matching] != NameMatchMode::Standard)
+                return;
+
+            for (auto it = using_column_name_to_column_node.begin(); it != using_column_name_to_column_node.end(); ++it)
+            {
+                const auto & using_column_list = it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
+                if (std::ranges::any_of(using_column_list.getNodes(), matches_using_column))
+                {
+                    using_column_node_it = it;
+                    break;
+                }
+            }
+
+            if (using_column_node_it == using_column_name_to_column_node.end())
+                return;
+        }
 
         auto current_type = resolved_column.getColumnType();
         auto result_type = using_column_node_it->second->getColumnType();
@@ -1526,6 +1590,28 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
             if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
                 using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+
+            /// Standard matching: the USING key is named by its spelling as written, which can
+            /// differ from the canonical per-side column names. Detect the key by membership of
+            /// both resolved columns in the same key's per-side column list instead.
+            if (using_column_node_it == join_using_column_name_to_column_node.end()
+                && scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+            {
+                for (auto it = join_using_column_name_to_column_node.begin(); it != join_using_column_name_to_column_node.end(); ++it)
+                {
+                    const auto & using_column_nodes = it->second->getExpressionOrThrow()->as<const ListNode &>().getNodes();
+                    if (using_column_nodes.size() < 2)
+                        continue;
+
+                    bool left_matches = std::any_of(using_column_nodes.begin(), using_column_nodes.end() - 1,
+                        [&](const auto & node) { return node->isEqual(*left_resolved_identifier); });
+                    if (left_matches && using_column_nodes.back()->isEqual(*right_resolved_identifier))
+                    {
+                        using_column_node_it = it;
+                        break;
+                    }
+                }
+            }
         }
         else
         {

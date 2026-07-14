@@ -1833,12 +1833,53 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
+/// For a COLUMNS(name, ...) matcher under `standard` matching: the canonical names selected by
+/// each list entry from `available_names`, folding entries like column references with per-entry
+/// ambiguity rejection and quoted pins. Nullopt when exact matching must be used.
+static std::optional<std::unordered_set<std::string>> buildStandardColumnsListMatchSet(
+    const MatcherNode & matcher_node,
+    const Names & available_names,
+    const IdentifierResolveScope & scope)
+{
+    if (matcher_node.getMatcherType() != MatcherNodeType::COLUMNS_LIST)
+        return {};
+
+    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] != NameMatchMode::Standard)
+        return {};
+
+    const auto & identifier_names = matcher_node.getColumnsIdentifierNames();
+    if (identifier_names.size() != matcher_node.getColumnsIdentifiers().size())
+        return {};
+
+    std::unordered_set<std::string> match_set;
+    for (const auto & identifier_name : identifier_names)
+    {
+        auto matches = collectFoldedNameMatchesInNames(available_names, identifier_name);
+        if (matches.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' in COLUMNS matcher is ambiguous under standard name matching. Candidates: {}. In scope {}",
+                identifier_name.toString(),
+                fmt::join(matches, ", "),
+                scope.scope_node->formatASTForErrorMessage());
+        if (matches.size() == 1)
+            match_set.insert(matches.front());
+    }
+
+    return match_set;
+}
+
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
     const QueryTreeNodePtr & table_expression_node,
     const NamesAndTypes & matched_columns,
     IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+
+    Names matched_column_names;
+    matched_column_names.reserve(matched_columns.size());
+    for (const auto & column : matched_columns)
+        matched_column_names.push_back(column.name);
+    auto standard_columns_list_match_set = buildStandardColumnsListMatchSet(matcher_node_typed, matched_column_names, scope);
 
     /** Use resolved columns from table expression data in nearest query scope if available.
       * It is important for ALIAS columns to use column nodes with resolved ALIAS expression.
@@ -1853,7 +1894,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     for (const auto & column : matched_columns)
     {
         const auto & column_name = column.name;
-        if (!matcher_node_typed.isMatchingColumn(column_name))
+        bool is_matching_column = standard_columns_list_match_set
+            ? standard_columns_list_match_set->contains(column_name)
+            : matcher_node_typed.isMatchingColumn(column_name);
+        if (!is_matching_column)
             continue;
 
         if (table_expression_data)
@@ -1904,8 +1948,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
     bool is_qualified_matcher,
     const Identifier & matched_qualified_identifier,
+    const IdentifierName & matched_qualified_identifier_name,
     IdentifierResolveScope & scope)
 {
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
 
@@ -1935,6 +1981,15 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
             Identifier explicit_identifier = matched_qualified_identifier;
             explicit_identifier.push_back(matched_column_node_typed.getColumnName());
             auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+
+            /// Standard matching: the qualifier folds as written, while the matched column name
+            /// is already canonical, so pin it to exact matching with a double-quoted part.
+            if (name_match_mode == NameMatchMode::Standard
+                && matched_qualified_identifier_name.size() == matched_qualified_identifier.getPartsSize())
+            {
+                explicit_lookup.identifier_name = matched_qualified_identifier_name;
+                explicit_lookup.identifier_name.push_back(IdentifierPart{matched_column_node_typed.getColumnName(), IdentifierPartQuote::DoubleQuoted});
+            }
 
             /// The qualifier is a table expression (the matcher already resolved it to one), so any
             /// type change can only come from the join tree. Resolve against the nearest query scope's
@@ -1983,11 +2038,30 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 auto & join_using_column_node = join_using_node->as<ColumnNode &>();
                 const auto & join_using_column_name = join_using_column_node.getColumnName();
 
-                if (matched_column_name != join_using_column_name)
-                    continue;
-
                 const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
                 const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
+
+                bool matches_using_key = matched_column_name == join_using_column_name;
+
+                /// Standard matching: the USING key is named by its spelling as written, which can
+                /// differ from the canonical per-side column names. Match the canonical per-side
+                /// column with the same name and source instead.
+                if (!matches_using_key && name_match_mode == NameMatchMode::Standard)
+                {
+                    for (const auto & join_using_column_inner_node : join_using_column_nodes)
+                    {
+                        const auto * inner_column_node = join_using_column_inner_node->as<ColumnNode>();
+                        if (inner_column_node && inner_column_node->getColumnName() == matched_column_name
+                            && inner_column_node->getColumnSource().get() == matched_column_node_typed.getColumnSource().get())
+                        {
+                            matches_using_key = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!matches_using_key)
+                    continue;
                 for (const auto & join_using_column_inner_node : join_using_column_nodes)
                 {
                     const auto * join_using_column_inner_column_node = join_using_column_inner_node->as<ColumnNode>();
@@ -2030,6 +2104,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+    expression_identifier_lookup.identifier_name = matcher_node_typed.getQualifiedIdentifierName();
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -2065,10 +2140,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             const auto & element_names = tuple_data_type->getElementNames();
             QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
+            auto standard_columns_list_match_set = buildStandardColumnsListMatchSet(matcher_node_typed, element_names, scope);
+
             auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
             for (const auto & element_name : element_names)
             {
-                if (!matcher_node_typed.isMatchingColumn(element_name))
+                bool is_matching_column = standard_columns_list_match_set
+                    ? standard_columns_list_match_set->contains(element_name)
+                    : matcher_node_typed.isMatchingColumn(element_name);
+                if (!is_matching_column)
                     continue;
 
                 auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
@@ -2096,6 +2176,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     identifier_resolve_settings.allow_to_check_database_catalog = false;
 
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+    table_identifier_lookup.identifier_name = matcher_node_typed.getQualifiedIdentifierName();
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
 
@@ -2184,7 +2265,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         scope);
 
     updateMatchedColumnsFromJoinUsing(
-        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
+        result_matched_column_nodes_with_names,
+        /*is_qualified_matcher=*/ true,
+        matcher_node_typed.getQualifiedIdentifier(),
+        matcher_node_typed.getQualifiedIdentifierName(),
+        scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2230,11 +2315,17 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     if (matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
     {
         auto identifiers = matcher_node_typed.getColumnsIdentifiers();
+        const auto & identifier_names = matcher_node_typed.getColumnsIdentifierNames();
         result.reserve(identifiers.size());
 
-        for (const auto & identifier : identifiers)
+        for (size_t identifier_index = 0; identifier_index < identifiers.size(); ++identifier_index)
         {
-            auto resolve_result = tryResolveIdentifier(IdentifierLookup{identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            const auto & identifier = identifiers[identifier_index];
+            IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+            /// COLUMNS list entries fold like column references; quote structure comes from the matcher.
+            if (identifier_index < identifier_names.size())
+                identifier_lookup.identifier_name = identifier_names[identifier_index];
+            auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
             if (!resolve_result.isResolved())
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Unknown identifier '{}' inside COLUMNS matcher. In scope {}",
@@ -2324,6 +2415,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             table_expression_column_names_to_skip.clear();
 
+            /// Standard matching: the merged USING key absorbs the canonical per-side source
+            /// columns, whose spellings can differ from the key spelling as written.
+            std::unordered_set<std::string> left_column_names_to_skip;
+            std::unordered_set<std::string> right_column_names_to_skip;
+
             QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
             /** If there is JOIN with USING we need to match only single USING column and do not use left table expression
@@ -2377,13 +2473,27 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
+
+                    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+                    {
+                        for (size_t i = 0; i < join_using_column_nodes.size(); ++i)
+                        {
+                            const auto * inner_column_node = join_using_column_nodes[i]->as<ColumnNode>();
+                            if (!inner_column_node)
+                                continue;
+                            auto & side_column_names_to_skip = (i + 1 == join_using_column_nodes.size()) ? right_column_names_to_skip : left_column_names_to_skip;
+                            side_column_names_to_skip.insert(inner_column_node->getColumnName());
+                        }
+                    }
+
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
                 }
             }
 
             for (auto && left_table_column_with_name : left_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
+                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second)
+                    || left_column_names_to_skip.contains(left_table_column_with_name.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
@@ -2391,7 +2501,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             for (auto && right_table_column_with_name : right_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
+                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second)
+                    || right_column_names_to_skip.contains(right_table_column_with_name.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
@@ -2439,7 +2550,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -2585,6 +2696,55 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
+    /// Standard matching: resolve EXCEPT and REPLACE list targets against the matched column set
+    /// up front, folding each target like a column reference with per-target ambiguity rejection
+    /// and quoted pins. Maps canonical matched column name -> target name as written.
+    /// EXCEPT('regexp') stays untouched: a regexp is byte-exact by definition.
+    std::unordered_map<const IColumnTransformerNode *, std::unordered_map<std::string, std::string>> standard_transformer_target_names;
+    if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+    {
+        Names matched_names;
+        matched_names.reserve(matched_expression_nodes_with_names.size());
+        for (const auto & [_, matched_name] : matched_expression_nodes_with_names)
+            matched_names.push_back(matched_name);
+
+        auto resolve_transformer_targets = [&](const IColumnTransformerNode * transformer, const Names & target_names, const std::vector<IdentifierPartQuote> & target_quotes)
+        {
+            /// A transformer without quote structure was synthesized; its targets match exactly.
+            if (target_quotes.size() != target_names.size())
+                return;
+
+            auto & canonical_to_target = standard_transformer_target_names[transformer];
+            for (size_t i = 0; i < target_names.size(); ++i)
+            {
+                IdentifierName target_name({IdentifierPart{target_names[i], target_quotes[i]}});
+                auto matches = collectFoldedNameMatchesInNames(matched_names, target_name);
+                if (matches.size() > 1)
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Column '{}' in {} transformer is ambiguous under standard name matching. Candidates: {}. In scope {}",
+                        target_names[i],
+                        transformer->getTransformerTypeName(),
+                        fmt::join(matches, ", "),
+                        scope.scope_node->formatASTForErrorMessage());
+                if (matches.size() == 1)
+                    canonical_to_target.emplace(matches.front(), target_names[i]);
+            }
+        };
+
+        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        {
+            if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+            {
+                if (except_transformer->getExceptTransformerType() == ExceptColumnTransformerType::COLUMN_LIST)
+                    resolve_transformer_targets(except_transformer, except_transformer->getExceptColumnNames(), except_transformer->getExceptColumnNamesQuotes());
+            }
+            else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+            {
+                resolve_transformer_targets(replace_transformer, replace_transformer->getReplacementsNames(), replace_transformer->getReplacementsNamesQuotes());
+            }
+        }
+    }
+
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
@@ -2662,10 +2822,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                if (except_transformer->isColumnMatching(column_name))
+                auto standard_targets_it = standard_transformer_target_names.find(except_transformer);
+                bool except_matches = standard_targets_it != standard_transformer_target_names.end()
+                    ? standard_targets_it->second.contains(column_name)
+                    : except_transformer->isColumnMatching(column_name);
+
+                if (except_matches)
                 {
+                    /// Account the target spelling as written, which the strict validation compares against.
                     if (except_transformer->isStrict())
-                        strict_transformer_to_used_column_names[except_transformer].insert(column_name);
+                        strict_transformer_to_used_column_names[except_transformer].insert(
+                            standard_targets_it != standard_transformer_target_names.end()
+                                ? standard_targets_it->second.at(column_name)
+                                : column_name);
 
                     node = {};
                     break;
@@ -2676,14 +2845,24 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                auto replace_expression = replace_transformer->findReplacementExpression(column_name);
+                std::string replacement_name = column_name;
+                auto standard_targets_it = standard_transformer_target_names.find(replace_transformer);
+                if (standard_targets_it != standard_transformer_target_names.end())
+                {
+                    auto target_it = standard_targets_it->second.find(column_name);
+                    if (target_it == standard_targets_it->second.end())
+                        continue;
+                    replacement_name = target_it->second;
+                }
+
+                auto replace_expression = replace_transformer->findReplacementExpression(replacement_name);
                 if (!replace_expression)
                     continue;
 
                 replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
-                    strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
+                    strict_transformer_to_used_column_names[replace_transformer].insert(replacement_name);
 
                 replace_transformer_mappings[column_name] = replace_expression;
 
@@ -2815,6 +2994,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         if (auto * identifier = current->as<IdentifierNode>())
                         {
                             auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
+
+                            /// Standard matching: mapping keys are canonical column names; fold the
+                            /// reference against them with quoted pins. On several folded matches skip
+                            /// the rewrite and let normal resolution report the ambiguity.
+                            if (it == replace_transformer_mappings.end()
+                                && scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard
+                                && identifier->getIdentifierName().size() == identifier->getIdentifier().getPartsSize())
+                            {
+                                auto folded_matches = collectFoldedNameMatchesInNames(
+                                    std::views::keys(replace_transformer_mappings), identifier->getIdentifierName());
+                                if (folded_matches.size() == 1)
+                                    it = replace_transformer_mappings.find(folded_matches.front());
+                            }
+
                             if (it != replace_transformer_mappings.end())
                             {
                                 current = it->second->clone();
@@ -5456,30 +5649,95 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         /// Synthesize a USING expression from the intersection of left and right column names.
         Names left_cols;
-        NameSet right_cols;
 
         if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpression(), left_cols))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of left table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
-        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "NATURAL JOIN: cannot determine columns of right table expression in {}",
-                join_node_typed.formatASTForErrorMessage());
-
         QueryTreeNodes using_nodes;
-        NameSet seen;
-        for (const auto & col_name : left_cols)
-        {
-            /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-            if (col_name.find('.') != std::string::npos)
-                continue;
 
-            if (right_cols.contains(col_name) && !seen.contains(col_name))
+        if (scope.context->getSettingsRef()[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+        {
+            Names right_cols_ordered;
+            if (!getOrderedColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols_ordered))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "NATURAL JOIN: cannot determine columns of right table expression in {}",
+                    join_node_typed.formatASTForErrorMessage());
+
+            /// Standard matching: intersect by folded class; a class with several spellings
+            /// on either side makes the join key ambiguous.
+            auto group_by_folded_class = [](const Names & cols)
             {
-                seen.insert(col_name);
+                std::unordered_map<String, Names> classes;
+                for (const auto & col_name : cols)
+                {
+                    /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
+                    if (col_name.find('.') != std::string::npos)
+                        continue;
+
+                    auto & members = classes[foldIdentifierCaseASCII(col_name)];
+                    if (std::find(members.begin(), members.end(), col_name) == members.end())
+                        members.push_back(col_name);
+                }
+                return classes;
+            };
+
+            auto left_classes = group_by_folded_class(left_cols);
+            auto right_classes = group_by_folded_class(right_cols_ordered);
+
+            NameSet seen;
+            for (const auto & col_name : left_cols)
+            {
+                if (col_name.find('.') != std::string::npos)
+                    continue;
+
+                auto folded_key = foldIdentifierCaseASCII(col_name);
+                if (!seen.emplace(folded_key).second)
+                    continue;
+
+                auto right_class_it = right_classes.find(folded_key);
+                if (right_class_it == right_classes.end())
+                    continue;
+
+                const auto & left_class = left_classes[folded_key];
+                const auto & right_class = right_class_it->second;
+                if (left_class.size() > 1 || right_class.size() > 1)
+                {
+                    Names candidates = left_class;
+                    candidates.insert(candidates.end(), right_class.begin(), right_class.end());
+                    std::sort(candidates.begin(), candidates.end());
+                    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "NATURAL JOIN column '{}' is ambiguous under standard name matching. Candidates: {}. In scope {}",
+                        col_name,
+                        fmt::join(candidates, ", "),
+                        scope.scope_node->formatASTForErrorMessage());
+                }
+
                 using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+            }
+        }
+        else
+        {
+            NameSet right_cols;
+            if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpression(), right_cols))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "NATURAL JOIN: cannot determine columns of right table expression in {}",
+                    join_node_typed.formatASTForErrorMessage());
+
+            NameSet seen;
+            for (const auto & col_name : left_cols)
+            {
+                /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
+                if (col_name.find('.') != std::string::npos)
+                    continue;
+
+                if (right_cols.contains(col_name) && !seen.contains(col_name))
+                {
+                    seen.insert(col_name);
+                    using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+                }
             }
         }
 
@@ -5523,15 +5781,29 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             const auto & identifier_full_name = identifier_node->getIdentifier().getFullName();
 
-            if (join_using_identifiers.contains(identifier_full_name))
+            const auto & settings = scope.context->getSettingsRef();
+
+            /// Standard matching: two USING keys that fold to the same name refer to the same
+            /// column, so deduplicate by the per-part matching key (folded unless double-quoted).
+            String using_dedup_key = identifier_full_name;
+            if (settings[Setting::column_and_query_name_matching] == NameMatchMode::Standard)
+            {
+                using_dedup_key.clear();
+                for (const auto & part : identifier_node->getIdentifierName())
+                {
+                    if (!using_dedup_key.empty())
+                        using_dedup_key += '.';
+                    using_dedup_key += part.matchingKey();
+                }
+            }
+
+            if (join_using_identifiers.contains(using_dedup_key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "JOIN {} identifier '{}' appears more than once in USING clause",
                     join_node_typed.formatASTForErrorMessage(),
                     identifier_full_name);
 
-            join_using_identifiers.insert(identifier_full_name);
-
-            const auto & settings = scope.context->getSettingsRef();
+            join_using_identifiers.insert(using_dedup_key);
 
             /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
               * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
@@ -5613,6 +5885,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!result_left_table_expression)
             {
                 IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
+                identifier_lookup.identifier_name = identifier_node->getIdentifierName();
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
             }
 
@@ -5675,6 +5948,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
             const auto & right_name = identifier_node->hasAlias() ? identifier_node->getAlias() : identifier_full_name;
             IdentifierLookup identifier_lookup{Identifier(right_name), IdentifierLookupContext::EXPRESSION};
+            if (identifier_node->hasAlias())
+            {
+                if (identifier_lookup.identifier.getPartsSize() == 1)
+                    identifier_lookup.identifier_name = IdentifierName({IdentifierPart{right_name, identifier_node->getAliasQuote()}});
+            }
+            else
+                identifier_lookup.identifier_name = identifier_node->getIdentifierName();
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
