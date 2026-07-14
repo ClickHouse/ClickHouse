@@ -1,0 +1,132 @@
+---
+description: 'Документация по специальному типу данных Interval'
+sidebarTitle: 'Interval'
+slug: /sql-reference/data-types/special-data-types/interval
+title: 'Interval'
+doc_type: 'reference'
+---
+
+Семейство типов данных, представляющих интервалы времени и даты. Результирующие типы оператора [INTERVAL](/ru/reference/operators/index#interval).
+
+Структура:
+
+* Интервал времени в виде беззнакового целочисленного значения.
+* Тип интервала.
+
+Поддерживаемые типы интервалов:
+
+* `NANOSECOND`
+* `MICROSECOND`
+* `MILLISECOND`
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+Для каждого типа интервала существует отдельный тип данных. Например, интервалу `DAY` соответствует тип данных `IntervalDay`:
+
+```sql
+SELECT toTypeName(INTERVAL 4 DAY)
+```
+
+```text
+┌─toTypeName(toIntervalDay(4))─┐
+│ IntervalDay                  │
+└──────────────────────────────┘
+```
+
+<div id="usage-remarks">
+  ## Примечания по использованию
+</div>
+
+Значения типа `Interval` можно использовать в арифметических операциях со значениями типов [Date](/ru/reference/data-types/date) и [DateTime](/ru/reference/data-types/datetime). Например, к текущему времени можно добавить 4 дня:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY
+```
+
+```text
+┌───current_date_time─┬─plus(now(), toIntervalDay(4))─┐
+│ 2019-10-23 10:58:45 │           2019-10-27 10:58:45 │
+└─────────────────────┴───────────────────────────────┘
+```
+
+Можно также одновременно использовать несколько интервалов:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+```
+
+```text
+┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
+│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
+└─────────────────────┴────────────────────────────────────────────────────────────────────┘
+```
+
+А для сравнения значений с разными интервалами:
+
+```sql
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+```
+
+```text
+┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
+│                                                           1 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+<div id="mixed-type-intervals">
+  ## Интервалы смешанных типов
+</div>
+
+Интервалы смешанных типов, например включающие и часы, и минуты, можно создавать с помощью синтаксиса `INTERVAL 'value' <from_kind> TO <to_kind>`.
+Результат представляет собой кортеж из двух или более интервалов.
+
+Поддерживаемые комбинации:
+
+| Синтаксис          | Строковый формат | Пример                                |
+| ------------------ | ---------------- | ------------------------------------- |
+| `YEAR TO MONTH`    | `Y-M`            | `INTERVAL '2-6' YEAR TO MONTH`        |
+| `DAY TO HOUR`      | `D H`            | `INTERVAL '5 12' DAY TO HOUR`         |
+| `DAY TO MINUTE`    | `D H:M`          | `INTERVAL '5 12:30' DAY TO MINUTE`    |
+| `DAY TO SECOND`    | `D H:M:S`        | `INTERVAL '5 12:30:45' DAY TO SECOND` |
+| `HOUR TO MINUTE`   | `H:M`            | `INTERVAL '1:30' HOUR TO MINUTE`      |
+| `HOUR TO SECOND`   | `H:M:S`          | `INTERVAL '1:30:45' HOUR TO SECOND`   |
+| `MINUTE TO SECOND` | `M:S`            | `INTERVAL '5:30' MINUTE TO SECOND`    |
+
+Значения неведущих полей проверяются в соответствии со стандартом SQL: `MONTH` 0-11, `HOUR` 0-23, `MINUTE` 0-59, `SECOND` 0-59.
+
+```sql
+SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+Необязательный знак `+` или `-` в начале применяется ко всем компонентам:
+
+```sql
+SELECT INTERVAL '+1:30' HOUR TO MINUTE;
+-- это эквивалентно:
+-- SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* оператор [INTERVAL](/ru/reference/operators/index#interval)
+* [toInterval](/ru/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) функции преобразования типов

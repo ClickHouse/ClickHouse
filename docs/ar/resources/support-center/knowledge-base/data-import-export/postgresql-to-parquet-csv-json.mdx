@@ -1,0 +1,136 @@
+---
+title: "كيف أُصدّر بيانات PostgreSQL إلى Parquet أو CSV أو JSON؟"
+date: 2023-03-22
+description: "تعرّف إلى كيفية تصدير بيانات PostgreSQL إلى تنسيقات Parquet أو CSV أو JSON باستخدام `clickhouse-local`، مع أمثلة متنوعة."
+tags: ['تصدير البيانات', 'تنسيقات البيانات']
+keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## كيفية تصدير بيانات PostgreSQL إلى Parquet أو CSV أو JSON
+</div>
+
+هذا سهل باستخدام `clickhouse-local`:
+
+* استخدم [دالة الجدول `postgresql`](/ar/reference/functions/table-functions/postgresql) لقراءة البيانات
+* استخدم عبارة `INTO OUTFILE _filename_ FORMAT` وحدد تنسيق الإخراج المطلوب
+
+يمكن أن يكون تنسيق الإخراج أيًا من [تنسيقات الإخراج](/ar/reference/formats/index) المدعومة في ClickHouse. لنلقِ نظرة على بعض الأمثلة...
+
+تستخدم هذه الأمثلة `clickhouse-local`، وهو جزء من الملف التنفيذي لـ ClickHouse. نزّله باستخدام ما يلي:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-postgresql-to-parquet">
+  ## تصدير PostgreSQL إلى Parquet
+</div>
+
+تتيح دالة الجدول `postgresql` تنفيذ استعلامات `SELECT` (و`INSERT`) على البيانات المخزنة على خادم PostgreSQL بعيد. على سبيل المثال، لعرض كامل محتويات جدول في PostgreSQL:
+
+```bash
+SELECT *
+FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+);
+```
+
+يمكننا توجيه ناتج هذا الاستعلام إلى ملف باستخدام `INTO OUTFILE`. استخدم `FORMAT` لتحديد تنسيق الملف المراد إنشاؤه. لنأخذ المحتوى الكامل لجدول PostgreSQL، ثم نرسل محتواه إلى ملف Parquet:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  بما أن اسم ملف الإخراج ينتهي بالامتداد `.parquet`، يفترض ClickHouse أننا نريد استخدام صيغة Parquet، لذا لاحظ أننا أغفلنا عبارة `FORMAT Parquet`.
+</Note>
+
+<div id="export-postgresql-to-csv">
+  ## تصدير PostgreSQL إلى CSV
+</div>
+
+الأمر مماثل لما هو عليه مع Parquet، باستثناء أننا نحدّد اسم ملف أنسب للمخرجات:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+هذا كل ما في الأمر! يتعرّف ClickHouse على الامتداد `.csv` في اسم ملف الإخراج، فيُخرج البيانات بصيغة القيم المفصولة بفواصل. وفيما عدا ذلك، فهو الأمر نفسه تمامًا كما في الأعلى.
+
+<div id="export-postgresql-to-json">
+  ## تصدير PostgreSQL إلى JSON
+</div>
+
+للتحويل من PostgreSQL إلى JSON، ما علينا سوى تغيير اسم الملف، وسيتعرّف ClickHouse على التنسيق تلقائيًا:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+<Note>
+  لا يلزمك التوقف عند هذا الحد — يمكنك استخدام `clickhouse-local` لسحب البيانات من PostgreSQL وإرسالها إلى [جميع أنواع صيغ الإخراج](/ar/reference/formats/index).
+
+  إذا لم يتمكن ClickHouse من تحديد نوع الإخراج من امتداد اسم الملف، أو إذا كنت تريد اختيار تنسيق معيّن صراحةً، فأضف العبارة `FOMRAT`:
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM
+     postgresql(
+      'localhost:5432',
+      'postgres_database',
+      'postgres_table',
+      'user',
+      'password'
+  )
+  INTO OUTFILE 'my_output_file.ndjson'
+  FORMAT JSONEachRow"
+  ```
+</Note>
+
+<div id="stream-postgresql-to-another-process">
+  ## تمرير PostgreSQL إلى عملية أخرى كتدفّق
+</div>
+
+بدلًا من استخدام `INTO OUTFILE`، يمكنك تمرير نتائج `دالة الجدول` إلى عملية أخرى كتدفّق. إليك مثالًا بسيطًا لتوضيح البنية - نحسب عدد الصفوف باستخدام أمر Linux `wc -l`:
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet'
+FORMAT JSONEachRow
+)" | wc -l
+```
+
+ومع ذلك، يمكننا بسهولة تمرير الصفوف بشكل متدفق إلى برنامج نصي لـ shell، أو برنامج نصي بلغة بايثون، أو أي عملية أخرى تريدها.

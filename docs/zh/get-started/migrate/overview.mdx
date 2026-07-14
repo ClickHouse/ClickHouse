@@ -1,0 +1,32 @@
+---
+sidebarTitle: '概述'
+slug: /integrations/migration/overview
+keywords: ['clickhouse', 'migrate', 'migration', 'migrating', 'data']
+title: '将数据迁移到 ClickHouse'
+description: '介绍将数据迁移到 ClickHouse 的可用选项'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="https://player.vimeo.com/video/753082620?h=eb566c8c08"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<br />
+
+将数据迁移到 ClickHouse Cloud 有多种方案，具体取决于您的数据当前位于何处：
+
+* [从自管理到 Cloud](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)：使用 `remoteSecure` 函数传输数据
+* [从其他 DBMS](/zh/get-started/migrate/other-methods/clickhouse-local-etl)：使用 [clickhouse-local] ETL 工具，并结合适用于当前 DBMS 的 ClickHouse 表函数
+* [从任何地方！](/zh/get-started/migrate/other-methods/etl-tool-to-clickhouse)：使用众多流行的 ETL/ELT 工具之一，它们可以连接各种不同的数据源
+* [对象存储](/zh/get-started/migrate/other-methods/object-storage-to-clickhouse)：轻松将 S3 中的数据插入 ClickHouse
+
+在示例 [从 Redshift 迁移](/zh/get-started/migrate/redshift/migration-guide) 中，我们介绍了三种将数据迁移到 ClickHouse 的不同方法。

@@ -1,0 +1,35 @@
+---
+title: README
+---
+
+<div id="products">
+  # 製品
+</div>
+
+**ここに含める内容:** ClickHouse の各種デプロイメント形態、およびマネージド製品や関連製品に関する製品別ドキュメントです。各サブディレクトリはそれぞれ独立しており、その製品領域に対応する概要、導入ガイド、各種ガイド、リファレンス資料を管理します。
+
+**対象読者:** 特定の ClickHouse 製品を利用するユーザー。ここにある内容は、読者がすでに対象製品を選んでおり、その製品に固有の詳細
+ (課金、デプロイメントトポロジー、製品固有の機能、Console/API
+の挙動) を知りたいことを前提としています。ClickHouse 全般に共通する内容、つまり概念、クエリ
+パターン、SQL リファレンスは、ここではなく `/core` に置くべきです。
+
+**サブディレクトリ:**
+
+* `cloud/` — ClickHouse Cloud (サーバーレスのマネージドサービス) 。
+* `clickstack/` — ClickStack。ClickHouse を基盤とするオブザーバビリティスタックです。
+* `bring-your-own-cloud/` — BYOC: 顧客自身の
+  クラウドアカウント上で稼働する ClickHouse Cloud。 (実際には Cloud のデプロイメントモードですが、簡潔にするためここでは分けています) 
+* `clickhouse-private/` — ClickHouse Private: 顧客のインフラストラクチャ上で実行する、分離された
+  セルフホスト型デプロイメント。 (実際には Cloud のデプロイメントモードですが、簡潔にするためここでは分けています) 
+* `kubernetes-operator/` — Kubernetes 上でクラスターをデプロイ
+  ・管理するための ClickHouse Kubernetes operator。
+* `managed-postgres/` — ClickHouse Cloud とネイティブに統合された
+  managed Postgres の提供形態。
+* `agentic-data-stack/` — エージェント型アナリティクススタック (ClickHouse + LibreChat
+  * Langfuse) 。
+* `chdb/` — chDB。ClickHouse のインプロセス版です。
+
+あるページが ClickHouse のエンジン、関数、設定、または概念について説明しており、それが
+製品に関係なく当てはまる場合は、`/core` (概念、ガイド、または
+リファレンス) に置くべきです。ここにページを置くのは、それがその製品と明確に結び付いている場合 —
+その Console、課金、デプロイメントモデル、または製品専用の機能に関わる場合に限ります。
