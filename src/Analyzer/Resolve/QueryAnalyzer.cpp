@@ -870,8 +870,8 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                #ifndef OS_LINUX
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
+                #if !defined(OS_LINUX) && !defined(OS_DARWIN)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux and macOS.");
                 #else
                     if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
