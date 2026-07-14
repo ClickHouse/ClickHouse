@@ -274,8 +274,10 @@ Pipe StorageSQLite::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true,
-                             /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
+    /// A read must never materialize a missing SQLite database. In particular, query-backed storages are
+    /// read-only and do not have pending generated-column reclassification, so deriving `allow_create` from
+    /// that flag would create an empty file on the first read after an `ATTACH` while the file is unavailable.
+    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
