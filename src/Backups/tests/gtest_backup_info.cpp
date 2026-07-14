@@ -497,6 +497,15 @@ TEST(BackupInfo, NormalizedStringRejectsDisallowedDiskWithContext)
     EXPECT_THROW((void)info.toNormalizedString(context), Exception);
 }
 
+TEST(BackupInfo, NormalizedStringCanonicalizesDiskRootPath)
+{
+    auto context = makeContextWithBackupAllowedDisk("default");
+    auto empty = BackupInfo::fromString("Disk('default', '')");
+    auto dot = BackupInfo::fromString("Disk('default', '.')");
+
+    EXPECT_EQ(empty.toNormalizedString(context), dot.toNormalizedString(context));
+}
+
 TEST(BackupInfo, NormalizedStringCanonicalizesFilePath)
 {
     auto context = makeContextWithBackupAllowedPaths();

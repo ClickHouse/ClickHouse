@@ -50,6 +50,9 @@ void checkBackupDiskPath(const String & disk_name, const DiskPtr & disk, fs::pat
             "Path '{}' to backup must be inside the specified disk '{}'",
             quoteString(path.c_str()),
             quoteString(disk_name));
+
+    if (path == ".")
+        path.clear();
 }
 
 void checkBackupFilePath(
