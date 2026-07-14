@@ -1,0 +1,279 @@
+---
+sidebarTitle: '고급 데이터 삽입'
+keywords: ['ClickHouse', 'Python', '삽입', '고급']
+description: 'ClickHouse Connect를 사용한 고급 데이터 삽입'
+slug: /integrations/language-clients/python/advanced-inserting
+title: '고급 데이터 삽입'
+doc_type: 'reference'
+---
+
+<div id="inserting-data-with-clickhouse-connect--advanced-usage">
+  ## ClickHouse Connect를 사용한 데이터 삽입: 고급 사용법
+</div>
+
+<div id="insertcontexts">
+  ### InsertContexts
+</div>
+
+ClickHouse Connect는 모든 삽입 작업을 `InsertContext` 내에서 실행합니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 Native 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
+
+`InsertContext`는 클라이언트 `create_insert_context` 메서드로 가져올 수 있습니다. 이 메서드는 `insert` 함수와 동일한 인수를 받습니다. 재사용 시에는 `InsertContext`의 `data` 속성만 수정해야 합니다. 이는 동일한 테이블에 새 데이터를 반복적으로 삽입할 때 재사용 가능한 객체를 제공하려는 목적에 부합합니다.
+
+```python
+test_data = [[1, 'v1', 'v2'], [2, 'v3', 'v4']]
+ic = test_client.create_insert_context(table='test_table', data='test_data')
+client.insert(context=ic)
+assert client.command('SELECT count() FROM test_table') == 2
+new_data = [[3, 'v5', 'v6'], [4, 'v7', 'v8']]
+ic.data = new_data
+client.insert(context=ic)
+qr = test_client.query('SELECT * FROM test_table ORDER BY key DESC')
+assert qr.row_count == 4
+assert qr[0][0] == 4
+```
+
+`InsertContext`s에는 삽입 과정에서 갱신되는 가변 상태가 포함되어 있으므로 스레드에 안전하지 않습니다.
+
+<div id="write-formats">
+  ### 쓰기 포맷
+</div>
+
+현재 쓰기 포맷은 일부 타입에 대해서만 구현되어 있습니다. 대부분의 경우 ClickHouse Connect는 첫 번째 (NULL이 아닌) 데이터 값의 타입을 확인해 컬럼에 맞는 올바른 쓰기 포맷을 자동으로 판단합니다. 예를 들어 `DateTime` 컬럼에 삽입할 때 해당 컬럼의 첫 번째 삽입 값이 Python 정수이면, ClickHouse Connect는 이를 실제로 epoch 초로 간주하고 정수 값을 직접 삽입합니다.
+
+대부분의 경우 데이터 타입의 쓰기 포맷을 재정의할 필요는 없지만, 전역 수준에서 재정의해야 한다면 `clickhouse_connect.datatypes.format` 패키지의 관련 메서드를 사용할 수 있습니다.
+
+<div id="write-format-options">
+  #### 쓰기 포맷 옵션
+</div>
+
+| ClickHouse 유형               | 네이티브 Python 타입          | 쓰기 포맷             | 비고                                                                                     |
+| --------------------------- | ----------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32]       | int                     | -                 |                                                                                        |
+| UInt64                      | int                     |                   |                                                                                        |
+| [U]Int[128,256]             | int                     |                   |                                                                                        |
+| BFloat16                    | float                   |                   |                                                                                        |
+| Float32                     | float                   |                   |                                                                                        |
+| Float64                     | float                   |                   |                                                                                        |
+| Decimal                     | decimal.Decimal         |                   |                                                                                        |
+| String                      | string                  |                   |                                                                                        |
+| FixedString                 | bytes                   | string            | 문자열로 삽입하면 추가 바이트는 0으로 설정됩니다                                                            |
+| Enum[8,16]                  | string                  |                   |                                                                                        |
+| Date                        | datetime.date           | int               | ClickHouse는 Date를 01/01/1970 이후의 일수로 저장합니다. int 타입은 이 &quot;epoch date&quot; 값으로 간주됩니다 |
+| Date32                      | datetime.date           | int               | Date와 같지만 더 넓은 날짜 범위를 지원합니다                                                            |
+| DateTime                    | datetime.datetime       | int               | ClickHouse는 DateTime을 epoch 초 단위로 저장합니다. int 타입은 이 &quot;epoch second&quot; 값으로 간주됩니다  |
+| DateTime64                  | datetime.datetime       | int               | Python datetime.datetime은 마이크로초 정밀도까지만 지원합니다. 원시 64비트 int 값을 사용할 수 있습니다                |
+| Time                        | datetime.timedelta      | int, string, time | ClickHouse는 DateTime을 epoch 초 단위로 저장합니다. int 타입은 이 &quot;epoch second&quot; 값으로 간주됩니다  |
+| Time64                      | datetime.timedelta      | int, string, time | Python datetime.timedelta은 마이크로초 정밀도까지만 지원합니다. 원시 64비트 int 값을 사용할 수 있습니다               |
+| IPv4                        | `ipaddress.IPv4Address` | string            | 올바른 형식의 문자열은 IPv4 주소로 삽입할 수 있습니다                                                       |
+| IPv6                        | `ipaddress.IPv6Address` | string            | 올바른 형식의 문자열은 IPv6 주소로 삽입할 수 있습니다                                                       |
+| Tuple                       | dict or tuple           |                   |                                                                                        |
+| Map                         | dict                    |                   |                                                                                        |
+| Nested                      | Sequence[dict]          |                   |                                                                                        |
+| UUID                        | uuid.UUID               | string            | 올바른 형식의 문자열은 ClickHouse UUID로 삽입할 수 있습니다                                               |
+| JSON/Object(&#39;json&#39;) | dict                    | string            | 딕셔너리 또는 JSON 문자열을 JSON 컬럼에 삽입할 수 있습니다 (`Object('json')`은 더 이상 권장되지 않음)                 |
+| Variant                     | object                  |                   | 현재는 모든 Variant 값이 String으로 삽입된 뒤 ClickHouse 서버에서 파싱됩니다                                 |
+| Dynamic                     | object                  |                   | 경고 -- 현재 Dynamic 컬럼에 삽입되는 모든 값은 ClickHouse String으로 저장됩니다                              |
+
+<div id="specialized-insert-methods">
+  ### 특수화된 삽입 메서드
+</div>
+
+ClickHouse Connect는 일반적으로 사용되는 데이터 포맷에 대해 특수화된 삽입 메서드를 제공합니다.
+
+* `insert_df` -- Pandas DataFrame을 삽입합니다. Python 시퀀스(Sequence)의 시퀀스인 `data` 인수 대신, 이 메서드의 두 번째 매개변수로는 Pandas DataFrame 인스턴스여야 하는 `df` 인수가 필요합니다. ClickHouse Connect는 DataFrame을 컬럼 지향 데이터 소스로 자동 처리하므로 `column_oriented` 매개변수는 필요하지 않으며 사용할 수도 없습니다.
+* `insert_arrow` -- PyArrow Table을 삽입합니다. ClickHouse Connect는 Arrow table을 수정하지 않은 채 ClickHouse 서버로 전달해 처리하므로, `table` 및 `arrow_table` 외에는 `database` 및 `settings` 인수만 사용할 수 있습니다.
+* `insert_df_arrow` -- Arrow 기반 Pandas DataFrame 또는 Polars DataFrame을 삽입합니다. ClickHouse Connect는 DataFrame이 Pandas 유형인지 Polars 유형인지 자동으로 판별합니다. Pandas인 경우 각 컬럼의 dtype backend가 Arrow 기반인지 확인하는 검증이 수행되며, 하나라도 그렇지 않으면 오류가 발생합니다.
+
+<Note>
+  NumPy array는 유효한 시퀀스(Sequence)의 시퀀스이므로 기본 `insert` 메서드의 `data` 인수로 사용할 수 있습니다. 따라서 별도의 특수화된 메서드는 필요하지 않습니다.
+</Note>
+
+<div id="pandas-dataframe-insert">
+  #### Pandas DataFrame 삽입
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+df = pd.DataFrame({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+})
+
+client.insert_df("users", df)
+```
+
+<div id="pyarrow-table-insert">
+  #### PyArrow Table 삽입
+</div>
+
+```python
+import clickhouse_connect
+import pyarrow as pa
+
+client = clickhouse_connect.get_client()
+
+arrow_table = pa.table({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+})
+
+client.insert_arrow("users", arrow_table)
+```
+
+<div id="arrow-backed-dataframe-insert-pandas-2">
+  #### Arrow 기반 DataFrame 삽입 (pandas 2.x)
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+# 성능 향상을 위해 Arrow 기반 dtype으로 변환
+df = pd.DataFrame({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+}).convert_dtypes(dtype_backend="pyarrow")
+
+client.insert_df_arrow("users", df)
+```
+
+<div id="time-zones">
+  ### 시간대
+</div>
+
+Python `datetime.datetime` 객체를 ClickHouse `DateTime` 또는 `DateTime64` 컬럼에 삽입할 때, ClickHouse Connect는 시간대 정보를 자동으로 처리합니다. ClickHouse는 모든 DateTime 값을 내부적으로 시간대 정보가 없는 Unix timestamp(Unix epoch 이후의 초 또는 소수점 이하 초)로 저장하므로, 시간대 변환은 삽입 시 클라이언트 측에서 자동으로 수행됩니다.
+
+<div id="timezone-aware-datetime-objects">
+  #### 시간대 인식 datetime 객체
+</div>
+
+시간대 정보가 포함된 Python `datetime.datetime` 객체를 삽입하면 ClickHouse Connect는 이를 Unix timestamp로 변환하기 위해 `.timestamp()`를 자동으로 호출하며, 이때 시간대 오프셋이 올바르게 반영됩니다. 즉, 어느 시간대의 datetime 객체를 삽입하더라도 UTC 기준의 해당 타임스탬프로 정확하게 저장됩니다.
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+client.command("CREATE TABLE events (event_time DateTime) ENGINE Memory")
+
+# 시간대 인식 datetime 객체 삽입
+denver_tz = pytz.timezone('America/Denver')
+tokyo_tz = pytz.timezone('Asia/Tokyo')
+
+data = [
+    [datetime(2023, 6, 15, 10, 30, 0, tzinfo=pytz.UTC)],
+    [denver_tz.localize(datetime(2023, 6, 15, 10, 30, 0))],
+    [tokyo_tz.localize(datetime(2023, 6, 15, 10, 30, 0))]
+]
+
+client.insert('events', data, column_names=['event_time'])
+results = client.query("SELECT * from events")
+print(*results.result_rows, sep="\n")
+# 출력:
+# (datetime.datetime(2023, 6, 15, 10, 30),)
+# (datetime.datetime(2023, 6, 15, 16, 30),)
+# (datetime.datetime(2023, 6, 15, 1, 30),)
+```
+
+이 예시에서 3개의 datetime 객체는 시간대가 서로 다르므로 각각 다른 시점을 나타냅니다. 각 객체는 해당 Unix timestamp로 올바르게 변환되어 ClickHouse에 저장됩니다.
+
+<Note>
+  pytz를 사용할 때는 naive datetime에 시간대 정보를 지정하려면 반드시 `localize()` 메서드를 사용해야 합니다. `tzinfo=`를 datetime 생성자에 직접 전달하면 과거 오프셋이 잘못 적용됩니다. UTC의 경우 `tzinfo=pytz.UTC`를 사용해도 올바르게 동작합니다. 자세한 내용은 [pytz 문서](https://pythonhosted.org/pytz/#localized-times-and-date-arithmetic)를 참조하십시오.
+</Note>
+
+<div id="timezone-naive-datetime-objects">
+  #### 시간대 정보가 없는 datetime 객체
+</div>
+
+시간대 정보가 없는 Python `datetime.datetime` 객체(`tzinfo`가 없는 객체)를 삽입하면 `.timestamp()` 메서드는 이를 시스템의 로컬 시간대로 해석합니다. 이러한 모호성을 피하려면 다음을 권장합니다.
+
+1. 삽입할 때는 항상 시간대 정보가 있는 datetime 객체를 사용하거나,
+2. 시스템 시간대가 UTC로 설정되어 있는지 확인하거나,
+3. 삽입하기 전에 수동으로 epoch 타임스탬프로 변환하십시오
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+
+# 권장: 항상 시간대 인식 datetime 객체를 사용하세요
+utc_time = datetime(2023, 6, 15, 10, 30, 0, tzinfo=pytz.UTC)
+client.insert('events', [[utc_time]], column_names=['event_time'])
+
+# 대안: epoch 타임스탬프로 수동 변환
+naive_time = datetime(2023, 6, 15, 10, 30, 0)
+epoch_timestamp = int(naive_time.replace(tzinfo=pytz.UTC).timestamp())
+client.insert('events', [[epoch_timestamp]], column_names=['event_time'])
+```
+
+<div id="datetime-columns-with-timezone-metadata">
+  #### 시간대 메타데이터가 포함된 DateTime 컬럼
+</div>
+
+ClickHouse 컬럼은 시간대 메타데이터를 포함해 정의할 수 있습니다(예: `DateTime('America/Denver')` 또는 `DateTime64(3, 'Asia/Tokyo')`). 이 메타데이터는 데이터 저장 방식에는 영향을 주지 않지만(여전히 UTC 타임스탬프로 저장됨), ClickHouse에서 데이터를 다시 쿼리할 때 사용할 시간대를 결정합니다.
+
+이러한 컬럼에 삽입할 때 ClickHouse Connect는 Python datetime을 Unix timestamp로 변환합니다(시간대 정보가 있으면 이를 반영함). 데이터를 다시 쿼리하면, 삽입할 때 어떤 시간대를 사용했는지와 관계없이 ClickHouse Connect는 컬럼의 시간대로 변환된 datetime을 반환합니다.
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+
+# Los Angeles 시간대 메타데이터로 테이블 생성
+client.command("CREATE TABLE events (event_time DateTime('America/Los_Angeles')) ENGINE Memory")
+
+# 뉴욕 시간 삽입 (EDT 오전 10:30, UTC 기준 14:30)
+ny_tz = pytz.timezone("America/New_York")
+data = ny_tz.localize(datetime(2023, 6, 15, 10, 30, 0))
+client.insert("events", [[data]], column_names=["event_time"])
+
+# 쿼리 결과 조회 시 시간이 자동으로 Los Angeles 시간대로 변환됨
+# 뉴욕 오전 10:30 (UTC-4) = UTC 14:30 = Los Angeles 오전 7:30 (UTC-7)
+results = client.query("select * from events")
+print(*results.result_rows, sep="\n")
+# 출력:
+# (datetime.datetime(2023, 6, 15, 7, 30, tzinfo=<DstTzInfo 'America/Los_Angeles' PDT-1 day, 17:00:00 DST>),)
+```
+
+<div id="file-inserts">
+  ## 파일 삽입
+</div>
+
+`clickhouse_connect.driver.tools` 패키지에는 파일 시스템에서 기존 ClickHouse 테이블로 직접 데이터를 삽입할 수 있는 `insert_file` 메서드가 포함되어 있습니다. 파싱은 ClickHouse 서버에 위임됩니다. `insert_file`은 다음 매개변수를 받습니다.
+
+| Parameter        | Type            | Default           | Description                                                                           |
+| ---------------- | --------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| client           | Client          | *Required*        | 삽입을 수행하는 데 사용하는 `driver.Client`                                                       |
+| table            | str             | *Required*        | 데이터를 삽입할 ClickHouse 테이블입니다. 데이터베이스를 포함한 전체 테이블 이름도 사용할 수 있습니다.                        |
+| file&#95;path    | str             | *Required*        | 데이터 파일의 네이티브 파일 시스템 경로                                                                |
+| fmt              | str             | CSV, CSVWithNames | 파일의 ClickHouse 입력 형식입니다. `column_names`가 제공되지 않으면 CSVWithNames를 사용하는 것으로 간주합니다        |
+| column&#95;names | Sequence of str | *None*            | 데이터 파일에 있는 컬럼 이름 목록입니다. 컬럼 이름이 포함된 포맷에는 필요하지 않습니다                                     |
+| database         | str             | *None*            | 테이블이 속한 데이터베이스입니다. 테이블 이름에 데이터베이스까지 포함되어 있으면 무시됩니다. 지정하지 않으면 삽입 시 클라이언트 데이터베이스를 사용합니다 |
+| settings         | dict            | *None*            | [설정 설명](/ko/integrations/language-clients/python/driver-api#settings-argument)을 참조하십시오.  |
+| compression      | str             | *None*            | `Content-Encoding` HTTP 헤더에 사용되는 ClickHouse 지원 압축 유형(zstd, lz4, gzip)입니다              |
+
+데이터가 일관되지 않거나 날짜/시간 값의 포맷이 일반적이지 않은 파일의 경우, 데이터 가져오기에 적용되는 설정(`input_format_allow_errors_num`, `input_format_allow_errors_num` 등)도 이 메서드에서 사용할 수 있습니다.
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver.tools import insert_file
+
+client = clickhouse_connect.get_client()
+insert_file(client, 'example_table', 'my_data.csv',
+            settings={'input_format_allow_errors_ratio': .2,
+                      'input_format_allow_errors_num': 5})
+```

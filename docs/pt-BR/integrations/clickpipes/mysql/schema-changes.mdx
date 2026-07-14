@@ -1,0 +1,39 @@
+---
+title: 'Suporte à propagação de alterações de esquema'
+slug: /integrations/clickpipes/mysql/schema-changes
+description: 'Página que descreve os tipos de alteração de esquema que o ClickPipes consegue detectar nas tabelas de origem'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+O ClickPipes para MySQL pode detectar alterações de esquema nas tabelas de origem e, em alguns casos, propagá-las automaticamente para as tabelas de destino. A forma como cada operação DDL é tratada está documentada abaixo:
+
+[//]: # "TODO Expandir esta página com o comportamento para rename, alterações de tipo de dado e truncate + orientações sobre como lidar com alterações de esquema incompatíveis."
+
+| Tipo de alteração de esquema                                                          | Comportamento                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adição de uma nova coluna (`ALTER TABLE ADD COLUMN ...`)                              | Propagada automaticamente. As novas colunas serão preenchidas em todas as linhas replicadas após a alteração de esquema                                                                                              |
+| Adição de uma nova coluna com valor padrão (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagada automaticamente. As novas colunas serão preenchidas em todas as linhas replicadas após a alteração de esquema, mas as linhas existentes não exibirão o valor padrão sem uma atualização completa da tabela |
+| Remoção de uma coluna existente (`ALTER TABLE DROP COLUMN ...`)                       | Detectada, mas **não** propagada. As colunas removidas serão preenchidas com `NULL` em todas as linhas replicadas após a alteração de esquema                                                                        |
+
+<Note>
+  No momento, adições de colunas durante o snapshot não têm suporte. A solução alternativa recomendada é executar snapshots antes ou depois de alterações de esquema planejadas ou, se o ClickPipe já estiver falhando, adicionar manualmente uma coluna do tipo apropriado à tabela de destino.
+</Note>
+
+<div id="mysql-5-limitations">
+  ### Limitações do MySQL 5.x
+</div>
+
+Versões do MySQL anteriores à [8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) não incluem metadados completos das colunas no binlog (`binlog_row_metadata=FULL`), então o ClickPipes rastreia as colunas pela posição ordinal. Isso significa:
+
+* **Adicionar uma coluna no final** (`ALTER TABLE ADD COLUMN ...`) é suportado.
+* **Qualquer DDL que altere as posições das colunas** fará com que o pipe gere um erro, porque as posições ordinais deixam de poder ser mapeadas com confiabilidade. Isso inclui:
+  * `ALTER TABLE DROP COLUMN ...`
+  * `ALTER TABLE ADD COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE MODIFY COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE CHANGE COLUMN ... AFTER ...` / `FIRST`
+
+Se esse erro ocorrer, será necessário ressincronizar o pipe.

@@ -1,0 +1,377 @@
+---
+sidebarTitle: 'SAML SSO 설정'
+slug: /cloud/security/saml-setup
+title: 'SAML SSO 설정'
+description: 'ClickHouse Cloud에서 SAML SSO를 설정하는 방법'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP', 'Okta', 'Google']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+ClickHouse Cloud는 Security Assertion Markup Language(SAML)를 통한 싱글 사인온(SSO)을 지원합니다. 이를 통해 IdP(Identity Provider)로 인증하여 ClickHouse Cloud 조직에 안전하게 로그인할 수 있습니다.
+
+서비스 제공자 시작 SSO, 각기 별도의 연결을 사용하는 여러 조직, 그리고 Just-in-Time 프로비저닝을 지원합니다. 또한 Okta를 지원하는 [SCIM 프로비저닝](/ko/products/cloud/guides/security/cloud-access-management/scim-setup)을 비공개 프리뷰로 제공합니다. 아직 속성 매핑은 지원하지 않습니다.
+
+SAML 통합을 활성화한 고객은 새 사용자에게 할당할 기본 역할을 지정하고 세션 타임아웃 설정을 조정할 수도 있습니다.
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+IdP에서 관리자 권한이 있어야 하며, 도메인의 DNS 설정에 TXT 레코드를 추가할 수 있어야 하고, ClickHouse Cloud 조직에서 **관리자** 역할도 보유해야 합니다. 로그인 과정을 더 간소화하려면 SAML 연결과 함께 **조직으로 바로 이동하는 직접 링크**도 설정하는 것이 좋습니다. 이 설정 방법은 IdP마다 다릅니다. 사용 중인 IdP에서 설정하는 방법은 아래를 참조하십시오.
+
+<div id="how-to-configure-your-idp">
+  ## IdP 구성 방법
+</div>
+
+<div id="steps">
+  ### 절차
+</div>
+
+<Steps>
+  <Step>
+    ### 조직 설정 열기
+
+    왼쪽 하단의 조직 이름을 클릭한 다음 &quot;Organization details&quot;를 선택하십시오.
+  </Step>
+
+  <Step>
+    ### SAML Single Sign-On 사용 설정
+
+    `Enable SAML single sign-on` 옆의 토글을 클릭하세요. 설정 과정에서 이 화면을 여러 번 다시 확인하게 되므로 열린 상태로 유지하세요.
+
+    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="SAML 설정 시작" force />
+  </Step>
+
+  <Step>
+    ### IdP(Identity Provider)에서 애플리케이션 만들기
+
+    IdP(Identity Provider)에서 애플리케이션을 만들고 `Enable SAML single sign-on` 화면의 값을 IdP(Identity Provider) 구성에 복사하십시오. 이 단계에 대한 자세한 내용은 아래의 IdP(Identity Provider)별 안내를 참조하십시오.
+
+    * [Okta SAML 구성](#configure-okta-saml)
+    * [Google SAML 구성](#configure-google-saml)
+    * [Azure (Microsoft) SAML 구성](#configure-azure-microsoft-saml)
+    * [Duo SAML 구성](#configure-duo-saml)
+
+    <Tip>
+      ClickHouse는 IdP(Identity Provider)에서 시작되는 로그인을 지원하지 않습니다. 사용자가 ClickHouse Cloud에 쉽게 액세스할 수 있도록, 다음 형식의 로그인 URL을 북마크로 설정하십시오: `https://console.clickhouse.cloud/?connection={orgId}`. 여기서 `{orgID}`는 Organization details 페이지에 있는 조직 ID입니다.
+    </Tip>
+
+    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="아이덴티티 공급자 애플리케이션 만들기" force />
+  </Step>
+
+  <Step>
+    ### 메타데이터 URL을 SAML 구성에 추가
+
+    SAML 제공업체에서 `Metadata URL`을 가져오십시오. ClickHouse Cloud로 돌아가 `다음: 메타데이터 URL 제공`을 클릭한 다음 텍스트 상자에 URL을 붙여넣으십시오.
+
+    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="메타데이터 URL 추가" force />
+  </Step>
+
+  <Step>
+    ### 도메인 확인 코드 가져오기
+
+    `Next: Verify your domains`를 클릭하십시오. 텍스트 상자에 도메인을 입력한 다음 `Check domain`을 클릭하십시오. 그러면 DNS 제공업체의 TXT 레코드에 추가할 임의의 확인 코드가 생성됩니다.
+
+    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="확인할 도메인 추가" force />
+  </Step>
+
+  <Step>
+    ### 도메인 확인
+
+    DNS provider에서 TXT 레코드를 생성하십시오. `TXT record name`을 DNS provider의 TXT 레코드 Name 필드에 복사하고, `Value`를 DNS provider의 Content 필드에 복사하십시오. 프로세스를 완료하려면 `Verify and Finish`를 클릭하십시오.
+
+    <Note>
+      DNS 레코드가 업데이트되고 확인되기까지 몇 분 정도 걸릴 수 있습니다. 설정 페이지를 나갔다가 나중에 돌아와도 처음부터 다시 시작하지 않고 프로세스를 완료할 수 있습니다.
+    </Note>
+
+    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="도메인 확인" force />
+  </Step>
+
+  <Step>
+    ### 기본 역할 및 세션 timeout 업데이트
+
+    SAML 설정이 완료되면 로그인 시 모든 사용자에게 할당할 기본 역할을 설정하고, 세션 timeout 설정도 조정할 수 있습니다. 할당 가능한 시스템 역할 목록은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+  </Step>
+
+  <Step>
+    ### 관리자 사용자 설정
+
+    <Note>
+      다른 인증 메서드로 구성된 사용자는 조직의 관리자가 제거할 때까지 그대로 유지됩니다.
+    </Note>
+
+    SAML을 통해 첫 번째 관리자 사용자를 할당하려면 다음 단계를 수행하십시오:
+
+    1. [ClickHouse Cloud](https://console.clickhouse.cloud)에서 로그아웃합니다.
+    2. IdP(Identity Provider)에서 관리자 사용자를 ClickHouse 애플리케이션에 할당합니다.
+    3. 해당 사용자에게 https://console.clickhouse.cloud/?connection={orgId}(바로가기 URL)를 통해 로그인하도록 안내합니다. 이전 단계에서 만든 북마크를 사용해도 됩니다. 사용자가 처음 로그인하기 전에는 ClickHouse Cloud에 표시되지 않습니다.
+    4. 기본 SAML 역할이 Admin이 아닌 경우, 새 SAML 사용자의 역할을 업데이트하려면 원래 인증 메서드로 로그아웃한 후 다시 로그인해야 할 수 있습니다.
+       * 이메일 + 비밀번호 계정의 경우 `https://console.clickhouse.cloud/?with=email`을 사용하십시오.
+       * 소셜 로그인의 경우 해당 버튼(**Continue with Google** 또는 **Continue with Microsoft**)을 클릭하십시오.
+
+    <Note>
+      위의 `?with=email`에서 `email`은 자리 표시자가 아니라 리터럴 매개변수 값입니다.
+    </Note>
+
+    5. 아래의 마지막 단계를 완료하려면 한 번 더 로그아웃한 다음 바로가기 URL을 통해 다시 로그인합니다.
+
+    <Tip>
+      단계를 줄이려면 처음에는 SAML 기본 역할을 `Admin`으로 설정할 수 있습니다. IdP(Identity Provider)에서 관리자가 할당되고 처음 로그인하면 기본 역할을 다른 값으로 변경할 수 있습니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 다른 인증 메서드 제거
+
+    통합을 완료하고 IdP(Identity Provider) 연결에서 시작된 사용자만 액세스할 수 있도록 제한하려면, SAML이 아닌 인증 메서드를 사용하는 사용자를 모두 제거하십시오.
+  </Step>
+</Steps>
+
+<div id="configure-okta-saml">
+  ### Okta SAML 구성
+</div>
+
+각 ClickHouse 조직마다 Okta에서 2개의 App Integration을 구성해야 합니다. 하나는 SAML 앱이고, 다른 하나는 직접 링크를 위한 북마크입니다.
+
+<Accordion title="1. 액세스 관리를 위한 그룹 만들기">
+  1. **Administrator** 권한으로 Okta 인스턴스에 로그인합니다.
+
+  2. 왼쪽에서 **Groups**를 선택합니다.
+
+  3. **Add group**을 클릭합니다.
+
+  4. 그룹 이름과 설명을 입력합니다. 이 그룹은 SAML 앱과 연결된 북마크 앱 간에 사용자 할당을 일관되게 유지하는 데 사용됩니다.
+
+  5. **Save**를 클릭합니다.
+
+  6. 생성한 그룹의 이름을 클릭합니다.
+
+  7. 이 ClickHouse 조직에 액세스할 사용자를 할당하려면 **Assign people**을 클릭합니다.
+</Accordion>
+
+<Accordion title="2. 사용자가 원활하게 로그인할 수 있도록 북마크 앱 만들기">
+  1. 왼쪽에서 **Applications**를 선택한 다음, **Applications** 하위 메뉴를 선택합니다.
+
+  2. **Browse App Catalog**를 클릭합니다.
+
+  3. **Bookmark App**을 검색해 선택합니다.
+
+  4. **Add integration**을 클릭합니다.
+
+  5. 앱의 레이블을 선택합니다.
+
+  6. URL을 `https://console.clickhouse.cloud/?connection={organizationid}`로 입력합니다.
+
+  7. **Assignments** 탭으로 이동한 다음 위에서 만든 그룹을 추가합니다.
+</Accordion>
+
+<Accordion title="3. 연결 활성화를 위한 SAML 앱 만들기">
+  1. 왼쪽에서 **Applications**를 선택한 다음, **Applications** 하위 메뉴를 선택합니다.
+
+  2. **Create App Integration**을 클릭합니다.
+
+  3. SAML 2.0을 선택하고 **Next**를 클릭합니다.
+
+  4. 애플리케이션 이름을 입력하고 **Don&#39;t display application icon to users** 옆의 확인란을 선택한 다음 **Next**를 클릭합니다.
+
+  5. 다음 값으로 SAML 설정 화면을 입력합니다.
+
+     | Field                          | Value                                  |
+     | ------------------------------ | -------------------------------------- |
+     | Single Sign On URL             | 콘솔에서 Single Sign-On URL을 복사합니다         |
+     | Audience URI (SP Entity ID)    | 콘솔에서 Service Provider Entity ID를 복사합니다 |
+     | Default RelayState             | 비워 둡니다                                 |
+     | Name ID format                 | Unspecified                            |
+     | Application username           | Email                                  |
+     | Update application username on | Create and update                      |
+
+  6. 다음 Attribute Statement를 입력합니다.
+
+     | Name  | Name format | Value      |
+     | ----- | ----------- | ---------- |
+     | email | Basic       | user.email |
+
+  7. **Next**를 클릭합니다.
+
+  8. Feedback 화면에서 요청된 정보를 입력한 후 **Finish**를 클릭합니다.
+
+  9. **Assignments** 탭으로 이동한 다음 위에서 만든 그룹을 추가합니다.
+
+  10. 새 앱의 **Sign On** 탭에서 **Copy metadata URL** 버튼을 클릭합니다.
+
+  11. 계속 진행하려면 [메타데이터 URL을 SAML 구성에 추가](#add-metadata-url)로 돌아갑니다.
+</Accordion>
+
+<div id="configure-google-saml">
+  ### Google SAML 구성
+</div>
+
+조직마다 Google에서 SAML 앱 1개를 구성해야 하며, multi-org SSO를 사용하는 경우 사용자가 북마크할 수 있도록 직접 링크(`https://console.clickhouse.cloud/?connection={organizationId}`)를 제공해야 합니다.
+
+<Accordion title="Google 웹 앱 만들기">
+  1. Google Admin 콘솔(admin.google.com)로 이동합니다.
+
+  <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML 앱" force />
+
+  2. **Apps**를 클릭한 다음, 왼쪽에서 **Web and mobile apps**를 클릭합니다.
+
+  3. 상단 메뉴에서 **Add app**을 클릭한 다음 **Add custom SAML app**을 선택합니다.
+
+  4. 앱 이름을 입력하고 **Continue**를 클릭합니다.
+
+  5. 메타데이터 URL을 복사해 따로 저장합니다.
+
+  6. 아래 값을 사용해 ACS URL과 Entity ID를 입력합니다.
+
+     | 필드        | 값                                      |
+     | --------- | -------------------------------------- |
+     | ACS URL   | 콘솔에서 Single Sign-On URL을 복사합니다         |
+     | Entity ID | 콘솔에서 Service Provider Entity ID를 복사합니다 |
+
+  7. **Signed response** 체크박스를 선택합니다.
+
+  8. Name ID Format에는 **EMAIL**을 선택하고, Name ID는 **Basic Information &gt; Primary email**로 그대로 둡니다.
+
+  9. **Continue**를 클릭합니다.
+
+  10. 다음 속성 매핑을 입력합니다.
+
+  | 필드                | 값             |
+  | ----------------- | ------------- |
+  | Basic information | Primary email |
+  | App attributes    | email         |
+
+  13. **Finish**를 클릭합니다.
+
+  14. 앱을 사용 설정하려면 모든 사용자에 대해 **OFF**를 클릭한 뒤 설정을 모든 사용자에 대해 **ON**으로 변경합니다. 화면 왼쪽의 옵션을 선택해 그룹 또는 조직 단위로 액세스를 제한할 수도 있습니다.
+
+  15. 계속하려면 [메타데이터 URL을 SAML 구성에 추가](#add-metadata-url)로 돌아갑니다.
+</Accordion>
+
+<div id="configure-azure-microsoft-saml">
+  ### Azure (Microsoft) SAML 구성
+</div>
+
+Azure (Microsoft) SAML은 Azure Active Directory (AD) 또는 Microsoft Entra라고도 불립니다.
+
+<Accordion title="Azure Enterprise 애플리케이션 만들기">
+  각 조직에 대해 별도의 Single Sign-On URL을 사용하여 애플리케이션 통합 하나를 설정합니다.
+
+  1. Microsoft Entra 관리 센터에 로그인합니다.
+
+  2. 왼쪽 메뉴에서 **Applications &gt; Enterprise** 애플리케이션으로 이동합니다.
+
+  3. 상단 메뉴에서 **New application**을 클릭합니다.
+
+  4. 상단 메뉴에서 **Create your own application**을 클릭합니다.
+
+  5. 이름을 입력하고 **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**를 선택한 다음 **Create**를 클릭합니다.
+
+     <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure 비갤러리 앱" force />
+
+  6. 왼쪽에서 **Users and groups**를 클릭한 다음 사용자를 할당합니다.
+
+  7. 왼쪽에서 **Single sign-on**을 클릭합니다.
+
+  8. **SAML**을 클릭합니다.
+
+  9. 다음 설정을 사용해 Basic SAML Configuration 화면을 채웁니다.
+
+     | 필드                                     | 값                                                               |
+     | -------------------------------------- | --------------------------------------------------------------- |
+     | 식별자(Entity ID)                         | 콘솔에서 Service Provider Entity ID를 복사합니다                          |
+     | 회신 URL(Assertion Consumer Service URL) | 콘솔에서 Single Sign-On URL을 복사합니다                                  |
+     | 로그인 URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
+     | Relay State                            | 비워 둡니다                                                          |
+     | 로그아웃 URL                               | 비워 둡니다                                                          |
+
+  10. Attributes &amp; Claims 아래에서 다음 항목을 추가(A)하거나 업데이트(U)합니다.
+
+      | 클레임 이름                    | 포맷     | 원본 속성     |
+      | ------------------------- | ------ | --------- |
+      | (U) 고유 사용자 식별자(Name ID)   | 이메일 주소 | user.mail |
+      | (A) email                 | Basic  | user.mail |
+      | (U) /identity/claims/name | 생략됨    | user.mail |
+
+      <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="속성 및 클레임" force />
+
+  11. 메타데이터 URL을 복사한 다음, [메타데이터 URL을 SAML 구성에 추가하기](#add-metadata-url)로 돌아가 계속 진행합니다.
+</Accordion>
+
+<div id="configure-duo-saml">
+  ### Duo SAML 구성
+</div>
+
+<Accordion title="Duo용 Generic SAML 서비스 공급자 생성">
+  1. [Generic SAML 서비스 공급자용 Duo Single Sign-On](https://duo.com/docs/sso-generic)의 안내를 따르십시오.
+
+  2. 다음 Bridge Attribute 매핑을 사용하십시오:
+
+     | Bridge Attribute | ClickHouse Attribute |
+     | :--------------- | :------------------- |
+     | 이메일 주소           | email                |
+
+  3. 다음 값을 사용하여 Duo의 Cloud 애플리케이션을 업데이트하십시오:
+
+     | 필드                                   | 값                                                               |
+     | :----------------------------------- | :-------------------------------------------------------------- |
+     | Entity ID                            | 콘솔에서 Service Provider Entity ID를 복사합니다                          |
+     | Assertion Consumer Service (ACS) URL | 콘솔에서 Single Sign-On URL을 복사합니다                                  |
+     | Service Provider Login URL           | `https://console.clickhouse.cloud/?connection={organizationid}` |
+
+  4. 메타데이터 URL을 복사한 후 [메타데이터 URL을 SAML 구성에 추가](#add-metadata-url)로 돌아가 다음 단계를 진행하십시오.
+</Accordion>
+
+<div id="how-it-works">
+  ## 동작 방식
+</div>
+
+<div id="user-management-with-saml-sso">
+  ### SAML SSO를 사용한 사용자 관리
+</div>
+
+사용자 권한을 관리하고 SAML 연결을 통해서만 액세스를 허용하는 방법에 대한 자세한 내용은 [Manage cloud users](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)를 참조하십시오.
+
+<div id="service-provider-initiated-sso">
+  ### 서비스 제공자 시작 SSO
+</div>
+
+ClickHouse는 서비스 제공자 시작 SSO만 사용합니다. 즉, 사용자는 `https://console.clickhouse.cloud`로 이동해 이메일 주소를 입력한 뒤 인증을 위해 IdP로 리디렉션됩니다. 이미 IdP를 통해 인증된 사용자는 직접 링크를 사용해 로그인 페이지에서 이메일 주소를 입력하지 않고도 조직에 자동으로 로그인할 수 있습니다.
+
+<div id="multi-org-sso">
+  ### Multi-org SSO
+</div>
+
+ClickHouse Cloud는 조직마다 별도의 연결을 제공하여 Multi-org SSO를 지원합니다. 각 조직에 로그인하려면 직접 링크(`https://console.clickhouse.cloud/?connection={organizationid}`)를 사용하십시오. 다른 조직에 로그인하기 전에 현재 조직에서 반드시 로그아웃하십시오.
+
+<Note>
+  회사 도메인을 사용하는 사용자가 https://console.clickhouse.cloud에서 이메일 주소를 입력할 때 특정 조직으로 자동 연결되지 않도록 하려면, 이 동작을 제거할 수 있게 SSO 설정을 수동으로 업데이트해 달라는 지원 티켓을 제출하십시오.
+</Note>
+
+<div id="additional-information">
+  ## 추가 정보
+</div>
+
+인증에서는 보안을 최우선으로 생각합니다. 따라서 SSO를 구현할 때 몇 가지 방침을 정했으며, 이를 알아두어야 합니다.
+
+* **서비스 제공자 시작(service provider-initiated) 인증 흐름만 처리합니다.** 사용자는 `https://console.clickhouse.cloud`로 이동하여 이메일 주소를 입력해야 IdP(Identity Provider)로 리디렉션됩니다. 사용자가 URL을 기억할 필요가 없도록, 편의를 위해 북마크 애플리케이션 또는 바로가기를 추가하는 방법도 안내합니다.
+
+* **SSO 계정과 비SSO 계정을 자동으로 연결하지 않습니다.** 동일한 이메일 주소를 사용하더라도 ClickHouse 사용자 목록에 하나의 사용자에 대해 여러 계정이 표시될 수 있습니다.
+
+<div id="troubleshooting-common-issues">
+  ## 일반적인 문제 해결
+</div>
+
+| 오류                                                                    | 원인                                                          | 해결 방법                                                                                                                                                    |
+| :-------------------------------------------------------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 시스템 구성 오류 또는 서비스 장애일 수 있습니다                                           | IdP(Identity Provider)에서 시작된 로그인                            | 이 오류를 해결하려면 직접 링크 `https://console.clickhouse.cloud/?connection={organizationid}`를 사용해 보십시오. 위의 IdP(Identity Provider) 안내에 따라 이를 사용자의 기본 로그인 방법으로 설정하십시오 |
+| IdP(Identity Provider)로 이동한 뒤 다시 로그인 페이지로 돌아옵니다                       | IdP(Identity Provider)에 이메일 속성 매핑이 구성되어 있지 않습니다             | 위의 IdP(Identity Provider) 안내에 따라 사용자 이메일 속성을 구성한 후 다시 로그인하십시오                                                                                            |
+| 사용자에게 이 애플리케이션이 할당되지 않았습니다                                            | 사용자가 IdP(Identity Provider)에서 ClickHouse 애플리케이션에 할당되지 않았습니다 | IdP(Identity Provider)에서 사용자를 애플리케이션에 할당한 후 다시 로그인하십시오                                                                                                   |
+| 여러 ClickHouse 조직이 SAML SSO와 통합되어 있고, 어떤 링크나 타일을 사용해도 항상 같은 조직에 로그인됩니다 | 첫 번째 조직에 여전히 로그인된 상태입니다                                     | 로그아웃한 다음 다른 조직에 로그인하십시오                                                                                                                                  |
+| URL에 잠시 `access denied`가 표시됩니다                                        | 이메일 도메인이 현재 구성된 도메인과 일치하지 않습니다                              | 이 오류를 해결할 수 있도록 지원팀에 문의하십시오                                                                                                                              |
