@@ -110,11 +110,12 @@ public:
     /// (see `dropLongConnection`) instead of being abandoned mid-response.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 512 * 1024; /// 512 KiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
-    /// The plan TARGET: residency is probed in `window_size` steps, each enriched with the
-    /// tiers' cell-aligned miss extents, until the enriched span reaches this ceiling (a big
-    /// cell fold can overshoot it - enough) - so cache discovery amortises across many serve
-    /// windows and the plan spans past the fill-ahead lead. `read_extent_end` does not size
-    /// the plan, so the plan survives mark-range advances and is reused.
+    /// The plan span: residency is probed ONCE over this whole span, so cache
+    /// discovery amortises across many serve windows and the plan spans past the
+    /// fill-ahead lead. Touched cells may overhang the span (fill-only work via the
+    /// schedule's cell closure); hits straddling its end fold in whole.
+    /// `read_extent_end` does not size the plan, so the plan survives mark-range
+    /// advances and is reused.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 4 * DEFAULT_WINDOW_SIZE; /// 32 MiB
     /// A warranted long connection opens with at least this much range and never streams
     /// past the cap. The continuous-read prediction may under-predict at the start of a run

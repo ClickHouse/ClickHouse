@@ -4385,11 +4385,13 @@ TEST(ReaderExecutor, PlanGrowsInWindowStepsToTheTarget)
     EXPECT_EQ(inspect(executor).planEnd(), 32000u) << "four window probes tile the plan to the target";
 }
 
-TEST(ReaderExecutor, PlanStopsAtFirstEnrichmentOvershootingTarget)
+TEST(ReaderExecutor, PlanKeepsSpanWhenCellOverhangsIt)
 {
-    /// "Bigger than the target is enough": the first window probe's cell-aligned
-    /// enrichment (one cold 24000-byte cell) already overshoots the 16000 target, so no
-    /// further probe steps run and the plan ends at the cell boundary past the target.
+    /// One cold 24000-byte cell overhangs the 16000 plan span. The plan keeps its
+    /// span (`plan_end` = the probed target - the overhang was never probed for
+    /// residency), while the geometry carries the WHOLE cell: its overhang is
+    /// fill-only work via the schedule's cell closure, so the fetch still fills
+    /// the touched cell to its boundary and the next plan finds it resident.
     String content(64000, 'h');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
@@ -4406,7 +4408,12 @@ TEST(ReaderExecutor, PlanStopsAtFirstEnrichmentOvershootingTarget)
 
     auto w1 = executor.readNextWindow();
     ASSERT_EQ(w1.range().offset, 0u);
-    EXPECT_EQ(inspect(executor).planEnd(), 24000u) << "the overshooting cell fold ends the probing";
+    EXPECT_EQ(inspect(executor).planEnd(), 16000u) << "the plan span is the probed target";
+    auto geom = inspect(executor).planGeometry();
+    ASSERT_EQ(geom->entries.size(), 1u);
+    ASSERT_FALSE(geom->entries[0].aligned_miss.empty());
+    EXPECT_EQ(geom->entries[0].aligned_miss.front().end(), 24000u)
+        << "the geometry carries the whole overhanging cell as fill work";
 }
 
 /// Stage-5 "stop at the first loss" under REAL FileCache contention (not the downloader-blind
