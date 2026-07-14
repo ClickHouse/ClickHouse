@@ -122,6 +122,7 @@ struct FileProgress;
 class Clusters;
 class QueryResultCache;
 class QueryConditionCache;
+class EncryptionHeaderCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -195,6 +196,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -958,6 +960,7 @@ public:
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+    ClientInfo & getClientInfo() { return client_info; }
 
     /// Modify stored in the context information about the client executing a query.
     void setClientInfo(const ClientInfo & client_info_);
@@ -1179,6 +1182,10 @@ public:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
     AsyncLoader & getAsyncLoader() const;
+
+    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
+    /// reuse (lazily created from `max_remote_read_connections`).
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
@@ -1552,6 +1559,11 @@ public:
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
 
+    void setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<EncryptionHeaderCache> getEncryptionHeaderCache() const;
+    void clearEncryptionHeaderCache() const;
+
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
       *  - since caches are linked to file names, and become incorrect.
@@ -1578,12 +1590,14 @@ public:
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
     BackgroundSchedulePool & getIcebergSchedulePool() const;
+    BackgroundSchedulePool & getStreamingSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1748,6 +1762,20 @@ public:
 
     ApplicationType getApplicationType() const;
     void setApplicationType(ApplicationType type);
+
+    /// Whether S3 access originating from user SQL must be denied the server's own ambient credentials
+    /// (environment, IMDS/IRSA, ECS, instance profile, SSO, AWS config files, role_arn-based STS, and the
+    /// GCP OAuth metadata service). Explicitly supplied credentials (in the query, or static keys in a
+    /// named collection or the server `<s3>` config) are unaffected.
+    /// True only in clickhouse-server with the `s3_allow_server_credentials_in_user_queries` setting
+    /// disabled (the default). Always false in clickhouse-local, where the user is the operator.
+    bool shouldRestrictUserQueryS3Credentials() const;
+
+    /// Same, but uses an explicitly captured value of `s3_allow_server_credentials_in_user_queries` instead of
+    /// this context's live setting. For callers whose context no longer reflects the creating session -- e.g.
+    /// a cached DataLake catalog that runs against the global context -- so a permissive global/default profile
+    /// cannot override the stricter value that applied when the object was created.
+    bool shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const;
 
     /// Sets default_profile and system_profile, must be called once during the initialization
     void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
@@ -1984,6 +2012,7 @@ public:
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

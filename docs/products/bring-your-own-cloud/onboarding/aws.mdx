@@ -86,10 +86,12 @@ Create a support ticket with the following information:
 
 To create or delete VPC peering for ClickHouse BYOC, follow the steps:
 
-#### Step 1: Enable private load balancer for ClickHouse BYOC 
+<Steps>
+<Step title="Enable private load balancer for ClickHouse BYOC" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
 Contact ClickHouse Support to enable Private Load Balancer.
 
-#### Step 2 Create a peering connection 
+</Step>
+<Step title="Create a peering connection" id="step-2-create-a-peering-connection">
 1. Navigate to the VPC Dashboard in ClickHouse BYOC account.
 2. Select Peering Connections.
 3. Click Create Peering Connection
@@ -103,7 +105,8 @@ Contact ClickHouse Support to enable Private Load Balancer.
 
 <br />
 
-#### Step 3 Accept the peering connection request 
+</Step>
+<Step title="Accept the peering connection request" id="step-3-accept-the-peering-connection-request">
 Go to the peering account, in the (VPC -> Peering connections -> Actions -> Accept request) page customer can approve this VPC peering request.
 
 <br />
@@ -112,7 +115,8 @@ Go to the peering account, in the (VPC -> Peering connections -> Actions -> Acce
 
 <br />
 
-#### Step 4 Add destination to ClickHouse VPC route tables 
+</Step>
+<Step title="Add destination to ClickHouse VPC route tables" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
 In ClickHouse BYOC account,
 1. Select Route Tables in the VPC Dashboard.
 2. Search for the ClickHouse VPC ID. Edit each route table attached to the private subnets.
@@ -127,7 +131,8 @@ In ClickHouse BYOC account,
 
 <br />
 
-#### Step 5 Add destination to the target VPC route tables 
+</Step>
+<Step title="Add destination to the target VPC route tables" id="step-5-add-destination-to-the-target-vpc-route-tables">
 In the peering AWS account,
 1. Select Route Tables in the VPC Dashboard.
 2. Search for the target VPC ID.
@@ -142,7 +147,8 @@ In the peering AWS account,
 
 <br />
 
-#### Step 6: Edit security group to allow peered VPC access 
+</Step>
+<Step title="Edit security group to allow peered VPC access" id="step-6-edit-security-group-to-allow-peered-vpc-access">
 In the ClickHouse BYOC account, you need to update the Security Group settings to allow traffic from your peered VPC. Please contact ClickHouse Support to request the addition of inbound rules that include the CIDR ranges of your peered VPC.
 
 ---
@@ -153,6 +159,9 @@ To access ClickHouse privately, a private load balancer and endpoint are provisi
 - **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
 Optional, after verifying that peering is working, you can request the removal of the public load balancer for ClickHouse BYOC.
+
+</Step>
+</Steps>
 
 ## Upgrade process 
 
