@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'はじめての Kafka ClickPipe の作成'
+description: 'はじめての Kafka ClickPipe を作成するための手順を順を追って説明するガイド。'
+slug: /integrations/clickpipes/kafka/create-your-first-kafka-clickpipe
+title: 'はじめての Kafka ClickPipe の作成'
+doc_type: 'guide'
+keywords: ['create kafka clickpipe', 'kafka', 'clickpipes', 'data sources', 'setup guide']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このガイドでは、はじめての Kafka ClickPipe を作成する手順を順を追って説明します。
+
+Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
+
+<Steps>
+  <Step>
+    ## データソースへ移動
+
+    左側のメニューで `Data Sources` ボタンを選択し、&quot;Set up a ClickPipe&quot; をクリックします。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="md" />
+  </Step>
+
+  <Step>
+    ## データソースを選択
+
+    一覧からKafkaのデータソースを選択します。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="データソースの種類を選択" size="md" />
+  </Step>
+
+  <Step>
+    ## データソースを設定する
+
+    ClickPipe の名前、説明 (任意) 、認証情報、その他の接続情報を入力してフォームを完成させます。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="接続情報を入力" size="md" />
+  </Step>
+
+  <Step>
+    ## スキーマレジストリを設定する (任意)
+
+    Avro および Protobuf のトピックでは、有効なスキーマが必要です。スキーマレジストリの設定方法について詳しくは、[スキーマレジストリ](/ja/integrations/clickpipes/kafka/schema-registries) を参照してください。
+  </Step>
+
+  <Step>
+    ## リバース プライベート エンドポイントを設定する (任意)
+
+    ClickPipes が AWS PrivateLink 経由で Kafka クラスターに接続できるよう、リバース プライベート エンドポイントを設定します。
+    詳細については、[AWS PrivateLink ドキュメント](/ja/integrations/clickpipes/aws-privatelink)を参照してください。
+  </Step>
+
+  <Step>
+    ## SSH トンネリングを設定する (任意)
+
+    Kafka ブローカーにパブリックにアクセスできない場合は、SSH トンネリングを使用できます。ClickPipes は直接接続する代わりに、踏み台サーバー (ネットワーク内にあり、パブリックにアクセス可能なサーバー) への SSH 接続を確立し、その接続を経由してプライベートネットワーク上の Kafka ブローカーにトラフィックを転送します。
+
+    1. &quot;SSH Tunnel&quot; トグルを有効にします。
+    2. SSH 接続の詳細を入力します。
+       * **SSH Host**: 踏み台サーバーのホスト名または IP アドレス。プライベートネットワークへのゲートウェイとして機能する、パブリックにアクセス可能なサーバーです。
+       * **SSH Port**: 踏み台サーバーの SSH ポート (デフォルトは `22`) 。
+       * **SSH User**: 踏み台サーバーで認証に使用するユーザー名。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="SSH トンネル設定" size="md" />
+
+    3. 鍵ベース認証を使用するには、&quot;Revoke and regenerate key pair&quot; をクリックして新しい鍵ペアを生成し、生成された公開鍵を SSH サーバーの `~/.ssh/authorized_keys` にコピーします。
+    4. &quot;Verify Connection&quot; をクリックして接続を確認します。
+
+    <Note>
+      ClickPipes が SSH トンネルを確立できるように、SSH 踏み台サーバーのファイアウォールルールで [ClickPipes IP addresses](/ja/integrations/clickpipes/home#list-of-static-ips) を許可してください。
+    </Note>
+  </Step>
+
+  <Step>
+    ## トピックを選択
+
+    トピックを選択すると、UI にそのトピックのサンプルドキュメントが表示されます。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="トピックを選択" size="md" />
+  </Step>
+
+  <Step>
+    ## 宛先テーブルを設定する
+
+    次のステップでは、データを新しい ClickHouse テーブルに取り込むか、既存のテーブルを再利用するかを選択できます。画面の案内に従って、テーブル名、スキーマ、設定を変更してください。上部のサンプルテーブルで、変更内容をリアルタイムでプレビューできます。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="テーブル、スキーマ、設定を指定する" size="md" />
+
+    用意されているコントロールを使用して、詳細設定をカスタマイズすることもできます。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="詳細設定を行うためのコントロール" size="md" />
+  </Step>
+
+  <Step>
+    ## 権限を設定する
+
+    ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。この内部ユーザーには、カスタムロールまたは事前定義済みロールのいずれかを選択できます。
+
+    * `Full access`: クラスターへのフルアクセス権を付与します。宛先テーブルで materialized view や Dictionary を使用する場合に便利です。
+    * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを付与します。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" size="md" />
+  </Step>
+
+  <Step>
+    ## セットアップを完了する
+
+    &quot;Create ClickPipe&quot; をクリックすると、ClickPipe が作成されて起動します。作成後は、Data Sources セクションに表示されます。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" size="md" />
+  </Step>
+</Steps>

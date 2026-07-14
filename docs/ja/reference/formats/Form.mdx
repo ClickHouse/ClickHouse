@@ -1,0 +1,48 @@
+---
+alias: []
+description: 'Formフォーマットに関するドキュメント'
+input_format: true
+keywords: ['Form']
+output_format: false
+slug: /interfaces/formats/Form
+title: 'Form'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+`Form` フォーマットは、データが `key1=value1&key2=value2` のように表される application/x-www-form-urlencoded 形式の単一レコードを読み取るために使用できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+`user_files` パスに、一部がURLエンコードされたデータを含むファイル `data.tmp` が配置されている場合:
+
+```text title="data.tmp"
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql title="Query"
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

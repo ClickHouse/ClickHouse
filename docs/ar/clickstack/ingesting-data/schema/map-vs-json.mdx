@@ -1,0 +1,167 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
+description: 'متى تستخدم نوع Map بدلاً من نوع JSON للسمات في ClickStack'
+sidebarTitle: 'نوع Map مقابل نوع JSON'
+title: 'نوع Map مقابل نوع JSON في ClickStack'
+doc_type: 'مرجع'
+keywords: ['clickstack', 'json', 'map', 'السمات', 'schema', 'observability']
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+يخزّن [المخطط الافتراضي](/ar/clickstack/ingesting-data/schemas) في ClickStack سمات resource وscope وlog وspan في أعمدة `Map(LowCardinality(String), String)`. ويدعم ClickHouse أيضًا [نوع `JSON`](/ar/reference/formats/JSON/JSON) محدَّد الأنواع بشكل صارم، كما يوفّر ClickStack دعمًا تجريبيًا لاستخدامه بدلًا من `Map`.
+
+**بالنسبة إلى أعباء عمل observability المعتادة، نوصي بالإبقاء على [المخطط الافتراضي المستند إلى `Map`](/ar/clickstack/ingesting-data/schemas).** يتوفر نوع JSON للمستخدمين الذين يريدون تقييمه على أعباء عمل تتضمن مجموعة صغيرة ومستقرة من مفاتيح السمات، لكنه ليس المخطط الموصى به للاستخدام العام.
+
+<div id="why-map">
+  ## لماذا يُعد Map الخيار الافتراضي الموصى به
+</div>
+
+تهيمن على بيانات observability سمات مثل سمات المورد، وسمات النطاق، وسمات span وlog. وتكون هذه المجموعات عادةً كبيرة وعالية الكاردينالية، ويجري استيعابها بمعدل نقل مرتفع. ويُعد المخطط الذي تختاره لهذه السمات العامل الأهم في تكلفة الاستيعاب وتخطيط التخزين.
+
+يخزّن `Map(LowCardinality(String), String)` المفاتيح والقيم ضمن بنية واحدة. وكان العيب التقليدي في `Map` هو أن قراءة مفتاح واحد كانت تتطلب قراءة عمود map بالكامل. لكن هذا لم يعد صحيحًا: إذ يدعم ClickHouse الآن [التسلسل المقسّم إلى حاويات لـ map](/ar/reference/data-types/map#bucketed-map-serialization)، الذي يقسّم map إلى حاويات بحيث لا تقرأ الاستعلامات إلا الحاويات التي تحتاج إليها. وعند دمج ذلك مع [الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/textindexes) على مفاتيح map وقيمه، وهي الطريقة التي جرى بها إعداد [المخطط الافتراضي لـ ClickStack](/ar/clickstack/ingesting-data/schemas)، يصبح `Map` انتقائيًا وسريعًا عند القراءة، من دون أي تكلفة إضافية عند الاستيعاب بسبب المفاتيح الجديدة.
+
+عمليًا، يعني ذلك ما يلي:
+
+* **استقرار تكلفة الاستيعاب مع زيادة عدد المفاتيح.** لا تؤدي إضافة مفتاح سمة جديد إلى تغيير تخطيط الأعمدة على القرص أو إنشاء ملفات أعمدة جديدة. وتظل تكلفة الاستيعاب محكومة بحجم البيانات، لا بكاردينالية المفاتيح.
+* **عدم تضخم البيانات الوصفية.** لا يرتبط عدد ملفات الأعمدة على القرص بعدد مفاتيح السمات الفريدة.
+* **عمليات lookup انتقائية عبر الفهارس.** توفّر الفهارس النصية على مفاتيح map وقيمه عمليات lookup مباشرة من دون فحص كل صف.
+* **سلوك متوقع عند معدلات النقل العالية.** يتعامل Map مع مجموعات السمات غير المقيّدة بمخطط، والتي تصل على دفعات ومتقلبة، وهو أمر شائع في tracing والسجلات، من دون عبء إضافي لكل مفتاح.
+
+<div id="why-not-json">
+  ## لماذا لا نستخدم JSON افتراضيًا
+</div>
+
+يعتمد النوع `JSON` نهجًا مختلفًا: ففي وقت الإدراج، ينشئ ClickHouse ديناميكيًا عمودًا فرعيًا مخصصًا وذا نوع محدد بدقة لكل `path` يرصده. وعند القراءة، يبدو هذا جذابًا لأن الأعمدة الفرعية المطلوبة فقط هي التي تُقرأ، وتُحفَظ الأنواع، ولا تكون هناك حاجة إلى تحويل الأنواع على مستوى `query`.
+
+لكن المقايضة تظهر في وقت الاستيعاب. فإِنشاء عدد كبير من الأعمدة الفرعية الديناميكية وإدارتها يضيف كلفةً إضافية وقت الكتابة ويزيد من تعقيد البيانات الوصفية. وفي أحمال observability، التي تتضمن عادةً مجموعات `attribute` كبيرة جدًا أو عالية الديناميكية ومعدل `معدل استيعاب البيانات` مرتفعًا، تكون هذه الكلفة الإضافية كبيرة. ويمكن للحد [`max_dynamic_paths`](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns) أن يخفف من هذا الأثر عبر تمرير `paths` الإضافية إلى عمود مشترك، لكن الوصول إلى العمود المشترك أبطأ من الأعمدة الفرعية المخصصة، مما يقلص ميزة وقت القراءة التي كانت أصلًا سبب استخدام JSON.
+
+ومع إزالة `bucketed map serialization` لمعظم الكلفة الإضافية التاريخية لوقت القراءة في `Map`، لم تعد ميزة وقت القراءة في `JSON` تفوق كلفته وقت الاستيعاب بالنسبة إلى أحمال observability المعتادة.
+
+<div id="when-to-consider-json">
+  ## متى قد تفكر في JSON
+</div>
+
+يمكن أن يكون نوع JSON خيارًا مناسبًا عندما تنطبق *جميع* الشروط التالية:
+
+* تكون مجموعة مفاتيح السمات **صغيرة ومستقرة**، أي أنك لا ترى آلاف المفاتيح الفريدة، ونادرًا ما تظهر مفاتيح جديدة.
+* يكون **معدل استيعاب البيانات** **محدودًا** مقارنةً بدرجة cardinality للسمات.
+* تريد **وصولًا قويَّ التحديد بالأنواع** إلى السمات من دون عمليات CAST وقت الاستعلام، (فتبقى الأرقام أرقامًا، وتبقى القيم المنطقية قيمًا منطقية).
+* تكون مستعدًا لتشغيل **ميزة تجريبية** في ClickStack وتقبّل أن هذا التكامل قد يتغيّر.
+
+إذا لم تنطبق كل هذه الشروط، فابقَ على [المخطط الافتراضي المستند إلى `Map`](/ar/clickstack/ingesting-data/schemas).
+
+<div id="beta-status">
+  ## حالة Beta
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **ميزة تجريبية، وليست جاهزة لبيئات الإنتاج**
+
+  دعم نوع JSON في **ClickStack** هو **ميزة تجريبية**. ورغم أن نوع JSON نفسه جاهز لبيئات الإنتاج في ClickHouse 25.3+، فإن تكامله ضمن ClickStack لا يزال قيد التطوير النشط، وقد تكون له قيود، أو يتغير مستقبلًا، أو يحتوي على أخطاء.
+</Warning>
+
+يوفر ClickStack دعمًا تجريبيًا لنوع JSON بدءًا من الإصدار `2.0.4`.
+
+<div id="enabling-json-support">
+  ## تمكين دعم JSON
+</div>
+
+لاستخدام المخططات المعرّفة بنوع JSON بدلًا من [المخططات الافتراضية المستندة إلى `Map`](/ar/clickstack/ingesting-data/schemas)، اضبط متغيرات البيئة التالية.
+
+| المتغير                                                         | يُضبط في                | الغرض                                                                                        |
+| --------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel المجمّع           | ينشئ مخططات في ClickHouse باستخدام نوع JSON.                                                 |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | يُمكّن طبقة التطبيق من الاستعلام عن المخططات المعرّفة بنوع JSON. ClickStack Open Source فقط. |
+
+<div id="managed-clickstack">
+  ### Managed ClickStack
+</div>
+
+لتمكين دعم JSON في Managed ClickStack، تواصل مع فريق الدعم عبر support@clickhouse.com قبل تهيئة المجمّع. يجب أيضًا تمكين هذه الميزة في واجهة مستخدم ClickStack ‏(HyperDX) ضمن ClickHouse Cloud.
+
+عيّن `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` في المجمّع. على سبيل المثال:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### ClickStack مفتوح المصدر
+</div>
+
+عيّن `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` في أي Deployment يتضمّن المجمّع، وعيّن `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` في طبقة تطبيق HyperDX لكي يتمكّن من الاستعلام عن المخططات من نوع JSON.
+
+على سبيل المثال:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="migrating-from-map-to-json">
+  ## الترحيل من مخطط قائم على Map إلى JSON
+</div>
+
+<Warning>
+  **التوافق العكسي**
+
+  إن [نوع JSON](/ar/reference/formats/JSON/JSON) **غير متوافق عكسيًا** مع المخططات الحالية القائمة على Map. يؤدي تمكين هذه الميزة إلى إنشاء جداول جديدة باستخدام النوع `JSON`، ويتطلب ترحيلاً يدويًا للبيانات.
+</Warning>
+
+للترحيل من [المخططات الافتراضية المستندة إلى Map](/ar/clickstack/ingesting-data/schemas)، اتبع الخطوات التالية:
+
+<Steps>
+  <Step>
+    ### أوقف OTel المجمّع
+  </Step>
+
+  <Step>
+    ### أعد تسمية الجداول الحالية وحدّث المصادر
+
+    أعد تسمية الجداول الحالية وحدّث مصادر البيانات في HyperDX.
+
+    على سبيل المثال:
+
+    ```sql
+    RENAME TABLE otel_logs TO otel_logs_map;
+    RENAME TABLE otel_metrics TO otel_metrics_map;
+    ```
+  </Step>
+
+  <Step>
+    ### انشر OTel المجمّع
+
+    انشر OTel المجمّع مع تعيين `OTEL_AGENT_FEATURE_GATE_ARG`.
+  </Step>
+
+  <Step>
+    ### أعد تشغيل حاوية HyperDX مع دعم مخطط JSON
+
+    ```shell
+    export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
+    ```
+  </Step>
+
+  <Step>
+    ### أنشئ مصادر بيانات جديدة
+
+    أنشئ مصادر بيانات جديدة في HyperDX تشير إلى جداول JSON.
+  </Step>
+</Steps>
+
+<div id="migrating-existing-data">
+  ### ترحيل البيانات الحالية (اختياري)
+</div>
+
+لنقل البيانات القديمة إلى جداول JSON الجديدة:
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+  يُوصى بهذا فقط لمجموعات البيانات التي يقل حجمها عن نحو 10 مليارات صف. البيانات المخزنة سابقًا باستخدام النوع Map لم تكن تحافظ على دقة الأنواع (إذ كانت جميع القيم من النوع Strings). ونتيجةً لذلك، ستظهر هذه البيانات القديمة كسلاسل نصية في المخطط الجديد إلى أن تنتهي صلاحيتها، ما يتطلب إجراء بعض تحويلات الأنواع في الواجهة الأمامية. أما البيانات الجديدة، فستُحفَظ أنواعها باستخدام النوع JSON.
+</Warning>

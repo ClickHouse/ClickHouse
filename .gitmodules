@@ -333,6 +333,9 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
+[submodule "contrib/sz3"]
+	path = contrib/sz3
+	url = https://github.com/ClickHouse/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -399,6 +402,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/libdeflate"]
+	path = contrib/libdeflate
+	url = https://github.com/ClickHouse/libdeflate
 [submodule "contrib/wagyu"]
 	path = contrib/wagyu
 	url = https://github.com/ClickHouse/wagyu

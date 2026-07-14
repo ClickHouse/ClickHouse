@@ -1,0 +1,151 @@
+---
+title: Kafka에서 새로운 JSON 데이터 타입을 어떻게 사용하나요?
+description: "Kafka 테이블 엔진과 JSON 데이터 타입을 사용해 Apache Kafka의 JSON 메시지를 ClickHouse의 단일 JSON 컬럼으로 직접 적재하는 방법을 알아보십시오."
+date: 2024-11-06
+tags: ['데이터 포맷', '데이터 수집']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="kafka-and-the-json-data-type">
+  ## Kafka와 JSON 데이터 타입
+</div>
+
+새로운 [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 도입으로 ClickHouse는 이제 [JSON 분석용 데이터베이스](https://clickhouse.com/engineering-resources/json-database)로 매우 적합한 선택지가 되었습니다.
+이 가이드에서는 Apache Kafka의 JSON 메시지를 ClickHouse의 단일 `JSON` 컬럼에 직접 적재하는 방법을 알아보겠습니다.
+
+<div id="setup-kafka">
+  ## Kafka 설정
+</div>
+
+먼저 로컬 머신에서 Kafka 브로커를 실행하겠습니다. 또한 Kafka와 더 쉽게 상호 작용할 수 있도록 호스트 운영 체제의 9092 포트를 동일한 9092 포트에 매핑하겠습니다:
+
+```bash
+docker run --name broker -p 9092:9092 apache/kafka:3.8.1
+```
+
+<div id="ingest-data-into-kafka">
+  ## Kafka로 데이터 수집
+</div>
+
+준비가 완료되면 데이터를 몇 건 수집해야 합니다.
+Wikimedia의 최근 변경 피드는 스트리밍 데이터 소스로 적합하므로, 이를 `wiki_events` topic으로 수집하겠습니다:
+
+```bash
+curl -N https://stream.wikimedia.org/v2/stream/recentchange 2>/dev/null |
+awk '/^data: /{gsub(/^data: /, ""); print}' |
+jq -cr --arg sep ø '[.meta.id, tostring] | join($sep)' |
+kcat -P -b localhost:9092 -t wiki_events -Kø
+```
+
+다음 명령을 실행해 데이터가 수집되고 있는지 확인할 수 있습니다:
+
+```bash
+kcat -C -b localhost:9092  -t wiki_events
+```
+
+```text
+{"$schema":"/mediawiki/recentchange/1.0.0","meta":{"uri":"https://www.wikidata.org/wiki/Q130972321","request_id":"5c687ded-4721-4bfc-ae6c-58ca25f4a6ce","id":"0fbb0982-c43b-4e8b-989b-db7e78dbdc76","dt":"2024-11-06T11:59:57Z","domain":"www.wikidata.org","stream":"mediawiki.recentchange","topic":"codfw.mediawiki.recentchange","partition":0,"offset":1228777205},"id":2338656448,"type":"edit","namespace":0,"title":"Q130972321","title_url":"https://www.wikidata.org/wiki/Q130972321","comment":"/* wbsetclaim-create:2||1 */ [[Property:P18]]: Mahdi Rrezaei Journalist.jpg","timestamp":1730894397,"user":"Wikimellatir","bot":false,"notify_url":"https://www.wikidata.org/w/index.php?diff=2270885254&oldid=2270870214&rcid=2338656448","minor":false,"patrolled":false,"length":{"old":4269,"new":4636},"revision":{"old":2270870214,"new":2270885254},"server_url":"https://www.wikidata.org","server_name":"www.wikidata.org","server_script_path":"/w","wiki":"wikidatawiki","parsedcomment":"<span dir=\"auto\"><span class=\"autocomment\">Created claim: </span></span> <a href=\"/wiki/Property:P18\" title=\"image | image of relevant illustration of the subject; if available, also use more specific properties (sample: coat of arms image, locator map, flag image, signature image, logo image, collage image)\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">image</span> <span class=\"wb-itemlink-id\">(P18)</span></span></a>: Mahdi Rrezaei Journalist.jpg"}
+{"$schema":"/mediawiki/recentchange/1.0.0","meta":{"uri":"https://www.wikidata.org/wiki/Q75756596","request_id":"eb116219-7372-4725-986f-790211708d36","id":"9e0d5299-5bd1-4c58-b796-9852afd8a84e","dt":"2024-11-06T11:59:54Z","domain":"www.wikidata.org","stream":"mediawiki.recentchange","topic":"codfw.mediawiki.recentchange","partition":0,"offset":1228777206},"id":2338656449,"type":"edit","namespace":0,"title":"Q75756596","title_url":"https://www.wikidata.org/wiki/Q75756596","comment":"/* wbeditentity-update-languages-and-other:0||55 */ mv labels and aliases matching [[Property:P528]] or [[Property:P3083]] to mul","timestamp":1730894394,"user":"Twofivesixbot","bot":true,"notify_url":"https://www.wikidata.org/w/index.php?diff=2270885237&oldid=2147709089&rcid=2338656449","minor":false,"patrolled":true,"length":{"old":30879,"new":27161},"revision":{"old":2147709089,"new":2270885237},"server_url":"https://www.wikidata.org","server_name":"www.wikidata.org","server_script_path":"/w","wiki":"wikidatawiki","parsedcomment":"<span dir=\"auto\"><span class=\"autocomment\">Changed label, description and/or aliases in 55 languages, and other parts: </span></span> mv labels and aliases matching <a href=\"/wiki/Property:P528\" title=\"catalog code | catalog name of an object, use with qualifier P972\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">catalog code</span> <span class=\"wb-itemlink-id\">(P528)</span></span></a> or <a href=\"/wiki/Property:P3083\" title=\"SIMBAD ID | identifier for an astronomical object, in the University of Strasbourg&#039;s SIMBAD database\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">SIMBAD ID</span> <span class=\"wb-itemlink-id\">(P3083)</span></span></a> to mul"}
+```
+
+지금까지는 잘 진행되고 있습니다.
+
+<div id="ingest-data-into-clickhouse">
+  ## ClickHouse로 데이터 수집
+</div>
+
+다음으로, 데이터를 ClickHouse로 수집하겠습니다.
+먼저, 다음 설정을 지정하여 JSON 타입(현재는 Experimental 기능)을 활성화하겠습니다:
+
+```sql
+SET allow_experimental_json_type = 1;
+```
+
+이제 [`Kafka` 테이블 엔진](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine)을 사용하는 `wiki_queue` 테이블을 만듭니다.
+
+```sql
+CREATE TABLE wiki_queue
+(
+    json JSON
+)
+ENGINE = Kafka(
+  'localhost:9092', 
+  'wiki_events', 
+  'clickhouse-consumer-group',
+  'JSONAsObject'
+);
+```
+
+[`JSONAsObject`](/ko/reference/formats/JSON/JSONAsObject) 포맷을 사용한다는 점에 유의하십시오. 이 포맷을 사용하면 들어오는 메시지를 JSON 객체로 사용할 수 있습니다.
+이 포맷은 `JSON` 유형의 단일 컬럼이 있는 테이블에만 파싱할 수 있습니다.
+
+다음으로, Wiki 데이터를 저장할 기본 테이블을 생성합니다:
+
+```sql
+CREATE TABLE wiki
+(
+    json JSON,
+    id String MATERIALIZED getSubcolumn(json, 'meta.id')
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+마지막으로, `wiki` 테이블을 채우는 materialized view를 생성하겠습니다:
+
+```sql
+CREATE MATERIALIZED VIEW wiki_mv TO wiki AS 
+SELECT json
+FROM wiki_queue;
+```
+
+<div id="querying-json-data-in-clickhouse">
+  ## ClickHouse에서 JSON 데이터 쿼리하기
+</div>
+
+이제 `wiki` 테이블에 대해 쿼리를 작성할 수 있습니다.
+예를 들어, 변경 사항을 커밋한 봇 수를 셀 수 있습니다:
+
+```sql
+SELECT json.bot, count()
+FROM wiki
+GROUP BY ALL
+```
+
+```text
+   ┌─json.bot─┬─count()─┐
+1. │ true     │    2526 │
+2. │ false    │    4691 │
+   └──────────┴─────────┘
+```
+
+또는 `en.wikipedia.org`에서 가장 많은 편집을 한 사용자를 찾을 수 있습니다:
+
+```sql
+SELECT
+    json.user,
+    count()
+FROM wiki
+WHERE json.server_name = 'en.wikipedia.org'
+GROUP BY ALL
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```text
+    ┌─json.user──────────────────────────────┬─count()─┐
+ 1. │ Monkbot                                │     267 │
+ 2. │ Onel5969                               │     107 │
+ 3. │ Bangwiki                               │      37 │
+ 4. │ HHH Pedrigree                          │      28 │
+ 5. │ REDACTED403                            │      23 │
+ 6. │ KylieTastic                            │      22 │
+ 7. │ Tinniesbison                           │      21 │
+ 8. │ XTheBedrockX                           │      20 │
+ 9. │ 2001:4455:1DB:4000:51F3:6A16:408E:69FC │      19 │
+10. │ Wcquidditch                            │      15 │
+    └────────────────────────────────────────┴─────────┘
+```

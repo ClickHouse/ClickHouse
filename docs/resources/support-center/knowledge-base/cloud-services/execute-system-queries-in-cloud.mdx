@@ -1,0 +1,28 @@
+---
+title: Execute SYSTEM statements on all nodes in ClickHouse Cloud
+description: Learn how to use `ON CLUSTER` and `clusterAllReplicas` to execute SYSTEM statements and queries across all nodes in a ClickHouse Cloud service.
+date: 2023-03-01
+tags: ['Deployments and Scaling']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## Answer {#answer}
+In order to execute the same query on all nodes of a ClickHouse Cloud service, we can use [clusterAllReplicas](/reference/functions/table-functions/cluster).
+
+For example, in order to get entries from a (node-local) system table from all nodes, you can use:
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+Similarly, you can execute the same [SYSTEM statement](/reference/statements/system) on all nodes with a single statement, by using the [ON CLUSTER](/reference/statements/distributed-ddl) clause:
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+For example for [dropping the filesystem cache](/reference/statements/system#drop-filesystem-cache) from all nodes, you can use:
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

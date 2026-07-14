@@ -1,0 +1,30 @@
+---
+sidebarTitle: '配置备份计划'
+slug: /cloud/manage/backups/configurable-backups
+description: '有关如何配置备份计划的指南'
+title: '配置备份计划'
+keywords: ['备份', 'Cloud 备份', '恢复']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="可配置备份" linking_verb_are="True" />
+
+要为服务配置备份计划，请前往控制台中的 **设置** 选项卡，然后点击 **更改备份配置**。
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="配置备份设置" border />
+
+这样会在右侧打开一个选项卡，你可以在其中为保留策略、频率和开始时间选择相应的值。保存所选设置后，它们才会生效。
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="选择备份保留策略和频率" border />
+
+<Note>
+  开始时间和频率互斥。开始时间优先。
+</Note>
+
+<Note>
+  更改备份计划可能会增加每月存储费用，因为某些备份可能不在该服务默认备份的覆盖范围内。请参阅[&quot;了解备份成本&quot;](/zh/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost)。
+</Note>

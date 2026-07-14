@@ -1,0 +1,345 @@
+---
+slug: /use-cases/observability/clickstack/monitoring-kubernetes
+title: '使用托管 ClickStack 监控 Kubernetes'
+description: '将 Kubernetes 集群中的日志、基础设施指标和事件采集到托管 ClickStack 中'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'k8s', '托管', '可观测性', '日志', '指标', '事件', 'DaemonSet 守护进程集', 'helm']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南将引导你把集群中的日志、基础设施指标和 Kubernetes 事件收集到托管 ClickStack 中，然后在内置的 Kubernetes 仪表板中查看它们。
+
+这种模式采用标准的 OpenTelemetry 方案：通过 [OpenTelemetry Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) 部署两个采集器，并都通过 OTLP 转发到你的 ClickStack 网关采集器。一个 **DaemonSet 守护进程集** 运行在每个节点上，用于收集容器日志和 kubelet 节点代理指标。一个仅包含单个副本的 **部署** 用于收集 Kubernetes 事件和集群级指标。有关网关角色的背景说明，请参阅 [Collector roles](/zh/clickstack/ingesting-data/collector#collector-roles)。
+
+本指南假定你已完成 [Setting up your OpenTelemetry Collector](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)，并且已有一个正在运行的 ClickStack 网关采集器。
+
+对于驻留在 Kubernetes 中的工作负载，网关采集器本身应当**使用带有 ClickStack 采集器镜像的上游 OpenTelemetry Helm 图表部署在同一个集群内**。请按照 [Deploying the collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 中的 Helm 路径进行安装。**请确保你已记录此 OTLP 端点**。
+
+<Steps>
+  <Step>
+    ## 准备前置条件
+
+    你需要：
+
+    * 一个 **Kubernetes 集群** (建议 v1.20+) ，并已配置好可连接该集群的 `kubectl`。
+    * **[Helm](https://helm.sh/) v3+**。
+    * ClickStack gateway collector 的 **OTLP 端点**，且该端点可从集群内部访问，例如 `http://clickstack-otel-collector.observability.svc.cluster.local:4318`。collector 应部署在 DaemonSet 守护进程集和部署都能访问到的位置，通常是在同一个集群内，或通过 `LoadBalancer` 类型的 service 暴露。
+    * 部署 gateway collector 时设置的 `OTLP_AUTH_TOKEN` 值。如果你没有对 collector 启用安全保护，可以跳过下面的 secret 步骤，并从清单中删除 `authorization` 请求头。
+
+    <Info>
+      **gateway 的运行位置**
+
+      对于集群内部署，请在同一集群内将 gateway collector 作为 Kubernetes `Deployment` 或 `StatefulSet` 运行，并通过其集群内 service DNS 访问。对于运行在集群外部的 gateway，请使用其可从外部访问的 URL。
+    </Info>
+  </Step>
+
+  <Step>
+    ## 创建认证 Secret 和 ConfigMap
+
+    选择要让收集器运行的命名空间，然后创建一个用于存储 `OTLP_AUTH_TOKEN` 的 Secret，以及一个指向你的网关的 ConfigMap：
+
+    ```shell
+    export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+    export OTEL_COLLECTOR_ENDPOINT="http://clickstack-otel-collector.observability.svc.cluster.local:4318"
+    export NAMESPACE=observability
+
+    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create secret generic clickstack-otlp-secret \
+      --from-literal=OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+      -n ${NAMESPACE}
+
+    kubectl create configmap otel-config-vars \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT} \
+      -n ${NAMESPACE}
+    ```
+
+    下面两个采集器都通过 `extraEnvs` 读取这些配置值，因此可共用同一个 Secret 和 ConfigMap。
+  </Step>
+
+  <Step>
+    ## 添加 OpenTelemetry Helm 仓库
+
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ## 部署集群级采集器
+
+    这是一个单副本部署，用于收集 **Kubernetes 事件** 和 **集群级指标** (节点数量、pod 阶段、Deployment 状态等) 。如果运行多个副本，就会产生重复数据。
+
+    将以下内容保存为 `k8s_deployment.yaml`：
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # 我们只需要一个这样的采集器——再多就会产生重复数据
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        # 通过 k8sobject receiver 收集 Kubernetes 事件。
+        kubernetesEvents:
+          enabled: true
+        # 通过 k8s_cluster receiver 收集集群级指标。
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    安装：
+
+    ```shell
+    helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      -f k8s_deployment.yaml \
+      -n ${NAMESPACE}
+    ```
+  </Step>
+
+  <Step>
+    ## 部署节点采集器
+
+    这是一个运行在每个节点上的 DaemonSet 守护进程集，用于收集**容器日志**、**主机指标**和 **kubelet 指标** (按 pod 和容器统计的 CPU 与内存利用率，相对于 requests 和 limits) 。
+
+    将以下内容保存为 `k8s_daemonset.yaml`：
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # 使用 kubeletstats CPU/内存利用率指标所必需
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # 额外的 kubelet 指标，以相对于 requests 和 limits 的利用率形式表示。
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    安装：
+
+    ```shell
+    helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      -f k8s_daemonset.yaml \
+      -n ${NAMESPACE}
+    ```
+
+    确认两个发行版均运行正常：
+
+    ```shell
+    kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collector
+    ```
+
+    你应该会看到 1 个部署 pod (容器组) 和每个节点 1 个 DaemonSet 守护进程集 pod (容器组) ，它们都处于 `Running` 状态。
+  </Step>
+
+  <Step>
+    ## 将 Kubernetes 属性转发到应用 (推荐)
+
+    要将应用的日志、指标和链路追踪与 Kubernetes 元数据 (pod 名称、命名空间、节点、部署) 关联起来，请通过 `OTEL_RESOURCE_ATTRIBUTES` 将这些元数据传递给应用。随后，DaemonSet 守护进程集的 `k8sattributes` 处理器会为传入的遥测数据补充匹配的 pod (容器组) 和节点属性。
+
+    ```yaml
+    # my_app_deployment.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: app-deployment
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: app
+      template:
+        metadata:
+          labels:
+            app: app
+            service.name: <MY_APP_NAME>
+        spec:
+          containers:
+            - name: app-container
+              image: my-image
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: POD_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.uid
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: DEPLOYMENT_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['deployment']
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+    ```
+  </Step>
+
+  <Step>
+    ## 在 ClickStack UI 中确认
+
+    在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
+
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="启动 ClickStack" border />
+
+    在 **搜索视图** 中，将数据源切换为 `Logs`，并将时间范围设为 **最近 15 分钟**。几秒钟内，你应该就能看到整个集群的容器日志，并附带 `k8s.namespace.name`、`k8s.pod.name` 和 `k8s.node.name` 等属性。
+
+    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="带有 Kubernetes 日志的 ClickStack 搜索视图" />
+
+    若要结合上下文查看基础设施指标和事件，请通过 **仪表盘** -&gt; **Kubernetes** 打开内置的 **Kubernetes** 仪表盘。`Pods`、`Nodes` 和 `Namespaces` 选项卡中都应显示数据。
+
+    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes 仪表盘" border />
+
+    如果没有显示任何内容：
+
+    * 验证 DaemonSet 守护进程集和部署的 pod (容器组) 是否处于 `Running` 状态，并使用 `kubectl logs -n ${NAMESPACE} <pod>` 查看其日志。
+    * 确认在集群内部可以访问 `YOUR_OTEL_COLLECTOR_ENDPOINT` (使用 `kubectl exec` 进入某个采集器 pod (容器组) 并执行 `curl`) 。
+    * 检查 Secret 中的 `OTLP_AUTH_TOKEN` 是否与网关采集器上设置的值一致。
+  </Step>
+
+  <Step>
+    ## 延伸阅读
+
+    * [Kubernetes 集成参考](/zh/clickstack/integration-examples/kubernetes)，了解完整的 receivers、processors 和调优选项。
+    * [将资源标签转发到 pod (容器组) ](/zh/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)，深入了解应用侧富集。
+    * [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)，了解如何在 OTLP 端点上启用 TLS，并为摄取用户配置最小权限。
+    * [估算资源](/zh/clickstack/ingesting-data/collector#estimating-resources)，评估在预期吞吐量下 gateway 和 agent 部署所需的资源。
+    * [生产环境部署](/zh/clickstack/managing/production)，查看面向生产环境的相关建议。
+  </Step>
+</Steps>

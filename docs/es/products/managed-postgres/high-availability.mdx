@@ -1,0 +1,76 @@
+---
+slug: /cloud/managed-postgres/high-availability
+sidebarTitle: 'Alta disponibilidad'
+title: 'Alta disponibilidad'
+description: 'Configura las réplicas standby y los modos de replicación para alta disponibilidad en ClickHouse Managed Postgres'
+keywords: ['alta disponibilidad', 'ha', 'standby', 'replicación', 'failover', 'postgres ha']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
+
+Managed Postgres ofrece distintos niveles de alta disponibilidad para adaptarse a tus requisitos de durabilidad y rendimiento. Puedes añadir una o dos réplicas standby al aprovisionar tu base de datos o ajustar esta configuración más adelante desde la página de **Configuración**, según sea necesario.
+
+{/* TODO(kaushik-ubi): Captura de pantalla de la configuración de alta disponibilidad
+    Ruta: /images/cloud/managed-postgres/high-availability-config.png */}
+
+<div id="high-availability-options">
+  ## Opciones de alta disponibilidad
+</div>
+
+<div id="two-standbys">
+  ### 2 Nodos standby
+</div>
+
+Con dos nodos standby, se aprovisionan dos nodos réplica junto con el nodo primario. Ambos nodos standby tienen el mismo tamaño que el primario y cualquiera de los dos puede asumir el control si el primario falla.
+
+Esta configuración usa **replicación síncrona**, en la que el primario espera la confirmación de al menos un nodo standby antes de confirmar las escrituras. Esto ofrece garantías de durabilidad más sólidas que la replicación asíncrona. Como solo se requiere una confirmación (no ambas), el impacto en el rendimiento es menor que con la replicación síncrona con un único nodo standby.
+
+<div id="one-standby">
+  ### 1 Standby
+</div>
+
+Con un standby, se aprovisiona un nodo réplica junto al primario. El standby tiene el mismo tamaño que el primario y puede asumir el control si el primario falla.
+
+Los datos se replican en el standby mediante **replicación asíncrona**. Esto significa que las escrituras se confirman en el primario sin esperar la confirmación del standby. La replicación asíncrona garantiza que la alta disponibilidad no ralentice las escrituras debido a la latencia de red adicional. Sin embargo, también significa que es posible que el standby no haya recibido las transacciones más recientes en el momento en que falle el primario. Para la mayoría de las aplicaciones, esta compensación entre rendimiento y el pequeño riesgo de perder escrituras muy recientes merece la pena. Si necesita durabilidad en las escrituras, se recomienda optar por 2 standbys.
+
+<div id="no-standby">
+  ### Sin standby
+</div>
+
+Con esta opción, solo se aprovisiona un nodo primario con el tamaño seleccionado. No se crea ningún nodo standby. El nodo primario sigue supervisándose para detectar fallos, pero la recuperación puede tardar más según la naturaleza del problema, ya que no hay ninguna réplica lista para asumir el control. Esta configuración es más adecuada para entornos de desarrollo, pruebas o cargas de trabajo no críticas en los que cierto tiempo de inactividad es aceptable.
+
+<div id="standbys-vs-read-replicas">
+  ## Standbys vs réplicas de lectura
+</div>
+
+Los standbys y las réplicas de lectura cumplen funciones distintas en Managed Postgres y se configuran por separado.
+
+**Standbys** se dedican exclusivamente a la alta disponibilidad y al failover automático. Replican los datos desde la instancia primaria mediante replicación en streaming y siempre están listos para promocionarse si la instancia primaria falla. Los standbys no están disponibles para consultas de lectura.
+
+**Réplicas de lectura** están diseñadas para escalar la carga de lectura. Extraen datos del WAL (Write-Ahead Log) desde el almacenamiento de objetos y se ejecutan en un entorno de red independiente con su propio endpoint de conexión. Las réplicas de lectura le permiten desviar la carga de lectura de la instancia primaria sin afectar las garantías de alta disponibilidad.
+
+<div id="why-standbys-dont-serve-read-queries">
+  ### Por qué las instancias standby no atienden consultas de lectura
+</div>
+
+Aunque algunos proveedores de bases de datos ofrecen standbys activos para consultas de solo lectura, Managed Postgres deliberadamente no lo hace. Permitir consultas de lectura en las instancias standby puede comprometer su propósito principal: estar listas para asumir el control de inmediato cuando falle la instancia primaria.
+
+Hay dos preocupaciones principales:
+
+1. **Competencia con la reproducción del WAL**: En cargas de trabajo con muchas escrituras, las consultas de lectura en una instancia standby compiten con la reproducción del WAL por los recursos del sistema. Esta competencia puede causar un alto retraso de replicación, lo que significa que la instancia standby queda rezagada con respecto a la primaria. Si se produce un failover mientras la instancia standby va con retraso, no tendrá los datos más recientes y puede que no esté lista para asumir el control sin problemas.
+
+2. **Interferencia con `VACUUM`**: Las consultas de lectura de larga duración en una instancia standby pueden impedir que `VACUUM` (y `AUTOVACUUM`) limpien las tuplas muertas en la primaria. PostgreSQL no puede eliminar filas a las que una consulta activa en cualquier réplica aún pueda necesitar acceder. Esto puede provocar el inflado de las tablas y una degradación del rendimiento con el tiempo.
+
+Al mantener las instancias standby dedicadas al failover, Managed Postgres garantiza que siempre estén sincronizadas y listas para asumir el control con una pérdida mínima de datos y tiempo de inactividad. Para escalar la lectura, usa [réplicas de lectura](/es/products/managed-postgres/read-replicas) en su lugar.
+
+<div id="handling-failures">
+  ## Gestión de fallos
+</div>
+
+Todas las instancias de Managed Postgres se supervisan continuamente para detectar fallos, independientemente de si la alta disponibilidad está habilitada. En todos los casos, el sistema intenta recuperarse automáticamente.
+
+Cuando hay instancias standby disponibles, la recuperación automática es más rápida y sencilla. Por lo general, el sistema se recupera en cuestión de minutos promoviendo una instancia standby a primaria. Sin instancias standby, la recuperación puede requerir intervención manual, lo que aumenta significativamente la duración de cualquier interrupción.
