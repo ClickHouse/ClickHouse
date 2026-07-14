@@ -38,3 +38,7 @@ NO_SUCH_COLUMN_IN_TABLE
 push	remote-sync
 --- async: INSERT INTO FUNCTION remote()
 release	remote-async
+--- sync: DEFAULT expression referencing injected column
+5	6	sync-default
+--- async: DEFAULT expression referencing injected column
+10	11	async-default

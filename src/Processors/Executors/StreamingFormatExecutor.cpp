@@ -143,7 +143,35 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 {
     size_t chunk_rows = chunk.getNumRows();
     if (adding_defaults_transform)
-        adding_defaults_transform->transform(chunk);
+    {
+        if (!constant_cols_for_defaults.empty())
+        {
+            /// Temporarily append the per-entry injected constant columns so that
+            /// AddingDefaultsTransform can evaluate DEFAULT expressions that reference
+            /// them (e.g. `b DEFAULT a + 1` where `a` comes from an HTTP header).
+            /// The injected columns are appended AFTER body columns so that body
+            /// column positions match the BlockMissingValues indices from the format.
+            auto cols = chunk.detachColumns();
+            for (const auto & const_col : constant_cols_for_defaults)
+            {
+                auto full_col = const_col->cloneEmpty();
+                for (size_t row = 0; row < chunk_rows; ++row)
+                    full_col->insertFrom(*const_col, 0);
+                cols.push_back(std::move(full_col));
+            }
+            chunk.setColumns(std::move(cols), chunk_rows);
+            adding_defaults_transform->transform(chunk);
+
+            /// Strip the injected columns back out before accumulation.
+            auto result_cols = chunk.detachColumns();
+            result_cols.resize(result_cols.size() - constant_cols_for_defaults.size());
+            chunk.setColumns(std::move(result_cols), chunk_rows);
+        }
+        else
+        {
+            adding_defaults_transform->transform(chunk);
+        }
+    }
 
     preallocateResultColumns(num_bytes, chunk);
 

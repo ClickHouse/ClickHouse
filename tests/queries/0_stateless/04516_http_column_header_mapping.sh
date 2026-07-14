@@ -219,3 +219,35 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns_remote"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_remote"
+
+# Test DEFAULT expressions that reference an http_column_* injected column.
+# With input_format_defaults_for_omitted_fields=1, the DEFAULT expression
+# `b DEFAULT a + 1` must use the injected value of `a`, not zero.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS test_http_columns_defaults;
+    CREATE TABLE test_http_columns_defaults (
+        a UInt64,
+        b UInt64 DEFAULT a + 1,
+        payload String
+    ) ENGINE = MergeTree ORDER BY tuple();
+"
+
+echo "--- sync: DEFAULT expression referencing injected column"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-A: 5' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns_defaults+(payload)+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
+    -d '{"payload":"sync-default"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT a, b, payload FROM test_http_columns_defaults"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns_defaults"
+
+echo "--- async: DEFAULT expression referencing injected column"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-A: 10' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns_defaults+(payload)+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
+    -d '{"payload":"async-default"}'
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SELECT a, b, payload FROM test_http_columns_defaults"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_defaults"

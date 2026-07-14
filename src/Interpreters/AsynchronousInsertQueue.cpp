@@ -1450,7 +1450,19 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     {
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(format_header), columns, *format, insert_context);
+        {
+            /// When there are injected columns, build an extended header for
+            /// AddingDefaultsTransform that appends the injected columns after
+            /// the body columns. This lets DEFAULT expressions that reference
+            /// injected columns (e.g. `b DEFAULT a + 1` where `a` is from a
+            /// header) evaluate correctly. The injected columns are appended
+            /// at the end so body column positions match BlockMissingValues indices.
+            Block defaults_header = format_header;
+            for (const auto & info : injected_column_infos)
+                defaults_header.insert(header.getByPosition(info.header_col_idx));
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
+                std::make_shared<const Block>(defaults_header), columns, *format, insert_context);
+        }
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1490,6 +1502,25 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
+
+        /// For each entry, update the per-entry injected constant columns so that
+        /// AddingDefaultsTransform can evaluate DEFAULT expressions (e.g. `b DEFAULT a+1`)
+        /// using the correct header-injected value for this entry's rows.
+        if (!injected_column_infos.empty())
+        {
+            const FormatSettings fmt_settings = getFormatSettings(insert_context);
+            Columns const_cols;
+            const_cols.reserve(injected_column_infos.size());
+            for (const auto & info : injected_column_infos)
+            {
+                const auto & raw_value = entry->http_header_column_values[info.entry_parsed_idx].second;
+                auto col = info.type->createColumn();
+                ReadBufferFromString buf(raw_value);
+                info.type->getDefaultSerialization()->deserializeWholeText(*col, buf, fmt_settings);
+                const_cols.push_back(std::move(col));
+            }
+            executor.setConstantColumnsForDefaults(std::move(const_cols));
+        }
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);
