@@ -78,6 +78,12 @@ struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::De
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (map_column)
+            callback(map_column);
+    }
 };
 
 void SerializationSubObjectSharedData::enumerateStreams(

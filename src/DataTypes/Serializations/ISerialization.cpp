@@ -492,6 +492,12 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 {
     explicit SubstreamsCacheColumnWithNumReadRowsElement(ColumnPtr column_, size_t num_read_rows_) : column(column_), num_read_rows(num_read_rows_) {}
 
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (column)
+            callback(column);
+    }
+
     ColumnPtr column;
     size_t num_read_rows;
 };
@@ -500,6 +506,11 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 
 void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
 {
+    /// The consumers of this cache element insert the last num_read_rows rows of the column into the
+    /// result (see insertDataFromCachedColumn), so the column must contain at least that many rows,
+    /// otherwise the range arithmetic there would underflow.
+    chassert(column);
+    chassert(column->size() >= num_read_rows);
     addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
 }
 
@@ -510,6 +521,11 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
         return std::nullopt;
 
     auto * typed_element = assert_cast<SubstreamsCacheColumnWithNumReadRowsElement *>(element);
+    /// The invariant established at insertion must still hold at lookup. If it does not, the cached
+    /// column was mutated in place through another reference after it was cached (broken copy-on-write
+    /// discipline, see https://github.com/ClickHouse/ClickHouse/issues/105626).
+    chassert(typed_element->column);
+    chassert(typed_element->column->size() >= typed_element->num_read_rows);
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
@@ -801,6 +817,9 @@ bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache,
 
 void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert)
 {
+    /// The range arithmetic below relies on this invariant, otherwise `cached_column->size() - num_read_rows` underflows.
+    chassert(cached_column);
+    chassert(cached_column->size() >= num_read_rows);
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
     /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
@@ -848,5 +867,84 @@ bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const IS
 
     return false;
 }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+
+void ColumnsOwnershipValidator::addColumnReference(const ColumnPtr & column)
+{
+    if (column)
+        ++known_references[column.get()];
+}
+
+void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache & cache)
+{
+    for (const auto & [_, element] : cache)
+    {
+        if (element)
+            element->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column); });
+    }
+}
+
+void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsDeserializeStatesCache & states)
+{
+    for (const auto & [_, state] : states)
+        add(state);
+}
+
+void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkStatePtr & state)
+{
+    if (!state)
+        return;
+
+    if (!seen_states.emplace(state.get()).second)
+        return;
+
+    state->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column); });
+}
+
+void ColumnsOwnershipValidator::add(const ColumnPtr & column)
+{
+    addColumnReference(column);
+}
+
+void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
+{
+    /// Each reference enumerated here is a live ColumnPtr owned by a structure of the current thread,
+    /// so it cannot go away concurrently, and concurrent activity of other threads can only make the
+    /// reference count larger than what we enumerate, never smaller.
+    auto references = known_references;
+
+    for (const auto & column : result_columns)
+    {
+        if (!column)
+            continue;
+
+        ++references[column.get()];
+        column->forEachSubcolumnRecursively([&](const IColumn & subcolumn) { ++references[&subcolumn]; });
+    }
+
+    for (const auto & [column, num_references] : references)
+    {
+        /// A single enumerated reference proves nothing beyond the column being alive;
+        /// only columns reachable from two or more holders can expose an inconsistency.
+        if (num_references > 1 && column->use_count() < num_references)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Column {} of type {} has reference count {} which is less than the number of its known holders ({}). "
+                "Copy-on-write reference counting was broken somewhere on the read path, which leads to use-after-free "
+                "(see https://github.com/ClickHouse/ClickHouse/issues/105626)",
+                reinterpret_cast<const void *>(column), column->getName(), column->use_count(), num_references);
+    }
+}
+
+#else
+
+void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache &) {}
+void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsDeserializeStatesCache &) {}
+void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkStatePtr &) {}
+void ColumnsOwnershipValidator::add(const ColumnPtr &) {}
+void ColumnsOwnershipValidator::validate(const Columns &) const {}
+
+#endif
 
 }

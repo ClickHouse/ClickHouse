@@ -35,6 +35,12 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
         new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (discriminators)
+            callback(discriminators);
+    }
 };
 
 

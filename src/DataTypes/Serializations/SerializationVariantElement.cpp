@@ -61,6 +61,14 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (discriminators)
+            callback(discriminators);
+        if (variant)
+            callback(variant);
+    }
 };
 
 

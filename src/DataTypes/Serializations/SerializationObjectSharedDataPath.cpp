@@ -79,6 +79,12 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (map_column)
+            callback(map_column);
+    }
 };
 
 

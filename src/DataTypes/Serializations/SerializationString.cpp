@@ -753,6 +753,12 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
         res->size_column = size_column;
         return res;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (size_column)
+            callback(size_column);
+    }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
