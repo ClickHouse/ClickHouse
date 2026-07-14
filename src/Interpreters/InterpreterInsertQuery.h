@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
@@ -56,6 +57,15 @@ public:
     bool supportsTransactions() const override { return true; }
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
+
+    /// Validates http_column_* mappings against the table schema and, when the INSERT
+    /// has an explicit column list, appends the mapped column names to it so that
+    /// getSampleBlock includes them in the pipeline header (treating them as client-provided).
+    /// Throws if any mapped column is non-insertable or conflicts with the explicit list.
+    static void expandInsertQueryWithHTTPHeaderColumns(
+        ASTInsertQuery & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameToNameMap & http_header_columns);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 

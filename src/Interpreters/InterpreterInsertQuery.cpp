@@ -755,6 +755,46 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 }
 
 
+void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
+    ASTInsertQuery & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameToNameMap & http_header_columns)
+{
+    const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
+
+    for (const auto & [col_name, _] : http_header_columns)
+    {
+        if (!insertable_sample.has(col_name))
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
+                "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
+                col_name, query.table_id.getFullTableName());
+    }
+
+    /// Only modify the explicit column list when the user provided one.
+    /// A null list means \"all table columns\": getSampleBlock already returns the
+    /// full schema including the http_column columns, so no modification is needed.
+    if (query.columns)
+    {
+        NameSet existing_columns;
+        for (const auto & child : query.columns->children)
+            existing_columns.insert(child->getColumnName());
+
+        for (const auto & [col_name, _] : http_header_columns)
+        {
+            if (existing_columns.contains(col_name))
+                throw Exception(
+                    ErrorCodes::DUPLICATE_COLUMN,
+                    "http_column mapping conflicts with column '{}' already listed in the INSERT column list. "
+                    "A column must come from either the request body or an HTTP header, not both.",
+                    col_name);
+            query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+        }
+    }
+}
+
+
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     auto context = getContext();
@@ -1087,39 +1127,7 @@ BlockIO InterpreterInsertQuery::execute()
                 "http_column_* URL parameters are not supported with INSERT ... SELECT. "
                 "Use getClientHTTPHeader() in the SELECT clause instead");
 
-        const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
-
-        for (const auto & [col_name, _] : http_header_columns)
-        {
-            if (!insertable_sample.has(col_name))
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
-                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
-                    col_name, query.table_id.getFullTableName());
-        }
-
-        /// When the user provides an explicit column list, the http_column columns must not
-        /// appear in it: a column must come from either the body or a header, not both.
-        /// When query.columns is null (all table columns), getSampleBlock already returns the
-        /// full schema including the http_column columns, so no modification is needed.
-        if (query.columns)
-        {
-            NameSet existing_columns;
-            for (const auto & child : query.columns->children)
-                existing_columns.insert(child->getColumnName());
-
-            for (const auto & [col_name, _] : http_header_columns)
-            {
-                if (existing_columns.contains(col_name))
-                    throw Exception(
-                        ErrorCodes::DUPLICATE_COLUMN,
-                        "http_column mapping conflicts with column '{}' already listed in the INSERT column list. "
-                        "A column must come from either the request body or an HTTP header, not both.",
-                        col_name);
-                query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
-            }
-        }
+        expandInsertQueryWithHTTPHeaderColumns(query, metadata_snapshot, http_header_columns);
     }
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);

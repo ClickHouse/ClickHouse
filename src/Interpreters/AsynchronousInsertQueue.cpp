@@ -98,14 +98,12 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int DUPLICATE_COLUMN;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 static const NameSet settings_to_skip
@@ -432,38 +430,8 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     const auto & http_header_columns = query_context->getHTTPHeaderColumns();
     if (!http_header_columns.empty())
     {
-        const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
-
-        for (const auto & [col_name, _] : http_header_columns)
-        {
-            if (!insertable_sample.has(col_name))
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
-                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
-                    col_name, insert_query.table_id.getFullTableName());
-        }
-
-        /// Same as the sync path: only modify the column list when the user provided an
-        /// explicit one. A null list means "all table columns" and getSampleBlock already
-        /// includes the http_column columns in the full schema.
-        if (insert_query.columns)
-        {
-            NameSet existing_columns;
-            for (const auto & child : insert_query.columns->children)
-                existing_columns.insert(child->getColumnName());
-
-            for (const auto & [col_name, _] : http_header_columns)
-            {
-                if (existing_columns.contains(col_name))
-                    throw Exception(
-                        ErrorCodes::DUPLICATE_COLUMN,
-                        "http_column mapping conflicts with column '{}' already listed in the INSERT column list. "
-                        "A column must come from either the request body or an HTTP header, not both.",
-                        col_name);
-                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
-            }
-        }
+        InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
+            insert_query, metadata_snapshot, http_header_columns);
     }
 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
