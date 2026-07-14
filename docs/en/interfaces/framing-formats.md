@@ -38,7 +38,14 @@ Frames packets as [HTTP server-sent events](https://html.spec.whatwg.org/multipa
 
 Because the client reconstructs the payload by joining the `data` fields with a newline and then stripping a single trailing newline, a payload that ends with a newline (the common case for line-based formats such as `JSONEachRow`, `TSV`, or `CSV`) is followed by an extra empty `data:` field, so the trailing newline survives the reconstruction. As a result, the concatenation of the reconstructed payloads of the `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing.
 
-Server-sent events is a text protocol. Because it treats line breaks as field delimiters, carriage returns (`\r`) in the payload would not be preserved. To support output formats that may produce non-UTF-8 bytes - binary formats such as `Native` or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw` - `EventStream` base64-encodes the `data`, `totals`, and `extremes` payloads (each into a single `data:` field), and signals this by adding a `payload=base64` parameter to the `Content-Type` (`text/event-stream; charset=UTF-8; payload=base64`). The client then base64-decodes those payloads; the concatenation of the decoded payloads is exactly what the output format would have produced without framing. The auxiliary JSON packets (`progress`, `log`, `profile_events`, `exception`) are never encoded. Text output formats are still embedded as plain text (no `payload=base64`).
+Server-sent events is a text protocol that treats line breaks (including carriage returns, `\r`) as field delimiters, so a payload cannot be embedded as text if it may contain arbitrary bytes or raw carriage returns. `EventStream` base64-encodes the `data`, `totals`, and `extremes` payloads (each into a single `data:` field) in these cases:
+
+- output formats that may produce non-UTF-8 bytes: binary formats such as `Native` or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`;
+- output formats that may emit raw carriage returns: `TSV` or `CSV` with `output_format_tsv_crlf_end_of_line` / `output_format_csv_crlf_end_of_line` enabled (the `\r\n` row terminator).
+
+When the payloads are base64-encoded, `EventStream` signals it by adding a `payload=base64` parameter to the `Content-Type` (`text/event-stream; charset=UTF-8; payload=base64`). The client then base64-decodes those payloads; the concatenation of the decoded payloads is exactly what the output format would have produced without framing. The auxiliary JSON packets (`progress`, `log`, `profile_events`, `exception`) are never encoded. Text output formats without raw carriage returns are still embedded as plain text (no `payload=base64`).
+
+The `*WithProgress` output formats (`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`) write progress as in-band rows that are part of their own output. A framing format delivers progress as separate `progress` packets instead, so it is not compatible with these output formats and rejects them - use the base output format (for example `JSONEachRow`) with framing, or the `None` framing with a `*WithProgress` format.
 
 ```bash
 curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
@@ -55,8 +62,7 @@ event: progress
 data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
 
 event: profile_events
-data: {"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}
-data: {"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
 
 ```
 
@@ -65,6 +71,8 @@ data: {"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":
 ## JSONEachPacketBase64 and JSONEachPacketString {#framing-format-jsoneachpacket}
 
 Every packet is a JSON object on a separate line (newline-delimited JSON, `application/x-ndjson`), containing the info about the packet. The bytes produced by the output format are put into the `data` field: base64-encoded in `JSONEachPacketBase64` (suitable for binary output formats), or as a JSON string in `JSONEachPacketString`.
+
+Because `JSONEachPacketString` puts the payload bytes into a JSON string, it is meant for output formats that produce valid UTF-8 text. `String` and `FixedString` columns can hold arbitrary bytes, so text output formats such as `JSONEachRow`, `TSV` or `CSV` may emit invalid UTF-8 for such values - just as ClickHouse's own `JSONEachRow` does with the default `output_format_json_validate_utf8 = 0` - and in that case the resulting JSON string, and therefore the whole NDJSON stream, is not guaranteed to be valid UTF-8. `JSONEachPacketString` does not validate or re-encode the payload; use `JSONEachPacketBase64` for byte-exact transport of arbitrary bytes.
 
 ```bash
 curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"

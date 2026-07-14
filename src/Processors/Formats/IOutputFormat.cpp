@@ -185,6 +185,22 @@ void IOutputFormat::finalizeUnlocked()
 {
     if (finalized)
         return;
+
+    if (framing && framing_exception_only)
+    {
+        /// Exception-only framing (see `setFraming`'s `for_exception`): the query failed before any
+        /// output was produced, so the real output format must not contribute any bytes. Skipping its
+        /// prefix, suffix and finalize keeps the payload buffer empty, so no `data` packet carrying an
+        /// empty format skeleton (for example `{"meta":[],"data":[]}` for `FORMAT JSON`) is emitted
+        /// before the `exception` packet. Only the framing's own auxiliary packets (logs, profile
+        /// events) and the exception packet are written. `finalizeBuffers` is still called so any
+        /// wrapping buffers of the unused output format are released cleanly.
+        finalizeBuffers();
+        framing->finalize();
+        finalized = true;
+        return;
+    }
+
     writePrefixIfNeeded();
 
     writeProgressIfNeededUnlocked();
@@ -283,20 +299,38 @@ void IOutputFormat::setProgress(Progress progress)
     statistics.progress = std::move(progress);
 }
 
-void IOutputFormat::setFraming(const std::shared_ptr<IFramingFormat> & framing_)
+void IOutputFormat::setFraming(const std::shared_ptr<IFramingFormat> & framing_, bool for_exception)
 {
     /// Some output formats (for example `Template`) do not write totals and extremes in
     /// `consumeTotals` / `consumeExtremes`, but store them and emit them later from `finalizeImpl`.
     /// A framing format cannot tell such deferred totals/extremes apart from the main data, so it
     /// would mislabel them as `data` packets. Reject these formats instead of producing wrong output.
-    if (areTotalsAndExtremesUsedInFinalize())
+    /// On the exception path (`for_exception`) only the `exception` packet is written (no data,
+    /// totals or extremes), so this restriction does not apply.
+    if (!for_exception && areTotalsAndExtremesUsedInFinalize())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The output format {} is not compatible with framing formats, "
             "because it writes totals and extremes in a deferred way",
             getName());
 
+    /// The `*WithProgress` output formats (`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`)
+    /// write progress as in-band rows that are part of their normal output (`writesProgressConcurrently`).
+    /// A framing format routes progress to out-of-band `progress` packets instead, so those in-band rows
+    /// would disappear and the concatenation of the `data` packets would no longer reproduce the unframed
+    /// output. Reject such formats; use the base output format (for example `JSONEachRow`) with framing,
+    /// which delivers progress as `progress` packets. On the exception path (`for_exception`) only the
+    /// exception packet is written (no data or progress), so this restriction does not apply.
+    if (!for_exception && writesProgressConcurrently())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The output format {} is not compatible with framing formats, "
+            "because it writes progress in-band as part of its output. "
+            "Use the base output format, which lets framing deliver progress as separate packets",
+            getName());
+
     framing = framing_;
+    framing_exception_only = for_exception;
 }
 
 InputPort & IOutputFormat::getPort(PortKind kind)

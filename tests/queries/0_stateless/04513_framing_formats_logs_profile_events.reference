@@ -7,3 +7,20 @@ log packets: OK
 "packet":"log","log":{"event_time":
 --- log packets in EventStream
 log events: OK
+--- profile events in EventStream are a single JSON array
+profile_events single JSON array: OK
+--- planning-phase logs are framed when the query fails before producing output
+planning-phase log packets: OK
+exception packet: OK
+--- planning-phase logs are framed with wait_end_of_query when the query fails before producing output
+wait_end_of_query planning-phase log packets: OK
+wait_end_of_query exception packet: OK
+--- profile events packets when framing is enabled by the query SETTINGS clause
+query SETTINGS profile_events packets: OK
+--- log packets when framing and logs are enabled by the query SETTINGS clause
+query SETTINGS log packets: OK
+--- the query SETTINGS clause can disable framing enabled by the URL
+query SETTINGS framing None disables framing: OK
+{"x":1}
+--- the query SETTINGS clause can disable logs enabled by the URL while framing stays on
+query SETTINGS send_logs_level none drops log packets: OK

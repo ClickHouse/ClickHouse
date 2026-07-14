@@ -1033,7 +1033,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -2456,9 +2456,14 @@ namespace
 /// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
 /// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
 /// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
-bool outputFormatProducesText(const String & format_name, const std::optional<FormatSettings> & output_format_settings)
+/// Some formats produce raw bytes only under certain settings (for example `CustomSeparated` with a
+/// `Raw` escaping rule), which is detected with the settings-aware `checkIfOutputFormatMayProduceRawBytes`.
+bool outputFormatProducesText(
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    const FormatSettings & format_settings)
 {
-    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name))
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings))
         return false;
     const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
     return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
@@ -2468,7 +2473,8 @@ FramingFormatPtr createFramingFormatIfApplicable(
     const ContextMutablePtr & context,
     WriteBuffer & ostr,
     const String & format_name,
-    const std::optional<FormatSettings> & output_format_settings)
+    const std::optional<FormatSettings> & output_format_settings,
+    bool for_exception = false)
 {
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
         return nullptr;
@@ -2482,15 +2488,29 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
     /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
     /// `LineAsString`) that write the column bytes verbatim.
-    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings);
+    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
 
-    auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
+    /// Whether the output format may emit raw carriage returns (for example `TSV` / `CSV` with
+    /// `output_format_tsv_crlf_end_of_line` / `output_format_csv_crlf_end_of_line`). Those cannot be
+    /// carried losslessly by the text `EventStream` framing and are base64-encoded there instead.
+    const bool payload_has_carriage_returns
+        = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
+
+    auto framing = createFramingFormat(
+        framing_name,
+        ostr,
+        format_settings,
+        {.is_http = true, .binary_payload = binary_payload, .payload_has_carriage_returns = payload_has_carriage_returns});
 
     /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
     /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
     /// the payloads (see `binary_payload`), but `JSONEachPacketString` puts the bytes into a JSON
     /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
-    if (framing->requiresTextPayload() && binary_payload)
+    ///
+    /// When framing only an exception (`for_exception`), the stream carries a single `exception`
+    /// packet, which is always JSON regardless of the output format, so this compatibility check is
+    /// skipped: the exception is framed even for output formats that cannot be embedded as text.
+    if (!for_exception && framing->requiresTextPayload() && binary_payload)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The framing format {} embeds the output as text and is not compatible with the output format {}, "
@@ -2509,42 +2529,67 @@ struct FramingQueues
     InternalProfileEventsQueuePtr profile_events_queue;
 };
 
-/// Attach the logs and profile-events queues to the current thread (the thread group of the query
-/// inherits them) as early as possible - before the query is interpreted - so the framing format
-/// captures the logs and profile events emitted during parsing, planning and analysis, just like
-/// the native protocol does. The queues are wired into the framing format later, once it is created
-/// (the framing format only becomes known after the output format's header is available).
-/// Does nothing unless a framing format is requested over HTTP.
-FramingQueues attachQueuesForFramingIfApplicable(const ContextMutablePtr & context)
+/// Attach or detach the logs and profile-events queues on the current thread (the thread group of
+/// the query inherits them) so they match the effective settings: a framing format requested over
+/// HTTP, plus `send_logs_level` / `send_profile_events`. The queues are owned by `queues` here (the
+/// thread group keeps only a weak reference), so dropping one detaches it and stops the capture.
+///
+/// This is idempotent and is called twice, because the settings that govern framing are only final
+/// after the query's own `SETTINGS` clause has been applied inside `executeQueryImpl`:
+///  - before the query is interpreted, so the logs and profile events emitted during parsing,
+///    planning and analysis are captured (matching the native protocol) when framing is requested
+///    from the session or the URL;
+///  - after `executeQueryImpl`, to reconcile the queues with the effective settings - so a framing
+///    format (or `send_logs_level` / `send_profile_events`) enabled only by the query's `SETTINGS`
+///    clause gets its queues, and the inverse override (framing or the queues disabled by the query)
+///    drops them instead of capturing packets that nobody drains.
+///
+/// The queues are wired into the framing format later, once it is created (the framing format only
+/// becomes known after the output format's header is available). A framing format enabled only by a
+/// query-level `SETTINGS` clause is not known before parsing, so its queues start capturing from
+/// query execution onwards - the parse / plan phase logs are captured only when framing is requested
+/// from the session or the URL.
+///
+/// Does nothing unless the query runs over HTTP.
+void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
 {
-    FramingQueues queues;
-
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
-        return queues;
+        return;
 
     const Settings & settings = context->getSettingsRef();
-    if (boost::iequals(settings[Setting::framing_output_format].value, "None"))
-        return queues;
+    const bool framing_enabled = !boost::iequals(settings[Setting::framing_output_format].value, "None");
 
     const auto client_logs_level = settings[Setting::send_logs_level];
-    if (client_logs_level != LogsLevel::none)
+    if (framing_enabled && client_logs_level != LogsLevel::none)
     {
-        queues.logs_queue = std::make_shared<InternalTextLogsQueue>();
+        if (!queues.logs_queue)
+            queues.logs_queue = std::make_shared<InternalTextLogsQueue>();
         queues.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
         queues.logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
         CurrentThread::attachInternalTextLogsQueue(queues.logs_queue, client_logs_level);
     }
-
-    if (settings[Setting::send_profile_events])
+    else if (queues.logs_queue)
     {
-        queues.profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-        CurrentThread::attachInternalProfileEventsQueue(queues.profile_events_queue);
+        queues.logs_queue.reset();
+        CurrentThread::attachInternalTextLogsQueue(nullptr, LogsLevel::none);
     }
 
-    return queues;
+    if (framing_enabled && settings[Setting::send_profile_events])
+    {
+        if (!queues.profile_events_queue)
+        {
+            queues.profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+            CurrentThread::attachInternalProfileEventsQueue(queues.profile_events_queue);
+        }
+    }
+    else if (queues.profile_events_queue)
+    {
+        queues.profile_events_queue.reset();
+        CurrentThread::attachInternalProfileEventsQueue(nullptr);
+    }
 }
 
-/// Wire the queues attached by `attachQueuesForFramingIfApplicable` into the framing format.
+/// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
 void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues)
 {
     if (queues.logs_queue)
@@ -2665,10 +2710,34 @@ void executeQuery(
     String format_name;
     OutputFormatPtr output_format;
 
+    /// If a framing format is requested, attach its logs and profile-events queues to the current
+    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// analysis are captured too (they are wired into the framing format once it is created below).
+    /// The queues are reconciled with the effective settings again after `executeQueryImpl` has
+    /// applied the query's own `SETTINGS` clause (see `syncFramingQueuesWithSettings`).
+    FramingQueues framing_queues;
+    syncFramingQueuesWithSettings(context, framing_queues);
+
     auto update_format_on_exception_if_needed = [&]()
     {
-        if (!output_format)
+        /// The data path may have thrown from `setFraming` after the output format was already
+        /// created: a format that defers totals and extremes to finalization (`Template`) or writes
+        /// progress in-band (`JSONEachRowWithProgress`) is rejected there. Such a leftover format is
+        /// not framed, and it writes to the payload buffer of a framing format that was destroyed
+        /// during stack unwinding, so it must not carry the exception. Recreate the format in that
+        /// case too, so the error is delivered as a framed `exception` packet rather than falling
+        /// back to a plain HTTP error body.
+        const bool unusable_for_framed_exception = output_format && !output_format->getFraming()
+            && context->getClientInfo().interface == ClientInfo::Interface::HTTP
+            && !boost::iequals(context->getSettingsRef()[Setting::framing_output_format].value, "None");
+
+        if (!output_format || unusable_for_framed_exception)
         {
+            /// `executeQueryImpl` may have applied the query's `SETTINGS` clause before throwing, so
+            /// reconcile the queues with the effective settings before framing the exception, so the
+            /// accumulated `log` / `profile_events` packets match the effective framing settings.
+            syncFramingQueuesWithSettings(context, framing_queues);
+
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -2676,11 +2745,24 @@ void executeQuery(
                     ? getIdentifierName(ast_query_with_output->format_ast)
                     : context->getDefaultFormat();
 
-                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings);
+                /// The exception stream carries only the `exception` packet (always JSON), so the framing
+                /// is created for the exception even when the output format cannot be embedded as text or
+                /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
+                /// attached before the query are wired in as well, so any `log` / `profile_events` packets
+                /// accumulated during parsing and planning are still drained on `finalize`.
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*for_exception=*/ true);
                 if (framing)
                 {
-                    output_format = FormatFactory::instance().getOutputFormat(format_name, framing->getPayloadBuffer(), {}, context, output_format_settings);
-                    output_format->setFraming(framing);
+                    /// With a framing format, the exception packet is written by the framing itself and
+                    /// the output format writes nothing in exception-only mode (see
+                    /// `framing_exception_only`), so the format here is only a carrier for the framing.
+                    /// It is created as `Null` rather than as the query's own format, because the real
+                    /// format may not even be constructible on the exception path - for example
+                    /// `Template` with a row template referencing columns of the header, which is empty
+                    /// here.
+                    output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+                    output_format->setFraming(framing, /*for_exception=*/ true);
+                    setFramingQueues(*framing, context, framing_queues);
                 }
                 else
                 {
@@ -2721,11 +2803,6 @@ void executeQuery(
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
 
-    /// If a framing format is requested, attach its logs and profile-events queues to the current
-    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
-    /// analysis are captured too (they are wired into the framing format once it is created below).
-    const FramingQueues framing_queues = attachQueuesForFramingIfApplicable(context);
-
     try
     {
         streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
@@ -2747,6 +2824,13 @@ void executeQuery(
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
+
+    /// The query's own `SETTINGS` clause (applied inside `executeQueryImpl`) may enable or disable
+    /// framing / logs / profile events differently from the session or URL defaults that
+    /// `syncFramingQueuesWithSettings` saw before parsing. Reconcile the queues with the effective
+    /// settings, now that they are final, before the framing format is created and the pipeline is
+    /// executed - so the queues match the framing decision and no queue captures packets nobody drains.
+    syncFramingQueuesWithSettings(context, framing_queues);
 
     const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
     if (!additional_http_headers.empty())

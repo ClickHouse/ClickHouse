@@ -78,7 +78,9 @@ public:
     /// have been created over the framing format's payload buffer. When set, the format notifies
     /// the framing format on packet boundaries, and progress is routed to the framing format
     /// instead of the `writeProgress` method. Not compatible with parallel formatting.
-    void setFraming(const std::shared_ptr<IFramingFormat> & framing_);
+    /// `for_exception` attaches the framing to serialize only an exception packet, so the deferred
+    /// totals/extremes check (which matters only for data packets) is skipped.
+    void setFraming(const std::shared_ptr<IFramingFormat> & framing_, bool for_exception = false);
     const std::shared_ptr<IFramingFormat> & getFraming() const { return framing; }
 
     /// By default the output format finalizes the framing format (which writes the trailing logs,
@@ -212,6 +214,10 @@ protected:
     bool finished = false;
     bool finalized = false;
     bool framing_finalize_deferred = false;
+    /// The framing was attached only to serialize an exception packet (see `setFraming`'s
+    /// `for_exception`). In this case the real output format must not write anything into the payload
+    /// buffer on finalization, so that no empty format skeleton leaks as a `data` packet.
+    bool framing_exception_only = false;
 
     /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;

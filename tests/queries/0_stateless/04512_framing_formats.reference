@@ -56,6 +56,10 @@ Unknown framing format Unknown
 1
 --- framing is rejected for formats that defer totals and extremes to finalize (Template)
 is not compatible with framing formats
+--- the deferred-totals rejection is delivered as a framed exception packet
+1
+--- an exception raised before the output format exists is framed even for Template
+1
 --- EventStream base64-encodes binary output formats (Native)
 text/event-stream; charset=UTF-8; payload=base64
 Native payload round-trips
@@ -69,3 +73,30 @@ is not compatible with the output format TSVRaw
 1
 --- JSONEachPacketBase64 carries raw output formats (RawBLOB)
 1
+--- JSONEachPacketString is rejected for CustomSeparated with the Raw escaping rule
+is not compatible with the output format CustomSeparated
+--- EventStream base64-encodes CustomSeparated with the Raw escaping rule
+text/event-stream; charset=UTF-8; payload=base64
+--- JSONEachPacketString accepts CustomSeparated with an escaping rule that escapes (Escaped)
+CustomSeparated (Escaped) accepted: OK
+--- a compatibility error is delivered as a framed exception packet (streaming)
+1
+--- a compatibility error is delivered as a framed exception packet (wait_end_of_query)
+1
+--- EventStream base64-encodes TSV with a CRLF row terminator
+text/event-stream; charset=UTF-8; payload=base64
+TSV CRLF payload round-trips
+--- EventStream base64-encodes CSV with a CRLF row terminator
+text/event-stream; charset=UTF-8; payload=base64
+--- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)
+{"packet":"data","data":"0\r\n1\r\n2\r\n"}
+--- framing is rejected for output formats that write progress in-band (JSONEachRowWithProgress)
+writes progress in-band
+--- the in-band-progress rejection is delivered as a framed exception packet
+1
+--- exception-only stream carries no data packet, only the exception (FORMAT JSON, streaming)
+data packets: 0
+exception packets: 1
+--- exception-only stream carries no data packet, only the exception (FORMAT JSON, wait_end_of_query)
+data packets: 0
+exception packets: 1

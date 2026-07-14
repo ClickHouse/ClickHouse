@@ -221,6 +221,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
@@ -1120,6 +1121,22 @@ void FormatFactory::markOutputFormatMayProduceRawBytes(const String & name)
     target = true;
 }
 
+void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Raw bytes checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
+void FormatFactory::registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_emit_carriage_return_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Carriage-return checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1212,10 +1229,18 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
     return target.is_tty_friendly;
 }
 
-bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name) const
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings) const
 {
     const auto & target = getCreators(name);
-    return target.may_produce_raw_bytes;
+    if (target.may_produce_raw_bytes)
+        return true;
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings);
+}
+
+bool FormatFactory::checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const
+{
+    const auto & target = getCreators(name);
+    return target.may_emit_carriage_return_checker && target.may_emit_carriage_return_checker(settings);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

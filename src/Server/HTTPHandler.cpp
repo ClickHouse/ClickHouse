@@ -563,7 +563,20 @@ void HTTPHandler::processQuery(
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 String framing_name = framing ? framing->getName() : "";
-                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
+
+                /// The buffered output is discarded on an exception, so the framing format is recreated
+                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// were attached during parsing and planning (the `framing` object goes out of scope
+                /// before this writer runs, so the queues are captured by value here) - otherwise the
+                /// framed exception response would drop the `log` / `profile_events` packets that the
+                /// streaming path and the documentation promise.
+                std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
+                InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
+                String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
+                UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+
+                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -577,9 +590,15 @@ void HTTPHandler::processQuery(
                     if (!framing_name.empty())
                     {
                         /// All the output buffered so far is discarded, so the framing format is created
-                        /// anew, and the response consists of a single exception packet.
+                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
+                        /// accumulated so far followed by a single exception packet.
                         auto framing_for_exception = createFramingFormat(
                             framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
+                        if (framing_logs_queue)
+                            framing_for_exception->setLogsQueue(framing_logs_queue);
+                        if (framing_profile_events_queue)
+                            framing_for_exception->setProfileEventsQueue(
+                                framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
                         framing_for_exception->setException(message);
                         framing_for_exception->finalize();
                     }
