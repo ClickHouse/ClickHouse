@@ -206,9 +206,10 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 append_part(part);
                 folded = true;
             }
-            /// a compound identifier keeps parameter children; substitution fills them later
+            /// a compound identifier keeps parameter children; substitution fills them later.
+            /// `special` marks it as a database path so substituted parts are validated
             if (folded)
-                database = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
+                database = make_intrusive<ASTIdentifier>(std::move(parts), /*special*/ true, std::move(params));
         }
 
         if (s_not.ignore(pos, expected))

@@ -166,7 +166,12 @@ DB::Names HiveCatalog::getTables() const
         DB::Names current_tables;
         executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
         for (const auto & table : current_tables)
+        {
+            /// a component with a literal dot cannot be represented in the flattened path
+            if (table.find('.') != std::string::npos)
+                continue;
             result.push_back(db + "." + table);
+        }
     }
     return result;
 }
@@ -188,7 +193,12 @@ DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace
     DB::Names result;
     result.reserve(current_tables.size());
     for (const auto & table : current_tables)
+    {
+        /// a component with a literal dot cannot be represented in the flattened path
+        if (table.find('.') != std::string::npos)
+            continue;
         result.push_back(namespace_name + "." + table);
+    }
     return result;
 }
 

@@ -73,7 +73,7 @@ def create_clickhouse_iceberg_database(
 ):
     settings = {
         "catalog_type": "rest",
-        "warehouse": "warehouse", 
+        "warehouse": "warehouse",
         "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
@@ -200,7 +200,7 @@ def test_select(started_cluster):
 
     test_ref = f"test_select_{uuid.uuid4().hex[:8]}"
     test_namespace = (f"{test_ref}_namespace",)
-    
+
     catalog.create_namespace(test_namespace)
 
     test_table_name = f"{test_ref}_table"
@@ -259,7 +259,7 @@ def test_select(started_cluster):
 5	test
 """)
     assert csv_compare(result, expected), f"got\n{result}\nwant\n{expected}"
-    
+
 
 def test_hide_sensitive_info(started_cluster):
     node = started_cluster.instances["node1"]
@@ -375,7 +375,7 @@ def test_timestamps(started_cluster):
     table_name = f"{test_ref}_table"
     test_namespace = (f"{test_ref}_namespace",)
     test_table_identifier = (test_namespace[0], table_name)
-    
+
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(test_namespace)
 
@@ -387,7 +387,7 @@ def test_timestamps(started_cluster):
             field_id=2, name="timestamptz", field_type=TimestampType(), required=False
         ),
     )
-    
+
     table = catalog.create_table(
         test_table_identifier,
         schema=simple_schema,
@@ -406,11 +406,11 @@ def test_timestamps(started_cluster):
     table.append(df)
 
     # Extract the table path from S3 location for ClickHouse Iceberg ENGINE configuration
-    # 
+    #
     # The table metadata contains the full S3 URI which needs to be processed:
     # table.metadata.location:  s3://warehouse-rest/<test_namespace>/<test_table_uuid>
     # extracted_table_path: <test_namespace>/<test_table_uuid>
-    
+
     table_metadata = table.metadata
     table_location = table_metadata.location
     if "warehouse-rest/" in table_location:
@@ -519,7 +519,7 @@ def test_drop_table(started_cluster):
 
 def test_three_part_identifiers(started_cluster):
     """Test 3-part identifiers (catalog.namespace.table) for DataLakeCatalog databases
-    
+
     verifies that queries like SELECT FROM catalog.namespace.table work without
     needing to quote the table name as `namespace.table`
     """

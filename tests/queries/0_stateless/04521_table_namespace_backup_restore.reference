@@ -12,6 +12,8 @@
 1
 0
 1
+-- an exclusion outside the restored database is rejected
+1
 -- EXCEPT TABLE folds a namespace path but keeps rejecting real databases
 1
 1

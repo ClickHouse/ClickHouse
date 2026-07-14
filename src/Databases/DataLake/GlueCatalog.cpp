@@ -262,6 +262,12 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
 
                 if (limit != 0 && result.size() >= limit)
                     break;
+                /// a component with a literal dot cannot be represented in the flattened path
+                if (table.GetName().find('.') != std::string::npos)
+                {
+                    LOG_WARNING(log, "Skipping table {} in database {}: literal dots in table components are not supported", table.GetName(), db_name);
+                    continue;
+                }
                 result.push_back(db_name + "." + table.GetName());
             }
             next_token = tables_result.GetNextToken();

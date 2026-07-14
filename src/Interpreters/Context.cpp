@@ -7777,11 +7777,17 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
 
 StorageID Context::resolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
 {
+    /// a secondary distributed-DDL execution received canonical names from the initiator;
+    /// reinterpreting a qualifier against this host's catalog would be nondeterministic
+    if (isDDLOrOnClusterInternal())
+        return resolveStorageID(std::move(storage_id), where);
     return resolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
 }
 
 StorageID Context::tryResolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
 {
+    if (isDDLOrOnClusterInternal())
+        return tryResolveStorageID(std::move(storage_id), where);
     return tryResolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
 }
 

@@ -2735,6 +2735,17 @@ BlockIO InterpreterCreateQuery::execute()
                     target.table_id = DatabaseCatalog::instance().applyNamespaceQualifier(target.table_id, database_info.database);
     }
 
+    /// under a scope an unqualified AS source must not ship bare: fill it deterministically
+    if (!create.as_table.empty() && !create.cluster.empty() && create.as_database.empty())
+    {
+        const auto database_info = getContext()->getCurrentDatabaseInfo();
+        if (!database_info.table_prefix.empty())
+        {
+            create.as_database = database_info.database;
+            create.as_table = database_info.table_prefix + "." + create.as_table;
+        }
+    }
+
     /// Normalize the `AS <table>` source through the shared resolver so DataLakeCatalog
     /// namespaces are honored, before access checks. On resolution failure the names are
     /// kept and downstream code reports the error after authorization.

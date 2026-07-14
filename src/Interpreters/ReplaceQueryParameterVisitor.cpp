@@ -305,6 +305,16 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
             table_name += "." + name_parts[i];
         name_parts = {name_parts[0], std::move(table_name)};
     }
+    /// parser folds mark pure path identifiers (INSERT/DDL table slots, SHOW TABLES FROM)
+    /// as special: every part is a path component there
+    else if (ast_identifier->semantic->special && !ast_identifier->as<ASTTableIdentifier>() && name_parts.size() >= 2)
+    {
+        for (const auto & part : name_parts)
+            if (part.find('.') != String::npos)
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+                    "Parameter value {} cannot be used as a component of a table path: "
+                    "literal dots inside a component are not supported", backQuote(part));
+    }
 
     /// FIXME: what should this mean?
     if (!ast_identifier->semantic->special && name_parts.size() >= 2)

@@ -60,6 +60,7 @@
 created_p
 -- a substituted component with a literal dot is rejected
 1
+1
 -- joinGet with a namespace-path table string
 one
 -- joinGet dependency tracking protects the actual Join table

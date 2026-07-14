@@ -414,13 +414,30 @@ void canonicalizeBackupElements(ASTBackupQuery::Elements & elements, const Strin
 /// literal is absent from the backup; both present is an ambiguity error
 void canonicalizeRestoreElements(ASTBackupQuery::Elements & elements, const String & current_database, const BackupPtr & backup, bool fold_new_targets)
 {
+    /// candidate metadata roots, mirroring BackupMetadataFinder ("", shards/N/,
+    /// shards/N/replicas/M/); an over-approximation is fine for an existence probe
+    std::vector<std::filesystem::path> roots;
+    roots.emplace_back("");
+    for (const auto & shard : backup->listFiles("shards", /*recursive*/ false))
+    {
+        roots.emplace_back(std::filesystem::path{"shards"} / shard);
+        for (const auto & replica : backup->listFiles((std::filesystem::path{"shards"} / shard / "replicas").string(), /*recursive*/ false))
+            roots.emplace_back(std::filesystem::path{"shards"} / shard / "replicas" / replica);
+    }
+
     auto backup_has_table = [&](const String & database, const String & table)
     {
-        return backup->fileExists((std::filesystem::path{"metadata"} / escapeForFileName(database) / (escapeForFileName(table) + ".sql")).string());
+        for (const auto & root : roots)
+            if (backup->fileExists((root / "metadata" / escapeForFileName(database) / (escapeForFileName(table) + ".sql")).string()))
+                return true;
+        return false;
     };
     auto backup_has_database = [&](const String & database)
     {
-        return backup->fileExists((std::filesystem::path{"metadata"} / (escapeForFileName(database) + ".sql")).string());
+        for (const auto & root : roots)
+            if (backup->fileExists((root / "metadata" / (escapeForFileName(database) + ".sql")).string()))
+                return true;
+        return false;
     };
 
     /// resolve one written name against backup contents; base_database is where a
@@ -458,6 +475,15 @@ void canonicalizeRestoreElements(ASTBackupQuery::Elements & elements, const Stri
                 auto resolved = except_table;
                 if (!resolved.first.empty() && resolved.first != base_database)
                     resolve_in_backup(resolved.first, resolved.second, base_database);
+                /// a DATABASE exclusion must name something inside that database, or the
+                /// finder would silently never match it (cross-database exclusions are
+                /// meaningful only for RESTORE ALL)
+                if (element.type == ASTBackupQuery::DATABASE && resolved.first != element.database_name)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXCEPT TABLE {}.{} does not belong to the restored database {}; "
+                        "qualify the excluded table as a name inside that database",
+                        backQuoteIfNeed(resolved.first), backQuoteIfNeed(resolved.second),
+                        backQuoteIfNeed(element.database_name));
                 resolved_except_tables.emplace(std::move(resolved));
             }
             element.except_tables = std::move(resolved_except_tables);
@@ -868,7 +894,10 @@ void BackupsWorker::doBackup(
     }
     else
     {
-        canonicalizeBackupElements(backup_query->elements, context->getCurrentDatabase());
+        /// an internal worker received canonical names from the initiator; reinterpreting
+        /// them against this host's catalog would be nondeterministic
+        if (!is_internal_backup)
+            canonicalizeBackupElements(backup_query->elements, context->getCurrentDatabase());
         backup_query->setCurrentDatabase(context->getCurrentDatabaseInfo());
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);

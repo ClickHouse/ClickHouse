@@ -54,8 +54,9 @@ bool foldNamespacesIntoTableName(IParser::Pos & pos, Expected & expected, ASTPtr
     }
     else
     {
-        /// a compound identifier keeps parameter children; substitution fills them later
-        table = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
+        /// a compound identifier keeps parameter children; substitution fills them later.
+        /// `special` marks it as a table path so substituted parts are validated
+        table = make_intrusive<ASTIdentifier>(std::move(parts), /*special*/ true, std::move(params));
     }
 
     return true;

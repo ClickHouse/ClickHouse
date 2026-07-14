@@ -68,6 +68,7 @@ $CLICKHOUSE_CLIENT --param_d="$db" --param_n="ns" -q "SHOW TABLES FROM {d:Identi
 
 echo "-- a substituted component with a literal dot is rejected"
 $CLICKHOUSE_CLIENT --param_n="a.b" --param_t="t" -q "SELECT count() FROM $db.{n:Identifier}.{t:Identifier}" 2>&1 | grep -m1 -c "BAD_QUERY_PARAMETER"
+$CLICKHOUSE_CLIENT --param_n="a.b" --param_t="t" -q "INSERT INTO $db.{n:Identifier}.{t:Identifier} VALUES (1)" 2>&1 | grep -m1 -c "BAD_QUERY_PARAMETER"
 
 echo "-- joinGet with a namespace-path table string"
 $CLICKHOUSE_CLIENT -m -q "

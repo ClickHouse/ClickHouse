@@ -36,6 +36,9 @@ $CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}_restored.\`ns.src\`"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}_restored.\`ns.restored\`"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${db}_restored"
 
+echo "-- an exclusion outside the restored database is rejected"
+$CLICKHOUSE_CLIENT -q "RESTORE DATABASE $db AS ${db}_r2 EXCEPT TABLE nowhere.t FROM Disk('backups', '${db}_full_dir')" 2>&1 | grep -m1 -c "does not belong"
+
 echo "-- EXCEPT TABLE folds a namespace path but keeps rejecting real databases"
 $CLICKHOUSE_CLIENT -q "BACKUP DATABASE $db EXCEPT TABLE ns.src TO Disk('backups', '${db}_except_dir')" | grep -m1 -c "BACKUP_CREATED"
 $CLICKHOUSE_CLIENT -m -q "

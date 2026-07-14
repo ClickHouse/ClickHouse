@@ -107,10 +107,11 @@ still returns the physical database (`catalog_name`), and `SHOW TABLES` lists
 only the direct children of the namespace, by their names relative to it.
 The prefix is cleared as soon as you switch to another database with `USE`.
 
-A namespace component cannot contain a literal dot: a back-quoted component
-like `` catalog_name.`a.b`.table `` is rejected, because after parsing it would
-be indistinguishable from `catalog_name.a.b.table`. Address such a table by
-quoting the whole path: `` catalog_name.`a.b.table` ``.
+A namespace or table component cannot contain a literal dot: a back-quoted
+component like `` catalog_name.`a.b`.table `` is rejected, because after parsing
+it would be indistinguishable from `catalog_name.a.b.table`. Catalog objects
+whose native components contain literal dots are not supported: they are skipped
+in listings and cannot be addressed.
 
 The same mechanism works for regular databases (`Atomic`, `Memory`), where a
 dot inside a table name lexically defines a namespace: a table named
