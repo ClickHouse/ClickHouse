@@ -97,7 +97,7 @@ protected:
 
     /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
     /// `external_id` is the shared secret of the assume-role triple; the other two (`role_arn`,
-    /// `role_session_name`) are identifiers passed inside `extra_credentials`, masked by maskS3ExtraCredentials.
+    /// `role_session_name`) are identifiers passed inside `extra_credentials`, masked by maskS3NestedSecretMaps.
     static constexpr std::string_view s3_secret_keys[]
         = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
@@ -129,18 +129,21 @@ protected:
         markSecretArgument(session_token_idx);
     }
 
-    /// `extra_credentials(role_arn = ..., external_id = ..., ...)` carries S3 assume-role auth material.
-    /// Mask all of its values, like `headers`; over-masking the non-secret identifiers is safe.
-    void maskS3ExtraCredentials()
+    /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
+    /// (`extra_credentials` carries the assume-role secret `external_id`). Record them so their values are
+    /// hidden with the keys kept. Idempotent: each map is recorded at most once, so this is safe to call
+    /// alongside `excludeS3OrURLNestedMaps`, which also records `headers`.
+    void maskS3NestedSecretMaps()
     {
         for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
         {
             const auto f = function->arguments->at(i)->getFunction();
-            if (f && f->name() == "extra_credentials")
-            {
-                result.nested_maps.push_back("extra_credentials");
-                return;
-            }
+            if (!f)
+                continue;
+            const auto name = f->name();
+            if ((name == "headers" || name == "extra_credentials")
+                && std::find(result.nested_maps.begin(), result.nested_maps.end(), name) == result.nested_maps.end())
+                result.nested_maps.push_back(name);
         }
     }
 
@@ -390,7 +393,10 @@ protected:
             if (!f)
                 break;
             if (f->name() == "headers")
-                result.nested_maps.push_back(f->name());
+            {
+                if (std::find(result.nested_maps.begin(), result.nested_maps.end(), f->name()) == result.nested_maps.end())
+                    result.nested_maps.push_back(f->name());
+            }
             else if (f->name() != "extra_credentials" && f->name() != "equals")
                 break;
             count -= 1;
@@ -412,7 +418,7 @@ protected:
         }
 
         findS3ExplicitUrlSecretNamedArguments(url_arg_idx);
-        maskS3ExtraCredentials();
+        maskS3NestedSecretMaps();
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -768,7 +774,7 @@ protected:
         }
 
         findS3ExplicitUrlSecretNamedArguments(0);
-        maskS3ExtraCredentials();
+        maskS3NestedSecretMaps();
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -899,7 +905,7 @@ protected:
         {
             /// S3('url', 'access_key_id', 'secret_access_key' [, session_token = ..., google_adc_* = ...])
             findS3ExplicitUrlSecretNamedArguments(0);
-            maskS3ExtraCredentials();
+            maskS3NestedSecretMaps();
             markSecretArgument(2);
 
             /// The S3 database engine accepts no positional argument beyond secret_access_key. Any further
@@ -1051,7 +1057,7 @@ protected:
             }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key] [, session_token = ..., google_adc_* = ...])
             findS3ExplicitUrlSecretNamedArguments(0);
-            maskS3ExtraCredentials();
+            maskS3NestedSecretMaps();
             markSecretArgument(2);
 
             /// The backup S3 locator only accepts url, access_key_id, secret_access_key positionally. Any
@@ -1104,17 +1110,19 @@ protected:
         return -1;
     }
 
-    /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
-    /// If the argument is found, it is marked as a secret.
+    /// Looks for secret arguments with a specified name in format `key=value` and marks them secret.
+    /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
+    /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0)
     {
-        ssize_t arg_idx = findNamedArgument(nullptr, key, start);
-        if (arg_idx >= 0)
+        bool found = false;
+        for (ssize_t arg_idx = findNamedArgument(nullptr, key, start); arg_idx >= 0;
+             arg_idx = findNamedArgument(nullptr, key, static_cast<size_t>(arg_idx) + 1))
         {
             markSecretArgument(arg_idx, /* argument_is_named= */ true);
-            return true;
+            found = true;
         }
-        return false;
+        return found;
     }
 
     /// Masks the secret-bearing named arguments of an S3 named collection: `secret_access_key`,
@@ -1124,19 +1132,22 @@ protected:
     /// a secret visible). Mirrors the "hide all named arguments" handling used for ambiguous XDBC collections.
     void findS3NamedCollectionSecretArguments(size_t start = 0)
     {
-        /// `extra_credentials(...)` can be passed as an override alongside a named collection.
-        maskS3ExtraCredentials();
+        /// `headers(...)` / `extra_credentials(...)` can be passed as overrides alongside a named collection.
+        maskS3NestedSecretMaps();
 
         ssize_t min_idx = -1;
         ssize_t max_idx = -1;
         for (const auto & key : s3_secret_keys)
         {
-            ssize_t arg_idx = findNamedArgument(nullptr, key, start);
-            if (arg_idx < 0)
-                continue;
-            if (min_idx < 0 || arg_idx < min_idx)
-                min_idx = arg_idx;
-            max_idx = std::max(max_idx, arg_idx);
+            /// Cover every occurrence, not just the first: a duplicated secret key must not leave a later
+            /// copy outside the masked span (the query is logged before duplicate-key validation runs).
+            for (ssize_t arg_idx = findNamedArgument(nullptr, key, start); arg_idx >= 0;
+                 arg_idx = findNamedArgument(nullptr, key, static_cast<size_t>(arg_idx) + 1))
+            {
+                if (min_idx < 0 || arg_idx < min_idx)
+                    min_idx = arg_idx;
+                max_idx = std::max(max_idx, arg_idx);
+            }
         }
         if (min_idx < 0)
             return;

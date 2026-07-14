@@ -48,9 +48,21 @@ SELECT * FROM s3('url_interleaved', secret_access_key = 'SEKRIT_SAK',
 SELECT * FROM s3('url_postoken', 'ak', 'SEKRIT_SAK', 'SEKRIT_POSTOK',
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A duplicated secret key is malformed but formatted for logging before validation rejects it, so
+-- every occurrence must be masked, not just the first.
+SELECT * FROM s3('url_dup', 'ak', 'sk',
+                 session_token = 'SEKRIT_DUP1',
+                 format = 'TSV',
+                 session_token = 'SEKRIT_DUP2',
+                 structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
 -- Named-collection form: an extra_credentials override alongside a collection must be masked too.
 -- The collection need not exist; masking runs on the AST before the collection is resolved.
 SELECT * FROM s3(nc_04510_missing, extra_credentials(external_id = 'SEKRIT_EID'),
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+-- Named-collection form: a headers() override must have its values masked too.
+SELECT * FROM s3(nc_headers_missing, headers('Authorization' = 'SEKRIT_HDRVAL'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 -- BACKUP ... TO S3 explicit-url form.
@@ -87,10 +99,11 @@ CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- A valid non-secret named override (use_environment_credentials) must stay visible while
--- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so drop it after.
-DROP DATABASE IF EXISTS db_04510_env;
-CREATE DATABASE db_04510_env ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
-DROP DATABASE db_04510_env;
+-- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so use a unique
+-- database name to avoid collisions across parallel runs, and drop it after.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM FLUSH LOGS query_log;
 -- Assert every form was logged and masked, and that no form leaks any secret (SEKRIT marker).
@@ -98,7 +111,9 @@ SELECT
     countIf(query LIKE '%url_basic%'        AND query LIKE '%[HIDDEN]%') > 0 AS s3_masked,
     countIf(query LIKE '%url_interleaved%'  AND query LIKE '%[HIDDEN]%') > 0 AS s3_interleaved_masked,
     countIf(query LIKE '%url_postoken%'     AND query LIKE '%[HIDDEN]%') > 0 AS s3_positional_session_token_masked,
+    countIf(query LIKE '%url_dup%'          AND query LIKE '%[HIDDEN]%') > 0 AS s3_duplicate_key_masked,
     countIf(query LIKE '%nc_04510_missing%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_named_collection_masked,
+    countIf(query LIKE '%nc_headers_missing%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_named_collection_headers_masked,
     countIf(query LIKE '%url_backup''%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
     countIf(query LIKE '%url_backup_pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS backup_positional_masked,
     countIf(query LIKE '%db_04510_ec%'      AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_masked,
@@ -106,7 +121,7 @@ SELECT
     countIf(query LIKE '%db_04510_hdr%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_headers_masked,
     countIf(query LIKE '%db_04510_expr%'    AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_expr_key_masked,
     countIf(query LIKE '%db_04510_s3pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS s3_db_positional_masked,
-    countIf(query LIKE '%db_04510_env%'     AND query LIKE '%use_environment_credentials = 1%') > 0 AS s3_db_env_override_visible,
+    countIf(query LIKE '%url_dbenv%'        AND query LIKE '%use_environment_credentials = 1%') > 0 AS s3_db_env_override_visible,
     countIf(query LIKE '%SEKRIT%') AS leaked
 FROM system.query_log
 WHERE current_database = currentDatabase()
