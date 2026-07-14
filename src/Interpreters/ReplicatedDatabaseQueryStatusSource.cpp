@@ -19,10 +19,12 @@ namespace ErrorCodes
 {
 extern const int TIMEOUT_EXCEEDED;
 extern const int LOGICAL_ERROR;
+extern const int FAULT_INJECTED;
 }
 namespace FailPoints
 {
 extern const char replicated_database_status_finished_node_missing[];
+extern const char replicated_database_status_finished_node_fallback_get_fault[];
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
@@ -65,7 +67,16 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
     }
     else
     {
-        /// The connected Keeper does not advertise LIST_WITH_STAT_AND_DATA, fall back to the per-host get.
+        /// The atomic list-with-data snapshot is not available (feature flags absent, or synchronous
+        /// settings waited on synced/), so fall back to the per-host get.
+        /// The failpoint lets a test assert the atomic path was actually taken: when it is enabled a normal
+        /// finished/ DDL must still succeed (never reaching this fallback), while a synchronous-settings DDL
+        /// or a Keeper without the feature flags must hit this and fail with the injected error.
+        fiu_do_on(FailPoints::replicated_database_status_finished_node_fallback_get_fault,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected fault in the per-host finished-node get fallback for {}", status_path.string());
+        });
         status = getExecutionStatus(status_path, &node_exists);
     }
     /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
