@@ -1352,6 +1352,7 @@ ContextData::ContextData(const ContextData &o) :
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
+    http_header_columns(o.http_header_columns),
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
@@ -7461,6 +7462,11 @@ const NameToNameMap & Context::getHTTPHeaderColumns() const
 void Context::setHTTPHeaderColumns(NameToNameMap mapping)
 {
     http_header_columns = std::move(mapping);
+}
+
+void Context::addHTTPHeaderColumn(const String & column_name, const String & header_value)
+{
+    http_header_columns.emplace(column_name, header_value);  /// first wins; emplace is a no-op on duplicate key
 }
 
 

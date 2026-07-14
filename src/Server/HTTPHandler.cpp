@@ -59,6 +59,9 @@
 
 namespace DB
 {
+
+static constexpr char HTTP_COLUMN_PREFIX[] = "http_column_";
+
 namespace Setting
 {
     extern const SettingsBool add_http_cors_header;
@@ -266,8 +269,6 @@ void HTTPHandler::processQuery(
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
-    static constexpr std::string_view HTTP_COLUMN_PREFIX = "http_column_";
-
     auto param_could_be_skipped = [&] (const String & name)
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
@@ -281,10 +282,6 @@ void HTTPHandler::processQuery(
             "database", "default_format"};
 
         if (reserved_param_names.contains(name))
-            return true;
-
-        /// http_column_* params are processed separately (header-to-column mapping).
-        if (name.starts_with(HTTP_COLUMN_PREFIX))
             return true;
 
         if (has_external_data)
@@ -303,28 +300,6 @@ void HTTPHandler::processQuery(
 
         return false;
     };
-
-    /// Parse http_column_* params: map HTTP request header values to INSERT columns.
-    /// URL param format: http_column_<Header-Name>=<column_name>
-    /// Values are sourced from ClientInfo::http_headers (populated by authenticateUserByHTTP),
-    /// which already filters out sensitive headers (Authorization, X-ClickHouse-*).
-    {
-        const auto & http_headers = context->getClientInfo().http_headers;
-        NameToNameMap http_header_columns;
-        for (const auto & [key, value] : params)
-        {
-            if (key.starts_with(HTTP_COLUMN_PREFIX))
-            {
-                String header_name(key.substr(HTTP_COLUMN_PREFIX.size()));
-                String column_name = value;
-                auto it = http_headers.find(header_name);
-                String header_value = (it != http_headers.end()) ? it->second : "";
-                http_header_columns.emplace(column_name, header_value);
-            }
-        }
-        if (!http_header_columns.empty())
-            context->setHTTPHeaderColumns(std::move(http_header_columns));
-    }
 
     /// Settings can be overridden in the query.
     SettingsChanges settings_changes;
@@ -887,6 +862,22 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
 
         if (!context->getQueryParameters().contains(parameter_name))
             context->setQueryParameter(parameter_name, value);
+        return true;
+    }
+
+    if (startsWith(key, HTTP_COLUMN_PREFIX))
+    {
+        /// Map an HTTP request header value to an INSERT column.
+        /// Behaviour mirrors param_*: first occurrence wins, empty header/column names are ignored.
+        /// Header values are sourced from ClientInfo::http_headers (already filtered for sensitive headers).
+        const String header_name = key.substr(strlen(HTTP_COLUMN_PREFIX));
+        const String & column_name = value;
+        if (!header_name.empty() && !column_name.empty())
+        {
+            const auto & http_headers = context->getClientInfo().http_headers;
+            auto it = http_headers.find(header_name);
+            context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
+        }
         return true;
     }
 

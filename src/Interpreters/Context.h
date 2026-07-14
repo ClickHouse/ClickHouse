@@ -1812,6 +1812,8 @@ public:
     /// HTTP header-to-column mappings for INSERT (set by http_column_* URL params).
     const NameToNameMap & getHTTPHeaderColumns() const;
     void setHTTPHeaderColumns(NameToNameMap mapping);
+    /// Add one mapping; first occurrence wins (duplicates silently ignored).
+    void addHTTPHeaderColumn(const String & column_name, const String & header_value);
 
 
     IHostContextPtr & getHostContext();
