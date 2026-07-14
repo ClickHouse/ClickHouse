@@ -620,7 +620,11 @@ bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ 
     const auto parsed = DataLake::tryParseTableName(name);
     if (!parsed)
         return false;
-    return getCatalog()->existsTable(parsed->first, parsed->second);
+    auto catalog = getCatalog();
+    /// a dotted namespace cannot address a flat catalog (see tryGetTableImpl)
+    if (catalog->hasFlatNamespaces() && parsed->first.find('.') != String::npos)
+        return false;
+    return catalog->existsTable(parsed->first, parsed->second);
 }
 
 StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
@@ -637,6 +641,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto [namespace_name, table_name] = *parsed;
 
     auto catalog = getCatalog();
+    /// a dotted namespace cannot address a flat catalog: the native single-level name it
+    /// would hit collides with namespace-path semantics (e.g. prefix grants)
+    if (catalog->hasFlatNamespaces() && namespace_name.find('.') != String::npos)
+        return nullptr;
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
         table_metadata.withForceAddBucket();

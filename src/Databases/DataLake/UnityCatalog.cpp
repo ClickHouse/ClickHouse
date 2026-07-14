@@ -93,7 +93,11 @@ DB::Names UnityCatalog::getTables() const
 DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
 {
     /// Unity schemas are flat — they cannot contain nested namespaces.
-    return getSchemas("");
+    auto namespaces = getSchemas("");
+    /// a native name with a literal dot collides with namespace-path semantics
+    /// (prefix grants, table paths); such namespaces are hidden and not addressable
+    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
+    return namespaces;
 }
 
 DB::Names UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const

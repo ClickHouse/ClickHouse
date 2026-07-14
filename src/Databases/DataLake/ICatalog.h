@@ -184,6 +184,10 @@ public:
     /// catalogs with a targeted lookup should override.
     virtual bool existsNamespace(const std::string & namespace_name) const;
 
+    /// Whether namespaces are single-level (Glue/Hive/Unity/Paimon and some REST
+    /// catalogs). A flat catalog can never be addressed with a dotted namespace.
+    virtual bool hasFlatNamespaces() const { return true; }
+
     /// Fetch fully-qualified table names, restricted by the `name` predicate (see
     /// `TableNameFilter`). Default impl prunes namespaces via `getNamespaces()`.
     virtual DB::Names getTables(const TableNameFilter & filter) const;

@@ -183,7 +183,10 @@ private:
         if (identifier.compound())
         {
             /// a qualifier that isn't a database selects a namespace inside the current
-            /// database; persist the canonical form so the reference never re-interprets
+            /// database; persist the canonical form so the reference never re-interprets.
+            /// never on secondary distributed-DDL execution: worker catalogs differ
+            if (context->isDDLOrOnClusterInternal())
+                return;
             auto table_id = identifier.getTableId();
             auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(table_id, database_name);
             if (folded.table_name != table_id.table_name)

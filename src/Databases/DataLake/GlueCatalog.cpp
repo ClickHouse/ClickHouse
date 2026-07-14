@@ -299,7 +299,11 @@ DB::Names GlueCatalog::getTables() const
 DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
 {
     /// Glue databases are flat — they cannot contain nested namespaces.
-    return getDatabases("");
+    auto namespaces = getDatabases("");
+    /// a native name with a literal dot collides with namespace-path semantics
+    /// (prefix grants, table paths); such namespaces are hidden and not addressable
+    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
+    return namespaces;
 }
 
 DB::Names GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const

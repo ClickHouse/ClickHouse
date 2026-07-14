@@ -58,6 +58,8 @@
 1
 9
 created_p
+-- a quoted dotted component in an expression table reference does not alias
+1
 -- a substituted component with a literal dot is rejected
 1
 1

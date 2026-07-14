@@ -2694,6 +2694,16 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
+    /// bake the session scope into the shipped inner SELECT: workers cannot reproduce it
+    const auto database_info = getContext()->getCurrentDatabaseInfo();
+    if (!database_info.table_prefix.empty() && create.select)
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), database_info.database,
+            /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, database_info.table_prefix);
+        ASTPtr select_ptr = create.select->ptr();
+        visitor.visit(select_ptr);
+    }
+
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
@@ -2728,8 +2738,8 @@ BlockIO InterpreterCreateQuery::execute()
 
         /// a target qualifier that isn't a database selects a table path in the
         /// current database: CREATE MATERIALIZED VIEW ... TO ns.t under USE db.
-        /// local only: the initiator's catalog is not authoritative for remote hosts
-        if (create.targets && create.cluster.empty())
+        /// initiator only: never on workers (their catalogs differ) or when shipping
+        if (create.targets && create.cluster.empty() && !getContext()->isDDLOrOnClusterInternal())
             for (auto & target : create.targets->targets)
                 if (!target.table_id.database_name.empty())
                     target.table_id = DatabaseCatalog::instance().applyNamespaceQualifier(target.table_id, database_info.database);

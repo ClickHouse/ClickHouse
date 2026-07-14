@@ -46,8 +46,8 @@ BlockIO InterpreterRenameQuery::execute()
 
         /// a source qualifier that isn't a database selects a table path in the current database.
         /// destinations stay strict: a misspelled database must fail, not create a dotted table.
-        /// local only: the initiator's catalog is not authoritative for remote hosts
-        if (rename.cluster.empty())
+        /// initiator only: never on workers (their catalogs differ) or when shipping
+        if (rename.cluster.empty() && !getContext()->isDDLOrOnClusterInternal())
         {
             for (auto & elem : rename.getElements())
             {

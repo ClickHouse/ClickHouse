@@ -294,7 +294,12 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (table_identifier.isCompound())
     {
         database_name = table_identifier[0];
-        /// extra parts are a table path inside the database: db.ns1.ns2.table
+        /// extra parts are a table path inside the database: db.ns1.ns2.table.
+        /// a quoted component with a literal dot would alias another path - stay unresolved
+        if (parts_size > 2)
+            for (size_t i = 1; i < parts_size; ++i)
+                if (table_identifier[i].find('.') != String::npos)
+                    return {};
         table_name = table_identifier[1];
         for (size_t i = 2; i < parts_size; ++i)
             table_name += "." + table_identifier[i];

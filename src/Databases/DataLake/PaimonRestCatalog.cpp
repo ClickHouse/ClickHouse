@@ -392,6 +392,9 @@ void PaimonRestCatalog::forEachTables(
         for (unsigned int i = 0; i < tables_array->size(); ++i)
         {
             String table_name = tables_array->getElement<String>(i);
+            /// a component with a literal dot cannot be represented in the flattened path
+            if (table_name.find('.') != String::npos)
+                continue;
             table_name = database + "." + table_name;
             tables.emplace_back(table_name);
             if (execute_func)
@@ -452,9 +455,12 @@ DB::Names PaimonRestCatalog::getTables() const
 DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
 {
     /// Paimon REST databases are flat — they cannot contain nested namespaces.
-    DB::Strings databases;
-    forEachDatabase(databases, {}, {});
-    return databases;
+    DB::Strings namespaces;
+    forEachDatabase(namespaces, {}, {});
+    /// a native name with a literal dot collides with namespace-path semantics
+    /// (prefix grants, table paths); such namespaces are hidden and not addressable
+    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
+    return namespaces;
 }
 
 DB::Names PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const

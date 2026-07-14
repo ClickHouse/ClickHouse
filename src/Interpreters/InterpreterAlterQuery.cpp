@@ -432,6 +432,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     command_ast->from_table = database_info.table_prefix + "." + command_ast->from_table;
                 if (!command_ast->to_table.empty() && command_ast->to_database.empty() && !database_info.table_prefix.empty())
                     command_ast->to_table = database_info.table_prefix + "." + command_ast->to_table;
+                /// bake the session scope into a shipped MODIFY QUERY: workers cannot reproduce it
+                if (command_ast->select && !database_info.table_prefix.empty())
+                {
+                    AddDefaultDatabaseVisitor visitor(getContext(), database_info.database,
+                        /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, database_info.table_prefix);
+                    ASTPtr select_ptr = command_ast->select->ptr();
+                    visitor.visit(select_ptr);
+                }
             }
         }
 

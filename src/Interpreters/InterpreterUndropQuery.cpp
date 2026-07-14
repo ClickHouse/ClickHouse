@@ -67,13 +67,17 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         }
         query.setDatabase(table_id.database_name);
     }
-    else if (auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(table_id, context->getCurrentDatabase());
-             folded.table_name != table_id.table_name)
+    else if (!context->isDDLOrOnClusterInternal())
     {
-        /// a qualifier that isn't a database selects a table path in the current database
-        table_id = folded;
-        query.setDatabase(table_id.database_name);
-        query.setTable(table_id.table_name);
+        /// a qualifier that isn't a database selects a table path in the current database;
+        /// initiator only: worker catalogs differ
+        if (auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(table_id, context->getCurrentDatabase());
+            folded.table_name != table_id.table_name)
+        {
+            table_id = folded;
+            query.setDatabase(table_id.database_name);
+            query.setTable(table_id.table_name);
+        }
     }
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);

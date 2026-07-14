@@ -66,6 +66,10 @@ $CLICKHOUSE_CLIENT --param_d="$db" --param_n="ns" --param_t="created_p" \
 $CLICKHOUSE_CLIENT -q "SELECT x FROM $db.\`ns.created_p\`"
 $CLICKHOUSE_CLIENT --param_d="$db" --param_n="ns" -q "SHOW TABLES FROM {d:Identifier}.{n:Identifier} LIKE 'created%'"
 
+echo "-- a quoted dotted component in an expression table reference does not alias"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE \`a.b.t\` (x UInt32) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM \`ns.t\` WHERE x IN $db.\`a.b\`.t" 2>&1 | grep -m1 -c "UNKNOWN"
+
 echo "-- a substituted component with a literal dot is rejected"
 $CLICKHOUSE_CLIENT --param_n="a.b" --param_t="t" -q "SELECT count() FROM $db.{n:Identifier}.{t:Identifier}" 2>&1 | grep -m1 -c "BAD_QUERY_PARAMETER"
 $CLICKHOUSE_CLIENT --param_n="a.b" --param_t="t" -q "INSERT INTO $db.{n:Identifier}.{t:Identifier} VALUES (1)" 2>&1 | grep -m1 -c "BAD_QUERY_PARAMETER"
