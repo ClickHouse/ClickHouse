@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
@@ -10,7 +9,7 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_join_shard_by_pk_ranges = 0;
 SET allow_reorder_prewhere_conditions = 0;
-SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
+SET max_bytes_before_external_join = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

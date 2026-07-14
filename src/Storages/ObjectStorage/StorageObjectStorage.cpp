@@ -140,7 +140,6 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
-    , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
@@ -353,14 +352,12 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
 }
 
 bool StorageObjectStorage::supportsDelete() const
@@ -410,8 +407,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
-    auto new_metadata = *current_metadata;
+    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -471,8 +467,7 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = clampClusterFunctionNumStreams(
-            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
@@ -556,7 +551,6 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
-        storage_id,
         object_storage,
         configuration,
         column_names,
@@ -810,16 +804,9 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
-    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
-    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
-    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
-    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
-    /// does not call it before invoking `mutate`.
-    updateExternalDynamicMetadataIfExists(context_);
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
+    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -837,14 +824,10 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
-
-    if (catalog)
-        return;
+    configuration->alter(object_storage, params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -857,24 +840,5 @@ void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, 
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
-void StorageObjectStorage::startup()
-{
-    if (configuration->isBackgroundExecutable())
-        background_operations_assignee.start();
-}
-
-void StorageObjectStorage::shutdown(bool)
-{
-    if (configuration->isBackgroundExecutable())
-    {
-        configuration->finishAllBackgroundJobs();
-        background_operations_assignee.finish();
-    }
-}
-
-bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
-{
-    return configuration->scheduleDataProcessingJob(assignee, *this);
-}
 
 }

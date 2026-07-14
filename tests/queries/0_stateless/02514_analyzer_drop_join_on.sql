@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS a;
 DROP TABLE IF EXISTS b;
 DROP TABLE IF EXISTS c;

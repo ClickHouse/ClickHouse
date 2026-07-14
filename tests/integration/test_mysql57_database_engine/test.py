@@ -10,10 +10,8 @@ from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.config_cluster import mysql_pass
 
-# The `mysql:5.7` docker image is amd64-only.
 if is_arm():
     pytestmark = pytest.mark.skip
-
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
@@ -114,14 +112,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
             "ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11)"
         )
         assert "add_column" in clickhouse_node.query(
-            "SHOW COLUMNS FROM test_database.test_table"
-        )
-        assert "PRIMARY" in clickhouse_node.query(
-            "SHOW INDEX FROM test_database.test_table"
-        )
-        assert "add_column" in clickhouse_node.query(
-            "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'",
-            settings={"show_remote_databases_in_system_tables": 1},
+            "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'"
         )
 
         time.sleep(
@@ -131,8 +122,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
             "ALTER TABLE `test_database`.`test_table` DROP COLUMN `add_column`"
         )
         assert "add_column" not in clickhouse_node.query(
-            "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'",
-            settings={"show_remote_databases_in_system_tables": 1},
+            "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'"
         )
 
         mysql_node.query("DROP TABLE `test_database`.`test_table`;")
@@ -345,8 +335,7 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
             "ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11) COMMENT 'add_column comment'"
         )
         assert "add_column comment" in clickhouse_node.query(
-            "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'",
-            settings={"show_remote_databases_in_system_tables": 1},
+            "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'"
         )
 
         clickhouse_node.query("DROP DATABASE test_database")

@@ -56,19 +56,19 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
             break;
     }
 
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     readIntText(x, istr);
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
 }
 
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    bool res = false;
+    bool res;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
@@ -82,7 +82,7 @@ inline bool tryReadText(
             break;
     }
 
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
     return res;
 }
 
@@ -90,7 +90,7 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     if (!tryReadIntText(x, istr))
         return false;
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
     return true;
 }
 
@@ -245,7 +245,7 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadAsIntText(x, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 

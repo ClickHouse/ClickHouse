@@ -19,11 +19,6 @@ bool SelectQueryInfo::isFinal() const
     return select.final();
 }
 
-bool SelectQueryInfo::isStream() const
-{
-    return table_expression_modifiers && table_expression_modifiers->hasStream();
-}
-
 std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
@@ -37,7 +32,7 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
+            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
         }
     }
     return node_name_to_input_node_column;
@@ -60,7 +55,6 @@ void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     prewhere_actions.serialize(ctx.out, ctx.registry);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
-    writeBinary(need_filter, ctx.out);
 }
 
 PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
@@ -70,7 +64,7 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
-    readBinary(prewhere_info.need_filter, ctx.in);
+    prewhere_info.need_filter = true;
 
     return prewhere_info;
 }

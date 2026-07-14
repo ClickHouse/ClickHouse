@@ -12,8 +12,10 @@ ASTPtr ASTTimeInterval::clone() const
     return make_intrusive<ASTTimeInterval>(*this);
 }
 
-void ASTTimeInterval::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTTimeInterval::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked frame) const
 {
+    frame.need_parens = false;
+
     for (bool is_first = true; auto [kind, value] : interval.toIntervals())
     {
         if (!std::exchange(is_first, false))

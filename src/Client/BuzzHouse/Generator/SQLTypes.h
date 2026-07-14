@@ -587,14 +587,12 @@ class AggregateFunctionType : public SQLType
 {
 public:
     const bool simple;
-    const std::string aggregate;
-    std::vector<AggregateParam> params;
+    const SQLFunc aggregate;
     std::vector<std::unique_ptr<SQLType>> subtypes;
 
-    AggregateFunctionType(const bool s, std::string aggr, std::vector<AggregateParam> p, std::vector<std::unique_ptr<SQLType>> subs)
+    AggregateFunctionType(const bool s, const SQLFunc aggr, std::vector<std::unique_ptr<SQLType>> subs)
         : simple(s)
-        , aggregate(std::move(aggr))
-        , params(std::move(p))
+        , aggregate(aggr)
         , subtypes(std::move(subs))
     {
     }
@@ -650,7 +648,7 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc = nullptr;
+    LowCardinality * lc;
 
     if (dynamic_cast<const T *>(tp))
     {
@@ -658,7 +656,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nullable)
     {
-        Nullable * nl = nullptr;
+        Nullable * nl;
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
@@ -671,7 +669,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_array)
     {
-        ArrayType * at = nullptr;
+        ArrayType * at;
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
@@ -680,8 +678,8 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nested)
     {
-        TupleType * ttp = nullptr;
-        NestedType * ntp = nullptr;
+        TupleType * ttp;
+        NestedType * ntp;
 
         if ((ttp = dynamic_cast<TupleType *>(tp)))
         {

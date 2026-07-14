@@ -44,8 +44,8 @@ void FrequencyHolder::loadEncodingsFrequency()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
 
     String line;
-    UInt16 bigram = 0;
-    Float64 frequency = 0;
+    UInt16 bigram;
+    Float64 frequency;
     String charset_name;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);
@@ -102,7 +102,7 @@ void FrequencyHolder::loadEmotionalDict()
 
     String line;
     String word;
-    Float64 tonality = 0;
+    Float64 tonality;
     size_t count = 0;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);

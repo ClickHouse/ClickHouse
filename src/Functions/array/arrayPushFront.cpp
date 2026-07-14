@@ -6,7 +6,7 @@ namespace DB
 {
 
 
-class FunctionArrayPushFront final : public FunctionArrayPush
+class FunctionArrayPushFront : public FunctionArrayPush
 {
 public:
     static constexpr auto name = "arrayPushFront";

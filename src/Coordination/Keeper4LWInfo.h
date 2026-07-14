@@ -3,8 +3,6 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -63,33 +61,22 @@ struct KeeperLogInfo
     uint64_t last_log_term{0};
 
     /// My last committed log index in state machine.
-    uint64_t last_committed_log_idx{};
+    uint64_t last_committed_log_idx;
 
     /// Leader's committed log index from my perspective.
-    uint64_t leader_committed_log_idx{};
+    uint64_t leader_committed_log_idx;
 
     /// Target log index should be committed to.
-    uint64_t target_committed_log_idx{};
+    uint64_t target_committed_log_idx;
 
     /// The largest committed log index in last snapshot.
-    uint64_t last_snapshot_idx{};
+    uint64_t last_snapshot_idx;
 
-    uint64_t latest_logs_cache_entries{};
-    uint64_t latest_logs_cache_size{};
+    uint64_t latest_logs_cache_entries;
+    uint64_t latest_logs_cache_size;
 
-    uint64_t commit_logs_cache_entries{};
-    uint64_t commit_logs_cache_size{};
-};
-
-struct KeeperClusterMemberInfo
-{
-    int32_t server_id{};
-    String endpoint;
-    bool is_observer{};
-    int32_t priority{};
-    bool is_leader{};
-    bool is_self{};
-    std::optional<uint64_t> last_log_index;
+    uint64_t commit_logs_cache_entries;
+    uint64_t commit_logs_cache_size;
 };
 
 }

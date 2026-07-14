@@ -1,7 +1,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Common/HTTPHeaderFilter.h>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -17,8 +16,6 @@
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
-
-#include <Parsers/ASTLiteral.h>
 #include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
@@ -125,17 +122,6 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
         format_name,
         context
     );
-
-    /// When a non-cluster table function (`url`) was auto-converted to cluster mode
-    /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
-    /// (`urlCluster`) and prepend the cluster name argument. This ensures that on the shard,
-    /// `TableFunctionURLCluster` is used, which correctly handles `distributed_processing`.
-    if (!endsWith(table_function->name, "Cluster"))
-    {
-        ASTs & args = expression_list->children;
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
-        table_function->name += "Cluster";
-    }
 }
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(

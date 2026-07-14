@@ -152,7 +152,7 @@ Interval kind binary encoding:
 | Week          | 0x07            |
 | Month         | 0x08            |
 | Quarter       | 0x09            |
-| Year          | 0x0A            |
+| Year          | 0x1A            |
 |---------------|-----------------|
 
 Aggregate function parameter binary encoding (binary encoding of a Field, see src/Common/FieldBinaryEncoding.h):

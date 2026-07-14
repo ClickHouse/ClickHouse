@@ -12,11 +12,6 @@
 
 namespace DB
 {
-
-/// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-/// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
-size_t getMinBytesForPrefetchInJoin();
-
 /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
 template <typename HashMap, typename KeyGetter>
 struct Inserter

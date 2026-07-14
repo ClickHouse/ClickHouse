@@ -91,262 +91,10 @@ FROM input(
      stat_threshold Float64,
      test String,
      query_index Int32,
-     query_display_name String,
-     changed_threshold Float64,
-     unstable_threshold Float64'
+     query_display_name String'
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
-
-# --- Aggregate report tables on the play cluster --------------------------
-# These capture everything that used to only live in the static HTML report
-# (Test Times, Test Performance Changes, Backward-incompatible queries,
-# Skipped tests, Run errors, async Metric Changes, Tested commits) plus the
-# collapsed flamegraph stacks. See ci/jobs/scripts/perf/README-db.md for DDL.
-
-TEST_TIMES_TABLE = "perf_test_times_v1"
-TEST_PERF_CHANGES_TABLE = "perf_test_perf_changes_v1"
-PARTIAL_QUERIES_TABLE = "perf_partial_queries_v1"
-SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
-RUN_ERRORS_TABLE = "perf_run_errors_v1"
-METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
-FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
-
-ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
-flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
-
-# Common per-row metadata columns and their SELECT expressions. Placeholders
-# are filled by get_insert_metadata() + job/PR info via .format() below.
-COMMON_META_COLUMNS = [
-    "event_date",
-    "check_start_time",
-    "pr_number",
-    "old_sha",
-    "new_sha",
-    "arch",
-    "baseline_kind",
-    "workflow_name",
-    "base_branch",
-    "report_url",
-    "instance_type",
-    "instance_id",
-]
-
-COMMON_META_SELECT = """\
-    '{EVENT_DATE}' AS event_date,
-    '{CHECK_START_TIME}' AS check_start_time,
-    {PR_NUMBER} AS pr_number,
-    '{REF_SHA}' AS old_sha,
-    '{CUR_SHA}' AS new_sha,
-    '{ARCH}' AS arch,
-    '{BASELINE_KIND}' AS baseline_kind,
-    '{WORKFLOW_NAME}' AS workflow_name,
-    '{BASE_BRANCH}' AS base_branch,
-    '{REPORT_URL}' AS report_url,
-    '{INSTANCE_TYPE}' AS instance_type,
-    '{INSTANCE_ID}' AS instance_id"""
-
-
-def _make_insert_query(table, table_columns, input_schema, select_exprs, where=None):
-    """Build INSERT INTO {table} ... SELECT ... FROM input('...') [WHERE ...] FORMAT TSV.
-
-    `table_columns` is the list of non-metadata column names written to in the
-    target table; `select_exprs` is the parallel list of SELECT expressions
-    (can be bare column names or arbitrary expressions referring to columns
-    produced by input()).
-    """
-    all_cols = COMMON_META_COLUMNS + list(table_columns)
-    select_all = COMMON_META_SELECT + ",\n    " + ",\n    ".join(select_exprs)
-    where_clause = f"WHERE {where}" if where else ""
-    return (
-        f"INSERT INTO {table}\n"
-        f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
-        "SELECT\n" + select_all + "\n"
-        "FROM input('" + input_schema + "')\n"
-        + where_clause + "\n"
-        "FORMAT TSV"
-    )
-
-
-# --- Per-table configs for aggregate report uploads -----------------------
-# Each entry describes how to ingest one TSV produced by compare.sh::report()
-# into one table on the play cluster.
-
-REPORT_UPLOADS = [
-    {
-        "table": TEST_TIMES_TABLE,
-        "source": f"{perf_wd}/report/test-times.tsv",
-        "table_columns": [
-            "test",
-            "wall_clock_sec",
-            "total_client_sec",
-            "queries",
-            "longest_query_sec",
-            "avg_query_sec",
-            "shortest_query_sec",
-            "runs",
-        ],
-        "input_schema": (
-            "test String, wall_clock_sec Float64, total_client_sec Float64, "
-            "queries UInt32, longest_query_sec Float64, avg_query_sec Float64, "
-            "shortest_query_sec Float64, runs UInt32"
-        ),
-        "select_exprs": [
-            "test",
-            "wall_clock_sec",
-            "total_client_sec",
-            "queries",
-            "longest_query_sec",
-            "avg_query_sec",
-            "shortest_query_sec",
-            "runs",
-        ],
-        # Skip the aggregate 'Total' row that compare.sh appends - UI can sum.
-        "where": "test != 'Total'",
-    },
-    {
-        "table": TEST_PERF_CHANGES_TABLE,
-        "source": f"{perf_wd}/report/test-perf-changes.tsv",
-        "table_columns": [
-            "test",
-            "times_speedup",
-            "queries",
-            "bad",
-            "changed",
-            "unstable",
-        ],
-        "input_schema": (
-            "test String, times_speedup_str String, queries UInt32, "
-            "bad UInt32, changed UInt32, unstable UInt32"
-        ),
-        # compare.sh emits times_speedup as a display string:
-        #   "-N.NNNx" => speedup, the magnitude is the times_speedup factor
-        #   "+N.NNNx" => slowdown, the magnitude is 1 / times_speedup
-        # Recover a signed Float64 so the UI can sort numerically.
-        "select_exprs": [
-            "test",
-            (
-                "multiIf("
-                "startsWith(times_speedup_str, '-'), "
-                "toFloat64OrZero(substring(times_speedup_str, 2, length(times_speedup_str) - 2)), "
-                "startsWith(times_speedup_str, '+'), "
-                "1.0 / nullIf(toFloat64OrZero(substring(times_speedup_str, 2, length(times_speedup_str) - 2)), 0), "
-                "1.0) AS times_speedup"
-            ),
-            "queries",
-            "bad",
-            "changed",
-            "unstable",
-        ],
-        "where": "test != 'Total'",
-    },
-    {
-        "table": PARTIAL_QUERIES_TABLE,
-        "source": f"{perf_wd}/report/partial-queries-report.tsv",
-        "table_columns": [
-            "test",
-            "query_index",
-            "query_display_name",
-            "median_sec",
-            "relative_time_stddev",
-        ],
-        # compare.sh column order is: time (median), rel_stddev, test, query_index, display
-        "input_schema": (
-            "median_sec Float64, relative_time_stddev Float64, "
-            "test String, query_index Int32, query_display_name String"
-        ),
-        "select_exprs": [
-            "test",
-            "query_index",
-            "query_display_name",
-            "median_sec",
-            "relative_time_stddev",
-        ],
-    },
-    {
-        "table": SKIPPED_TESTS_TABLE,
-        "source": f"{perf_wd}/analyze/skipped-tests.tsv",
-        "table_columns": ["test", "reason"],
-        "input_schema": "test String, reason String",
-        "select_exprs": ["test", "reason"],
-    },
-    {
-        "table": RUN_ERRORS_TABLE,
-        "source": f"{perf_wd}/run-errors.tsv",
-        "table_columns": ["test", "error"],
-        "input_schema": "test String, error String",
-        "select_exprs": ["test", "error"],
-    },
-    {
-        "table": METRIC_CHANGES_TABLE,
-        "source": f"{perf_wd}/metrics/changes.tsv",
-        "table_columns": [
-            "metric",
-            "old_median",
-            "new_median",
-            "diff",
-            "times_diff",
-        ],
-        "input_schema": (
-            "metric String, old_median Float64, new_median Float64, "
-            "diff Float64, times_diff Float64"
-        ),
-        "select_exprs": [
-            "metric",
-            "old_median",
-            "new_median",
-            "diff",
-            "times_diff",
-        ],
-    },
-]
-
-INSERT_FLAMEGRAPH_STACKS = """\
-INSERT INTO {FLAMEGRAPH_STACKS_TABLE}
-(
-""" + ",\n".join("    " + c for c in COMMON_META_COLUMNS) + """,
-    test,
-    query_index,
-    query_display_name,
-    side,
-    trace_type,
-    stack,
-    samples
-)
-SELECT
-""" + COMMON_META_SELECT + """,
-    test,
-    query_index,
-    query_display_name,
-    side,
-    trace_type,
-    stack,
-    samples
-FROM input(
-    'test String, query_index Int32, query_display_name String,
-     side String, trace_type String, stack String, samples UInt64'
-) FORMAT TSV"""
-
-# clickhouse-local query that merges report/stacks.left.tsv and
-# report/stacks.right.tsv into a single upload-ready TSV with an explicit
-# `side` column.
-BUILD_FLAMEGRAPH_UPLOAD_QUERY = """
-create table flamegraph_stacks_upload engine File(TSV, 'analyze/ch-uploads/flamegraph-stacks.tsv') as
-select test, query_index, query_display_name, side, trace_type, stack, samples
-from (
-    select test, query_index, query_display_name,
-        'baseline' as side, trace_type,
-        readable_trace as stack, c as samples
-    from file('report/stacks.left.tsv', TSV,
-        'test String, query_index Int32, trace_type String, query_display_name String, readable_trace String, c UInt64')
-    union all
-    select test, query_index, query_display_name,
-        'candidate' as side, trace_type,
-        readable_trace as stack, c as samples
-    from file('report/stacks.right.tsv', TSV,
-        'test String, query_index Int32, trace_type String, query_display_name String, readable_trace String, c UInt64')
-)
-"""
 
 INSERT_RAW_QUERY_METRICS_DATA = """\
 INSERT INTO {RAW_QUERY_METRICS_TABLE}
@@ -537,200 +285,17 @@ def build_raw_query_metrics_tsv():
     return True
 
 
-def build_flamegraph_upload_tsv():
-    """Merge report/stacks.{left,right}.tsv into analyze/ch-uploads/flamegraph-stacks.tsv.
-
-    Returns False (and logs a warning) if either input file is missing or
-    clickhouse-local fails, so the caller can skip the upload.
-    """
-    left_stacks = Path(perf_wd) / "report/stacks.left.tsv"
-    right_stacks = Path(perf_wd) / "report/stacks.right.tsv"
-    if not left_stacks.is_file() or not right_stacks.is_file():
-        print(
-            f"WARNING: flamegraph stacks inputs missing "
-            f"(left={left_stacks.is_file()}, right={right_stacks.is_file()}), "
-            f"skipping flamegraph upload"
-        )
-        return False
-
-    Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
-    Path(flamegraph_upload_path).unlink(missing_ok=True)
-    result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
-        cwd=perf_wd,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr)
-    if result.returncode != 0:
-        print(
-            f"WARNING: Failed to build flamegraph stacks TSV with exit code [{result.returncode}]"
-        )
-        return False
-    if not Path(flamegraph_upload_path).is_file():
-        print(
-            f"WARNING: Flamegraph stacks TSV [{flamegraph_upload_path}] was not created"
-        )
-        return False
-    return True
-
-
-def get_check_start_time():
-    """Return the perf check start time (ISO, no microseconds).
-
-    Uses the CHPC_CHECK_START_TIMESTAMP env var when available so that every
-    batch of the same job lines up on the same timestamp (same "data point"
-    in history charts). Falls back to now() for manual runs.
-    """
-    check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
-    if check_start_timestamp:
-        return (
-            datetime.fromtimestamp(int(check_start_timestamp))
-            .isoformat(sep=" ")
-            .split(".")[0]
-        )
-    return datetime.now().isoformat(sep=" ").split(".")[0]
-
-
-def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
-    """Upload one entry from REPORT_UPLOADS to the play cluster.
-
-    Silently skips if the source TSV is missing or empty (e.g. because the
-    test stage produced no unstable queries or no skipped tests). Returns
-    True on success or skip, False on upload failure.
-    """
-    source_path = Path(cfg["source"])
-    if not source_path.is_file():
-        print(f"Skipping upload to [{cfg['table']}]: [{source_path}] not found")
-        return True
-
-    with open(source_path, "r", encoding="utf-8") as f:
-        data = f.read()
-    if not data.strip():
-        print(f"Skipping upload to [{cfg['table']}]: [{source_path}] is empty")
-        return True
-
-    query_template = _make_insert_query(
-        table=cfg["table"],
-        table_columns=cfg["table_columns"],
-        input_schema=cfg["input_schema"],
-        select_exprs=cfg["select_exprs"],
-        where=cfg.get("where"),
-    )
-    insert_metadata = get_insert_metadata(info, compare_against_release)
-    query = query_template.format(
-        EVENT_DATE=datetime.now().date().isoformat(),
-        CHECK_START_TIME=get_check_start_time(),
-        PR_NUMBER=info.pr_number,
-        REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
-        **insert_metadata,
-    )
-    line_count = data.count("\n")
-    print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
-    insert_ok = cidb.do_insert_query(
-        query=query,
-        data=data,
-        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-        retries=3,
-    )
-    if insert_ok:
-        print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
-    else:
-        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed")
-    return insert_ok
-
-
-def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release):
-    """Build and upload the merged flamegraph stacks TSV."""
-    if not build_flamegraph_upload_tsv():
-        return True
-
-    with open(flamegraph_upload_path, "r", encoding="utf-8") as f:
-        data = f.read()
-    if not data.strip():
-        print(f"Skipping flamegraph upload: [{flamegraph_upload_path}] is empty")
-        return True
-
-    insert_metadata = get_insert_metadata(info, compare_against_release)
-    query = INSERT_FLAMEGRAPH_STACKS.format(
-        FLAMEGRAPH_STACKS_TABLE=FLAMEGRAPH_STACKS_TABLE,
-        EVENT_DATE=datetime.now().date().isoformat(),
-        CHECK_START_TIME=get_check_start_time(),
-        PR_NUMBER=info.pr_number,
-        REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
-        **insert_metadata,
-    )
-    line_count = data.count("\n")
-    print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
-    insert_ok = cidb.do_insert_query(
-        query=query,
-        data=data,
-        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-        retries=3,
-    )
-    if insert_ok:
-        print(f"Inserted [{line_count}] flamegraph stack rows")
-    else:
-        print(f"Inserted [{line_count}] flamegraph stack rows - failed")
-    return insert_ok
-
-
-def match_reference_debug_info():
-    # addressToLine resolves a frame to "file:line" only where DWARF covers
-    # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
-    # table remains (addressToSymbol works) but there is no line info, so the
-    # patched binary symbolizes differently from the reference (master) build and
-    # flamegraph tooling cannot match the frames. A ".debug_info" section is not a
-    # reliable signal (Rust crates emit one even under -g0), so probe how many
-    # system.stack_trace frames resolve to a line on each binary and strip the
-    # reference only when the patched binary resolves far fewer. Merge-to-master
-    # resolves comparably on both and is left untouched. Must match
-    # compare.sh::match_reference_debug_info.
-    left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
-    right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
-    probe = (
-        "select countIf(addressToLine(arrayJoin(trace)) like '%:%') "
-        "from system.stack_trace"
-    )
-
-    def resolved_lines(binary):
-        # Running clickhouse also decompresses the self-extracting binary in place.
-        out = Shell.get_output(
-            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
-        )
-        return int(out) if out and out.strip().isdigit() else 0
-
-    if resolved_lines(right) * 4 < resolved_lines(left):
-        Shell.check(f"strip --strip-debug {left}", verbose=True)
-    else:
-        print("Patched binary has comparable line info, leaving reference as-is")
-
-
 class CHServer:
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
     LEFT_SERVER_KEEPER_RAFT_PORT = 9234
     LEFT_SERVER_INTERSERVER_PORT = 9009
-    LEFT_SERVER_HTTP_PORT = 8123
     # patched version
     RIGHT_SERVER_PORT = 19001
     RIGHT_SERVER_KEEPER_PORT = 19181
     RIGHT_SERVER_KEEPER_RAFT_PORT = 19234
     RIGHT_SERVER_INTERSERVER_PORT = 19009
-    RIGHT_SERVER_HTTP_PORT = 18123
-
-    # lg2 of the average byte interval between jemalloc allocation samples.
-    # Denser than the 512 KiB (19) default: we profile single queries in
-    # isolation, so the profile needs to be dense to yield useful
-    # JemallocSample flamegraphs. Must match compare.sh.
-    JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
     def __init__(self, is_left=False):
         if is_left:
@@ -738,7 +303,6 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
-            http_port = self.LEFT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
@@ -746,7 +310,6 @@ class CHServer:
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
-            http_port = self.RIGHT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
@@ -757,18 +320,12 @@ class CHServer:
         self.server_path = serever_path
         self.name = "Reference" if is_left else "Patched"
 
-        # The perf-comparison config removes <http_port>; re-enable it on the
-        # command line (a documented config override, see Server.cpp) with a
-        # distinct port per server, so that shell-script tests can talk to the
-        # server over HTTP.
         self.start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
-            --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
-            --interserver_http_port {inter_server_port} \
-            --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
+            --interserver_http_port {inter_server_port}"
 
     def start_preconfig(self):
         print("Starting ClickHouse server")
@@ -779,7 +336,6 @@ class CHServer:
             stderr=subprocess.STDOUT,
             stdout=self.log_fd,
             shell=True,
-            start_new_session=True,
         )
         time.sleep(2)
         retcode = self.proc.poll()
@@ -788,12 +344,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print("ClickHouse server process started -> wait ready")
+        print(f"ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print("ClickHouse server ready")
+            print(f"ClickHouse server ready")
         else:
-            print("ClickHouse server NOT ready")
+            print(f"ClickHouse server NOT ready")
 
         Shell.check(
             f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
@@ -806,11 +362,7 @@ class CHServer:
         print("Command: ", self.start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
-            self.start_cmd,
-            stderr=subprocess.STDOUT,
-            stdout=self.log_fd,
-            shell=True,
-            start_new_session=True,
+            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
         )
         time.sleep(2)
         retcode = self.proc.poll()
@@ -819,12 +371,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print("ClickHouse server process started -> wait ready")
+        print(f"ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print("ClickHouse server ready")
+            print(f"ClickHouse server ready")
         else:
-            print("ClickHouse server NOT ready")
+            print(f"ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -833,13 +385,13 @@ class CHServer:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
                 break
             else:
-                print("Server not ready, wait")
+                print(f"Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -862,8 +414,6 @@ class CHServer:
         res, out, err = Shell.get_res_stdout_stderr(
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
-                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
-                --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 --runs {runs} --max-queries {max_queries} \
                 --profile-seconds 10 \
                 {test_file}",
@@ -932,28 +482,6 @@ def find_base_release_build(info, build_type):
     return None
 
 
-# The number of distinct "slower" queries that fails the whole performance
-# check. This is the gate that actually decides the Praktika `Check Results`
-# status: `report.py` embeds a status into `report.html`, but `main` below
-# discards it ("always green mode") and recomputes the final status by
-# reparsing the "N slower" message, so the effective gate lives here. The value
-# must stay synchronized with the slower-queries threshold in
-# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
-# "slower" queries is dominated by CI noise (a single bad shard run, frequency
-# scaling, or code-layout artifacts can push several unrelated micro benchmarks
-# over their per-query thresholds at once), while a genuine regression shows up
-# as a small cluster of related queries with large magnitudes that the
-# per-query thresholds catch on their own.
-SLOWER_QUERIES_FAIL_THRESHOLD = 10
-
-
-def too_many_slow(message):
-    match = re.search(r"(|.* )(\d+) slower.*", message)
-    return (
-        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
-    )
-
-
 def main():
 
     args = parse_args()
@@ -1002,7 +530,7 @@ def main():
         else:
             assert False
     else:
-        Utils.raise_with_error("Unknown processor architecture")
+        Utils.raise_with_error(f"Unknown processor architecture")
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -1066,16 +594,6 @@ def main():
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
-            # The reference build (left) is downloaded as a bare `clickhouse`
-            # binary, but the patched build (right) was only symlinked under its
-            # subcommand names below. Shell-script perf queries
-            # (<query type="shell">) invoke the multi-call binary directly via
-            # $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL / $CLICKHOUSE_CLIENT, which
-            # compare.sh builds from `right/clickhouse`; without this symlink
-            # `right/clickhouse local` fails with "No such file or directory" and
-            # the query is dropped from the comparison. Mirror the reference
-            # layout so `right/clickhouse` exists too.
-            f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-client",
@@ -1232,8 +750,6 @@ def main():
     if res and JobStages.RESTART in stages:
         print("Start Servers")
 
-        match_reference_debug_info()
-
         def restart_ch1():
             res_ = leftCH.start()
             return res_
@@ -1361,13 +877,7 @@ def main():
 
         def insert_raw_query_metrics_data():
             cidb = CIDBCluster()
-            # Metrics insertion is a reporting side-effect, not the perf
-            # verdict. A transient LogCluster (play.clickhouse.com) timeout
-            # must not fail the whole job - skip and warn, like
-            # insert_report_aggregates() and prepare_historical_data() do.
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping raw query metrics insert")
-                return True
+            assert cidb.is_ready()
 
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
@@ -1429,12 +939,7 @@ def main():
 
         def insert_historical_data():
             cidb = CIDBCluster()
-            # Reporting side-effect, not the perf verdict - a transient
-            # LogCluster timeout must not fail the job (see
-            # insert_raw_query_metrics_data / insert_report_aggregates).
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping historical data insert")
-                return True
+            assert cidb.is_ready()
 
             now = datetime.now()
             date = now.date().isoformat()
@@ -1478,57 +983,14 @@ def main():
             )
         )
 
-    if res and not info.is_local_run and JobStages.REPORT in stages:
-
-        def insert_report_aggregates():
-            """Upload all aggregate report TSVs and the tested-commits summary.
-
-            Each upload is attempted independently; a failure or missing
-            input for one table does not block the others. A single upload
-            error does not fail the job either - these tables are purely
-            informational for the UI, the source TSVs are still shipped in
-            logs.tar.zst.
-            """
-            cidb = CIDBCluster()
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping report aggregate uploads")
-                return True
-
-            for cfg in REPORT_UPLOADS:
-                try:
-                    run_report_upload(
-                        cfg=cfg,
-                        cidb=cidb,
-                        info=info,
-                        reference_sha=reference_sha,
-                        compare_against_release=compare_against_release,
-                    )
-                except Exception:
-                    traceback.print_exc()
-
-            try:
-                insert_flamegraph_stacks(
-                    cidb=cidb,
-                    info=info,
-                    reference_sha=reference_sha,
-                    compare_against_release=compare_against_release,
-                )
-            except Exception:
-                traceback.print_exc()
-
-            return True
-
-        results.append(
-            Result.from_commands_run(
-                name="Insert report aggregates",
-                command=insert_report_aggregates,
-                with_info=True,
-            )
-        )
-
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
+
+        def too_many_slow(msg):
+            match = re.search(r"(|.* )(\d+) slower.*", msg)
+            threshold = 5
+            return int(match.group(2).strip()) > threshold if match else False
 
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
@@ -1610,32 +1072,18 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" ! -name "*-trace-log.tsv" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
         files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
-    result = Result.create_from(
+    Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
         info=message,
-    )
-    if info.pr_number:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?q={info.pr_number}"
-        )
-    else:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?scope=master&q={(info.sha or '')[:12]}"
-        )
-    result.set_label(
-        "Performance dashboard",
-        link=dashboard_link,
-        hint="Combined performance dashboard for this run (all shards, amd + arm)",
-    )
-    result.complete_job()
+    ).complete_job()
 
 
 if __name__ == "__main__":
