@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/DateLUT.h>
 #include <Common/ErrnoException.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 #include <algorithm>
@@ -50,12 +51,11 @@ namespace DB
         if (is_interval)
         {
             /// `VALID FOR <interval>` is a shortcut for `VALID UNTIL now + <interval>`. We compute the
-            /// deadline here, at query execution time, and turn it into a string so that it flows through
-            /// the regular `VALID UNTIL` handling below - the stored result is thus in the `VALID UNTIL` form.
+            /// deadline here, at query execution time.
             /// The current time is injected as a literal instead of using `now`, because `now` is
             /// non-deterministic and would not be folded to a constant by `evaluateConstantExpression`.
             /// `toDateTime64` (rather than `toDateTime`) is used so that large intervals do not overflow
-            /// the year-2106 boundary of `DateTime` and instead saturate at the `DateTime64` upper bound.
+            /// the year-2106 boundary of `DateTime` and instead saturate at the `DateTime64` bounds.
             if (!context)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR requires a query context to evaluate the interval");
 
@@ -89,8 +89,20 @@ namespace DB
 
             auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(now_seconds)));
             auto scale_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
-            ast = makeASTFunction("toString",
+            ast = makeASTFunction("toUnixTimestamp64Second",
                 makeASTFunction("plus", makeASTFunction("toDateTime64", now_literal, scale_literal), ast));
+
+            /// The deadline is extracted numerically (`toUnixTimestamp64Second` scales any `DateTime64`
+            /// to whole seconds) rather than by round-tripping through a datetime string, because the
+            /// values saturated at the `DateTime64` bounds (years 0000 and 9999) do not all survive
+            /// datetime-text parsing.
+            /// Every deadline in the past means the same thing - the credential is already expired - so
+            /// a pre-epoch deadline (e.g. a saturated huge negative interval) is clamped to the smallest
+            /// expired instant, `1970-01-01 00:00:01` (the value 0 would mean "no expiration"). This also
+            /// keeps every deadline produced by `VALID FOR` exactly representable in the stored access
+            /// entity encoding (see `AuthenticationData::toAST`).
+            const auto deadline = evaluateConstantExpression(ast, context).first;
+            return std::max<time_t>(static_cast<time_t>(deadline.safeGet<Int64>()), 1);
         }
 
         if (context)
@@ -116,16 +128,16 @@ namespace DB
         else
         {
             /// No query context means we are deserializing a stored access entity (`ATTACH USER` coming
-            /// from replicated or disk access storage). Deadlines are serialized as Unix timestamp
-            /// strings (see `AuthenticationData::toAST`), which denote the same instant regardless of
-            /// the server time zone. Entities written by older versions store a bare local-time string
-            /// instead, which is resolved in the server time zone, as before. `readDateTimeText` handles
-            /// the non-negative timestamps and the datetime form, but not pre-1970 (negative) timestamps,
-            /// which are read explicitly here.
-            if (valid_until_str.starts_with('-'))
+            /// from replicated or disk access storage). Post-epoch deadlines are serialized as zero-padded
+            /// Unix timestamp strings (see `AuthenticationData::toAST`), which denote the same instant
+            /// regardless of the server time zone and are read here as plain integers. Everything else is
+            /// in the `YYYY-MM-DD hh:mm:ss[ UTC]` datetime form: pre-1970 deadlines carry an explicit
+            /// `UTC` suffix, which best-effort parsing honours, and entities written by older versions
+            /// store a bare local-time string, which is resolved in the server time zone, as before.
+            if (std::all_of(valid_until_str.begin(), valid_until_str.end(), isNumericASCII))
                 readIntText(time, in);
             else
-                readDateTimeText(time, in);
+                parseDateTimeBestEffort(time, in, DateLUT::instance(""), DateLUT::instance("UTC"));
         }
 
         return time;

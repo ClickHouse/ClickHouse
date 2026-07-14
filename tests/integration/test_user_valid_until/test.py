@@ -167,14 +167,14 @@ def test_valid_for_interval_overflow(started_cluster):
     node.query("DROP USER IF EXISTS user_valid_for_overflow")
 
     # An absurdly high interval must not overflow: the deadline is computed in DateTime64
-    # and saturates at its upper bound (year 2299) instead of wrapping around into the past.
+    # and saturates at its upper bound (year 9999) instead of wrapping around into the past.
     node.query("CREATE USER user_valid_for_overflow VALID FOR INTERVAL 1000000 YEAR")
 
     assert node.query("SELECT 1", user="user_valid_for_overflow") == "1\n"
-    assert "VALID UNTIL \\'2299-12-31" in node.query(
+    assert "VALID UNTIL \\'9999-" in node.query(
         "SHOW CREATE USER user_valid_for_overflow"
     )
-    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold year 2299;
+    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold year 9999;
     # the value is clamped to the upper bound of `DateTime` instead of wrapping around.
     assert (
         node.query(
@@ -189,9 +189,10 @@ def test_valid_for_interval_overflow(started_cluster):
 def test_valid_for_interval_negative_overflow(started_cluster):
     node.query("DROP USER IF EXISTS user_valid_for_neg_overflow")
 
-    # An absurdly low (negative) interval must not wrap around into the future: the deadline is
-    # computed in DateTime64 and saturates at its lower bound (year 1900) instead. The credential
-    # is therefore already expired, so login must fail.
+    # An absurdly low (negative) interval must not wrap around into the future: the deadline
+    # saturates at the DateTime64 lower bound and, like every deadline in the past, is stored
+    # as the smallest expired instant, 1 (`1970-01-01 00:00:01`) - distinct from 0, which means
+    # "no expiration". The credential is therefore already expired, so login must fail.
     node.query(
         "CREATE USER user_valid_for_neg_overflow VALID FOR INTERVAL -1000000 YEAR"
     )
@@ -201,10 +202,9 @@ def test_valid_for_interval_negative_overflow(started_cluster):
         "SELECT 1", user="user_valid_for_neg_overflow"
     )
 
-    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold the pre-1970
-    # (negative) deadline; the value is clamped to 1 (`1970-01-01 00:00:01`) instead of a plain
-    # `static_cast<UInt32>` wrapping the negative `time_t` into a far-future timestamp. It stays
-    # distinct from 0, which means "no expiration".
+    assert "VALID UNTIL \\'1970-01-01 00:00:01\\'" in node.query(
+        "SHOW CREATE USER user_valid_for_neg_overflow"
+    )
     assert (
         node.query(
             "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_neg_overflow'"
@@ -213,6 +213,45 @@ def test_valid_for_interval_negative_overflow(started_cluster):
     )
 
     node.query("DROP USER IF EXISTS user_valid_for_neg_overflow")
+
+
+def test_valid_until_small_timestamp_restart(started_cluster):
+    # A deadline within the first seconds of the epoch is stored on disk as a zero-padded Unix
+    # timestamp: an unpadded string of fewer than 5 digits would be rejected as ambiguous by the
+    # datetime reader on reload, making the user unloadable after a restart.
+    node.query("DROP USER IF EXISTS user_small_ts")
+    node.query("CREATE USER user_small_ts VALID UNTIL '1970-01-01 00:00:01 UTC'")
+
+    show_create = node.query("SHOW CREATE USER user_small_ts")
+    assert "VALID UNTIL \\'1970-01-01 00:00:01\\'" in show_create
+
+    node.restart_clickhouse()
+
+    assert node.query("SHOW CREATE USER user_small_ts") == show_create
+    assert "Authentication failed" in node.query_and_get_error(
+        "SELECT 1", user="user_small_ts"
+    )
+
+    node.query("DROP USER user_small_ts")
+
+
+def test_valid_until_pre_epoch_deadline_restart(started_cluster):
+    # A pre-1970 deadline is a negative time_t and is stored on disk in the datetime form with an
+    # explicit UTC suffix: a raw negative Unix timestamp string would fail to parse on reload.
+    node.query("DROP USER IF EXISTS user_pre_epoch")
+    node.query("CREATE USER user_pre_epoch VALID UNTIL '1900-01-01 00:00:00 UTC'")
+
+    show_create = node.query("SHOW CREATE USER user_pre_epoch")
+    assert "VALID UNTIL \\'1900-01-01 00:00:00\\'" in show_create
+
+    node.restart_clickhouse()
+
+    assert node.query("SHOW CREATE USER user_pre_epoch") == show_create
+    assert "Authentication failed" in node.query_and_get_error(
+        "SELECT 1", user="user_pre_epoch"
+    )
+
+    node.query("DROP USER user_pre_epoch")
 
 
 def test_multiple_authentication_methods(started_cluster):

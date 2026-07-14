@@ -12,6 +12,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/LRUCache.h>
 
+#include <fmt/format.h>
+
 #include <boost/algorithm/hex.hpp>
 #include <Poco/SHA1Engine.h>
 
@@ -473,11 +475,29 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
         {
             /// The serialized entity is parsed back by another server (replicated access storage) or
             /// after a restart (disk access storage), possibly under a different default time zone and
-            /// possibly by an older server version. A Unix timestamp string denotes the same instant
-            /// regardless of the time zone, and older versions parse it the same way (their datetime
-            /// reader treats an all-digit string as a Unix timestamp), whereas a datetime string would
-            /// be reinterpreted in each server's own time zone.
-            node->valid_until = make_intrusive<ASTLiteral>(toString(static_cast<Int64>(valid_until)));
+            /// possibly by an older server version.
+            if (valid_until >= 0)
+            {
+                /// A Unix timestamp string denotes the same instant regardless of the time zone, and
+                /// older versions parse it the same way (their datetime reader treats an all-digit
+                /// string as a Unix timestamp), whereas a datetime string would be reinterpreted in
+                /// each server's own time zone. The value is zero-padded to 10 digits because the
+                /// datetime reader rejects a timestamp of fewer than 5 digits as ambiguous.
+                node->valid_until = make_intrusive<ASTLiteral>(fmt::format("{:010}", valid_until));
+            }
+            else
+            {
+                /// Older versions fail to parse a Unix timestamp with a leading '-', so a pre-1970
+                /// deadline is stored in the datetime form they have always written and read themselves.
+                /// The explicit `UTC` suffix pins the instant for current versions; older versions stop
+                /// reading before the suffix and resolve the value in their own time zone, which keeps
+                /// the deadline in the deep past (i.e. the credential stays expired) even though the
+                /// exact instant may shift by the time zone offset. The value is clamped to
+                /// `1900-01-01 00:00:00 UTC`, the lower bound of the datetime range supported by every
+                /// reader of this format; all deadlines in the past are equivalent (already expired).
+                static constexpr time_t min_datetime_form = -2208988800; /// 1900-01-01 00:00:00 UTC
+                node->valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(std::max(valid_until, min_datetime_form)));
+            }
         }
         else
         {
