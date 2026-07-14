@@ -643,6 +643,11 @@ void ConfigProcessor::doIncludesRecursive(
                 ///    earlier versions always interpreted a `from_zk` value as XML.
                 ///  - A value that does not begin with '<' on a structural `<include from_zk=.../>`
                 ///    is parsed as a YAML subtree, expanded the same way as a configuration file.
+                ///    In a build without `yaml-cpp` (`ENABLE_YAML_CPP=0`, so `USE_YAML_CPP` is 0)
+                ///    YAML cannot be parsed, so such a value is kept as literal text instead — the
+                ///    behavior earlier versions had for `from_zk` in XML-only builds. A plain scalar
+                ///    is spliced identically either way (both paths produce the same text
+                ///    substitution); only an actual YAML subtree requires `yaml-cpp`.
                 ///  - A value that does not begin with '<' on any other element is kept as literal
                 ///    text using its exact original bytes. YAML autodetection is deliberately NOT
                 ///    applied here, even for an ordinary container element such as
@@ -661,16 +666,23 @@ void ConfigProcessor::doIncludesRecursive(
                     /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
                     zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 }
+#if USE_YAML_CPP
                 else if (node->nodeName() == "include")
                 {
                     /// A structural `<include>` may reference a YAML subtree: expand it the same way
-                    /// as a configuration file.
+                    /// as a configuration file. Guarded by `USE_YAML_CPP`: in a build without
+                    /// `yaml-cpp` a structural `<include>` referencing a non-XML value falls through
+                    /// to the literal-text branch below (the old XML-only behavior), instead of
+                    /// throwing "Unable to parse YAML configuration without usage of yaml-cpp".
                     zk_document = YAMLParser::parseString(znode.contents);
                 }
+#endif
                 else
                 {
                     /// A leaf value or an ordinary element: keep the value as literal text using its
                     /// exact original bytes (a subtree must be provided as XML on such an element).
+                    /// In a build without `yaml-cpp` a structural `<include>` referencing a non-XML
+                    /// value also lands here and is preserved as literal text (see the note above).
                     zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
                 }
                 return getRootNode(zk_document.get());
