@@ -369,9 +369,11 @@ TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
 TEST(BackupInfo, NormalizedStringDistinguishesS3ArchiveMode)
 {
     auto archive = BackupInfo::fromString("S3('s3://bucket/backup.zip')");
-    auto directory = BackupInfo::fromString("S3('s3://bucket/backup.zip#directory')");
+    auto directory_with_fragment = BackupInfo::fromString("S3('s3://bucket/backup.zip#directory')");
+    auto directory_with_slash = BackupInfo::fromString("S3('s3://bucket/backup.zip/')");
 
-    EXPECT_NE(archive.toNormalizedString(), directory.toNormalizedString());
+    EXPECT_NE(archive.toNormalizedString(), directory_with_fragment.toNormalizedString());
+    EXPECT_EQ(directory_with_fragment.toNormalizedString(), directory_with_slash.toNormalizedString());
 }
 
 TEST(BackupInfo, NormalizedStringEncodesS3FieldsUnambiguously)
@@ -705,6 +707,24 @@ TEST(BackupInfo, NormalizedStringUsesAzureConnectionStringParserSemantics)
     EXPECT_NE(with_ignored_lowercase_keys.toNormalizedString(), ignored_destination.toNormalizedString());
     EXPECT_THROW((void)invalid_blob_endpoint.toNormalizedString(), Exception);
 }
+
+TEST(BackupInfo, NormalizedStringCanonicalizesAzureEndpointTrailingSlash)
+{
+    auto no_slash = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup')");
+    auto one_slash = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/', 'container', 'backup')");
+    auto two_slashes = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net//', 'container', 'backup')");
+    auto archive_name = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/account.zip', 'container', 'backup')");
+    auto archive_name_with_slash = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/account.zip/', 'container', 'backup')");
+
+    EXPECT_EQ(no_slash.toNormalizedString(), one_slash.toNormalizedString());
+    EXPECT_NE(no_slash.toNormalizedString(), two_slashes.toNormalizedString());
+    EXPECT_EQ(archive_name.toNormalizedString(), archive_name_with_slash.toNormalizedString());
+}
 #endif
 
 TEST(BackupInfo, NormalizedStringUsesFrozenAzureNamedCollection)
@@ -726,4 +746,33 @@ TEST(BackupInfo, NormalizedStringUsesFrozenAzureNamedCollection)
 
     EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
     EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
+}
+
+TEST(BackupInfo, FreezeNamedCollectionPreservesResolvedSnapshot)
+{
+    const String collection_name = "backup_info_frozen_snapshot";
+
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("url", Field("s3://bucket/base"));
+    create_query->overridability.emplace("url", true);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    auto drop_collection = [&]
+    {
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    };
+    SCOPE_EXIT({ drop_collection(); });
+
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(" + collection_name + ", url='s3://bucket/overridden')");
+    auto frozen = info.freezeNamedCollection(context);
+    String identity = frozen.toNormalizedString();
+
+    EXPECT_TRUE(frozen.frozen_named_collection->isQueryOverridden("url"));
+    drop_collection();
+    EXPECT_EQ(frozen.toNormalizedString(), identity);
 }

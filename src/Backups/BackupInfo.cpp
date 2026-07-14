@@ -190,16 +190,29 @@ namespace
     }
 #endif
 
+    String stripAllTrailingSlashes(String s)
+    {
+        while (s.size() > 1 && s.back() == '/')
+            s.pop_back();
+        return s;
+    }
+
     String stripTrailingSlashes(String s)
     {
         bool had_trailing_slash = !s.empty() && s.back() == '/';
 
-        while (s.size() > 1 && s.back() == '/')
-            s.pop_back();
+        s = stripAllTrailingSlashes(std::move(s));
 
         if (had_trailing_slash && s != "/" && hasRegisteredArchiveFileExtension(s))
             s += '/';
 
+        return s;
+    }
+
+    String stripOneTrailingSlash(String s)
+    {
+        if (!s.empty() && s.back() == '/')
+            s.pop_back();
         return s;
     }
 
@@ -258,12 +271,12 @@ namespace
         S3::URI uri(stripURLUserInfo(s), /* allow_archive_path_syntax = */ false);
         appendNormalizedIdentityComponent(result, first, "endpoint=" + uri.endpoint);
         appendNormalizedIdentityComponent(result, first, "bucket=" + uri.bucket);
-        appendNormalizedIdentityComponent(result, first, "key=" + stripTrailingSlashes(uri.key));
+        appendNormalizedIdentityComponent(result, first, "key=" + stripAllTrailingSlashes(uri.key));
         appendNormalizedIdentityComponent(result, first, "version_id=" + uri.version_id);
 #else
         /// Without AWS support the `S3` backup engine cannot be used. Strip the
         /// whole query because exact presigned-parameter parsing is unavailable.
-        appendNormalizedIdentityComponent(result, first, "url=" + stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s))));
+        appendNormalizedIdentityComponent(result, first, "url=" + stripAllTrailingSlashes(stripURLUserInfo(stripURLQuery(s))));
 #endif
         appendNormalizedIdentityComponent(result, first, hasRegisteredArchiveFileExtension(s) ? "mode=archive" : "mode=directory");
         return result;
@@ -275,10 +288,10 @@ namespace
         bool first = true;
 #if USE_AWS_S3
         S3::URI uri("s3://bucket/" + s, /* allow_archive_path_syntax = */ false);
-        appendNormalizedIdentityComponent(result, first, "key=" + stripTrailingSlashes(uri.key));
+        appendNormalizedIdentityComponent(result, first, "key=" + stripAllTrailingSlashes(uri.key));
         appendNormalizedIdentityComponent(result, first, "version_id=" + uri.version_id);
 #else
-        appendNormalizedIdentityComponent(result, first, "path=" + stripTrailingSlashes(stripURLQuery(s)));
+        appendNormalizedIdentityComponent(result, first, "path=" + stripAllTrailingSlashes(stripURLQuery(s)));
 #endif
         appendNormalizedIdentityComponent(result, first, hasRegisteredArchiveFileExtension(s) ? "mode=archive" : "mode=directory");
         return result;
@@ -299,10 +312,10 @@ namespace
             }
         }
 
-        return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
+        return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
 #else
         if (s.find(';') == String::npos)
-            return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
+            return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
 
         std::unordered_map<String, String> parts;
         Strings redacted_parts;
@@ -333,7 +346,7 @@ namespace
 
         auto blob_endpoint = parts.find("blobendpoint");
         if (blob_endpoint != parts.end())
-            return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(blob_endpoint->second)));
+            return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(blob_endpoint->second)));
 
         auto protocol = parts.find("defaultendpointsprotocol");
         auto account_name = parts.find("accountname");
@@ -345,7 +358,7 @@ namespace
             result += account_name->second;
             result += ".blob.";
             result += endpoint_suffix->second;
-            return stripTrailingSlashes(result);
+            return stripOneTrailingSlash(result);
         }
 
         std::sort(redacted_parts.begin(), redacted_parts.end());
