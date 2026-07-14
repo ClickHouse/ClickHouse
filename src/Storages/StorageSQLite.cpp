@@ -309,17 +309,19 @@ public:
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
-        const String & remote_table_name_)
+        const String & remote_table_name_,
+        const Names & explicitly_inserted_columns_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
+        , explicitly_inserted_columns(explicitly_inserted_columns_.begin(), explicitly_inserted_columns_.end())
     {
         /// SQLite generated columns are kept in the table structure as `MATERIALIZED` (readable but not
         /// insertable). ClickHouse still computes a placeholder for them and includes them in the block
-        /// reaching the sink, so collect their names to omit them from the SQLite INSERT - SQLite computes
-        /// their values itself and rejects an explicit write into a generated column.
+        /// reaching the sink, so collect their names to omit automatically added placeholders from the SQLite
+        /// INSERT while retaining explicitly inserted columns for SQLite to reject.
         for (const auto & column : metadata_snapshot_->getColumns().getMaterialized())
             generated_columns.insert(column.name);
     }
@@ -330,12 +332,12 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        /// Drop the generated columns collected in the constructor: SQLite computes them itself, so they
-        /// must not appear in the INSERT column list. When there are no generated columns (the common case)
-        /// this is the full block.
+        /// Drop generated columns that the insert pipeline added automatically: SQLite computes them itself,
+        /// so they must not appear in the INSERT column list. A generated column explicitly named by the user
+        /// is preserved, allowing SQLite to reject the unsupported write instead of silently discarding its value.
         Block insertable_block;
         for (const auto & elem : block)
-            if (!generated_columns.contains(elem.name))
+            if (!generated_columns.contains(elem.name) || explicitly_inserted_columns.contains(elem.name))
                 insertable_block.insert(elem);
 
         WriteBufferFromOwnString sqlbuf;
@@ -377,6 +379,7 @@ private:
     StorageSQLite::SQLitePtr sqlite_db;
     String remote_table_name;
     std::unordered_set<String> generated_columns;
+    std::unordered_set<String> explicitly_inserted_columns;
 };
 
 
@@ -393,7 +396,16 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     /// Idempotent - it runs at most once and is a no-op once the classification has been repaired.
     reclassifyGeneratedColumnsFromRemote(context_);
 
-    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db_local, remote_table_or_query.getTableName());
+    Names explicitly_inserted_columns;
+    if (context_->getInsertionTable() == getStorageID())
+    {
+        const auto & insertion_column_names = context_->getInsertionTableColumnNames();
+        if (insertion_column_names)
+            explicitly_inserted_columns = *insertion_column_names;
+    }
+
+    return std::make_shared<SQLiteSink>(
+        *this, metadata_snapshot, sqlite_db_local, remote_table_or_query.getTableName(), explicitly_inserted_columns);
 }
 
 
