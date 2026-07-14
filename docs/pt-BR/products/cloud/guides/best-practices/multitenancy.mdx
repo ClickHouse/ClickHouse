@@ -1,0 +1,405 @@
+---
+slug: /cloud/bestpractices/multi-tenancy
+sidebarTitle: 'Multitenancy'
+title: 'Multitenancy'
+description: 'Boas práticas para implementar multitenancy'
+doc_type: 'guide'
+keywords: ['multitenancy', 'isolamento', 'boas práticas', 'arquitetura', 'multitenant']
+---
+
+Em uma plataforma SaaS de análise de dados, é comum que vários tenants, como organizações, clientes ou unidades de negócio, compartilhem a mesma infraestrutura de banco de dados, mantendo a separação lógica de seus dados. Isso permite que diferentes usuários acessem com segurança seus próprios dados dentro da mesma plataforma.
+
+Dependendo dos requisitos, há diferentes maneiras de implementar multitenancy. Abaixo, apresentamos um guia de como implementá-la com o ClickHouse Cloud.
+
+<div id="shared-table">
+  ## Tabela compartilhada
+</div>
+
+Nessa abordagem, os dados de todos os tenants são armazenados em uma única tabela compartilhada, com um campo (ou conjunto de campos) usado para identificar os dados de cada tenant. Para maximizar o desempenho, esse campo deve ser incluído na [chave primária](/pt-BR/reference/statements/create/table#primary-key). Para garantir que você só possa acessar os dados do tenant correspondente, usamos [controle de acesso baseado em funções](/pt-BR/concepts/features/security/access-rights), implementado por meio de [políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management).
+
+> **Recomendamos essa abordagem por ser a mais simples de gerenciar, principalmente quando todos os tenants compartilham o mesmo esquema de dados e os volumes de dados são moderados (&lt; TBs)**
+
+Ao consolidar todos os dados dos tenants em uma única tabela, a eficiência de armazenamento melhora com a otimização da compressão de dados e a redução da sobrecarga de metadados. Além disso, as atualizações de esquema são simplificadas, já que todos os dados são gerenciados de forma centralizada.
+
+Esse método é particularmente eficaz para lidar com um grande número de tenants (potencialmente, milhões).
+
+No entanto, abordagens alternativas podem ser mais adequadas se os tenants tiverem esquemas de dados diferentes ou se houver tendência de divergirem ao longo do tempo.
+
+Nos casos em que há uma disparidade significativa no volume de dados entre os tenants, os menores podem sofrer impactos desnecessários no desempenho das consultas. Observe que esse problema é amplamente mitigado ao incluir o campo do tenant na chave primária.
+
+<div id="shared-table-example">
+  ### Exemplo
+</div>
+
+Este é um exemplo de implementação de um modelo de multitenancy com tabela compartilhada.
+
+Primeiro, vamos criar uma tabela compartilhada com um campo `tenant_id` incluído na chave primária.
+
+```sql
+--- Cria a tabela events. Usando tenant_id como parte da chave primária
+CREATE TABLE events
+(
+    tenant_id UInt32,                 -- Identificador do tenant
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (tenant_id, timestamp)
+```
+
+Vamos inserir dados fictícios.
+
+```sql
+-- Inserir algumas linhas fictícias
+INSERT INTO events (tenant_id, id, type, timestamp, user_id, data)
+VALUES
+(1, '7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(1, '846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+(1, '6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(2, '7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(2, '6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+(2, '43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(1, '83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+(1, '975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}'),
+(2, 'f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+(2, '5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}'),
+```
+
+Agora, vamos criar dois usuários: `user_1` e `user_2`.
+
+```sql
+-- Criar usuários 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+Criamos [políticas de linha](/pt-BR/reference/statements/create/row-policy) que restringem `user_1` e `user_2` a acessar apenas os dados de seus respectivos tenants.
+
+```sql
+-- Criar políticas de linha
+CREATE ROW POLICY user_filter_1 ON default.events USING tenant_id=1 TO user_1
+CREATE ROW POLICY user_filter_2 ON default.events USING tenant_id=2 TO user_2
+```
+
+Em seguida, conceda privilégios [`GRANT SELECT`](/pt-BR/reference/statements/grant#usage) na tabela compartilhada usando uma role comum.
+
+```sql
+-- Criar role
+CREATE ROLE user_role
+
+-- Conceder acesso somente leitura à tabela events.
+GRANT SELECT ON default.events TO user_role
+GRANT user_role TO user_1
+GRANT user_role TO user_2
+```
+
+Agora você pode se conectar como `user_1` e executar um SELECT simples. Apenas as linhas do primeiro tenant são retornadas.
+
+```sql
+-- Logado como user_1
+SELECT *
+FROM events
+```
+
+```response
+   ┌─tenant_id─┬─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │         1 │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │         1 │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │         1 │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │         1 │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │         1 │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-tables">
+  ## Tabelas separadas
+</div>
+
+Nessa abordagem, os dados de cada tenant são armazenados em uma tabela separada no mesmo banco de dados, eliminando a necessidade de um campo específico para identificar tenants. O acesso do usuário é controlado por meio de uma [instrução GRANT](/pt-BR/reference/statements/grant), garantindo que cada usuário possa acessar apenas as tabelas que contêm os dados dos seus tenants.
+
+> **Usar tabelas separadas é uma boa opção quando os tenants têm esquemas de dados diferentes.**
+
+Em cenários com poucos tenants e conjuntos de dados muito grandes, nos quais o desempenho das consultas é crítico, essa abordagem pode ter desempenho superior ao de um modelo de tabela compartilhada. Como não é necessário filtrar os dados de outros tenants, as consultas podem ser mais eficientes. Além disso, as chaves primárias podem ser ainda mais otimizadas, já que não é preciso incluir um campo extra (como um ID de tenant) na chave primária.
+
+Observe que essa abordagem não escala para milhares de tenants. Consulte [limites de uso](/pt-BR/products/cloud/guides/best-practices/usagelimits).
+
+<div id="shared-table-example">
+  ### Exemplo
+</div>
+
+Este é um exemplo de implementação do modelo de multi-tenancy com tabelas separadas.
+
+Primeiro, vamos criar duas tabelas: uma para os eventos do `tenant_1` e outra para os eventos do `tenant_2`.
+
+```sql
+-- Criar tabela para o tenant 1 
+CREATE TABLE events_tenant_1
+(
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (timestamp, user_id) -- A chave primária pode se concentrar em outros atributos
+
+-- Criar tabela para o tenant 2 
+CREATE TABLE events_tenant_2
+(
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (timestamp, user_id) -- A chave primária pode se concentrar em outros atributos
+```
+
+Vamos inserir dados fictícios.
+
+```sql
+INSERT INTO events_tenant_1 (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO events_tenant_2 (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+Em seguida, vamos criar dois usuários `user_1` e `user_2`.
+
+```sql
+-- Criar usuários 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+Em seguida, conceda privilégios `GRANT SELECT` na tabela correspondente.
+
+```sql
+-- Conceder acesso somente leitura à tabela de eventos.
+GRANT SELECT ON default.events_tenant_1 TO user_1
+GRANT SELECT ON default.events_tenant_2 TO user_2
+```
+
+Agora você pode se conectar como `user_1` e executar um select simples na tabela correspondente a esse usuário. Apenas as linhas do primeiro tenant são retornadas.
+
+```sql
+-- Conectado como user_1
+SELECT *
+FROM default.events_tenant_1
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-databases">
+  ## Bancos de dados separados
+</div>
+
+Os dados de cada tenant são armazenados em um banco de dados separado dentro do mesmo serviço ClickHouse.
+
+> **Essa abordagem é útil se cada tenant precisar de um grande número de tabelas e, possivelmente, visões materializadas, além de ter um esquema de dados diferente. No entanto, ela pode se tornar difícil de gerenciar se o número de tenants for grande.**
+
+A implementação é semelhante à abordagem de tabelas separadas, mas, em vez de conceder privilégios no nível da tabela, os privilégios são concedidos no nível do banco de dados.
+
+Observe que essa abordagem não escala para milhares de tenants. Consulte os [limites de uso](/pt-BR/products/cloud/guides/best-practices/usagelimits).
+
+<div id="shared-table-example">
+  ### Exemplo
+</div>
+
+Este é um exemplo de implementação de um modelo de multitenancy com bancos de dados separados.
+
+Primeiro, vamos criar dois bancos de dados, um para `tenant_1` e um para `tenant_2`.
+
+```sql
+-- Criar banco de dados para tenant_1
+CREATE DATABASE tenant_1;
+
+-- Criar banco de dados para tenant_2
+CREATE DATABASE tenant_2;
+```
+
+```sql
+-- Criar tabela para tenant_1
+CREATE TABLE tenant_1.events
+(
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (timestamp, user_id);
+
+-- Criar tabela para tenant_2
+CREATE TABLE tenant_2.events
+(
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (timestamp, user_id);
+```
+
+Vamos inserir dados fictícios.
+
+```sql
+INSERT INTO tenant_1.events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO tenant_2.events (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+Então, vamos criar dois usuários, `user_1` e `user_2`.
+
+```sql
+-- Criar usuários 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+Em seguida, conceda privilégios `GRANT SELECT` sobre a tabela correspondente.
+
+```sql
+-- Conceder somente leitura à tabela de eventos.
+GRANT SELECT ON tenant_1.events TO user_1
+GRANT SELECT ON tenant_2.events TO user_2
+```
+
+Agora você pode se conectar como `user_1` e executar uma consulta SELECT simples na tabela de eventos do banco de dados correspondente. Apenas as linhas do primeiro tenant são retornadas.
+
+```sql
+-- Conectado como user_1
+SELECT *
+FROM tenant_1.events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="compute-compute-separation">
+  ## Separação compute-compute
+</div>
+
+As três abordagens descritas acima também podem ser isoladas ainda mais com o uso de [Warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse). Os dados são compartilhados por meio de um armazenamento de objetos comum, mas cada tenant pode ter seu próprio serviço de compute graças à [separação compute-compute](/pt-BR/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation), com diferentes proporções de CPU e memória.
+
+O gerenciamento de usuários é semelhante ao das abordagens descritas anteriormente, já que todos os serviços em um warehouse [compartilham controles de acesso](/pt-BR/products/cloud/features/infrastructure/warehouses#database-credentials).
+
+Observe que o número de serviços filhos em um warehouse é limitado. Consulte [Limitações do warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#limitations).
+
+<div id="separate-service">
+  ## Serviço em nuvem separado
+</div>
+
+A abordagem mais radical é usar um serviço ClickHouse diferente para cada tenant.
+
+> **Esse método, menos comum, pode ser uma solução quando os dados dos tenants precisam ser armazenados em diferentes regiões, por motivos legais, de segurança ou de proximidade.**
+
+Uma conta de usuário deve ser criada em cada serviço ao qual o usuário terá acesso aos dados do respectivo tenant.
+
+Essa abordagem é mais difícil de gerenciar e adiciona sobrecarga a cada serviço, já que cada um deles exige sua própria infraestrutura para operar. Os serviços podem ser gerenciados por meio da [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview), e a orquestração também pode ser feita com o [provider oficial do Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
+
+<div id="shared-table-example">
+  ### Exemplo
+</div>
+
+Este é um exemplo de implementação de um modelo de multitenancy com serviços separados. Observe que o exemplo mostra a criação de tabelas e usuários em um serviço ClickHouse; isso precisará ser replicado em todos os serviços.
+
+Primeiro, vamos criar a tabela `events`
+
+```sql
+-- Criar tabela para tenant_1
+CREATE TABLE events
+(
+    id UUID,                    -- ID único do evento
+    type LowCardinality(String), -- Tipo do evento
+    timestamp DateTime,          -- Timestamp do evento
+    user_id UInt32,               -- ID do usuário que disparou o evento
+    data String,                 -- Dados do evento
+)
+ORDER BY (timestamp, user_id);
+```
+
+Vamos inserir dados fictícios.
+
+```sql
+INSERT INTO events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+```
+
+Em seguida, vamos criar dois usuários `user_1`
+
+```sql
+-- Criar usuários 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+```
+
+Em seguida, conceda o privilégio `SELECT` na tabela correspondente.
+
+```sql
+-- Conceder somente leitura na tabela events.
+GRANT SELECT ON events TO user_1
+```
+
+Agora você pode se conectar como `user_1` ao serviço do tenant 1 e executar um SELECT simples. Apenas as linhas do primeiro tenant são retornadas.
+
+```sql
+-- Logado como user_1
+SELECT *
+FROM events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```

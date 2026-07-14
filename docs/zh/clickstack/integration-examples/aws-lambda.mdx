@@ -1,0 +1,372 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-lambda
+title: '使用 Rotel 和 ClickStack 监控 AWS Lambda 日志'
+sidebarTitle: 'AWS Lambda 日志'
+description: '使用 Rotel 和 ClickStack 监控 AWS Lambda 日志'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', '日志', 'CloudWatch']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<Info>
+  **TL;DR**
+
+  本指南介绍如何使用 Rotel Lambda Extension 收集并将函数日志、扩展日志以及 OpenTelemetry 数据直接转发到 ClickHouse，从而通过 ClickStack 监控 AWS Lambda 函数。你将了解如何：
+
+  * 将 Rotel Lambda Extension layer 部署到 Lambda 函数
+  * 配置该扩展，将日志和链路追踪导出到 ClickStack
+  * 可选择禁用 CloudWatch 日志以降低成本
+
+  这种方式完全绕过 CloudWatch 日志，可显著降低 Lambda 可观测性成本。
+
+  所需时间：5–10 分钟
+</Info>
+
+<div id="existing-lambda">
+  ## 与现有 Lambda 函数集成
+</div>
+
+本节介绍如何配置现有的 AWS Lambda 函数，通过 Rotel Lambda Extension 将日志和链路追踪发送到 ClickStack。
+
+<div id="prerequisites">
+  ### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 需要监控的 AWS Lambda 函数
+* 已配置 AWS CLI，并具有相应权限
+* 具有添加 layer 权限的 Lambda 执行角色
+
+<Steps>
+  <Step>
+    #### 选择合适的 Rotel Lambda Extension layer
+
+    选择与 Lambda runtime 架构匹配的 Lambda layer。`{version}` 字段
+    取决于你要部署到的 AWS 区域。请查看 [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
+    页面，获取与你所在区域对应的最新版本号。
+
+    | 架构           | ARN                                                                          |
+    | ------------ | ---------------------------------------------------------------------------- |
+    | x86-64/amd64 | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-amd64:{version}` |
+    | arm64        | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-arm64:{version}` |
+
+    **可用区域：**
+
+    * us-east-{1, 2}, us-west-{1, 2}
+    * eu-central-1, eu-north-1, eu-west-{1, 2, 3}
+    * ca-central-1
+    * ap-southeast-{1, 2}, ap-northeast-{1, 2}
+    * ap-south-1
+    * sa-east-1
+  </Step>
+
+  <Step>
+    #### 将 Rotel layer 添加到 Lambda 函数
+
+    *在这些示例中，请将 `{arch}`、`{region}` 和 `{version}` 替换为上方对应的值。*
+
+    ##### 选项 1：AWS Console
+
+    1. 打开 AWS Lambda 控制台
+    2. 导航到你的 Lambda 函数
+    3. 滚动到 **Layers** 部分，然后点击 **Add a layer**
+    4. 选择 **Specify an ARN**
+    5. 输入 Rotel layer 的 ARN：
+       ```text
+       arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+       ```
+    6. 点击 **Add**
+
+    ##### 选项 2：AWS CLI
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+
+    ##### 选项 3：AWS SAM
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... 其他配置 ...
+          Layers:
+            - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+  </Step>
+
+  <Step>
+    #### 配置该扩展以导出到 ClickStack
+
+    Rotel Lambda Extension 通过环境变量进行配置。你需要配置 OTLP 导出器的端点，使其指向你的 ClickStack 实例。以下示例假设你的 AWS Lambda 函数能够访问该 ClickStack 实例。
+
+    ##### 基本配置 (环境变量)
+
+    将这些环境变量添加到你的 Lambda 函数中：
+
+    ```bash
+    # 必填：ClickStack OTLP 端点
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+
+    # 可选：身份验证请求头
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+
+    # 可选：服务名称（默认为 Lambda 函数名称）
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+    ##### 高级配置 (使用 .env 文件)
+
+    对于更复杂的配置，请在 Lambda 函数部署包中创建一个 `rotel.env` 文件：
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    然后将环境变量设为指向该文件：
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+    ##### 使用 AWS Secrets Manager 或 Parameter Store
+
+    对于生产环境部署，建议将 API 密钥等敏感信息存储在 AWS Secrets Manager 或 Parameter Store 中：
+
+    **AWS Secrets Manager 示例：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-abc123}"
+    ```
+
+    **AWS Parameter Store 示例：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key}"
+    ```
+
+    **所需的 IAM 权限：**
+
+    将以下权限添加到您的 Lambda 执行角色中：
+
+    对于 Secrets Manager：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    若使用 Parameter Store：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      用于获取机密信息的 AWS API 调用会使冷启动延迟增加 100–150 毫秒。机密信息只会在初始化时分批 (每批最多 10 个) 获取，因此后续调用不会受到影响。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 测试集成
+
+    调用你的 Lambda 函数，验证日志是否已发送到 ClickStack：
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    检查 Lambda 日志中是否有报错：
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    配置完成后，登录 HyperDX (ClickStack 的 UI) ，确认日志已正常流入：
+
+    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda 日志视图" />
+
+    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Lambda 日志详情" />
+
+    在日志中查看以下关键属性：
+
+    * `service.name`：你的 Lambda 函数名称
+    * `faas.name`：AWS Lambda 函数名称
+    * `faas.invocation_id`：唯一调用 ID
+    * `cloud.provider`：&quot;aws&quot;
+    * `cloud.platform`：&quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+<div id="disable-cloudwatch">
+  ## 禁用 CloudWatch 日志 (成本优化)
+</div>
+
+默认情况下，AWS Lambda 会将所有日志发送到 CloudWatch 日志，这在大规模场景下成本可能较高。确认日志已流向 ClickStack 后，您可以禁用 CloudWatch 日志记录以降低成本。
+
+<Steps>
+  <Step>
+    #### 从执行角色中移除 CloudWatch 权限
+
+    1. 打开 AWS 控制台并进入 **AWS Lambda**
+    2. 进入您的 Lambda 函数
+    3. 选择 **Configuration** → **Permissions**
+    4. 点击执行角色名称以打开 IAM 控制台
+    5. 编辑该角色并移除所有 `logs:*` 操作：
+       * 如果使用自定义策略，请编辑并移除 `logs:CreateLogGroup`、`logs:CreateLogStream` 和 `logs:PutLogEvents`
+       * 如果使用 AWS 托管策略 `AWSLambdaBasicExecutionRole`，请将其从该角色中移除
+    6. 保存该角色
+  </Step>
+
+  <Step>
+    #### 验证 CloudWatch 日志记录已禁用
+
+    再次调用您的函数，并确认：
+
+    1. 不会创建新的 CloudWatch 日志流
+    2. 日志仍会继续出现在 ClickStack/HyperDX 中
+
+    ```bash
+    # 策略更改后，这里不应显示新的日志流
+    aws logs describe-log-streams \
+      --log-group-name /aws/lambda/my-function \
+      --order-by LastEventTime \
+      --descending \
+      --max-items 5
+    ```
+  </Step>
+</Steps>
+
+<div id="auto-instrumentation">
+  ## 添加 OpenTelemetry 自动插桩
+</div>
+
+Rotel Lambda Extension 可与 OpenTelemetry 自动插桩 layer 无缝协同工作，除日志外，还可收集分布式链路追踪和指标。
+
+<Steps>
+  <Step>
+    #### 选择对应语言的插桩 layer
+
+    AWS 为多种语言提供了 OpenTelemetry 自动插桩 layer：
+
+    | Language | Layer ARN Pattern                                                                     |
+    | -------- | ------------------------------------------------------------------------------------- |
+    | Node.js  | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-{version}`     |
+    | Python   | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-python-{arch}-ver-{version}`     |
+    | Java     | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-java-agent-{arch}-ver-{version}` |
+
+    最新版本请参见 [AWS OpenTelemetry Lambda repository](https://github.com/aws-observability/aws-otel-lambda)。
+  </Step>
+
+  <Step>
+    #### 将两个 layer 都添加到函数中
+
+    同时添加 Rotel extension layer 和插桩 layer：
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers \
+        arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version} \
+        arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-1-30-2:1
+    ```
+  </Step>
+
+  <Step>
+    #### 配置自动插桩
+
+    设置 `AWS_LAMBDA_EXEC_WRAPPER` 环境变量以启用自动插桩：
+
+    **对于 Node.js：**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+
+    **对于 Python：**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    ```
+
+    **对于 Java：**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证链路追踪
+
+    调用函数后：
+
+    1. 前往 HyperDX 中的 **Traces** 视图
+    2. 你应能看到包含 Lambda 函数 spans 的链路追踪
+    3. 链路追踪会通过 `trace_id` 和 `span_id` 属性与日志关联起来
+  </Step>
+</Steps>
+
+<div id="examples">
+  ## 示例应用
+</div>
+
+查看演示 Rotel Lambda Extension 的 Python 示例应用：
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**：采用手动 OpenTelemetry 埋点的 Python 应用，直接将链路追踪和日志发送到 ClickHouse
+
+<div id="join-rotel-community">
+  ## 加入 Rotel 社区
+</div>
+
+如果你对 Rotel 有任何疑问，请加入 [Rotel Discord 服务器](https://rotel.dev)，分享你的反馈或提出问题。也欢迎查看 [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) 并贡献改进意见。
+
+<div id="resources">
+  ## 其他资源
+</div>
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**：源代码及详细文档
+* **[Rotel Core](https://github.com/streamfold/rotel)**：为该扩展提供支持的轻量级 OTel 数据平面

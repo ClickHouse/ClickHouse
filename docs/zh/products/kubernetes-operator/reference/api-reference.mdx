@@ -1,0 +1,619 @@
+---
+position: 1
+slug: /clickhouse-operator/reference/api-reference
+title: 'ClickHouse Operator API 参考文档'
+keywords: ['kubernetes']
+description: '本文档提供 ClickHouse Operator 自定义资源的详细 API 参考。'
+doc_type: 'reference'
+sidebarTitle: 'API 参考文档'
+---
+
+本文档提供 ClickHouse Operator 自定义资源的详细 API 参考。
+
+<div id="additionalport">
+  ## AdditionalPort
+</div>
+
+AdditionalPort 声明了一个额外的 TCP 端口，用于在 ClickHouse pod (容器组) 和由 operator 管理的无头 Service 上暴露。
+
+| 字段     | 类型      | 描述                                                                      | 必填   | 默认值 |
+| ------ | ------- | ----------------------------------------------------------------------- | ---- | --- |
+| `name` | string  | `name` 在列表中唯一标识该端口，同时用作容器端口名称和 Service 端口名称。<br />它必须是一个 DNS&#95;LABEL。 | true |     |
+| `port` | integer | `port` 是要暴露的 TCP 端口号。                                                   | true |     |
+
+出现于：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
+
+CABundleSelector 用于从集群命名空间中的某个 Secret 里选择一个保存 CA bundle 的键。
+
+| 字段     | 类型     | 描述                             | 必填    | 默认值    |
+| ------ | ------ | ------------------------------ | ----- | ------ |
+| `name` | String | 要从中选择的 Secret 在集群命名空间中的名称。     | true  |        |
+| `key`  | String | 要选择的 Secret 键。必须是有效的 Secret 键。 | false | ca.crt |
+
+出现在：
+
+* [ClusterTLSSpec](#clustertlsspec)
+
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
+
+ClickHouseCluster 是 `clickhouseclusters` API 的 schema。
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### API 版本和 Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+```
+
+| 字段       | 类型                                                  | 描述 | 必填   | 默认值 |
+| -------- | --------------------------------------------------- | -- | ---- | --- |
+| `spec`   | [ClickHouseClusterSpec](#clickhouseclusterspec)     |    | true |     |
+| `status` | [ClickHouseClusterStatus](#clickhouseclusterstatus) |    | true |     |
+
+出现于：
+
+* [ClickHouseClusterList](#clickhouseclusterlist)
+
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
+
+ClickHouseClusterList 包含 ClickHouseCluster 的列表。
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### API 版本和 Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseClusterList
+```
+
+| 字段      | 类型                                         | 描述 | 必填   | 默认值 |
+| ------- | ------------------------------------------ | -- | ---- | --- |
+| `items` | [ClickHouseCluster](#clickhousecluster) 数组 |    | true |     |
+
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
+
+ClickHouseClusterSpec 定义了 ClickHouseCluster 的期望状态。
+
+| 字段                               | 类型                                                                                                                                  | 描述                                                                                                                                                                   | 必填    | 默认值           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
+| `replicas`                       | integer                                                                                                                             | 单个分片中的副本数量。                                                                                                                                                          | false | 3             |
+| `shards`                         | integer                                                                                                                             | 集群中的分片数量。                                                                                                                                                            | false | 1             |
+| `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | 对用于 ClickHouse 协调的 KeeperCluster 的引用。<br />省略命名空间时，将使用 ClickHouseCluster 所在的命名空间。                                                                                    | true  |               |
+| `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | 传递给 ClickHouse pod (容器组) 规范的参数。                                                                                                                                      | false |               |
+| `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | 传递给 ClickHouse 容器规范的参数。                                                                                                                                              | false |               |
+| `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse 数据持久化存储的规格。                                                                                                                                               | false |               |
+| `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | 用于 JBOD / 多磁盘存储的额外 per-pod PVC 模板。<br />每个条目会传播到 StatefulSet volumeClaimTemplate 中，挂载于 `/var/lib/clickhouse/disks/<name>`，并<br />添加到生成的 JBOD 存储策略中。<br />磁盘集合在创建时固定。 | false |               |
+| `labels`                         | object (keys:string, values:string)                                                                                                 | 添加到资源上的附加标记。                                                                                                                                                         | false |               |
+| `annotations`                    | object (keys:string, values:string)                                                                                                 | 添加到资源上的附加注解。                                                                                                                                                         | false |               |
+| `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget 用于配置为每个分片创建的 PDB。<br />未设置时，Operator 对单副本<br />分片默认使用 maxUnavailable=1，对多副本分片默认使用 minAvailable=1。                                                | false |               |
+| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse 服务器的配置参数。                                                                                                                                                 | false |               |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain 是 Kubernetes 集群中用于 DNS 解析的集群域名后缀。                                                                                                                      | false | cluster.local |
+| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel 指定用于主版本升级检查的发布渠道。<br />为空时，仅会建议次版本更新。允许的值包括：stable、lts 或特定的 major.minor 版本 (例如 25.8) 。                                                                | false |               |
+| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | 用于版本检测 Job 的 VersionProbeTemplate 覆盖配置。                                                                                                                              | false |               |
+| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret 是一个可选引用，指向外部管理的、包含集群敏感信息的 Secret。<br />该 Secret 必须与集群位于同一命名空间中。                                                                                       | false |               |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts 声明了要在 ClickHouse Pod (容器组)  和由 Operator 管理的无头 Service 上暴露的额外 TCP 端口。<br />Operator 仅会将这些端口添加到 Kubernetes 资源中，不会配置 ClickHouse 服务器在这些端口上监听。            | false |               |
+
+出现于：
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
+
+ClickHouseClusterStatus 定义了 ClickHouseCluster 的已观测状态。
+
+| 字段                      | 类型                                                                                                        | 描述                                                                         | 必填    | 默认值 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----- | --- |
+| `conditions`            | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |                                                                            | false |     |
+| `readyReplicas`         | integer                                                                                                   | ReadyReplicas 表示已准备好处理请求的副本总数。                                             | false |     |
+| `configurationRevision` | string                                                                                                    | ConfigurationRevision 表示每个副本的目标配置修订版本。                                     | true  |     |
+| `statefulSetRevision`   | string                                                                                                    | StatefulSetRevision 表示每个副本的目标 StatefulSet 修订版本。                            | true  |     |
+| `currentRevision`       | string                                                                                                    | CurrentRevision 表示最近应用的 ClickHouseCluster spec 修订版本。                       | true  |     |
+| `updateRevision`        | string                                                                                                    | UpdateRevision 表示最近请求的 ClickHouseCluster spec 修订版本。                        | true  |     |
+| `observedGeneration`    | integer                                                                                                   | ObservedGeneration 表示控制器观测到的最新 generation。                                 | true  |     |
+| `version`               | string                                                                                                    | Version 表示容器镜像报告的版本。                                                       | false |     |
+| `versionProbeRevision`  | string                                                                                                    | VersionProbeRevision 是最近一次成功版本探测的镜像哈希。<br />当其与当前镜像哈希匹配时，将直接使用缓存的 Version。 | false |     |
+
+出现位置：
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
+
+ClickHouseSettings 定义 ClickHouse 服务器的设置选项。
+
+| 字段                    | 类型                                                                                                            | 描述                                                                                    | 是否必填  | 默认值  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----- | ---- |
+| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | 指定 `default` ClickHouse 用户密码的来源和类型。                                                   | false |      |
+| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse 服务器的日志配置。                                                                  | false |      |
+| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 设置，用于为 ClickHouse 服务器配置安全端点和证书验证。                                                 | false |      |
+| `enableDatabaseSync`  | boolean                                                                                                       | 启用将 ClickHouse 数据库同步到新创建的副本，并在<br />缩容后清理过期副本。<br />仅支持 Replicated 和 integration 数据库。 | false | true |
+| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 配置，将与默认配置合并。                                                           | false |      |
+| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 附加的 ClickHouse 用户配置，将与默认配置合并。                                                         | false |      |
+
+出现于：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
+
+ClusterTLSSpec 定义集群的 TLS 配置。
+
+| 字段                 | 类型                                                                                                                        | 描述                                                                                                                                                      | 必需    | 默认值   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----- |
+| `enabled`          | boolean                                                                                                                   | Enabled 表示是否启用 TLS，这决定了是否打开安全端口。                                                                                                                        | false | false |
+| `required`         | boolean                                                                                                                   | Required 指定是否必须对所有连接强制启用 TLS。启用后将禁用非安全端口。                                                                                                               | false | false |
+| `serverCertSecret` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ServerCertSecret 是对包含服务器证书的 TLS Secret 的引用。<br />该 Secret 应具有与 cert-manager 生成的证书相同的结构，<br />其中证书和私钥分别存储在 &quot;tls.crt&quot; 和 &quot;tls.key&quot; 键下。 | false |       |
+| `caBundle`         | [CABundleSelector](#cabundleselector)                                                                                     | CABundle 是对某个 Secret 键的引用，该键保存用于验证 peer 证书的 CA 证书包。<br />如果为空，则使用系统信任的 CA 证书包。<br />如果未指定，键默认为 &quot;ca.crt&quot;。                                      | false |       |
+
+出现于：
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
+
+ConfigMapKeySelector 用于选择 ConfigMap 中的某个键。
+
+| 字段     | 类型     | 描述                           | 必需   | 默认 |
+| ------ | ------ | ---------------------------- | ---- | -- |
+| `name` | string | 要从中选择的集群命名空间中的 ConfigMap 名称。 | true |    |
+| `key`  | string | 要选择的 ConfigMap 的键。必须是有效的键。   | true |    |
+
+出现在：
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="containerimage">
+  ## ContainerImage
+</div>
+
+ContainerImage 定义了一个容器镜像，其中包含 repository、tag 或 hash。
+
+| 字段           | 类型     | 描述                                               | 必填    | 默认值 |
+| ------------ | ------ | ------------------------------------------------ | ----- | --- |
+| `repository` | string | 容器镜像仓库名称<br />示例：docker.io/clickhouse/clickhouse | false |     |
+| `tag`        | string | 容器镜像标签，与 `hash` 互斥。<br />示例：25.3                 | false |     |
+| `hash`       | string | 容器镜像哈希，与 `tag` 互斥。                               | false |     |
+
+出现在：
+
+* [ContainerTemplateSpec](#containertemplatespec)
+
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
+
+ContainerTemplateSpec 描述了集群中各容器的容器配置覆盖项。
+
+| Field             | Type                                                                                                                      | Description                                                                                                                                                                                                        | Required | Default |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
+| `image`           | [ContainerImage](#containerimage)                                                                                         | Image 是要部署的容器镜像。                                                                                                                                                                                                   | true     |         |
+| `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core)                     | 镜像的 ImagePullPolicy，默认为 IfNotPresent。                                                                                                                                                                              | false    |         |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources 是 server 容器的资源需求。<br />作为整体应用：仅当所有资源字段都为空时，才会使用 operator 默认值。                                                                                                                                            | false    |         |
+| `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | VolumeMounts 是容器的卷挂载列表。<br />会与 operator 生成的挂载项拼接。与 operator 挂载共享 `mountPath` 的条目<br />会合并到同一个 projected volume 中。                                                                                                 | false    |         |
+| `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | Env 是要在容器中设置的环境变量列表。<br />按名称与 operator 默认值合并。                                                                                                                                                                     | false    |         |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext 定义了容器运行时应使用的安全选项。<br />非 nil 的 SecurityContext 会完全替换 operator 默认值；整个<br />结构体都由用户负责。为 nil 时，会保留 operator 默认值。<br />更多信息：https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false    |         |
+| `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe 会覆盖 operator 的默认存活探针。                                                                                                                                                                                | false    |         |
+| `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe 会覆盖 operator 的默认就绪探针。                                                                                                                                                                               | false    |         |
+
+出现位置：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
+
+DefaultPasswordSelector 用于选择默认用户密码的来源。
+
+| 字段             | 类型                                            | 描述                                                                                                 | 必填    | 默认值      |
+| -------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----- | -------- |
+| `passwordType` | string                                        | 提供的密码类型。可能的值请参阅文档：https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true  | password |
+| `secret`       | [SecretKeySelector](#secretkeyselector)       | 从 Secret 的键中选择密码值                                                                                  | false |          |
+| `configMap`    | [ConfigMapKeySelector](#configmapkeyselector) | 从 ConfigMap 的键中选择密码值                                                                               | false |          |
+
+出现在：
+
+* [ClickHouseSettings](#clickhousesettings)
+
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
+
+ExternalSecret 是对同一命名空间中某个 Secret 的引用。
+
+| 字段       | 类型                                            | 描述                                                                                                       | 必填    | 默认值     |
+| -------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----- | ------- |
+| `name`   | string                                        | Secret 的名称。                                                                                              | true  |         |
+| `policy` | [ExternalSecretPolicy](#externalsecretpolicy) | 该策略控制 operator 如何处理 Secret 的内容。<br />Observe (默认) ：如果缺少任何必需的键，则会阻止协调。<br />Manage：将缺失的必需键生成到现有 Secret 中。 | false | Observe |
+
+出现在：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
+
+ExternalSecretPolicy 用于控制 operator 如何处理外部 Secret 的内容。
+
+| 字段        | 说明                                                                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Observe` | ExternalSecretPolicyObserve 是默认策略：operator 会读取并验证该 Secret；<br />如果缺少任何必需键，则会阻止协调。<br />缺失的必需键及其预期格式会在运行时通过 ExternalSecretValid 状态条件报告。<br /> |
+| `Manage`  | ExternalSecretPolicyManage 是一种策略：operator 会为缺失的必需键生成<br />值，以补齐这些键。该 Secret 会被更新，但 operator 永远不会声明其所有权或将其删除。<br />                           |
+
+出现于：
+
+* [ExternalSecret](#externalsecret)
+
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
+
+KeeperCluster 是 `keeperclusters` API 的 schema。
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### API 版本和 Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+```
+
+| 字段       | 类型                                          | 描述 | 必需   | 默认值 |
+| -------- | ------------------------------------------- | -- | ---- | --- |
+| `spec`   | [KeeperClusterSpec](#keeperclusterspec)     |    | true |     |
+| `status` | [KeeperClusterStatus](#keeperclusterstatus) |    | true |     |
+
+出现于：
+
+* [KeeperClusterList](#keeperclusterlist)
+
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
+
+KeeperClusterList 包含一个 KeeperCluster 列表。
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### API 版本和 Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperClusterList
+```
+
+| 字段      | 类型                                 | 描述 | 必填   | 默认值 |
+| ------- | ---------------------------------- | -- | ---- | --- |
+| `items` | [KeeperCluster](#keepercluster) 数组 |    | true |     |
+
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
+
+KeeperClusterReference 用于标识 ClickHouseCluster 所使用的 KeeperCluster。
+
+| 字段          | 类型     | 说明                                                            | 必填    | 默认值 |
+| ----------- | ------ | ------------------------------------------------------------- | ----- | --- |
+| `name`      | string | KeeperCluster 资源的名称。                                          | true  |     |
+| `namespace` | string | KeeperCluster 资源所在的命名空间。<br />省略时，使用 ClickHouseCluster 的命名空间。 | false |     |
+
+出现于：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
+
+KeeperClusterSpec 定义了 KeeperCluster 的期望状态。
+
+| Field                  | Type                                                                                                                                | Description                                                                                                                                       | Required | Default       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------- |
+| `replicas`             | integer                                                                                                                             | 集群中的副本数                                                                                                                                           | false    | 3             |
+| `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | 传递给 Keeper pod (容器组) 规范的参数。                                                                                                                       | false    |               |
+| `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | 传递给 Keeper 容器规范的参数。                                                                                                                               | false    |               |
+| `dataVolumeClaimSpec`  | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse Keeper 数据持久化存储的规格。                                                                                                                     | false    |               |
+| `labels`               | object (keys:string, values:string)                                                                                                 | 添加到资源的附加标记。                                                                                                                                       | false    |               |
+| `annotations`          | object (keys:string, values:string)                                                                                                 | 添加到资源的附加注解。                                                                                                                                       | false    |               |
+| `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget 用于配置为 Keeper 集群创建的 PDB。<br />未设置时，operator 默认使用 maxUnavailable=replicas/2<br />(为 2F+1 集群保留 quorum)；单副本集群使用 maxUnavailable=1。 | false    |               |
+| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper server 的配置参数。                                                                                                                   | false    |               |
+| `clusterDomain`        | string                                                                                                                              | 集群域名后缀是 Kubernetes 集群用于 DNS 解析的域名后缀。                                                                                                      | false    | cluster.local |
+| `upgradeChannel`       | string                                                                                                                              | UpgradeChannel 指定用于主版本升级检查的发布渠道。<br />为空时，只会建议次版本更新。允许的值包括：stable、lts 或特定的 major.minor 版本 (例如 25.8) 。                                             | false    |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | VersionProbeTemplate 用于覆盖版本检测 Job 的配置。<br />已弃用：Keeper 版本探测作业已不再使用；保留此字段是为了保持向后兼容。                                                                | false    |               |
+
+出现在：
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
+
+KeeperClusterStatus 定义了 KeeperCluster 的已观测状态。
+
+| 字段                      | 类型                                                                                                        | 描述                                                                               | 必填    | 默认值 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----- | --- |
+| `conditions`            | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |                                                                                  | false |     |
+| `readyReplicas`         | integer                                                                                                   | ReadyReplicas 表示可提供服务请求的就绪副本总数。                                                  | false |     |
+| `configurationRevision` | string                                                                                                    | ConfigurationRevision 表示每个副本的目标配置修订版本。                                           | true  |     |
+| `statefulSetRevision`   | string                                                                                                    | StatefulSetRevision 表示每个副本的目标 StatefulSet 修订版本。                                  | true  |     |
+| `currentRevision`       | string                                                                                                    | CurrentRevision 表示最近一次已应用的 KeeperCluster 规范修订版本。                                 | true  |     |
+| `updateRevision`        | string                                                                                                    | UpdateRevision 表示最近一次请求的 KeeperCluster 规范修订版本。                                   | true  |     |
+| `observedGeneration`    | integer                                                                                                   | ObservedGeneration 表示控制器观测到的最新 generation。                                       | true  |     |
+| `version`               | string                                                                                                    | Version 表示 Keeper server 报告的版本。                                                  | false |     |
+| `versionProbeRevision`  | string                                                                                                    | VersionProbeRevision 是最近一次成功版本探测的镜像哈希。<br />已弃用：不再使用 Keeper 版本探测作业；保留此字段是为了向后兼容。 | false |     |
+
+出现于：
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
+
+KeeperSettings 定义 ClickHouse Keeper server 的配置。
+
+| Field         | Type                                                                                                          | Description                                      | Required | Default |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------- | ------- |
+| `logger`      | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse Keeper server 的日志配置。                  | false    |         |
+| `tls`         | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 设置，用于为 ClickHouse Keeper server 配置安全端点和证书验证。 | false    |         |
+| `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | 将与默认 ClickHouse Keeper 配置合并的额外配置。                | false    |         |
+
+出现在：
+
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
+
+LoggerConfig 定义服务器日志配置。
+
+| 字段          | 类型      | 描述                       | 必需    | 默认值   |
+| ----------- | ------- | ------------------------ | ----- | ----- |
+| `logToFile` | boolean | 如果为 false，则禁用所有文件日志。     | false | true  |
+| `jsonLogs`  | boolean | 如果为 true，则以 JSON 格式记录日志。 | false | false |
+| `level`     | string  | 服务器日志记录器的详细程度级别。         | false | trace |
+| `size`      | string  | 日志文件最大大小。                | false | 1000M |
+| `count`     | integer | 保留的日志文件最大数量。             | false | 50    |
+
+出现在：
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
+
+NamedTemplateMeta 定义了需要名称的模板对象支持的元数据设置。
+
+| 字段            | 类型                         | 描述         | 必填    | 默认值 |
+| ------------- | -------------------------- | ---------- | ----- | --- |
+| `name`        | string                     | 名称是资源标识符。  | true  |     |
+| `labels`      | object (键:string，值:string) | 用于模板对象的标记。 | false |     |
+| `annotations` | object (键:string，值:string) | 用于模板对象的注解。 | false |     |
+
+出现于：
+
+* [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
+
+PDBPolicy 用于控制是否创建 PodDisruptionBudget。
+
+| 字段         | 描述                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `Enabled`  | PDBPolicyEnabled 表示启用由 operator 创建 PodDisruptionBudget。<br />                        |
+| `Disabled` | PDBPolicyDisabled 表示禁用 PodDisruptionBudget，operator 将删除具有匹配标记的资源。<br />              |
+| `Ignored`  | PDBPolicyIgnored 表示忽略 PodDisruptionBudget，operator 不会创建或删除任何 PDB，现有 PDB 将保持不变。<br /> |
+
+出现位置：
+
+* [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
+
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
+
+PersistentVolumeClaimTemplate 是一个按副本划分的具名 PersistentVolumeClaim 模板。
+
+| 字段         | 类型                                                                                                                                  | 描述                                                                                                                              | 必填   | 默认值 |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---- | --- |
+| `metadata` | [NamedTemplateMeta](#namedtemplatemeta)                                                                                             | `metadata` 的字段请参阅 Kubernetes API 文档。                                                                                            | true |     |
+| `spec`     | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Spec 定义了 pod (容器组) 作者所请求卷的预期特征。<br />更多信息：https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims | true |     |
+
+出现位置：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
+
+PodDisruptionBudgetSpec 用于配置为集群创建的 PDB。
+`MinAvailable` 和 `MaxUnavailable` 只能设置其中之一。
+如果两者都未设置，operator 会根据副本数选择一个安全的默认值。
+
+| 字段                           | 类型                                                                                                                                              | 描述                                                                                                                                  | 必填    | 默认值     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- |
+| `policy`                     | [PDBPolicy](#pdbpolicy)                                                                                                                         | `policy` 用于控制 operator 是否创建 PodDisruptionBudget。<br />未设置时默认值为 &quot;Enabled&quot;。将其设为 &quot;Disabled&quot; 可跳过创建 PDB (例如在开发环境中) 。 | false | Enabled |
+| `minAvailable`               | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | `MinAvailable` 表示在发生中断期间必须保持可用的最少 pod (容器组) 数量。                                                                                     | false |         |
+| `maxUnavailable`             | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | `MaxUnavailable` 表示在发生中断期间最多可处于不可用状态的 pod (容器组) 数量。                                                                                 | false |         |
+| `unhealthyPodEvictionPolicy` | [UnhealthyPodEvictionPolicyType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#unhealthypodevictionpolicytype-v1-policy) | `UnhealthyPodEvictionPolicy` 定义了在何种条件下应将不健康的 pod (容器组) <br />视为可驱逐对象。<br />有效值为 &quot;IfReady&quot; 和 &quot;AlwaysAllow&quot;。      | false |         |
+
+出现位置：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
+
+PodTemplateSpec 描述了集群中 Pod (容器组) 的配置覆盖项。
+
+| 字段                              | 类型                                                                                                                                   | 说明                                                                                                                                                                                                                                        | 必需    | 默认值 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --- |
+| `terminationGracePeriodSeconds` | 整数                                                                                                                                   | pod (容器组) 优雅终止所需的可选耗时，单位为秒。可在删除请求中减小该值。<br />该值必须为非负整数。值为 0 表示通过<br />kill 信号立即停止 (没有关闭机会) 。<br />如果该值为 nil，则将改用默认宽限期。<br />宽限期是指向 pod (容器组) 中运行的进程发送<br />终止信号后，到使用 kill 信号强制终止这些进程之间的耗时。<br />请将此值设置为长于你的进程预期清理时间。<br />默认值为 30 秒。      | 否     |     |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) 数组 | TopologySpreadConstraints 描述了一组 pod (容器组) 应如何分布在拓扑<br />域中。调度器会按照这些约束来安排 pod (容器组) 的调度。<br />所有 topologySpreadConstraints 都以逻辑与 (AND) 的方式组合。<br />按 `topologyKey` 与 operator 默认值合并。                                                       | 否     |     |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) 数组         | ImagePullSecrets 是一个可选的引用列表，引用同一命名空间中的 Secret，用于拉取此 PodSpec 所使用的任意镜像。<br />如果指定了这些 Secret，它们会被传递给各个拉取实现使用。<br />更多信息：https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />按名称与 operator 默认值合并。 | false |     |
+| `nodeSelector`                  | 对象 (键:string，值:string)                                                                                                               | NodeSelector 是一个选择器，只有满足该选择器的节点，pod (容器组) 才能调度到其上。<br />该选择器必须与节点的标签匹配，pod (容器组) 才能被调度到该节点。<br />更多信息：https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                  | false |     |
+| `affinity`                      | [亲和性](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | 如果已指定，则表示 pod (容器组) 的调度约束。<br />会附加到 Operator 的默认设置中：调度项列表将被合并。                                                                                                                                                                           | false |     |
+| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) 数组                             | 如果指定，则为 pod (容器组) 的容忍设置。                                                                                                                                                                                                                  | false |     |
+| `schedulerName`                 | String                                                                                                                               | 如果指定了，pod (容器组) 将由指定的调度器调度。<br />如果未指定，pod (容器组) 将由默认调度器调度。                                                                                                                                                                               | false |     |
+| `serviceAccountName`            | String                                                                                                                               | ServiceAccountName 是用于运行此 pod (容器组) 的 ServiceAccount 名称。<br />更多信息：https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                    | false |     |
+| `priorityClassName`             | String                                                                                                                               | PriorityClassName 是 pod (容器组) 使用的 PriorityClass 名称。                                                                                                                                                                                       | false |     |
+| `runtimeClassName`              | string                                                                                                                               | RuntimeClassName 是 pod (容器组) 使用的 RuntimeClass 名称。                                                                                                                                                                                         | false |     |
+| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) 数组                                     | Volumes 定义了 pod (容器组) 中的容器可挂载的卷列表。<br />更多信息：https://kubernetes.io/docs/concepts/storage/volumes<br />按名称与 operator 默认配置合并；用户定义的卷会替换任何同名的 operator 卷。                                                                                     | false |     |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                | SecurityContext 包含 pod (容器组) 级别的安全属性以及通用容器设置。<br />非 nil 的 SecurityContext 会完全替换 operator 的默认值；整个<br />结构体均由用户负责。为 nil 时，则保留 operator 的默认值。                                                                                               | false |     |
+| `topologyZoneKey`               | String                                                                                                                               | TopologyZoneKey 是节点标签的键。<br />带有此键且标签值相同的节点会被视为位于同一拓扑可用区。<br />设置此项后，将启用默认的 TopologySpreadConstraints 和 Affinity 规则，以便将 Pod (容器组) 分散到各个可用区。<br />建议将其设置为 &quot;topology.kubernetes.io/zone&quot;                                          | false |     |
+| `nodeHostnameKey`               | String                                                                                                                               | NodeHostnameKey 是节点标记的键。<br />带有此键且其值相同的节点会被视为处于同一节点上。<br />设置此项可启用默认的 AntiAffinity 规则，将不同分片的副本分散到各个节点上。<br />建议将其设置为 &quot;kubernetes.io/hostname&quot;                                                                                  | 否     |     |
+| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) 数组                               | InitContainers 是在主服务器容器启动前运行的初始化容器列表。<br />按名称与 operator 的默认值合并。<br />同名项会被合并。                                                                                                                                                            | 否     |     |
+
+出现位置：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
+
+SecretKeySelector 用于选择某个 Secret 中的一个键。
+
+| 字段     | 类型     | 描述                             | 必填   | 默认值 |
+| ------ | ------ | ------------------------------ | ---- | --- |
+| `name` | String | 要从中选择的 Secret 在集群命名空间中的名称。     | true |     |
+| `key`  | String | 要选择的 Secret 键。必须是有效的 Secret 键。 | true |     |
+
+出现在：
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
+
+TemplateMeta 定义了模板对象支持的元数据设置。
+
+| 字段            | 类型                         | 描述         | 必填    | 默认值 |
+| ------------- | -------------------------- | ---------- | ----- | --- |
+| `labels`      | object (键:string，值:string) | 用于模板对象的标记。 | false |     |
+| `annotations` | object (键:string，值:string) | 用于模板对象的注解。 | false |     |
+
+出现于：
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
+
+VersionProbeContainer 定义版本探测的容器级覆盖配置。
+字段名和 JSON 标签与 corev1.Container 保持一致，以便 SMP 按名称进行合并。
+
+| 字段                | 类型                                                                                                                        | 描述                                                                | 必需    | 默认值           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----- | ------------- |
+| `name`            | string                                                                                                                    | 容器名称。如果为空，operator 会将其设置为版本探测容器的名称。                               | true  | version-probe |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | `resources` 表示版本探测容器的计算资源需求。<br />通过 SMP 与 operator 的默认值进行深度合并。   | false |               |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext 定义版本探测容器的安全选项。<br />通过 SMP 与 operator 的默认值进行深度合并。 | false |               |
+
+出现位置：
+
+* [VersionProbePodSpec](#versionprobepodspec)
+
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
+
+VersionProbeJobSpec 定义了版本探测的 Job 级别覆盖配置。
+
+| Field                     | Type                                                | Description                                | Required | Default |
+| ------------------------- | --------------------------------------------------- | ------------------------------------------ | -------- | ------- |
+| `ttlSecondsAfterFinished` | integer                                             | TTLSecondsAfterFinished 用于限制已完成 Job 的生命周期。 | false    |         |
+| `template`                | [VersionProbePodTemplate](#versionprobepodtemplate) | Template 描述了将为版本探测 Job 创建的 pod (容器组) 。     | false    |         |
+
+出现位置：
+
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
+
+VersionProbePodSpec 定义了版本探测的 Pod 级覆盖项。
+字段名和 JSON 标签与 corev1.PodSpec 保持一致，以兼容策略性合并补丁。
+
+| Field             | Type                                                                                                                  | Description                                                                         | Required | Default |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------- | ------- |
+| `nodeSelector`    | object (keys:string, values:string)                                                                                   | NodeSelector 将版本探测 pod (容器组) 限制在具有匹配标记的节点上。                                         | false    |         |
+| `tolerations`     | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array           | 版本探测 pod (容器组) 的容忍设置。                                                               | false    |         |
+| `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext 包含版本探测 pod (容器组) 的 pod 级安全属性。                                       | false    |         |
+| `containers`      | [VersionProbeContainer](#versionprobecontainer) array                                                                 | 版本探测 pod (容器组) 的容器覆盖项。<br />name 字段是可选的——operator 会将其填充为默认容器名。<br />也可以指定名称不同的其他容器。 | false    |         |
+
+出现于：
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
+
+VersionProbePodTemplate 用于描述对版本探测 pod (容器组) 的覆盖配置。
+
+| 字段         | 类型                                          | 描述                                   | 必需    | 默认值 |
+| ---------- | ------------------------------------------- | ------------------------------------ | ----- | --- |
+| `metadata` | [TemplateMeta](#templatemeta)               | `metadata` 的字段请参阅 Kubernetes API 文档。 | false |     |
+| `spec`     | [VersionProbePodSpec](#versionprobepodspec) | 版本探测 pod (容器组) 预期行为的规范。              | false |     |
+
+出现于：
+
+* [VersionProbeJobSpec](#versionprobejobspec)
+
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
+
+VersionProbeTemplate 定义了版本检测 Job 的覆盖配置。
+该结构参照 batchv1.JobTemplateSpec，仅公开受支持的字段。
+
+| 字段         | Type                                        | 描述                                       | 必需    | 默认值 |
+| ---------- | ------------------------------------------- | ---------------------------------------- | ----- | --- |
+| `metadata` | [TemplateMeta](#templatemeta)               | 有关 `metadata` 的字段，请参阅 Kubernetes API 文档。 | false |     |
+| `spec`     | [VersionProbeJobSpec](#versionprobejobspec) | 版本探测 Job 预期行为的规范。                        | false |     |
+
+出现于：
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)

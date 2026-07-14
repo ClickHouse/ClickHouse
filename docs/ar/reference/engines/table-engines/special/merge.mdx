@@ -1,0 +1,122 @@
+---
+description: 'المحرك `Merge` (عدم الخلط بينه وبين `MergeTree`) لا يخزّن البيانات
+  بنفسه، بل يتيح القراءة من أي عدد من الجداول الأخرى في الوقت نفسه.'
+sidebarTitle: 'Merge'
+slug: /engines/table-engines/special/merge
+title: 'محرك الجدول Merge'
+doc_type: 'reference'
+---
+
+المحرك `Merge` (عدم الخلط بينه وبين `MergeTree`) لا يخزّن البيانات بنفسه، بل يتيح القراءة من أي عدد من الجداول الأخرى في الوقت نفسه.
+
+تُنفَّذ القراءة بالتوازي تلقائيًا. ولا يدعم الكتابة إلى جدول. وعند القراءة، تُستخدم فهارس الجداول التي تُقرأ فعليًا، إن وُجدت.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+```
+
+<div id="engine-parameters">
+  ## معلمات المحرك
+</div>
+
+<div id="db_name">
+  ### `db_name`
+</div>
+
+`db_name` — القيم الممكنة:
+
+* اسم قاعدة البيانات،
+  * تعبير ثابت يُرجع سلسلة نصية تحتوي على اسم قاعدة بيانات، على سبيل المثال، `currentDatabase()`,
+  * `REGEXP(expression)`، حيث يكون `expression` تعبيرًا نمطيًا لمطابقة أسماء قواعد البيانات.
+
+<div id="tables_regexp">
+  ### `tables_regexp`
+</div>
+
+`tables_regexp` — تعبير نمطي لمطابقة أسماء الجداول في DB أو DBs المحدَّدين.
+
+التعبيرات النمطية — [re2](https://github.com/google/re2) (يدعم مجموعة فرعية من PCRE)، وهو حساس لحالة الأحرف.
+راجع الملاحظات حول إفلات الرموز في التعبيرات النمطية في قسم &quot;match&quot;.
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+عند تحديد الجداول المطلوب القراءة منها، لا يُختار جدول `Merge` نفسه، حتى لو كان يطابق التعبير النمطي. وذلك لتجنّب الحلقات.
+يمكن إنشاء جدولَي `Merge` يحاول كلٌّ منهما قراءة بيانات الآخر بلا نهاية، لكن هذه ليست فكرة جيدة.
+
+الطريقة المعتادة لاستخدام محرّك `Merge` هي التعامل مع عدد كبير من جداول `TinyLog` كما لو كانت جدولًا واحدًا.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+**مثال 1**
+
+لنفترض وجود قاعدتي البيانات `ABC_corporate_site` و`ABC_store`. سيحتوي جدول `all_visitors` على معرّفات من الجدولين `visitors` في كلتا قاعدتي البيانات.
+
+```sql
+CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
+```
+
+**مثال 2**
+
+لنفترض أن لديك جدولًا قديمًا باسم `WatchLog_old` وقررت تغيير التقسيم دون نقل البيانات إلى جدول جديد باسم `WatchLog_new`، وتحتاج إلى عرض البيانات من كلا الجدولين.
+
+```sql
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT * FROM WatchLog;
+```
+
+```text
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_table` — اسم الجدول الذي قُرئت منه البيانات. النوع: [String](/ar/reference/data-types/string).
+
+  إذا قمت بالتصفية باستخدام `_table`، (على سبيل المثال `WHERE _table='xyz'`) فلن تُقرأ إلا الجداول التي تستوفي شرط التصفية.
+
+* `_database` — يتضمن اسم قاعدة البيانات التي قُرئت منها البيانات. النوع: [String](/ar/reference/data-types/string).
+
+**انظر أيضًا**
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [merge](/ar/reference/functions/table-functions/merge) دالة جدول

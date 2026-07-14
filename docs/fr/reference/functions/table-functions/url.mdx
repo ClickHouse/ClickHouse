@@ -1,0 +1,135 @@
+---
+description: 'Crée une table à partir de l’`URL` avec le `format` et la `structure` spécifiés'
+sidebarTitle: 'url'
+slug: /sql-reference/table-functions/url
+title: 'url'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="url-table-function">
+  # Fonction de table url
+</div>
+
+La fonction `url` crée une table à partir d&#39;une `URL`, avec le `format` et la `structure` spécifiés.
+
+La fonction `url` peut être utilisée dans des requêtes `SELECT` et `INSERT` sur les données des tables [URL](/fr/reference/engines/table-engines/special/url).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+url(URL [,format] [,structure] [,headers])
+```
+
+<div id="parameters">
+  ## Paramètres
+</div>
+
+| Paramètre   | Description                                                                                                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | Adresse du serveur HTTP ou HTTPS entre guillemets simples, acceptant les requêtes `GET` ou `POST` (pour les requêtes `SELECT` ou `INSERT`, respectivement). Type : [String](/fr/reference/data-types/string). |
+| `format`    | [Format](/fr/reference/formats/index) des données. Type : [String](/fr/reference/data-types/string).                                                                                                             |
+| `structure` | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string).                                               |
+| `headers`   | En-têtes au format `'headers('key1'='value1', 'key2'='value2')'`. Vous pouvez définir des en-têtes pour l’appel HTTP.                                                                                      |
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table au format et à la structure spécifiés, contenant les données de l&#39;`URL` définie.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Récupération des 3 premières lignes d’une table contenant des colonnes de type `String` et [UInt32](/fr/reference/data-types/int-uint) depuis un serveur HTTP qui renvoie les données au format [CSV](/fr/reference/formats/CSV/CSV).
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+Insertion de données à partir d’une `URL` dans une table :
+
+```sql
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
+```
+
+<div id="globs-in-url">
+  ## Globs dans l’URL
+</div>
+
+Les motifs dans `{ }` sont utilisés pour générer un ensemble de shards ou pour spécifier des adresses de basculement. Pour connaître les types de motifs pris en charge et voir des exemples, consultez la description de la fonction [remote](/fr/reference/functions/table-functions/remote#globs-in-addresses).
+Le caractère `|` à l’intérieur des motifs sert à spécifier des adresses de basculement. Elles sont parcourues dans le même ordre que celui indiqué dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings#glob_expansion_max_elements).
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin de l’`URL`. Type : `LowCardinality(String)`.
+* `_file` — Nom de la ressource pointée par l’`URL`. Type : `LowCardinality(String)`.
+* `_size` — Taille de la ressource en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
+* `_time` — Horodatage de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l’horodatage est inconnu, la valeur est `NULL`.
+* `_headers` - En-têtes de réponse HTTP. Type : `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="hive-style-partitioning">
+  ## paramètre use_hive_partitioning
+</div>
+
+Lorsque le paramètre `use_hive_partitioning` est défini sur 1, ClickHouse détecte le partitionnement de type Hive dans le chemin (`/name=value/`) et permet d’utiliser les colonnes de partition comme colonnes virtuelles dans une requête. Ces colonnes virtuelles porteront les mêmes noms que dans le chemin partitionné.
+
+**Exemple**
+
+Utilisation de colonnes virtuelles créées avec le partitionnement de type Hive
+
+```sql
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="resolving-relative-urls">
+  ## Résolution des URL relatives
+</div>
+
+Le paramètre [url&#95;base](/fr/reference/settings/session-settings#url_base) permet de passer une URL relative à la fonction `url`. Lorsque `url_base` est défini et que l’argument de la fonction est une référence relative, celle-ci est résolue par rapport à l’URL de base, conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+
+Les règles de résolution sont les suivantes :
+
+* **Relative au chemin** (par ex. `data.csv`) : fusionnée avec le chemin de l’URL de base — tout ce qui suit le dernier `/` du chemin de base est remplacé. La barre oblique finale est importante : `https://example.com/dir/` + `data.csv` donne `https://example.com/dir/data.csv`, mais `https://example.com/dir` + `data.csv` donne `https://example.com/data.csv`. Les segments de point (`./` et `../`) sont normalisés.
+* **Relative à l’hôte** (par ex. `/test/data.csv`) : résolue à l’aide du schéma et de l’hôte de l’URL de base.
+* **Relative au schéma** (par ex. `//other.com/test/data.csv`) : résolue à l’aide du schéma de l’URL de base.
+* **Requête uniquement** (par ex. `?x=1`) : ajoutée au chemin de base complet, en remplaçant toute requête ou tout fragment existant.
+* **Fragment uniquement** (par ex. `#frag`) : ajouté à l’URL de base, en conservant la requête et en remplaçant tout fragment existant.
+* **Vide** : renvoie l’URL de base sans fragment.
+* **URL absolue** : transmise telle quelle ; `url_base` est ignoré.
+
+**Exemple**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
+```
+
+<div id="storage-settings">
+  ## Paramètres de stockage
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#engine_url_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
+* [enable&#95;url&#95;encoding](/fr/reference/settings/session-settings#enable_url_encoding) - permet d’activer ou de désactiver le décodage/l’encodage du chemin dans l’URI. Activé par défaut.
+* [url&#95;base](/fr/reference/settings/session-settings#url_base) - URL de base pour résoudre les URL relatives passées à la fonction `url`.
+
+<div id="permissions">
+  ## Autorisations
+</div>
+
+La fonction `url` nécessite l’autorisation `CREATE TEMPORARY TABLE`. Par conséquent, elle ne fonctionnera pas pour les utilisateurs dont le paramètre [readonly](/fr/concepts/features/configuration/settings/permissions-for-queries#readonly) est défini sur 1. Au minimum, readonly = 2 est requis.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)

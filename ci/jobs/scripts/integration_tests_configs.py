@@ -228,7 +228,7 @@ test_named_collections_encrypted2/test.py	355884
 test_backup_restore_on_cluster/test.py	355552
 test_refreshable_mat_view_replicated/test.py	355015
 test_lost_part_during_startup/test.py	354182
-test_scheduler/test.py	351404
+test_scheduler_io/test.py	351404
 test_ytsaurus/test_tables.py	349422
 test_mysql_database_engine/test.py	348017
 test_storage_iceberg_schema_evolution/test_evolved_schema_simple.py	343043

@@ -817,7 +817,7 @@ namespace
         Float64 tmp_float = 0;
         /// Check if it's a float value, and if so, don't try to infer DateTime from it,
         /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
-        if (tryReadFloatText(tmp_float, buf) && buf.eof())
+        if (tryReadFloatTextPrecise(tmp_float, buf) && buf.eof())
             return true;
 
         return false;

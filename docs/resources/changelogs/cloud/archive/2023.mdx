@@ -1,0 +1,504 @@
+---
+slug: /whats-new/cloud/2023
+sidebarTitle: '2023'
+title: 'Cloud changelog - 2023'
+description: 'ClickHouse Cloud changelog for 2023'
+doc_type: 'changelog'
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes', '2023']
+---
+
+## December 18, 2023 {#december-18-2023}
+
+This release brings a new region in GCP (us-east1), ability to self-service secure endpoint connections, support for additional integrations including DBT 1.7, and numerous bug fixes and security enhancements.
+
+### General changes {#general-changes-1}
+- ClickHouse Cloud is now available in GCP us-east1 (South Carolina) region
+- Enabled ability to set up AWS Private Link and GCP Private Service Connect via OpenAPI
+
+### Console changes {#console-changes-7}
+- Enabled seamless login to SQL console if you have the Developer role
+- Streamlined workflow for setting idling controls during onboarding
+
+### Integrations changes {#integrations-changes-7}
+- DBT connector: Added support for DBT up to v1.7
+- Metabase: Added support for Metabase v0.48
+- PowerBI Connector: Added ability to run on PowerBI Cloud
+- Make permissions for ClickPipes internal user configurable
+- Kafka Connect
+  - Improved deduplication logic and ingestion of Nullable types.
+  - Add support text-based formats (CSV, TSV)
+- Apache Beam: add support for Boolean and LowCardinality types
+- Nodejs client: add support for Parquet format
+
+### Security announcements {#security-announcements}
+- Patched 3 security vulnerabilities - see [security changelog](/resources/changelogs/security-changelog) for details:
+  - CVE 2023-47118 (CVSS 7.0) - a heap buffer overflow vulnerability affecting the native interface running by default on port 9000/tcp
+  - CVE-2023-48704 (CVSS 7.0) - a heap buffer overflow vulnerability affecting the native interface running by default on port 9000/tcp
+  - CVE 2023-48298 (CVSS 5.9) - an integer underflow vulnerability in the FPC compressions codec
+
+## November 22, 2023 {#november-22-2023}
+
+This release upgrades the core database version, improves login and authentication flow, and adds proxy support to Kafka Connect Sink.
+
+### ClickHouse version upgrade {#clickhouse-version-upgrade-2}
+
+- Dramatically improved performance for reading Parquet files. See [23.8 release blog](https://clickhouse.com/blog/clickhouse-release-23-08) for details.
+- Added type inference support for JSON. See [23.9 release blog](https://clickhouse.com/blog/clickhouse-release-23-09) for details.
+- Introduced powerful analyst-facing functions like `ArrayFold`. See [23.10 release blog](https://clickhouse.com/blog/clickhouse-release-23-10) for details.
+- **User-facing backward-incompatible change**: Disabled setting `input_format_json_try_infer_numbers_from_strings` by default to avoid inferring numbers from strings in JSON format. Doing so can create possible parsing errors when sample data contains strings similar to numbers.
+- Dozens of new features, performance improvements, and bug fixes. See [core database changelogs](/resources/changelogs/oss/2026) for details.
+
+### Console changes {#console-changes-8}
+
+- Improved login and authentication flow.
+- Improved AI-based query suggestions to better support large schemas.
+
+### Integrations changes {#integrations-changes-8}
+
+- Kafka Connect Sink: Added proxy support, `topic-tablename` mapping, and configurability for Keeper _exactly-once_ delivery properties.
+- Node.js client: Added support for Parquet format.
+- Metabase: Added `datetimeDiff` function support.
+- Python client: Added support for special characters in column names. Fixed timezone parameter binding.
+
+## November 2, 2023 {#november-2-2023}
+
+This release adds more regional support for development services in Asia, introduces key rotation functionality to customer-managed encryption keys, improved granularity of tax settings in the billing console and a number of bug fixes across supported language clients.
+
+### General updates {#general-updates-1}
+- Development services are now available in AWS for `ap-south-1` (Mumbai) and `ap-southeast-1` (Singapore)
+- Added support for key rotation in customer-managed encryption keys (CMEK)
+
+### Console changes {#console-changes-9}
+- Added ability to configure granular tax settings when adding a credit card
+
+### Integrations changes {#integrations-changes-9}
+- MySQL
+  - Improved Tableau Online and QuickSight support via MySQL
+- Kafka Connector
+  - Introduced a new StringConverter to support text-based formats (CSV, TSV)
+  - Added support for Bytes and Decimal data types
+  - Adjusted Retryable Exceptions to now always be retried (even when errors.tolerance=all)
+- Node.js client
+  - Fixed an issue with streamed large datasets providing corrupted results
+- Python client
+  - Fixed timeouts on large inserts
+  - Fixed NumPy/Pandas Date32 issue
+​​- Golang client
+  - Fixed insertion of an empty map into JSON column, compression buffer cleanup, query escaping, panic on zero/nil for IPv4 and IPv6
+  - Added watchdog on canceled inserts
+- DBT
+  - Improved distributed table support with tests
+
+## October 19, 2023 {#october-19-2023}
+
+This release brings usability and performance improvements in the SQL console, better IP data type handling in the Metabase connector, and new functionality in the Java and Node.js clients.
+
+### Console changes {#console-changes-10}
+- Improved usability of the SQL console (e.g. preserve column width between query executions)
+- Improved performance of the SQL console
+
+### Integrations changes {#integrations-changes-10}
+- Java client:
+  - Switched the default network library to improve performance and reuse open connections
+  - Added proxy support
+  - Added support for secure connections with using Trust Store
+- Node.js client: Fixed keep-alive behavior for insert queries
+- Metabase: Fixed IPv4/IPv6 column serialization
+
+## September 28, 2023 {#september-28-2023}
+
+This release brings general availability of ClickPipes for Kafka, Confluent Cloud, and Amazon MSK and the Kafka Connect ClickHouse Sink, self-service workflow to secure access to Amazon S3 via IAM roles, and AI-assisted query suggestions ( private preview).
+
+### Console changes {#console-changes-11}
+- Added a self-service workflow to secure [access to Amazon S3 via IAM roles](/products/cloud/guides/data-sources/accessing-s3-data-securely)
+- Introduced AI-assisted query suggestions in private preview (please [contact ClickHouse Cloud support](https://console.clickhouse.cloud/support) to try it out.)
+
+### Integrations changes {#integrations-changes-11}
+- Announced general availability of ClickPipes - a turnkey data ingestion service - for Kafka, Confluent Cloud, and Amazon MSK (see the [release blog](https://clickhouse.com/blog/clickpipes-is-generally-available))
+- Reached general availability of Kafka Connect ClickHouse Sink
+  - Extended support for customized ClickHouse settings using `clickhouse.settings` property
+  - Improved deduplication behavior to account for dynamic fields
+  - Added support for `tableRefreshInterval` to re-fetch table changes from ClickHouse
+- Fixed an SSL connection issue and type mappings between [PowerBI](/integrations/connectors/data-visualization/powerbi-and-clickhouse) and ClickHouse data types
+
+## September 7, 2023 {#september-7-2023}
+
+This release brings the beta release of the PowerBI Desktop official connector, improved credit card payment handling for India, and multiple improvements across supported language clients.
+
+### Console changes {#console-changes-12}
+- Added remaining credits and payment retries to support charges from India
+
+### Integrations changes {#integrations-changes-12}
+- Kafka Connector: added support for configuring ClickHouse settings, added error.tolerance configuration option
+- PowerBI Desktop: released the beta version of the official connector
+- Grafana: added support for Point geo type, fixed Panels in Data Analyst dashboard, fixed timeInterval macro
+- Python client: Compatible with Pandas 2.1.0, dropped Python 3.7 support, added support for nullable JSON type
+- Node.js client: added default_format setting support
+- Golang client: fixed bool type handling, removed string limits
+
+## Aug 24, 2023 {#aug-24-2023}
+
+This release adds support for the MySQL interface to the ClickHouse database, introduces a new official PowerBI connector, adds a new "Running Queries" view in the cloud console, and updates the ClickHouse version to 23.7.
+
+### General updates {#general-updates-2}
+- Added support for the [MySQL wire protocol](/concepts/features/interfaces/mysql), which (among other use cases) enables compatibility with many existing BI tools. Please reach out to support to enable this feature for your organization.
+- Introduced a new official PowerBI connector
+
+### Console changes {#console-changes-13}
+- Added support for "Running Queries" view in SQL Console
+
+### ClickHouse 23.7 version upgrade {#clickhouse-237-version-upgrade}
+- Added support for Azure Table function, promoted geo datatypes to production-ready, and improved join performance - see 23.5 release [blog](https://clickhouse.com/blog/clickhouse-release-23-05) for details
+- Extended MongoDB integration support to version 6.0 - see 23.6 release [blog](https://clickhouse.com/blog/clickhouse-release-23-06) for details
+- Improved performance of writing to Parquet format by 6x, added support for PRQL query language, and improved SQL compatibility - see 23.7 release [deck](https://presentations.clickhouse.com/release_23.7/) for details
+- Dozens of new features, performance improvements, and bug fixes - see detailed [changelogs](/resources/changelogs/oss/2026) for 23.5, 23.6, 23.7
+
+### Integrations changes {#integrations-changes-13}
+- Kafka Connector: Added support for Avro Date and Time types
+- JavaScript client: Released a stable version for web-based environment
+- Grafana: Improved filter logic, database name handling, and added support for TimeInteval with sub-second precision
+- Golang Client: Fixed several batch and async data loading issues
+- Metabase: Support v0.47, added connection impersonation, fixed data types mappings
+
+## July 27, 2023 {#july-27-2023}
+
+This release brings the private preview of ClickPipes for Kafka, a new data loading experience, and the ability to load a file from a URL using the cloud console.
+
+### Integrations changes {#integrations-changes-14}
+- Introduced the private preview of [ClickPipes](https://clickhouse.com/cloud/clickpipes) for Kafka, a cloud-native integration engine that makes ingesting massive volumes of data from Kafka and Confluent Cloud as simple as clicking a few buttons. Please sign up for the waitlist [here](https://clickhouse.com/cloud/clickpipes#joinwaitlist).
+- JavaScript client: released support for web-based environment (browser, Cloudflare workers). The code is refactored to allow community creating connectors for custom environments.
+- Kafka Connector: Added support for inline schema with Timestamp and Time Kafka types
+- Python client: Fixed insert compression and LowCardinality reading issues
+
+### Console changes {#console-changes-14}
+- Added a new data loading experience with more table creation configuration options
+- Introduced ability to load a file from a URL using the cloud console
+- Improved invitation flow with additional options to join a different organization and see all your outstanding invitations
+
+## July 14, 2023 {#july-14-2023}
+
+This release brings the ability to spin up Dedicated Services, a new AWS region in Australia, and the ability to bring your own key for encrypting data on disk.
+
+### General updates {#general-updates-3}
+- New AWS Australia region: Sydney (ap-southeast-2)
+- Dedicated tier services for demanding latency-sensitive workloads (please contact [support](https://console.clickhouse.cloud/support) to set it up)
+- Bring your own key (BYOK) for encrypting data on disk (please contact [support](https://console.clickhouse.cloud/support) to set it up)
+
+### Console changes {#console-changes-15}
+- Improvements to observability metrics dashboard for asynchronous inserts
+- Improved chatbot behavior for integration with support
+
+### Integrations changes {#integrations-changes-15}
+- NodeJS client: fixed a bug with a connection failure due to socket timeout
+- Python client: added QuerySummary to insert queries, support special characters in the database name
+- Metabase: updated JDBC driver version, added DateTime64 support, performance improvements.
+
+### Core database changes {#core-database-changes}
+- [Query cache](/concepts/features/performance/caches/query-cache) can be enabled in ClickHouse Cloud. When it is enabled, successful queries are cached for a minute by default and subsequent queries will use the cached result.
+
+## June 20, 2023 {#june-20-2023}
+
+This release makes ClickHouse Cloud on GCP generally available, brings a Terraform provider for the Cloud API, and updates the ClickHouse version to 23.4.
+
+### General updates {#general-updates-4}
+- ClickHouse Cloud on GCP is now GA, bringing GCP Marketplace integration, support for Private Service Connect, and automatic backups (see [blog](https://clickhouse.com/blog/clickhouse-cloud-on-google-cloud-platform-gcp-is-generally-available) and [press release](https://clickhouse.com/blog/clickhouse-cloud-expands-choice-with-launch-on-google-cloud-platform) for details)
+- [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) for Cloud API is now available
+
+### Console changes {#console-changes-16}
+- Added a new consolidated settings page for services
+- Adjusted metering accuracy for storage and compute
+
+### Integrations changes {#integrations-changes-16}
+- Python client: improved insert performance, refactored internal dependencies to support multiprocessing
+- Kafka Connector: It can be uploaded and installed on Confluent Cloud, added retry for interim connection problems, reset the incorrect connector state automatically
+
+### ClickHouse 23.4 version upgrade {#clickhouse-234-version-upgrade}
+- Added JOIN support for parallel replicas (please contact [support](https://console.clickhouse.cloud/support) to set it up)
+- Improved performance of lightweight deletes
+- Improved caching while processing large inserts
+
+### Administration changes {#administration-changes-1}
+- Expanded local dictionary creation for non "default" users
+
+## May 30, 2023 {#may-30-2023}
+
+This release brings the public release of the ClickHouse Cloud Programmatic API for Control Plane operations (see [blog](https://clickhouse.com/blog/using-the-new-clickhouse-cloud-api-to-automate-deployments) for details), S3 access using IAM roles, and additional scaling options.
+
+### General changes {#general-changes-2}
+- API Support for ClickHouse Cloud. With the new Cloud API, you can seamlessly integrate managing services in your existing CI/CD pipeline and manage your services programmatically
+- S3 access using IAM roles. You can now leverage IAM roles to securely access your private Amazon Simple Storage Service (S3) buckets (please contact support to set it up)
+
+### Scaling changes {#scaling-changes}
+- [Horizontal scaling](/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling). Workloads that require more parallelization can now be configured with up to 10 replicas (please contact support to set it up)
+- [CPU based autoscaling](/products/cloud/features/autoscaling/overview). CPU-bound workloads can now benefit from additional triggers for autoscaling policies
+
+### Console changes {#console-changes-17}
+- Migrate Dev service to Production service (please contact support to enable)
+- Added scaling configuration controls during instance creation flows
+- Fix connection string when default password is not present in memory
+
+### Integrations changes {#integrations-changes-17}
+- Golang client: fixed a problem leading to unbalanced connections in native protocol, added support for the custom settings in the native protocol
+- Nodejs client: dropped support for nodejs v14, added support for v20
+- Kafka Connector: added support for LowCardinality type
+- Metabase: fixed grouping by a time range, fixed support for integers in built-in Metabase questions
+
+### Performance and reliability {#performance-and-reliability}
+- Improved efficiency and performance of write heavy workloads
+- Deployed incremental backup strategy to increase speed and efficiency of backups
+
+## May 11, 2023 {#may-11-2023}
+
+This release brings the public beta of ClickHouse Cloud on GCP
+(see [blog](https://clickhouse.com/blog/clickhouse-cloud-on-gcp-available-in-public-beta) 
+for details), extends administrators' rights to grant terminate query permissions,
+and adds more visibility into the status of MFA users in the Cloud console.
+
+<Info>
+**Update**
+
+ClickHouse Cloud on GCP is now GA, see the entry for June twenty above. 
+</Info>
+
+### ClickHouse Cloud on GCP is now available in public beta {#clickhouse-cloud-on-gcp-is-now-available-in-public-beta-now-ga-see-june-20th-entry-above}
+
+<Note>
+ClickHouse Cloud on GCP is now GA, see the [June 20th](#june-20-2023) entry above.
+</Note>
+
+- Launches a fully-managed separated storage and compute ClickHouse offering, running on top of Google Compute and Google Cloud Storage
+- Available in Iowa (us-central1), Netherlands (europe-west4), and Singapore (asia-southeast1) regions
+- Supports both Development and Production services in all three initial regions
+- Provides strong security by default: End-to-end encryption in transit, data-at-rest encryption, IP Allow Lists
+
+### Integrations changes {#integrations-changes-18}
+- Golang client: Added proxy environment variables support
+- Grafana: Added the ability to specify ClickHouse custom settings and proxy environment variables in Grafana datasource setup
+- Kafka Connector: Improved handling of empty records
+
+### Console changes {#console-changes-18}
+- Added an indicator for multifactor authentication (MFA) use in the user list
+
+### Performance and reliability {#performance-and-reliability-1}
+- Added more granular control over terminate query permission for administrators
+
+## May 4, 2023 {#may-4-2023}
+
+This release brings a new heatmap chart type, improves billing usage page, and improves service startup time.
+
+### Console changes {#console-changes-19}
+- Added heatmap chart type to SQL console
+- Improved billing usage page to show credits consumed within each billing dimension
+
+### Integrations changes {#integrations-changes-19}
+- Kafka connector: Added retry mechanism for transient connection errors
+- Python client: Added max_connection_age setting to ensure that HTTP connections are not reused forever. This can help with certain load-balancing issues
+- Node.js client: Added support for Node.js v20
+- Java client: Improved client certificate authentication support, and added support for nested Tuple/Map/Nested types
+
+### Performance and reliability {#performance-and-reliability-2}
+- Improved service startup time in presence of a large number of parts
+- Optimized long-running query cancellation logic in SQL console
+
+### Bug fixes {#bug-fixes}
+- Fixed a bug causing 'Cell Towers' sample dataset import to fail
+
+## April 20, 2023 {#april-20-2023}
+
+This release updates the ClickHouse version to 23.3, significantly improves the speed of cold reads, and brings real-time chat with support.
+
+### Console changes {#console-changes-20}
+- Added an option for real-time chat with support
+
+### Integrations changes {#integrations-changes-20}
+- Kafka connector: Added support for Nullable types
+- Golang client: Added support for external tables, support boolean and pointer type parameter bindings
+
+### Configuration changes {#configuration-changes}
+- Adds ability to drop large tables–by overriding `max_table_size_to_drop` and `max_partition_size_to_drop` settings
+
+### Performance and reliability {#performance-and-reliability-3}
+- Improve speed of cold reads by the means of S3 prefetching via `allow_prefetched_read_pool_for_remote_filesystem` setting
+
+### ClickHouse 23.3 version upgrade {#clickhouse-233-version-upgrade}
+- Lightweight deletes are production-ready–see 23.3 release [blog](https://clickhouse.com/blog/clickhouse-release-23-03) for details
+- Added support for multi-stage PREWHERE-see 23.2 release [blog](https://clickhouse.com/blog/clickhouse-release-23-03) for details
+- Dozens of new features, performance improvements, and bug fixes–see detailed [changelogs](/resources/changelogs/oss/2026) for 23.3 and 23.2
+
+## April 6, 2023 {#april-6-2023}
+
+This release brings an API for retrieving cloud endpoints, an advanced scaling control for minimum idle timeout, and support for external data in Python client query methods.
+
+### API changes {#api-changes}
+* Added ability to programmatically query ClickHouse Cloud endpoints via [Cloud Endpoints API](/products/cloud/guides/sql-console/query-endpoints)
+
+### Console changes {#console-changes-21}
+- Added 'minimum idle timeout' setting to advanced scaling settings
+- Added best-effort datetime detection to schema inference in data loading modal
+
+### Integrations changes {#integrations-changes-21}
+- [Metabase](/integrations/connectors/data-visualization/metabase-and-clickhouse): Added support for multiple schemas
+- [Go client](/integrations/language-clients/go/index): Fixed idle connection liveness check for TLS connections
+- [Python client](/integrations/language-clients/python/index)
+  - Added support for external data in query methods
+  - Added timezone support for query results
+  - Added support for `no_proxy`/`NO_PROXY` environment variable
+  - Fixed server-side parameter binding of the NULL value for Nullable types
+
+### Bug fixes {#bug-fixes-1}
+* Fixed behavior where running `INSERT INTO ... SELECT ...` from the SQL console incorrectly applied the same row limit as select queries
+
+## March 23, 2023 {#march-23-2023}
+
+This release brings database password complexity rules, significant speedup in restoring large backups, and support for displaying traces in Grafana Trace View.
+
+### Security and reliability {#security-and-reliability}
+- Core database endpoints now enforce password complexity rules
+- Improved time to restore large backups
+
+### Console changes {#console-changes-22}
+- Streamlined onboarding workflow, introducing new defaults and more compact views
+- Reduced sign-up and sign-in latencies
+
+### Integrations changes {#integrations-changes-22}
+- Grafana:
+  - Added support for displaying trace data stored in ClickHouse in Trace View
+  - Improved time range filters and added support for special characters in table names
+- Superset: Added native ClickHouse support
+- Kafka Connect Sink: Added automatic date conversion and Null column handling
+- Metabase: Implemented compatibility with v0.46
+- Python client: Fixed inserts in temporary tables and added support for Pandas Null
+- Golang client: Normalized Date types with timezone
+- Java client
+  - Added to SQL parser support for compression, infile, and outfile keywords
+  - Added credentials overload
+  - Fixed batch support with `ON CLUSTER`
+- Node.js client
+  - Added support for JSONStrings, JSONCompact, JSONCompactStrings, JSONColumnsWithMetadata formats
+  - `query_id` can now be provided for all main client methods
+
+### Bug fixes {#bug-fixes-2}
+- Fixed a bug resulting in slow initial provisioning and startup times for new services
+- Fixed a bug that resulted in slower query performance due to cache misconfiguration
+
+## March 9, 2023 {#march-9-2023}
+
+This release improves observability dashboards, optimizes time to create large backups, and adds the configuration necessary to drop large tables and partitions.
+
+### Console changes {#console-changes-23}
+- Added advanced observability dashboards (preview)
+- Introduced a memory allocation chart to the observability dashboards
+- Improved spacing and newline handling in SQL Console spreadsheet view
+
+### Reliability and performance {#reliability-and-performance}
+- Optimized backup schedule to run backups only if data was modified
+- Improved time to complete large backups
+
+### Configuration changes {#configuration-changes-1}
+- Added the ability to increase the limit to drop tables and partitions by overriding the settings `max_table_size_to_drop` and `max_partition_size_to_drop` on the query or connection level
+- Added source IP to query log, to enable quota and access control enforcement based on source IP
+
+### Integrations {#integrations}
+- [Python client](/integrations/language-clients/python/index): Improved Pandas support and fixed timezone-related issues
+- [Metabase](/integrations/connectors/data-visualization/metabase-and-clickhouse): Metabase 0.46.x compatibility and support for SimpleAggregateFunction
+- [Kafka-Connect](/integrations/connectors/data-ingestion/kafka/index): Implicit date conversion and better handling for null columns
+- [Java Client](https://github.com/ClickHouse/clickhouse-java): Nested conversion to Java maps
+
+##  February 23, 2023 {#february-23-2023}
+
+This release enables a subset of the features in the ClickHouse 23.1 core release, brings interoperability with Amazon Managed Streaming for Apache Kafka (MSK), and exposes advanced scaling and idling adjustments in the activity log.
+
+### ClickHouse 23.1 version upgrade {#clickhouse-231-version-upgrade}
+
+Adds support for a subset of features in ClickHouse 23.1, for example:
+- ARRAY JOIN with Map type
+- SQL standard hex and binary literals
+- New functions, including `age()`, `quantileInterpolatedWeighted()`, `quantilesInterpolatedWeighted()`
+- Ability to use structure from insertion table in `generateRandom` without arguments
+- Improved database creation and rename logic that allows the reuse of previous names
+- See the 23.1 release [webinar slides](https://presentations.clickhouse.com/release_23.1/#cover) and [23.1 release changelog](#clickhouse-231-version-upgrade) for more details
+
+### Integrations changes {#integrations-changes-23}
+- [Kafka-Connect](/integrations/connectors/data-ingestion/kafka/index): Added support for Amazon MSK
+- [Metabase](/integrations/connectors/data-visualization/metabase-and-clickhouse): First stable release 1.0.0
+  - Made the connector is available on [Metabase Cloud](https://www.metabase.com/start/)
+  - Added a feature to explore all available databases
+  - Fixed synchronization of database with AggregationFunction type
+- [DBT-clickhouse](/integrations/connectors/data-ingestion/etl-tools/dbt/index): Added support for the latest DBT version v1.4.1
+- [Python client](/integrations/language-clients/python/index): Improved proxy and ssh tunneling support; added a number of fixes and performance optimizations for Pandas DataFrames
+- [Nodejs client](/integrations/language-clients/js): Released ability to attach `query_id` to query result, which can be used to retrieve query metrics from the `system.query_log`
+- [Golang client](/integrations/language-clients/go/index): Optimized network connection with ClickHouse Cloud
+
+### Console changes {#console-changes-24}
+- Added advanced scaling and idling settings adjustments to the activity log
+- Added user agent and IP information to reset password emails
+- Improved signup flow mechanics for Google OAuth
+
+### Reliability and performance {#reliability-and-performance-1}
+- Speed up the resume time from idle for large services
+- Improved reading latency for services with a large number of tables and partitions
+
+### Bug fixes {#bug-fixes-3}
+- Fixed behavior where resetting service password did not adhere to the password policy
+- Made organization invite email validation case-insensitive
+
+## February 2, 2023 {#february-2-2023}
+
+This release brings an officially supported Metabase integration, a major Java client / JDBC driver release, and support for views and materialized views in the SQL console.
+
+### Integrations changes {#integrations-changes-24}
+- [Metabase](/integrations/connectors/data-visualization/metabase-and-clickhouse) plugin: Became an official solution maintained by ClickHouse
+- [dbt](/integrations/connectors/data-ingestion/etl-tools/dbt/index) plugin: Added support for [multiple threads](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md)
+- [Grafana](/integrations/connectors/data-visualization/grafana/index) plugin: Better handling of connection errors
+- [Python](/integrations/language-clients/python/index) client: [Streaming support](/integrations/language-clients/python/advanced-querying#streaming-queries) for insert operation
+- [Go](/integrations/language-clients/go/index) client: [Bug fixes](https://github.com/ClickHouse/clickhouse-go/blob/main/CHANGELOG.md): close canceled connections, better handling of connection errors
+- [JS](/integrations/language-clients/js) client: [Breaking changes in exec/insert](https://github.com/ClickHouse/clickhouse-js/releases/tag/0.0.12); exposed query_id in the return types
+- [Java](https://github.com/ClickHouse/clickhouse-java#readme) client / JDBC driver major release
+  - [Breaking changes](https://github.com/ClickHouse/clickhouse-java/releases): deprecated methods, classes and packages were removed
+  - Added R2DBC driver and file insert support
+
+### Console changes {#console-changes-25}
+- Added support for views and materialized views in SQL console
+
+### Performance and reliability {#performance-and-reliability-4}
+- Faster password reset for stopped/idling instances
+- Improved the scale-down behavior via more accurate activity tracking
+- Fixed a bug where SQL console CSV export was truncated
+- Fixed a bug resulting in intermittent sample data upload failures
+
+## January 12, 2023 {#january-12-2023}
+
+This release updates the ClickHouse version to 22.12, enables dictionaries for many new sources, and improves query performance.
+
+### General changes {#general-changes-3}
+- Enabled dictionaries for additional sources, including external ClickHouse, Cassandra, MongoDB, MySQL, PostgreSQL, and Redis
+
+### ClickHouse 22.12 version upgrade {#clickhouse-2212-version-upgrade}
+- Extended JOIN support to include Grace Hash Join
+- Added Binary JSON (BSON) support for reading files
+- Added support for GROUP BY ALL standard SQL syntax
+- New mathematical functions for decimal operations with fixed precision
+- See the [22.12 release blog](https://clickhouse.com/blog/clickhouse-release-22-12) and [detailed 22.12 changelog](#clickhouse-2212-version-upgrade) for the complete list of changes
+
+### Console changes {#console-changes-26}
+- Improved auto-complete capabilities in SQL Console
+- Default region now takes into account continent locality
+- Improved Billing Usage page to display both billing and website units
+
+### Integrations changes {#integrations-changes-25}
+- DBT release [v1.3.2](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md#release-132-2022-12-23)
+  - Added experimental support for the delete+insert incremental strategy
+  - New s3source macro
+- Python client [v0.4.8](https://github.com/ClickHouse/clickhouse-connect/blob/main/CHANGELOG.md#048-2023-01-02)
+  - File insert support
+  - Server-side query [parameters binding](/concepts/features/interfaces/client#cli-queries-with-parameters)
+- Go client [v2.5.0](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.5.0)
+  - Reduced memory usage for compression
+  - Server-side query [parameters binding](/concepts/features/interfaces/client#cli-queries-with-parameters)
+
+### Reliability and performance {#reliability-and-performance-2}
+- Improved read performance for queries that fetch a large number of small files on object store
+- Set the [compatibility](/reference/settings/session-settings#compatibility) setting to the version with which the service is initially launched, for newly launched services
+
+### Bug fixes {#bug-fixes-4}
+Using the Advanced Scaling slider to reserve resources now takes effect right away.
