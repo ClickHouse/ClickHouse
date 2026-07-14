@@ -35,6 +35,8 @@
 #include <deque>
 #include <iterator>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 using namespace DB;
 
@@ -220,10 +222,19 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
+                    global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
         pool->wait();
+
+        /// Share one StoredColumnsIndex across all slots so that RowRef::block_no is globally
+        /// unique: cells built by any slot end up in the shared two-level map after the build
+        /// phase, and per-row used flags are merged into a common structure keyed by block_no.
+        auto shared_index = getData(hash_joins[0])->stored_columns_index;
+        for (size_t i = 1; i < slots; ++i)
+            getData(hash_joins[i])->stored_columns_index = shared_index;
     }
     catch (...)
     {
@@ -292,6 +303,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         }
     }
 
+    size_t post_join_total_rows = 0;
+    size_t post_join_total_bytes = 0;
+
     while (blocks_left > 0)
     {
         bool made_progress = false;
@@ -320,6 +334,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
+                std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
+
                 dispatched_block = {};
                 blocks_left--;
 
@@ -335,7 +351,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
-        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
@@ -452,24 +468,12 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
-    }
-    return res;
+    return global_total_rows.load(std::memory_order_relaxed);
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
-    }
-    return res;
+    return global_total_bytes.load(std::memory_order_relaxed);
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
@@ -728,6 +732,40 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
+std::pair<size_t, size_t> ConcurrentHashJoin::updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Update total rows for the current hash join instance and for the overall concurrent hash join
+    const size_t rows_delta = hash_join->data->getTotalRowCount() - hash_join->local_total_rows;
+    const size_t updated_global_rows = global_total_rows.fetch_add(rows_delta, std::memory_order_relaxed) + rows_delta;
+    hash_join->local_total_rows += rows_delta;
+
+    /// Update total bytes for the current hash join instance and for the overall concurrent hash join, taking
+    /// into account that bytes could shrink
+    const size_t updated_local_bytes = hash_join->data->getTotalByteCount();
+    size_t updated_global_bytes = 0;
+    if (updated_local_bytes >= hash_join->local_total_bytes)
+    {
+        const size_t bytes_delta = updated_local_bytes - hash_join->local_total_bytes;
+        updated_global_bytes = global_total_bytes.fetch_add(bytes_delta, std::memory_order_relaxed) + bytes_delta;
+    }
+    else
+    {
+        const size_t bytes_delta = hash_join->local_total_bytes - updated_local_bytes;
+        updated_global_bytes = global_total_bytes.fetch_sub(bytes_delta, std::memory_order_relaxed) - bytes_delta;
+    }
+    hash_join->local_total_bytes = updated_local_bytes;
+    return {updated_global_rows, updated_global_bytes};
+}
+
+void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Reset global and local total rows and bytes
+    global_total_rows.fetch_sub(hash_join->local_total_rows, std::memory_order_relaxed);
+    global_total_bytes.fetch_sub(hash_join->local_total_bytes, std::memory_order_relaxed);
+    hash_join->local_total_rows = 0;
+    hash_join->local_total_bytes = 0;
+}
+
 BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
@@ -735,6 +773,7 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     std::lock_guard lock(hash_join->mutex);
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
+    resetTotalRowsAndBytesUnlocked(hash_join);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
@@ -790,7 +829,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         if (std::any_of(hash_joins.begin(), hash_joins.end(),
                         [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
-            /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
+            /// Keep the pointers in NullMapHolder to original StoredBlocks, which remain valid
             /// in their respective slots
             HashJoin::NullmapList combined;
             size_t combined_allocated = 0;
@@ -800,8 +839,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 const auto * sc = holder.columns;
                 if (!sc)
                     return;
-                // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
+                // matches the original right block rows referenced by this slot's StoredBlocks
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
@@ -821,7 +860,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
                 if (sc->selector.isContinuousRange())
                 {
-                    // Fast path: the slot's ScatteredColumns cover a single continuous range in the original right block
+                    // Fast path: the slot's StoredBlocks cover a single continuous range in the original right block
                     const auto range = sc->selector.getRange();
                     apply_range(range.first, range.second);
                 }
@@ -855,7 +894,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
                 // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                // we do not free StoredBlocks here; they are owned by the join and needed during probing/emission
                 src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }

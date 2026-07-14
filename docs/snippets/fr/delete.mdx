@@ -1,0 +1,116 @@
+---
+description: 'Les suppressions légères simplifient le processus de suppression des données de la base de données.'
+keywords: ['delete']
+sidebarTitle: 'DELETE'
+slug: /sql-reference/statements/delete
+title: "L'instruction `DELETE` légère"
+doc_type: 'reference'
+---
+
+L&#39;instruction `DELETE` légère supprime les lignes de la table `[db.]table` qui correspondent à l&#39;expression `expr`. Elle est disponible uniquement pour la famille de moteurs de table *MergeTree.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+```
+
+On l&#39;appelle &quot;lightweight `DELETE`&quot; pour le distinguer de la commande [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete), qui est une opération lourde.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+```sql
+-- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+<div id="lightweight-delete-does-not-delete-data-immediately">
+  ## `DELETE` léger ne supprime pas les données immédiatement
+</div>
+
+`DELETE` léger est implémenté sous la forme d&#39;une [mutation](/fr/reference/statements/alter/index#mutations) qui marque les lignes comme supprimées, sans toutefois les supprimer physiquement immédiatement.
+
+Par défaut, les instructions `DELETE` attendent que le marquage des lignes comme supprimées soit terminé avant de renvoyer la réponse. Cela peut prendre beaucoup de temps si le volume de données est important. Vous pouvez aussi l&#39;exécuter de manière asynchrone en arrière-plan à l&#39;aide du paramètre [`lightweight_deletes_sync`](/fr/reference/settings/session-settings#lightweight_deletes_sync). S&#39;il est désactivé, l&#39;instruction `DELETE` renverra immédiatement, mais les données pourront encore rester visibles dans les requêtes jusqu&#39;à la fin de la mutation en arrière-plan.
+
+La mutation ne supprime pas physiquement les lignes qui ont été marquées comme supprimées ; cela ne se produira qu&#39;au prochain merge. Par conséquent, il est possible que, pendant une durée indéterminée, les données ne soient pas réellement supprimées du stockage et soient seulement marquées comme supprimées.
+
+Si vous devez garantir que vos données sont supprimées du stockage dans un délai prévisible, envisagez d&#39;utiliser le paramètre de table [`min_age_to_force_merge_seconds`](/fr/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds). Vous pouvez aussi utiliser la commande [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete). Notez que la suppression de données à l&#39;aide de `ALTER TABLE ... DELETE` peut consommer des ressources importantes, car elle recrée toutes les parts affectées.
+
+<div id="deleting-large-amounts-of-data">
+  ## Suppression de grandes quantités de données
+</div>
+
+Les suppressions massives peuvent dégrader les performances de ClickHouse. Si vous cherchez à supprimer toutes les lignes d’une table, envisagez d’utiliser la commande [`TRUNCATE TABLE`](/fr/reference/statements/truncate).
+
+Si vous prévoyez des suppressions fréquentes, envisagez d’utiliser une [clé de partitionnement personnalisée](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Vous pourrez ensuite utiliser la commande [`ALTER TABLE ... DROP PARTITION`](/fr/reference/statements/alter/partition#drop-partitionpart) pour supprimer rapidement toutes les lignes associées à cette partition.
+
+<div id="limitations-of-lightweight-delete">
+  ## Limites du `DELETE` léger
+</div>
+
+<div id="lightweight-deletes-with-projections">
+  ### `DELETE` légers avec des projections
+</div>
+
+Par défaut, `DELETE` ne fonctionne pas sur les tables comportant des projections. En effet, des lignes d&#39;une projection peuvent être affectées par une opération `DELETE`. Il existe toutefois un [paramètre MergeTree](/fr/reference/settings/merge-tree-settings), `lightweight_mutation_projection_mode`, pour modifier ce comportement.
+
+<div id="performance-considerations-when-using-lightweight-delete">
+  ## Considérations relatives aux performances lors de l’utilisation de `DELETE` léger
+</div>
+
+**La suppression de grands volumes de données avec l’instruction `DELETE` légère peut dégrader les performances des requêtes SELECT.**
+
+Les éléments suivants peuvent également dégrader les performances de `DELETE` léger :
+
+* Une condition `WHERE` complexe dans une requête `DELETE`.
+* Si la file d’attente des mutations contient déjà de nombreuses autres mutations, cela peut entraîner des problèmes de performances, car toutes les mutations d’une table sont exécutées séquentiellement.
+* La table concernée contient un très grand nombre de parts de données.
+* Une grande quantité de données stockées dans des parts compactes. Dans une part compacte, toutes les colonnes sont stockées dans un seul fichier.
+
+<div id="delete-permissions">
+  ## Autorizations de suppression
+</div>
+
+`DELETE` requiert le privilège `ALTER DELETE`. Pour autoriser les instructions `DELETE` sur une table spécifique pour un utilisateur donné, exécutez la commande suivante :
+
+```sql
+GRANT ALTER DELETE ON db.table to username;
+```
+
+<div id="how-lightweight-deletes-work-internally-in-clickhouse">
+  ## Fonctionnement interne des `DELETE` légers dans ClickHouse
+</div>
+
+1. **Un « masque » est appliqué aux lignes concernées**
+
+   Lorsqu&#39;une requête `DELETE FROM table ...` est exécutée, ClickHouse enregistre un masque dans lequel chaque ligne est marquée soit comme « existante », soit comme « supprimée ». Ces lignes « supprimées » sont alors exclues des requêtes suivantes. Toutefois, les lignes ne sont réellement supprimées que plus tard, lors des fusions ultérieures. L&#39;écriture de ce masque est bien plus légère que ce qu&#39;implique une requête `ALTER TABLE ... DELETE`.
+
+   Le masque est implémenté sous la forme d&#39;une colonne système cachée `_row_exists` qui stocke `True` pour toutes les lignes visibles et `False` pour celles qui sont supprimées. Cette colonne n&#39;est présente dans une part que si certaines de ses lignes ont été supprimées. Elle n&#39;existe pas lorsqu&#39;une part a toutes ses valeurs égales à `True`.
+
+2. **Les requêtes `SELECT` sont transformées pour inclure le masque**
+
+   Lorsqu&#39;une colonne masquée est utilisée dans une requête, la requête `SELECT ... FROM table WHERE condition` est étendue en interne avec le prédicat sur `_row_exists` et devient :
+
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+
+   Lors de l&#39;exécution, la colonne `_row_exists` est lue pour déterminer quelles lignes ne doivent pas être renvoyées. S&#39;il y a beaucoup de lignes supprimées, ClickHouse peut déterminer quels granules peuvent être entièrement ignorés lors de la lecture du reste des colonnes.
+
+3. **Les requêtes `DELETE` sont transformées en requêtes `ALTER TABLE ... UPDATE`**
+
+   `DELETE FROM table WHERE condition` est traduit en mutation `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition`.
+
+   En interne, cette mutation est exécutée en deux étapes :
+
+   1. Une commande `SELECT count() FROM table WHERE condition` est exécutée pour chaque part afin de déterminer si elle est concernée.
+
+   2. À partir des commandes ci-dessus, les parts concernées sont ensuite mutées, et des liens physiques sont créés pour les parts non concernées. Dans le cas des parts wide, la colonne `_row_exists` de chaque ligne est mise à jour, et les fichiers de toutes les autres colonnes sont liés physiquement. Pour les parts compact, toutes les colonnes sont réécrites, car elles sont toutes stockées ensemble dans un seul fichier.
+
+   Comme le montrent les étapes ci-dessus, le `DELETE` léger utilisant la technique du masquage offre de meilleures performances que le `ALTER TABLE ... DELETE` traditionnel, car il ne réécrit pas les fichiers de toutes les colonnes pour les parts concernées.
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Gestion des mises à jour et des suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

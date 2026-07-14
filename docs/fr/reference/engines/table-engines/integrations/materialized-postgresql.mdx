@@ -1,0 +1,86 @@
+---
+description: 'Crée une table ClickHouse à partir d''un dump initial d''une table PostgreSQL
+  et lance le processus de réplication.'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/table-engines/integrations/materialized-postgresql
+title: 'Moteur de table MaterializedPostgreSQL'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Il est recommandé aux utilisateurs de ClickHouse Cloud d’utiliser [ClickPipes](/fr/integrations/clickpipes/home) pour la réplication de PostgreSQL vers ClickHouse. Cette solution prend nativement en charge le Change Data Capture (CDC) hautes performances pour PostgreSQL.
+</Note>
+
+Crée une table ClickHouse à partir d’un dump initial d’une table PostgreSQL et lance le processus de réplication, c.-à-d. exécute une tâche en arrière-plan pour appliquer les nouvelles modifications au fur et à mesure qu’elles surviennent dans la table PostgreSQL de la base de données PostgreSQL distante.
+
+<Note>
+  Ce moteur de table est expérimental. Pour l’utiliser, définissez `allow_experimental_materialized_postgresql_table` sur 1 dans vos fichiers de configuration ou à l’aide de la commande `SET` :
+
+  ```sql
+  SET allow_experimental_materialized_postgresql_table=1
+  ```
+</Note>
+
+Si plusieurs tables sont nécessaires, il est fortement recommandé d’utiliser le moteur de base de données [MaterializedPostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql) plutôt que le moteur de table, ainsi que le paramètre `materialized_postgresql_tables_list`, qui spécifie les tables à répliquer (il sera également possible d’ajouter le `schema` de la base de données). Les performances seront nettement meilleures en termes d’utilisation du CPU, avec moins de connexions et moins de slots de réplication dans la base de données PostgreSQL distante.
+
+<div id="creating-a-table">
+  ## Création d’une table
+</div>
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+```
+
+**Paramètres du moteur**
+
+* `host:port` — Adresse du serveur PostgreSQL.
+* `database` — Nom de la base de données distante.
+* `table` — Nom de la table distante.
+* `user` — Utilisateur PostgreSQL.
+* `password` — Mot de passe de l’utilisateur.
+
+<div id="requirements">
+  ## Prérequis
+</div>
+
+1. Le paramètre [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) doit avoir la valeur `logical`, et le paramètre `max_replication_slots` doit avoir une valeur d’au moins `2` dans le fichier de configuration de PostgreSQL.
+
+2. Une table utilisant le moteur `MaterializedPostgreSQL` doit avoir une clé primaire, identique à l’index de replica identity (par défaut : la clé primaire) d’une table PostgreSQL (voir les [détails sur l’index de replica identity](/fr/reference/engines/database-engines/materialized-postgresql#requirements)).
+
+3. Seul le moteur de base de données [Atomic](https://en.wikipedia.org/wiki/Atomicity_\(database_systems\)) est autorisé.
+
+4. Le moteur de table `MaterializedPostgreSQL` fonctionne uniquement avec les versions de PostgreSQL &gt;= 11, car son implémentation nécessite la fonction PostgreSQL [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_version` — Compteur de transactions. Type : [UInt64](/fr/reference/data-types/int-uint).
+
+* `_sign` — Indicateur de suppression. Type : [Int8](/fr/reference/data-types/int-uint). Valeurs possibles :
+  * `1` — La ligne n’est pas supprimée,
+  * `-1` — La ligne est supprimée.
+
+Il n’est pas nécessaire d’ajouter ces colonnes lors de la création d’une table. Elles sont toujours accessibles dans une requête `SELECT`.
+La colonne `_version` correspond à la position `LSN` dans le `WAL` et peut donc être utilisée pour vérifier à quel point la réplication est à jour.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+
+SELECT key, value, _version FROM postgresql_db.postgresql_replica;
+```
+
+<Note>
+  La réplication des valeurs [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) n’est pas prise en charge. La valeur par défaut du type de données est utilisée.
+</Note>

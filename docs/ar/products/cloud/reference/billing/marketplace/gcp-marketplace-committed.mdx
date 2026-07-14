@@ -1,0 +1,127 @@
+---
+slug: /cloud/billing/marketplace/gcp-marketplace-committed-contract
+title: 'عقد الالتزام في GCP Marketplace'
+description: 'اشترك في ClickHouse Cloud عبر GCP Marketplace (عقد الالتزام)'
+keywords: ['gcp', 'google', 'marketplace', 'الفوترة', 'التزام', 'عقد الالتزام']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+ابدأ استخدام ClickHouse Cloud على [GCP Marketplace](https://console.cloud.google.com/marketplace) عبر عقد التزام. يتيح عقد الالتزام، المعروف أيضًا باسم عرض خاص، للعملاء الالتزام بإنفاق مبلغ محدد على ClickHouse Cloud خلال فترة زمنية.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* عرض خاص (Private Offer) من ClickHouse استنادًا إلى شروط تعاقدية محددة.
+
+<div id="steps-to-sign-up">
+  ## خطوات التسجيل
+</div>
+
+1. يُفترض أنك تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة العرض الخاص وقبوله.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-1.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في GCP Marketplace" border />
+
+<br />
+
+2. انقر على رابط **Review Offer** في رسالة البريد الإلكتروني. من المفترض أن ينقلك ذلك إلى صفحة GCP Marketplace الخاصة بك، حيث تظهر تفاصيل العرض الخاص.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-2.webp" size="md" alt="ملخص العرض في GCP Marketplace" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-3.webp" size="md" alt="ملخص الأسعار في GCP Marketplace" border />
+
+<br />
+
+3. راجع تفاصيل العرض الخاص، وإذا كانت كل المعلومات صحيحة، فانقر على **Accept**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-4.webp" size="md" alt="صفحة القبول في GCP Marketplace" border />
+
+<br />
+
+4. انقر على **Go to product page**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-5.webp" size="md" alt="تأكيد القبول في GCP Marketplace" border />
+
+<br />
+
+5. انقر على **Manage on provider**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-6.webp" size="md" alt="صفحة ClickHouse Cloud في GCP Marketplace" border />
+
+<br />
+
+من الضروري جدًا أن تتم إعادة توجيهك إلى ClickHouse Cloud في هذه المرحلة وأن تُنشئ حسابًا أو تسجّل الدخول. من دون إكمال هذه الخطوة، لن نتمكن من ربط اشتراكك في GCP Marketplace بـ ClickHouse Cloud.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-7.webp" size="md" alt="نافذة تأكيد مغادرة الموقع في GCP Marketplace" border />
+
+<br />
+
+6. بعد إعادة توجيهك إلى ClickHouse Cloud، يمكنك إما تسجيل الدخول باستخدام حساب حالي أو التسجيل بحساب جديد.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="صفحة تسجيل الدخول إلى ClickHouse Cloud" border />
+
+<br />
+
+إذا كنت مستخدمًا جديدًا لـ ClickHouse Cloud، فانقر على **Register** في أسفل الصفحة. سيُطلب منك إنشاء مستخدم جديد والتحقق من عنوان بريدك الإلكتروني. بعد التحقق من بريدك الإلكتروني، يمكنك مغادرة صفحة تسجيل الدخول إلى ClickHouse Cloud ثم تسجيل الدخول باستخدام اسم المستخدم الجديد على [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="صفحة التسجيل في ClickHouse Cloud" border />
+
+<br />
+
+لاحظ أنه إذا كنت مستخدمًا جديدًا، فستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري. راجع لقطات الشاشة أدناه.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="نموذج معلومات التسجيل في ClickHouse Cloud" border />
+
+<br />
+
+إذا كنت مستخدمًا حاليًا لـ ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام بيانات الاعتماد الخاصة بك.
+
+7. بعد تسجيل الدخول بنجاح، سيتم إنشاء مؤسسة جديدة في ClickHouse Cloud. وسترتبط هذه المؤسسة بحساب الفوترة الخاص بك في GCP، وستتم فوترة كل الاستخدام عبر حساب GCP الخاص بك.
+
+8. بعد تسجيل الدخول، يمكنك التأكد من أن الفوترة الخاصة بك مرتبطة بالفعل بـ GCP Marketplace والبدء في إعداد موارد ClickHouse Cloud الخاصة بك.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp" size="md" alt="صفحة تسجيل الدخول إلى ClickHouse Cloud" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp" size="md" alt="صفحة الخدمات الجديدة في ClickHouse Cloud" border />
+
+<br />
+
+9. يُفترض أن تتلقى رسالة بريد إلكتروني تؤكد التسجيل:
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp" size="md" alt="رسالة تأكيد البريد الإلكتروني من GCP Marketplace" border />
+
+<br />
+
+<br />
+
+إذا واجهت أي مشكلات، فلا تتردد في التواصل مع [فريق الدعم لدينا](https://clickhouse.com/support/program).
