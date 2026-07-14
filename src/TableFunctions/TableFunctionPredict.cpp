@@ -56,21 +56,21 @@ StoragePtr TableFunctionPredict::executeImpl(
     Targets targets;
 
     Block block;
-    while (executor.pull(block)) {
-        for (size_t row = 0; row < block.rows(); ++row) {
+    while (executor.pull(block))
+    {
+        for (size_t row = 0; row < block.rows(); ++row)
+        {
             Features features;
-            Target target;
+            Target target = 0;
 
-            for (const auto& column: block.getColumnsWithTypeAndName())
+            for (const auto & column : block.getColumnsWithTypeAndName())
             {
                 // TODO
                 const Feature value = column.column->getFloat64(row);
                 if (column.name == "target")
-                {
                     target = value;
-                } else {
+                else
                     features.push_back(value);
-                }
             }
 
             feature_matrix.push_back(std::move(features));
@@ -78,14 +78,14 @@ StoragePtr TableFunctionPredict::executeImpl(
         }
     }
 
-
     auto model = ModelRegistry::instance().getModel(model_name);
-    // Targets y_hat = model->predict(X);
-    Targets y_hat;
+    Targets y_hat = model->predict(feature_matrix);
 
     auto col = ColumnFloat64::create();
-    auto& data = col->getData();
-    std::copy(y_hat.begin(), y_hat.end(), data.begin());
+    auto & data = col->getData();
+    data.reserve(y_hat.size());
+    for (const Target value : y_hat)
+        data.push_back(value);
 
     Block result_block;
     result_block.insert({std::move(col),

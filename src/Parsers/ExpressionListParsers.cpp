@@ -2023,27 +2023,22 @@ public:
         ParserCompoundIdentifier model_p;
         ParserCompoundIdentifier table_p;
 
-        if (!s_model.ignore(pos, expected)) {
+        if (!s_model.ignore(pos, expected))
             return false;
-        }
 
         ASTPtr model_name;
-        if (!model_p.parse(pos, model_name, expected)) {
+        if (!model_p.parse(pos, model_name, expected))
             return false;
-        }
 
-        if (!ParserToken(TokenType::Comma).ignore(pos, expected)) {
+        if (!ParserToken(TokenType::Comma).ignore(pos, expected))
             return false;
-        }
 
-        if (!s_table.ignore(pos, expected)) {
+        if (!s_table.ignore(pos, expected))
             return false;
-        }
 
         ASTPtr table_name;
-        if (!table_p.parse(pos, table_name, expected)) {
+        if (!table_p.parse(pos, table_name, expected))
             return false;
-        }
 
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;

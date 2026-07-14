@@ -17,39 +17,38 @@ ModelRegistry & ModelRegistry::instance()
     return inst;
 }
 
-ModelPtr ModelRegistry::registerModel(const String& model_name, ModelPtr model)
+ModelPtr ModelRegistry::registerModel(const String & model_name, ModelPtr model)
 {
     std::lock_guard lock(mutex);
-    if (models.contains(model_name)) {
+    if (models.contains(model_name))
         throw Exception(ErrorCodes::MODEL_ALREADY_EXISTS, "Model '{}' was already registered", model_name);
-    }
 
     models[model_name] = model;
     return model;
 }
 
-ModelPtr ModelRegistry::getModel(const std::string & model_name) const
+ModelPtr ModelRegistry::getModel(const String & model_name) const
 {
     std::lock_guard lock(mutex);
-    if (!models.contains(model_name)) {
+    auto it = models.find(model_name);
+    if (it == models.end())
+        throw Exception(ErrorCodes::MODEL_NOT_FOUND, "No model '{}' exists", model_name);
+
+    return it->second;
+}
+
+void ModelRegistry::dropModel(const String & model_name, bool if_exists)
+{
+    std::lock_guard lock(mutex);
+    auto it = models.find(model_name);
+    if (it == models.end())
+    {
+        if (if_exists)
+            return;
         throw Exception(ErrorCodes::MODEL_NOT_FOUND, "No model '{}' exists", model_name);
     }
 
-    return models.at(model_name);
-}
-
-bool ModelRegistry::hasModel(const String& model_name) const
-{
-    return models.contains(model_name);
-}
-
-void ModelRegistry::unregisterModel(const String& model_name)
-{
-    if (!models.contains(model_name)) {
-        throw Exception(ErrorCodes::MODEL_NOT_FOUND, "No model '{}' exists", model_name);
-    }
-
-    models.erase(model_name);
+    models.erase(it);
 }
 
 }

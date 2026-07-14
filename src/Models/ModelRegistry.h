@@ -7,33 +7,30 @@
 namespace DB
 {
 
-/// Registry for the existing models
-/// Currently saves all models in Memery
-/// TODO: think about moving them to DB
+/// Registry for the existing models.
+/// Currently keeps all models in memory.
+/// TODO: think about moving them to a database.
 class ModelRegistry
 {
 public:
     static ModelRegistry & instance();
 
-    /// Register a new model.
-    /// Creates an IModel class using ModelSpec within registration process.
-    /// Returns new registered model.
-    ModelPtr registerModel(const String& model_name, ModelPtr model);
+    /// Register a new model under the given name.
+    /// Throws if a model with this name already exists.
+    /// Returns the registered model.
+    ModelPtr registerModel(const String & model_name, ModelPtr model);
 
-    /// Retrieve registered model.
-    /// Throws if model is not found.
+    /// Retrieve a registered model.
+    /// Throws if the model is not found.
     ModelPtr getModel(const String & model_name) const;
 
-    /// Check wether model exists
-    bool hasModel(const String& model_name) const;
-
-    // Unregisters existing model.
-    /// Throws if model is not found.
-    void unregisterModel(const String& model_name);
+    /// Remove a model from the registry as a single locked operation.
+    /// Throws if the model is not found, unless `if_exists` is set.
+    void dropModel(const String & model_name, bool if_exists);
 
 private:
     mutable std::mutex mutex;
     std::unordered_map<String, ModelPtr> models;
 };
 
-} // namespace DB
+}

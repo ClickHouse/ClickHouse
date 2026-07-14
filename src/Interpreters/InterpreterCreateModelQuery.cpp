@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int UNKNOWN_TABLE;
     extern const int BAD_TYPE_OF_FIELD;
 }
 
@@ -106,20 +105,20 @@ BlockIO InterpreterCreateModelQuery::execute()
     Targets targets;
 
     Block block;
-    while (executor.pull(block)) {
-        for (size_t row = 0; row < block.rows(); ++row) {
+    while (executor.pull(block))
+    {
+        for (size_t row = 0; row < block.rows(); ++row)
+        {
             Features features;
             Target target = 0;
 
-            for (const auto& column: block.getColumnsWithTypeAndName())
+            for (const auto & column : block.getColumnsWithTypeAndName())
             {
                 const Feature value = column.column->getFloat64(row);
                 if (column.name == target_name)
-                {
                     target = value;
-                } else {
+                else
                     features.push_back(value);
-                }
             }
 
             feature_matrix.push_back(std::move(features));
@@ -127,16 +126,14 @@ BlockIO InterpreterCreateModelQuery::execute()
         }
     }
 
-    // Create, register and fit the model
+    // Create and fit the model, then register it only after training succeeds,
+    // so a failed training never leaves an untrained model visible in the registry.
 
     ModelPtr model = createModel(algorithm, hyperparameters);
 
-    ModelRegistry::instance().registerModel(
-        model_name,
-        model
-    );
-
     model->fit(feature_matrix, targets);
+
+    ModelRegistry::instance().registerModel(model_name, model);
 
     return {};
 }

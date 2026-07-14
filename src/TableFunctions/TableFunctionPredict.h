@@ -3,7 +3,7 @@
 #include <optional>
 
 #include <TableFunctions/ITableFunction.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
 
@@ -20,7 +20,7 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const override
     {
-        return ColumnsDescription{{"predict", std::make_shared<DataTypeString>()}};
+        return ColumnsDescription{{"prediction", std::make_shared<DataTypeFloat64>()}};
     }
 
 private:
