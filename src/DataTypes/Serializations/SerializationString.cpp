@@ -830,33 +830,50 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto mutable_column = column->assumeMutable();
     auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
     auto & offsets = mutable_string_column.getOffsets();
-    size_t prev_last_offset = offsets.back();
-    size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
-    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
 
-    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
-    size_t bytes_to_read = offsets.back() - prev_last_offset;
-
-    /// The total size is derived from the size stream before any data is read. If the stream is
-    /// corrupted or desynchronized, the sizes are garbage and the total can be absurdly large;
-    /// report a regular error instead of attempting the allocation and reaching the allocator
-    /// sanity check, which is a logical error and aborts debug and sanitizer builds.
+    /// Validate the sizes before mutating the column. If the stream is corrupted or
+    /// desynchronized, the sizes are garbage: a single absurd value would reach the allocator
+    /// sanity check (a logical error, which aborts debug and sanitizer builds), and several
+    /// values can overflow the cumulative offsets and produce an internally inconsistent
+    /// column with offsets pointing past the data. Report a regular error before anything
+    /// is committed.
     static constexpr size_t max_total_string_size = 1ULL << 48;
-    if (bytes_to_read > max_total_string_size)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Too large total size ({}) of String column computed from the size stream: most likely the data is corrupted",
-            bytes_to_read);
+    size_t bytes_to_skip = 0;
+    size_t bytes_to_read = 0;
+    for (size_t i = prev_size; i != prev_size + num_read_rows; ++i)
+    {
+        size_t size = sizes_data[i];
+        auto & total = (i < prev_size + rows_offset) ? bytes_to_skip : bytes_to_read;
+        if (size > max_total_string_size || total > max_total_string_size - size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Too large total size of String column computed from the size stream (row size {}, accumulated {}): "
+                "most likely the data is corrupted",
+                size,
+                total);
+        total += size;
+    }
 
     auto & data = mutable_string_column.getChars();
     size_t initial_size = data.size();
-    data.resize(initial_size + bytes_to_read);
+
+    /// Grow the data first and append the offsets last, so that if anything below throws, the
+    /// column stays exactly as it was (shrinking a PODArray does not throw).
+    offsets.reserve(offsets.size() + (num_read_rows - rows_offset));
     stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
     data.resize(initial_size + bytes_to_read);
+    try
+    {
+        stream->readBigStrict(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
+    }
+    catch (...)
+    {
+        data.resize(initial_size);
+        throw;
+    }
+    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     column = std::move(mutable_column);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();

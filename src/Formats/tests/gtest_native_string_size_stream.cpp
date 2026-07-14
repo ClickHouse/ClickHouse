@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -9,6 +10,11 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 using namespace DB;
 
@@ -126,5 +132,32 @@ TEST(NativeStringSizeStream, WireLayout)
         String tail(expected_tail, sizeof(expected_tail) - 1);
         ASSERT_GE(data.size(), tail.size());
         ASSERT_EQ(data.substr(data.size() - tail.size()), tail);
+    }
+}
+
+TEST(NativeStringSizeStream, CorruptedSizeStreamWraparound)
+{
+    Block block;
+    addColumn(block, "s", "String", {Field("abcdefgh"), Field("ijklmnop")});
+    auto data = writeToString(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+
+    /// The column tail is [UInt64 size, UInt64 size, 16 bytes of data]. Rewrite the sizes to
+    /// [0xfffffffffffffff0, 0x20]: they sum to 0x10 with a wraparound, so a naive total matches
+    /// the data that is actually present while the offset of row 0 points far past it.
+    ASSERT_EQ(data.substr(data.size() - 16), "abcdefghijklmnop");
+    const char corrupted_sizes[] = "\xf0\xff\xff\xff\xff\xff\xff\xff"
+                                   "\x20\x00\x00\x00\x00\x00\x00\x00";
+    data.replace(data.size() - 32, 16, corrupted_sizes, 16);
+
+    ReadBufferFromString in(data);
+    NativeReader reader(in, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+    try
+    {
+        reader.read();
+        FAIL() << "expected INCORRECT_DATA for a wrapped-around size stream";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
     }
 }
