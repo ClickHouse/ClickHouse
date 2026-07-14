@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -364,9 +365,29 @@ TEST(BloomFilterAggregateFunction, UsesVersionedStateSerialization)
 
     EXPECT_TRUE(aggregate_function->isVersioned());
     EXPECT_EQ(aggregate_function->getDefaultVersion(), GROUP_BLOOM_FILTER_STATE_VERSION);
+    EXPECT_EQ(
+        aggregate_function->getVersionFromRevision(DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING - 1),
+        0);
+    EXPECT_EQ(
+        aggregate_function->getVersionFromRevision(DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING),
+        GROUP_BLOOM_FILTER_STATE_VERSION_V1);
 }
 
-TEST(BloomFilterData, SerializationVersionZeroUsesCurrentLayout)
+TEST(BloomFilterData, SerializationVersionResolution)
+{
+    EXPECT_EQ(
+        AggregateFunctionGroupBloomFilterData::getSerializationVersion(std::nullopt),
+        GROUP_BLOOM_FILTER_STATE_VERSION);
+    EXPECT_EQ(
+        AggregateFunctionGroupBloomFilterData::getSerializationVersion(size_t{0}),
+        GROUP_BLOOM_FILTER_STATE_VERSION_V1);
+    EXPECT_EQ(
+        AggregateFunctionGroupBloomFilterData::getSerializationVersion(GROUP_BLOOM_FILTER_STATE_VERSION_V1),
+        GROUP_BLOOM_FILTER_STATE_VERSION_V1);
+    EXPECT_THROW(AggregateFunctionGroupBloomFilterData::getSerializationVersion(size_t{2}), Exception);
+}
+
+TEST(BloomFilterData, SerializationVersionZeroUsesVersion1Layout)
 {
     AggregateFunctionGroupBloomFilterData data;
     data.init(64, 3, 7);
@@ -375,13 +396,13 @@ TEST(BloomFilterData, SerializationVersionZeroUsesCurrentLayout)
     WriteBufferFromOwnString explicit_zero;
     data.write(explicit_zero, size_t{0});
 
-    WriteBufferFromOwnString explicit_current;
-    data.write(explicit_current, GROUP_BLOOM_FILTER_STATE_VERSION);
+    WriteBufferFromOwnString explicit_version_1;
+    data.write(explicit_version_1, GROUP_BLOOM_FILTER_STATE_VERSION_V1);
 
-    EXPECT_EQ(explicit_zero.str(), explicit_current.str());
+    EXPECT_EQ(explicit_zero.str(), explicit_version_1.str());
 
     AggregateFunctionGroupBloomFilterData restored;
-    ReadBufferFromString in(explicit_zero.str());
+    ReadBufferFromString in(explicit_version_1.str());
     restored.read(
         in,
         /*expected_filter_size_bytes=*/64,

@@ -32,7 +32,7 @@ SELECT
     length(CAST(empty_bf AS String)) < length(CAST(full_bf AS String)),
     length(CAST(all_null_bf AS String)) < length(CAST(full_bf AS String));
 
--- Versioned states round-trip through revision-0 `Native` files.
+-- Revision-0 `Native` files use the original v1 aggregate-state layout.
 INSERT INTO FUNCTION file(currentDatabase() || '_04073_bloom_filter_native.native', 'Native', 'bf AggregateFunction(groupBloomFilter(1000), UInt64), skipped AggregateFunction(groupBloomFilterIf(1000), UInt64, UInt8)')
 SELECT
     groupBloomFilterState(1000)(number) AS bf,

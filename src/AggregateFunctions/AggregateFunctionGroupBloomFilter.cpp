@@ -158,7 +158,7 @@ public:
     size_t getVersionFromRevision(size_t revision) const override
     {
         if (revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING)
-            return GROUP_BLOOM_FILTER_STATE_VERSION;
+            return GROUP_BLOOM_FILTER_STATE_VERSION_V1;
         return 0;
     }
 

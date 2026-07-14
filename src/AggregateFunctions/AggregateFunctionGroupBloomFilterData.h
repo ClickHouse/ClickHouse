@@ -23,7 +23,9 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-static constexpr size_t GROUP_BLOOM_FILTER_STATE_VERSION = 1;
+/// Version 0 is a compatibility marker for this original v1 layout and must never follow the current version.
+static constexpr size_t GROUP_BLOOM_FILTER_STATE_VERSION_V1 = 1;
+static constexpr size_t GROUP_BLOOM_FILTER_STATE_VERSION = GROUP_BLOOM_FILTER_STATE_VERSION_V1;
 
 static constexpr size_t BLOOM_FILTER_DEFAULT_SEED = 0;
 static constexpr double BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.025;
@@ -99,15 +101,16 @@ struct AggregateFunctionGroupBloomFilterData
         if (!version)
             return GROUP_BLOOM_FILTER_STATE_VERSION;
 
-        if (*version == 0)
-            return GROUP_BLOOM_FILTER_STATE_VERSION;
-
-        if (*version != GROUP_BLOOM_FILTER_STATE_VERSION)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unsupported version {} of {} aggregate function serialization state",
-                *version, name);
-
-        return *version;
+        switch (*version)
+        {
+            case 0:
+            case GROUP_BLOOM_FILTER_STATE_VERSION_V1:
+                return GROUP_BLOOM_FILTER_STATE_VERSION_V1;
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported version {} of {} aggregate function serialization state",
+                    *version, name);
+        }
     }
 
     void setParameters(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
@@ -172,7 +175,44 @@ struct AggregateFunctionGroupBloomFilterData
 
     void write(WriteBuffer & buf, std::optional<size_t> version) const
     {
-        getSerializationVersion(version);
+        const auto serialization_version = getSerializationVersion(version);
+        switch (serialization_version)
+        {
+            case GROUP_BLOOM_FILTER_STATE_VERSION_V1:
+                writeVersion1(buf);
+                return;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported resolved version {} of {} aggregate function serialization state",
+            serialization_version, name);
+    }
+
+    /// Deserialize the state, validating the header against the declared aggregate function
+    /// parameters (expected_filter_size_bytes, expected_num_hashes, expected_seed)
+    void read(
+        ReadBuffer & buf,
+        size_t expected_filter_size_bytes,
+        size_t expected_num_hashes,
+        size_t expected_seed,
+        std::optional<size_t> version)
+    {
+        const auto serialization_version = getSerializationVersion(version);
+        switch (serialization_version)
+        {
+            case GROUP_BLOOM_FILTER_STATE_VERSION_V1:
+                readVersion1(buf, expected_filter_size_bytes, expected_num_hashes, expected_seed);
+                return;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported resolved version {} of {} aggregate function serialization state",
+            serialization_version, name);
+    }
+
+private:
+    void writeVersion1(WriteBuffer & buf) const
+    {
 
         writeVarUInt(filter_size_bytes, buf);
         writeVarUInt(num_hashes, buf);
@@ -189,17 +229,12 @@ struct AggregateFunctionGroupBloomFilterData
         }
     }
 
-    /// Deserialize the state, validating the header against the declared aggregate function
-    /// parameters (expected_filter_size_bytes, expected_num_hashes, expected_seed)
-    void read(
+    void readVersion1(
         ReadBuffer & buf,
         size_t expected_filter_size_bytes,
         size_t expected_num_hashes,
-        size_t expected_seed,
-        std::optional<size_t> version)
+        size_t expected_seed)
     {
-        getSerializationVersion(version);
-
         readVarUInt(filter_size_bytes, buf);
         readVarUInt(num_hashes, buf);
         readVarUInt(seed, buf);
