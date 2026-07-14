@@ -1,4 +1,6 @@
 #include <Interpreters/Context.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -197,17 +199,24 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         if (part->getType() != MergeTreeDataPartType::Wide || !part->getColumnsSubstreams().empty())
             continue;
 
+        /// Only types with a dynamic structure (JSON, Dynamic, and composites containing them) have
+        /// substreams that the default serialization cannot enumerate, so only those need to be recovered
+        /// from the part's actual on-disk stream count. hasDynamicSubcolumns() is too broad here: a plain
+        /// Map or Variant reports true there, yet its physical streams are fully enumerable from the default
+        /// serialization, so they are already counted once by the per-column union above (via
+        /// countColumnStreams). Excluding them from non_dynamic_columns would count them a second time
+        /// through total_streams - non_dynamic_streams and over-reserve the merge on upgrade-path tables.
         NamesAndTypesList non_dynamic_columns;
-        bool has_dynamic_column = false;
+        bool has_dynamic_structure_column = false;
         for (const auto & column : part->getColumns())
         {
-            if (column.type->hasDynamicSubcolumns())
-                has_dynamic_column = true;
+            if (column.type->hasDynamicStructure())
+                has_dynamic_structure_column = true;
             else
                 non_dynamic_columns.push_back(column);
         }
 
-        if (!has_dynamic_column)
+        if (!has_dynamic_structure_column)
             continue;
 
         const size_t total_streams = countPartStreams(*part);
@@ -234,7 +243,8 @@ UInt64 estimateNeededMemoryForMerge(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const MergeTreeSettings & settings,
-    bool output_on_remote_disk)
+    bool output_on_remote_disk,
+    UInt64 remote_write_buffer_ceiling)
 {
     /// Per-stream read buffer size, from the effective server settings (merges read through the global
     /// context). A read buffer is later shrunk to the granule size, and it is smaller for the local
@@ -255,29 +265,39 @@ UInt64 estimateNeededMemoryForMerge(
     /// WriteBufferFromAzureBlobStorage): the first buffer is max(*_max_single_part_upload_size,
     /// *_min_upload_part_size) (ExpBufferAllocationPolicy::first_size), later buffers grow up to
     /// *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in memory at
-    /// once while their uploads are in flight. Take that worst-case per-stream ceiling from the effective
-    /// settings over both back ends (a given disk is only one of them, so the max is a safe upper bound), so
-    /// a deployment that raises the multipart sizes cannot allocate more per stream than is reserved here -
-    /// pinning the first buffer to *_max_single_part_upload_size alone would underestimate it when
-    /// *_min_upload_part_size is the larger of the two. This is only a ceiling: the output side is separately
-    /// capped by the merge's data volume below, because an upload buffer never holds more than the data
-    /// written into it.
-    const auto & query_settings = context->getSettingsRef();
-    auto remote_stream_ceiling = [](UInt64 max_single, UInt64 min_upload, UInt64 max_upload, UInt64 max_inflight) -> UInt64
+    /// once while their uploads are in flight.
+    ///
+    /// Prefer the actual destination disk's ceiling (remote_write_buffer_ceiling from
+    /// IObjectStorage::getWriteBufferMemoryCeiling) when the caller knows the disk: a background merge's
+    /// object-storage writer takes its multipart sizes from the disk's own request settings and ignores the
+    /// query/session settings (see S3ObjectStorage::writeObject), so a disk config that raises the multipart
+    /// sizes is reflected here and cannot allocate more per stream than is reserved. When the disk is not yet
+    /// known (the admission guess before CurrentlyMergingPartsTagger picks it), fall back to the worst-case
+    /// per-stream ceiling from the context settings over both back ends (a given disk is only one of them, so
+    /// the max is a safe upper bound); pinning the first buffer to *_max_single_part_upload_size alone would
+    /// underestimate it when *_min_upload_part_size is the larger of the two. This is only a ceiling: the
+    /// output side is separately capped by the merge's data volume below, because an upload buffer never
+    /// holds more than the data written into it.
+    UInt64 remote_write_buffer_size = remote_write_buffer_ceiling;
+    if (remote_write_buffer_size == 0)
     {
-        return std::max(max_single, min_upload) + max_inflight * max_upload;
-    };
-    const UInt64 remote_write_buffer_size = std::max(
-        remote_stream_ceiling(
-            std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::s3_max_single_part_upload_size]),
-            query_settings[Setting::s3_min_upload_part_size],
-            query_settings[Setting::s3_max_upload_part_size],
-            query_settings[Setting::s3_max_inflight_parts_for_one_file]),
-        remote_stream_ceiling(
-            std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::azure_max_single_part_upload_size]),
-            query_settings[Setting::azure_min_upload_part_size],
-            query_settings[Setting::azure_max_upload_part_size],
-            query_settings[Setting::azure_max_inflight_parts_for_one_file]));
+        auto remote_stream_ceiling = [](UInt64 max_single, UInt64 min_upload, UInt64 max_upload, UInt64 max_inflight) -> UInt64
+        {
+            return std::max(max_single, min_upload) + max_inflight * max_upload;
+        };
+        const auto & query_settings = context->getSettingsRef();
+        remote_write_buffer_size = std::max(
+            remote_stream_ceiling(
+                std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::s3_max_single_part_upload_size]),
+                query_settings[Setting::s3_min_upload_part_size],
+                query_settings[Setting::s3_max_upload_part_size],
+                query_settings[Setting::s3_max_inflight_parts_for_one_file]),
+            remote_stream_ceiling(
+                std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::azure_max_single_part_upload_size]),
+                query_settings[Setting::azure_min_upload_part_size],
+                query_settings[Setting::azure_max_upload_part_size],
+                query_settings[Setting::azure_max_inflight_parts_for_one_file]));
+    }
 
     /// Input side: one reader stream per column substream of every source part. The reader buffers hold
     /// a window of the compressed file plus the decompressed block, so they can never hold more than the
@@ -332,6 +352,17 @@ UInt64 estimateNeededMemoryForMerge(
     const UInt64 output_memory = std::min(output_worst_case, output_data_bound);
 
     return input_memory + output_memory;
+}
+
+UInt64 getDiskWriteBufferMemoryCeiling(const DiskPtr & disk)
+{
+    /// Only real object-storage disks expose a settings-dependent write buffer ceiling. A plain local disk,
+    /// or a decorator that is not itself a DiskObjectStorage, returns 0 so the estimator falls back to the
+    /// context settings (dynamic_cast avoids the exception that IDisk::getObjectStorage throws for disks
+    /// that do not support object storage).
+    if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        return object_storage_disk->getObjectStorage()->getWriteBufferMemoryCeiling();
+    return 0;
 }
 
 UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)

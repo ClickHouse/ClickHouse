@@ -70,6 +70,10 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 list_object_keys_size;
     extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+    extern const S3RequestSettingsUInt64 max_single_part_upload_size;
+    extern const S3RequestSettingsUInt64 min_upload_part_size;
+    extern const S3RequestSettingsUInt64 max_upload_part_size;
+    extern const S3RequestSettingsUInt64 max_inflight_parts_for_one_file;
 }
 
 
@@ -335,6 +339,21 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         attributes,
         std::move(scheduler),
         disk_write_settings);
+}
+
+UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling() const
+{
+    /// Mirror the multipart upload buffer sizing of WriteBufferFromS3 / BufferAllocationPolicy: the first
+    /// buffer is max(max_single_part_upload_size, min_upload_part_size), later buffers grow up to
+    /// max_upload_part_size, and up to max_inflight_parts_for_one_file of them can be held in memory while
+    /// their uploads are in flight. These come from this storage's own request settings (background writes
+    /// do not apply query/session settings, see writeObject above).
+    const auto & request_settings = s3_settings.get()->request_settings;
+    const UInt64 max_single_part_upload_size = request_settings[S3RequestSetting::max_single_part_upload_size];
+    const UInt64 min_upload_part_size = request_settings[S3RequestSetting::min_upload_part_size];
+    const UInt64 max_upload_part_size = request_settings[S3RequestSetting::max_upload_part_size];
+    const UInt64 max_inflight_parts_for_one_file = request_settings[S3RequestSetting::max_inflight_parts_for_one_file];
+    return std::max(max_single_part_upload_size, min_upload_part_size) + max_inflight_parts_for_one_file * max_upload_part_size;
 }
 
 

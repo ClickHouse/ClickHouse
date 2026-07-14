@@ -352,9 +352,16 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
     /// This replica is already committed to running this merge locally, so reserve unconditionally;
     /// the reservation still throttles selection of further merges via canEnqueueBackgroundTask.
+    /// The destination disk is already chosen here, so size the object-storage write buffers from that
+    /// disk's own multipart upload settings (a background writer ignores the query/session settings).
+    const DiskPtr output_disk = reserved_space->getDisk();
+    const bool output_on_remote_disk = output_disk->isRemote();
+    const UInt64 remote_write_buffer_ceiling = output_on_remote_disk
+        ? CompactionStatistics::getDiskWriteBufferMemoryCeiling(output_disk)
+        : 0;
     memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
         CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
+            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, output_on_remote_disk, remote_write_buffer_ceiling)));
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))

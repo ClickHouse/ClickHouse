@@ -367,6 +367,16 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
+    /// The maximum amount of memory a single write buffer to this storage can hold at once. A background
+    /// merge writes one such buffer per output column stream and reserves memory for them up front (see
+    /// MergeMemoryReservation / CompactionStatistics::estimateNeededMemoryForMerge). For object storage this
+    /// is the multipart upload buffer ceiling derived from this storage's own request settings: background
+    /// writes take their multipart sizes from the disk configuration, not from the query/session settings, so
+    /// the estimate must read them from here rather than from the merge context. Returns 0 when the storage
+    /// does not buffer writes in memory in a settings-dependent size (the estimator then falls back to the
+    /// global defaults).
+    virtual UInt64 getWriteBufferMemoryCeiling() const { return 0; }
+
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;

@@ -330,6 +330,18 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         std::move(scheduler));
 }
 
+UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
+{
+    /// Mirror the multipart upload buffer sizing of WriteBufferFromAzureBlobStorage / BufferAllocationPolicy:
+    /// the first buffer is max(max_single_part_upload_size, min_upload_part_size), later buffers grow up to
+    /// max_upload_part_size, and up to max_inflight_parts_for_one_file of them can be held in memory while
+    /// their uploads are in flight. These come from this storage's own request settings (background writes
+    /// do not apply query/session settings).
+    const auto settings_ptr = settings.get();
+    const UInt64 first_buffer = std::max<UInt64>(settings_ptr->max_single_part_upload_size, settings_ptr->min_upload_part_size);
+    return first_buffer + settings_ptr->max_inflight_parts_for_one_file * settings_ptr->max_upload_part_size;
+}
+
 void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
