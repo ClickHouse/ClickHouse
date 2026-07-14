@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.iceberg_utils import (
@@ -158,3 +160,106 @@ def test_deletion_vectors_complex(started_cluster_iceberg_with_spark, storage_ty
             f"SELECT id FROM {expression} WHERE id % 3 = 0"
         )
     ) == sorted([x for x in expected_ids if x % 3 == 0])
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_deletion_vectors_cache_" + storage_type + "_" + get_uuid_str()
+    deleted_ids = [2, 5, 7, 100]
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} SELECT id FROM range(0, 200)")
+    spark.sql(
+        f"DELETE FROM {table_name} WHERE id IN ({', '.join(str(x) for x in deleted_ids)})"
+    )
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+
+    instance.query("SYSTEM DROP PUFFIN_FILES_CACHE")
+
+    query_id1 = f"{table_name}-{uuid.uuid4()}"
+    query_id2 = f"{table_name}-{uuid.uuid4()}"
+    query_id3 = f"{table_name}-{uuid.uuid4()}"
+
+    assert int(
+        instance.query(
+            f"SELECT count(id) FROM {expression}",
+            query_id=query_id1,
+            settings={"use_puffin_files_cache": 1},
+        )
+    ) == 200 - len(deleted_ids)
+
+    assert int(
+        instance.query(
+            f"SELECT count(id) FROM {expression}",
+            query_id=query_id2,
+            settings={"use_puffin_files_cache": 1},
+        )
+    ) == 200 - len(deleted_ids)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+        )
+    ) > 0
+    assert int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+        )
+    ) > 0
+
+    puffin_reads_first = int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesRead'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+        )
+    )
+    puffin_reads_second = int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesRead'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+        )
+    )
+    assert puffin_reads_first > 0
+    assert puffin_reads_second == 0
+
+    instance.query("SYSTEM DROP PUFFIN_FILES_CACHE")
+
+    assert int(
+        instance.query(
+            f"SELECT count(id) FROM {expression}",
+            query_id=query_id3,
+            settings={"use_puffin_files_cache": 1},
+        )
+    ) == 200 - len(deleted_ids)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id3}' AND type = 'QueryFinish'"
+        )
+    ) > int(
+        instance.query(
+            f"SELECT ProfileEvents['PuffinFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+        )
+    )

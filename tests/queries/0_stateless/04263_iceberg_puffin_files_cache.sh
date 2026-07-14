@@ -20,7 +20,7 @@ SETTINGS use_puffin_files_cache = 1;
 
 SELECT event, value
 FROM system.events
-WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses')
+WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses', 'PuffinFilesRead')
 ORDER BY event;
 
 SELECT count(id)
@@ -29,7 +29,7 @@ SETTINGS use_puffin_files_cache = 1;
 
 SELECT event, value
 FROM system.events
-WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses')
+WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses', 'PuffinFilesRead')
 ORDER BY event;
 
 SYSTEM DROP PUFFIN_FILES_CACHE;
@@ -40,6 +40,26 @@ SETTINGS use_puffin_files_cache = 1;
 
 SELECT event, value
 FROM system.events
-WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses')
+WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses', 'PuffinFilesRead')
+ORDER BY event;
+
+SYSTEM DROP PUFFIN_FILES_CACHE;
+
+SELECT count(id)
+FROM icebergLocal('${TABLE_PATH}')
+SETTINGS use_puffin_files_cache = 0;
+
+SELECT event, value
+FROM system.events
+WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses', 'PuffinFilesRead')
+ORDER BY event;
+
+SELECT count(id)
+FROM icebergLocal('${TABLE_PATH}')
+SETTINGS use_puffin_files_cache = 0;
+
+SELECT event, value
+FROM system.events
+WHERE event IN ('PuffinFilesCacheHits', 'PuffinFilesCacheMisses', 'PuffinFilesRead')
 ORDER BY event;
 "

@@ -158,6 +158,8 @@ The following limitations apply to deletion vectors:
 - Column-scoped deletion vectors (`fields` in the Puffin blob) are not supported
 - Writing deletion vectors is not supported
 
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. The cache can be cleared with `SYSTEM DROP PUFFIN_FILES_CACHE`.
+
 ### Basic usage {#basic-usage}
 ```sql
  SELECT * FROM example_table ORDER BY 1
