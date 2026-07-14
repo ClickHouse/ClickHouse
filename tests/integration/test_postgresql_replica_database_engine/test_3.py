@@ -1562,6 +1562,58 @@ def test_numeric_to_int256(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS test_int256")
 
 
+def test_prefix_valid_value_keeps_replicating(started_cluster):
+    # Regression for a prefix-valid PostgreSQL text value (e.g. '1abc') read into a declared
+    # Decimal. SerializationDecimal::deserializeText push_back's the parsed prefix and then calls
+    # throwUnexpectedDataAfterParsedValue, which popBack(1)'s that value before throwing
+    # UNEXPECTED_DATA_AFTER_PARSED_VALUE, so the destination column keeps a consistent size. The
+    # consumer catches the translated BAD_ARGUMENTS, inserts a default, and replication must keep
+    # advancing without duplicating the row or tripping Chunk::checkNumRowsIsConsistent.
+    table_name = "test_prefix_valid"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (key integer PRIMARY KEY, v text NOT NULL)")
+    cursor.execute(f"INSERT INTO {table_name} VALUES (1, '10.5')")
+
+    # Declare v as Decimal so the text prefix '1' parses and the trailing 'abc' throws.
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, v Decimal(10, 2)))"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=table_overrides,
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM test_database.{table_name}", "1"
+    )
+    assert "Decimal(10, 2)" == instance.query(
+        "SELECT type FROM system.columns WHERE database='test_database' "
+        f"AND table='{table_name}' AND name='v'"
+    ).strip()
+
+    # Prefix-valid junk: the '1' prefix is appended before the parser throws on 'abc'.
+    cursor.execute(f"INSERT INTO {table_name} VALUES (2, '1abc')")
+    # A valid follow-up row must still arrive, proving replication advanced past the bad tuple.
+    cursor.execute(f"INSERT INTO {table_name} VALUES (3, '7.25')")
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM test_database.{table_name}", "3"
+    )
+    # The bad value was replaced with the column default (0), not duplicated.
+    assert "0" == instance.query(
+        f"SELECT v FROM test_database.{table_name} WHERE key = 2"
+    ).strip()
+    assert "7.25" == instance.query(
+        f"SELECT v FROM test_database.{table_name} WHERE key = 3"
+    ).strip()
+
+    pg_manager.drop_materialized_db()
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_numeric_int256_validation(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # Regressions for the numeric -> Int256 mapping. The postgresql() table function is used

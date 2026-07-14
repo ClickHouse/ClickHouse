@@ -1,0 +1,44 @@
+-- values() with Float32: lossy decimal literals are accepted (issue #43144)
+0	0.1
+1	0.34
+2	0.88
+3	-1.23
+4	-3.3
+5	5.4
+-- single Float32 column
+0.1
+0.5
+1
+-- the converted value matches CAST to Float32
+1
+-- BFloat16 and Float64 columns
+0.5
+0.1
+-- BFloat16 also accepts inexact decimal literals (the lossy path covers all narrow floats)
+1
+-- out-of-range values are still rejected (no silent overflow to inf or wrap-around)
+-- IN keeps exact value semantics, consistent with the = operator
+0	0
+1	1
+0	0
+1	1
+-- same IN result without the analyzer
+0
+1
+-- the fall-through Variant conversion path prefers a lossless alternative, falling back to lossy only when needed
+[[9223372036854775807,-9223372036854775808],[0.9999,7]]
+[[0.1,0.2]]
+-- the exact-first preference does not extend to a directly-insertable field (pre-existing ColumnVariant order, unchanged)
+16777216	Float32
+-- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path
+1
+-- the default templated INSERT ... VALUES path accepts inexact-float literals in complex types (issue #43144)
+[0.1]	1	0
+[0.12345679]	1	0
+[0.2]	1	0
+-- same for a Tuple(Float32, Float32) column via the templated path
+(0.1,0.2)	1
+(0.3,0.4)	1
+-- same for a scalar Float32 column via the templated path
+0.1	1
+0.2	1
