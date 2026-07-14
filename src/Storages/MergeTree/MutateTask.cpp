@@ -1247,14 +1247,6 @@ static void processStatisticsChanges(
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
 
-    /// `all_statistics` was loaded from the source part and is keyed on the type stored at write
-    /// time. A MODIFY COLUMN that changed a column's type but did not schedule a recalculation for
-    /// that column (it is not in `stats_to_recalc`) would leave a stale-typed collector here, which
-    /// `buildIfExists` then feeds a new-type block during the rebuild below. Reconcile against the
-    /// current metadata first: replace any type-mismatched collector with a fresh empty one for the
-    /// new type (or drop it if the column no longer declares statistics).
-    all_statistics.reconcileWithColumns(metadata_snapshot->getColumns());
-
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
         auto it = all_statistics.find(from_name);
@@ -1293,6 +1285,15 @@ static void processStatisticsChanges(
                 process_rename(command.column_name, "");
         }
     }
+
+    /// `all_statistics` was loaded from the source part and is keyed on the type stored at write
+    /// time. A MODIFY COLUMN that changed a column's type but did not schedule a recalculation for
+    /// that column (it is not in `stats_to_recalc`) leaves a stale-typed collector here, which
+    /// `buildIfExists` would then feed a new-type block during the rebuild below. Reconcile against
+    /// the current metadata: replace any type-mismatched collector with a fresh empty one for the
+    /// new type (or drop it if the column no longer declares statistics). This runs after the rename
+    /// loop above so a collector renamed to its current column name is reconciled under that name.
+    all_statistics.reconcileWithColumns(metadata_snapshot->getColumns());
 
     if (!stats_to_recalc.empty())
     {

@@ -641,7 +641,12 @@ void ColumnsStatistics::reconcileWithColumns(const ColumnsDescription & columns)
 
         const auto & current_type = column_desc->type;
         const auto & stat_type = stat->getDataType();
-        if (stat_type && current_type->equals(*stat_type))
+        /// Compare by type name, not equals(): the statistics file keys compatibility on the stored
+        /// type name (ColumnStatistics::serialize writes data_type->getName(), deserialize rejects a
+        /// mismatch). equals() treats a custom-named type as its base (Bool == UInt8), which would
+        /// keep a UInt8 collector for a Bool column and write statistics that the next loadStatistics
+        /// immediately discards as stale.
+        if (stat_type && current_type->getName() == stat_type->getName())
             continue;
 
         /// Type changed since the loaded statistic was written. Drop the stale-typed collector
