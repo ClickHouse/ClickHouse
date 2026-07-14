@@ -3,10 +3,12 @@ sidebarTitle: 'The Name of Your Quickstart'
 title: 'Build an ETL pipeline using ClickHouse'
 # useCases — one or more of: ['All', 'Real-time analytics', 'Data warehousing', 'Observability', 'AI/ML']
 useCases: ['Data warehousing', 'Real-time analytics']
-# products — exactly one of: ['Cloud', 'OSS', 'ClickPipes', 'Language clients', 'ClickStack', 'chDB']
+# products — one or more of: ['Cloud', 'OSS', 'ClickPipes', 'Language clients', 'ClickStack', 'chDB']
 products: ['Cloud']
 description: 'Learn how to ingest data from CSV and parquet files into ClickHouse Cloud'
 ---
+
+import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx'
 
 {/* (Optional) - Import prerequisite snippets or CTAs */}
 import CloudPrerequisites from '/get-started/quickstarts/_prerequisites/cloud_prerequisite.mdx';
@@ -31,28 +33,23 @@ In this quick start you'll build ...
 
 <Steps titleSize="h3">
 
-    <Step>
-        ### Connecting to your data source
+    <Step title="Connecting to your data source" id="connecting-to-your-data-source">
         These are instructions or content that only pertain to the first step.
 
     </Step>
-    <Step>
-        ### Extracting Data
+    <Step title="Extracting Data" id="extracting-data">
         These are instructions or content that only pertain to the second step.
 
     </Step>
-    <Step>
-        ### Transforming Data
+    <Step title="Transforming Data" id="transforming-data">
         These are instructions or content that only pertain to the third step.
 
     </Step>
-    <Step>
-        ### Loading Data into ClickHouse
+    <Step title="Loading Data into ClickHouse" id="loading-data-into-clickhouse">
         These are instructions or content that only pertain to the fourth step.
 
     </Step>
-    <Step>
-        ### Monitoring and Optimization
+    <Step title="Monitoring and Optimization" id="monitoring-and-optimization">
         These are instructions or content that only pertain to the fifth step.
 
     </Step>
@@ -69,7 +66,7 @@ Check out the following quickstarts or guides next:
 
 {/* Footer back-link to the explorer — keep as-is */}
 <div className="mt-8">
-<a href="/get-started/quickstarts/home" onClick={(e) => { e.preventDefault(); window.location.href = (window.location.pathname.startsWith('/docs') ? '/docs' : '') + '/get-started/quickstarts/home'; }} className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors font-normal no-underline"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>All quickstarts</a>
+<BackToQuickstarts />
 </div>
 
 {/*
