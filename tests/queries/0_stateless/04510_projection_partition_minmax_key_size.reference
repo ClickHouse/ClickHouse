@@ -21,3 +21,11 @@
 498
 -- no parts over-pruned with folding on
 1
+-- modulo = -199, folding off
+2
+-- modulo = -199, folding on
+2
+-- modulo IN (-199, -57), folding off
+5
+-- modulo IN (-199, -57), folding on
+5

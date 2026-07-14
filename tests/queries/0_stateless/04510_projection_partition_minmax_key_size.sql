@@ -73,4 +73,16 @@ SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding
 SELECT '-- no parts over-pruned with folding on';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Parts: 256/256%';
 
+-- Negative single-point = and IN also route through moduloLegacy. id = -199 stores in the
+-- moduloLegacy(-199, 200) = 57 partition, colliding with id = 57. Folding on must match the
+-- folding-off baseline and must not prune away that shared partition.
+SELECT '-- modulo = -199, folding off';
+SELECT count() FROM t_04510_mod WHERE id % 200 = -199 SETTINGS use_constant_folding_in_index_analysis = 0;
+SELECT '-- modulo = -199, folding on';
+SELECT count() FROM t_04510_mod WHERE id % 200 = -199 SETTINGS use_constant_folding_in_index_analysis = 1;
+SELECT '-- modulo IN (-199, -57), folding off';
+SELECT count() FROM t_04510_mod WHERE id % 200 IN (-199, -57) SETTINGS use_constant_folding_in_index_analysis = 0;
+SELECT '-- modulo IN (-199, -57), folding on';
+SELECT count() FROM t_04510_mod WHERE id % 200 IN (-199, -57) SETTINGS use_constant_folding_in_index_analysis = 1;
+
 DROP TABLE t_04510_mod;
