@@ -135,10 +135,12 @@
 
 #include <algorithm>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
 #include <future>
+#include <span>
 #include <vector>
 
 
@@ -237,7 +239,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString remote_fs_zero_copy_zookeeper_path;
     extern const MergeTreeSettingsBool replicated_can_become_leader;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
-    extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
     extern const MergeTreeSettingsFloat replicated_max_ratio_of_wrong_parts;
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
@@ -262,6 +263,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char check_table_inject_retryable_zk_error[];
 }
 
 namespace ErrorCodes
@@ -446,7 +448,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , fetcher(*this)
     , cleanup_thread(*this)
     , deduplication_hashes_cache(*this, "deduplication_hashes")
-    , async_block_ids_cache(*this, "async_blocks")
     , part_check_thread(*this)
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
@@ -6028,7 +6029,6 @@ void StorageReplicatedMergeTree::partialShutdown()
 
     cleanup_thread.stop();
     deduplication_hashes_cache.stop();
-    async_block_ids_cache.stop();
     part_check_thread.stop();
 
     /// Stop queue processing
@@ -6348,6 +6348,16 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef()[Setting::select_sequential_consistency]);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
+}
+
+MergeTreeData::DataPartsVector
+StorageReplicatedMergeTree::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+{
+    DataPartsVector parts;
+    foreachActiveParts(
+        [&](auto & part) { parts.push_back(part); },
+        query_context->getSettingsRef()[Setting::select_sequential_consistency]);
+    return parts;
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(ContextPtr query_context) const
@@ -6783,6 +6793,8 @@ void StorageReplicatedMergeTree::alter(
 
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
+    /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
+    KeyDescription old_sorting_key = future_metadata.sorting_key;
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
@@ -6848,7 +6860,9 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    if (!query_settings[Setting::allow_suspicious_primary_key])
+    /// Only re-verify the sorting key on ALTERs that can actually change it (see StorageMergeTree::alter).
+    if (!query_settings[Setting::allow_suspicious_primary_key]
+        && MergeTreeData::sortingKeyChanged(old_sorting_key, future_metadata.sorting_key))
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }
@@ -8988,20 +9002,57 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 {
     Coordination::Requests delete_requests;
     getClearBlocksInPartitionOps(delete_requests, zookeeper, partition_id, min_block_num, max_block_num);
-    Coordination::Responses delete_responses;
-    auto code = zookeeper.tryMulti(delete_requests, delete_responses);
-    if (code != Coordination::Error::ZOK)
+
+    /// Send removals in batches to avoid exceeding ZooKeeper's maximum message size.
+    static constexpr size_t max_batches_in_flight = 16;
+
+    struct BatchInFlight
     {
-        for (size_t i = 0; i < delete_requests.size(); ++i)
-            if (delete_responses[i]->error != Coordination::Error::ZOK)
-                LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
+        std::span<const Coordination::RequestPtr> ops;
+        std::future<Coordination::MultiResponse> future;
+    };
+
+    std::deque<BatchInFlight> in_flight;
+    size_t num_deleted = 0;
+    size_t num_failed = 0;
+
+    auto wait_oldest = [&]
+    {
+        auto batch = std::move(in_flight.front());
+        auto response = batch.future.get();
+        in_flight.pop_front();
+
+        if (response.error == Coordination::Error::ZOK)
+        {
+            num_deleted += batch.ops.size();
+            return;
+        }
+
+        if (!Coordination::isUserError(response.error))
+            throw zkutil::KeeperException(response.error);
+
+        size_t failed_op_index = zkutil::getFailedOpIndex(response.error, response.responses);
+        LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", batch.ops[failed_op_index]->getPath(), response.error);
+        num_failed += batch.ops.size();
+    };
+
+    for (size_t batch_start = 0; batch_start < delete_requests.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
+    {
+        if (in_flight.size() >= max_batches_in_flight)
+            wait_oldest();
+
+        size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, delete_requests.size());
+        std::span batch_ops(delete_requests.begin() + batch_start, delete_requests.begin() + batch_end);
+        in_flight.push_back({batch_ops, zookeeper.asyncTryMultiNoThrow(batch_ops)});
     }
 
-    async_block_ids_cache.truncate();
+    while (!in_flight.empty())
+        wait_oldest();
+
     deduplication_hashes_cache.truncate();
 
-    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
-              delete_requests.size(), partition_id, min_block_num, max_block_num);
+    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}], {} deletions failed",
+              num_deleted, partition_id, min_block_num, max_block_num, num_failed);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
@@ -10236,10 +10287,18 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
     {
         try
         {
+            fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
+            {
+                throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
+            });
             return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
         }
         catch (const Exception & ex)
         {
+            /// A transient error does not prove the part is broken; rethrow so the CHECK query fails and can be retried.
+            if (isRetryableException(std::current_exception()))
+                throw;
+
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
             return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
         }

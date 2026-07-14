@@ -1,0 +1,27 @@
+---
+alias: []
+description: 'Documentation for the PrettyMonoBlock format'
+input_format: false
+keywords: ['PrettyMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyMonoBlock
+title: 'PrettyMonoBlock'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';
+
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✗     | ✔       |       |
+
+## Description {#description}
+
+Differs from the [`Pretty`](/reference/formats/Pretty/Pretty) format in that up to `10,000` rows are buffered,
+and then output as a single table, and not by [blocks](/resources/develop-contribute/introduction/architecture#block).
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+<PrettyFormatSettings/>

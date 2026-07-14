@@ -1,0 +1,281 @@
+---
+description: 'توثيق استعلام SELECT'
+sidebarTitle: 'SELECT'
+slug: /sql-reference/statements/select/
+title: 'استعلام SELECT'
+doc_type: 'reference'
+---
+
+تُستخدم استعلامات `SELECT` لاسترجاع البيانات. وبشكل افتراضي، تُعاد البيانات المطلوبة إلى العميل، ويمكن عند استخدامها مع [INSERT INTO](/ar/reference/statements/insert-into) توجيهها إلى جدول آخر.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+[WITH expr_list(subquery)]
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table [(alias1 [, alias2 ...])] (ON <expr_list>)|(USING <column_list>)
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[HAVING expr]
+[WINDOW window_expr_list]
+[QUALIFY expr]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[LIMIT [offset_value, ]n BY columns]
+[LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
+[UNION  ...]
+[INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
+[FORMAT format]
+```
+
+جميع البنود اختيارية، باستثناء قائمة التعبيرات المطلوبة التي تأتي مباشرة بعد `SELECT`، والتي تُشرح بمزيد من التفصيل [أدناه](#select-clause).
+
+تُشرح تفاصيل كل بند اختياري في أقسام منفصلة، وهي مُدرجة بالترتيب نفسه الذي تُنفَّذ به:
+
+* [بند WITH](/ar/reference/statements/select/with)
+* [بند SELECT](#select-clause)
+* [بند DISTINCT](/ar/reference/statements/select/distinct)
+* [بند FROM](/ar/reference/statements/select/from)
+* [بند SAMPLE](/ar/reference/statements/select/sample)
+* [بند JOIN](/ar/reference/statements/select/join)
+* [بند PREWHERE](/ar/reference/statements/select/prewhere)
+* [بند WHERE](/ar/reference/statements/select/where)
+* [بند WINDOW](/ar/reference/functions/window-functions/index)
+* [بند GROUP BY](/ar/reference/statements/select/group-by)
+* [بند LIMIT BY](/ar/reference/statements/select/limit-by)
+* [بند HAVING](/ar/reference/statements/select/having)
+* [بند QUALIFY](/ar/reference/statements/select/qualify)
+* [بند LIMIT](/ar/reference/statements/select/limit)
+* [بند OFFSET](/ar/reference/statements/select/offset)
+* [بند UNION](/ar/reference/statements/select/union)
+* [بند INTERSECT](/ar/reference/statements/select/intersect)
+* [بند EXCEPT](/ar/reference/statements/select/except)
+* [بند INTO OUTFILE](/ar/reference/statements/select/into-outfile)
+* [بند FORMAT](/ar/reference/statements/select/format)
+
+<div id="select-clause">
+  ## بند SELECT
+</div>
+
+تُحتسب [التعبيرات](/ar/reference/syntax#expressions) المحددة في بند `SELECT` بعد اكتمال جميع العمليات في البنود الموضحة أعلاه. وتعمل هذه التعبيرات كما لو كانت تُطبَّق على صفوف منفصلة في النتيجة. وإذا كانت التعبيرات في بند `SELECT` تحتوي على دوال تجميع، فإن ClickHouse يعالج دوال التجميع والتعبيرات المستخدمة بوصفها وسيطات لها أثناء [تجميع GROUP BY](/ar/reference/statements/select/group-by).
+
+إذا كنت تريد تضمين جميع الأعمدة في النتيجة، فاستخدم رمز النجمة (`*`). على سبيل المثال: `SELECT * FROM ...`.
+
+<div id="dynamic-column-selection">
+  ### الاختيار الديناميكي للأعمدة
+</div>
+
+يتيح لك الاختيار الديناميكي للأعمدة (ويُعرف أيضًا باسم تعبير COLUMNS) مطابقة بعض الأعمدة في النتائج باستخدام تعبير نمطي [re2](https://en.wikipedia.org/wiki/RE2_\(software\)).
+
+```sql
+COLUMNS('regexp')
+```
+
+على سبيل المثال، تأمل الجدول التالي:
+
+```sql
+CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
+```
+
+يختار الاستعلام التالي بيانات من جميع الأعمدة التي تحتوي أسماؤها على الرمز `a`.
+
+```sql
+SELECT COLUMNS('a') FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+لا تُعاد الأعمدة المحددة بترتيب أبجدي.
+
+يمكنك استخدام عدة تعبيرات `COLUMNS` في استعلام وتطبيق الدوال عليها.
+
+على سبيل المثال:
+
+```sql
+SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
+│  1 │  1 │  1 │ Int8           │
+└────┴────┴────┴────────────────┘
+```
+
+يُمرَّر كل عمود تُرجعه عبارة `COLUMNS` إلى الدالة على هيئة وسيط منفصل. ويمكنك أيضًا تمرير وسائط أخرى إلى الدالة إذا كانت تدعمها. توخَّ الحذر عند استخدام الدوال. إذا كانت الدالة لا تدعم عدد الوسائط التي مرَّرتها إليها، فإن ClickHouse يُلقي استثناءً.
+
+على سبيل المثال:
+
+```sql
+SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
+```
+
+```text
+Received exception from server (version 19.14.1):
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
+```
+
+في هذا المثال، تُرجِع `COLUMNS('a')` عمودين: `aa` و`ab`. وتُرجِع `COLUMNS('c')` العمود `bc`. لا يمكن تطبيق العامل `+` على 3 وسيطات، لذلك يرفع ClickHouse استثناءً بالرسالة المناسبة.
+
+قد تكون أنواع بيانات الأعمدة التي طابقت التعبير `COLUMNS` مختلفة. وإذا لم يطابق `COLUMNS` أي أعمدة وكان هو التعبير الوحيد في `SELECT`، فإن ClickHouse يرفع استثناءً.
+
+<div id="select-columns-with-like-or-ilike">
+  #### اختيار الأعمدة باستخدام `LIKE` أو `ILIKE`
+</div>
+
+يمكنك أيضًا اختيار الأعمدة عبر مطابقة أسمائها مع نمط بعد `*`، باستخدام `LIKE` المطابق لحالة الأحرف أو `ILIKE` غير المطابق لحالة الأحرف:
+
+```sql
+SELECT * ILIKE 'a%' FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+تتبع الأنماط `LIKE` و`ILIKE` دلالات `LIKE`، لا دلالات التعبيرات النمطية. يطابق المحرف `%` أي تسلسل من المحارف، ويطابق المحرف `_` أي محرف واحد، ويُستخدم `\` لإلغاء المعنى الخاص لكل من `%` و`_` و`\`. والفرق الوحيد بينهما هو أن `LIKE` يطابق أسماء الأعمدة مع مراعاة حالة الأحرف، بينما `ILIKE` غير حساس لحالة الأحرف. على سبيل المثال:
+
+```sql
+SELECT * ILIKE 'a_' FROM col_names
+```
+
+يختار الاستعلام أعمدةً ذات أسماء مكوّنة من حرفين وتبدأ بـ `a`، مثل `aa` و`ab`.
+
+تدعم `* LIKE` و`* ILIKE` أيضًا العلامات النجمية المؤهلة ومحوِّلات الأعمدة:
+
+```sql
+SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
+```
+
+```text
+┌─aa─┐
+│  1 │
+└────┘
+```
+
+<div id="asterisk">
+  ### النجمة
+</div>
+
+يمكنك وضع نجمة في أي جزء من الاستعلام بدلًا من تعبير. وعند تحليل الاستعلام، تُوسَّع النجمة إلى قائمة بكل أعمدة الجدول (باستثناء الأعمدة `MATERIALIZED` و`ALIAS`). ولا يوجد سوى عدد قليل من الحالات التي يكون فيها استخدام النجمة مبررًا:
+
+* عند إنشاء dump للجدول.
+* في الجداول التي لا تحتوي إلا على عدد قليل من الأعمدة، مثل جداول النظام.
+* للحصول على معلومات عن الأعمدة الموجودة في جدول. في هذه الحالة، اضبط `LIMIT 1`. لكن من الأفضل استخدام الاستعلام `DESC TABLE`.
+* عند وجود تصفية قوية على عدد صغير من الأعمدة باستخدام `PREWHERE`.
+* في الاستعلامات الفرعية (لأن الأعمدة غير المطلوبة للاستعلام الخارجي تُستبعد من الاستعلامات الفرعية).
+
+في جميع الحالات الأخرى، لا نوصي باستخدام النجمة، لأنها لا تمنحك سوى عيوب نظام إدارة قواعد البيانات العمودي بدلًا من مزاياه. وبعبارة أخرى، لا يُنصح باستخدام النجمة.
+
+<div id="extreme-values">
+  ### القيم القصوى
+</div>
+
+بالإضافة إلى النتائج، يمكنك أيضًا الحصول على القيم الدنيا والقصوى لأعمدة النتائج. للقيام بذلك، اضبط الإعداد **extremes** على 1. تُحسب القيم الدنيا والقصوى للأنواع الرقمية، والتواريخ، وقيم التاريخ والوقت. أما الأعمدة الأخرى، فتُخرَج لها القيم الافتراضية.
+
+يُحسب صفّان إضافيان — القيم الدنيا والقيم القصوى، على الترتيب. ويُخرَج هذان الصفّان الإضافيان في [التنسيقات](/ar/reference/formats/index) `XML` و`JSON*` و`TabSeparated*` و`CSV*` و`Vertical` و`Template` و`Pretty*`، بشكل منفصل عن الصفوف الأخرى. ولا يُخرَجان في التنسيقات الأخرى.
+
+في تنسيقات `JSON*` و`XML`، تُخرَج القيم القصوى في حقل منفصل باسم &#39;extremes&#39;. وفي تنسيقات `TabSeparated*` و`CSV*` و`Vertical`، يأتي هذا الصف بعد النتيجة الرئيسية، وبعد &#39;totals&#39; أيضًا إذا كان موجودًا. ويسبقه صف فارغ (بعد البيانات الأخرى). وفي تنسيقات `Pretty*`، يُخرَج الصف في جدول منفصل بعد النتيجة الرئيسية، وبعد `totals` أيضًا إذا كان موجودًا. وفي تنسيق `Template`، تُخرَج القيم القصوى وفقًا للقالب المحدد.
+
+تُحسب القيم القصوى للصفوف قبل `LIMIT`، ولكن بعد `LIMIT BY`. ومع ذلك، عند استخدام `LIMIT offset, size`، تُدرَج الصفوف التي تسبق `offset` ضمن `extremes`. وفي الطلبات المتدفقة، قد تتضمن النتيجة أيضًا عددًا قليلًا من الصفوف التي مرّت عبر `LIMIT`.
+
+<div id="notes">
+  ### ملاحظات
+</div>
+
+يمكنك استخدام المرادفات (الأسماء المستعارة باستخدام `AS`) في أي جزء من الاستعلام.
+
+تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+إذا كان الاستعلام لا يتضمن بنود `DISTINCT` و`GROUP BY` و`ORDER BY` ولا الاستعلامات الفرعية `IN` و`JOIN`، فستتم معالجة الاستعلام بالكامل على نحوٍ تدفقي، باستخدام مقدار O(1) من RAM. بخلاف ذلك، قد يستهلك الاستعلام قدرًا كبيرًا من RAM إذا لم تُحدَّد القيود المناسبة:
+
+* `max_memory_usage`
+* `max_rows_to_group_by`
+* `max_rows_to_sort`
+* `max_rows_in_distinct`
+* `max_bytes_in_distinct`
+* `max_rows_in_set`
+* `max_bytes_in_set`
+* `max_rows_in_join`
+* `max_bytes_in_join`
+* `max_bytes_before_external_sort`
+* `max_bytes_ratio_before_external_sort`
+* `max_bytes_before_external_group_by`
+* `max_bytes_ratio_before_external_group_by`
+
+لمزيد من المعلومات، راجع قسم &quot;الإعدادات&quot;. يمكن استخدام الفرز الخارجي (بحفظ الجداول المؤقتة على القرص) والتجميع الخارجي.
+
+<div id="select-modifiers">
+  ## مُعدِّلات SELECT
+</div>
+
+يمكنك استخدام المُعدِّلات التالية في استعلامات `SELECT`.
+
+| المُعدِّل                                                  | الوصف                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`APPLY`](/ar/reference/statements/select/apply_modifier)     | يتيح لك استدعاء دالة لكل صف تُعيده عبارة جدول خارجية في الاستعلام.                                                                                                                                                                                                                                                                 |
+| [`EXCEPT`](/ar/reference/statements/select/except_modifier)   | يحدِّد أسماء عمود واحد أو أكثر لاستبعادها من النتيجة. وتُحذف جميع أسماء الأعمدة المطابقة من المخرجات.                                                                                                                                                                                                                              |
+| [`REPLACE`](/ar/reference/statements/select/replace_modifier) | يحدِّد اسمًا مستعارًا واحدًا أو أكثر لـ [التعبيرات](/ar/reference/syntax#expression-aliases). يجب أن يطابق كل اسم مستعار اسم عمود من عبارة `SELECT *`. وفي قائمة أعمدة المخرجات، يُستبدل العمود المطابق للاسم المستعار بالتعبير الموجود في `REPLACE`. لا يغيِّر هذا المُعدِّل أسماء الأعمدة أو ترتيبها، لكنه قد يغيِّر القيمة ونوعها. |
+
+<div id="modifier-combinations">
+  ### تركيبات المعدِّلات
+</div>
+
+يمكنك استخدام كل معدِّل على حدة أو الجمع بينها.
+
+**أمثلة:**
+
+استخدام المعدِّل نفسه عدة مرات.
+
+```sql
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
+```
+
+```response
+┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
+│                        2 │                        3 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+استخدام عدة معدِّلات في استعلام واحد.
+
+```sql
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
+```
+
+```response
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
+
+<div id="settings-in-select-query">
+  ## الإعدادات في استعلام SELECT
+</div>
+
+يمكنك تحديد الإعدادات اللازمة مباشرةً داخل استعلام `SELECT`. ولا تُطبَّق قيمة الإعداد إلا على هذا الاستعلام، ثم تُعاد إلى القيمة الافتراضية أو إلى القيمة السابقة بعد تنفيذ الاستعلام.
+
+للتعرّف على طرق أخرى لضبط الإعدادات، راجع [هنا](/ar/concepts/features/configuration/settings/overview).
+
+بالنسبة إلى الإعدادات المنطقية المعيّنة إلى true، يمكنك استخدام صيغة مختصرة بحذف تعيين القيمة. وعند تحديد اسم الإعداد فقط، يُعيَّن تلقائيًا إلى `1` (صواب).
+
+**مثال**
+
+```sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
+```

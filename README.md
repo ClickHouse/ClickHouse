@@ -46,31 +46,32 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/314862596/) - June 9th, 2026
-* [LA Happy Hour](https://luma.com/clickh-tshu) - June 10th, 2026
-* [ClickHouse + Hex AI hackathon](https://luma.com/clickh-2ujv)- June 11th, 2026
-* [Meetup São Paulo](https://luma.com/clickh-87tk) - June 11th, 2026
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/314863232/) - June 11, 2026
-* [ClickHouse Cafe @ Data & AI Summit](https://luma.com/clickh-vrjd) - June 16th, 2026
-* [NY Happy Hour](https://luma.com/odgqf98e) - June 17th, 2026
-* [Seattle Iceberg Meetup](https://luma.com/vwt2i2rs) - June 25th, 2026
-* [KL Meetup](https://luma.com/clickh-8cfv) - June 26th, 2026 
-* [AI Demo Night SF](https://luma.com/clickh-2crf) - July 1st, 2026
-* [Data at scale Amsterdam](https://luma.com/clickh-ha56) - July 7th, 2026
-* [AI Builders Night NY](https://luma.com/clickh-lz8k) - July 8th, 2026
-* [Happy Hour Open Source de Montréal](https://luma.com/clickh-o8up) - July 9th, 2026
-* [AI Builders Night SF](https://luma.com/clickh-gz0r)- July 14th, 2026
-* [Bangkok OSS & Data Evening: Queries, Code & Community](https://luma.com/gpzn0n8v) - July 23, 2026 
+* [AI Builders Night SF](https://luma.com/clickh-gz0r) - July 14th, 2026
+* [Data Engineering Things Seattle Meetup](https://luma.com/sbonpt98) - July 16th, 2026
+* [Bangkok OSS & Data Evening: Queries, Code & Community](https://luma.com/gpzn0n8v) - July 23rd, 2026
+* [Happy Hour warm-up: AWS Summit Bogotá](https://luma.com/clickh-bkld) - July 30th, 2026
+* [ClickHouse Singapore August 2026 Edition](https://luma.com/clickh-2r4t) - August 4th, 2026
+* [ClickHouse Jakarta Meetup](https://luma.com/clickh-552k) - August 5th, 2026
+* [AI Demo Night](https://luma.com/qeg73alr) - August 6th, 2026
+* [Data Engineering Meetup](https://luma.com/clickh-z578) - August 11th, 2026
+* [AI Demo Night](https://luma.com/c4alsewg) - August 18th, 2026
+* [NYC Apache Iceberg™ Community Meetup](https://luma.com/t3z5q5s8) - August 20th, 2026
+* [Bangalore Iceberg Community Meetup](https://luma.com/clickh-t3iz) - August 22nd, 2026
+* [Vancouver Meetup](https://luma.com/jr8tc94e) - August 25th, 2026
+* [The Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
+* [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
+* [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
+* [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
+* [Paris Meetup](https://luma.com/clickh-gsz1) - September 29th, 2026
 
 
 Recent meetups
-* [Toronto Meetup](https://luma.com/d5sytpvo) - June 2nd, 2026
-* [AI Demo Night NY](https://luma.com/zi2360cm) - May 21st, 2026
-* [Chicago Meetup](https://luma.com/c5evgnbc) - May 19th, 2026
-* [Agentic AI Unplugged: Bengaluru Edition](https://luma.com/AgenticAI-BLR2026) - May 15th, 2026
-* [Long Beach Pycon Party](https://luma.com/hs289p7w) - May 15th, 2026
-* [ClickHouse + Cast AI Meetup (Singapore)](https://luma.com/awssummitsg26party) - May 6th, 2026
-* [Boston Meetup](https://luma.com/0f3asaol) - May 6th, 2026
+* [Happy Hour Open Source de Montréal](https://luma.com/clickh-o8up) - July 9th, 2026
+* [AI Builders Night NY](https://luma.com/clickh-lz8k) - July 8th, 2026
+* [AI Builders Offstage: Docker & ClickHouse](https://paris.aitinkerers.org/p/ait-raise-docker-for-ai)  - July 7th, 2026
+* [AI Demo Night SF](https://luma.com/clickh-2crf) - July 1st, 2026
+* [KL Meetup](https://luma.com/clickh-8cfv) - June 26th, 2026 
+* [Seattle Iceberg Meetup](https://luma.com/vwt2i2rs) - June 25th, 2026
 
 ## Recent Recordings
 

@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'Overview'
+description: 'How to export data from BigQuery to ClickHouse Cloud using ClickPipes.'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'Integrating BigQuery with ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/_intro.mdx';
+
+import { Image } from "/snippets/components/Image.jsx";
+
+<IntroClickPipe/>
+
+## Features {#features}
+
+### Initial load {#initial-load}
+
+The BigQuery ClickPipe will load selected tables in a BigQuery [dataset](https://docs.cloud.google.com/bigquery/docs/datasets-intro) into the ClickHouse destination tables in a single batch operation. Once the ingestion task completes, the ClickPipe stops automatically. The initial load ingestion process requires a user-provided Google Cloud Storage (GCS) bucket for staging. In the future, the intermediary bucket will be provided and managed by ClickPipes.
+
+<Note>
+ClickPipes relies on batch extract jobs to fetch data from BigQuery into the staging GCS bucket. This operations incurs **no processing charges** in BigQuery.
+</Note>
+
+### CDC (Change Data Capture) {#cdc}
+
+CDC is **not supported** in Private Preview, but will be supported in the future. In the meantime, we recommend using the [Google Cloud Storage ClickPipe](/integrations/clickpipes/object-storage/google-cloud-storage/overview) to continuously sync BigQuery data exports into ClickHouse Cloud once the initial load is completed.
+
+## Data type mapping {#data-type-mapping}
+
+[BigQuery data types](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+
+| BigQuery Data Type | ClickHouse Data Type | Details                                                           |
+|--------------------|----------------------|-------------------------------------------------------------------|
+| `BOOL`             | `Bool`               |                                                                   |
+| `INT64`            | `Int64`              |                                                                   |
+| `FLOAT64`          | `Float64`            |                                                                   |
+| `NUMERIC`          | `Decimal(P, S)`      | Precision up to 38, scale up to 9. Precision/scale is preserved.  |
+| `BIGNUMERIC`       | `Decimal(P, S)`      | Precision up to 76, scale up to 38. Precision/scale is preserved. |
+| `STRING`           | `String`             |                                                                   |
+| `BYTES`            | `String`             |                                                                   |
+| `JSON`             | `String` (JSON)      |                                                                   |
+| `DATE`             | `Date`               |                                                                   |
+| `TIME`             | `String`             | Microsecond precision.                                            |
+| `DATETIME`         | `DateTime`           | Microsecond precision.                                            |
+| `TIMESTAMP`        | `DateTime64(6)`      | Microsecond precision.                                            |
+| `GEOGRAPHY`        | `String`             |                                                                   |
+| `GEOMETRY`         | `String`             |                                                                   |
+| `UUID`             | `String`             |                                                                   |
+| `ARRAY<T>`         | `Array(T)`           |                                                                   |
+| `ARRAY<DATE>`      | `Array(Date)`        |                                                                   |
+| `STRUCT` (RECORD)  | `String`             |                                                                   |
+
+## Access control {#access-control}
+
+### Authentication {#authentication}
+
+#### Service account credentials {#service-account-credentials}
+
+ClickPipes authenticates to your Google Cloud project using a [service account key](https://docs.cloud.google.com/iam/docs/keys-create-delete). We recommend creating a dedicated service account with the minimum required set of [permissions](#permissions) to allow ClickPipes to export data from BigQuery, load it into the staging GCS bucket, and read it into ClickHouse.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creating a service account key with BigQuery and Cloud Storage permissions" size="lg" border/>
+
+### Permissions {#permissions}
+
+#### BigQuery {#bigquery}
+
+The service account must have the following BigQuery roles: 
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+To further scope access, we recommend using [IAM conditions](https://docs.cloud.google.com/bigquery/docs/conditions) to restrict the resources the role has access to. For example, you can restrict the `dataViewer` role to the specific dataset containing the tables you want to sync:
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+#### Cloud Storage {#cloud-storage}
+
+The service account must have the following Cloud Storage roles: 
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+To further scope access, we recommend using [IAM conditions](https://docs.cloud.google.com/bigquery/docs/conditions) to restrict the resources the role has access to. For example, you can restrict the `objectAdmin` and `bucketViewer` roles to the dedicated bucket created for ClickPipes syncs.
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

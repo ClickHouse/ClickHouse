@@ -1,0 +1,469 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration
+title: 'تهيئة Helm'
+description: 'تهيئة مفاتيح API والأسرار وإدخال لعمليات نشر ClickStack باستخدام Helm'
+doc_type: 'guide'
+keywords: ['تهيئة ClickStack', 'أسرار Helm', 'إعداد مفتاح API', 'تهيئة إدخال', 'إعداد TLS']
+---
+
+<Warning>
+  **إصدار المخطط 2.x**
+
+  توثق هذه الصفحة مخطط Helm **v2.x** المعتمد على المخططات الفرعية. إذا كنت لا تزال تستخدم مخطط v1.x ذي القوالب المضمّنة، فراجع [تهيئة Helm (v1.x)](/ar/clickstack/deployment/helm-configuration-v1). للاطلاع على خطوات الترحيل، راجع [دليل الترقية](/ar/clickstack/deployment/helm-upgrade).
+</Warning>
+
+يغطي هذا الدليل خيارات التهيئة لعمليات نشر ClickStack باستخدام Helm. للتثبيت الأساسي، راجع [دليل النشر الرئيسي باستخدام Helm](/ar/clickstack/deployment/helm).
+
+<div id="values-organization">
+  ## تنظيم القيم
+</div>
+
+تنظّم مخطط Helm بالإصدار v2.x القيم حسب نوع مورد Kubernetes ضمن الكتلة `hyperdx:`:
+
+```yaml
+hyperdx:
+  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"
+
+  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret Secret (sensitive env vars)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
+  service:        # K8s Service spec (type, annotations)
+  ingress:        # K8s Ingress spec (host, tls, annotations)
+  podDisruptionBudget:  # K8s PDB spec
+  tasks:          # K8s CronJob specs
+```
+
+تمرّ جميع متغيرات البيئة عبر موردين ذوي اسمين ثابتين، يشترك فيهما كلٌّ من نشر HyperDX **و** OTEL Collector عبر `envFrom`:
+
+* **`clickstack-config`** ConfigMap — يُعبَّأ من `hyperdx.config`
+* **`clickstack-secret`** Secret — يُعبَّأ من `hyperdx.secrets`
+
+لم يعد هناك ConfigMap منفصل مخصّص لـ OTEL. ويقرأ كلٌّ من عبئي العمل من المصادر نفسها.
+
+<div id="api-key-setup">
+  ## إعداد مفتاح API
+</div>
+
+بعد نشر ClickStack بنجاح، اضبط مفتاح API لتمكين جمع بيانات القياس عن بُعد:
+
+1. **ادخل إلى مثيل HyperDX الخاص بك** عبر مورد الإدخال المُعَدّ أو نقطة نهاية الخدمة
+2. **سجّل الدخول إلى لوحة معلومات HyperDX** ثم انتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استرداده
+3. **حدّث النشر لديك** باستخدام مفتاح API بإحدى الطرق التالية:
+
+<div id="api-key-values-file">
+  ### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values
+</div>
+
+أضِف مفتاح API إلى `values.yaml`:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key-here"
+```
+
+ثم قم بترقية النشر:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### الطريقة 2: التحديث باستخدام Helm upgrade مع الخيار --set
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack \
+  --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### أعد تشغيل الحاويات القرنية لتطبيق التغييرات
+</div>
+
+بعد تحديث مفتاح API، أعد تشغيل الحاويات القرنية لكي تعتمد التهيئة الجديدة:
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app
+```
+
+<Note>
+  تنشئ مخطط Helm تلقائيًا Kubernetes secret (`clickstack-secret`) من قيم الإعداد الخاصة بك. ولا تحتاج إلى أي إعداد إضافي لـ secret إلا إذا أردت استخدام External Secret.
+</Note>
+
+<div id="secret-management">
+  ## إدارة الأسرار
+</div>
+
+للتعامل مع البيانات الحساسة مثل مفاتيح API أو بيانات اعتماد قاعدة البيانات، يوفّر مخطط بالإصدار v2.x موردًا موحّدًا باسم `clickstack-secret` يُعبَّأ من `hyperdx.secrets`.
+
+<div id="default-secret-values">
+  ### القيم الافتراضية للأسرار
+</div>
+
+تتضمّن المخطط قيماً افتراضية لجميع الأسرار. يمكنك تجاوزها في `values.yaml`:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key"
+    CLICKHOUSE_PASSWORD: "your-clickhouse-otel-password"
+    CLICKHOUSE_APP_PASSWORD: "your-clickhouse-app-password"
+    MONGODB_PASSWORD: "your-mongodb-password"
+```
+
+<div id="using-external-secret">
+  ### استخدام Secret خارجي في Kubernetes
+</div>
+
+في عمليات النشر في بيئة الإنتاج، عندما تريد إبقاء بيانات الاعتماد منفصلة عن قيم Helm، استخدم Secret خارجيًا في Kubernetes:
+
+```bash
+# Create your secret
+kubectl create secret generic my-clickstack-secrets \
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
+  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
+  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
+  --from-literal=MONGODB_PASSWORD=my-mongo-password
+```
+
+ثم أشر إليه ضمن `values` لديك:
+
+```yaml
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "my-clickstack-secrets"
+```
+
+<div id="ingress-setup">
+  ## إعداد الإدخال
+</div>
+
+لنشر واجهة مستخدم HyperDX وواجهة برمجة التطبيقات الخاصة به عبر اسم نطاق، فعِّل الإدخال في ملف `values.yaml`.
+
+<div id="general-ingress-configuration">
+  ### التكوين العام للإدخال
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # Must match ingress host
+
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **ملاحظة مهمة حول الإعداد**
+
+  يجب أن يتطابق `hyperdx.frontendUrl` مع اسم مضيف مورد الإدخال وأن يتضمن البروتوكول (على سبيل المثال، `https://hyperdx.yourdomain.com`). ويضمن ذلك أن تعمل جميع الروابط وملفات تعريف الارتباط وعمليات إعادة التوجيه المُنشأة على النحو الصحيح.
+</Info>
+
+<div id="enabling-tls">
+  ### تمكين TLS ‏(HTTPS)
+</div>
+
+لتأمين عملية النشر باستخدام HTTPS:
+
+**1. أنشئ Secret لـ TLS باستخدام شهادتك ومفتاحك الخاص:**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. فعّل TLS في إعداد مورد الدخول الخاص بك:**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### مثال على إعداد الإدخال
+</div>
+
+للاطلاع، إليك كيف يبدو مورد الإدخال الذي أُنشئ:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### المشكلات الشائعة في الإدخال
+</div>
+
+**إعداد المسار وإعادة الكتابة:**
+
+* بالنسبة إلى Next.js وغيرها من التطبيقات أحادية الصفحة، استخدم دائمًا مسار Regex وتعليمة إعادة كتابة كما هو موضح أعلاه
+* لا تستخدم `path: /` فقط من دون إعادة كتابة، لأن ذلك سيؤدي إلى تعطّل تقديم الموارد الثابتة
+
+**عدم تطابق `frontendUrl` و `ingress.host`:**
+
+* إذا لم يتطابقا، فقد تواجه مشكلات في ملفات تعريف الارتباط وعمليات إعادة التوجيه وتحميل الموارد
+
+**سوء تهيئة TLS:**
+
+* تأكد من أن secret الخاص بـ TLS صالح وأنه مُشار إليه بشكل صحيح في الإدخال
+* قد تمنع المتصفحات المحتوى غير الآمن إذا وصلت إلى التطبيق عبر HTTP عندما يكون TLS مفعّلًا
+
+**إصدار متحكّم إدخال:**
+
+* تتطلب بعض الميزات (مثل مسارات Regex وعمليات إعادة الكتابة) إصدارات حديثة من متحكّم nginx إدخال
+* تحقّق من إصدارك باستخدام:
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## الإدخال لـ OTEL collector
+</div>
+
+إذا كنت بحاجة إلى تعريض نقاط نهاية OTEL collector (للتتبعات والمقاييس والسجلات) عبر الإدخال، فاستخدم إعداد `additionalIngresses`. ويُعد ذلك مفيدًا لإرسال بيانات القياس عن بُعد من خارج العنقود أو لاستخدام نطاق مخصص للـ OTEL collector.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* ينشئ هذا مورد إدخال منفصلًا لنقاط نهاية OTel collector
+* يمكنك استخدام نطاق مختلف، وتهيئة إعدادات TLS محددة، وتطبيق تعليقات توضيحية مخصصة
+* تتيح لك قاعدة مسار Regex توجيه جميع إشارات OTLP (التتبعات والمقاييس والسجلات) عبر قاعدة واحدة
+
+<Note>
+  إذا لم تكن بحاجة إلى إتاحة OTel collector خارجيًا، فيمكنك تخطي هذا الإعداد. بالنسبة إلى معظم المستخدمين، يكفي إعداد الإدخال العام.
+</Note>
+
+بدلًا من ذلك، يمكنك استخدام [`additionalManifests`](/ar/clickstack/deployment/helm-additional-manifests) لتعريف موارد إدخال مخصصة بالكامل، مثل AWS ALB Ingress.
+
+<div id="otel-collector-configuration">
+  ## تهيئة OTEL collector
+</div>
+
+يُنشر OTEL Collector عبر مخطط Helm الرسمي الخاص بـ OpenTelemetry Collector بوصفه المخطط الفرعي `otel-collector:`. قم بتهيئته مباشرةً ضمن `otel-collector:` في values الخاصة بك:
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+تتم مشاركة متغيرات البيئة (نقطة نهاية ClickHouse، وعنوان URL لـ OpAMP، وما إلى ذلك) عبر ConfigMap الموحّد `clickstack-config` وSecret `clickstack-secret`. كما أن `extraEnvsFrom` في المخطط الفرعي مُهيّأ مسبقًا للقراءة من كليهما.
+
+اطّلع على [مخطط Helm الخاص بـ OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) للاطلاع على جميع قيم المخطط الفرعي المتاحة.
+
+<div id="mongodb-configuration">
+  ## تهيئة MongoDB
+</div>
+
+تتولى إدارة MongoDB مشغّل MCK عبر مورد مخصص من النوع `MongoDBCommunity`. ويُعرَض قسم CR spec كما هو من `mongodb.spec`:
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+يتم تعيين كلمة مرور MongoDB في `hyperdx.secrets.MONGODB_PASSWORD`. راجع [وثائق MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity) للاطلاع على جميع حقول CRD المتاحة.
+
+<div id="clickhouse-configuration">
+  ## إعداد ClickHouse
+</div>
+
+تُدار ClickHouse بواسطة ClickHouse Operator عبر الموارد المخصصة `ClickHouseCluster` و`KeeperCluster`. وتُولَّد مواصفات CR لكليهما حرفيًا من values:
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+تُؤخذ بيانات اعتماد مستخدم ClickHouse من `hyperdx.secrets` (وليس من `clickhouse.config.users` كما في v1.x). راجع [دليل تهيئة ClickHouse Operator](/ar/products/kubernetes-operator/guides/configuration) للاطّلاع على جميع حقول CRD المتاحة.
+
+<div id="troubleshooting-ingress">
+  ## استكشاف أخطاء الإدخال وإصلاحها
+</div>
+
+**تحقق من مورد الإدخال:**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**تحقق من سجلات وحدة تحكم الإدخال:**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**اختبار عناوين URL للموارد:**
+
+استخدم `curl` للتحقق من أن الملفات الثابتة تُقدَّم كملفات JS لا كصفحات HTML:
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Should return Content-Type: application/javascript
+```
+
+**أدوات المطوّر في المتصفح:**
+
+* تحقّق من علامة التبويب Network بحثًا عن أخطاء 404 أو ملفات تُرجع HTML بدلًا من JS
+* ابحث عن أخطاء مثل `Unexpected token <` في وحدة التحكّم (وهذا يشير إلى إرجاع HTML بدلًا من JS)
+
+**تحقّق من إعادة كتابة المسارات:**
+
+* تأكّد من أن مورد الإدخال لا يزيل مسارات الملفات أو يعيد كتابتها بشكل غير صحيح
+
+**امسح ذاكرة التخزين المؤقت للمتصفح وCDN:**
+
+* بعد إجراء التغييرات، امسح ذاكرة التخزين المؤقت للمتصفح وأي ذاكرة تخزين مؤقت لـ CDN/الوكيل لتجنّب تحميل ملفات قديمة
+
+<div id="customizing-values">
+  ## تخصيص القيم
+</div>
+
+يمكنك تخصيص الإعدادات باستخدام خيارات `--set`:
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+بدلًا من ذلك، أنشئ ملف `values.yaml` مخصّصًا. لاسترجاع القيم الافتراضية:
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+طبِّق القيم المخصّصة لديك:
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [خيارات النشر](/ar/clickstack/deployment/helm-deployment-options) - الأنظمة الخارجية وعمليات النشر بالحد الأدنى
+* [عمليات النشر على Cloud](/ar/clickstack/deployment/helm-cloud) - إعدادات GKE وEKS وAKS
+* [دليل الترقية](/ar/clickstack/deployment/helm-upgrade) - الترحيل من v1.x إلى v2.x
+* [ملفات توصيف إضافية](/ar/clickstack/deployment/helm-additional-manifests) - كائنات Kubernetes مخصصة
+* [دليل Helm الرئيسي](/ar/clickstack/deployment/helm) - التثبيت الأساسي
+* [الإعداد (v1.x)](/ar/clickstack/deployment/helm-configuration-v1) - دليل إعداد v1.x

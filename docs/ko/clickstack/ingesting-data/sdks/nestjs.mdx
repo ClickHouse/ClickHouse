@@ -1,0 +1,133 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'ClickStack용 NestJS SDK - ClickHouse Observability Stack'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '로깅', '통합', '애플리케이션 모니터링']
+---
+
+ClickStack NestJS 통합을 사용하면 로거를 직접 생성하거나 기본 로거를 사용해
+ClickStack으로 로그를 전송할 수 있습니다([nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme) 기반).
+
+**이 가이드에서 통합하는 항목:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 로그</td>
+      <td className="pe-2">✖️ 메트릭</td>
+      <td className="pe-2">✖️ 트레이스</td>
+    </tr>
+  </tbody>
+</table>
+
+*메트릭이나 APM/트레이스를 전송하려면 해당 언어용 통합도 애플리케이션에
+추가해야 합니다.*
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+루트 `AppModule`에 `HyperDXNestLoggerModule`을 임포트하고 `forRoot()`
+메서드로 구성합니다.
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Managed ClickStack에는 불필요
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+이후 `HDX_LOGGER_MODULE_PROVIDER` 주입 토큰을 통해 프로젝트 전체에서
+winston 인스턴스를 주입해 사용할 수 있습니다:
+
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
+```
+
+<div id="replacing-the-nest-logger">
+  ### Nest 로거 교체하기(부트스트래핑 시에도 적용)
+</div>
+
+<Info>
+  **중요**
+
+  이 방식을 사용하면 의존성 주입을 포기하게 됩니다. 따라서 `forRoot`와 `forRootAsync`는 필요하지 않으며 사용해서도 안 됩니다. 메인 모듈에서 제거하십시오.
+</Info>
+
+의존성 주입을 사용하면 사소한 단점이 하나 있습니다. Nest는 먼저 애플리케이션을 부트스트랩해야 합니다
+(모듈과 provider를 인스턴스화하고, 의존성을 주입하는 등의 작업).
+그런데 이 과정에서는 `HyperDXNestLogger` 인스턴스를 아직 사용할 수 없으므로
+Nest는 내부 로거를 대신 사용합니다.
+
+해결 방법 중 하나는 `createLogger` 함수를 사용해 애플리케이션 생명주기 외부에서 로거를 생성한 뒤
+이를 `NestFactory.create`에 전달하는 것입니다. 그러면 Nest는 사용자 지정 로거(`createLogger` 메서드가 반환한 바로 그 인스턴스)를
+Logger 클래스로 감싸고, 모든 호출을 해당 로거로 전달합니다.
+
+`main.ts` 파일에서 로거를 생성하십시오.
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Managed ClickStack에서는 불필요
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+메인 모듈에서 Logger 서비스를 제공하도록 변경합니다:
+
+```javascript
+import { Logger, Module } from '@nestjs/common';
+
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
+
+그런 다음 `@nestjs/common`의 Logger를 타입 힌트로 지정해 로거를 간단히 주입합니다:
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```
