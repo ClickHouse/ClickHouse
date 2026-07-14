@@ -169,6 +169,19 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
+    /// Open the writer for the new log file first, before touching any state.
+    /// If this throws (e.g. a transient I/O error, or an injected fault), nothing
+    /// has changed: `current_writer` still points to the previous, non-finalized
+    /// writer, so the log remains usable and the operation can be retried later.
+    /// Previously the new writer was created only after the old one had been
+    /// finalized, so a failure here left `current_writer` pointing to a finalized
+    /// buffer, and the next write (e.g. from the background cleanup thread) aborted
+    /// with the "Cannot write to finalized buffer" logical error.
+    size_t new_log_number = current_log_number + 1;
+    auto new_path = getLogPath(logs_dir, new_log_number);
+    auto new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+
+    /// The new writer is ready; now finalize the previous one and switch over.
     try
     {
         if (current_writer)
@@ -181,15 +194,11 @@ void MergeTreeDeduplicationLog::rotate()
         tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
         if (current_writer)
             current_writer->cancel();
-        current_writer = nullptr;
     }
 
-    current_log_number++;
-    auto new_path = getLogPath(logs_dir, current_log_number);
-    MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
-    existing_logs.emplace(current_log_number, log_description);
-
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    current_log_number = new_log_number;
+    existing_logs.emplace(current_log_number, MergeTreeDeduplicationLogNameDescription{new_path, 0});
+    current_writer = std::move(new_writer);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
