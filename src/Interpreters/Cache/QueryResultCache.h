@@ -26,6 +26,12 @@ struct Settings;
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
 
+/// True if the session is limited by a per-authentication-method `GRANTS` clause (a token-style credential).
+/// The query result cache is not access-control-aware on a hit: it isolates entries by user/roles but never re-checks
+/// access (and, like data changes, it is not invalidated by `GRANT`/`REVOKE` - see the class comment below). To keep
+/// such a limited credential fail-close, these sessions do not read from or write to the query result cache.
+bool sessionHasCredentialAccessLimit(const ContextPtr & context);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 

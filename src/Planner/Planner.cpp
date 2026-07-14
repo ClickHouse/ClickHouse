@@ -2184,6 +2184,12 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && !query_result_cache)
         should_cache = false;
 
+    /// A credential-limited session must not read from or write to the query result cache (fail-close, see
+    /// `sessionHasCredentialAccessLimit`). This also covers the explicit per-subquery opt-in path, which does not consult
+    /// the outer query context's `canUseQueryResultCache` flag.
+    if (should_cache && sessionHasCredentialAccessLimit(query_context))
+        should_cache = false;
+
     /// For explicit per-subquery opt-in, we track cache eligibility locally
     /// without mutating the shared query context (which would leak to the outer query).
     bool local_can_use_cache = can_use_query_result_cache || should_cache;
