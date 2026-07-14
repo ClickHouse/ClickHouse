@@ -1,5 +1,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <chrono>
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
@@ -963,7 +964,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
+                std::optional<StreamingSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -979,10 +980,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression.stream_settings)
                 {
-                    stream_settings = TableExpressionModifiers::StreamSettings{};
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    if (ast_stream_settings.settings.cursor_tree.has_value())
-                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
+
+                    stream_settings = StreamingSettings{};
+
+                    if (ast_stream_settings.cursor.has_value())
+                        stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());
+
+                    if (ast_stream_settings.watermark.has_value())
+                    {
+                        const auto & ast_watermark = ast_stream_settings.watermark.value();
+                        stream_settings->watermark = std::make_shared<WatermarkSettings>();
+                        stream_settings->watermark->column = ast_watermark.column;
+                        stream_settings->watermark->idle_timeout = std::chrono::milliseconds(ast_watermark.idle_timeout_ms);
+                        if (ast_watermark.expression)
+                            stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
+                    }
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
