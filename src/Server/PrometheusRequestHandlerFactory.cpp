@@ -83,7 +83,17 @@ namespace
         PrometheusRequestHandlerConfig & res)
     {
         if (config.has(config_prefix + ".enable_table_name_url_routing"))
+        {
             res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
+
+            if (res.enable_table_name_url_routing
+                && (!res.time_series_table_name.database.empty() || !res.time_series_table_name.table.empty()))
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "`enable_table_name_url_routing` cannot be combined with a configured `database` or `table`");
+            }
+        }
     }
 
     void validateURLRoutingHandlerType(
