@@ -61,6 +61,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         /// through and producing non-deterministic / incorrect results. See #82279.
         if (expression_step->getExpression().hasArrayJoin())
             return 0;
+        /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) below the
+        /// sort must observe every source block. Both top-K paths - the `__topKFilter`
+        /// prewhere and skip-index granule pruning - drop source rows at read time, before
+        /// they reach this `ExpressionStep`, so the stateful function would run on only the
+        /// surviving candidate rows. This mirrors the `hasStatefulFunctions` guards in
+        /// `liftUpFunctions`, lazy materialization, `splitFilter`, and filter push-down.
+        if (expression_step->getExpression().hasStatefulFunctions())
+            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -72,6 +80,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort
         /// breaks the top-K source-row threshold assumption. See #82279.
         if (filter_step->getExpression().hasArrayJoin())
+            return 0;
+        /// Same reasoning as above: a stateful function inside a `FilterStep` below the sort
+        /// must see every source block, but the top-K paths drop rows before it.
+        if (filter_step->getExpression().hasStatefulFunctions())
             return 0;
         if (node->children.size() != 1)
             return 0;

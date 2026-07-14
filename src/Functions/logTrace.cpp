@@ -43,9 +43,11 @@ namespace
         /// `WHERE a AND logTrace(...)` chain into separate filter transforms, which would run the other conditions
         /// first and evaluate `logTrace` only on the surviving blocks - logging fewer times than there are input
         /// blocks. The same guard keeps `splitFilter`, `filterPushDown`, and redundant-sort removal from reordering
-        /// the call, keeps `tryExecuteFunctionsAfterSorting` from lifting it above an `ORDER BY [... LIMIT]`, and keeps
-        /// lazy materialization from deferring it past the `LIMIT`. This mirrors other functions with block-level
-        /// semantics such as `neighbor`.
+        /// the call, keeps `tryExecuteFunctionsAfterSorting` from lifting it above an `ORDER BY [... LIMIT]`, keeps
+        /// lazy materialization from deferring it past the `LIMIT`, and keeps the top-K `ORDER BY ... LIMIT`
+        /// optimizations (`optimizeTopK`, `topKThroughJoin`) from dropping source rows before it via a prewhere
+        /// filter, skip-index pruning, or a sort pushed below a `JOIN`. This mirrors other functions with
+        /// block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

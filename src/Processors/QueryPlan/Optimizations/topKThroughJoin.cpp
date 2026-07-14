@@ -202,6 +202,13 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         /// See `#82279`.
         if (dag.hasArrayJoin())
             return 0;
+        /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) in an
+        /// `ExpressionStep` between `Sort` and `Join` must observe every row the join
+        /// produces. Pushing the sort + limit below the join truncates the preserved side to
+        /// its top-n rows, so the join emits fewer rows and the stateful function above it
+        /// runs fewer times. This mirrors the `hasStatefulFunctions` guards elsewhere.
+        if (dag.hasStatefulFunctions())
+            return 0;
         for (auto & sort_col : description)
         {
             const auto * out_node = dag.tryFindInOutputs(sort_col.column_name);
