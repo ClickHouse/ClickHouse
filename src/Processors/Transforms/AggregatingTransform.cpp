@@ -1,3 +1,6 @@
+#include <bit>
+
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Common/CurrentThread.h>
@@ -206,6 +209,10 @@ public:
         std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
         std::atomic<bool> is_cancelled = false;
 
+        /// Rows merged so far across all partitions of the parallel single-level merge; the group
+        /// limit is checked against this running total.
+        std::atomic<size_t> single_level_merged_rows = 0;
+
         SharedData()
         {
             for (auto & flag : is_bucket_processed)
@@ -268,6 +275,63 @@ private:
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+};
+
+/// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
+/// every per-thread table and emits it as one chunk.
+class ConvertingAggregatedToChunksByPartitionMergingSource final : public ISource
+{
+public:
+    using SharedDataPtr = ConvertingAggregatedToChunksWithMergingSource::SharedDataPtr;
+
+    ConvertingAggregatedToChunksByPartitionMergingSource(
+        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, UInt32 num_partitions_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::move(shared_data_))
+        , num_partitions(num_partitions_)
+    {
+    }
+
+    String getName() const override { return "ConvertingAggregatedToChunksByPartitionMergingSource"; }
+
+protected:
+    Chunk generate() override
+    {
+        UInt32 partition = shared_data->next_bucket_to_merge.fetch_add(1);
+
+        if (partition >= num_partitions)
+        {
+            data.reset();
+            return {};
+        }
+
+        /// The serial merge stops merging further tables once the group limit breaks; the parallel
+        /// equivalent is to stop taking further partitions once the merged total has crossed.
+        bool no_more_keys = false;
+        if (!params->aggregator.checkLimits(shared_data->single_level_merged_rows.load(), no_more_keys))
+        {
+            data.reset();
+            return {};
+        }
+
+        auto agg_chunk = params->aggregator.mergeSingleLevelPartitionAndConvertToChunk(
+            *data, params->final, partition, num_partitions, shared_data->is_cancelled);
+
+        /// Under the `throw` overflow mode this raises as soon as the running total exceeds the
+        /// limit — the same condition on which the serial merge would have thrown between tables.
+        const size_t total = shared_data->single_level_merged_rows.fetch_add(agg_chunk.chunk.getNumRows()) + agg_chunk.chunk.getNumRows();
+        params->aggregator.checkLimits(total, no_more_keys);
+
+        return convertToChunk(std::move(agg_chunk));
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    UInt32 num_partitions;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -451,6 +515,16 @@ public:
             else
                 mergeSingleLevel();
         }
+        else if (parallel_partition_merge_started || worthParallelPartitionMergeSingleLevel())
+        {
+            if (!parallel_partition_merge_started)
+            {
+                parallel_partition_merge_started = true;
+                LOG_TRACE(getLogger("AggregatingTransform"), "Use parallel hash-partition merge for single level aggregation data.");
+            }
+            if (inputs.empty())
+                createSourcesForPartitionMerge();
+        }
         else
         {
             mergeSingleLevel();
@@ -509,6 +583,9 @@ public:
         else if (parallelize_single_level_merge)
             // Also single level, but need to check all input ports are finished.
             return prepareParallelizeSingleLevel();
+        else if (parallel_partition_merge_started)
+            // Also single level: the partition sources emit finished chunks, forward them as they come.
+            return preparePartitionMerge();
 
         /// Two-level case.
         return prepareTwoLevel();
@@ -529,6 +606,58 @@ private:
             return false;
 
         return true;
+    }
+
+    bool worthParallelPartitionMergeSingleLevel()
+    {
+        if (!params->params.enable_parallel_single_level_merge)
+            return false;
+
+        if (num_threads <= 1 || data->size() <= 1)
+            return false;
+
+        /// The overflow row lives outside the partitioned cells, and under the `any` overflow mode
+        /// the tables hold diverged key sets that the merge must reconcile key by key — both need
+        /// the serial merge. Under `throw` and `break` the tables are ordinary, and the partition
+        /// sources re-check the group limit against their shared running total.
+        if (params->params.overflow_row)
+            return false;
+        if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::ANY)
+            return false;
+
+        return params->aggregator.canMergeSingleLevelInPartitions(*data->at(0));
+    }
+
+    /// The partition sources emit finished chunks in no particular order; forward them as they come.
+    IProcessor::Status preparePartitionMerge()
+    {
+        auto & output = outputs.front();
+
+        bool all_finished = true;
+        for (auto & input : inputs)
+        {
+            if (input.isFinished())
+                continue;
+            all_finished = false;
+
+            if (input.hasData())
+            {
+                auto chunk = input.pull();
+                if (chunk.hasRows())
+                {
+                    output.push(std::move(chunk));
+                    return Status::PortFull;
+                }
+            }
+        }
+
+        if (all_finished)
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        return Status::NeedData;
     }
 
     IProcessor::Status prepareParallelizeSingleLevel()
@@ -673,6 +802,7 @@ private:
     bool is_initialized = false;
     bool finished = false;
     bool parallelize_single_level_merge = false;
+    bool parallel_partition_merge_started = false;
 
     Chunks single_level_chunks;
 
@@ -783,6 +913,39 @@ private:
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
 
+            processors.emplace_back(std::move(source));
+        }
+
+        data.reset();
+    }
+
+    void createSourcesForPartitionMerge()
+    {
+        /// More partitions than workers, handed out dynamically, so a partition that got a light
+        /// partition does not stay idle.
+        const size_t max_partitions = std::bit_floor(std::min<size_t>(NUM_BUCKETS, num_threads * 2));
+
+        /// Heavy per-key states always get the full partition count: their merge work dwarfs the
+        /// partitioning overhead at any key count. Cheap states get fewer partitions for smaller
+        /// merges, sized by the largest source table — a lower bound on the distinct-key count.
+        const bool has_heavy_states
+            = std::ranges::any_of(params->params.aggregates, [](const auto & aggregate) { return aggregate.function->sizeOfData() > 16; });
+
+        size_t num_partitions = max_partitions;
+        if (!has_heavy_states)
+        {
+            static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
+            size_t max_table_size = 0;
+            for (const auto & variants : *data)
+                max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
+            num_partitions = std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
+        }
+
+        const size_t num_sources = std::min<size_t>(num_threads, num_partitions);
+        for (size_t thread = 0; thread < num_sources; ++thread)
+        {
+            auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
+                params, data, shared_data, static_cast<UInt32>(num_partitions));
             processors.emplace_back(std::move(source));
         }
 
