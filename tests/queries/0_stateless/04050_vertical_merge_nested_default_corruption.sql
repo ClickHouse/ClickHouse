@@ -181,3 +181,42 @@ SELECT count(), countDistinct(_part) FROM t_nested_alias;
 SELECT id, `n.a` FROM t_nested_alias ORDER BY id;
 
 DROP TABLE t_nested_alias;
+
+-- A DEFAULT dependency reached through a *subcolumn of an ALIAS column* must still be discovered.
+-- `m` is an expired physical `Map` column, `m_alias` is `ALIAS m`, and the Nested subcolumn `n.b`
+-- depends on the expired `m` only via the alias subcolumn `m_alias.keys`. `ColumnsDescription` does
+-- not register subcolumns of alias columns, so `m_alias.keys` does not resolve directly; the
+-- dependency must be recovered by resolving the identifier prefix (`m_alias`) and expanding the alias
+-- to the physical `m`. Without this, `n.b` is not expired and vertical merge tries to materialize it
+-- from the missing `m`, corrupting the shared Nested offsets of the present sibling `n.a`.
+DROP TABLE IF EXISTS t_nested_alias_subcol;
+
+CREATE TABLE t_nested_alias_subcol (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias_subcol;
+
+INSERT INTO t_nested_alias_subcol VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_subcol VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_subcol ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_alias_subcol ADD COLUMN m_alias Map(String, String) ALIAS m;
+ALTER TABLE t_nested_alias_subcol ADD COLUMN `n.b` Array(String) DEFAULT m_alias.keys;
+
+SYSTEM START MERGES t_nested_alias_subcol;
+OPTIMIZE TABLE t_nested_alias_subcol FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+-- (`n.b` itself is not selected: a DEFAULT reading a subcolumn of a missing column is the same
+--  pre-existing read-path limitation noted for `t_nested_subcol` above.)
+SELECT count(), countDistinct(_part) FROM t_nested_alias_subcol;
+SELECT id, `n.a` FROM t_nested_alias_subcol ORDER BY id;
+
+DROP TABLE t_nested_alias_subcol;

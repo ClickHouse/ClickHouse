@@ -182,7 +182,8 @@ namespace
 /// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. `ALIAS` columns are
 /// expanded recursively into the physical columns they ultimately read, so that a default
 /// depending on an expired column through an alias is detected. Each source column is resolved to
-/// its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column `m`).
+/// its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column `m`), including
+/// subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m` resolves to `m`).
 NameSet collectDefaultStorageDependencies(const ASTPtr & default_expression, const ColumnsDescription & columns_desc)
 {
     NameSet result;
@@ -203,12 +204,25 @@ NameSet collectDefaultStorageDependencies(const ASTPtr & default_expression, con
 
         for (const auto & required_name : columns_context.requiredColumns())
         {
-            auto resolved = columns_desc.tryGetColumn(
-                GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name);
-            if (!resolved)
-                continue;
+            String storage_name;
 
-            auto storage_name = resolved->getNameInStorage();
+            /// `withSubcolumns` resolves subcolumns of *physical* columns (e.g. `m.keys` -> `m`).
+            if (auto resolved = columns_desc.tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name))
+            {
+                storage_name = resolved->getNameInStorage();
+            }
+            else
+            {
+                /// Subcolumns of `ALIAS` columns are not registered (`ColumnsDescription::addSubcolumns`
+                /// skips `ColumnDefaultKind::Alias`), so an identifier like `m_alias.keys` with
+                /// `m_alias ALIAS m` does not resolve above. Fall back to the identifier's prefix
+                /// (`m_alias`) so the alias expansion below still reaches the physical dependency.
+                auto prefix = Nested::splitName(required_name).first;
+                if (prefix.empty() || !columns_desc.has(prefix))
+                    continue;
+                storage_name = std::move(prefix);
+            }
 
             /// An `ALIAS` column is not physically stored, so it never appears in `expired_columns`.
             /// Expand it into the physical columns its expression reads instead. `visited_aliases`
