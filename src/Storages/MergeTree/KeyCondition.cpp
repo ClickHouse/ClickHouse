@@ -1468,9 +1468,16 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
+    /// The monotonic function chain was built against the recursively-stripped (non-LowCardinality)
+    /// key type in `extractAtomFromTree`, but `arg_type` here can still carry LowCardinality: the chain
+    /// loop propagates `current_type = result_type`, and an earlier function (e.g. `toLowCardinality`)
+    /// can produce a LowCardinality result type. Strip it so the function does not receive a
+    /// LowCardinality const column dispatched as its plain type (mirrors the cached branch of
+    /// `applyFunction`, which strips the column and its type in lockstep).
+    auto stripped_type = recursiveRemoveLowCardinality(arg_type);
     ColumnsWithTypeAndName columns
     {
-            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+            { stripped_type->createColumnConst(1, arg_value), stripped_type, "x" },
         };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);

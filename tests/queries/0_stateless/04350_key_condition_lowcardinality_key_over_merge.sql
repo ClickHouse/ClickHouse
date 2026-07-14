@@ -83,3 +83,24 @@ SELECT count() FROM t_04350_arr_merge
 
 DROP TABLE t_04350_arr_lc;
 DROP TABLE t_04350_arr_merge;
+
+-- Explicit-field path: a monotonic function chain whose intermediate function returns
+-- LowCardinality. `applyMonotonicFunctionsChainToRange` propagates `current_type = result_type`,
+-- so after `toLowCardinality(b)` the running type is LowCardinality again even though the caller
+-- passed the recursively-stripped key type. On the partition-minmax constant-coordinate (explicit
+-- field) path this reached `applyFunctionForField` with a LowCardinality `arg_type`, which built a
+-- LowCardinality const column that the next function (a Bool CAST wrapper) then rejected with a Bad
+-- cast LOGICAL_ERROR. `applyFunctionForField` must strip LowCardinality like the cached branch does.
+DROP TABLE IF EXISTS t_04350_lc3;
+DROP TABLE IF EXISTS t_04350_merge3;
+CREATE TABLE t_04350_lc3 (a UInt64, b LowCardinality(Bool))
+    ENGINE = MergeTree ORDER BY (a, b) PARTITION BY b
+    SETTINGS index_granularity = 1, allow_nullable_key = 1,
+             primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.5;
+INSERT INTO t_04350_lc3 SELECT number, number % 2 = 0 FROM numbers(1000);
+CREATE TABLE t_04350_merge3 (a UInt64, b Bool)
+    ENGINE = Merge(currentDatabase(), 't_04350_lc3');
+SELECT count() FROM t_04350_merge3 WHERE toLowCardinality(b) > toNullable(toLowCardinality(false));
+
+DROP TABLE t_04350_lc3;
+DROP TABLE t_04350_merge3;
