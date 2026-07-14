@@ -105,7 +105,6 @@ IEJoinStep::IEJoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
-
 static IEJoinConditions reverseIEJoinConditions(IEJoinConditions conditions)
 {
     for (auto & condition : conditions)

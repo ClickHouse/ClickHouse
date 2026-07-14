@@ -814,6 +814,27 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
     return has_join_predicates;
 }
 
+/// An inequality (`<`, `<=`, `>`, `>=`) between an expression over the left table and an
+/// expression over the right table, normalized so that the left operand comes from the left
+/// table; std::nullopt when the condition has a different shape.
+static std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> tryGetInequalityBetweenTables(const JoinActionRef & condition)
+{
+    auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+    if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
+        && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
+        return {};
+
+    if (lhs.fromRight() && rhs.fromLeft())
+    {
+        predicate_op = reverseInequalityOperator(predicate_op);
+        std::swap(lhs, rhs);
+    }
+    else if (!lhs.fromLeft() || !rhs.fromRight())
+        return {};
+
+    return {{predicate_op, std::move(lhs), std::move(rhs)}};
+}
+
 /// Two inequality conditions extracted from the JOIN ON expression for the IEJoin algorithm,
 /// in the query orientation. Key names refer to the outputs of the pre-join actions; they are
 /// used only inside the planner to resolve the key positions for `IEJoinStep`.
@@ -840,8 +861,6 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
 {
-    IEJoinPlanDescription description;
-
     if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
         return {};
 
@@ -851,23 +870,15 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     auto try_get_inequality_condition = [&](const JoinActionRef & condition)
         -> std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
     {
-        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-        if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
-            && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
-            return {};
-
-        if (lhs.fromRight() && rhs.fromLeft())
-        {
-            predicate_op = reverseInequalityOperator(predicate_op);
-            std::swap(lhs, rhs);
-        }
-        else if (!lhs.fromLeft() || !rhs.fromRight())
+        auto inequality = tryGetInequalityBetweenTables(condition);
+        if (!inequality)
             return {};
 
         /// The commit below casts both sides of the condition to a common type; probe that
         /// here, so that a combination `predicateOperandsToCommonType` cannot handle makes the
         /// caller fall back to the generic handling (which compares such operands in a filter)
         /// instead of throwing.
+        const auto & [predicate_op, lhs, rhs] = *inequality;
         const auto & lhs_type = lhs.getType();
         const auto & rhs_type = rhs.getType();
         if (!join_settings.allow_dynamic_type_in_join_keys && (hasDynamicType(lhs_type) || hasDynamicType(rhs_type)))
@@ -875,37 +886,33 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
             return {};
 
-        return {{predicate_op, std::move(lhs), std::move(rhs)}};
+        return inequality;
     };
 
     /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
     /// of freedom; fixed to the first two for now.
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
+    std::vector<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
     std::vector<JoinActionRef> residual_conditions;
     for (const auto & condition : join_expression)
     {
-        auto inequality = keys.size() < 2
-            ? try_get_inequality_condition(condition)
-            : std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>{};
-        if (!inequality)
-        {
+        auto inequality = keys.size() < 2 ? try_get_inequality_condition(condition) : std::nullopt;
+        if (inequality)
+            keys.push_back(std::move(*inequality));
+        else
             residual_conditions.push_back(condition);
-            continue;
-        }
-
-        auto [predicate_op, lhs, rhs] = std::move(*inequality);
-        description.operators[keys.size()] = predicate_op;
-        keys.emplace_back(std::move(lhs), std::move(rhs));
     }
 
     if (keys.size() != 2)
         return {};
 
     /// Both conditions are validated, commit: mutate the DAG.
-    for (auto & [lhs, rhs] : keys)
+    IEJoinPlanDescription description;
+    for (size_t i = 0; i < keys.size(); ++i)
     {
+        auto & [predicate_op, lhs, rhs] = keys[i];
         predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
 
+        description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
         description.key_names_right.push_back(rhs.getColumnName());
 
@@ -929,11 +936,7 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
     size_t inequality_conditions = 0;
     for (const auto & condition : join_operator.expression)
     {
-        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-        if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
-            && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
-            continue;
-        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+        if (tryGetInequalityBetweenTables(condition))
             ++inequality_conditions;
     }
     return inequality_conditions >= 2;
@@ -1355,8 +1358,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
-        bool ie_join_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN);
-
         /// The position of `ie_join` in the `join_algorithm` list sets its priority: listed first,
         /// it claims the join before the equality conditions are claimed as hash join keys
         /// (they become a filter over the join result for ALL INNER, or a residual condition
@@ -1371,7 +1372,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            if (ie_join_enabled)
+            /// No equality keys were found: drop the empty clause added above; the disjunctive
+            /// path below builds its own clauses, IEJoin does not use them at all.
+            table_join_clauses.pop_back();
+
+            if (TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN))
                 ie_join_description = tryExtractIEJoinDescription(
                     join_expression, join_operator, used_expressions, join_settings, planning_context);
 
@@ -1381,7 +1386,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
 
-                table_join_clauses.pop_back();
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
                     join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
 
