@@ -196,15 +196,27 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-E=no_col" \
     -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
 
-echo "--- error: MATERIALIZED column"
+echo "--- error: MATERIALIZED column without insert_allow_materialized_columns"
 ${CLICKHOUSE_CURL} -sS -H 'X-V: 1' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-V=mat_col" \
-    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+    -d '{"payload":"x"}' 2>&1 | grep -o 'ILLEGAL_COLUMN'
 
-echo "--- error: ALIAS column"
+echo "--- error: ALIAS column is never insertable"
 ${CLICKHOUSE_CURL} -sS -H 'X-V: hi' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-V=alias_col" \
-    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+    -d '{"payload":"x"}' 2>&1 | grep -o 'ILLEGAL_COLUMN'
+
+do_materialized_tests() {
+    echo "--- ${mode}: MATERIALIZED column allowed with insert_allow_materialized_columns=1"
+    ${CLICKHOUSE_CURL} -sS -H 'X-Mat: 42' \
+        "${CLICKHOUSE_URL}${INSERT_EXTRA}&insert_allow_materialized_columns=1&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Mat=mat_col" \
+        -d '{"payload":"mat-test"}'
+    flush
+    ${CLICKHOUSE_CLIENT} -q "SELECT payload, mat_col FROM t"
+    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+}
+
+run_modes do_materialized_tests
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 

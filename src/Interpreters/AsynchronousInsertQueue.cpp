@@ -431,7 +431,8 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     if (!http_header_columns.empty())
     {
         InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
-            insert_query, metadata_snapshot, http_header_columns);
+            insert_query, metadata_snapshot, http_header_columns,
+            query_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
     }
 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
@@ -588,7 +589,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto table = interpreter_for_table.getTable(insert_query);
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         const auto format_settings = getFormatSettings(query_context);
-        const Block insertable_block = metadata->getSampleBlockInsertable();
+        const bool allow_materialized = query_context->getSettingsRef()[Setting::insert_allow_materialized_columns];
 
         /// Collect and sort column names for deterministic order across all entries
         /// in a batch. The flush loop indexes by position (entry_parsed_idx), so
@@ -600,15 +601,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         for (const auto & col_name : http_col_names)
         {
-            if (!insertable_block.has(col_name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "http_column mapping references column '{}' which is not insertable in table '{}'. "
-                    "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
-                    col_name, insert_query.table_id.getFullTableName());
 
             const auto & str_value = http_header_columns.at(col_name);
-            const auto & col_type = insertable_block.getByName(col_name).type;
+            /// expandInsertQueryWithHTTPHeaderColumns already validated insertability;
+            /// here we just retrieve the type for parsing.
+            const auto & col_type = metadata->getColumns().get(col_name).type;
 
             /// Parse the header value once at push time so that type errors
             /// (e.g. "not-a-number" for UInt64) surface immediately to the client.

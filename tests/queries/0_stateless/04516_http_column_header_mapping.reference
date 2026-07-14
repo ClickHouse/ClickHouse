@@ -57,10 +57,14 @@ release	sig2	batch2
 DUPLICATE_COLUMN
 --- error: non-existent column
 NO_SUCH_COLUMN_IN_TABLE
---- error: MATERIALIZED column
-NO_SUCH_COLUMN_IN_TABLE
---- error: ALIAS column
-NO_SUCH_COLUMN_IN_TABLE
+--- error: MATERIALIZED column without insert_allow_materialized_columns
+ILLEGAL_COLUMN
+--- error: ALIAS column is never insertable
+ILLEGAL_COLUMN
+--- sync: MATERIALIZED column allowed with insert_allow_materialized_columns=1
+mat-test	42
+--- async: MATERIALIZED column allowed with insert_allow_materialized_columns=1
+mat-test	42
 --- sync: non-String column types
 42	['a','b']	3.14	typed
 --- async: non-String column types

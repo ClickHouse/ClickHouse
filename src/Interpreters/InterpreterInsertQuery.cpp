@@ -758,18 +758,29 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
     ASTInsertQuery & query,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameToNameMap & http_header_columns)
+    const NameToNameMap & http_header_columns,
+    bool allow_materialized)
 {
-    const Block insertable_sample = metadata_snapshot->getSampleBlockInsertable();
+    const auto & columns_desc = metadata_snapshot->getColumns();
 
     for (const auto & [col_name, _] : http_header_columns)
     {
-        if (!insertable_sample.has(col_name))
+        if (!columns_desc.has(col_name))
             throw Exception(
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "http_column mapping references column '{}' which does not exist or is not insertable in table '{}'. "
-                "MATERIALIZED, ALIAS and other non-insertable columns are not supported.",
+                "http_column mapping references column '{}' which does not exist in table '{}'.",
                 col_name, query.table_id.getFullTableName());
+
+        const auto kind = columns_desc.get(col_name).default_desc.kind;
+        const bool insertable = (kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Ephemeral)
+            || (allow_materialized && kind == ColumnDefaultKind::Materialized);
+        if (!insertable)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "http_column mapping references column '{}' in table '{}' which is not insertable{}.",
+                col_name, query.table_id.getFullTableName(),
+                kind == ColumnDefaultKind::Alias ? " (ALIAS columns are never insertable)"
+                    : " (MATERIALIZED columns require insert_allow_materialized_columns=1)");
     }
 
     /// Only modify the explicit column list when the user provided one.
@@ -1127,7 +1138,7 @@ BlockIO InterpreterInsertQuery::execute()
                 "http_column_* URL parameters are not supported with INSERT ... SELECT. "
                 "Use getClientHTTPHeader() in the SELECT clause instead");
 
-        expandInsertQueryWithHTTPHeaderColumns(query, metadata_snapshot, http_header_columns);
+        expandInsertQueryWithHTTPHeaderColumns(query, metadata_snapshot, http_header_columns, allow_materialized);
     }
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
