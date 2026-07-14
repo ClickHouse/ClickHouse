@@ -594,18 +594,27 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     {
         auto table = DatabaseCatalog::instance().getTable(insert_query.table_id, query_context);
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
-        FormatSettings format_settings;
+        const auto format_settings = getFormatSettings(query_context);
+
+        /// Collect and sort column names so that parsed_http_header_columns has a
+        /// deterministic order across all entries in a batch. This is required because
+        /// the flush loop indexes entries by position (entry_parsed_idx), and unordered
+        /// iteration of http_header_columns (std::unordered_map) could produce different
+        /// orderings for different requests, causing cross-column value swaps.
         http_col_names.reserve(http_header_columns.size());
-        for (const auto & [col_name, str_value] : http_header_columns)
+        for (const auto & [col_name, _] : http_header_columns)
+            http_col_names.push_back(col_name);
+        std::sort(http_col_names.begin(), http_col_names.end());
+
+        for (const auto & col_name : http_col_names)
         {
+            const auto & str_value = http_header_columns.at(col_name);
             const auto & col_type = metadata->getColumns().get(col_name).type;
             auto parsed = col_type->createColumn();
             ReadBufferFromString buf(str_value);
             col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
             entry->parsed_http_header_columns.emplace_back(col_name, std::move(parsed));
-            http_col_names.push_back(col_name);
         }
-        std::sort(http_col_names.begin(), http_col_names.end());
     }
 
     const auto & client_info = query_context->getClientInfo();
