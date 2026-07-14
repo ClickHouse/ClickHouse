@@ -279,6 +279,7 @@ private:
             const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
             if (divisor == 1)
             {
+                /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
                     result_data[i] = static_cast<ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
@@ -289,6 +290,14 @@ private:
             for (size_t i = 0; i != size; ++i)
             {
                 const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
+                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
+                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
+                {
+                    result_data[i] = static_cast<ResultFieldType>(
+                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+                    continue;
+                }
                 const Int64 rounded_towards_zero = t / divider * divisor;
                 const Int64 res = t >= 0
                     ? rounded_towards_zero

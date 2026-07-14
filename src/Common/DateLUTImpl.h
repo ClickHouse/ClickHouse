@@ -489,6 +489,8 @@ public:
         return rounded_towards_zero - divisor;
     }
 
+    static bool isTimeInLUTRange(Time t) { return !isOutOfLUTRange(t); }
+
     static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
@@ -1576,8 +1578,9 @@ public:
     }
 
     /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
-    /// `roundDownToMultiple(t, divisor)` for every `t` in this time zone, nothing if it needs the LUT.
-    /// Must mirror the dispatch of the corresponding methods.
+    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
+    /// needs the LUT. Must mirror the dispatch of the corresponding methods. The `offset_is_whole_number_of_*`
+    /// properties only hold during the epoch, so callers must keep out-of-range `t` on the generic path.
     std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
     {
         if (!offset_is_whole_number_of_minutes_during_epoch)

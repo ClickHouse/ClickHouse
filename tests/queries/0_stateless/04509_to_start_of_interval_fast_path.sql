@@ -53,6 +53,20 @@ SELECT toStartOfInterval(toDateTime('2024-04-07 01:45:10', 'Australia/Lord_Howe'
 SELECT toStartOfInterval(toDateTime('2024-04-07 01:45:10', 'Australia/Lord_Howe'), INTERVAL 1 HOUR);
 SELECT toStartOfInterval(toDateTime('2024-04-07 03:10:00', 'Australia/Lord_Howe'), INTERVAL 2 HOUR);
 
+-- Values outside the lookup table (before 1900, after 2299): the offset is extrapolated there and can have
+-- a sub-minute component (`Asia/Kolkata` is +5:53:28 before 1906), so they must keep the generic path.
+SELECT 'out of LUT range';
+SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
+     + countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t))
+     + countIf(toStartOfInterval(t, INTERVAL 15 MINUTE) != toStartOfFifteenMinutes(t))
+     + countIf(toStartOfInterval(t, INTERVAL 1 HOUR) != toStartOfHour(t))
+FROM (SELECT toDateTime64(arrayJoin([-2209000000., -3786749363., 16725303245., 10413800000.]) + number * 97.13, 3, 'Asia/Kolkata') AS t FROM numbers(20000));
+SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
+     + countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t))
+     + countIf(toStartOfInterval(t, INTERVAL 15 MINUTE) != toStartOfFifteenMinutes(t))
+     + countIf(toStartOfInterval(t, INTERVAL 1 HOUR) != toStartOfHour(t))
+FROM (SELECT toDateTime64(arrayJoin([-2209000000., -3786749363., 16725303245., 10413800000.]) + number * 97.13, 3, 'Europe/Moscow') AS t FROM numbers(20000));
+
 -- Pre-epoch DateTime64 values.
 SELECT 'pre-epoch';
 SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:58.123', 3, 'UTC'), INTERVAL 7 SECOND);
