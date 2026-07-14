@@ -41,14 +41,16 @@ struct PuffinFilesCacheKeyHash
 struct PuffinFilesCacheCell : private boost::noncopyable
 {
     DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows;
+    bool is_empty_deletion_vector = false;
     UInt64 memory_bytes = 0;
 
     explicit PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_);
 
 private:
+    static constexpr UInt64 EMPTY_DELETION_VECTOR_WEIGHT = 1;
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
 
-    static UInt64 calculateMemorySize(const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_);
+    static UInt64 calculateMemorySize(bool is_empty_deletion_vector_, const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_);
 };
 
 struct PuffinFilesCacheWeightFunction
@@ -77,14 +79,29 @@ public:
         auto load_fn_wrapper = [&]()
         {
             auto excluded_rows = load_fn();
-            LOG_TRACE(
-                log,
-                "Loaded puffin deletion vector into cache for {} | {} at offset {} length {} for data file {}",
-                key.file_path,
-                key.etag,
-                key.content_offset,
-                key.content_size_in_bytes,
-                key.referenced_data_file);
+            const bool is_empty_deletion_vector = !excluded_rows;
+            if (is_empty_deletion_vector)
+            {
+                LOG_TRACE(
+                    log,
+                    "Cached empty puffin deletion vector for {} | {} at offset {} length {} for data file {}",
+                    key.file_path,
+                    key.etag,
+                    key.content_offset,
+                    key.content_size_in_bytes,
+                    key.referenced_data_file);
+            }
+            else
+            {
+                LOG_TRACE(
+                    log,
+                    "Loaded puffin deletion vector into cache for {} | {} at offset {} length {} for data file {}",
+                    key.file_path,
+                    key.etag,
+                    key.content_offset,
+                    key.content_size_in_bytes,
+                    key.referenced_data_file);
+            }
             return std::make_shared<PuffinFilesCacheCell>(std::move(excluded_rows));
         };
 
@@ -94,17 +111,22 @@ public:
             LOG_TRACE(log, "Puffin files cache miss for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheMisses);
         }
+        else if (result.first->is_empty_deletion_vector)
+        {
+            LOG_TRACE(log, "Puffin files cache hit (empty deletion vector) for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
+            ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
+        }
         else
         {
             LOG_TRACE(log, "Puffin files cache hit for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
 
-        return cloneExcludedRows(result.first->excluded_rows);
+        return cloneExcludedRows(*result.first);
     }
 
 private:
-    static DataLakeObjectMetadata::ExcludedRowsPtr cloneExcludedRows(const DataLakeObjectMetadata::ExcludedRowsPtr & source);
+    static DataLakeObjectMetadata::ExcludedRowsPtr cloneExcludedRows(const PuffinFilesCacheCell & cell);
 
     LoggerPtr log;
 

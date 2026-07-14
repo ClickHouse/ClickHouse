@@ -17,13 +17,13 @@ extern const Event PuffinFilesCacheWeightLost;
 namespace DB
 {
 
-DataLakeObjectMetadata::ExcludedRowsPtr PuffinFilesCache::cloneExcludedRows(const DataLakeObjectMetadata::ExcludedRowsPtr & source)
+DataLakeObjectMetadata::ExcludedRowsPtr PuffinFilesCache::cloneExcludedRows(const PuffinFilesCacheCell & cell)
 {
-    if (!source)
+    if (cell.is_empty_deletion_vector)
         return nullptr;
 
     auto cloned = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
-    cloned->merge(*source);
+    cloned->merge(*cell.excluded_rows);
     return cloned;
 }
 
@@ -47,8 +47,11 @@ size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) cons
     return hash;
 }
 
-UInt64 PuffinFilesCacheCell::calculateMemorySize(const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_)
+UInt64 PuffinFilesCacheCell::calculateMemorySize(bool is_empty_deletion_vector_, const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_)
 {
+    if (is_empty_deletion_vector_)
+        return EMPTY_DELETION_VECTOR_WEIGHT;
+
     if (!excluded_rows_)
         return 0;
 
@@ -57,7 +60,10 @@ UInt64 PuffinFilesCacheCell::calculateMemorySize(const DataLakeObjectMetadata::E
 
 PuffinFilesCacheCell::PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_)
     : excluded_rows(std::move(excluded_rows_))
-    , memory_bytes(calculateMemorySize(excluded_rows) + SIZE_IN_MEMORY_OVERHEAD)
+    , is_empty_deletion_vector(!excluded_rows)
+    , memory_bytes(
+          calculateMemorySize(is_empty_deletion_vector, excluded_rows)
+          + (is_empty_deletion_vector ? 0 : SIZE_IN_MEMORY_OVERHEAD))
 {
 }
 
