@@ -799,6 +799,7 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
         catch (...)
         {
             error_description = json_str;
+            LOG_ERROR(log, "Received broken json in access token response from rest catalog (url: {})", url.toString());
         }
 
         if (error == "invalid_grant")
