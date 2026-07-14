@@ -215,7 +215,9 @@ struct ToStartOfDayImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
+        /// Saturate: start-of-day in seconds exceeds the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfDay's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(static_cast<time_t>(t.whole)), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
     {
@@ -2138,7 +2140,9 @@ struct ToYearNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toYearSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
+            /// Saturate so the result stays monotonic over the whole DateTime64 range (out-of-range
+            /// inputs would otherwise wrap, breaking the always-monotonic claim used for pruning).
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2234,7 +2238,8 @@ struct ToMonthNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toMonthNumSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
+            /// Saturate to keep the result monotonic over the whole DateTime64 range (see toYearNumSinceEpoch).
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2266,7 +2271,8 @@ struct ToRelativeWeekNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(t);
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
+            /// Saturate to keep the result monotonic over the whole DateTime64 range (see toYearNumSinceEpoch).
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toRelativeWeekNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2298,7 +2304,8 @@ struct ToRelativeDayNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toDayNum(t));
         else
-            return static_cast<UInt16>(time_zone.toDayNum(t));
+            /// Saturate to keep the result monotonic over the whole DateTime64 range (see toYearNumSinceEpoch).
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2330,7 +2337,8 @@ struct ToRelativeHourNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
+            /// Saturate to keep the result monotonic over the whole DateTime64 range (see toYearNumSinceEpoch).
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2368,7 +2376,8 @@ struct ToRelativeMinuteNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toRelativeMinuteNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeMinuteNum(t));
+            /// Saturate to keep the result monotonic over the whole DateTime64 range (see toYearNumSinceEpoch).
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2395,9 +2404,14 @@ struct ToRelativeSecondNumImpl
 {
     static constexpr auto name = "toRelativeSecondNum";
 
-    static Int64 execute(Int64 t, const DateLUTImpl &)
+    static auto execute(Int64 t, const DateLUTImpl &)
     {
-        return t;
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return t;
+        else
+            /// Saturate: the Standard-precision result is UInt32, so an unclamped Int64 would wrap for
+            /// DateTime64 inputs outside the UInt32-second range and break the always-monotonic claim.
+            return static_cast<UInt32>(std::clamp<Int64>(t, 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl &)
     {
