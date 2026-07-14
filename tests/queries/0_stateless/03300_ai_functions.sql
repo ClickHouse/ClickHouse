@@ -407,7 +407,50 @@ SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
 
 -- =============================================================================
--- 17. aiEmbed
+-- 17. aiMask
+-- =============================================================================
+
+SELECT '-- aiMask: registered';
+SELECT name FROM system.functions WHERE name = 'aiMask';
+
+SELECT '-- aiMask: too few arguments';
+SELECT aiMask(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiMask('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiMask: too many arguments';
+SELECT aiMask('x', ['email'], map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiMask: non-constant categories';
+SELECT aiMask(x, [x]) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiMask: wrong type for categories (not array)';
+SELECT aiMask(x, 'email,phone') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiMask: wrong type for categories (Array of non-String)';
+SELECT aiMask(x, [1, 2, 3]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- An empty category list is valid and means "redact all detected PII".
+SELECT '-- aiMask: empty categories array accepted (mask all)';
+SELECT count() FROM (SELECT aiMask(x, []) AS result FROM tab);
+SELECT count() FROM (SELECT aiMask(x, CAST([], 'Array(String)')) AS result FROM tab);
+
+SELECT '-- aiMask: return type';
+DROP TABLE IF EXISTS _03300_ret_mask;
+CREATE TABLE _03300_ret_mask ENGINE = Memory AS
+    SELECT aiMask(x, ['email']) AS result FROM tab;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_mask';
+DROP TABLE IF EXISTS _03300_ret_mask;
+
+SELECT '-- aiMask: with replacement and temperature';
+SELECT count() FROM (SELECT aiMask(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
+
+-- aiMask is fail-closed: a provider error aborts the query even with ai_function_throw_on_error = 0.
+SELECT '-- aiMask: fail-closed on provider error despite throw_on_error = 0';
+SELECT aiMask('secret', ['email']) SETTINGS ai_function_throw_on_error = 0; -- { serverError POCO_EXCEPTION, NETWORK_ERROR, SOCKET_TIMEOUT }
+
+-- =============================================================================
+-- 18. aiEmbed
 -- =============================================================================
 
 SELECT '-- aiEmbed: registered';
@@ -478,7 +521,7 @@ DROP TABLE IF EXISTS _03300_embed_null_out;
 DROP TABLE IF EXISTS _03300_embed_null_in;
 
 -- =============================================================================
--- 17b. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
+-- 18b. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
 -- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
 -- swallows the error so the INSERT still succeeds, with `[]` / "" for the row.
 -- =============================================================================
@@ -546,11 +589,24 @@ INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(translation) FROM _03300_translate_default;
 DROP TABLE _03300_translate_default;
 
+-- Counterpart to the survives-INSERT cases above. aiMask is fail-closed, so its DEFAULT INSERT
+-- fails even under ai_function_throw_on_error = 0.
+SELECT '-- aiMask: DEFAULT INSERT fails (fail-closed, unlike the functions above)';
+DROP TABLE IF EXISTS _03300_mask_default;
+CREATE TABLE _03300_mask_default
+(
+    id UInt32,
+    doc String,
+    masked String DEFAULT aiMask(doc, ['email'])
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_mask_default (id, doc) VALUES (1, 'hello world'); -- { serverError POCO_EXCEPTION, NETWORK_ERROR, SOCKET_TIMEOUT }
+DROP TABLE _03300_mask_default;
+
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
 
 -- =============================================================================
--- 18. Re-disable the setting mid-session
+-- 19. Re-disable the setting mid-session
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 0;

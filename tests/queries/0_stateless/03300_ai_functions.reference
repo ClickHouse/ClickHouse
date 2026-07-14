@@ -94,6 +94,21 @@ aiTranslate
 result	String
 -- aiTranslate: with instructions and temperature
 0
+-- aiMask: registered
+aiMask
+-- aiMask: too few arguments
+-- aiMask: too many arguments
+-- aiMask: non-constant categories
+-- aiMask: wrong type for categories (not array)
+-- aiMask: wrong type for categories (Array of non-String)
+-- aiMask: empty categories array accepted (mask all)
+0
+0
+-- aiMask: return type
+result	String
+-- aiMask: with replacement and temperature
+0
+-- aiMask: fail-closed on provider error despite throw_on_error = 0
 -- aiEmbed: registered
 aiEmbed
 -- aiEmbed: too few arguments
@@ -126,4 +141,5 @@ result	Array(Float32)
 1	0
 -- aiTranslate: DEFAULT survives INSERT (no exception)
 1	0
+-- aiMask: DEFAULT INSERT fails (fail-closed, unlike the functions above)
 -- Re-disabled blocks function

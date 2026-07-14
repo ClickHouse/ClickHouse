@@ -109,6 +109,15 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning HTTP 200 with plain, non-JSON content, used to check that aiMask rejects a
+        # response that is not a `{"masked_text": ...}` object.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_rawtext AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/rawtext', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -544,6 +553,108 @@ def test_translate_null_input(started_cluster):
     lines = result.strip().split("\n")
     assert "\\N" in lines
     assert "hello" in lines
+
+
+# ---------------------------------------------------------------------------
+# aiMask
+# ---------------------------------------------------------------------------
+
+
+def test_mask_basic(started_cluster):
+    """aiMask sends a response_format with a single `masked_text` field."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('customer John Doe, john@doe.org')"
+    )
+    result = instance.query(
+        "SELECT aiMask(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    # Mock returns {"masked_text": "<user_message>"}; postProcess extracts the value.
+    assert result.strip() == "customer John Doe, john@doe.org"
+    # The redaction schema and category list are forwarded to the provider.
+    sent = last_request()["body"]
+    assert "masked_text" in sent
+    assert "email" in sent and "name" in sent
+
+
+def test_mask_all_categories_empty_array(started_cluster):
+    """An empty categories array is accepted and means 'redact every detected category'."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text with pii')")
+    result = instance.query(
+        "SELECT aiMask(x, [], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "some text with pii"
+
+
+def test_mask_replacement_forwarded(started_cluster):
+    """The `replacement` token is embedded in the system prompt sent to the provider."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('redact me')")
+    instance.query(
+        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    body = json.loads(last_request()["body"])
+    assert body["messages"][0]["role"] == "system"
+    assert "<<HIDDEN>>" in body["messages"][0]["content"]
+
+
+def test_mask_multiple_rows(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
+    qid = unique_query_id("mask_events")
+    instance.query(
+        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_mask_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "text" in lines
+
+
+def test_mask_fail_closed_ignores_throw_on_error(started_cluster):
+    """aiMask is fail-closed."""
+    error = instance.query_and_get_error(
+        "SELECT aiMask('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_mask_error_throw(started_cluster):
+    """By default (`ai_function_throw_on_error = 1`) a provider error propagates."""
+    error = instance.query_and_get_error(
+        "SELECT aiMask('secret', ['email'], map('credentials', 'ai_error'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_mask_rejects_unverified_response(started_cluster):
+    """A provider that returns HTTP 200 with content that is not a `{"masked_text": ...}`
+    object is rejected (MALFORMED_AI_PROVIDER_RESPONSE)."""
+    error = instance.query_and_get_error(
+        "SELECT aiMask('secret John Doe', ['name'], map('credentials', 'ai_rawtext'))",
+        settings=AI_SETTINGS,
+    )
+    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
 
 
 # ---------------------------------------------------------------------------
