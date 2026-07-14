@@ -1,0 +1,11 @@
+<clickhouse>
+    <http_handlers>
+        <url_routing_validation>
+            <url>/write</url>
+            <handler>
+                <type>write</type>
+                <enable_table_name_url_routing>true</enable_table_name_url_routing>
+            </handler>
+        </url_routing_validation>
+    </http_handlers>
+</clickhouse>

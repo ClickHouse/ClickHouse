@@ -86,6 +86,25 @@ namespace
             res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
     }
 
+    void validateURLRoutingHandlerType(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        PrometheusRequestHandlerConfig::Type type,
+        std::string_view full_type)
+    {
+        if (!config.has(config_prefix + ".enable_table_name_url_routing"))
+            return;
+
+        if (type == PrometheusRequestHandlerConfig::Type::Write || type == PrometheusRequestHandlerConfig::Type::APIv1)
+            return;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "`enable_table_name_url_routing` is not supported for Prometheus handler type `{}`; "
+            "it is supported only for remote-write handlers and `prometheus_api_v1`",
+            full_type);
+    }
+
     /// Parses a configuration like this:
     /// <!-- <type>write</type> (Implied, not actually parsed) -->
     /// <table>db.time_series_table_name</table>
@@ -178,7 +197,9 @@ namespace
     /// <table>db.time_series_table_name</table>
     PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        auto type = parseHandlerType(config.getString(config_prefix + ".type"));
+        const auto full_type = config.getString(config_prefix + ".type");
+        auto type = parseHandlerType(full_type);
+        validateURLRoutingHandlerType(config, config_prefix, type, full_type);
         switch (type)
         {
             case PrometheusRequestHandlerConfig::Type::Metrics:

@@ -650,6 +650,42 @@ def test_prometheus_handler():
         )
 
 
+def test_prometheus_url_routing_rejects_unsupported_handler_types():
+    cluster = ClickHouseCluster(__file__)
+    instance = cluster.add_instance(
+        "prometheus_url_routing_validation",
+        main_configs=["test_prometheus_url_routing_validation/config.xml"],
+        stay_alive=True,
+    )
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    try:
+        cluster.start()
+        for handler_type in ("remote_read", "query_api"):
+            instance.stop_clickhouse()
+            instance.replace_in_config(
+                config_path,
+                "<type>write</type>",
+                f"<type>{handler_type}</type>",
+            )
+            instance.start_clickhouse(expected_to_fail=True)
+            expected_message = (
+                "`enable_table_name_url_routing` is not supported for Prometheus "
+                f"handler type `{handler_type}`"
+            )
+            assert instance.contains_in_log(
+                expected_message
+            )
+            instance.replace_in_config(
+                config_path,
+                f"<type>{handler_type}</type>",
+                "<type>write</type>",
+            )
+            instance.start_clickhouse()
+    finally:
+        cluster.shutdown()
+
+
 def test_replicas_status_handler():
     with contextlib.closing(
         SimpleCluster(
