@@ -5,17 +5,18 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-#include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateTypeQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTDropTypeQuery.h>
 #include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTDropTypeQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
@@ -349,13 +350,29 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
+    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>() || query->as<ASTCreateFunctionWithDriverQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }
     else if (query->as<ASTDropFunctionQuery>())
     {
         interpreter_name = "InterpreterDropFunctionQuery";
+    }
+    else if (query->as<ASTCreateTypeQuery>())
+    {
+        interpreter_name = "InterpreterCreateTypeQuery";
+    }
+    else if (query->as<ASTDropTypeQuery>())
+    {
+        interpreter_name = "InterpreterDropTypeQuery";
+    }
+    else if (query->as<ASTShowTypesQuery>())
+    {
+        interpreter_name = "InterpreterShowTypesQuery";
+    }
+    else if (query->as<ASTShowTypeQuery>())
+    {
+        interpreter_name = "InterpreterShowTypeQuery";
     }
     else if (query->as<ASTCreateWorkloadQuery>())
     {
@@ -404,22 +421,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
-    }
-    else if (query->as<ASTCreateTypeQuery>())
-    {
-        interpreter_name = "InterpreterCreateTypeQuery";
-    }
-    else if (query->as<ASTDropTypeQuery>())
-    {
-        interpreter_name = "InterpreterDropTypeQuery";
-    }
-    else if (query->as<ASTShowTypesQuery>())
-    {
-        interpreter_name = "InterpreterShowTypesQuery";
-    }
-    else if (query->as<ASTShowTypeQuery>())
-    {
-        interpreter_name = "InterpreterShowTypeQuery";
     }
     else if (query->as<ASTExecuteAsQuery>())
     {
