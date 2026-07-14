@@ -13,6 +13,14 @@ SET allow_experimental_eval_table_function = 1;
 SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n SETTINGS union_default_mode = ''DISTINCT''');
 SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n'); -- { serverError EXPECTED_ALL_OR_DISTINCT }
 
+-- INTERSECT / EXCEPT default modes are likewise resolved from the generated query's own SETTINGS.
+-- These modes live in separate branches of `SelectIntersectExceptQueryVisitor`, so the inner
+-- `intersect_default_mode` / `except_default_mode = 'ALL'` must win over the outer `'DISTINCT'`,
+-- keeping duplicates exactly as when the query is executed directly. INTERSECT ALL of [1,1,2] and
+-- [1,1,3] keeps two 1s; EXCEPT ALL of [1,1,1,2] and [1] keeps 1,1,2.
+SELECT count() FROM eval('SELECT arrayJoin([1, 1, 2]) AS n INTERSECT SELECT arrayJoin([1, 1, 3]) AS n SETTINGS intersect_default_mode = ''ALL''') SETTINGS intersect_default_mode = 'DISTINCT';
+SELECT count() FROM eval('SELECT arrayJoin([1, 1, 1, 2]) AS n EXCEPT SELECT arrayJoin([1]) AS n SETTINGS except_default_mode = ''ALL''') SETTINGS except_default_mode = 'DISTINCT';
+
 -- The AST size limits `max_ast_elements` / `max_ast_depth` apply to the generated query, same as when
 -- it is executed directly, so a tiny outer query cannot smuggle a huge or deep AST past them.
 SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10') SETTINGS max_ast_elements = 30; -- { serverError TOO_BIG_AST }
