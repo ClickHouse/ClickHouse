@@ -369,7 +369,9 @@ When both peers are the same modern build, the two directions land on the same r
 
 The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`.
 
-Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`. File exports and local `clickhouse-client` output have no such knob and stay at `0`.
+Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`.
+
+Because the parameter lands on the whole query context, it reaches every `NativeWriter` built for that request, not only the result stream. In particular a server-side write such as `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` over HTTP with a raised `?client_protocol_version=` writes the file at that revision. This is long-standing behavior (it predates the size-stream serialization and applies to `BlockInfo` and `has_custom_serialization` too), and it is asymmetric: the read side (below) is not raised the same way, so such a file does not read back through `file(...)`. Leave `client_protocol_version` off a request that writes data meant to be read again. `INTO OUTFILE` and local `clickhouse-client` output have no such knob and stay at `0`.
 
 #### `FORMAT Native` input — revision 0 by default, raisable over HTTP {#revision-input}
 
@@ -381,14 +383,17 @@ Over HTTP the same `?client_protocol_version=<n>` parameter raises the input rev
 
 For `FORMAT Native` the default is revision `0` at both ends. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
 
-A stream produced at a raised revision (`?client_protocol_version=<n>` on the `SELECT`) carries `BlockInfo` and `has_custom_serialization` bytes and revision-gated encodings, and it does not read back at the default. Put the same `?client_protocol_version=<n>` on the consuming `INSERT ... FORMAT Native` request and the round trip works at any supported revision. For files there is no such knob, so file exports that need to be read back must stay at revision `0` — or move the data over the native TCP protocol, where each direction uses the handshake-negotiated revision.
+A stream produced at a raised revision (`?client_protocol_version=<n>` on the `SELECT`) carries `BlockInfo` and `has_custom_serialization` bytes and revision-gated encodings, and it does not read back at the default. Put the same `?client_protocol_version=<n>` on the consuming `INSERT ... FORMAT Native` request and the round trip works at any supported revision.
+
+Files are the asymmetric case. A raised `?client_protocol_version=` on a server-side `INSERT INTO FUNCTION file(...)` (or `s3`, `url`) *writes* the file at that revision, but a `file(...)` *read* always parses at revision `0` — so such a file does not round-trip. Either leave `client_protocol_version` off the writing request so the file is plain revision `0`, or move the data over the native TCP protocol, where each direction uses the handshake-negotiated revision.
 
 | Channel | Write revision | Read revision | `BlockInfo` / custom serialization |
 |---|---|---|---|
 | Native TCP Data packet | Peer's advertised revision (per direction) | Peer's advertised revision (per direction) | `BlockInfo` whenever revision `> 0`; `has_custom_serialization` at `≥ 54454` |
 | `SELECT ... FORMAT Native` over HTTP | `client_protocol_version` (default `0`) | n/a | Only if `client_protocol_version` raised |
-| `INSERT ... FORMAT Native` over HTTP | n/a | `client_protocol_version` (default `0`) | Only if `client_protocol_version` raised |
-| `INTO OUTFILE` / file / `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
+| `INSERT ... FORMAT Native` over HTTP (body) | n/a | `client_protocol_version` (default `0`) | Only if `client_protocol_version` raised |
+| `INSERT INTO FUNCTION file`/`s3`/`url(..., 'Native')` over HTTP | `client_protocol_version` (default `0`) | `0` (reads always) | On write only if `client_protocol_version` raised — such a file does not read back |
+| `INTO OUTFILE` / local `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
 
 :::note Protocol revision vs serialization version
 Do not confuse the protocol revision with the [serialization version](#serialization-version-concept). The revision here is connection- or request-wide and never appears in the bytes. The serialization version is per column, carried by [versioned types](#versioned-types), and is written into every non-empty block. The revision decides whether a feature is there at all; the serialization version, once you are inside a versioned column, picks which variant of that one type's encoding follows.
