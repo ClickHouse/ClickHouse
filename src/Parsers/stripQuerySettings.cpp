@@ -8,6 +8,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace DB
@@ -32,6 +33,41 @@ void stripNamesFromSetQuery(ASTSetQuery & set_query, Predicate && is_stripped)
 {
     std::erase_if(set_query.changes, [&](const SettingChange & change) { return is_stripped(change.name); });
     std::erase_if(set_query.default_settings, [&](const String & name) { return is_stripped(name); });
+}
+
+/// Detach `field` from `owner`, tolerating a `field` slot that is not registered in `owner.children`.
+/// IAST::reset hard-throws LOGICAL_ERROR ("AST subtree not found in children") in that case, but the
+/// server-side AST fuzzer can hand us structurally-invalid ASTs whose SETTINGS slot is desynced from
+/// `children` (executeQuery.cpp documents that the fuzzer produces such ASTs and the surrounding code
+/// only skips them at format time - this strip runs before that guard). Erase the child if present,
+/// then clear the slot unconditionally, so a desynced node is detached instead of aborting the server.
+/// `IAST::children` is a boost::container::vector, so use the remove/erase idiom (no std::erase_if).
+void eraseChild(IAST & owner, const IAST * child_ptr)
+{
+    owner.children.erase(
+        std::remove_if(
+            owner.children.begin(),
+            owner.children.end(),
+            [&](const ASTPtr & child) { return child.get() == child_ptr; }),
+        owner.children.end());
+}
+
+void detachChild(IAST & owner, ASTPtr & field)
+{
+    if (!field)
+        return;
+    eraseChild(owner, field.get());
+    field.reset();
+}
+
+/// Raw-pointer overload for owners that hold their SETTINGS slot as a bare pointer (e.g. ASTStorage).
+template <typename T>
+void detachChild(IAST & owner, T *& field)
+{
+    if (field == nullptr)
+        return;
+    eraseChild(owner, field);
+    field = nullptr;
 }
 
 template <typename Visitor>
@@ -104,7 +140,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     {
                         stripNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
-                            insert_query->reset(insert_query->settings_ast);
+                            detachChild(*insert_query, insert_query->settings_ast);
                     }
                 return;
             }
@@ -118,7 +154,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 {
                     stripNamesFromSetQuery(*storage->settings, is_stripped);
                     if (isEmptySetQuery(*storage->settings))
-                        storage->reset(storage->settings);
+                        detachChild(*storage, storage->settings);
                 }
                 return;
             }
@@ -137,7 +173,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     {
                         stripNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
-                            query_with_output->reset(query_with_output->settings_ast);
+                            detachChild(*query_with_output, query_with_output->settings_ast);
                     }
             }
 

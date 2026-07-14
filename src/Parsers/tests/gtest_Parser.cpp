@@ -1,5 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
@@ -946,6 +947,84 @@ TEST(RemoveSettingsFromQuery, StripsSettingsCarriersOutsideChildrenWalk)
         ParserQuery reparser(formatted.data() + formatted.size());
         ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
         EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+}
+
+/// The server-side AST fuzzer can hand the strip a structurally-invalid AST whose SETTINGS slot is
+/// desynced from `children` (a mutated child list left the `settings_ast` pointer set but no longer in
+/// `children`). Detaching that slot via IAST::reset hard-throws LOGICAL_ERROR "AST subtree not found in
+/// children", which aborted the server (the strip runs before the format-time try/catch that skips such
+/// ASTs). The transform must instead tolerate the desync and detach the slot. Reproduces STID 1218-27e6.
+TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// Each carrier holds ONLY safety settings, so the strip empties the clause and tries to detach the
+    /// slot. Before the strip we mimic the fuzzer by erasing the settings node from `children` while
+    /// leaving the owner's slot pointer set - exactly the desync the reset()-based detach aborted on.
+    /// Covers every owner branch that detaches: ASTQueryWithOutput (SELECT-UNION), ASTInsertQuery and
+    /// ASTStorage (CREATE ... SETTINGS).
+    const std::vector<String> queries = {
+        /// SETTINGS after FORMAT parks the clause in ASTQueryWithOutput::settings_ast.
+        "SELECT 1 FORMAT Null SETTINGS max_rows_to_read = 0, max_execution_time = 0",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// Desync the SETTINGS slot from `children` on whichever owner carries it, leaving the slot set.
+        std::vector<IAST *> nodes{ast.get()};
+        bool desynced = false;
+        while (!nodes.empty())
+        {
+            auto * node = nodes.back();
+            nodes.pop_back();
+
+            IAST * settings_slot = nullptr;
+            if (auto * insert_query = node->as<ASTInsertQuery>())
+                settings_slot = insert_query->settings_ast.get();
+            else if (auto * storage = node->as<ASTStorage>())
+                settings_slot = storage->settings;
+            else if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(node))
+                settings_slot = query_with_output->settings_ast.get();
+
+            if (settings_slot)
+            {
+                const size_t before = node->children.size();
+                node->children.erase(
+                    std::remove_if(
+                        node->children.begin(),
+                        node->children.end(),
+                        [&](const ASTPtr & child) { return child.get() == settings_slot; }),
+                    node->children.end());
+                if (node->children.size() < before)
+                    desynced = true;
+            }
+
+            for (const auto & child : node->children)
+                if (child)
+                    nodes.push_back(child.get());
+        }
+        ASSERT_TRUE(desynced) << "setup: SETTINGS node was not in children to begin with for: " << query;
+
+        /// Must not throw (before the fix this aborted with "AST subtree not found in children"), and the
+        /// safety setting must still be gone.
+        EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
+        for (const auto & name : safety_settings)
+            EXPECT_FALSE(settingNamePresent(ast, name))
+                << "safety setting '" << name << "' survived for: " << query;
     }
 }
 
