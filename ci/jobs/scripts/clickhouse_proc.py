@@ -15,6 +15,7 @@ from typing import List
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -308,6 +309,7 @@ class ClickHouseProc:
         print("Starting ClickHouse server")
         # check binary available and do decompression in the meantime
         assert Shell.check("clickhouse --version", verbose=True)
+        kill_leftover_server_processes()
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
         self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
         print("Command: ", self.start_cmd)
@@ -452,6 +454,7 @@ profiles:
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
             Shell.check("dmesg --clear", verbose=True)
+            kill_leftover_server_processes()
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
@@ -740,7 +743,10 @@ profiles:
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
-        attempts = 30
+        # A debug or sanitizer server can legitimately take over a minute from
+        # fork to listening; the loop below exits early on success and detects a
+        # dead server via proc.poll(), so a generous deadline costs nothing.
+        attempts = 60
         delay = 2
         if replica_num == 1:
             pid_file = self.pid_file_replica_1

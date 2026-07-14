@@ -11,7 +11,8 @@ chDB provides a native C/C++ API for embedding ClickHouse functionality directly
 
 ## Installation {#installation}
 
-### Step 1: Install libchdb {#install-libchdb}
+<Steps>
+<Step title="Install libchdb" id="install-libchdb">
 
 Install the chDB library on your system:
 
@@ -19,7 +20,8 @@ Install the chDB library on your system:
 curl -sL https://lib.chdb.io | bash
 ```
 
-### Step 2: Include headers {#include-headers}
+</Step>
+<Step title="Include headers" id="include-headers">
 
 Include the chDB header in your project:
 
@@ -27,7 +29,8 @@ Include the chDB header in your project:
 #include <chdb.h>
 ```
 
-### Step 3: Link library {#link-library}
+</Step>
+<Step title="Link library" id="link-library">
 
 Compile and link your application with chDB:
 
@@ -38,6 +41,9 @@ gcc -o myapp myapp.c -lchdb
 # C++ compilation  
 g++ -o myapp myapp.cpp -lchdb
 ```
+
+</Step>
+</Steps>
 
 ## C Examples {#c-examples}
 
