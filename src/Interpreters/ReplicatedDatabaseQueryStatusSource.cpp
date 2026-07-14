@@ -131,10 +131,16 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
 
 bool ReplicatedDatabaseQueryStatusSource::wantsFinishedNodeData() const
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// checkStatus consumes the cached payload only in debug/sanitizer builds, so keep the atomic list-with-data
+    /// request confined to those builds too: a release build issues no with_data listing and keeps the plain path.
     /// checkStatus reads the cached payload as a serialized finished/<host_id> ExecutionStatus. That is only valid
     /// when we actually wait on finished/. Under synchronous settings getNodesToWait() waits on synced/, whose
     /// nodes have an empty payload, so keep the plain listing and let checkStatus do the per-host finished/ get.
     return !context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings];
+#else
+    return false;
+#endif
 }
 
 Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
