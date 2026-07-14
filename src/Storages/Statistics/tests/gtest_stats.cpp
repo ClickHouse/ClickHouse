@@ -599,11 +599,13 @@ TEST(Statistics, StructureEqualsConsidersDataType)
 /// feeds them a post-change block during the rebuild when the mutation did not schedule a recalculation
 /// for that column (e.g. STID 0250-4148: `uniq` declared Int64, block Int128, column 'mtrl'). Before the
 /// rebuild, `processStatisticsChanges` now calls `ColumnsStatistics::reconcileWithColumns(current
-/// columns)`: any collector whose type disagrees with the current metadata is replaced by a fresh
-/// new-type collector (matching what `MutateAllPartColumnsTask` builds from `ColumnsStatistics(columns)`),
-/// or dropped if the column no longer declares statistics. After reconciliation the rebuild feeds a
-/// matching-type collector, so no mismatch reaches the guard.
-TEST(Statistics, ReconcileWithColumnsRebuildsTypeChangedCollectors)
+/// columns)`: any collector whose type disagrees with the current metadata is DROPPED. It is not
+/// materialized to the new type here, because that empty collector would only be filled if the mutation
+/// actually reads the column into a block; a column rebuilt by the mutation is re-added from
+/// `stats_to_recalc` afterwards, and a column merely carried forward via hardlinks is never fed a block
+/// (an empty collector would serialize a zero-row statistic for a non-empty column). A dropped stat is a
+/// missing stat, so no mismatch reaches the guard and no wrong statistic is written.
+TEST(Statistics, ReconcileWithColumnsDropsTypeChangedCollectors)
 {
     tryRegisterAggregateFunctions();
 
@@ -634,18 +636,10 @@ TEST(Statistics, ReconcileWithColumnsRebuildsTypeChangedCollectors)
         return columns;
     };
 
-    auto block_of = [](const String & column_name, const DataTypePtr & type)
-    {
-        MutableColumnPtr col = type->createColumn();
-        for (Int64 i = 0; i < 100; ++i)
-            /// Coerce the integer value to the column's type (Int128, Decimal256, UInt8, Float64, Nullable)
-            /// so the column accepts it regardless of its concrete Field representation.
-            col->insert(convertFieldToType(Field(i), *type));
-        return Block{ColumnWithTypeAndName(std::move(col), type, column_name)};
-    };
-
     /// The exact type-change matrix from the failure family: Int64 -> {Int128, Decimal256, UInt8, Float64}
-    /// and the nullability dimension. After reconciliation the rebuild must succeed and count 100 uniques.
+    /// and the nullability dimension. After reconciliation the stale collector must be DROPPED (not
+    /// materialized to the new type), so the mutation rebuild never feeds it a mismatched block and never
+    /// writes an empty statistic for a column it does not read.
     auto int64_type = std::make_shared<DataTypeInt64>();
     std::vector<DataTypePtr> new_types = {
         std::make_shared<DataTypeInt128>(),
@@ -657,47 +651,43 @@ TEST(Statistics, ReconcileWithColumnsRebuildsTypeChangedCollectors)
 
     for (const auto & new_type : new_types)
     {
+        /// Even though the new column still declares statistics, the type-changed collector is dropped:
+        /// it is only re-added (as a matching-type collector) from `stats_to_recalc` if the mutation
+        /// actually rebuilds the column from a block. A carried-forward column is never fed a block, so
+        /// keeping an empty collector here would serialize a zero-row statistic for a non-empty column.
         auto stats = make_loaded("mtrl", int64_type);
         stats.reconcileWithColumns(make_columns("mtrl", new_type, /*with_uniq=*/ true));
-
-        ASSERT_TRUE(stats.contains("mtrl")) << "collector dropped for type " << new_type->getName();
-        EXPECT_TRUE(stats.at("mtrl")->getDataType()->equals(*new_type))
-            << "collector not rebuilt to " << new_type->getName();
-
-        /// The reconciled collector matches the new block type, so the mutation rebuild no longer aborts.
-        EXPECT_NO_THROW(stats.buildIfExists(block_of("mtrl", new_type))) << "rebuild threw for type " << new_type->getName();
-        EXPECT_EQ(stats.at("mtrl")->estimateCardinality(), 100u) << "wrong cardinality for " << new_type->getName();
+        EXPECT_FALSE(stats.contains("mtrl")) << "type-changed collector not dropped for type " << new_type->getName();
     }
 
     /// Custom-name-only change (UInt8 <-> Bool): both directions share UInt8's typeid, so equals() reports
     /// them equal and reconcileWithColumns would keep the stale collector; only the getName() comparison
-    /// tells them apart. Assert on the collector's stored type NAME so that reverting the production code
-    /// from getName() back to equals() fails here (with equals(), the collector keeps the old name).
+    /// tells them apart. The type changed, so the collector must be dropped. This locks in the production
+    /// getName() comparison: reverting it to equals() would treat Bool==UInt8, keep the collector, and
+    /// make `contains("mtrl")` true here -> the assertions below fail.
     {
         auto uint8_type = std::make_shared<DataTypeUInt8>();
         auto bool_type = DataTypeFactory::instance().get("Bool");
 
         auto uint8_to_bool = make_loaded("mtrl", uint8_type);
         uint8_to_bool.reconcileWithColumns(make_columns("mtrl", bool_type, /*with_uniq=*/ true));
-        ASSERT_TRUE(uint8_to_bool.contains("mtrl"));
-        EXPECT_EQ(uint8_to_bool.at("mtrl")->getDataType()->getName(), bool_type->getName())
-            << "collector kept UInt8 across a UInt8->Bool change (equals() would keep the stale collector)";
+        EXPECT_FALSE(uint8_to_bool.contains("mtrl"))
+            << "collector kept across a UInt8->Bool change (equals() would keep the stale collector)";
 
         auto bool_to_uint8 = make_loaded("mtrl", bool_type);
         bool_to_uint8.reconcileWithColumns(make_columns("mtrl", uint8_type, /*with_uniq=*/ true));
-        ASSERT_TRUE(bool_to_uint8.contains("mtrl"));
-        EXPECT_EQ(bool_to_uint8.at("mtrl")->getDataType()->getName(), uint8_type->getName())
-            << "collector kept Bool across a Bool->UInt8 change (equals() would keep the stale collector)";
+        EXPECT_FALSE(bool_to_uint8.contains("mtrl"))
+            << "collector kept across a Bool->UInt8 change (equals() would keep the stale collector)";
     }
 
-    /// A column that dropped its statistics across the type change: the stale collector is removed entirely.
+    /// A column that dropped its statistics across the type change: the stale collector is removed too.
     {
         auto stats = make_loaded("mtrl", int64_type);
         stats.reconcileWithColumns(make_columns("mtrl", std::make_shared<DataTypeInt128>(), /*with_uniq=*/ false));
         EXPECT_FALSE(stats.contains("mtrl")) << "stale collector for a de-statisticized column was not dropped";
     }
 
-    /// Matching type is a no-op: the existing collector is preserved (not needlessly rebuilt).
+    /// Matching type is a no-op: the existing collector is preserved (not needlessly dropped or rebuilt).
     {
         auto stats = make_loaded("mtrl", int64_type);
         auto * before = stats.at("mtrl").get();

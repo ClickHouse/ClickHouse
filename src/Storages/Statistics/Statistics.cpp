@@ -631,8 +631,6 @@ void ColumnsStatistics::merge(const ColumnsStatistics & other)
 
 void ColumnsStatistics::reconcileWithColumns(const ColumnsDescription & columns)
 {
-    const auto & factory = MergeTreeStatisticsFactory::instance();
-
     for (auto & [column_name, stat] : *this)
     {
         const auto * column_desc = columns.tryGet(column_name);
@@ -649,13 +647,17 @@ void ColumnsStatistics::reconcileWithColumns(const ColumnsDescription & columns)
         if (stat_type && current_type->getName() == stat_type->getName())
             continue;
 
-        /// Type changed since the loaded statistic was written. Drop the stale-typed collector
-        /// and build a fresh empty one for the current type when the column still declares
-        /// statistics; otherwise remove it entirely.
-        if (column_desc->statistics.empty())
-            stat = nullptr;
-        else
-            stat = factory.get(*column_desc);
+        /// Type changed since the loaded statistic was written. Drop the stale-typed collector.
+        /// Do NOT materialize a fresh empty collector for the new type here: this collector is only
+        /// carried forward via hardlinks unless the mutation actually rebuilds the column from data.
+        /// A column that IS rebuilt is re-added right after this call from `stats_to_recalc` (see
+        /// processStatisticsChanges), so it gets a matching-type collector that `buildIfExists` fills.
+        /// A column that is NOT rebuilt (e.g. splitAndModifyMutationCommands skips its READ_COLUMN
+        /// while a later mutation renames a stale collector onto its current name) is never fed a
+        /// block, so an empty collector left here would serialize a zero-row statistic for a
+        /// non-empty column. Dropping it makes the stat simply absent (safe fallback), matching the
+        /// pre-existing behavior where a type-name mismatch made loadStatistics discard it.
+        stat = nullptr;
     }
 
     std::erase_if(*this, [](const auto & pair) { return pair.second == nullptr; });

@@ -164,13 +164,16 @@ public:
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
 
-    /// Replace any collector whose type disagrees with the current column type in `columns`
-    /// with a fresh empty collector for the current type. Statistics loaded from a source part
-    /// (`IMergeTreeDataPart::loadStatistics`) are keyed on the type stored at write time; a
-    /// MODIFY COLUMN that changed the type but did not schedule a recalculation for that column
-    /// would otherwise feed the stale-typed collector a new-type block during the mutation rebuild
-    /// (`build`/`buildIfExists`) and trip the type-mismatch guard. Rebuilding from the new type is
-    /// correct: the mutation writes a fresh part, so the collector is filled from scratch anyway.
+    /// Drop any collector whose type disagrees with the current column type in `columns`.
+    /// Statistics loaded from a source part (`IMergeTreeDataPart::loadStatistics`) are keyed on the
+    /// type stored at write time; a MODIFY COLUMN that changed the type but did not schedule a
+    /// recalculation for that column would otherwise feed the stale-typed collector a new-type block
+    /// during the mutation rebuild (`build`/`buildIfExists`) and trip the type-mismatch guard.
+    /// The stale collector is only dropped, not rebuilt: a column the mutation actually rebuilds is
+    /// re-added afterwards from `stats_to_recalc` with a matching-type collector, while a column only
+    /// carried forward via hardlinks is never fed a block, so a materialized empty collector would
+    /// serialize a zero-row statistic for a non-empty column. A dropped stat is a missing stat (safe
+    /// fallback); the pre-existing type-name mismatch made loadStatistics discard it anyway.
     void reconcileWithColumns(const ColumnsDescription & columns);
 };
 
