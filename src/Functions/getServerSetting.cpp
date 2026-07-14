@@ -24,11 +24,20 @@ class FunctionGetServerSetting final : public IFunction
 public:
     static constexpr auto name = "getServerSetting";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetServerSetting>(context->isDistributed()); }
+
+    explicit FunctionGetServerSetting(bool is_distributed_) : is_distributed(is_distributed_) {}
 
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+
+    bool isServerConstant() const override { return true; }
+
+    /// The value is server-local: each shard may have a different config or runtime limit,
+    /// so the initiator of a distributed query must not fold the call into a literal
+    /// computed from its own value (same as `getServerPort`).
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -86,6 +95,8 @@ private:
 
         return server_settings.get(setting_name);
     }
+
+    bool is_distributed;
 };
 
 }
