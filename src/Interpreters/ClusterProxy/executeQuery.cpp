@@ -7,6 +7,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -125,6 +126,19 @@ namespace
     /// regression test would no longer exercise the reuse path it is meant to guard. Suppress the test failpoint
     /// while the discarded probe plan is built (the probe and the real build run on the same thread in sequence).
     thread_local bool in_insert_select_suitability_probe = false;
+
+    /// True when the sharding key expression itself contains an IN/set (e.g. a subquery like `x IN (SELECT ...)`).
+    /// The sharding key expression is built standalone from the sharding-key AST, so such a set is never
+    /// populated during planning. `OptimizeShardingKeyRewriteIn` executes this expression on constant values to
+    /// prune shards, which would hit `FunctionIn` with an unbuilt set and throw "Not-ready Set". Skip the rewrite
+    /// in that case and query all shards (the same safe fallback used for non-deterministic sharding keys).
+    bool shardingKeyExpressionContainsSet(const ExpressionActionsPtr & sharding_key_expr)
+    {
+        for (const auto & node : sharding_key_expr->getActionsDAG().getNodes())
+            if (node.result_type && WhichDataType(node.result_type).isSet())
+                return true;
+        return false;
+    }
 }
 
 namespace ClusterProxy
@@ -437,7 +451,8 @@ void executeQuery(
             auto query_for_shard = query_info.query_tree->clone();
             if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
                 /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+                sharding_key_expr->getRequiredColumns().size() == 1 &&
+                !shardingKeyExpressionContainsSet(sharding_key_expr))
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
@@ -476,7 +491,8 @@ void executeQuery(
             ASTPtr query_ast_for_shard = query_info.query->clone();
             if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
                 /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+                sharding_key_expr->getRequiredColumns().size() == 1 &&
+                !shardingKeyExpressionContainsSet(sharding_key_expr))
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
