@@ -743,7 +743,10 @@ profiles:
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
-        attempts = 30
+        # A debug or sanitizer server can legitimately take over a minute from
+        # fork to listening; the loop below exits early on success and detects a
+        # dead server via proc.poll(), so a generous deadline costs nothing.
+        attempts = 60
         delay = 2
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
