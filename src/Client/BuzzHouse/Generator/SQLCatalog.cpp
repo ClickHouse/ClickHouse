@@ -3,137 +3,6 @@
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> outFormats
-    = {{OutFormat::OUT_Arrow, OutFormat::OUT_ArrowStream},
-       {OutFormat::OUT_Avro, OutFormat::OUT_AvroConfluent},
-       {OutFormat::OUT_BSONEachRow},
-       {OutFormat::OUT_Buffers},
-       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactEachRowWithProgress,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactStringsEachRowWithProgress,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_MsgPack},
-       {OutFormat::OUT_Native},
-       {OutFormat::OUT_ORC},
-       {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufList, OutFormat::OUT_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB},
-       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV},
-       {OutFormat::OUT_Values}};
-
-const std::unordered_map<OutFormat, InFormat> outIn
-    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-       {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
-       {OutFormat::OUT_Avro, InFormat::IN_Avro},
-       {OutFormat::OUT_AvroConfluent, InFormat::IN_AvroConfluent},
-       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-       {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
-       {OutFormat::OUT_CSV, InFormat::IN_CSV},
-       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
-       {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
-       {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON, InFormat::IN_JSON},
-       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-       {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-       {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-       {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-       {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-       {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactEachRowWithProgress, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithProgress, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-       {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
-       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-       {OutFormat::OUT_Native, InFormat::IN_Native},
-       {OutFormat::OUT_ORC, InFormat::IN_ORC},
-       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-       {OutFormat::OUT_ProtobufList, InFormat::IN_ProtobufList},
-       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
-       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
-       {OutFormat::OUT_TabSeparatedRaw, InFormat::IN_TabSeparatedRaw},
-       {OutFormat::OUT_TabSeparatedRawWithNames, InFormat::IN_TabSeparatedRawWithNames},
-       {OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, InFormat::IN_TabSeparatedRawWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
-       {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-       {OutFormat::OUT_Values, InFormat::IN_Values}};
-
-const std::vector<std::vector<InOutFormat>> inOutFormats = {
-    {InOutFormat::INOUT_Arrow, InOutFormat::INOUT_ArrowStream},
-    {InOutFormat::INOUT_Avro, InOutFormat::INOUT_AvroConfluent},
-    {InOutFormat::INOUT_BSONEachRow},
-    {InOutFormat::INOUT_Buffers},
-    {InOutFormat::INOUT_CSV, InOutFormat::INOUT_CSVWithNames, InOutFormat::INOUT_CSVWithNamesAndTypes},
-    {InOutFormat::INOUT_CustomSeparated, InOutFormat::INOUT_CustomSeparatedWithNames, InOutFormat::INOUT_CustomSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_JSON,
-     InOutFormat::INOUT_JSONColumns,
-     InOutFormat::INOUT_JSONColumnsWithMetadata,
-     InOutFormat::INOUT_JSONCompact,
-     InOutFormat::INOUT_JSONCompactColumns,
-     InOutFormat::INOUT_JSONCompactEachRow,
-     InOutFormat::INOUT_JSONCompactEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONCompactStringsEachRow,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONEachRow,
-     InOutFormat::INOUT_JSONLines,
-     InOutFormat::INOUT_JSONObjectEachRow,
-     InOutFormat::INOUT_JSONStringsEachRow},
-    {InOutFormat::INOUT_CapnProto},
-    {InOutFormat::INOUT_MsgPack},
-    {InOutFormat::INOUT_Native},
-    {InOutFormat::INOUT_Npy},
-    {InOutFormat::INOUT_ORC},
-    {InOutFormat::INOUT_Parquet},
-    {InOutFormat::INOUT_Protobuf, InOutFormat::INOUT_ProtobufList, InOutFormat::INOUT_ProtobufSingle},
-    {InOutFormat::INOUT_RawBLOB},
-    {InOutFormat::INOUT_RowBinary, InOutFormat::INOUT_RowBinaryWithNames, InOutFormat::INOUT_RowBinaryWithNamesAndTypes},
-    {InOutFormat::INOUT_TabSeparated,
-     InOutFormat::INOUT_TabSeparatedRaw,
-     InOutFormat::INOUT_TabSeparatedRawWithNames,
-     InOutFormat::INOUT_TabSeparatedRawWithNamesAndTypes,
-     InOutFormat::INOUT_TabSeparatedWithNames,
-     InOutFormat::INOUT_TabSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_Template},
-    {InOutFormat::INOUT_TSKV},
-    {InOutFormat::INOUT_Values}};
-
 bool SQLColumn::canBeInserted() const
 {
     return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
@@ -871,24 +740,24 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const DB::Strings formats = {"ORC", "Avro", "Parquet"};
 
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
     {
         /// What Delta Lake supports
-        file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.nextMediumNumber() < 91 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
     {
-        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Parquet};
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        static const DB::Strings formats = {"ORC", "Parquet"};
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
     {
         /// At the moment give more preference for Parquet
-        file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.nextMediumNumber() < 26 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
     }
     if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
     {
