@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -322,6 +323,21 @@ public:
             if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
                 return false;
             if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
+                return false;
+        }
+
+        if (auto * sort_node = parent->as<SortNode>())
+        {
+            /// Do not replace WITH FILL FROM/TO/STEP/STALENESS constants. The planner reads them
+            /// directly via `as<ConstantNode &>()` in extractWithFillValue (PlannerSorting.cpp),
+            /// so a `__getScalar` FunctionNode there would cause a bad cast during planning.
+            if (sort_node->hasFillFrom() && sort_node->getFillFrom() == child)
+                return false;
+            if (sort_node->hasFillTo() && sort_node->getFillTo() == child)
+                return false;
+            if (sort_node->hasFillStep() && sort_node->getFillStep() == child)
+                return false;
+            if (sort_node->hasFillStaleness() && sort_node->getFillStaleness() == child)
                 return false;
         }
 

@@ -46,14 +46,16 @@ This guide provides a high-level overview of setting up a Streamkap pipeline to 
 - Your ClickHouse cluster connection details: Hostname, Port, Username, and Password.
 - A source database (e.g., PostgreSQL, SQL Server) configured to allow CDC. You can find detailed setup guides in the Streamkap documentation.
 
-### Step 1: Configure the Source in Streamkap {#configure-clickhouse-source}
+<Steps>
+<Step title="Configure the Source in Streamkap" id="configure-clickhouse-source">
 1. Log into your Streamkap account.
 2. In the sidebar, navigate to **Connectors** and select the **Sources** tab.
 3. Click **+ Add** and select your source database type (e.g., SQL Server RDS).
 4. Fill in the connection details, including the endpoint, port, database name, and user credentials.
 5. Save the connector.
 
-### Step 2: Configure the ClickHouse Destination {#configure-clickhouse-dest}
+</Step>
+<Step title="Configure the ClickHouse Destination" id="configure-clickhouse-dest">
 1. In the **Connectors** section, select the **Destinations** tab.
 2. Click **+ Add** and choose **ClickHouse** from the list.
 3. Enter the connection details for your ClickHouse service:
@@ -63,7 +65,8 @@ This guide provides a high-level overview of setting up a Streamkap pipeline to 
    - **Database:** The target database name in ClickHouse
 4. Save the destination.
 
-### Step 3: Create and Run the Pipeline {#run-pipeline}
+</Step>
+<Step title="Create and Run the Pipeline" id="run-pipeline">
 1. Navigate to **Pipelines** in the sidebar and click **+ Create**.
 2. Select the Source and Destination you just configured.
 3. Choose the schemas and tables you wish to stream.
@@ -71,13 +74,17 @@ This guide provides a high-level overview of setting up a Streamkap pipeline to 
 
 Once created, the pipeline will become active. Streamkap will first take a snapshot of the existing data and then begin streaming any new changes as they occur.
 
-### Step 4: Verify the Data in ClickHouse {#verify-data-clickhoouse}
+</Step>
+<Step title="Verify the Data in ClickHouse" id="verify-data-clickhoouse">
 
 Connect to your ClickHouse cluster and run a query to see the data arriving in the target table.
 
 ```sql
 SELECT * FROM your_table_name LIMIT 10;
 ```
+
+</Step>
+</Steps>
 
 ## How it Works with ClickHouse {#how-it-works-with-clickhouse}
 
