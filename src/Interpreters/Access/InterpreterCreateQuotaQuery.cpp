@@ -114,6 +114,11 @@ namespace
             }
         }
 
+        /// An ALTER cloned from a legacy inert quota still carries its non-positive interval; drop it
+        /// so a user-facing CREATE/ALTER never republishes the crash-triggering definition.
+        if (validate)
+            std::erase_if(quota_all_limits, [](const Quota::Limits & x) { return x.duration.count() <= 0; });
+
         if (override_to_roles)
             quota.to_roles = *override_to_roles;
         else if (query.roles)

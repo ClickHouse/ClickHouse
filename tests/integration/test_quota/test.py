@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import uuid
 
 import pytest
 
@@ -17,6 +18,7 @@ instance = cluster.add_instance(
         "configs/users.d/myquota.xml",
         "configs/users.d/user_with_no_quota.xml",
     ],
+    stay_alive=True,
 )
 
 
@@ -1831,3 +1833,55 @@ def test_quota_keyed_by_normalized_query_hash_from_users_xml():
 
     # Restore a clean config so later periodic reloads do not fail.
     copy_quota_xml("no_quotas.xml")
+
+
+def test_persisted_legacy_zero_interval_quota_loads_inert():
+    # A FOR INTERVAL 0 SECOND quota created by an older version used to divide by the
+    # interval duration when consumed. After upgrade such a quota must still load (so one
+    # bad entity does not fail startup), stay inert (no enforcement, no divide-by-zero),
+    # and not grow system.quotas_usage rows.
+    instance.stop_clickhouse()
+
+    quota_id = uuid.uuid4()
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+        cat > /var/lib/clickhouse/access/{quota_id}.sql << 'EOF'
+ATTACH QUOTA q_legacy_zero KEYED BY user_name FOR INTERVAL 0 SECOND MAX queries = 1000 TO ALL;
+EOF""",
+        ]
+    )
+    instance.exec_in_container(
+        ["bash", "-c", "touch /var/lib/clickhouse/access/need_rebuild_lists.mark"]
+    )
+    instance.start_clickhouse()
+
+    try:
+        # The legacy quota loaded rather than failing startup.
+        assert (
+            instance.query(
+                "SELECT durations FROM system.quotas WHERE name = 'q_legacy_zero'"
+            )
+            == "[0]\n"
+        )
+        # Queries succeed (no divide-by-zero) and the inert quota is not enforced.
+        assert instance.query("SELECT count() FROM numbers(3)") == "3\n"
+        # No usage rows accumulate for the inert quota.
+        assert (
+            instance.query(
+                "SELECT count() FROM system.quotas_usage WHERE quota_name = 'q_legacy_zero'"
+            )
+            == "0\n"
+        )
+        # A user-facing ALTER must not republish the zero-length interval; it is dropped.
+        instance.query("ALTER QUOTA q_legacy_zero FOR INTERVAL 1 HOUR MAX queries = 500")
+        assert (
+            instance.query(
+                "SELECT duration FROM system.quota_limits WHERE quota_name = 'q_legacy_zero' ORDER BY duration"
+            )
+            == "3600\n"
+        )
+    finally:
+        instance.query("DROP QUOTA IF EXISTS q_legacy_zero")
