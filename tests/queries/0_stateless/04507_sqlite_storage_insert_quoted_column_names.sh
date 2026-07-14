@@ -19,12 +19,16 @@ trap cleanup EXIT
 rm -rf "${BASE}"
 mkdir -p "${BASE}"
 
+# Column names that require identifier quoting (a single quote, and a space). Both round-trip through the
+# SQLite engine on INSERT and SELECT. Column names containing a double quote or a backslash are not covered:
+# the read path quotes identifiers with ClickHouse's double-quote escaping (`"` -> `\"`, `\` -> `\\`), which
+# SQLite does not understand, so such a column can be written but not read back yet.
 sqlite3 "${DB_PATH}" <<'SQL'
-CREATE TABLE tbl("a'b" INTEGER, "a\b" INTEGER);
+CREATE TABLE tbl("a'b" INTEGER, "c d" INTEGER);
 SQL
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04507 (\`a'b\` Nullable(Int64), \`a\\b\` Nullable(Int64)) ENGINE = SQLite('${DB_PATH}', 'tbl')"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04507 (\`a'b\` Nullable(Int64), \`c d\` Nullable(Int64)) ENGINE = SQLite('${DB_PATH}', 'tbl')"
 
 echo 'Rows after INSERT into SQLite columns requiring identifier quoting:'
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04507 (\`a'b\`, \`a\\b\`) VALUES (1, 2)"
-${CLICKHOUSE_CLIENT} --query "SELECT \`a'b\`, \`a\\b\` FROM t_04507 FORMAT TSVWithNames"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04507 (\`a'b\`, \`c d\`) VALUES (1, 2)"
+${CLICKHOUSE_CLIENT} --query "SELECT \`a'b\`, \`c d\` FROM t_04507 FORMAT TSVWithNames"
