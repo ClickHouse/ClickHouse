@@ -284,23 +284,44 @@ def parse_crash(crash_path: Path, fuzzer_binary: Optional[Path]) -> CrashInfo:
     )
 
 
+def _severity_rank(severity: str) -> int:
+    """Return the sort rank of a severity (0 = worst). Unknown severities sort last."""
+    try:
+        return SEVERITY_ORDER.index(severity)
+    except ValueError:
+        return len(SEVERITY_ORDER)
+
+
 def group_crashes(crash_infos: List[CrashInfo]) -> List[CrashGroup]:
-    """Group `CrashInfo` objects by stack hash and return sorted groups."""
+    """Group `CrashInfo` objects by stack hash and return sorted groups.
+
+    Every member of a group shares the same stack hash (and therefore the same
+    frames), but members can still differ in severity and crash type - for
+    example a `READ` and a `WRITE` overflow with identical top frames. The group
+    must advertise its *worst* member, otherwise a `CRITICAL` write overflow
+    seen after a `HIGH` read overflow would be reported as `HIGH`, defeating the
+    tool's purpose of surfacing the worst crash per stack.
+    """
     groups: Dict[str, CrashGroup] = {}
 
     for info in crash_infos:
-        if info.stack_hash not in groups:
-            groups[info.stack_hash] = CrashGroup(
+        group = groups.get(info.stack_hash)
+        if group is None:
+            groups[info.stack_hash] = group = CrashGroup(
                 stack_hash=info.stack_hash,
                 severity=info.severity,
                 crash_type=info.crash_type,
                 frames=info.frames,
             )
-        groups[info.stack_hash].members.append(info.path)
+        elif _severity_rank(info.severity) < _severity_rank(group.severity):
+            # A worse crash reached the same stack: promote the group to it.
+            group.severity = info.severity
+            group.crash_type = info.crash_type
+        group.members.append(info.path)
 
     sorted_groups = sorted(
         groups.values(),
-        key=lambda g: (SEVERITY_ORDER.index(g.severity), g.stack_hash),
+        key=lambda g: (_severity_rank(g.severity), g.stack_hash),
     )
     return sorted_groups
 
@@ -391,6 +412,54 @@ def generate_report(groups: List[CrashGroup], crashes_dir: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Self-tests
+# ---------------------------------------------------------------------------
+
+def _run_self_tests() -> int:
+    """Run built-in regression tests. Returns 0 on success, 1 on failure."""
+
+    def make(stack_hash: str, severity: str, crash_type: str) -> CrashInfo:
+        return CrashInfo(
+            path=Path(f"crash-{stack_hash}-{severity}"),
+            severity=severity,
+            crash_type=crash_type,
+            frames=["frame_a", "frame_b"],
+            stack_hash=stack_hash,
+        )
+
+    # A deduplicated group must advertise the worst severity/type regardless of
+    # the order in which its members are seen (the read/write overflow case).
+    read = make("h1", "HIGH", "heap-buffer-overflow (read)")
+    write = make("h1", "CRITICAL", "heap-buffer-overflow (write)")
+    for order in ([read, write], [write, read]):
+        groups = group_crashes(order)
+        assert len(groups) == 1, f"expected 1 group, got {len(groups)}"
+        assert groups[0].severity == "CRITICAL", f"severity not promoted: {groups[0].severity}"
+        assert groups[0].crash_type == "heap-buffer-overflow (write)", (
+            f"crash_type not promoted: {groups[0].crash_type}"
+        )
+        assert len(groups[0].members) == 2, "both members must be kept"
+
+    # Groups are sorted worst-first.
+    order = group_crashes([make("h2", "LOW", "timeout"), make("h1", "CRITICAL", "x")])
+    assert [g.severity for g in order] == ["CRITICAL", "LOW"], "groups not sorted worst-first"
+
+    # A WRITE overflow must be CRITICAL even though the direction is on the line
+    # following the sanitizer header.
+    sample = (
+        "==123==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x1\n"
+        "WRITE of size 4 at 0x1 thread T0\n"
+        "    #0 0xdead in foo\n"
+    )
+    severity, crash_type = _classify_from_sanitizer_text(sample)
+    assert severity == "CRITICAL", f"write overflow misclassified as {severity}"
+    assert crash_type == "heap-buffer-overflow (write)", crash_type
+
+    print("All self-tests passed.", file=sys.stderr)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -402,7 +471,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "crashes_dir",
         metavar="CRASHES_DIR",
         type=Path,
+        nargs="?",
+        default=None,
         help="Directory containing crash-*, oom-*, timeout-*, leak-* files.",
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run built-in regression tests and exit.",
     )
     parser.add_argument(
         "--fuzzer-binary",
@@ -424,7 +500,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
 
-    crashes_dir: Path = args.crashes_dir
+    if args.self_test:
+        return _run_self_tests()
+
+    crashes_dir: Optional[Path] = args.crashes_dir
+    if crashes_dir is None:
+        print("error: CRASHES_DIR is required (or pass --self-test)", file=sys.stderr)
+        return 1
     if not crashes_dir.is_dir():
         print(f"error: crashes directory not found: {crashes_dir}", file=sys.stderr)
         return 1
