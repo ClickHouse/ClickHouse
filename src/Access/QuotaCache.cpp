@@ -190,6 +190,19 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     intervals.reserve(quota->all_limits.size());
     for (const auto & limits : quota->all_limits)
     {
+        /// A non-positive interval duration would divide by zero in getEndOfInterval and can never
+        /// expire. CREATE/ALTER QUOTA rejects it, but a legacy quota persisted before that
+        /// validation still loads from disk, so skip such intervals here instead of enforcing them.
+        if (limits.duration <= std::chrono::seconds::zero())
+        {
+            LOG_WARNING(
+                getLogger("QuotaCache"),
+                "Ignoring quota {} interval with non-positive duration {} seconds",
+                quota->getName(),
+                limits.duration.count());
+            continue;
+        }
+
         intervals.emplace_back(limits.duration, limits.randomize_interval, current_time);
         auto & interval = intervals.back();
         for (auto quota_type : collections::range(QuotaType::MAX))
