@@ -1,0 +1,129 @@
+---
+title: Создайте собственный DNS-алиас через настройку обратного прокси
+description: Узнайте, как настроить собственный DNS-алиас для вашего экземпляра с помощью обратного прокси
+date: 2025-05-16
+tags: ['Администрирование сервера', 'Безопасность и аутентификация']
+keywords: ['собственный DNS-алиас', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # Собственный DNS-алиас через настройку обратного прокси
+</div>
+
+> В этой статье базы знаний мы покажем, как настроить собственный
+> DNS-алиас для вашего экземпляра ClickHouse Cloud с помощью обратного
+> прокси, например Nginx, для нативного клиента ClickHouse.
+
+<div id="create-certificate">
+  ## Создайте самоподписанный сертификат
+</div>
+
+<Note>
+  Этот шаг не требуется, если вы используете подписанные сертификаты.
+</Note>
+
+Создайте самоподписанный сертификат для доменного имени по вашему выбору.
+В этом примере мы будем использовать доменное имя `xyz-customdomain.com` и
+создадим сертификат с именем `MyCertificate.crt`. Подробнее см. в разделе [&quot;Создание SSL-сертификатов&quot;](/ru/concepts/features/security/tls/configuring-tls#2-create-tls-certificates).
+
+Добавьте сертификат в `/etc/clickhouse-client/config.xml`:
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## Обновление конфигурации Nginx
+</div>
+
+Добавьте в файл `nginx.conf` следующее:
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+Где `isrgrootx1.pem` — это корневой сертификат ClickHouse Cloud, который
+можно скачать [здесь](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+<div id="update-hosts-file">
+  ## Обновите файл hosts
+</div>
+
+<Note>
+  Следующий шаг не требуется, если вы используете собственные DNS-серверы
+</Note>
+
+Добавьте следующее в файл `/etc/hosts` на сервере Nginx:
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+Где `10.X.Y.Z` — IP-адрес вашего сервера Nginx.
+
+<div id="connect-to-cloud-using-alias">
+  ## Подключение к Cloud через DNS-алиас
+</div>
+
+Теперь вы можете подключиться, используя свой пользовательский DNS-алиас:
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

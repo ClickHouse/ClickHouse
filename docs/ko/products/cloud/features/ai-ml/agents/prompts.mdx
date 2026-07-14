@@ -1,0 +1,67 @@
+---
+sidebarTitle: 'Prompts'
+slug: /cloud/features/ai-ml/agents/prompts
+title: 'Prompts'
+description: 'ClickHouse Agents용 저장 프롬프트 라이브러리'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', '프롬프트', '템플릿']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+Prompts 라이브러리는 자주 반복해 입력하는 자연어 프롬프트를 저장해 두고 다시 사용할 수 있는 공간입니다. 채팅 컴포저에서 쓰는 스니펫처럼 생각하면 됩니다. 동일한 분석 질문이나 포맷 지시를 여러 대화에서 반복해 사용할 때 유용합니다.
+
+<div id="create-a-prompt">
+  ## 프롬프트 만들기
+</div>
+
+왼쪽 탐색 메뉴의 **Prompts** 아이콘에서 Prompts 패널을 열고 **+** 버튼을 클릭해 **Create Prompt** 양식을 여십시오. 다음 필드를 입력하세요.
+
+* **Prompt Name** (필수) - 선택기에 표시되는 이름입니다. 구체적으로 작성하십시오. *&quot;WAU&quot;*보다는 *&quot;지역별 주간 활성 사용자 수&quot;*가 더 좋습니다.
+* **Text** (필수) - 컴포저에 실제로 삽입되는 텍스트입니다.
+* **Special variables** - **Special variables** 버튼을 클릭해 플레이스홀더를 삽입하거나 `{{name}}` 형식의 마커를 직접 입력할 수 있습니다. 선택기에서는 삽입 전에 값을 입력하라는 메시지가 표시됩니다.
+* **Category**, **Description**, **Command** (선택 사항) - 라이브러리 정리, 선택기 미리보기 텍스트, 빠른 실행 바로가기 설정에 사용됩니다.
+
+그런 다음 오른쪽 아래의 **Create Prompt**를 클릭하십시오.
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="왼쪽에서 + 버튼이 강조 표시된 Prompts 패널과 오른쪽에서 Prompt Name, Text, Category, Special variables, Description, Command 필드 및 Create Prompt 버튼이 표시된 Create Prompt 양식" size="lg" />
+
+<div id="use-a-prompt">
+  ## 프롬프트 사용
+</div>
+
+Prompts 패널에서 프롬프트 카드의 **...** 메뉴를 열고 **Preview**를 선택합니다:
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="Prompts 패널에서 프롬프트가 선택되어 있고, 오른쪽에 세부 정보가 표시되며, Preview 및 Edit 옵션이 있는 컨텍스트 메뉴가 열린 모습" size="lg" />
+
+미리 보기에는 프롬프트 텍스트와 작성자, 날짜가 표시됩니다. **Use Prompt**를 클릭하면 본문이 컴포저에 삽입됩니다. 프롬프트에 변수가 있으면 먼저 값을 입력하세요.
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="프롬프트 제목, 작성자, 날짜, 본문 텍스트와 Use Prompt 버튼이 표시된 프롬프트 미리 보기 모달" size="md" />
+
+<div id="share-prompts">
+  ## 프롬프트 공유
+</div>
+
+기본적으로 프롬프트는 생성한 사람만 사용할 수 있습니다. 소유자는 프롬프트의 공개 범위를 다음과 같이 변경할 수 있습니다:
+
+* **특정 사용자 또는 그룹** - 지정한 사용자 또는 그룹의 구성원은 프롬프트를 찾아 사용할 수 있습니다.
+* **조직 전체** - ClickHouse Cloud 조직의 모든 사용자가 프롬프트를 찾아 사용할 수 있습니다.
+
+프롬프트는 에이전트와 동일한 권한 모델을 사용합니다. 역할별로 수행할 수 있는 작업의 전체 매트릭스는 [공유 및
+액세스](/ko/products/cloud/features/ai-ml/agents/sharing-and-access)를 참조하십시오.
+
+<div id="prompts-vs-skills-vs-instructions">
+  ## Prompts, 스킬, 지침의 차이
+</div>
+
+Prompts, 스킬, 그리고 에이전트 지침은 모두 모델에 텍스트를 추가하지만, 무엇이 이를 트리거하는지와 얼마나 오래 유지되는지에서 차이가 있습니다.
+
+* **Prompts** - 사용자가 직접 컴포저에 삽입하는 텍스트로, 각 턴마다 수정합니다.
+* **[스킬](/ko/products/cloud/features/ai-ml/agents/builder/skills)** - 작업과 관련이 있다고 에이전트가 판단할 때 스스로 불러오는 지침 모음입니다.
+* **에이전트 지침** - 모든 대화에 적용되는 에이전트의 지속적인 system prompt입니다.
+
+표현을 재사용하되 매번 문구는 직접 조정하고 싶다면 prompt를 사용하십시오. 직접 입력하지 않아도 에이전트가 특정 작업 유형 전반에 걸쳐 동일한 지침을 일관되게 적용하게 하려면 스킬을 사용하십시오. 동작이 에이전트의
+전체 수명 동안 유지되어야 한다면 에이전트 지침를 사용하십시오.

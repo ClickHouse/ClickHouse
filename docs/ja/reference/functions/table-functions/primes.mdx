@@ -1,0 +1,137 @@
+---
+slug: /sql-reference/table-functions/primes
+sidebarTitle: 'primes'
+title: 'primes'
+description: '素数を含む単一の `prime` カラムを持つテーブルを返します。'
+doc_type: 'reference'
+---
+
+* `primes()` – 2 から始まる素数を昇順で含む、単一の `prime` カラム (UInt64) を持つ無限テーブルを返します。`LIMIT` (必要に応じて `OFFSET` も) を使用して行数を制限します。
+
+* `primes(N)` – 2 から始まる最初の `N` 個の素数を含む、単一の `prime` カラム (UInt64) を持つテーブルを返します。
+
+* `primes(N, M)` – `N` 番目の素数 (0 始まり) から始まる `M` 個の素数を含む、単一の `prime` カラム (UInt64) を持つテーブルを返します。
+
+* `primes(N, M, S)` – 素数のインデックスにおいてステップ `S` で、`N` 番目の素数 (0 始まり) から始まる `M` 個の素数を含む、単一の `prime` カラム (UInt64) を持つテーブルを返します。返される素数は、索引 `N, N + S, N + 2S, ..., N + (M - 1)S` に対応します。`S` は `>= 1` である必要があります。
+
+これは [`system.primes`](/ja/reference/system-tables/primes) システムテーブルに似ています。
+
+次のクエリは同等です:
+
+```sql
+SELECT * FROM primes(10);
+SELECT * FROM primes(0, 10);
+SELECT * FROM primes() LIMIT 10;
+SELECT * FROM system.primes LIMIT 10;
+SELECT * FROM system.primes WHERE prime IN (2, 3, 5, 7, 11, 13, 17, 19, 23, 29);
+```
+
+次のクエリも同等です。
+
+```sql
+SELECT * FROM primes(10, 10);
+SELECT * FROM primes() LIMIT 10 OFFSET 10;
+SELECT * FROM system.primes LIMIT 10 OFFSET 10;
+```
+
+<div id="examples">
+  ### 例
+</div>
+
+最初の10個の素数。
+
+```sql
+SELECT * FROM primes(10);
+```
+
+```response
+  ┌─prime─┐
+  │     2 │
+  │     3 │
+  │     5 │
+  │     7 │
+  │    11 │
+  │    13 │
+  │    17 │
+  │    19 │
+  │    23 │
+  │    29 │
+  └───────┘
+```
+
+1e15を超える最初の素数。
+
+```sql
+SELECT prime FROM primes() WHERE prime > 1e15 LIMIT 1;
+```
+
+```response
+  ┌────────────prime─┐
+  │ 1000000000000037 │ -- 1.00 quadrillion
+  └──────────────────┘
+```
+
+非常に大きな範囲における素数に対する剰余条件を解きます。`p >= 10^15` を満たし、`p` を `65537` で割った余りが `1` となる最初の素数 `p` を見つけてください。
+
+```sql
+SELECT prime
+FROM primes()
+WHERE prime >= 1e15
+  AND prime % 65537 = 1
+LIMIT 1;
+```
+
+```response
+ ┌────────────prime─┐
+ │ 1000000001218399 │ -- 1.00兆
+ └──────────────────┘
+```
+
+最初の7個のメルセンヌ素数。
+
+```sql
+SELECT prime
+FROM primes()
+WHERE bitAnd(prime, prime + 1) = 0
+LIMIT 7;
+```
+
+```response
+  ┌──prime─┐
+  │      3 │
+  │      7 │
+  │     31 │
+  │    127 │
+  │   8191 │
+  │ 131071 │
+  │ 524287 │
+  └────────┘
+```
+
+<div id="notes">
+  ### 注記
+</div>
+
+* 最も高速なのは、既定のステップ (`1`) を使用する単純な範囲クエリとポイントフィルタクエリです。たとえば、`primes(N)` や `primes() LIMIT N` です。これらの形式では、最適化された素数ジェネレーターにより、非常に大きな素数も効率よく計算できます。
+* 境界のないソース (`primes()` / `system.primes`) では、`prime BETWEEN ...`、`prime IN (...)`、`prime = ...` のような単純な値フィルタを生成中に適用し、探索対象の値の範囲を絞り込めます。たとえば、次のクエリはほぼ瞬時に実行されます。
+
+```sql
+SELECT sum(prime)
+FROM primes()
+WHERE prime BETWEEN 1e6 AND 1e6 + 100
+   OR prime BETWEEN 1e12 AND 1e12 + 100
+   OR prime BETWEEN 1e15 AND 1e15 + 100
+   OR prime IN (9999999967, 9999999971, 9999999973)
+   OR prime = 1000000000000037;
+```
+
+```response
+  ┌───────sum(prime)─┐
+  │ 2004010006000641 │ -- 2.00 quadrillion
+  └──────────────────┘
+
+1 row in set. Elapsed: 0.090 sec. 
+```
+
+* この値域最適化は、`WHERE` を伴う範囲指定付きの table function (`primes(N)`、`primes(offset, count[, step])`) には適用されません。これらのバリアントは素数のインデックスによって有限の table を定義するため、意味論を保つには、その table の生成後にフィルタを評価する必要があるためです。
+* 0 以外の offset や 1 より大きい step (`primes(offset, count)` / `primes(offset, count, step)`) を使用すると、内部で追加の素数を生成して読み飛ばす必要が生じることがあるため、遅くなる場合があります。offset や step が不要であれば、省略してください。

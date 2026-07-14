@@ -1,0 +1,167 @@
+---
+sidebarTitle: 'ClickHouse CLI'
+slug: /cloud/features/cli
+title: 'ClickHouse CLI'
+description: 'ClickHouse CLI を使用して ClickHouse Cloud サービスとローカルの ClickHouse インスタンスを管理します'
+keywords: ['clickhousectl', 'CLI', 'クラウド管理', 'ローカル開発']
+doc_type: 'reference'
+---
+
+ClickHouse CLI (`clickhousectl`) は、ClickHouse Cloud リソースの管理や、ClickHouse を使ったローカル開発を一元的に行えるコマンドラインツールです。[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの管理にも対応しています。
+
+<div id="installation">
+  ## インストール
+</div>
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+便宜上、`chctl` のエイリアスも自動的に作成されます。
+
+<div id="cloud-management">
+  ## Cloud 管理
+</div>
+
+ClickHouse Cloud にログインし、コマンドラインから直接サービスを管理します。
+
+<div id="authentication">
+  ### 認証
+</div>
+
+```bash
+clickhousectl cloud auth
+```
+
+API key とシークレットの入力が求められ、これらは `.clickhouse/credentials.json` に保存されます (プロジェクトローカル、Git では無視されます) 。
+
+環境変数を使用することもできます。
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+<div id="services">
+  ### サービス
+</div>
+
+```bash
+# サービスの一覧表示
+clickhousectl cloud service list
+
+# サービスの作成
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1
+
+# サービスの詳細取得
+clickhousectl cloud service get <service-id>
+
+# サービスのスケール
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3
+
+# サービスの起動/停止
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# サービスの削除
+clickhousectl cloud service delete <service-id>
+```
+
+<div id="postgres-services">
+  ### Postgres サービス (ベータ)
+</div>
+
+[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成と管理を行います。
+
+```bash
+# Postgresサービスの一覧表示
+clickhousectl cloud postgres list
+
+# Postgresサービスの作成
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18
+
+# サービス詳細の取得
+clickhousectl cloud postgres get <pg-id>
+
+# サービスの更新
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+
+# パスワードのリセット
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# 読み取りレプリカとポイントインタイムリストア
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# サービスの削除
+clickhousectl cloud postgres delete <pg-id>
+```
+
+<div id="organizations">
+  ### Organizations
+</div>
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+```
+
+<div id="api-keys">
+  ### APIキー
+</div>
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key delete <key-id>
+```
+
+<div id="members-and-invitations">
+  ### メンバーと招待
+</div>
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+```
+
+<div id="backups">
+  ### バックアップ
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="json-output">
+  ### JSON 出力
+</div>
+
+任意の cloud コマンドで JSON 形式のレスポンスを取得するには、`--json` フラグを使用します。
+
+```bash
+clickhousectl cloud --json service list
+```
+
+<div id="local-development">
+  ## ローカル開発
+</div>
+
+CLI は、ローカルの ClickHouse インストールやサーバーの管理にも対応しています。ローカル開発を始めるには、[clickhousectl (CLI)](/ja/get-started/setup/self-managed/clickhousectl) ページを参照してください。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+* macOS (aarch64、x86&#95;64) または Linux (aarch64、x86&#95;64)
+* Cloud コマンドの実行には [ClickHouse Cloud API key](/ja/products/cloud/features/admin-features/api/openapi) が必要です

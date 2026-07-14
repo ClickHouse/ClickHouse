@@ -1,0 +1,154 @@
+---
+title: 'Conectarse a ClickHouse'
+slug: /cloud/reference/byoc/connect
+sidebarTitle: 'Conectarse a ClickHouse'
+keywords: ['BYOC', 'nube', 'bring your own cloud', 'conectarse a clickhouse', 'balanceador de carga', 'privatelink']
+description: 'Conéctese a sus servicios BYOC de ClickHouse a través de endpoints públicos, privados o de PrivateLink'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta página describe las distintas formas de conectarse a sus servicios de ClickHouse en BYOC. Puede elegir entre balanceadores de carga públicos, balanceadores de carga privados o endpoints de PrivateLink/Private Service Connect según sus requisitos de seguridad y red.
+
+<div id="public-load-balancer">
+  ## Balanceador de carga público
+</div>
+
+Un balanceador de carga público proporciona acceso a tus servicios de ClickHouse desde Internet. Esta es la configuración predeterminada al usar una VPC dedicada gestionada por ClickHouse.
+
+<div id="public-load-balancer-overview">
+  ### Descripción general
+</div>
+
+* **Acceso**: Accesible desde internet
+* **Caso de uso**: Adecuado para aplicaciones y usuarios que necesitan conectarse desde distintas ubicaciones o redes
+* **Seguridad**: Protegido con cifrado TLS y filtrado de IP (recomendado)
+
+<div id="connecting-via-public-load-balancer">
+  ### Conexión a través de un balanceador de carga público
+</div>
+
+Para conectarte a tu servicio de ClickHouse mediante el endpoint público:
+
+1. **Obtén el endpoint de tu servicio** en la consola de ClickHouse Cloud. El endpoint se muestra en la sección &quot;Connect&quot; de tu servicio.
+
+<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="Conexión BYOC" background="black" />
+
+Por ejemplo:
+
+```text
+sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
+```
+
+<div id="public-ip-filtering">
+  ### Filtrado por IP
+</div>
+
+El filtrado por IP (IP Access List) es **muy recomendable** cuando se utiliza un balanceador de carga público para restringir el acceso a direcciones IP o rangos CIDR autorizados.
+
+Para obtener información detallada sobre el filtrado por IP, consulte la [documentación sobre IP Access List](/es/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="private-load-balancer">
+  ## Balanceador de carga privado
+</div>
+
+Un balanceador de carga privado proporciona acceso interno a sus servicios de ClickHouse y solo es accesible desde sus redes conectadas (p. ej., VPC con peering). Esta es la configuración predeterminada cuando se usa una VPC gestionada por el cliente.
+
+<div id="public-load-balancer-overview">
+  ### Descripción general
+</div>
+
+* **Acceso**: Accesible solo desde la infraestructura de su red privada
+* **Caso de uso**: Ideal para aplicaciones que se ejecutan en el mismo entorno en la nube o están conectadas mediante peering de VPC
+* **Seguridad**: El tráfico permanece dentro de su red privada, sin exposición a la internet pública
+
+<div id="connecting-via-private-load-balancer">
+  ### Conexión a través de un balanceador de carga privado
+</div>
+
+Para conectarse mediante el endpoint privado:
+
+1. **Habilite el balanceador de carga privado** (si aún no lo está). Póngase en contacto con el soporte de ClickHouse si necesita [habilitar un balanceador de carga privado](/es/products/bring-your-own-cloud/configuration/configurations#load-balancers) para su implementación.
+2. **Asegúrese de que haya conectividad de red**:
+   * Para peering de VPC: complete la configuración de peering de VPC (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network))
+   * Para otras redes privadas: asegúrese de que el enrutamiento esté configurado para llegar a la VPC de BYOC
+3. **Obtenga su endpoint privado**:
+   El endpoint privado está disponible en la consola de ClickHouse Cloud, en la sección &quot;Connect&quot; de su servicio. El endpoint privado sigue el mismo formato que el endpoint público, pero con el sufijo `-private` añadido a la parte del ID del servicio. Por ejemplo:
+   * **Endpoint público**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   * **Endpoint privado**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+<div id="public-ip-filtering">
+  ### Filtrado por IP
+</div>
+
+Aunque los balanceadores de carga privados restringen el acceso únicamente a redes internas, puede configurar el filtrado por IP para tener un control aún más preciso sobre qué orígenes de su red privada pueden conectarse. El filtrado por IP para balanceadores de carga privados utiliza el mismo mecanismo de configuración que los balanceadores de carga públicos: defina las direcciones IP o los rangos CIDR permitidos, y ClickHouse Cloud aplicará estas reglas según corresponda a cada tipo de endpoint. La plataforma distingue automáticamente entre rangos CIDR públicos y privados y los asigna a los endpoints del balanceador de carga correspondientes. Consulte la [documentación de IP Access List](/es/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="security-group-configuration">
+  ### Configuración del grupo de seguridad
+</div>
+
+Para las implementaciones en AWS, el grupo de seguridad del balanceador de carga privado controla qué redes pueden acceder al endpoint. De forma predeterminada, solo se permite el tráfico procedente de la VPC de BYOC.
+
+Para obtener más información, consulta la [configuración del grupo de seguridad del balanceador de carga privado](/es/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group).
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink o Private Service Connect
+</div>
+
+AWS PrivateLink y GCP Private Service Connect ofrecen la opción de conectividad más segura, lo que le permite acceder de forma privada a los servicios de ClickHouse sin peering de VPC ni gateways de Internet.
+
+<div id="public-load-balancer-overview">
+  ### Descripción general
+</div>
+
+* **Acceso**: Conectividad privada a través del servicio gestionado del proveedor de nube
+* **Aislamiento de red**: El tráfico nunca atraviesa la Internet pública
+* **Caso de uso**: Implementaciones Enterprise que requieren la máxima seguridad y el máximo aislamiento de red
+* **Beneficios**:
+  * No se requiere peering de VPC
+  * Arquitectura de red simplificada
+  * Mayor seguridad y mejor cumplimiento normativo
+
+<div id="connecting-via-privatelink">
+  ### Conexión mediante PrivateLink/Private Service Connect
+</div>
+
+Complete la configuración de PrivateLink o Private Service Connect (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network)). Una vez completada la configuración, puede conectarse a su servicio de ClickHouse mediante un formato de endpoint específico para PrivateLink. El endpoint de PrivateLink incluye un subdominio `vpce` para indicar que el tráfico se enruta a través del endpoint de la VPC. La resolución DNS en su VPC dirige automáticamente el tráfico a través del endpoint de PrivateLink.
+
+El formato del endpoint de PrivateLink es similar al del endpoint público, pero incluye un subdominio `vpce` entre el subdominio del servicio y el subdominio de infraestructura de BYOC. Por ejemplo:
+
+* **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Endpoint de PrivateLink**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+<div id="endpoint-id-allowlist">
+  ### Lista de permitidos de Endpoint ID
+</div>
+
+Para usar PrivateLink o Private Service Connect, el Endpoint ID de la conexión de su cliente debe incluirse explícitamente en la lista de permitidos de cada servicio de ClickHouse. Póngase en contacto con el soporte de ClickHouse y proporcione sus Endpoint IDs para que puedan añadirse a la lista de permitidos del servicio.
+
+Para obtener instrucciones detalladas de configuración, consulte la [guía de configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network).
+
+<div id="choosing-connection-method">
+  ## Elegir el método de conexión adecuado
+</div>
+
+| Método de conexión                      | Nivel de seguridad         | Requisitos de red                              | Caso de uso                                                                 |
+| --------------------------------------- | -------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------- |
+| **Balanceador de carga público**        | Medio (con filtrado de IP) | Acceso a Internet                              | Aplicaciones/usuarios desde distintas ubicaciones                           |
+| **Balanceador de carga privado**        | Alto                       | peering de VPC o red privada                   | Aplicaciones en el mismo entorno en la nube                                 |
+| **PrivateLink/Private Service Connect** | Máximo                     | Servicio administrado por el proveedor de nube | Implementaciones empresariales que requieren el máximo nivel de aislamiento |
+
+<div id="troubleshooting">
+  ## Solución de problemas de conexión
+</div>
+
+Si tiene problemas de conexión:
+
+1. **Verifique la accesibilidad del endpoint**: Asegúrese de que está usando el endpoint correcto (público o privado)
+2. **Compruebe los filtros de IP**: En los balanceadores de carga públicos, verifique que su dirección IP esté en la lista de permitidos
+3. **Verifique la conectividad de red**: En las conexiones privadas, asegúrese de que el peering de VPC o PrivateLink estén configurados correctamente
+4. **Compruebe los grupos de seguridad**: En los balanceadores de carga privados, verifique que las reglas del grupo de seguridad permitan tráfico desde su red de origen
+5. **Compruebe los grupos de seguridad**: En PrivateLink o Private Service Connect, verifique que el Endpoint ID se haya añadido a la lista de permitidos del servicio de ClickHouse
+6. **Revise la autenticación**: Asegúrese de usar las credenciales correctas (nombre de usuario y contraseña)
+7. **Contacte con el soporte**: Si los problemas persisten, contacte con el soporte de ClickHouse

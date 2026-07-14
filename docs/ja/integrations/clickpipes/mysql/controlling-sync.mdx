@@ -1,0 +1,72 @@
+---
+title: 'MySQL ClickPipe の同期を制御する'
+description: 'MySQL ClickPipe の同期制御に関するドキュメント'
+slug: /integrations/clickpipes/mysql/sync_control
+sidebarTitle: '同期の制御'
+keywords: ['MySQL ClickPipe', 'ClickPipe の同期制御', 'MySQL CDC（変更データキャプチャ）レプリケーション', 'ClickHouse MySQL コネクタ', 'ClickHouse データベースの同期']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、ClickPipe が **CDC (変更データキャプチャ) (Running) モード** の場合に、MySQL ClickPipe の同期を制御する方法を説明します。
+
+<div id="overview">
+  ## 概要
+</div>
+
+Database ClickPipes は、ソースデータベースからデータを取得する処理と、移行先データベースへデータを送信する処理という、並行して動作する 2 つのプロセスから成るアーキテクチャです。取得側のプロセスは同期設定によって制御され、データをどのくらいの頻度で取得するか、また 1 回にどの程度のデータを取得するかを定義します。ここでいう「1 回」とは 1 バッチのことで、ClickPipe はデータをバッチ単位で取得および送信します。
+
+MySQL ClickPipe の同期を制御する主な方法は 2 つあります。以下の設定のいずれかの条件を満たすと、ClickPipe はデータの送信を開始します。
+
+<div id="interval">
+  ### 同期間隔
+</div>
+
+パイプの同期間隔は、ClickPipe がソースデータベースからレコードを取得する時間の長さ (秒単位) です。取得したデータを ClickHouse に送信する時間は、この間隔には含まれません。
+
+既定値は**1 分**です。
+同期間隔には任意の正の整数値を設定できますが、10 秒を超える値にすることを推奨します。
+
+<div id="batch-size">
+  ### Pull バッチサイズ
+</div>
+
+Pull バッチサイズは、ClickPipe がソースデータベースから 1 回のバッチで取得するレコード数です。ここでいうレコードとは、そのパイプに含まれるテーブルに対する insert、更新、削除を指します。
+
+デフォルトは **100,000** レコードです。
+安全な最大値は 1,000 万レコードです。
+
+<div id="transactions">
+  ### 例外: ソース上の長時間実行トランザクション
+</div>
+
+ソースデータベース上でトランザクションが実行されると、ClickPipe はそのトランザクションの COMMIT を受信するまで待機してから処理を進めます。これにより、同期間隔と Pull バッチサイズの両方よりもこちらが優先されます。
+
+<div id="configuring">
+  ### 同期設定の構成
+</div>
+
+ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔と Pull バッチサイズを設定できます。
+ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップで設定できます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="同期設定を作成" size="md" />
+
+既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="同期編集ボタン" size="md" />
+
+すると、同期設定を表示するフライアウトが開き、そこで同期間隔と Pull バッチサイズを変更できます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="同期設定を編集" size="md" />
+
+<div id="monitoring">
+  ### 同期制御の挙動を監視する
+</div>
+
+各バッチにかかる時間は、ClickPipe の **Metrics** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間には、プッシュにかかる時間に加え、受信する行がない場合に ClickPipe が待機する時間も含まれます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs テーブル" size="md" />
