@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnsView.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -640,19 +641,21 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+namespace
 {
-    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
-    source_nested_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-            source_nested_columns.emplace_back(rhs_replicated->nested_column);
-        else
-            source_nested_columns.emplace_back(source_column);
-    }
 
-    nested_column->chooseDynamicStructureForMerge(source_nested_columns, max_dynamic_subcolumns);
+const IColumn * getReplicatedNestedOrSelfSourceColumn(const IColumn * source_column, const void *)
+{
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column))
+        return rhs_replicated->getNestedColumn().get();
+    return source_column;
+}
+
+}
+
+void ColumnReplicated::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    nested_column->chooseDynamicStructureForMerge(source_columns.project(getReplicatedNestedOrSelfSourceColumn), max_dynamic_subcolumns);
 }
 
 void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
@@ -664,18 +667,9 @@ void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 }
 
 
-void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnReplicated::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-            nested_source_columns.push_back(replicated->getNestedColumn());
-        else
-            nested_source_columns.push_back(source_column);
-    }
-    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+    nested_column->takeOrCalculateStatisticsFrom(source_columns.project(getReplicatedNestedOrSelfSourceColumn));
 }
 
 namespace

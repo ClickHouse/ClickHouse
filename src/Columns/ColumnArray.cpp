@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsView.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <fmt/format.h>
@@ -1671,14 +1672,26 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+namespace
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
-    data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
+const IColumn * getArrayNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    if (!source_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+    const auto * array_column = typeid_cast<const ColumnArray *>(source_column);
+    if (!array_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
+
+    return array_column->getDataPtr().get();
+}
+
+}
+
+void ColumnArray::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    data->chooseDynamicStructureForMerge(source_columns.project(getArrayNestedSourceColumn), max_dynamic_subcolumns);
 }
 
 void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
@@ -1686,26 +1699,12 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
 }
 
-void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnArray::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        if (!source_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-        const auto * array_column = typeid_cast<const ColumnArray *>(source_column.get());
-        if (!array_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
-
-        nested_source_columns.push_back(array_column->getDataPtr());
-    }
-
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data column is invalid");
 
-    data->takeOrCalculateStatisticsFrom(nested_source_columns);
+    data->takeOrCalculateStatisticsFrom(source_columns.project(getArrayNestedSourceColumn));
 }
 
 }

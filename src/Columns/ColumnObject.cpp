@@ -4,6 +4,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Columns/ColumnsView.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
@@ -1843,7 +1844,29 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+namespace
+{
+
+const IColumn * getObjectTypedPathSourceColumn(const IColumn * source_column, const void * context)
+{
+    const auto & path = *static_cast<const String *>(context);
+    return assert_cast<const ColumnObject &>(*source_column).getTypedPaths().at(path).get();
+}
+
+const IColumn * getObjectDynamicPathSourceColumnIfExists(const IColumn * source_column, const void * context)
+{
+    const auto & path = *static_cast<const String *>(context);
+    const auto & dynamic_paths = assert_cast<const ColumnObject &>(*source_column).getDynamicPaths();
+    auto it = dynamic_paths.find(path);
+    if (it == dynamic_paths.end())
+        return nullptr;
+
+    return it->second.get();
+}
+
+}
+
+void ColumnObject::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Object column");
@@ -1863,34 +1886,35 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     /// First, collect all dynamic paths from all source columns and calculate total number of non-null values.
     /// We read source statistics to make path selection decisions, but do not update statistics in the result.
     UnorderedMapWithMemoryTracking<String, size_t> path_to_total_number_of_non_null_values;
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
-        /// During deserialization from MergeTree we will have statistics from the whole
-        /// data part with number of non null values for each dynamic path.
-        const auto & source_statistics = source_object.getOrCalculateStatistics();
-        for (const auto & [path, column_ptr] : source_object.dynamic_paths_ptrs)
+    source_columns.forEach(
+        [&](const IColumn * source_column)
         {
-            auto it = path_to_total_number_of_non_null_values.find(path);
-            if (it == path_to_total_number_of_non_null_values.end())
-                it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
-            size_t size = column_ptr->size() - column_ptr->getNumberOfDefaultRows();
-            auto statistics_it = source_statistics->dynamic_paths_statistics.find(path);
-            if (statistics_it != source_statistics->dynamic_paths_statistics.end())
-                size = statistics_it->second;
-            it->second += size;
-        }
+            const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+            /// During deserialization from MergeTree we will have statistics from the whole
+            /// data part with number of non null values for each dynamic path.
+            const auto & source_statistics = source_object.getOrCalculateStatistics();
+            for (const auto & [path, column_ptr] : source_object.dynamic_paths_ptrs)
+            {
+                auto it = path_to_total_number_of_non_null_values.find(path);
+                if (it == path_to_total_number_of_non_null_values.end())
+                    it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
+                size_t size = column_ptr->size() - column_ptr->getNumberOfDefaultRows();
+                auto statistics_it = source_statistics->dynamic_paths_statistics.find(path);
+                if (statistics_it != source_statistics->dynamic_paths_statistics.end())
+                    size = statistics_it->second;
+                it->second += size;
+            }
 
-        /// Add paths from shared data statistics. It can help extracting frequent paths
-        /// from shared data to dynamic paths.
-        for (const auto & [path, size] : source_statistics->shared_data_paths_statistics)
-        {
-            auto it = path_to_total_number_of_non_null_values.find(path);
-            if (it == path_to_total_number_of_non_null_values.end())
-                it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
-            it->second += size;
-        }
-    }
+            /// Add paths from shared data statistics. It can help extracting frequent paths
+            /// from shared data to dynamic paths.
+            for (const auto & [path, size] : source_statistics->shared_data_paths_statistics)
+            {
+                auto it = path_to_total_number_of_non_null_values.find(path);
+                if (it == path_to_total_number_of_non_null_values.end())
+                    it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
+                it->second += size;
+            }
+        });
 
     /// Reset current state.
     dynamic_paths.clear();
@@ -1942,26 +1966,13 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     /// on all resulting dynamic columns.
     for (auto & [path, column] : dynamic_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> dynamic_path_source_columns;
-        for (const auto & source_column : source_columns)
-        {
-            const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
-            auto it = source_object.dynamic_paths.find(path);
-            if (it != source_object.dynamic_paths.end())
-                dynamic_path_source_columns.push_back(it->second);
-        }
-        column->chooseDynamicStructureForMerge(dynamic_path_source_columns, max_dynamic_subcolumns);
+        column->chooseDynamicStructureForMerge(
+            source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path), max_dynamic_subcolumns);
     }
 
     /// Typed paths also can contain types with dynamic structure.
     for (auto & [path, column] : typed_paths)
-    {
-        VectorWithMemoryTracking<ColumnPtr> typed_path_source_columns;
-        typed_path_source_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->chooseDynamicStructureForMerge(typed_path_source_columns, max_dynamic_subcolumns);
-    }
+        column->chooseDynamicStructureForMerge(source_columns.project(getObjectTypedPathSourceColumn, &path), max_dynamic_subcolumns);
 }
 
 void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
@@ -2019,37 +2030,38 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     return calculated_statistics;
 }
 
-void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnObject::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
-        const auto & source_statistics = source_object.getOrCalculateStatistics();
-
-        /// For dynamic paths in source statistics: if the path is in our dynamic structure, add directly;
-        /// otherwise accumulate in shared data candidates.
-        for (const auto & [path, size] : source_statistics->dynamic_paths_statistics)
+    source_columns.forEach(
+        [&](const IColumn * source_column)
         {
-            if (dynamic_paths.contains(path))
-                new_statistics.dynamic_paths_statistics[path] += size;
-            else
-                shared_data_candidates[path] += size;
-        }
+            const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+            const auto & source_statistics = source_object.getOrCalculateStatistics();
 
-        /// For shared data paths in source statistics: if the path got promoted to a dynamic path
-        /// in the merged structure, add to dynamic_paths_statistics; otherwise accumulate in shared data candidates.
-        for (const auto & [path, size] : source_statistics->shared_data_paths_statistics)
-        {
-            if (dynamic_paths.contains(path))
-                new_statistics.dynamic_paths_statistics[path] += size;
-            else
-                shared_data_candidates[path] += size;
-        }
-    }
+            /// For dynamic paths in source statistics: if the path is in our dynamic structure, add directly;
+            /// otherwise accumulate in shared data candidates.
+            for (const auto & [path, size] : source_statistics->dynamic_paths_statistics)
+            {
+                if (dynamic_paths.contains(path))
+                    new_statistics.dynamic_paths_statistics[path] += size;
+                else
+                    shared_data_candidates[path] += size;
+            }
+
+            /// For shared data paths in source statistics: if the path got promoted to a dynamic path
+            /// in the merged structure, add to dynamic_paths_statistics; otherwise accumulate in shared data candidates.
+            for (const auto & [path, size] : source_statistics->shared_data_paths_statistics)
+            {
+                if (dynamic_paths.contains(path))
+                    new_statistics.dynamic_paths_statistics[path] += size;
+                else
+                    shared_data_candidates[path] += size;
+            }
+        });
 
     /// Select top MAX_SHARED_DATA_STATISTICS_SIZE paths by total size for shared data statistics.
     if (shared_data_candidates.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -2071,29 +2083,38 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Recursively update statistics for nested dynamic paths.
+    if (std::optional<const IColumn *> single_source_column = source_columns.tryGetSingle(); single_source_column)
+    {
+        const IColumn * source_column = *single_source_column;
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+        for (auto & [path, column] : dynamic_paths)
+        {
+            auto it = source_object.dynamic_paths.find(path);
+            if (it == source_object.dynamic_paths.end())
+                continue;
+
+            const ColumnPtr & source_path_column = it->second;
+            column->takeOrCalculateStatisticsFrom(source_path_column);
+        }
+
+        for (auto & [path, column] : typed_paths)
+        {
+            const ColumnPtr & source_path_column = source_object.typed_paths.at(path);
+            column->takeOrCalculateStatisticsFrom(source_path_column);
+        }
+        return;
+    }
+
     for (auto & [path, column] : dynamic_paths)
     {
-        VectorWithMemoryTracking<ColumnPtr> dynamic_path_source_columns;
-        for (const auto & source_column : source_columns)
-        {
-            const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
-            auto it = source_object.dynamic_paths.find(path);
-            if (it != source_object.dynamic_paths.end())
-                dynamic_path_source_columns.push_back(it->second);
-        }
+        auto dynamic_path_source_columns = source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path);
         if (!dynamic_path_source_columns.empty())
             column->takeOrCalculateStatisticsFrom(dynamic_path_source_columns);
     }
 
     /// Recursively update statistics for typed paths.
     for (auto & [path, column] : typed_paths)
-    {
-        VectorWithMemoryTracking<ColumnPtr> typed_path_source_columns;
-        typed_path_source_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->takeOrCalculateStatisticsFrom(typed_path_source_columns);
-    }
+        column->takeOrCalculateStatisticsFrom(source_columns.project(getObjectTypedPathSourceColumn, &path));
 }
 
 size_t ColumnObject::findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end)

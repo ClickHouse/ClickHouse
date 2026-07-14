@@ -203,7 +203,7 @@ public:
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
@@ -218,7 +218,7 @@ public:
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     bool hasStatistics() const override { return true; }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const ColumnsView & source_columns) override;
 
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }

@@ -3,6 +3,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsView.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
@@ -941,13 +942,19 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+namespace
 {
-    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
-    values_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
+
+const IColumn * getSparseValuesSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnSparse &>(*source_column).getValuesPtr().get();
+}
+
+}
+
+void ColumnSparse::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    values->chooseDynamicStructureForMerge(source_columns.project(getSparseValuesSourceColumn), max_dynamic_subcolumns);
 }
 
 void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
@@ -955,13 +962,9 @@ void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
     values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
 }
 
-void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnSparse::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
-    values_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeOrCalculateStatisticsFrom(values_source_columns);
+    values->takeOrCalculateStatisticsFrom(source_columns.project(getSparseValuesSourceColumn));
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

@@ -3,6 +3,7 @@
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsView.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -138,7 +139,8 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
             if (columns[i]->getPtr()->isReplicated() && !chunk_columns[i]->isReplicated())
                 chunk_columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
 
-            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
+            ColumnPtr source_column = columns[i]->getPtr();
+            chunk_columns[i]->takeOrCalculateStatisticsFrom(source_column);
             columns[i] = std::move(chunk_columns[i]);
         }
         else if (columns[i]->isReplicated())

@@ -2,6 +2,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsView.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
@@ -454,16 +455,26 @@ void ColumnMap::Statistics::merge(const Statistics & other)
     count += other.count;
 }
 
-void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+namespace
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_column_map = assert_cast<const ColumnMap &>(*source_column);
-        nested_source_columns.push_back(source_column_map.getNestedColumnPtr());
-    }
-    nested->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
+
+const IColumn * getMapNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    if (!source_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+    const auto * source_map = typeid_cast<const ColumnMap *>(source_column);
+    if (!source_map)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
+
+    return source_map->getNestedColumnPtr().get();
+}
+
+}
+
+void ColumnMap::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    nested->chooseDynamicStructureForMerge(source_columns.project(getMapNestedSourceColumn), max_dynamic_subcolumns);
 }
 
 void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
@@ -486,33 +497,32 @@ ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
     return std::make_shared<Statistics>(calculateStatisticsForRange(0, size()));
 }
 
-void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnMap::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
     auto new_statistics = std::make_shared<Statistics>();
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        if (!source_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
-        const auto * source_map = typeid_cast<const ColumnMap *>(source_column.get());
-        if (!source_map)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
-
-        auto source_statistics = source_map->getOrCalculateStatistics();
-        if (!source_statistics)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source statistics is invalid");
-
-        new_statistics->merge(*source_statistics);
-        nested_source_columns.push_back(source_map->getNestedColumnPtr());
-    }
-
-    statistics = std::move(new_statistics);
     if (!nested)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is not initialized");
 
-    nested->takeOrCalculateStatisticsFrom(nested_source_columns);
+    source_columns.forEach(
+        [&](const IColumn * source_column)
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_map = typeid_cast<const ColumnMap *>(source_column);
+            if (!source_map)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
+
+            auto source_statistics = source_map->getOrCalculateStatistics();
+            if (!source_statistics)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source statistics is invalid");
+
+            new_statistics->merge(*source_statistics);
+        });
+
+    statistics = std::move(new_statistics);
+    nested->takeOrCalculateStatisticsFrom(source_columns.project(getMapNestedSourceColumn));
 }
 
 

@@ -169,10 +169,10 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { values->fixDynamicStructure(); }
     bool hasStatistics() const override { return values->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const ColumnsView & source_columns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {

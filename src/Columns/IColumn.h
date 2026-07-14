@@ -797,7 +797,8 @@ public:
     /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
     /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.
     /// Does NOT update statistics in the result — use `takeOrCalculateStatisticsFrom` for that.
-    virtual void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+    virtual void chooseDynamicStructureForMerge(const ColumnsView & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {
+    }
 
     /// For columns with dynamic structure fix current dynamic structure so later inserts into this column won't change it.
     virtual void fixDynamicStructure() {}
@@ -885,7 +886,7 @@ public:
     /// Merges/takes statistics from source columns. For multiple sources, computes merged statistics.
     /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
     /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
-    virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
+    virtual void takeOrCalculateStatisticsFrom(const ColumnsView & /*source_columns*/) { }
 
 protected:
     template <typename Compare, typename Sort, typename PartialSort>
