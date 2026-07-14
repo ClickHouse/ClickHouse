@@ -14,8 +14,6 @@
 
 namespace DB
 {
-enum class InsertDeduplicationVersions : uint8_t;
-
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
@@ -31,8 +29,6 @@ struct DeduplicationHash
     DeduplicationHash(UInt128 hash_, std::string partition_id_, HashType htype);
 
     static DeduplicationHash createUnifiedHash(UInt128 hash, std::string partition_id);
-    static DeduplicationHash createSyncHash(UInt128 hash, std::string partition_id);
-    static DeduplicationHash createAsyncHash(UInt128 hash, std::string partition_id);
 
     DeduplicationHash(const DeduplicationHash & other) = default;
     DeduplicationHash(DeduplicationHash && other) = default;
@@ -75,7 +71,7 @@ public:
     DeduplicationInfo(const DeduplicationInfo & other);
     DeduplicationInfo(DeduplicationInfo && other) = default;
 
-    static Ptr create(bool async_insert_, InsertDeduplicationVersions unification_stage);
+    static Ptr create(bool async_insert_);
 
     ChunkInfo::Ptr merge(const ChunkInfo::Ptr & right) const override;
     Ptr mergeSelf(const Ptr & right) const;
@@ -103,18 +99,10 @@ public:
     std::pair<std::string, size_t> debug(size_t offset) const;
     std::string debug() const;
 
-    // for sync insert: if user token is empty then by_part_writer token would be calculated later by part writer
-    // for async insert: if user token is empty then by_data_hash token would be calculated later
+    // if the user token is empty, the unified hash of the data is computed later from the block
     void setUserToken(const String & token, size_t count);
     void setSourceBlockNumber(size_t block_number);
     void setRootViewID(const StorageIDMaybeEmpty & id);
-
-    /// use for provide deduplication hash for the part from one partition
-    void setPartWriterHashForPartition(UInt128 hash, size_t count) const;
-    /// use for provide deduplication hash for the chunk with maybe multiple partitions in it
-    void setPartWriterHashes(const std::vector<UInt128> & partitions_hashes, size_t count) const;
-    /// hash from part writer would be used as user token for dependent views if no user token has been set before
-    void redefineTokensWithDataHash(const Block & block);
 
     void setViewID(const StorageID & id);
     void setViewBlockNumber(size_t block_number);
@@ -125,18 +113,11 @@ public:
     const std::vector<StorageIDMaybeEmpty> & getVisitedViews() const;
 
 private:
-    DeduplicationInfo(bool async_insert_, InsertDeduplicationVersions unification_stage_);
+    explicit DeduplicationInfo(bool async_insert_);
 
-    /// Row-major hash: for each row, hash all columns. Used by the old compatibility path.
-    UInt128 calculateDataHashRowWise(size_t offset, const Block & block) const;
     /// Column-major hash: for each column, hash the row range. Used by the unified path.
-    /// Produces a different hash than row-wise for the same data.
     UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
-    // the old one hash
-    DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
-    // the new unified hash
     DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
-    std::vector<DeduplicationHash> chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const;
 
 
     Ptr cloneSelfFilterImpl() const;
@@ -165,7 +146,6 @@ private:
     LoggerPtr logger = getLogger("DedupInfo");
     size_t instance_id = 0;
     bool is_async_insert = false;
-    InsertDeduplicationVersions unification_stage;
 
 
     InsertDependenciesBuilderConstPtr insert_dependencies;
@@ -177,14 +157,10 @@ private:
 
     struct TokenDefinition
     {
-        // there is a difference how block ids are generated from these two types of tokens
-        // if by_part_writer is set then it is used as is
-        // if by_user is set then block id is calculated as a hash of this string extended with extra tokens
-        // When both are empty then data hash is calculated and used as by_user token
+        // if by_user is set, the block id is a hash of this string extended with extra tokens;
+        // when it is empty, the unified column-wise hash of the data is used instead
         std::string by_user;
-        std::optional<UInt128> by_part_writer;
 
-        std::optional<UInt128> data_hash;
         std::optional<UInt128> data_hash_batch;
 
         struct Extra
@@ -220,7 +196,6 @@ private:
         static TokenDefinition asUserToken(std::string token);
 
         std::string debug() const;
-        void setDataToken(UInt128 token);
         bool empty() const;
         bool canBeExtended(const TokenDefinition & right) const;
         void doExtend(const TokenDefinition & right);

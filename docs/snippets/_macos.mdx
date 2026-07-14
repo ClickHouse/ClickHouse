@@ -1,4 +1,3 @@
-
 import Recommendations from '/snippets/recommendations.mdx';
 
 # Install ClickHouse using Homebrew
@@ -9,12 +8,10 @@ We recommend using the [quick install](/get-started/setup/self-managed/quick-ins
 </Warning>
 
 <Steps>
-<Step>
-## Review recommendations {#review-recommendations}
+<Step title="Review recommendations" id="review-recommendations">
 <Recommendations />
 </Step>
-<Step>
-## Install using the community Homebrew formula {#install-using-community-homebrew-formula}
+<Step title="Install using the community Homebrew formula" id="install-using-community-homebrew-formula">
 To install ClickHouse on macOS using [Homebrew](https://brew.sh/), you can use
 the ClickHouse community [homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
@@ -22,14 +19,15 @@ the ClickHouse community [homebrew formula](https://formulae.brew.sh/cask/clickh
 brew install --cask clickhouse
 ```
 </Step>
-<Step>
-## Fix the developer verification error in macOS {#fix-developer-verification-error-macos}
+<Step title="Fix the developer verification error in macOS" id="fix-developer-verification-error-macos">
 If you install ClickHouse using `brew`, you may encounter an error from MacOS.
 By default, MacOS won't run applications or tools created by a developer who can't be verified.
 
 When attempting to run any `clickhouse` command, you may see this error:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="MacOS developer verification error dialog" border />
+<Frame>
+  <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="MacOS developer verification error dialog" />
+</Frame>
 
 To get around this verification error, you need to remove the app from MacOS' quarantine bin either by finding the appropriate setting in your System Settings window, using the terminal, or by re-installing ClickHouse.
 
@@ -39,12 +37,16 @@ The easiest way to remove the `clickhouse` executable from the quarantine bin is
 1. Open **System settings**.
 1. Navigate to **Privacy & Security**:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security settings default view" border />
+    <Frame>
+      <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="MacOS Privacy & Security settings default view" />
+    </Frame>
 
 1. Scroll to the bottom of the window to find a message saying _"clickhouse-macos-aarch64" was blocked from use because it isn't from an identified developer".
 1. Click **Allow Anyway**.
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS Privacy & Security settings showing Allow Anyway button" border />
+    <Frame>
+      <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="MacOS Privacy & Security settings showing Allow Anyway button" />
+    </Frame>
 
 1. Enter your MacOS user password.
 
@@ -87,8 +89,7 @@ clickhouse client [args]
 clickhouse benchmark [args]
 ```
 </Step>
-<Step>
-## Fix the issue by reinstalling ClickHouse {#fix-issue}
+<Step title="Fix the issue by reinstalling ClickHouse" id="fix-issue">
 Brew has a command-line option which avoids quarantining installed binaries in the first place.
 
 First, uninstall ClickHouse:

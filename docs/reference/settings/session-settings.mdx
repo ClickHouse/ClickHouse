@@ -171,6 +171,16 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
 
 Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
 
+## ai_function_embedding_default_credentials {#ai_function_embedding_default_credentials} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
+
 ## ai_function_embedding_max_batch_size {#ai_function_embedding_max_batch_size} 
 
 <ExperimentalBadge/>
@@ -244,6 +254,16 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+
+## ai_function_text_default_credentials {#ai_function_text_default_credentials} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 
 ## ai_function_throw_on_error {#ai_function_throw_on_error} 
 
@@ -1012,9 +1032,9 @@ Possible values:
 - 0 — Disallow.
 - 1 — Allow.
 
-:::note
+<Note>
 Use this setting only for backward compatibility if your use cases depend on old syntax.
-:::
+</Note>
 
 ## allow_simdjson {#allow_simdjson} 
 
@@ -1196,9 +1216,9 @@ Possible values:
 
 Cloud default value: `0`.
 
-:::note
+<Note>
 `alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
-:::
+</Note>
 
 ## alter_update_mode {#alter_update_mode} 
 
@@ -1261,9 +1281,9 @@ When enabled, the analyzer substitutes ordinary (non-materialized, non-parameter
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-:::note
+<Note>
 Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
-:::
+</Note>
 
 When the legacy behaviour is enabled:
 
@@ -2189,10 +2209,10 @@ This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`.
 
 Disabled by default.
 
-:::note
+<Note>
 In ClickHouse Cloud, the service-level default compatibility setting must be set by ClickHouse Cloud support. Please [open a case](https://clickhouse.cloud/support) to have it set.
 However, the compatibility setting can be overridden at the user, role, profile, query, or session level using standard ClickHouse setting mechanisms such as `SET compatibility = '22.3'` in a session or `SETTINGS compatibility = '22.3'` in a query.
-:::
+</Note>
 
 ## compatibility_ignore_auto_increment_in_create_table {#compatibility_ignore_auto_increment_in_create_table} 
 
@@ -2963,13 +2983,13 @@ Possible values:
 - 1 — Enabled.
 - 0 — Disabled.
 
-:::note
+<Note>
 This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](/reference/engines/table-engines/special/distributed) table engine).
-:::
+</Note>
 
-:::note
+<Note>
 You should not rely on automatic batch splitting, since this may hurt performance.
-:::
+</Note>
 
 ## distributed_background_insert_timeout {#distributed_background_insert_timeout} 
 
@@ -4055,9 +4075,9 @@ Result:
 
 Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
 
-:::note
+<Note>
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
+</Note>
 
 Possible values:
 
@@ -4148,12 +4168,12 @@ WHERE (_part, _part_offset) IN (
 
 Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
 
-:::note
+<Note>
 Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
 As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
 
 This setting currently applies only to tables from the MergeTree family.
-:::
+</Note>
 
 Possible values:
 
@@ -5316,9 +5336,9 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-:::note
+<Note>
 It's applicable only to the default profile. A server reboot is required for the changes to take effect.
-:::
+</Note>
 
 ## http_skip_not_found_url_for_globs {#http_skip_not_found_url_for_globs} 
 
@@ -5740,9 +5760,9 @@ Possible values:
 For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
 For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
-:::note
+<Note>
 `insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum (`insert_deduplication_version = new_unified_hash`) is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
-:::
+</Note>
 
 Example:
 
@@ -5849,9 +5869,9 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
-:::note
+<Note>
 This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/products/cloud/features/infrastructure/shared-merge-tree#consistency) for more information.
-:::
+</Note>
 
 Enables the quorum writes.
 
@@ -5882,9 +5902,9 @@ See also:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Use parallel quorum inserts by default. It is significantly more convenient to use than sequential quorum inserts"}]}]}/>
 
-:::note
+<Note>
 This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/products/cloud/features/infrastructure/shared-merge-tree#consistency) for more information.
-:::
+</Note>
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
@@ -6085,9 +6105,9 @@ Possible values:
 
 Changes the behaviour of join operations with `ANY` strictness.
 
-:::note
+<Note>
 This setting applies only for `JOIN` operations with [Join](/reference/engines/table-engines/special/join) engine tables.
-:::
+</Note>
 
 Possible values:
 
@@ -6846,11 +6866,11 @@ Maximum number of analyses performed by interpreter.
 
 The maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
 
-:::note
+<Note>
 At this time, it isn't checked during parsing, but only after parsing the query.
 This means that a syntactic tree that is too deep can be created during parsing,
 but the query will fail.
-:::
+</Note>
 
 ## max_ast_elements {#max_ast_elements} 
 
@@ -6858,11 +6878,11 @@ but the query will fail.
 
 The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
 
-:::note
+<Note>
 At this time, it isn't checked during parsing, but only after parsing the query.
 This means that a syntactic tree that is too deep can be created during parsing,
 but the query will fail.
-:::
+</Note>
 
 ## max_autoincrement_series {#max_autoincrement_series} 
 
@@ -6904,12 +6924,12 @@ Possible values:
 - Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/reference/statements/select/group-by) operation.
 - `0` — `GROUP BY` in external memory disabled.
 
-:::note
+<Note>
 If memory usage during GROUP BY operations is exceeding this threshold in bytes,
 activate the 'external aggregation' mode (spill data to disk).
 
 The recommended value is half of the available system memory.
-:::
+</Note>
 
 ## max_bytes_before_external_join {#max_bytes_before_external_join} 
 
@@ -7049,9 +7069,9 @@ leaf nodes will read 100 bytes at max.
 
 The restriction is checked for each processed chunk of data.
 
-:::note
+<Note>
 This setting is unstable with `prefer_localhost_replica=1`.
-:::
+</Note>
 
 ## max_bytes_to_sort {#max_bytes_to_sort} 
 
@@ -7076,9 +7096,9 @@ The maximum number of columns that can be read from a table in a single query.
 If a query requires reading more than the specified number of columns, an exception
 is thrown.
 
-:::tip
+<Tip>
 This setting is useful for preventing overly complex queries.
-:::
+</Tip>
 
 `0` value means unlimited.
 
@@ -7088,9 +7108,9 @@ This setting is useful for preventing overly complex queries.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-:::note
+<Note>
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
+</Note>
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -7228,11 +7248,11 @@ to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
 If query runtime exceeds the specified number of seconds, the behavior will be
 determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
-:::note
+<Note>
 The timeout is checked and the query can stop only in designated places during data processing.
 It currently cannot stop during merging of aggregation states or during query analysis,
 and the actual run time will be higher than the value of this setting.
-:::
+</Note>
 
 ## max_execution_time_leaf {#max_execution_time_leaf} 
 
@@ -7660,9 +7680,9 @@ Restriction on dropping partitions in query time. The value `0` means that you c
 
 Cloud default value: 1 TB.
 
-:::note
+<Note>
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/reference/settings/server-settings/settings#max_partition_size_to_drop)
-:::
+</Note>
 
 ## max_partitions_per_insert_block {#max_partitions_per_insert_block} 
 
@@ -7693,9 +7713,9 @@ the following text:
   SELECT queries (ORDER BY key is sufficient to make range queries fast).
   Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
-:::note
+<Note>
 This setting is a safety threshold because using a large number of partitions is a common misconception.
-:::
+</Note>
 
 ## max_partitions_to_read {#max_partitions_to_read} 
 
@@ -7710,9 +7730,9 @@ Possible values:
 - Positive integer
 - `-1` - unlimited (default)
 
-:::note
+<Note>
 You can also specify the MergeTree setting [`max_partitions_to_read`](/reference/settings/session-settings#max_partitions_to_read) in tables' setting.
-:::
+</Note>
 
 ## max_parts_to_move {#max_parts_to_move} 
 
@@ -7737,9 +7757,9 @@ If the number of rows to read from the projection index is less than or equal to
 The maximum number of bytes of a query string parsed by the SQL parser.
 Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
 
-:::note
+<Note>
 `max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
-:::
+</Note>
 
 ## max_rand_distribution_parameter {#max_rand_distribution_parameter} 
 
@@ -7826,9 +7846,9 @@ Even if the result size is small, it can reference larger data structures in mem
 representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns,
 so the threshold can be exceeded despite the small result size.
 
-:::warning
+<Warning>
 The setting is fairly low level and should be used with caution
-:::
+</Warning>
 
 ## max_result_rows {#max_result_rows} 
 
@@ -7943,9 +7963,9 @@ will read at max 100 rows.
 
 The restriction is checked for each processed chunk of data.
 
-:::note
+<Note>
 This setting is unstable with `prefer_localhost_replica=1`.
-:::
+</Note>
 
 ## max_rows_to_sort {#max_rows_to_sort} 
 
@@ -8089,10 +8109,10 @@ Allows you to use more sources than the number of threads - to more evenly distr
 If a query has more than the specified number of nested subqueries, throws an
 exception.
 
-:::tip
+<Tip>
 This allows you to have a sanity check to protect against the users of your
 cluster from writing overly complex queries.
-:::
+</Tip>
 
 ## max_table_size_to_drop {#max_table_size_to_drop} 
 
@@ -8102,9 +8122,9 @@ Restriction on deleting tables in query time. The value `0` means that you can d
 
 Cloud default value: 1 TB.
 
-:::note
+<Note>
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/reference/settings/server-settings/settings#max_table_size_to_drop)
-:::
+</Note>
 
 ## max_temporary_columns {#max_temporary_columns} 
 
@@ -8115,9 +8135,9 @@ when running a query, including constant columns. If a query generates more than
 the specified number of temporary columns in memory as a result of intermediate
 calculation, then an exception is thrown.
 
-:::tip
+<Tip>
 This setting is useful for preventing overly complex queries.
-:::
+</Tip>
 
 `0` value means unlimited.
 
@@ -8153,10 +8173,10 @@ Like `max_temporary_columns`, the maximum number of temporary columns that must
 be kept in RAM simultaneously when running a query, but without counting constant
 columns.
 
-:::note
+<Note>
 Constant columns are formed fairly often when running a query, but they require
 approximately zero computing resources.
-:::
+</Note>
 
 ## max_threads {#max_threads} 
 
@@ -8528,9 +8548,9 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
 
-:::note
+<Note>
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
+</Note>
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression} 
 
@@ -9127,9 +9147,9 @@ See also:
 - [distributed_push_down_limit](#distributed_push_down_limit)
 - [optimize_skip_unused_shards](#optimize_skip_unused_shards)
 
-:::note
+<Note>
 Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
-:::
+</Note>
 
 ## optimize_dry_run_check_part {#optimize_dry_run_check_part} 
 
@@ -9429,9 +9449,9 @@ If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that w
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
-:::note
+<Note>
 Supported only with the analyzer (`enable_analyzer = 1`).
-:::
+</Note>
 
 ## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has} 
 
@@ -9494,9 +9514,9 @@ Possible values:
 
 Enables or disables skipping of unused shards for [SELECT](/reference/statements/select/index) queries that have sharding key condition in `WHERE/PREWHERE`, and activates related optimizations for distributed queries (e.g. aggregation by sharding key).
 
-:::note
+<Note>
 Assumes that the data is distributed by sharding key, otherwise a query yields incorrect result.
-:::
+</Note>
 
 Possible values:
 
@@ -10245,11 +10265,11 @@ Possible values:
 - 1 — ClickHouse always sends a query to the localhost replica if it exists.
 - 0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#load_balancing) setting.
 
-:::note
+<Note>
 Disable this setting if you use [max_parallel_replicas](#max_parallel_replicas) without [parallel_replicas_custom_key](#parallel_replicas_custom_key).
 If [parallel_replicas_custom_key](#parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
-:::
+</Note>
 
 ## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds} 
 
@@ -10521,9 +10541,9 @@ Default value: -1
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10582,9 +10602,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
 
 Toggles query optimization at the query plan level.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10598,9 +10618,9 @@ Possible values:
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10614,9 +10634,9 @@ Possible values:
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10649,9 +10669,9 @@ Determine which side of the join should be the build table (also called inner, t
 Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10665,9 +10685,9 @@ Possible values:
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10707,9 +10727,9 @@ Useful to avoid long optimization times for complex queries.
 In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
 For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 ## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match} 
 
@@ -10736,9 +10756,9 @@ Maximum length of step description in EXPLAIN PLAN.
 Toggles a query-plan-level optimization which merges consecutive filters.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10848,9 +10868,9 @@ Allow to push down filter to PREWHERE expression for supported storages
 Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10879,9 +10899,9 @@ Possible values:
 Toggles the read in-order optimization query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10905,9 +10925,9 @@ Keep reading in order from the left table in JOIN operations, which can be utili
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10923,9 +10943,9 @@ Possible values:
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10941,9 +10961,9 @@ Possible values:
 Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10961,9 +10981,9 @@ Possible values:
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -10974,9 +10994,9 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Toggles a query-plan-level optimization which splits filters into expressions.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -11017,9 +11037,9 @@ Possible values:
 Toggles a query-plan-level optimization which tries to use the vector similarity index.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 
 Possible values:
 
@@ -11789,9 +11809,9 @@ Enable the bulk filtering algorithm for indices. It is expected to be always bet
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-:::note
+<Note>
 This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/products/cloud/features/infrastructure/shared-merge-tree#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
-:::
+</Note>
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
@@ -11917,10 +11937,10 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 1999-12-13 07:23:23.123
 ```
 
-:::warning
+<Warning>
 Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors.
 See the following example and explanation.
-:::
+</Warning>
 
 ```sql
 CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
@@ -12416,9 +12436,9 @@ Possible values:
 - `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
 - `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
 
-:::tip
+<Tip>
 This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/reference/settings/session-settings#max_partitions_per_insert_block).
-:::
+</Tip>
 
 ## throw_on_unsupported_query_inside_transaction {#throw_on_unsupported_query_inside_transaction} 
 
@@ -12682,10 +12702,10 @@ Possible values:
 - 0 — Uses `user[:password]@host:port#default_database` directory format.
 - 1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
 
-:::note
+<Note>
 - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
 - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
-:::
+</Note>
 
 ## use_concurrency_control {#use_concurrency_control} 
 

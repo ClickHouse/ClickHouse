@@ -37,8 +37,9 @@ static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
 static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 0;
 static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 
-ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_)
+ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
     : connections(std::move(connections_))
+    , authenticate_connection(std::move(authenticate_connection_))
     , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
     , accept_thread("ExchangeServer")
     , handshake_pool(
@@ -110,11 +111,11 @@ void ExchangeServer::run()
                 try
                 {
                     handshake_pool.scheduleOrThrowOnError(
-                        [accepted = socket, conns = connections, task_log = log]()
+                        [accepted = socket, conns = connections, task_log = log, auth = authenticate_connection]()
                         {
                             try
                             {
-                                handleConnection(accepted, conns, task_log);
+                                handleConnection(accepted, conns, task_log, auth);
                             }
                             catch (...)
                             {
@@ -166,7 +167,7 @@ namespace
     }
 }
 
-void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log)
+void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate)
 {
     LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
 
@@ -233,6 +234,8 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
         out.finalize();
     };
 
+    /// The protocol version must match exactly. A mismatched peer is rejected after a
+    /// best-effort SinkHello so it gets a precise diagnostic naming both versions.
     if (source_hello.source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
     {
         try
@@ -249,11 +252,17 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
             StreamingExchangeProtocol::PROTOCOL_VERSION);
     }
 
-    /// Versions match - body layout is known, parse the rest.
+    /// Version matches, so the body layout is known - parse the rest.
     source_hello.readAfterVersion(body_in);
 
     LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}",
         source_hello.query_id, source_hello.stream_name, source_hello.source_version);
+
+    /// Authenticate before completing the handshake or registering the connection,
+    /// so an unauthenticated peer is never rendezvoused with a local sink. A failure
+    /// throws and the connection is dropped without a SinkHello.
+    if (authenticate)
+        authenticate(source_hello.jwt_token);
 
     send_sink_hello();
 
