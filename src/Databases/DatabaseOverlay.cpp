@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
@@ -50,7 +51,19 @@ FoldedNameIndex::ResolutionResult DatabaseOverlay::resolveTableName(const Identi
     std::set<String> canonical_names;
     for (const auto & db : databases)
     {
-        auto child = db->resolveTableName(name, context_);
+        FoldedNameIndex::ResolutionResult child;
+        try
+        {
+            child = db->resolveTableName(name, context_);
+        }
+        catch (const Exception & e)
+        {
+            /// A child without folded lookup (e.g. Filesystem) contributes exact-only tables;
+            /// they are still reachable by their exact spelling through the regular path.
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                continue;
+            throw;
+        }
         if (child.outcome == FoldedNameIndex::Outcome::Matched)
             canonical_names.insert(child.canonical);
         else if (child.outcome == FoldedNameIndex::Outcome::Ambiguous)

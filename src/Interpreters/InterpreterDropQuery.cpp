@@ -114,6 +114,23 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
                 drop.getDatabase(), identifierPartQuoteFromAST(drop.database), getContext()),
             IdentifierPartQuote::DoubleQuoted);
     }
+    else if (drop.table && !drop.database && !drop.cluster.empty() && !drop.isTemporary())
+    {
+        /// The cluster entry is serialized before local resolution and replayed with exact
+        /// matching, so an unqualified name must be qualified and canonicalized here.
+        /// A session temporary table shadows the current-database one and stays untouched.
+        bool is_session_temporary = static_cast<bool>(getContext()->tryResolveStorageID(
+            StorageID{"", drop.getTable()}, Context::ResolveExternal));
+        if (!is_session_temporary && !getContext()->getCurrentDatabase().empty())
+        {
+            StorageID table_id{getContext()->getCurrentDatabase(), drop.getTable()};
+            table_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
+            table_id.table_name_quote = identifierPartQuoteFromAST(drop.table);
+            table_id = DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), getContext());
+            drop.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+            drop.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
+        }
+    }
 
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {

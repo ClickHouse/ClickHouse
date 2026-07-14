@@ -382,7 +382,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         // We try to get the table with the database name and the table name.
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
-            storage = database->tryGetTable(table_name, context);
+            storage = database->tryGetTable(storage_id.table_name, context);
         /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
         if (storage)
             storage_id = storage->getStorageID();
