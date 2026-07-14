@@ -700,8 +700,6 @@ TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
 TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
 {
     auto provider = makeProvider();
-    EXPECT_EQ(provider->fetchHeadAlignment(), kSegmentSize);
-    EXPECT_EQ(provider->fetchTailAlignment(), kSegmentSize);
 
     const size_t object_size = 3 * kSegmentSize;
     auto object = makeObject("obj_tile", object_size);
@@ -753,8 +751,6 @@ TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
     cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
     cache_settings.boundary_alignment = kSegmentSize;
     auto provider = std::make_shared<DiskCacheProvider>(wide_cache, cache_settings, /*query_id_=*/String{});
-    EXPECT_EQ(provider->fetchHeadAlignment(), kSegmentSize);
-    EXPECT_EQ(provider->fetchTailAlignment(), 4 * kSegmentSize);
 
     const size_t object_size = 8 * kSegmentSize;
     auto object = makeObject("obj_wide", object_size);

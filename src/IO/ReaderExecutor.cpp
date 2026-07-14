@@ -837,6 +837,28 @@ static CacheWriter::CacheSegmentPin pinIfCovering(CacheWriter * writer, size_t f
     return {};
 }
 
+/// Cell-edge fetch shaping: the widest `into` cell STRICTLY containing `pos`
+/// extends a piece cut to its edge, so a touched cache cell is fetched whole.
+/// `pos` on a cell boundary (or an `into`-empty bypass job) stays put - a
+/// bypass job reads exactly the requested bytes.
+static size_t cellFloor(const PlanSchedule::Retrieve & r, size_t pos)
+{
+    size_t off = pos;
+    for (const auto & t : r.into)
+        if (t.cell.offset < pos && pos < t.cell.end())
+            off = std::min(off, t.cell.offset);
+    return off;
+}
+
+static size_t cellCeil(const PlanSchedule::Retrieve & r, size_t pos)
+{
+    size_t end = pos;
+    for (const auto & t : r.into)
+        if (t.cell.offset < pos && pos < t.cell.end())
+            end = std::max(end, t.cell.end());
+    return end;
+}
+
 // ─── The display (cont.): plan-view hit serve ──────────────────────────────
 
 /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
@@ -1858,15 +1880,15 @@ void ReaderExecutor::launchRetrieve(size_t ri)
         return;
     const size_t capacity = horizon_end - base;
     /// The allowance is CELL-QUANTIZED: consumption prediction decides which cells to
-    /// fetch, not which bytes. An extent/reach cut mid-cell fills the touched cache cell
-    /// in fragments - one small cache write per fragment and a fresh source request for
-    /// the remainder (identity for bypass jobs - their grids are 1). A horizon- or
-    /// tail-bound cut needs no ceil: the next top-up continues the same job and completes
-    /// the cell. Zero stays zero - the ceil must not resurrect an exhausted allowance.
-    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
+    /// fetch, not which bytes. An extent/reach cut mid-cell would fill the touched cache
+    /// cell in fragments - one small cache write per fragment and a fresh source request
+    /// for the remainder - so it extends to the cell end (identity for bypass jobs). A
+    /// horizon- or tail-bound cut needs no ceil: the next top-up continues the same job
+    /// and completes the cell. Zero stays zero - the ceil must not resurrect an exhausted
+    /// allowance.
     size_t allowance = fetchAllowance(base);
     if (allowance)
-        allowance = std::min(r.range.end(), (base + allowance + tail_grid - 1) / tail_grid * tail_grid) - base;
+        allowance = std::min(r.range.end(), cellCeil(r, base + allowance)) - base;
     const size_t chunk = std::min({r.range.end() - base, capacity, allowance});
     if (chunk == 0)
         return;
@@ -1976,12 +1998,11 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
         return coveredPrefixEnd(cov, range);
     };
     const size_t missing = fill_prefix_end(window_phys);
-    const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
-    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
-    /// The append-only floor: grid-floor the first missing byte (clamped to the job) and walk
-    /// the fill frontier from there - ACROSS runs, so a before-slack run no serve window ever
-    /// reaches (a seek past it) is still fetched and the cell fills whole from its floor.
-    const size_t floor_off = std::max(r.range.offset, missing / head_grid * head_grid);
+    /// The append-only floor: open at the first missing byte's cell start (clamped to the
+    /// job) and walk the fill frontier from there - ACROSS runs, so a before-slack run no
+    /// serve window ever reaches (a seek past it) is still fetched and the cell fills
+    /// whole from its floor.
+    const size_t floor_off = std::max(r.range.offset, cellFloor(r, missing));
     const size_t base = floor_off < missing
         ? fill_prefix_end(ByteRange{floor_off, missing - floor_off})
         : missing;
@@ -1992,7 +2013,7 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     for (const auto & fr : r.fetch_runs)
         if (fr.end() > base)
             return ByteRange{base,
-                std::min(fr.end(), (window_phys.end() + tail_grid - 1) / tail_grid * tail_grid) - base};
+                std::min(fr.end(), cellCeil(r, window_phys.end())) - base};
     return {};
 }
 
@@ -2067,16 +2088,14 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
         return true;
     }
 
-    /// The piece extends to the job's fetch grids, clamped into its range (cell-fill
-    /// granularity; identity for a bypass job - its grids are 1). The grid head can reach
-    /// across a same-tier resident run - at most one grid cell, cache-served when
+    /// The piece extends to the edges of the touched `into` cells, clamped into the job's
+    /// range (cell-fill granularity; identity for a bypass job - no cells). The cell head
+    /// can reach across a same-tier resident run - at most one cell, cache-served when
     /// resident, once per plan.
-    const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
-    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
     const size_t fetch_lo
-        = std::min(window.offset, std::max(r.range.offset, window.offset / head_grid * head_grid));
+        = std::min(window.offset, std::max(r.range.offset, cellFloor(r, window.offset)));
     const size_t fetch_hi = std::max(window.end(),
-        std::min(r.range.end(), (window.end() + tail_grid - 1) / tail_grid * tail_grid));
+        std::min(r.range.end(), cellCeil(r, window.end())));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
     /// 1) The wait step (`waitSiblingFills`) - bounded to the cursor WINDOW; the
@@ -2586,8 +2605,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
         GeometryEntry geom_entry;
         geom_entry.tier = cache->tier();
-        geom_entry.head_align = cache->fetchHeadAlignment();
-        geom_entry.tail_align = cache->fetchTailAlignment();
         geom_entry.whole_cell = cache->fillsWholeCell();
         BufEntry buf_entry;
         buf_entry.provider = cache.get();

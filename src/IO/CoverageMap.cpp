@@ -46,21 +46,12 @@ ByteRange CoverageMap::fetchWindowAt(ByteRange req) const
     for (const auto & entry : entries)
         for (const auto & m : entry.aligned_miss)
         {
-            /// Head: `req` starts inside this miss run -> round its offset down to
-            /// the tier's grid, clamped to the run start (bounded by `head_align`).
-            if (entry.head_align > 1 && m.offset <= req.offset && req.offset < m.end())
-            {
-                size_t floored = (req.offset / entry.head_align) * entry.head_align;
-                lo = std::min(lo, std::max(m.offset, floored));
-            }
-            /// Tail: `req` ends inside this miss run -> round its end up to the
-            /// tier's grid, clamped to the run end. `1` (incremental tiers) never
-            /// extends.
-            if (entry.tail_align > 1 && m.offset < req.end() && req.end() <= m.end())
-            {
-                size_t ceiled = ((req.end() + entry.tail_align - 1) / entry.tail_align) * entry.tail_align;
-                hi = std::max(hi, std::min(m.end(), ceiled));
-            }
+            /// Head: `req` starts inside this miss cell -> open at the cell's start.
+            if (m.offset <= req.offset && req.offset < m.end())
+                lo = std::min(lo, m.offset);
+            /// Tail: `req` ends inside this miss cell -> run to the cell's end.
+            if (m.offset < req.end() && req.end() <= m.end())
+                hi = std::max(hi, m.end());
         }
     return ByteRange{lo, hi - lo};
 }

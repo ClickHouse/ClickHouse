@@ -695,16 +695,6 @@ size_t DiskCacheProvider::optimalFillCell() const
     return capped / boundary * boundary;
 }
 
-size_t DiskCacheProvider::fetchHeadAlignment() const
-{
-    return resolvedBoundaryAlignment();
-}
-
-size_t DiskCacheProvider::fetchTailAlignment() const
-{
-    return optimalFillCell();
-}
-
 CacheViewPtr DiskCacheProvider::planResidencyView(
     const StoredObject & object,
     size_t object_file_offset,
@@ -852,12 +842,11 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
             merged_obj.push_back(ByteRange{a_off, a_end - a_off});
     }
 
-    /// Tile each merged run into optimal fill cells on the ABSOLUTE grid, so the
-    /// cells `openWriteBuffers` creates in virgin holes coincide with the fetch
-    /// tail grid (`fetchTailAlignment`) by construction. A cut falling inside an
-    /// EXISTING segment is pushed past it - one range per real cell, so two
-    /// writers never hold the same segment. Cuts advance monotonically, so a
-    /// single forward index over `existing_obj` suffices.
+    /// Tile each merged run into optimal fill cells on the ABSOLUTE grid - each
+    /// emitted range is ONE cell, the unit the executor's fetch shaping works in.
+    /// A cut falling inside an EXISTING segment is pushed past it - one range per
+    /// real cell, so two writers never hold the same segment. Cuts advance
+    /// monotonically, so a single forward index over `existing_obj` suffices.
     const size_t opt_cell = optimalFillCell();
     VectorWithMemoryTracking<ByteRange> tiled_obj;
     size_t next_existing = 0;

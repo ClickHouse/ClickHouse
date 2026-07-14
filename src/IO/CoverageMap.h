@@ -17,16 +17,14 @@ namespace DB
 struct GeometryEntry
 {
     CacheTier tier{};
-    /// Grid the fetch rounds to at each edge of a miss run
-    /// (`ICacheProvider::fetch{Head,Tail}Alignment`); `1` = no over-read.
-    size_t head_align = 1;
-    size_t tail_align = 1;
     /// Cell is written WHOLE (first-writer-wins, e.g. page) vs incrementally
     /// appended (fs). A whole-cell tier fills only when a connection covers the
-    /// entire cell. Separate from `tail_align` so a tier can fetch a wide cell
-    /// without being first-writer-wins.
+    /// entire cell; an incremental tier appends whatever prefix is covered.
     bool whole_cell = false;
     VectorWithMemoryTracking<ByteRange> resident;
+    /// EACH RANGE IS ONE CELL of the tier (the provider's alignment policy) -
+    /// the sole source of fetch shaping: pieces open at cell starts and ceil to
+    /// cell ends (`fetchWindowAt`, the schedule's write targets, the piece cuts).
     VectorWithMemoryTracking<ByteRange> aligned_miss;
 };
 
@@ -67,11 +65,10 @@ struct CoverageMap
     size_t gapEnd(size_t gap_start) const;
 
 
-    /// The window to FETCH to serve `req`: `req` rounded OUT to the cache cell
-    /// at each edge (it may start LEFT of `req.offset` and end past `req.end()`;
-    /// the caller slices back). The widening is BOUNDED by each tier's alignment
-    /// grid, NOT the coalesced miss run, and is clamped into the run so it never
-    /// reaches resident bytes.
+    /// The CELL CLOSURE of `req`: `req` widened to the edges of the miss cells
+    /// its endpoints fall in (across all tiers), so a touched cell is planned
+    /// whole. Plan-build only - `buildSchedule`'s fill region; at run time the
+    /// widening is carried as schedule data (the write-target cells).
     ByteRange fetchWindowAt(ByteRange req) const;
 
     /// How far a long connection opened at `from` would stream before it must

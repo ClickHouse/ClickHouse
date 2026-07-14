@@ -126,9 +126,7 @@ public:
     bool populatesOnMiss() const override { return !bypass_if_missing; }
 
     /// A page-cache block is written whole (first-writer-wins, no later
-    /// completion), so both fetch edges round to `block_size`.
-    size_t fetchHeadAlignment() const override { return block_size; }
-    size_t fetchTailAlignment() const override { return block_size; }
+    /// completion); the probe reports one miss range per block.
     bool fillsWholeCell() const override { return true; }
 
     CacheViewPtr planResidencyView(

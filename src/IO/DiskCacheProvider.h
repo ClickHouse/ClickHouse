@@ -177,19 +177,6 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// Fetch shaping. Segment STARTS are quantized by `boundary_alignment` (the
-    /// max segment size only caps a cell's length), so the head floors to the
-    /// boundary grid - flooring to a coarser grid would overshoot into slack that
-    /// lands mid-cell and populates nothing (an append-only cell refuses a write
-    /// past its offset). The tail ceils to the OPTIMAL fill cell (the extent
-    /// `planResidencyView` tiles virgin holes into), so a cold fetch finishes the
-    /// touched cell. `fetchWindowAt` clamps each edge to the miss run, so a
-    /// partially-cached segment fills only its missing part. NOT first-writer-wins:
-    /// the segment is still incrementally appended (`fillsWholeCell()` stays false),
-    /// so a connection covering only a prefix appends it.
-    size_t fetchHeadAlignment() const override;
-    size_t fetchTailAlignment() const override;
-
     /// One `cache->get` (no segment creation): each resident sub-range becomes
     /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
     /// concurrently-DOWNLOADING segment credits its committed prefix as a hit

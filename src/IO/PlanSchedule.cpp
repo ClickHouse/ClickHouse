@@ -18,11 +18,6 @@ bool contains(ByteRange outer, ByteRange inner)
     return inner.offset >= outer.offset && inner.end() <= outer.end();
 }
 
-size_t alignOf(const GeometryEntry & e)
-{
-    return std::max(e.head_align, e.tail_align);
-}
-
 VectorWithMemoryTracking<ByteRange> mergeSorted(VectorWithMemoryTracking<ByteRange> parts)
 {
     std::sort(parts.begin(), parts.end(),
@@ -154,16 +149,16 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
                 continue;
             }
 
-            /// Slack-only cell: own it iff no tier missing the same bytes has a
-            /// strictly coarser alignment.
-            const size_t align_e = alignOf(e);
+            /// Slack-only cell: own it iff no tier misses the same bytes with a
+            /// strictly WIDER cell - the coarsest-cell tier's alignment created
+            /// the slack, so it owns the fill.
             bool owns = true;
             for (size_t ej = 0; owns && ej < g.entries.size(); ++ej)
             {
                 if (ej == ei)
                     continue;
                 for (const auto & m2 : g.entries[ej].aligned_miss)
-                    if (overlaps(m2, m) && alignOf(g.entries[ej]) > align_e)
+                    if (overlaps(m2, m) && m2.size > m.size)
                     {
                         owns = false;
                         break;
@@ -248,22 +243,9 @@ PlanSchedule buildSchedule(
     /// its own job. The runtime decides how many source connections span them (a held connection
     /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
     /// `scheduleLookaheadReach` / `canContinue`); the schedule only says WHAT to read.
-    /// The coarsest fetch grids across the plan's POPULATING tiers - the ones that scheduled
-    /// fill cells (`aligned_miss` non-empty). A bypass-mode tier reports its alignment but
-    /// schedules no cells, so it must not shape the fetch: nothing could hold the extension,
-    /// and the serve would fetch-and-discard it every window. An `into`-empty (bypass) job can
-    /// only exist in an all-bypass plan - any populating tier missing a gap gives it a cell -
-    /// so such a job gets grids of 1 and reads exactly the requested bytes.
-    size_t fetch_head_grid = 1;
-    size_t fetch_tail_grid = 1;
-    for (const auto & e : geometry.entries)
-    {
-        if (e.aligned_miss.empty())
-            continue;
-        fetch_head_grid = std::max(fetch_head_grid, e.head_align);
-        fetch_tail_grid = std::max(fetch_tail_grid, e.tail_align);
-    }
-
+    /// Fetch shaping is the `into` cells themselves: pieces open at cell starts and ceil to
+    /// cell ends. An `into`-empty (bypass) job reads exactly the requested bytes - nothing
+    /// could hold an extension, and the serve would fetch-and-discard it every window.
     for (const auto & f : fill)
     {
         PlanSchedule::Retrieve r;
@@ -271,8 +253,6 @@ PlanSchedule buildSchedule(
         r.source = PlanSchedule::Source::Remote;
         r.into = writeTargetsFor(geometry, f, request);
         r.fetch_runs = fetchRunsFor(geometry, f);
-        r.fetch_head_grid = fetch_head_grid;
-        r.fetch_tail_grid = fetch_tail_grid;
         r.ahead_eligible = true;   /// a source fill depends on nothing but the source
         sched.retrieves.push_back(std::move(r));
     }

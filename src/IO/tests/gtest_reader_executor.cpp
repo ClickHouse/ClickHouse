@@ -541,8 +541,9 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
     /// Read-only residency probe: classify each block as hit/miss against the LIVE
-    /// store (never mutating it), coalescing adjacent same-kind blocks into one entry.
-    /// Hits carry a held read buffer; misses are whole-block-aligned with no writer.
+    /// store (never mutating it). Hits coalesce adjacent blocks into one entry and
+    /// carry a held read buffer; misses are ONE ENTRY PER BLOCK (a block is this
+    /// mock's cell) with no writer.
     CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
         auto view = std::make_unique<CacheView>();
@@ -553,36 +554,36 @@ public:
         const size_t end_block = (range_in_file.end() + block_size - 1) / block_size;
 
         bool run_active = false;
-        bool run_is_hit = false;
         ByteRange run_range{0, 0};
-        auto flush_run = [&]()
+        auto flush_hit_run = [&]()
         {
             if (!run_active)
                 return;
-            if (run_is_hit)
-                view->hit_entries.push_back(HitEntry{
-                    run_range, std::make_unique<MockCacheReader>(run_range, storage, block_size)});
-            else
-                view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
+            view->hit_entries.push_back(HitEntry{
+                run_range, std::make_unique<MockCacheReader>(run_range, storage, block_size)});
             run_active = false;
         };
 
         for (size_t b = start_block; b < end_block; ++b)
         {
-            const bool is_hit = storage.contains(b);
             const ByteRange block_range{b * block_size, block_size};
-            if (run_active && run_is_hit != is_hit)
-                flush_run();
-            if (!run_active)
+            if (storage.contains(b))
             {
-                run_active = true;
-                run_is_hit = is_hit;
-                run_range = block_range;
+                if (!run_active)
+                {
+                    run_active = true;
+                    run_range = block_range;
+                }
+                else
+                    run_range.size = block_range.end() - run_range.offset;
             }
             else
-                run_range.size = block_range.end() - run_range.offset;
+            {
+                flush_hit_run();
+                view->miss_entries.push_back(MissEntry{block_range, /*writer=*/nullptr});
+            }
         }
-        flush_run();
+        flush_hit_run();
         return view;
     }
 
@@ -2167,7 +2168,7 @@ TEST(ReaderExecutor, HitRunHealsStaleView)
     EXPECT_EQ(got, content) << "the stale hit run must heal through the bank, not truncate";
 }
 
-TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
+TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
 {
     TestThreadGroup tg;
 
@@ -2198,14 +2199,17 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
             result.append(node.data(), node.size);
     };
 
-    /// Window 1: [0,1000). Fills the segment to cwo=1000; the executor pins it.
+    /// Window 1: [0,1000). The fetch extends to the CELL edge (cell-fill shaping), so
+    /// the whole segment fills at once - complete, hence unpinned and evictable.
     auto w1 = executor->readNextWindow();
     ASSERT_FALSE(w1.empty());
     consume(std::move(w1));
+    ASSERT_EQ(cache->downloaded[0], 4000u) << "the touched cell is fetched whole";
 
-    /// Eviction pressure. The pinned segment must survive (use_count()==2).
+    /// Eviction pressure drops the COMPLETE (unpinned) cell mid-read; the remaining
+    /// windows must heal by re-fetching, never truncate or serve stale bytes.
     cache->evictUnpinned();
-    ASSERT_EQ(cache->downloaded[0], 1000u) << "pinned in-flight segment was evicted";
+    ASSERT_EQ(cache->downloaded[0], 0u) << "a complete cell is evictable";
 
     /// Drain the rest sequentially.
     while (true)
@@ -2358,28 +2362,50 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
+    auto pool = std::make_shared<SyncPrefetchPool>();
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    /// One-window lead: the look-ahead machine enters segment 1 one window at a
+    /// time, so the collect at the boundary pins a genuinely PARTIAL segment 1
+    /// (an in-flight pin exists only while a cell is mid-fill - the pump's
+    /// cursor fetches complete their cell and pin nothing).
+    executor_options.fill_ahead_lead = 1000;
     ReaderExecutor executor(source, objects, caches, executor_options);
 
-    ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
-    ASSERT_EQ(cache->downloaded[0], 1000u);
-    cache->evictUnpinned();
-    ASSERT_EQ(cache->downloaded[0], 1000u) << "segment 0 should be pinned before the seek";
-
-    executor.seek(5000);                                  /// continuity breaks -> pin released
-    cache->evictUnpinned();
-    EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u)
-        << "pin should be released on seek, allowing eviction of segment 0";
-
-    auto chain = executor.readNextWindow();                /// [5000,6000)
-    ASSERT_FALSE(chain.empty());
     String got;
+    auto consume = [&](ChainedBuffers chain)
+    {
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    };
+
+    /// Consume through segment 0 and the first window of segment 1: the machine
+    /// collect at the boundary pinned the in-flight partial segment 1.
+    for (int i = 0; i < 5; ++i)
+    {
+        auto chain = executor.readNextWindow();
+        ASSERT_FALSE(chain.empty());
+        consume(std::move(chain));
+    }
+    EXPECT_EQ(got, content.substr(0, got.size()));
+    cache->evictUnpinned();
+    ASSERT_GT(cache->downloaded[1], 0u) << "in-flight partial segment 1 must be pinned";
+    ASSERT_LT(cache->downloaded[1], 4000u) << "segment 1 must still be mid-fill for the pin to matter";
+
+    executor.seek(0);                                     /// far seek: pin released
+    cache->evictUnpinned();
+    EXPECT_EQ(cache->downloaded[1], 0u)
+        << "pin should be released on seek, allowing eviction of segment 1";
+
+    auto chain = executor.readNextWindow();                /// [0,1000) re-fetches
+    ASSERT_FALSE(chain.empty());
+    String after;
     for (const auto & node : chain.getNodes())
-        got.append(node.data(), node.size);
-    EXPECT_EQ(got, content.substr(5000, got.size()));
+        after.append(node.data(), node.size);
+    EXPECT_EQ(after, content.substr(0, after.size()));
 }
 
 TEST(ReaderExecutor, PutFailedTakesNoPin)
@@ -3072,14 +3098,11 @@ public:
     String name() const override { return provider_name; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
-    /// A block is the write unit (`seedBlock`/`hasBlock` operate on whole blocks), so
-    /// both fetch edges round to `block_size`: a touch fills the whole block it lands in.
-    size_t fetchHeadAlignment() const override { return block_size; }
-    size_t fetchTailAlignment() const override { return block_size; }
-
-    /// Read-only residency probe at FULL block granularity, coalescing adjacent
-    /// same-kind blocks. Never mutates the store. Hits carry a held read buffer;
-    /// misses are whole-block-aligned with no writer.
+    /// Read-only residency probe at FULL block granularity: a block IS the write
+    /// unit (`seedBlock`/`hasBlock` operate on whole blocks), so each miss range
+    /// is ONE block - a touch fetches the whole block it lands in (cell-edge
+    /// shaping). Hits coalesce adjacent blocks into one entry; never mutates the
+    /// store.
     CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
         auto view = std::make_unique<CacheView>();
@@ -3090,36 +3113,36 @@ public:
         const size_t end_block = (range_in_file.end() + block_size - 1) / block_size;
 
         bool run_active = false;
-        bool run_is_hit = false;
         ByteRange run_range{0, 0};
-        auto flush_run = [&]()
+        auto flush_hit_run = [&]()
         {
             if (!run_active)
                 return;
-            if (run_is_hit)
-                view->hit_entries.push_back(HitEntry{
-                    run_range, std::make_unique<WideGranularityReadBuffer>(run_range, storage, block_size)});
-            else
-                view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
+            view->hit_entries.push_back(HitEntry{
+                run_range, std::make_unique<WideGranularityReadBuffer>(run_range, storage, block_size)});
             run_active = false;
         };
 
         for (size_t b = start_block; b < end_block; ++b)
         {
-            const bool is_hit = storage.contains(b);
             const ByteRange block_range{b * block_size, block_size};
-            if (run_active && run_is_hit != is_hit)
-                flush_run();
-            if (!run_active)
+            if (storage.contains(b))
             {
-                run_active = true;
-                run_is_hit = is_hit;
-                run_range = block_range;
+                if (!run_active)
+                {
+                    run_active = true;
+                    run_range = block_range;
+                }
+                else
+                    run_range.size = block_range.end() - run_range.offset;
             }
             else
-                run_range.size = block_range.end() - run_range.offset;
+            {
+                flush_hit_run();
+                view->miss_entries.push_back(MissEntry{block_range, /*writer=*/nullptr});
+            }
         }
-        flush_run();
+        flush_hit_run();
         return view;
     }
 

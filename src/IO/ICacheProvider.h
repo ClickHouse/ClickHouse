@@ -196,30 +196,21 @@ public:
     /// a slower tier is written up only into faster tiers that populate.
     virtual bool populatesOnMiss() const { return true; }
 
-    /// Granularity the fetch HEAD is rounded DOWN to, so a read starting
-    /// mid-cell fills the cell's aligned prefix. The slack is counted as
-    /// over-read. `1` disables. Disk: `boundary_alignment`; page: `block_size`.
-    virtual size_t fetchHeadAlignment() const { return 1; }
-
-    /// Granularity the fetch TAIL is rounded UP to. Needed only by tiers with
-    /// whole-cell writes (a page block is first-writer-wins, never completed
-    /// later); `1` for incrementally-fillable tiers.
-    virtual size_t fetchTailAlignment() const { return 1; }
-
     /// Whether a cell is written WHOLE (first-writer-wins, never completed later -
     /// the page cache) vs incrementally appended (the filesystem cache). A
     /// whole-cell tier is a fill target only when a connection covers the ENTIRE
-    /// cell; an incremental tier appends whatever prefix is covered. Kept separate
-    /// from `fetchTailAlignment` so a tier can round its fetch to a wide cell
-    /// WITHOUT being treated as first-writer-wins.
+    /// cell; an incremental tier appends whatever prefix is covered.
     virtual bool fillsWholeCell() const { return false; }
 
     virtual String name() const = 0;
 
     /// Read-only residency probe over a (typically large) look-ahead range:
-    /// hit read buffers (pinning their resident segments) + writer-null
-    /// cache-aligned misses. MUST NOT mutate the cache - a fully-resident
-    /// range costs only the probe.
+    /// hit read buffers (pinning their resident segments) + writer-null misses.
+    /// EACH MISS RANGE IS ONE CELL of the tier - the provider owns the alignment
+    /// policy (exact gaps for a bypass tier; boundary-aligned optimal cells for
+    /// the filesystem cache; whole blocks for the page cache) - and the executor
+    /// derives all fetch shaping from these cell edges. MUST NOT mutate the
+    /// cache - a fully-resident range costs only the probe.
     virtual CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) = 0;
 

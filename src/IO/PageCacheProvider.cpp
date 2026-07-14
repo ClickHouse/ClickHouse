@@ -299,8 +299,12 @@ CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
         }
         else
         {
-            /// Writers are `openWriteBuffers`' job; views carry null.
-            view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
+            /// Writers are `openWriteBuffers`' job; views carry null. One entry
+            /// per BLOCK: each miss range is one cell - the executor derives
+            /// fetch shaping and whole-cell containment from these edges.
+            for (size_t off = run_range.offset; off < run_range.end(); off += block_size)
+                view->miss_entries.push_back(
+                    MissEntry{ByteRange{off, std::min(block_size, run_range.end() - off)}, /*writer=*/nullptr});
         }
         run_cells.clear();
         run_active = false;
