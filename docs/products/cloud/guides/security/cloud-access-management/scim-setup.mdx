@@ -42,8 +42,7 @@ You'll need:
 ## Configure SCIM on your ClickHouse Cloud organization {#configure-clickhouse-cloud}
 
 <Steps>
-<Step>
-### Enable SCIM {#enable-scim-provisioning}
+<Step title="Enable SCIM" id="enable-scim-provisioning">
 
 Sign in to **ClickHouse Cloud Console** as an organization admin and open **Organization settings → SAML and SCIM settings → SCIM Configuration**.
 
@@ -61,8 +60,7 @@ https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
 
 Copy it — you'll paste it into Okta later.
 </Step>
-<Step>
-### Generate a SCIM access token {#generate-scim-token}
+<Step title="Generate a SCIM access token" id="generate-scim-token">
 
 Locate the `Create an API key` section and choose an expiration date.
 
@@ -76,8 +74,7 @@ Click `Generate key`. The token is shown **once**, as a key (prefixed `scim_`) a
 
 ![Generate a new SCIM API key](/images/cloud/security/scim-okta/scim-okta-07.webp)
 </Step>
-<Step>
-### Define the role mapping {#define-role-mapping}
+<Step title="Define the role mapping" id="define-role-mapping">
 
 From the SCIM Configuration panel, click **Map roles in "Users and roles"** (or navigate directly via **Users and roles → Roles**).
 
@@ -93,8 +90,7 @@ SCIM groups bind to ClickHouse Cloud roles by name, with a few rules to keep in 
 ## Configure the ClickHouse Cloud application in Okta {#configure-okta}
 
 <Steps>
-<Step>
-### Open your ClickHouse Cloud application in Okta {#open-clickhouse-cloud-app}
+<Step title="Open your ClickHouse Cloud application in Okta" id="open-clickhouse-cloud-app">
 
 In the **Okta Admin Console**, go to **Applications → Applications** and search for the application you created when you set up SAML SSO for ClickHouse Cloud. Open it.
 
@@ -108,8 +104,7 @@ The application now shows a **Provisioning** tab.
 
 ![Provisioning tab now appears on the application](/images/cloud/security/scim-okta/scim-okta-05.webp)
 </Step>
-<Step>
-### Connect Okta to the SCIM endpoint {#connect-okta-scim}
+<Step title="Connect Okta to the SCIM endpoint" id="connect-okta-scim">
 
 Open the **Provisioning** tab of the application and click `Edit`. Fill in the form:
 
@@ -135,8 +130,7 @@ Click `Test Connector Configuration`. You should see a green confirmation. If it
 
 Click `Save`.
 </Step>
-<Step>
-### Configure provisioning behavior {#configure-provisioning-behavior}
+<Step title="Configure provisioning behavior" id="configure-provisioning-behavior">
 
 Still on the **Provisioning** tab, click `To App` in the left sidebar. Click `Edit` and enable:
 
@@ -153,8 +147,7 @@ Click `Save`, then return to the application's **Sign On** / **Provisioning** ta
 
 ![Save the provisioning settings and return to the Sign On tab](/images/cloud/security/scim-okta/scim-okta-10b.webp)
 </Step>
-<Step>
-### Map user attributes {#map-user-attributes}
+<Step title="Map user attributes" id="map-user-attributes">
 
 Okta and ClickHouse Cloud need to agree on how user fields line up. On the **Provisioning** tab, click `To App` and review the **Attribute Mappings** for your application. The defaults from the Okta SAML application are usually fine — verify the table below:
 
@@ -175,8 +168,7 @@ You can add optional attributes such as department, manager, and location — Cl
 Make sure your Okta `userName` and `email` use the same casing. ClickHouse Cloud normalises emails to lowercase; mismatches between the two fields can cause test failures.
 </Warning>
 </Step>
-<Step>
-### Push groups and assign users {#push-groups-and-assign-users}
+<Step title="Push groups and assign users" id="push-groups-and-assign-users">
 
 This is where roles get applied automatically.
 
