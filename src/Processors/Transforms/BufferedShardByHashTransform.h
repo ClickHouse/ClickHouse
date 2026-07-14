@@ -45,6 +45,14 @@ public:
     /// all transforms sharing `total_buffered_bytes_` (0 = no cap); exceeding the cap throws
     /// TOO_MANY_ROWS_OR_BYTES instead of buffering without limit, because with a selective consumer the only
     /// alternatives to reading ahead are deadlock or spilling.
+    ///
+    /// The cap is enforced at input-block granularity, on measured sizes only: admission is checked against
+    /// each pulled block's `allocatedBytes()` and re-checked after the block is split (`scatter` can grow
+    /// buffers beyond the pre-split size), so the buffered bytes can transiently exceed the cap by up to one
+    /// block's post-split footprint per transform before the exception is raised. A chunk's footprint cannot
+    /// be known before reading it, so any earlier enforcement would reject chunks whose actual bytes fit. The
+    /// cap is a guardrail against unbounded read-ahead with an actionable error, not a byte-exact memory
+    /// limit — the query memory tracker (`max_memory_usage`) remains the hard limit.
     BufferedShardByHashTransform(
         SharedHeader header,
         size_t num_shards_,
@@ -114,11 +122,11 @@ private:
 
     /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment
     /// the chunk is pulled (before it is split), so the budget accounts for the in-flight read-ahead of
-    /// every scatter and admission decisions cannot overshoot by a whole chunk. When the chunk is split the
-    /// same charge is carried over as the block's charge (no discharge/re-charge), so the counter is
+    /// every scatter and the admission decision runs on the chunk's measured size. When the chunk is split
+    /// the same charge is carried over as the block's charge (no discharge/re-charge), so the counter is
     /// continuous across the split.
     ///
-    /// `already_reserved` bytes were added to the counter before the pull as a conservative reservation (see
+    /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
     /// the admission path in prepare()); chargePendingInput adds only the difference to the chunk's exact
     /// `allocatedBytes()`, so the reservation is reconciled rather than double-charged. It also records the
     /// chunk's size as `reservation_estimate` to reserve before the next pull.
@@ -134,10 +142,9 @@ private:
     /// Bytes currently queued across all transforms sharing this counter (never null).
     std::shared_ptr<std::atomic<Int64>> total_buffered_bytes;
 
-    /// Set in prepare() when the shared budget is already exhausted, when the reservation for the next chunk
-    /// would not fit (so the chunk is not even pulled), or when the just-pulled chunk pushes the counter past
-    /// max_buffered_bytes; work() then throws before the chunk is split (or before it is pulled at all), so
-    /// nothing over-budget buffers.
+    /// Set in prepare() when the shared budget is already exhausted (so no further chunk is pulled) or when
+    /// the just-pulled chunk's measured size pushes the counter past max_buffered_bytes; work() then throws
+    /// before the chunk is split, so nothing over-budget buffers.
     bool budget_exceeded = false;
 
     /// Input chunk that was pulled in prepare() and will be split in work().
@@ -147,13 +154,14 @@ private:
     /// when the chunk is split, or released if the chunk is dropped before it is split.
     Int64 pending_input_bytes = 0;
 
-    /// Pre-split `allocatedBytes()` of the last chunk this scatter pulled. Reserved against the shared budget
-    /// *before* the next pull so concurrent scatters (each prepare() runs under its own node mutex, not a
-    /// stage-wide lock) serialize their admission through the counter and cannot each materialize a chunk while
-    /// it still reads below the cap. 0 until the first pull, so the first chunk per scatter can still be pulled
-    /// before the estimate warms up - inherent to measuring a chunk's size only after reading it; the post-pull
-    /// re-check in prepare() and the post-split re-check in work() still catch that first chunk. Chunks from one
-    /// input stream are ~uniform, so this converges after a single pull.
+    /// Pre-split `allocatedBytes()` of the last chunk this scatter pulled. Published to the shared counter
+    /// *before* the next pull as a provisional reservation, so concurrent scatters (each prepare() runs under
+    /// its own node mutex, not a stage-wide lock) observe each other's in-flight pulls through the counter and
+    /// cannot all conclude at the same time that there is room for one more chunk each. It is a soft gate: being
+    /// only an estimate it never rejects a chunk by itself (a wide block followed by a narrow one must not fail
+    /// a query whose actual bytes fit); the admission decision runs on the pulled chunk's measured size, after
+    /// chargePendingInput reconciles the reservation to it. Chunks from one input stream are ~uniform, so the
+    /// estimate converges after a single pull (0 until then).
     Int64 reservation_estimate = 0;
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.

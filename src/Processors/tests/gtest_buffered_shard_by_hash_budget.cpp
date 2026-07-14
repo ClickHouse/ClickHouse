@@ -164,14 +164,15 @@ struct SecondPullOutcome
     bool work_threw_budget_error;    /// work() threw TOO_MANY_ROWS_OR_BYTES for the shared buffer budget.
 };
 
-/// Drive one scatter to the point where it would pull a *second* input chunk while the first is still buffered,
-/// under a shared budget of `max_buffered_bytes` bytes. Priming the first block warms `reservation_estimate`
-/// and leaves the block's charge resident in the output ports; draining one lane makes that output starve so
-/// the transform wants to pull again. Returns whether the second chunk was pulled and whether work() then threw
-/// the buffer-budget error. With reservation-before-pull admission, a second chunk whose reserved estimate does
-/// not fit the shared budget is refused *before* it is pulled (the input chunk is left in place and work()
-/// throws); without the reservation the transform would materialize the chunk first and only then throw.
-SecondPullOutcome attemptSecondPull(size_t num_rows, size_t num_shards, size_t max_buffered_bytes)
+/// Drive one scatter to the point where it pulls a *second* input chunk (of `second_rows` rows) while the first
+/// block (of `first_rows` rows) is still buffered, under a shared budget of `max_buffered_bytes` bytes. Priming
+/// the first block warms `reservation_estimate` and leaves the block's charge resident in the output ports;
+/// draining one lane makes that output starve so the transform wants to pull again. Returns whether the second
+/// chunk was pulled and whether work() then threw the buffer-budget error. The admission decision must run on
+/// the second chunk's measured size, not on the reservation estimated from the first chunk: a second chunk
+/// whose actual bytes fit the budget proceeds even when the estimate would not, and a second chunk whose actual
+/// bytes cross the cap makes work() throw before it is split.
+SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_t num_shards, size_t max_buffered_bytes)
 {
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
@@ -198,7 +199,7 @@ SecondPullOutcome attemptSecondPull(size_t num_rows, size_t num_shards, size_t m
         sink->setNeeded();
 
     /// Prime: push the first block and split it into the ports (parked, charged; estimate warmed).
-    source_output.push(Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows));
+    source_output.push(Chunk(Columns{makeDistinctKeyColumn(first_rows), makeUInt64ValueColumn(first_rows)}, first_rows));
     for (int step = 0; step < 8; ++step)
     {
         if (transform.prepare() != IProcessor::Status::Ready)
@@ -213,7 +214,7 @@ SecondPullOutcome attemptSecondPull(size_t num_rows, size_t num_shards, size_t m
         sinks.front()->pull();
 
     /// Present a second block and run one admission cycle on the now-starving lane.
-    source_output.push(Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows));
+    source_output.push(Chunk(Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, second_rows));
     const auto status = transform.prepare();
     const bool second_chunk_pulled = !source_output.hasData();
 
@@ -235,15 +236,12 @@ SecondPullOutcome attemptSecondPull(size_t num_rows, size_t num_shards, size_t m
 
 }
 
-/// The shared buffer budget must be a real stage-wide cap, not merely a post-hoc tripwire. Several scatters run
-/// prepare() concurrently, each under its own node mutex rather than a stage-wide lock, so if admission only
-/// read the counter before pulling and charged the chunk afterwards, every scatter could pass the check and
-/// pull one chunk each before any of them throws - overshooting `aggregation_in_order_shuffle_max_buffered_bytes`
-/// by up to one chunk per scatter. The transform instead reserves a conservative estimate of the next chunk
-/// (its last pulled size) against the shared counter *before* pulling, so a chunk that would not fit is refused
-/// before it is materialized. This drives one scatter to the point of a second pull whose reserved estimate
-/// does not fit the budget and checks the pull is refused, versus a control budget with room for it.
-TEST(BufferedShardByHashTransform, ReservationRefusesOverBudgetChunkBeforePulling)
+/// The admission decision for the shared buffer budget runs on each pulled chunk's measured size: a chunk whose
+/// actual bytes cross the cap is rejected right after the pull (work() throws TOO_MANY_ROWS_OR_BYTES before the
+/// chunk is split, so no over-budget data buffers), while under a budget with room for it the same chunk
+/// proceeds normally. This drives one scatter to a second pull that lands the counter past the cap and checks
+/// work() throws, versus a control budget with room for it.
+TEST(BufferedShardByHashTransform, ChunkThatCrossesBudgetThrowsBeforeSplit)
 {
     const size_t num_rows = 4000;
     const size_t num_shards = 8;
@@ -258,22 +256,66 @@ TEST(BufferedShardByHashTransform, ReservationRefusesOverBudgetChunkBeforePullin
     const Int64 resident_after_split = bufferedBytesAfterSplit(
         header, Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_shards, ColumnNumbers{0});
     ASSERT_GT(resident_after_split, 0);
-    /// ...and the pre-split size of the next chunk, which is what the transform reserves before pulling it.
-    const Int64 reservation = static_cast<Int64>(
+    /// ...and the pre-split size of the next chunk, which is what admission charges when it is pulled.
+    const Int64 second_chunk_bytes = static_cast<Int64>(
         Chunk(Columns{makeDistinctKeyColumn(num_rows), makeUInt64ValueColumn(num_rows)}, num_rows).allocatedBytes());
-    ASSERT_GT(reservation, 0);
+    ASSERT_GT(second_chunk_bytes, 0);
 
-    /// Budget large enough to hold the first block but not the first block plus the reserved second chunk: the
-    /// second pull's reservation crosses the cap, so it must be refused before the chunk is pulled. (The budget
-    /// exceeds `resident_after_split`, so priming the first block never trips it.)
-    const auto tight = attemptSecondPull(num_rows, num_shards, static_cast<size_t>(resident_after_split + reservation / 2));
-    EXPECT_FALSE(tight.second_chunk_pulled);
+    /// Budget large enough to hold the first block but not the first block plus the second chunk: the second
+    /// chunk's measured size crosses the cap, so work() must throw before splitting it. (The budget exceeds
+    /// `resident_after_split`, so priming the first block never trips it.)
+    const auto tight = attemptSecondPull(
+        num_rows, num_rows, num_shards, static_cast<size_t>(resident_after_split + second_chunk_bytes / 2));
+    EXPECT_TRUE(tight.second_chunk_pulled);
     EXPECT_TRUE(tight.work_threw_budget_error);
 
-    /// Budget with room for both: the reservation fits, so the second chunk is pulled normally (control).
-    const auto loose = attemptSecondPull(num_rows, num_shards, static_cast<size_t>(resident_after_split + 2 * reservation));
+    /// Budget with room for both: the second chunk is admitted and split normally (control).
+    const auto loose = attemptSecondPull(
+        num_rows, num_rows, num_shards, static_cast<size_t>(resident_after_split + 2 * second_chunk_bytes));
     EXPECT_TRUE(loose.second_chunk_pulled);
     EXPECT_FALSE(loose.work_threw_budget_error);
+}
+
+/// The reservation published before a pull is this scatter's *last* pulled size — only an estimate of the next
+/// chunk. It must act as a soft gate: on a variable-width stream, a wide block followed by a narrow one leaves
+/// an estimate far above the narrow chunk's actual bytes, and rejecting on that estimate would fail a query
+/// whose buffered bytes never cross the cap. This primes the estimate with a wide block under a budget that the
+/// estimate crosses but the narrow chunk's actual bytes do not, and checks the narrow chunk is pulled and
+/// processed without the budget error.
+TEST(BufferedShardByHashTransform, OverEstimatedReservationDoesNotRejectSmallerChunk)
+{
+    const size_t wide_rows = 20000;
+    const size_t narrow_rows = 500;
+    const size_t num_shards = 8;
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    const Int64 wide_resident_after_split = bufferedBytesAfterSplit(
+        header, Columns{makeDistinctKeyColumn(wide_rows), makeUInt64ValueColumn(wide_rows)}, num_shards, ColumnNumbers{0});
+    ASSERT_GT(wide_resident_after_split, 0);
+    /// The estimate the transform reserves before the second pull is the wide chunk's pre-split size.
+    const Int64 wide_chunk_bytes = static_cast<Int64>(
+        Chunk(Columns{makeDistinctKeyColumn(wide_rows), makeUInt64ValueColumn(wide_rows)}, wide_rows).allocatedBytes());
+    /// Both measured sizes of the narrow chunk (admission checks the pre-split size, the post-split re-check
+    /// its exact resident bytes) must fit under the budget headroom the wide estimate does not fit under.
+    const Int64 narrow_chunk_bytes = static_cast<Int64>(
+        Chunk(Columns{makeDistinctKeyColumn(narrow_rows), makeUInt64ValueColumn(narrow_rows)}, narrow_rows).allocatedBytes());
+    const Int64 narrow_resident_after_split = bufferedBytesAfterSplit(
+        header, Columns{makeDistinctKeyColumn(narrow_rows), makeUInt64ValueColumn(narrow_rows)}, num_shards, ColumnNumbers{0});
+    const Int64 headroom = wide_chunk_bytes / 2;
+    ASSERT_LT(narrow_chunk_bytes, headroom);
+    ASSERT_LT(narrow_resident_after_split, headroom);
+
+    /// The wide-block estimate crosses this budget (resident + wide_chunk_bytes > budget), but the narrow
+    /// chunk's actual bytes fit; a hard reservation gate would spuriously throw here.
+    const auto outcome = attemptSecondPull(
+        wide_rows, narrow_rows, num_shards, static_cast<size_t>(wide_resident_after_split + headroom));
+    EXPECT_TRUE(outcome.second_chunk_pulled);
+    EXPECT_FALSE(outcome.work_threw_budget_error);
 }
 
 /// The canonical shuffle buffer-budget regression: `ColumnLowCardinality::scatter` shares one dictionary
