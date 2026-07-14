@@ -63,6 +63,14 @@ ATTACH TABLE db_overlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { se
 
 RENAME TABLE db_overlay.t_a TO db_overlay.t_a_renamed_via_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
+-- RENAME is rejected up front by the facade database name, before any existence probe, so the facade
+-- cannot act as a source-table existence oracle: `IF EXISTS` on a name missing from every source still
+-- rejects (it is not a silent no-op), and naming the facade as the rename destination rejects too
+-- (it does not leak via `TABLE_ALREADY_EXISTS`).
+RENAME TABLE IF EXISTS db_overlay.no_such_table TO db_a.whatever; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+RENAME TABLE db_a.t_a TO db_overlay.dest_via_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+RENAME TABLE db_a.t_a TO db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+
 CREATE DATABASE loop_self ENGINE = Overlay('loop_self'); -- { serverError BAD_ARGUMENTS }
 
 CREATE DATABASE bad_overlay ENGINE = Overlay('this_db_does_not_exist'); -- { serverError BAD_ARGUMENTS }
@@ -72,6 +80,13 @@ DROP TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 DETACH TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 OPTIMIZE TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 TRUNCATE TABLE db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+
+-- The rejection happens up front by the facade database name, before the table is resolved, so
+-- `DROP`/`DETACH TABLE IF EXISTS` cannot be used as a source-table existence oracle: a name that is
+-- missing from every source still rejects instead of silently succeeding as a no-op.
+DROP TABLE IF EXISTS db_overlay.no_such_table; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+DETACH TABLE IF EXISTS db_overlay.no_such_table; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+TRUNCATE TABLE IF EXISTS db_overlay.no_such_table; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 -- Standalone lightweight mutation statements are rejected the same way as ALTER.
 DELETE FROM db_overlay.t_a WHERE id = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
