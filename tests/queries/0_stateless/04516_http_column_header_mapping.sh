@@ -55,36 +55,33 @@ ${CLICKHOUSE_CURL} -sS \
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
 
-echo "--- async: header-to-column mapping with batching"
-# Send two async inserts with different header values. They should batch together
-# but each row must carry its own request's header values.
+echo "--- async: different header values per request coalesce into one batch"
+# Two fire-and-forget requests, then explicit flush. Each row must carry its own
+# request's header values to verify per-entry injection works correctly.
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
     -H 'X-Signature: sig1' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature" \
-    -d '{"payload":"async1"}' &
-pid1=$!
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature" \
+    -d '{"payload":"async1"}'
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: release' \
     -H 'X-Signature: sig2' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature" \
-    -d '{"payload":"async2"}' &
-pid2=$!
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature" \
+    -d '{"payload":"async2"}'
 
-wait $pid1
-wait $pid2
-
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, signature, payload FROM test_http_columns ORDER BY payload"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
 
 echo "--- async: multiple rows per entry"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: star' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
     -d '{"payload":"multi1"}
 {"payload":"multi2"}'
 
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns ORDER BY payload"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
 
@@ -124,9 +121,10 @@ ${CLICKHOUSE_CURL} -sS \
     -H 'X-Count: 100' \
     -H "X-Tags: ['async']" \
     -H 'X-Rate: 2.72' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+test_http_columns_typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count&http_column_X-Tags=tags&http_column_X-Rate=rate" \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns_typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count&http_column_X-Tags=tags&http_column_X-Rate=rate" \
     -d '{"payload":"async-typed"}'
 
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT count, tags, rate, payload FROM test_http_columns_typed"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_typed"

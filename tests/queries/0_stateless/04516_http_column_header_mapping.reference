@@ -8,7 +8,7 @@ release	sha256=def456	row3
 issues	case-test
 --- sync: missing header produces empty string
 	no-header
---- async: header-to-column mapping with batching
+--- async: different header values per request coalesce into one batch
 push	sig1	async1
 release	sig2	async2
 --- async: multiple rows per entry
