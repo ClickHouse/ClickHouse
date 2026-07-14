@@ -985,6 +985,12 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
         ASSERT_NE(nullptr, ast) << "query: " << query;
 
         /// Desync the SETTINGS slot from `children` on whichever owner carries it, leaving the slot set.
+        /// The desync must be "slot points at a node no longer in `children`", NOT "slot points at a
+        /// freed node": for ASTStorage the slot is a bare `ASTSetQuery *` whose ONLY owner is `children`,
+        /// so simply erasing the matching child would drop the last owning intrusive_ptr and leave the
+        /// slot dangling - a use-after-free, not the desync we mean to test. Keep an owning `ASTPtr` for
+        /// every erased settings node alive for the whole test body so the slot stays valid-but-desynced.
+        std::vector<ASTPtr> kept_alive;
         std::vector<IAST *> nodes{ast.get()};
         bool desynced = false;
         while (!nodes.empty())
@@ -1007,7 +1013,13 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
                     std::remove_if(
                         node->children.begin(),
                         node->children.end(),
-                        [&](const ASTPtr & child) { return child.get() == settings_slot; }),
+                        [&](const ASTPtr & child)
+                        {
+                            if (child.get() != settings_slot)
+                                return false;
+                            kept_alive.push_back(child);
+                            return true;
+                        }),
                     node->children.end());
                 if (node->children.size() < before)
                     desynced = true;

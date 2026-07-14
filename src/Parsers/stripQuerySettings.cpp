@@ -70,6 +70,18 @@ void detachChild(IAST & owner, T *& field)
     field = nullptr;
 }
 
+/// True if the raw `ptr` is still owned by `owner.children`. This is a pointer-value comparison and
+/// never dereferences `ptr`, so it is safe even when `ptr` is dangling. Owners like ASTStorage hold
+/// their SETTINGS slot as a bare pointer whose only owner is `children`; a fuzzer-mutated child list
+/// can drop that owning intrusive_ptr while leaving the slot set, leaving the pointer dangling.
+bool isBackedByChildren(const IAST & owner, const IAST * ptr)
+{
+    for (const auto & child : owner.children)
+        if (child.get() == ptr)
+            return true;
+    return false;
+}
+
 template <typename Visitor>
 void visitAllNodes(const ASTPtr & ast, Visitor && visit)
 {
@@ -150,11 +162,22 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 /// `CREATE ... SETTINGS max_rows_to_read = 0` parks the cap here; on the server
                 /// applySettingsFromQuery moves the non-engine settings from the storage clause onto the
                 /// context, so it must be stripped (and pruned to avoid a bare `SETTINGS`).
+                ///
+                /// `storage->settings` is a bare `ASTSetQuery *` whose only owner is `storage->children`.
+                /// A fuzzer-mutated child list can drop that owning intrusive_ptr while leaving the slot
+                /// set, so the pointer may be dangling; dereferencing it would be a use-after-free. Only
+                /// touch it while it is still backed by `children`, and just clear the slot otherwise
+                /// (the node it named is already gone from the tree, so nothing re-serializes it).
                 if (storage->settings)
                 {
-                    stripNamesFromSetQuery(*storage->settings, is_stripped);
-                    if (isEmptySetQuery(*storage->settings))
-                        detachChild(*storage, storage->settings);
+                    if (isBackedByChildren(*storage, storage->settings))
+                    {
+                        stripNamesFromSetQuery(*storage->settings, is_stripped);
+                        if (isEmptySetQuery(*storage->settings))
+                            detachChild(*storage, storage->settings);
+                    }
+                    else
+                        storage->settings = nullptr;
                 }
                 return;
             }
