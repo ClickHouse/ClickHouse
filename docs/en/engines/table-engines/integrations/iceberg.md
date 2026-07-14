@@ -328,6 +328,12 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 `Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
 
+## Truncate {#truncate}
+
+ClickHouse supports `TRUNCATE TABLE` for Iceberg tables. The table schema is preserved, and all visible rows are cleared. No files are removed from object storage. Instead we create an empty metadata file preserving the table schema and atomically update the catalog. This works for REST/transactional backends. 
+
+This requires `allow_experimental_insert_into_iceberg = 1`
+
 ## Asynchronous metadata prefetching {#async-metadata-prefetch}
 
 Asynchronous metadata prefetching can be enabled at `Iceberg` table creation by setting `iceberg_metadata_async_prefetch_period_ms`. If set to 0 (default) or if metadata caching is not enabled, the asynchronous prefetching is disabled.
