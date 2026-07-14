@@ -28,6 +28,7 @@ struct PuffinFilesCacheKey
     String etag;
     Int64 content_offset = 0;
     Int64 content_size_in_bytes = 0;
+    String referenced_data_file;
 
     bool operator==(const PuffinFilesCacheKey & other) const;
 };
@@ -67,7 +68,8 @@ public:
         const String & file_path,
         const String & etag,
         Int64 content_offset,
-        Int64 content_size_in_bytes);
+        Int64 content_size_in_bytes,
+        const String & referenced_data_file);
 
     template <typename LoadFunc>
     DataLakeObjectMetadata::ExcludedRowsPtr getOrSetDeletionVector(const PuffinFilesCacheKey & key, LoadFunc && load_fn)
@@ -77,23 +79,24 @@ public:
             auto excluded_rows = load_fn();
             LOG_TRACE(
                 log,
-                "Loaded puffin deletion vector into cache for {} | {} at offset {} length {}",
+                "Loaded puffin deletion vector into cache for {} | {} at offset {} length {} for data file {}",
                 key.file_path,
                 key.etag,
                 key.content_offset,
-                key.content_size_in_bytes);
+                key.content_size_in_bytes,
+                key.referenced_data_file);
             return std::make_shared<PuffinFilesCacheCell>(std::move(excluded_rows));
         };
 
         auto result = Base::getOrSet(key, load_fn_wrapper);
         if (result.second)
         {
-            LOG_TRACE(log, "Puffin files cache miss for {} | {} at offset {} length {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes);
+            LOG_TRACE(log, "Puffin files cache miss for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheMisses);
         }
         else
         {
-            LOG_TRACE(log, "Puffin files cache hit for {} | {} at offset {} length {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes);
+            LOG_TRACE(log, "Puffin files cache hit for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheHits);
         }
 

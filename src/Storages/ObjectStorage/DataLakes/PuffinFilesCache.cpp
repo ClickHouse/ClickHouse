@@ -22,7 +22,8 @@ bool PuffinFilesCacheKey::operator==(const PuffinFilesCacheKey & other) const
     return file_path == other.file_path
         && etag == other.etag
         && content_offset == other.content_offset
-        && content_size_in_bytes == other.content_size_in_bytes;
+        && content_size_in_bytes == other.content_size_in_bytes
+        && referenced_data_file == other.referenced_data_file;
 }
 
 size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) const
@@ -32,6 +33,7 @@ size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) cons
     boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.etag.data(), key.etag.size()));
     boost::hash_combine(hash, key.content_offset);
     boost::hash_combine(hash, key.content_size_in_bytes);
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.referenced_data_file.data(), key.referenced_data_file.size()));
     return hash;
 }
 
@@ -74,12 +76,13 @@ std::optional<PuffinFilesCacheKey> PuffinFilesCache::tryCreateKey(
     const String & file_path,
     const String & etag,
     Int64 content_offset,
-    Int64 content_size_in_bytes)
+    Int64 content_size_in_bytes,
+    const String & referenced_data_file)
 {
     if (etag.empty())
         return std::nullopt;
 
-    return PuffinFilesCacheKey{file_path, etag, content_offset, content_size_in_bytes};
+    return PuffinFilesCacheKey{file_path, etag, content_offset, content_size_in_bytes, referenced_data_file};
 }
 
 void PuffinFilesCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)
