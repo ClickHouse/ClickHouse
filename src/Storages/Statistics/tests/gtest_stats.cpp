@@ -669,6 +669,27 @@ TEST(Statistics, ReconcileWithColumnsRebuildsTypeChangedCollectors)
         EXPECT_EQ(stats.at("mtrl")->estimateCardinality(), 100u) << "wrong cardinality for " << new_type->getName();
     }
 
+    /// Custom-name-only change (UInt8 <-> Bool): both directions share UInt8's typeid, so equals() reports
+    /// them equal and reconcileWithColumns would keep the stale collector; only the getName() comparison
+    /// tells them apart. Assert on the collector's stored type NAME so that reverting the production code
+    /// from getName() back to equals() fails here (with equals(), the collector keeps the old name).
+    {
+        auto uint8_type = std::make_shared<DataTypeUInt8>();
+        auto bool_type = DataTypeFactory::instance().get("Bool");
+
+        auto uint8_to_bool = make_loaded("mtrl", uint8_type);
+        uint8_to_bool.reconcileWithColumns(make_columns("mtrl", bool_type, /*with_uniq=*/ true));
+        ASSERT_TRUE(uint8_to_bool.contains("mtrl"));
+        EXPECT_EQ(uint8_to_bool.at("mtrl")->getDataType()->getName(), bool_type->getName())
+            << "collector kept UInt8 across a UInt8->Bool change (equals() would keep the stale collector)";
+
+        auto bool_to_uint8 = make_loaded("mtrl", bool_type);
+        bool_to_uint8.reconcileWithColumns(make_columns("mtrl", uint8_type, /*with_uniq=*/ true));
+        ASSERT_TRUE(bool_to_uint8.contains("mtrl"));
+        EXPECT_EQ(bool_to_uint8.at("mtrl")->getDataType()->getName(), uint8_type->getName())
+            << "collector kept Bool across a Bool->UInt8 change (equals() would keep the stale collector)";
+    }
+
     /// A column that dropped its statistics across the type change: the stale collector is removed entirely.
     {
         auto stats = make_loaded("mtrl", int64_type);
