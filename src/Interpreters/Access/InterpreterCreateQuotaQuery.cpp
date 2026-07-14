@@ -78,10 +78,7 @@ namespace
         {
             auto duration = query_limits.duration;
 
-            /// Reject a non-positive interval only on the user-facing CREATE/ALTER path.
-            /// Deserialization of already-stored entities (AccessEntityIO) passes validate=false
-            /// so a legacy zero-interval quota still loads on startup after an upgrade; the
-            /// division-by-zero it would cause is guarded at the consumption site instead.
+            /// Reject only on CREATE/ALTER; deserialization (validate=false) still loads legacy quotas.
             if (validate && !query_limits.drop && duration.count() <= 0)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,

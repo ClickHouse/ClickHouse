@@ -52,11 +52,7 @@ private:
         QuotaPtr quota;
         UUID quota_id;
         const RolesOrUsersSet * roles = nullptr;
-        /// True when the quota had at least one limit but every limit has a non-positive interval
-        /// duration (a legacy quota loaded from disk that CREATE/ALTER would now reject): all its
-        /// intervals are dropped in rebuildIntervals, so it is skipped entirely at consumption
-        /// setup to avoid caching an empty Intervals per key. A quota with no limits at all (the
-        /// "simpliest" quota) is NOT inert: it legitimately reports an empty usage row.
+        /// Had limits, but every one has a non-positive (legacy) interval: enforces nothing, caches nothing.
         bool is_inert = false;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };

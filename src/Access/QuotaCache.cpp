@@ -37,13 +37,7 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     quota_id = quota_id_;
     roles = &quota->to_roles;
 
-    /// A legacy quota persisted before CREATE/ALTER started rejecting non-positive interval
-    /// durations still loads from disk (deserialization uses validate=false). Such an interval
-    /// would divide by zero in getEndOfInterval and can never expire, so it is skipped when
-    /// building intervals (see rebuildIntervals). Warn once here at load/change time instead of
-    /// once per quota key, and mark the quota inert if it had limits but none survived: it then
-    /// caches no Intervals per key. A quota with no limits at all is a normal "track nothing"
-    /// quota and stays non-inert so it still reports an empty usage row.
+    /// Warn once here (not per key) about legacy non-positive intervals.
     size_t kept_limits = 0;
     for (const auto & limits : quota->all_limits)
     {
@@ -60,12 +54,7 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 
     if (is_inert)
     {
-        /// An inert quota enforces nothing and must expose no usage rows. Drop any per-key
-        /// intervals an earlier enforceable version of this quota cached, so getAllQuotasUsage
-        /// stops reporting stale empty rows. This covers the warm path where an ALTER (or a
-        /// rolling upgrade sending FOR INTERVAL 0 SECOND) turns an active quota inert after it
-        /// already accumulated keys; nothing repopulates key_to_intervals while inert, since
-        /// chooseQuotaToConsumeFor skips the quota before calling getOrBuildIntervals.
+        /// Drop any intervals cached by an earlier enforceable version so no stale usage rows remain.
         key_to_intervals.clear();
         return;
     }
@@ -224,10 +213,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     intervals.reserve(quota->all_limits.size());
     for (const auto & limits : quota->all_limits)
     {
-        /// A non-positive interval duration would divide by zero in getEndOfInterval and can never
-        /// expire. CREATE/ALTER QUOTA rejects it, but a legacy quota persisted before that
-        /// validation still loads from disk, so skip such intervals here instead of enforcing them.
-        /// The warning is emitted once at load time in setQuota, not per quota key.
+        /// Skip legacy non-positive intervals (would divide by zero in getEndOfInterval).
         if (limits.duration <= std::chrono::seconds::zero())
             continue;
 
@@ -437,10 +423,7 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
         if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
             continue;
 
-        /// A legacy on-disk quota that had limits but every one is non-positive (CREATE/ALTER would
-        /// now reject it) drops all its intervals. Skip it entirely so it never allocates a cached
-        /// Intervals per quota key nor a per-hash resolver entry: it stays fully inert. A quota with
-        /// no limits at all is not inert and is still set up (it reports an empty usage row).
+        /// An inert quota caches nothing per key.
         if (info.is_inert)
             continue;
 
@@ -459,10 +442,7 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
                 auto it = all_quotas.find(found_quota_id);
                 if (it == all_quotas.end())
                     return nullptr;
-                /// An in-flight query can keep an old SingleQuota (and this resolver) alive after
-                /// the quota flipped inert. Bail out instead of calling getOrBuildIntervals, which
-                /// would re-insert an empty Intervals into key_to_intervals for a new hash and
-                /// resurface stale NULL rows in system.quotas_usage.
+                /// Do not repopulate key_to_intervals for a quota that flipped inert.
                 if (it->second.is_inert)
                     return nullptr;
                 return it->second.getOrBuildIntervals(hash_key);
