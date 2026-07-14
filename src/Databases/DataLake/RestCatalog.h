@@ -32,6 +32,17 @@ struct AccessToken
     }
 };
 
+/// Authentication material for a catalog request. When `bearer_token` is non-empty it is passed to
+/// `BuilderRWBufferFromHTTP::create`, which fills the `Authorization: Bearer` header there;
+/// `extra_headers` carries every other header (a user-supplied auth header, `x-goog-user-project`,
+/// `User-Agent`, ...). Keeping the bearer separate lets the either/or `Authorization` rule live in
+/// `create` rather than at every call site.
+struct AuthHeaders
+{
+    std::string bearer_token;
+    DB::HTTPHeaderEntries extra_headers;
+};
+
 class RestCatalog : public ICatalog, public DB::WithContext
 {
 public:
@@ -133,8 +144,6 @@ protected:
     bool oauth_server_use_request_body;
     mutable MultiVersion<AccessToken> access_token;
 
-    Poco::Net::HTTPBasicCredentials credentials{};
-
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,
         const Poco::URI::QueryParameters & params = {},
@@ -177,7 +186,7 @@ protected:
         TableMetadata & result) const;
 
     Config loadConfig();
-    virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+    virtual AuthHeaders getAuthHeaders(bool update_token) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
@@ -217,7 +226,7 @@ public:
 
     String getBearerToken() const;
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+    AuthHeaders getAuthHeaders(bool update_token) const override;
 
 protected:
     /// Parameters for OneLake OAuth.
@@ -247,7 +256,7 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+    AuthHeaders getAuthHeaders(bool update_token) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
