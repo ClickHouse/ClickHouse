@@ -2526,11 +2526,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// (the running union of already-processed, faster tiers' hits) lets a slower
     /// tier PRUNE the miss cells a faster tier already holds. The streaming
     /// `covered` guard in the serve path re-establishes the same priority when
-    /// serving. Hits fold up to the ceiling, so a hit segment straddling the span's
-    /// end folds whole into the plan.
-    const size_t resident_clip_end
-        = std::max(plan_range.end(), plan_range.offset + effectivePlanCeiling());
-
+    /// serving.
     IntervalSet upper_hits;
     for (auto & pv : work)
     {
@@ -2543,7 +2539,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         PlanTier plan_tier;
         plan_tier.provider = cache.get();
 
-        extractResidentRuns(*view, plan_range, resident_clip_end, geom_entry, upper_hits);
+        extractResidentRuns(*view, plan_range, geom_entry, upper_hits);
         extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry);
 
         /// Drop records that are neither resident nor a populatable gap — nothing to
@@ -2558,20 +2554,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     }
 
     chassert(geom->entries.size() == plan.tiers.size());
-
-    /// HIT-TAIL EXTENSION: a hit segment straddling the span's end was folded in whole
-    /// (`resident_clip_end`), and serving it needs no fetch and no further residency
-    /// knowledge - so extend `plan_end` over it (fewer replans). MISS overhang must NOT
-    /// extend the horizon: serving it would need fetch scheduling over territory whose
-    /// other-tier residency was never probed - it stays fill-only work via the cell
-    /// closure, and the next plan finds it resident.
-    {
-        size_t hit_end = geom->plan_end;
-        for (const auto & e : geom->entries)
-            for (const auto & r : e.resident)
-                hit_end = std::max(hit_end, r.end());
-        geom->plan_end = hit_end;
-    }
 
     /// Publish atomically: `geometry()` and `tiers` are one object (`read_plan`), so a
     /// reader can never see new geometry against a stale buffer vector. Assigning
@@ -2683,7 +2665,7 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
 }
 
 void ReaderExecutor::extractResidentRuns(
-    const CacheView & view, ByteRange plan_range, size_t resident_clip_end,
+    const CacheView & view, ByteRange plan_range,
     GeometryEntry & geom_entry, IntervalSet & upper_hits)
 {
     /// Each clamped run also folds into `upper_hits` - the prune input for the SLOWER
@@ -2693,13 +2675,13 @@ void ReaderExecutor::extractResidentRuns(
     /// tier's hits.
     for (const auto & hit : view.hits())
     {
-        /// Hits are segment-aligned and may extend past the plan span. Clamp the left
-        /// at `plan_start` so streaming never reads behind the cursor; the right bound
-        /// is `resident_clip_end` (the larger of the probe-range end and the fixed
-        /// plan ceiling, `effectivePlanCeiling`), which folds a whole hit segment
-        /// straddling the probe edge into the plan instead of clipping it.
+        /// Hits are cell-aligned and may overhang the plan span (the page tier's
+        /// block ceiling; the disk provider clamps to the probed range itself).
+        /// Clamp both edges to the span: the geometry never exceeds the probed
+        /// span - streaming never reads behind the cursor, and territory past
+        /// `plan_end` was never probed in the other tiers.
         const size_t lo = std::max(hit.range.offset, plan_range.offset);
-        const size_t hi = std::min(hit.range.end(), resident_clip_end);
+        const size_t hi = std::min(hit.range.end(), plan_range.end());
         if (lo < hi)
         {
             geom_entry.resident.push_back(ByteRange{lo, hi - lo});

@@ -112,8 +112,8 @@ public:
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// The plan span: residency is probed ONCE over this whole span, so cache
     /// discovery amortises across many serve windows and the plan spans past the
-    /// fill-ahead lead. Touched cells may overhang the span (fill-only work via the
-    /// schedule's cell closure); hits straddling its end fold in whole.
+    /// fill-ahead lead. Touched cells may overhang the span - fill-only work via
+    /// the schedule's cell closure; the geometry itself never exceeds the span.
     /// `read_extent_end` does not size the plan, so the plan survives mark-range
     /// advances and is reused.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 4 * DEFAULT_WINDOW_SIZE; /// 32 MiB
@@ -141,9 +141,9 @@ public:
         String log_file_path;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         /// Single fixed size for the plan window (see `DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW`).
-        /// The plan extends the request rightward to fold ALL affected cache segments
-        /// (hits as well as misses) on every tier into the geometry, pins them, and reuses
-        /// the plan across read-extent advances while the cursor stays inside the pinned span.
+        /// The plan pins the touched segments within the span and is reused across
+        /// read-extent advances while the cursor stays inside it; touched miss cells
+        /// may overhang the span as fill-only work.
         size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
         /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
@@ -687,7 +687,7 @@ private:
     /// records the survivors in the geometry, and has the provider UPGRADE
     /// them with write buffers in place (populatable tiers only).
     static void extractResidentRuns(
-        const CacheView & view, ByteRange plan_range, size_t resident_clip_end,
+        const CacheView & view, ByteRange plan_range,
         GeometryEntry & geom_entry, IntervalSet & upper_hits);
     static void extractMissesAndOpenWriters(
         ICacheProvider & cache, CacheView & view,
