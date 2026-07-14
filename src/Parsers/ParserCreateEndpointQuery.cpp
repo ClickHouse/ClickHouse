@@ -4,6 +4,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateEndpointQuery.h>
 #include <Parsers/ParserSQLClusterCatalogProperties.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 
 namespace DB
@@ -37,10 +38,15 @@ bool ParserCreateEndpointQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!parseSQLClusterCatalogPropertiesAssignments(properties, pos, expected))
         return false;
 
+    bool sync = false;
+    if (!parseSQLClusterCatalogSyncTail(sync, pos, expected))
+        return false;
+
     auto query = make_intrusive<ASTCreateEndpointQuery>();
     tryGetIdentifierNameInto(endpoint_ast, query->endpoint_name);
     query->properties = std::move(properties);
     query->if_not_exists = if_not_exists;
+    query->sync = sync;
     node = query;
     return true;
 }

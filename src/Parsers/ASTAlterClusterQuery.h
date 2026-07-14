@@ -58,6 +58,9 @@ public:
     String rename_shard_from;
     String rename_shard_to;
 
+    /// Optional trailing `SYNC` (catalog replica-group wait / ON CLUSTER distributed-DDL wait).
+    bool sync = false;
+
     String getID(char) const override { return "AlterClusterQuery"; }
 
     ASTPtr clone() const override;

@@ -1,4 +1,5 @@
 #include <Parsers/ASTAlterClusterQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -120,6 +121,7 @@ void ASTAlterClusterQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &
     }
 
     formatOnCluster(ostr, s);
+    formatSQLClusterCatalogSyncTail(ostr, sync);
 }
 
 }

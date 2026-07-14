@@ -17,8 +17,7 @@ BlockIO InterpreterAlterEndpointQuery::execute()
 
     current_context->checkAccess(AccessType::ALTER_ENDPOINT);
 
-    ClusterMetadataManager::instance().alterEndpoint(query.endpoint_name, query.properties);
-    return {};
+    return ClusterMetadataManager::instance().alterEndpoint(query.endpoint_name, query.properties, query.sync, current_context);
 }
 
 void registerInterpreterAlterEndpointQuery(InterpreterFactory & factory)

@@ -57,23 +57,24 @@ BlockIO InterpreterCreateClusterCatalogQuery::execute()
     /// Existence is enforced inside `ClusterMetadataManager::create{Cluster,Shard}` via the metadata DDL worker.
     if (is_cluster)
     {
-        ClusterMetadataManager::instance().createCluster(
+        return ClusterMetadataManager::instance().createCluster(
             query.name,
             query.members,
             cluster_secret,
             allow_distributed_ddl_queries,
-            query.if_not_exists);
+            query.if_not_exists,
+            query.sync,
+            current_context);
     }
-    else
-    {
-        ClusterMetadataManager::instance().createShard(
-            query.name,
-            query.members,
-            shard_weight,
-            shard_internal_replication,
-            query.if_not_exists);
-    }
-    return {};
+
+    return ClusterMetadataManager::instance().createShard(
+        query.name,
+        query.members,
+        shard_weight,
+        shard_internal_replication,
+        query.if_not_exists,
+        query.sync,
+        current_context);
 }
 
 void registerInterpreterCreateClusterCatalogQuery(InterpreterFactory & factory)

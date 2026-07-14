@@ -53,19 +53,14 @@ BlockIO InterpreterAlterClusterQuery::execute()
     switch (query.command)
     {
         case AlterClusterCommand::AddShard:
-            ClusterMetadataManager::instance().addClusterMembersFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().addClusterMembersFromSQL(query, query.sync, current_context);
         case AlterClusterCommand::DropShard:
-            ClusterMetadataManager::instance().dropClusterMembersFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().dropClusterMembersFromSQL(query, query.sync, current_context);
         case AlterClusterCommand::ReplaceClusterMembers:
-            ClusterMetadataManager::instance().replaceClusterMembersFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().replaceClusterMembersFromSQL(query, query.sync, current_context);
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ALTER CLUSTER: unsupported command after validation");
     }
-
-    return {};
 }
 
 void registerInterpreterAlterClusterQuery(InterpreterFactory & factory)

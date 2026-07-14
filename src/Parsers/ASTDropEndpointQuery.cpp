@@ -1,4 +1,5 @@
 #include <Parsers/ASTDropEndpointQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -18,6 +19,7 @@ void ASTDropEndpointQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &
     if (if_exists)
         ostr << "IF EXISTS ";
     ostr << backQuoteIfNeed(endpoint_name);
+    formatSQLClusterCatalogSyncTail(ostr, sync);
 }
 
 }

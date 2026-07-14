@@ -26,10 +26,8 @@ BlockIO InterpreterDropClusterCatalogQuery::execute()
     }
 
     if (is_cluster)
-        ClusterMetadataManager::instance().dropCluster(query.name, query.if_exists);
-    else
-        ClusterMetadataManager::instance().dropShard(query.name, query.if_exists);
-    return {};
+        return ClusterMetadataManager::instance().dropCluster(query.name, query.if_exists, query.sync, current_context);
+    return ClusterMetadataManager::instance().dropShard(query.name, query.if_exists, query.sync, current_context);
 }
 
 void registerInterpreterDropClusterCatalogQuery(InterpreterFactory & factory)

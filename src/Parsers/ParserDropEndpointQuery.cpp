@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserDropEndpointQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 
 namespace DB
@@ -28,9 +29,14 @@ bool ParserDropEndpointQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!name_p.parse(pos, endpoint_ast, expected))
         return false;
 
+    bool sync = false;
+    if (!parseSQLClusterCatalogSyncTail(sync, pos, expected))
+        return false;
+
     auto query = make_intrusive<ASTDropEndpointQuery>();
     tryGetIdentifierNameInto(endpoint_ast, query->endpoint_name);
     query->if_exists = if_exists;
+    query->sync = sync;
     node = query;
     return true;
 }

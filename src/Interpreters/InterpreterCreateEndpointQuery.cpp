@@ -82,11 +82,12 @@ BlockIO InterpreterCreateEndpointQuery::execute()
 
     current_context->checkAccess(AccessType::CREATE_ENDPOINT);
 
-    ClusterMetadataManager::instance().createEndpoint(
+    return ClusterMetadataManager::instance().createEndpoint(
         endpoint_query.endpoint_name,
         makeEndpointDefinition(endpoint_query.properties),
-        endpoint_query.if_not_exists);
-    return {};
+        endpoint_query.if_not_exists,
+        endpoint_query.sync,
+        current_context);
 }
 
 void registerInterpreterCreateEndpointQuery(InterpreterFactory & factory)

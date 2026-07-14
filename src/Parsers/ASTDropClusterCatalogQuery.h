@@ -21,6 +21,8 @@ public:
     Kind kind = Kind::Cluster;
     String name;
     bool if_exists = false;
+    /// Optional trailing `SYNC` (catalog replica-group wait / ON CLUSTER distributed-DDL wait).
+    bool sync = false;
 
     String getID(char) const override
     {

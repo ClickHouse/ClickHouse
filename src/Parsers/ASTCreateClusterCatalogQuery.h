@@ -31,7 +31,8 @@ public:
     /// Optional `PROPERTIES (...)`; syntax only at parse time. Semantics validated in interpreter.
     SettingsChanges properties;
     bool if_not_exists = false;
-    /// After `ON CLUSTER ...`, optional `SYNC` (wait for distributed DDL when task timeout would otherwise skip it).
+    /// Optional trailing `SYNC`. Without `ON CLUSTER`, waits for replica-group catalog apply and returns status rows.
+    /// With `ON CLUSTER`, forces a non-zero distributed DDL task timeout (existing behavior).
     bool sync = false;
 
     String getID(char) const override

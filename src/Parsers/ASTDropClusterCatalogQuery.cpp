@@ -1,4 +1,5 @@
 #include <Parsers/ASTDropClusterCatalogQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -18,6 +19,7 @@ void ASTDropClusterCatalogQuery::formatImpl(WriteBuffer & ostr, const IAST::Form
         ostr << "IF EXISTS ";
     ostr << backQuoteIfNeed(name);
     formatOnCluster(ostr, s);
+    formatSQLClusterCatalogSyncTail(ostr, sync);
 }
 
 }

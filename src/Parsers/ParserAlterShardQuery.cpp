@@ -6,6 +6,7 @@
 #include <Parsers/ParserAlterShardQuery.h>
 #include <Parsers/ParserSQLClusterAlterReplaceList.h>
 #include <Parsers/ParserSQLClusterCatalogProperties.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 
 namespace DB
@@ -24,7 +25,6 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_to(Keyword::TO);
     ParserKeyword s_properties(Keyword::PROPERTIES);
     ParserKeyword s_replace(Keyword::REPLACE);
-    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier name_p;
 
     if (!s_alter.ignore(pos, expected))
@@ -43,12 +43,21 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String shard_name;
     tryGetIdentifierNameInto(shard_ast, shard_name);
 
-    auto finish = [&](ASTPtr query)
+    ParserKeyword s_on(Keyword::ON);
+    auto finish = [&](ASTPtr query) -> bool
     {
         auto & alter = query->as<ASTAlterShardQuery &>();
         alter.shard_name = shard_name;
         alter.if_exists = if_exists;
+        if (s_on.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, alter.cluster, expected))
+                return false;
+        }
+        if (!parseSQLClusterCatalogSyncTail(alter.sync, pos, expected))
+            return false;
         node = std::move(query);
+        return true;
     };
 
     /// `ALTER SHARD name REPLACE ... TO ... [, REPLACE ... TO ...] [MODIFY PROPERTIES (...)]` — must parse before `MODIFY PROPERTIES` / `MODIFY REPLICA`.
@@ -89,15 +98,7 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!parseSQLClusterCatalogPropertiesAssignments(query->shard_definition_properties, pos, expected))
                 return false;
         }
-        String cluster_str;
-        if (s_on.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-            query->cluster = std::move(cluster_str);
-        }
-        finish(std::move(query));
-        return true;
+        return finish(std::move(query));
     }
 
     /// `ALTER SHARD name MODIFY PROPERTIES (...)` — shard-level options only (no `REPLICA` list).
@@ -117,29 +118,13 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             tryGetIdentifierNameInto(rep_ast, query->replica_name);
             if (!parseSQLClusterCatalogPropertiesAssignments(query->replica_properties, pos, expected))
                 return false;
-            String cluster_str;
-            if (s_on.ignore(pos, expected))
-            {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                    return false;
-                query->cluster = std::move(cluster_str);
-            }
-            finish(std::move(query));
-            return true;
+            return finish(std::move(query));
         }
         auto query = make_intrusive<ASTAlterShardQuery>();
         query->command = AlterShardCommand::ModifyShardProperties;
         if (!parseSQLClusterCatalogPropertiesAssignments(query->shard_definition_properties, pos, expected))
             return false;
-        String cluster_str;
-        if (s_on.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-            query->cluster = std::move(cluster_str);
-        }
-        finish(std::move(query));
-        return true;
+        return finish(std::move(query));
     }
 
     /// Subcommands: `ADD|DROP|MODIFY|RENAME REPLICA ...`
@@ -156,15 +141,7 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         /// `ADD REPLICA` only attaches an existing replica named collection (one created via `CREATE REPLICA`)
         /// to the shard — it does NOT mutate the endpoint's own properties. Use `ALTER ENDPOINT name
         /// PROPERTIES (...)` for that.
-        String cluster_str;
-        if (s_on.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-            query->cluster = std::move(cluster_str);
-        }
-        finish(std::move(query));
-        return true;
+        return finish(std::move(query));
     }
 
     if (s_drop.ignore(pos, expected))
@@ -177,15 +154,7 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto query = make_intrusive<ASTAlterShardQuery>();
         query->command = AlterShardCommand::DropReplica;
         tryGetIdentifierNameInto(rep_ast, query->replica_name);
-        String cluster_str;
-        if (s_on.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-            query->cluster = std::move(cluster_str);
-        }
-        finish(std::move(query));
-        return true;
+        return finish(std::move(query));
     }
 
     if (s_rename.ignore(pos, expected))
@@ -204,15 +173,7 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->command = AlterShardCommand::RenameReplica;
         tryGetIdentifierNameInto(from_ast, query->replica_name);
         tryGetIdentifierNameInto(to_ast, query->rename_replica_to);
-        String cluster_str;
-        if (s_on.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-            query->cluster = std::move(cluster_str);
-        }
-        finish(std::move(query));
-        return true;
+        return finish(std::move(query));
     }
 
     return false;

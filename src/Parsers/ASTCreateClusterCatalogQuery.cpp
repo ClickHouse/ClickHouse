@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateClusterCatalogQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -75,8 +76,7 @@ void ASTCreateClusterCatalogQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
     }
 
     formatOnCluster(ostr, s);
-    if (!cluster.empty() && sync)
-        ostr << " SYNC";
+    formatSQLClusterCatalogSyncTail(ostr, sync);
 }
 
 }

@@ -62,22 +62,16 @@ BlockIO InterpreterAlterShardQuery::execute()
     switch (query.command)
     {
         case AlterShardCommand::ModifyShardProperties:
-            ClusterMetadataManager::instance().updateShardPropertiesFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().updateShardPropertiesFromSQL(query, query.sync, current_context);
         case AlterShardCommand::AddReplica:
-            ClusterMetadataManager::instance().addReplicaToShardFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().addReplicaToShardFromSQL(query, query.sync, current_context);
         case AlterShardCommand::DropReplica:
-            ClusterMetadataManager::instance().dropReplicaFromShardFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().dropReplicaFromShardFromSQL(query, query.sync, current_context);
         case AlterShardCommand::ReplaceReplicas:
-            ClusterMetadataManager::instance().replaceShardReplicasFromSQL(query);
-            break;
+            return ClusterMetadataManager::instance().replaceShardReplicasFromSQL(query, query.sync, current_context);
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ALTER SHARD: unsupported command after validation");
     }
-
-    return {};
 }
 
 void registerInterpreterAlterShardQuery(InterpreterFactory & factory)

@@ -38,6 +38,8 @@ public:
 
     String shard_name;
     bool if_exists = false;
+    /// Optional trailing `SYNC` (catalog replica-group wait / ON CLUSTER distributed-DDL wait).
+    bool sync = false;
 
     /// `ModifyShardProperties` / optional tail of `ReplaceReplicas` — shard-level `MODIFY PROPERTIES`.
     SettingsChanges shard_definition_properties;

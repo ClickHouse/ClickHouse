@@ -17,8 +17,7 @@ BlockIO InterpreterDropEndpointQuery::execute()
 
     current_context->checkAccess(AccessType::DROP_ENDPOINT);
 
-    ClusterMetadataManager::instance().dropEndpoint(query.endpoint_name, query.if_exists);
-    return {};
+    return ClusterMetadataManager::instance().dropEndpoint(query.endpoint_name, query.if_exists, query.sync, current_context);
 }
 
 void registerInterpreterDropEndpointQuery(InterpreterFactory & factory)

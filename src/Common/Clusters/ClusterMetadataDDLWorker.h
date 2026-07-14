@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace DB
 {
@@ -19,8 +20,15 @@ namespace DB
 class ClusterMetadataDDLWorker : public DDLWorker
 {
 public:
+    struct PreparedMutation
+    {
+        String digest;
+        ClusterMetadataMutation metadata_mutation;
+    };
+
     using SnapshotReloader = std::function<String()>;
-    using MutationApplier = std::function<String(const ClusterMetadataMutation &)>;
+    using MutationPreparer = std::function<PreparedMutation(const ClusterMetadataMutation &)>;
+    using MutationApplier = std::function<String(const std::vector<ClusterMetadataMutation> &)>;
 
     ClusterMetadataDDLWorker(
         ContextPtr context_,
@@ -29,6 +37,7 @@ public:
         String zookeeper_name_,
         UInt32 max_log_entries_per_batch_,
         SnapshotReloader snapshot_reloader_,
+        MutationPreparer mutation_preparer_,
         MutationApplier mutation_applier_);
     ~ClusterMetadataDDLWorker() override;
 
@@ -38,14 +47,34 @@ public:
     const String & getNodeName() const { return node_name; }
 
     /// Process currently committed entries synchronously. Useful for startup and tests.
-    bool processCommittedEntriesOnce();
-    String enqueueMutation(const ClusterMetadataMutation & mutation);
+    bool processCommittedEntries();
+
+    struct EnqueuedMutationInfo
+    {
+        String entry_path;
+        String replicas_path;
+        String zookeeper_name;
+        Strings hosts_to_wait;
+    };
+
+    /// Enqueue a mutation, apply it locally on the initiator, and return paths for SYNC waiters.
+    EnqueuedMutationInfo enqueueMutation(const ClusterMetadataMutation & mutation);
+    /// Enqueue and verify only this node's finished status (default, non-SYNC path).
     void enqueueMutationAndWait(const ClusterMetadataMutation & mutation);
 
 private:
+    struct EnqueuedMutation
+    {
+        String entry_path;
+        String entry_name;
+        UInt32 entry_number = 0;
+        String digest;
+    };
+
     ClusterMetadataStoragePtr storage;
     String node_name;
     SnapshotReloader snapshot_reloader;
+    MutationPreparer mutation_preparer;
     MutationApplier mutation_applier;
     UInt32 max_log_entries_per_batch = 1;
 
@@ -75,6 +104,10 @@ private:
     void initializeCounter();
     void registerReplica();
     bool reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep);
+    bool catchUpLocalSnapshot(UInt32 target_log_ptr);
+    bool catchUpLocalSnapshotUnlocked(UInt32 target_log_ptr);
+    EnqueuedMutation enqueueMutationImpl(const ClusterMetadataMutation & mutation);
+    void applyEnqueuedMutationLocallyUnlocked(const EnqueuedMutation & enqueued, const ClusterMetadataMutation & mutation);
     void appendMutationOps(Coordination::Requests & ops, const ClusterMetadataMutation & mutation) const;
     UInt32 processEntriesBatch(UInt32 first_entry, UInt32 last_entry);
     void updateReplicaDigest(const String & digest);

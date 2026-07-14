@@ -56,11 +56,6 @@ EndpointCatalogDefinition EndpointCatalogDefinition::deserialize(const String & 
 
 String ShardCatalogDefinition::serialize() const
 {
-    /// Only normalized (authoritative) fields are persisted. The resolved `endpoints` snapshot is
-    /// derived from `endpoint_names` at load time, and `referenced_by_clusters` is a derived reverse
-    /// index. Persisting them would make the blob (and therefore the snapshot digest) depend on data
-    /// that is never rewritten on `ALTER ENDPOINT`, causing digests to diverge between a node that
-    /// applies incrementally and a node that reloads the snapshot from Keeper.
     WriteBufferFromOwnString wb;
     writeVarUInt(ShardCatalogDefinition::SERIALIZE_VERSION, wb);
     writeStringBinary(name, wb);

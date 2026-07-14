@@ -12,6 +12,8 @@ class ASTDropEndpointQuery : public IAST
 public:
     String endpoint_name;
     bool if_exists = false;
+    /// Optional trailing `SYNC` — wait for replica-group catalog apply and return status rows.
+    bool sync = false;
 
     String getID(char) const override { return "DropEndpointQuery"; }
 

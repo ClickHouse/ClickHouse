@@ -14,6 +14,8 @@ class ASTAlterEndpointQuery : public IAST
 public:
     String endpoint_name;
     SettingsChanges properties;
+    /// Optional trailing `SYNC` — wait for replica-group catalog apply and return status rows.
+    bool sync = false;
 
     String getID(char) const override { return "AlterEndpointQuery"; }
 

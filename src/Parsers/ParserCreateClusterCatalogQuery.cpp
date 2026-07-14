@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateClusterCatalogQuery.h>
 #include <Parsers/ParserSQLClusterCatalogProperties.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 #include <Parsers/ParserSQLClusterShardReplicaList.h>
 
 
@@ -13,22 +14,6 @@ namespace DB
 
 namespace
 {
-
-/// Shared tail: `[ON CLUSTER <cluster> [SYNC]]`.
-bool parseOnClusterTail(String & cluster_str, bool & sync, IParser::Pos & pos, Expected & expected)
-{
-    ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_sync(Keyword::SYNC);
-
-    if (!s_on.ignore(pos, expected))
-        return true;
-
-    if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-        return false;
-    if (s_sync.ignore(pos, expected))
-        sync = true;
-    return true;
-}
 
 bool parseClusterMemberList(std::vector<String> & members, IParser::Pos & pos, Expected & expected)
 {
@@ -102,8 +87,15 @@ bool ParserCreateClusterCatalogQuery::parseImpl(Pos & pos, ASTPtr & node, Expect
         return false;
 
     String cluster_str;
+    ParserKeyword s_on(Keyword::ON);
+    if (s_on.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
+
     bool sync = false;
-    if (!parseOnClusterTail(cluster_str, sync, pos, expected))
+    if (!parseSQLClusterCatalogSyncTail(sync, pos, expected))
         return false;
 
     auto query = make_intrusive<ASTCreateClusterCatalogQuery>();

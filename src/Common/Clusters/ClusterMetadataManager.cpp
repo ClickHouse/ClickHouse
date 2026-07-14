@@ -7,12 +7,16 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Core/Field.h>
 #include <Core/ServerUUID.h>
+#include <Interpreters/ClusterMetadataQueryStatusSource.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterClusterQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
 #include <Parsers/ASTCreateClusterCatalogQuery.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -44,6 +48,12 @@ namespace ErrorCodes
     extern const int SHARD_ALREADY_EXISTS;
     extern const int SHARD_DOESNT_EXIST;
     extern const int SHARD_IS_REFERENCED;
+}
+
+namespace Setting
+{
+    extern const SettingsInt64 distributed_ddl_task_timeout;
+    extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
 }
 
 namespace
@@ -144,6 +154,52 @@ void applyEndpointPropertiesPatch(EndpointCatalogDefinition & definition, const 
 
     if (!definition.port)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Endpoint requires positive `port`");
+}
+
+void applyShardPropertiesPatch(ShardCatalogDefinition & definition, const SettingsChanges & properties)
+{
+    SQLClusterCatalog::PropertyValidation::assertNoDuplicatePropertyNames(properties);
+
+    for (const auto & change : properties)
+    {
+        if (change.name == "weight")
+            definition.weight = SQLClusterCatalog::PropertyValidation::Shard::parseWeightValue(change.value);
+        else if (change.name == "internal_replication")
+            SQLClusterCatalog::PropertyValidation::Shard::parseInternalReplicationValue(change.value, definition.internal_replication);
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown property `{}` in ALTER SHARD ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
+                change.name);
+        }
+    }
+}
+
+void applyClusterPropertiesPatch(ClusterCatalogDefinition & definition, const SettingsChanges & properties)
+{
+    SQLClusterCatalog::PropertyValidation::assertNoDuplicatePropertyNames(properties);
+
+    for (const auto & change : properties)
+    {
+        if (change.name == "secret")
+        {
+            if (change.value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `secret` must be a string");
+            definition.secret = change.value.safeGet<String>();
+        }
+        else if (change.name == "allow_distributed_ddl_queries")
+        {
+            definition.allow_distributed_ddl_queries = parseBoolProperty(change.value);
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown property `{}` in ALTER CLUSTER ... REPLACE ... MODIFY PROPERTIES (allowed: secret, allow_distributed_ddl_queries)",
+                change.name);
+        }
+    }
 }
 
 Cluster::Address makeEndpointAddress(
@@ -271,7 +327,11 @@ void ClusterMetadataManager::initialize()
             },
             [this](const ClusterMetadataMutation & mutation)
             {
-                return applyMutation(mutation);
+                return prepareMutation(mutation);
+            },
+            [this](const std::vector<ClusterMetadataMutation> & mutations)
+            {
+                return applyMutations(mutations);
             });
         initialized_replica_group = config.replica_group;
 
@@ -419,12 +479,7 @@ void ClusterMetadataManager::reloadSnapshotUnlocked()
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::reloadSnapshot");
     snapshot = storage->readSnapshot();
-    for (auto & [shard_name, shard] : snapshot.shards)
-    {
-        if (shard.name.empty())
-            shard.name = shard_name;
-        resolveEndpointsForShard(shard);
-    }
+    normalizeSnapshot(snapshot);
     ++snapshot_version;
 }
 
@@ -530,47 +585,305 @@ void ClusterMetadataManager::commitMutation(const ClusterMetadataMutation & muta
         worker = ddl_worker;
     }
 
-    if (!worker)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker is not initialized");
-
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutation");
     worker->enqueueMutationAndWait(mutation);
 }
 
-String ClusterMetadataManager::applyMutation(const ClusterMetadataMutation & mutation)
+BlockIO ClusterMetadataManager::commitMutationSync(const ClusterMetadataMutation & mutation, ContextPtr query_context)
+{
+    ClusterMetadataDDLWorkerPtr worker;
+    {
+        std::lock_guard lock(mutex);
+        worker = ddl_worker;
+    }
+
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutationSync");
+    const auto enqueued = worker->enqueueMutation(mutation);
+
+    BlockIO io;
+    if (!query_context)
+        query_context = context;
+    if (!query_context)
+        query_context = Context::getGlobalContextInstance();
+    if (!query_context)
+        return io;
+
+    if (query_context->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
+        return io;
+
+    auto source = std::make_shared<ClusterMetadataQueryStatusSource>(
+        enqueued.zookeeper_name,
+        enqueued.entry_path,
+        enqueued.replicas_path,
+        query_context,
+        enqueued.hosts_to_wait);
+    io.pipeline = QueryPipeline(std::move(source));
+
+    if (query_context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
+        || query_context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
+
+    return io;
+}
+
+BlockIO ClusterMetadataManager::finishCommit(const ClusterMetadataMutation & mutation, bool sync, ContextPtr query_context)
+{
+    if (sync)
+        return commitMutationSync(mutation, query_context ? query_context : context);
+    commitMutation(mutation);
+    return {};
+}
+
+ClusterMetadataDDLWorker::PreparedMutation ClusterMetadataManager::prepareMutation(const ClusterMetadataMutation & mutation) const
 {
     if (!isEnabled())
         throwIfDisabled();
 
-    String digest;
+    ClusterMetadataStoragePtr local_storage;
+    ClusterMetadataStorage::Snapshot candidate;
     {
         std::lock_guard lock(mutex);
-        if (!storage)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster metadata storage is not initialized");
-        applyMutationUnlocked(mutation);
-        digest = snapshot.digest;
+        local_storage = storage;
+        candidate = snapshot;
     }
-    return digest;
+
+    if (!local_storage)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster metadata storage is not initialized");
+
+    switch (mutation.type)
+    {
+        case ClusterMetadataMutation::Type::CreateEndpoint:
+            if (candidate.shards.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL SHARD", mutation.name);
+            if (candidate.clusters.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL CLUSTER", mutation.name);
+            break;
+        case ClusterMetadataMutation::Type::CreateShard:
+            if (candidate.endpoints.contains(mutation.name))
+                throw Exception(
+                    ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS,
+                    "Cannot create SQL SHARD `{}` because an endpoint with the same name already exists",
+                    mutation.name);
+            if (candidate.clusters.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL CLUSTER", mutation.name);
+            break;
+        case ClusterMetadataMutation::Type::CreateCluster:
+            if (candidate.endpoints.contains(mutation.name))
+                throw Exception(
+                    ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS,
+                    "Cannot create SQL CLUSTER `{}` because an endpoint with the same name already exists",
+                    mutation.name);
+            if (candidate.shards.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_NAME_AMBIGUOUS, "Name `{}` is already used as SQL SHARD", mutation.name);
+            for (const auto & shard_name : ClusterCatalogDefinition::deserialize(mutation.definition_data).members)
+            {
+                if (!candidate.shards.contains(shard_name))
+                    throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cluster metadata shard `{}` does not exist", shard_name);
+            }
+            break;
+        case ClusterMetadataMutation::Type::DropEndpoint:
+            for (const auto & [shard_name, shard] : candidate.shards)
+            {
+                if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), mutation.name) != shard.endpoint_names.end())
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_CLUSTER_DEFINITION,
+                        "Cannot drop cluster metadata endpoint `{}` because shard `{}` references it",
+                        mutation.name,
+                        shard_name);
+                }
+            }
+            break;
+        case ClusterMetadataMutation::Type::DropShard:
+        {
+            std::vector<String> referencing_clusters;
+            for (const auto & [cluster_name, cluster] : candidate.clusters)
+            {
+                if (std::find(cluster.members.begin(), cluster.members.end(), mutation.name) != cluster.members.end())
+                    referencing_clusters.push_back(cluster_name);
+            }
+            std::sort(referencing_clusters.begin(), referencing_clusters.end());
+            if (!referencing_clusters.empty())
+            {
+                throw Exception(
+                    ErrorCodes::SHARD_IS_REFERENCED,
+                    "Cannot drop SQL SHARD `{}` because SQL CLUSTER `{}` references it",
+                    mutation.name,
+                    referencing_clusters.front());
+            }
+            break;
+        }
+        case ClusterMetadataMutation::Type::AlterEndpoint:
+        case ClusterMetadataMutation::Type::ModifyEndpointProperties:
+            if (!candidate.endpoints.contains(mutation.name))
+                throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", mutation.name);
+            break;
+        case ClusterMetadataMutation::Type::AlterShard:
+            if (!candidate.shards.contains(mutation.name))
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+            for (const auto & endpoint_name : ShardCatalogDefinition::deserialize(mutation.definition_data).endpoint_names)
+            {
+                if (!candidate.endpoints.contains(endpoint_name))
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
+            }
+            break;
+        case ClusterMetadataMutation::Type::DropCluster:
+            if (!candidate.clusters.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "SQL CLUSTER `{}` does not exist", mutation.name);
+            break;
+        case ClusterMetadataMutation::Type::AlterCluster:
+            if (!candidate.clusters.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", mutation.name);
+            for (const auto & shard_name : ClusterCatalogDefinition::deserialize(mutation.definition_data).members)
+            {
+                if (!candidate.shards.contains(shard_name))
+                    throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cluster metadata shard `{}` does not exist", shard_name);
+            }
+            break;
+        case ClusterMetadataMutation::Type::ModifyShardProperties:
+        case ClusterMetadataMutation::Type::AddShardReplicas:
+        case ClusterMetadataMutation::Type::DropShardReplicas:
+        case ClusterMetadataMutation::Type::ReplaceShardReplicas:
+            if (!candidate.shards.contains(mutation.name))
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+            break;
+        case ClusterMetadataMutation::Type::AddClusterMembers:
+        case ClusterMetadataMutation::Type::DropClusterMembers:
+        case ClusterMetadataMutation::Type::ReplaceClusterMembers:
+            if (!candidate.clusters.contains(mutation.name))
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", mutation.name);
+            break;
+    }
+
+    applyMutationToSnapshot(candidate, mutation);
+    validateSnapshotReferences(candidate);
+    candidate.digest = local_storage->calculateDigest(candidate);
+    return ClusterMetadataDDLWorker::PreparedMutation{
+        .digest = candidate.digest,
+        .metadata_mutation = materializeMetadataMutation(candidate, mutation),
+    };
 }
 
-void ClusterMetadataManager::applyMutationUnlocked(const ClusterMetadataMutation & mutation)
+String ClusterMetadataManager::applyMutations(const std::vector<ClusterMetadataMutation> & mutations)
+{
+    if (!isEnabled())
+        throwIfDisabled();
+
+    std::lock_guard lock(mutex);
+    if (!storage)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster metadata storage is not initialized");
+
+    auto candidate = snapshot;
+    for (const auto & mutation : mutations)
+        applyMutationToSnapshot(candidate, mutation);
+
+    validateSnapshotReferences(candidate);
+    candidate.digest = storage->calculateDigest(candidate);
+    snapshot = std::move(candidate);
+    ++snapshot_version;
+    return snapshot.digest;
+}
+
+void ClusterMetadataManager::normalizeSnapshot(ClusterMetadataStorage::Snapshot & target) const
+{
+    for (auto & [shard_name, shard] : target.shards)
+    {
+        if (shard.name.empty())
+            shard.name = shard_name;
+        resolveEndpointsForShard(shard, target);
+    }
+}
+
+void ClusterMetadataManager::validateSnapshotReferences(const ClusterMetadataStorage::Snapshot & target) const
+{
+    for (const auto & [shard_name, shard] : target.shards)
+    {
+        for (const auto & endpoint_name : shard.endpoint_names)
+        {
+            if (!target.endpoints.contains(endpoint_name))
+                throw Exception(
+                    ErrorCodes::BAD_CLUSTER_DEFINITION,
+                    "Cluster metadata shard `{}` references missing endpoint `{}`",
+                    shard_name,
+                    endpoint_name);
+        }
+    }
+
+    for (const auto & [cluster_name, cluster] : target.clusters)
+    {
+        UInt64 total_weight = 0;
+        for (const auto & member : cluster.members)
+        {
+            const auto shard_it = target.shards.find(member);
+            if (shard_it == target.shards.end())
+                throw Exception(
+                    ErrorCodes::SHARD_DOESNT_EXIST,
+                    "Cluster metadata cluster `{}` references missing shard `{}`",
+                    cluster_name,
+                    member);
+
+            total_weight += shard_it->second.weight;
+            if (total_weight > Cluster::MAX_TOTAL_SHARD_WEIGHT)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "SQL CLUSTER `{}` total shard weight must not exceed {}, got at least {}",
+                    cluster_name,
+                    Cluster::MAX_TOTAL_SHARD_WEIGHT,
+                    total_weight);
+        }
+    }
+}
+
+ClusterMetadataMutation ClusterMetadataManager::materializeMetadataMutation(
+    const ClusterMetadataStorage::Snapshot & source_snapshot,
+    const ClusterMetadataMutation & mutation) const
+{
+    switch (mutation.type)
+    {
+        case ClusterMetadataMutation::Type::CreateEndpoint:
+        case ClusterMetadataMutation::Type::DropEndpoint:
+        case ClusterMetadataMutation::Type::AlterEndpoint:
+        case ClusterMetadataMutation::Type::CreateShard:
+        case ClusterMetadataMutation::Type::DropShard:
+        case ClusterMetadataMutation::Type::AlterShard:
+        case ClusterMetadataMutation::Type::CreateCluster:
+        case ClusterMetadataMutation::Type::DropCluster:
+        case ClusterMetadataMutation::Type::AlterCluster:
+            return mutation;
+        case ClusterMetadataMutation::Type::ModifyEndpointProperties:
+            return ClusterMetadataMutation::alterEndpoint(mutation.name, source_snapshot.endpoints.at(mutation.name));
+        case ClusterMetadataMutation::Type::ModifyShardProperties:
+        case ClusterMetadataMutation::Type::AddShardReplicas:
+        case ClusterMetadataMutation::Type::DropShardReplicas:
+        case ClusterMetadataMutation::Type::ReplaceShardReplicas:
+            return ClusterMetadataMutation::alterShard(source_snapshot.shards.at(mutation.name));
+        case ClusterMetadataMutation::Type::AddClusterMembers:
+        case ClusterMetadataMutation::Type::DropClusterMembers:
+        case ClusterMetadataMutation::Type::ReplaceClusterMembers:
+            return ClusterMetadataMutation::alterCluster(mutation.name, source_snapshot.clusters.at(mutation.name));
+    }
+}
+
+void ClusterMetadataManager::applyMutationToSnapshot(
+    ClusterMetadataStorage::Snapshot & target,
+    const ClusterMetadataMutation & mutation) const
 {
     switch (mutation.type)
     {
         case ClusterMetadataMutation::Type::CreateEndpoint:
         case ClusterMetadataMutation::Type::AlterEndpoint:
         {
-            snapshot.endpoints[mutation.name] = EndpointCatalogDefinition::deserialize(mutation.definition_data);
-            for (auto & shard_entry : snapshot.shards)
+            target.endpoints[mutation.name] = EndpointCatalogDefinition::deserialize(mutation.definition_data);
+            for (auto & shard_entry : target.shards)
             {
                 auto & shard = shard_entry.second;
                 if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), mutation.name) != shard.endpoint_names.end())
-                    resolveEndpointsForShard(shard);
+                    resolveEndpointsForShard(shard, target);
             }
             break;
         }
         case ClusterMetadataMutation::Type::DropEndpoint:
-            snapshot.endpoints.erase(mutation.name);
+            target.endpoints.erase(mutation.name);
             break;
         case ClusterMetadataMutation::Type::CreateShard:
         case ClusterMetadataMutation::Type::AlterShard:
@@ -578,37 +891,195 @@ void ClusterMetadataManager::applyMutationUnlocked(const ClusterMetadataMutation
             auto shard = ShardCatalogDefinition::deserialize(mutation.definition_data);
             if (shard.name.empty())
                 shard.name = mutation.name;
-            resolveEndpointsForShard(shard);
-            snapshot.shards[mutation.name] = std::move(shard);
+            resolveEndpointsForShard(shard, target);
+            target.shards[mutation.name] = std::move(shard);
             break;
         }
         case ClusterMetadataMutation::Type::DropShard:
-            snapshot.shards.erase(mutation.name);
+            target.shards.erase(mutation.name);
             break;
         case ClusterMetadataMutation::Type::CreateCluster:
         case ClusterMetadataMutation::Type::AlterCluster:
-            snapshot.clusters[mutation.name] = ClusterCatalogDefinition::deserialize(mutation.definition_data);
+            target.clusters[mutation.name] = ClusterCatalogDefinition::deserialize(mutation.definition_data);
             break;
         case ClusterMetadataMutation::Type::DropCluster:
-            snapshot.clusters.erase(mutation.name);
+            target.clusters.erase(mutation.name);
             break;
+        case ClusterMetadataMutation::Type::ModifyEndpointProperties:
+        {
+            auto endpoint_it = target.endpoints.find(mutation.name);
+            if (endpoint_it == target.endpoints.end())
+                throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", mutation.name);
+            applyEndpointPropertiesPatch(endpoint_it->second, mutation.deserializeSettingsChanges());
+            break;
+        }
+        case ClusterMetadataMutation::Type::ModifyShardProperties:
+        {
+            auto shard_it = target.shards.find(mutation.name);
+            if (shard_it == target.shards.end())
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+            applyShardPropertiesPatch(shard_it->second, mutation.deserializeSettingsChanges());
+            break;
+        }
+        case ClusterMetadataMutation::Type::AddShardReplicas:
+        {
+            auto shard_it = target.shards.find(mutation.name);
+            if (shard_it == target.shards.end())
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+
+            auto & shard = shard_it->second;
+            for (const auto & endpoint_name : mutation.deserializeStringList())
+            {
+                if (!target.endpoints.contains(endpoint_name))
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
+                if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), endpoint_name) != shard.endpoint_names.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Endpoint `{}` is already listed on SQL SHARD `{}`", endpoint_name, mutation.name);
+                shard.endpoint_names.push_back(endpoint_name);
+            }
+            resolveEndpointsForShard(shard, target);
+            break;
+        }
+        case ClusterMetadataMutation::Type::DropShardReplicas:
+        {
+            auto shard_it = target.shards.find(mutation.name);
+            if (shard_it == target.shards.end())
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+
+            auto & endpoint_names = shard_it->second.endpoint_names;
+            for (const auto & endpoint_name : mutation.deserializeStringList())
+            {
+                auto endpoint_it = std::find(endpoint_names.begin(), endpoint_names.end(), endpoint_name);
+                if (endpoint_it == endpoint_names.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Endpoint `{}` is not listed on SQL SHARD `{}`", endpoint_name, mutation.name);
+                if (endpoint_names.size() <= 1)
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP the last replica from SQL SHARD `{}`", mutation.name);
+                endpoint_names.erase(endpoint_it);
+            }
+            resolveEndpointsForShard(shard_it->second, target);
+            break;
+        }
+        case ClusterMetadataMutation::Type::ReplaceShardReplicas:
+        {
+            auto shard_it = target.shards.find(mutation.name);
+            if (shard_it == target.shards.end())
+                throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", mutation.name);
+
+            SettingsChanges properties;
+            const auto replacements = mutation.deserializeReplacements(&properties);
+            std::unordered_map<String, String> replacement_map;
+            for (const auto & replacement : replacements)
+            {
+                if (!target.endpoints.contains(replacement.to))
+                    throw Exception(
+                        ErrorCodes::BAD_CLUSTER_DEFINITION,
+                        "Cluster metadata endpoint `{}` does not exist (REPLACE ... TO target must exist)",
+                        replacement.to);
+                auto [map_it, inserted] = replacement_map.emplace(replacement.from, replacement.to);
+                if (!inserted && map_it->second != replacement.to)
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Conflicting REPLACE mappings for endpoint `{}` on SQL SHARD `{}`", replacement.from, mutation.name);
+            }
+
+            auto & shard = shard_it->second;
+            for (const auto & [from_name, _] : replacement_map)
+            {
+                if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), from_name) == shard.endpoint_names.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Endpoint `{}` is not a replica of SQL SHARD `{}`", from_name, mutation.name);
+            }
+
+            for (auto & endpoint_name : shard.endpoint_names)
+            {
+                if (auto map_it = replacement_map.find(endpoint_name); map_it != replacement_map.end())
+                    endpoint_name = map_it->second;
+            }
+
+            std::unordered_set<String> seen;
+            for (const auto & endpoint_name : shard.endpoint_names)
+            {
+                if (!seen.insert(endpoint_name).second)
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Duplicate endpoint `{}` after REPLACE on SQL SHARD `{}`", endpoint_name, mutation.name);
+            }
+
+            applyShardPropertiesPatch(shard, properties);
+            resolveEndpointsForShard(shard, target);
+            break;
+        }
+        case ClusterMetadataMutation::Type::AddClusterMembers:
+        {
+            auto cluster_it = target.clusters.find(mutation.name);
+            if (cluster_it == target.clusters.end())
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", mutation.name);
+
+            auto & members = cluster_it->second.members;
+            for (const auto & member : mutation.deserializeStringList())
+            {
+                if (!target.shards.contains(member))
+                    throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cluster metadata shard `{}` does not exist", member);
+                if (std::find(members.begin(), members.end(), member) != members.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "SQL CLUSTER member `{}` is already listed in SQL CLUSTER `{}`", member, mutation.name);
+                members.push_back(member);
+            }
+            break;
+        }
+        case ClusterMetadataMutation::Type::DropClusterMembers:
+        {
+            auto cluster_it = target.clusters.find(mutation.name);
+            if (cluster_it == target.clusters.end())
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", mutation.name);
+
+            auto & members = cluster_it->second.members;
+            for (const auto & member : mutation.deserializeStringList())
+            {
+                auto member_it = std::find(members.begin(), members.end(), member);
+                if (member_it == members.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`", member, mutation.name);
+                members.erase(member_it);
+            }
+            if (members.empty())
+                throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP all members from SQL CLUSTER `{}`", mutation.name);
+            break;
+        }
+        case ClusterMetadataMutation::Type::ReplaceClusterMembers:
+        {
+            auto cluster_it = target.clusters.find(mutation.name);
+            if (cluster_it == target.clusters.end())
+                throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", mutation.name);
+
+            SettingsChanges properties;
+            const auto replacements = mutation.deserializeReplacements(&properties);
+            std::unordered_map<String, String> replacement_map;
+            for (const auto & replacement : replacements)
+            {
+                if (!target.shards.contains(replacement.to))
+                    throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cluster metadata shard `{}` does not exist", replacement.to);
+                auto [map_it, inserted] = replacement_map.emplace(replacement.from, replacement.to);
+                if (!inserted && map_it->second != replacement.to)
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Conflicting REPLACE mappings for member `{}` on SQL CLUSTER `{}`", replacement.from, mutation.name);
+            }
+
+            auto & cluster = cluster_it->second;
+            for (const auto & [from_name, _] : replacement_map)
+            {
+                if (std::find(cluster.members.begin(), cluster.members.end(), from_name) == cluster.members.end())
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "SQL CLUSTER member `{}` is not listed in SQL CLUSTER `{}`", from_name, mutation.name);
+            }
+
+            for (auto & member : cluster.members)
+            {
+                if (auto map_it = replacement_map.find(member); map_it != replacement_map.end())
+                    member = map_it->second;
+            }
+
+            std::unordered_set<String> seen;
+            for (const auto & member : cluster.members)
+            {
+                if (!seen.insert(member).second)
+                    throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Duplicate member `{}` after REPLACE on SQL CLUSTER `{}`", member, mutation.name);
+            }
+
+            applyClusterPropertiesPatch(cluster, properties);
+            break;
+        }
     }
-
-    snapshot.digest = storage->calculateDigest(snapshot);
-    ++snapshot_version;
-}
-
-void ClusterMetadataManager::commitAlterShard(const ShardCatalogDefinition & definition)
-{
-    if (definition.name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ShardCatalogDefinition requires non-empty name");
-
-    commitMutation(ClusterMetadataMutation::alterShard(definition));
-}
-
-void ClusterMetadataManager::commitAlterCluster(const String & cluster_name, const ClusterCatalogDefinition & definition)
-{
-    commitMutation(ClusterMetadataMutation::alterCluster(cluster_name, definition));
 }
 
 void ClusterMetadataManager::materializeSnapshotClusters(
@@ -1014,6 +1485,13 @@ void ClusterMetadataManager::resolveShardEndpoints(
     }
 }
 
+void ClusterMetadataManager::resolveEndpointsForShard(
+    ShardCatalogDefinition & shard,
+    const ClusterMetadataStorage::Snapshot & source_snapshot) const
+{
+    resolveShardEndpoints(shard, source_snapshot.endpoints);
+}
+
 void ClusterMetadataManager::resolveEndpointsForShard(ShardCatalogDefinition & shard) const
 {
     resolveShardEndpoints(shard, snapshot.endpoints);
@@ -1028,25 +1506,19 @@ ShardCatalogDefinition ClusterMetadataManager::buildShardDefinition(
     if (endpoint_names.empty())
         throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "CREATE SHARD requires at least one endpoint");
 
-    for (const auto & endpoint_name : endpoint_names)
-    {
-        if (!snapshot.endpoints.contains(endpoint_name))
-            throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
-    }
-
     ShardCatalogDefinition record;
     record.name = shard_name;
     record.endpoint_names = endpoint_names;
     record.weight = weight;
     record.internal_replication = internal_replication;
-    resolveEndpointsForShard(record);
     return record;
 }
 
-bool ClusterMetadataManager::createEndpoint(
+BlockIO ClusterMetadataManager::createEndpoint(
     const String & endpoint_name,
     const EndpointCatalogDefinition & definition,
-    bool if_not_exists)
+    bool if_not_exists,
+    bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1058,16 +1530,15 @@ bool ClusterMetadataManager::createEndpoint(
         if (snapshot.endpoints.contains(endpoint_name))
         {
             if (if_not_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` already exists", endpoint_name);
         }
     }
 
-    commitMutation(ClusterMetadataMutation::createEndpoint(endpoint_name, definition));
-    return true;
+    return finishCommit(ClusterMetadataMutation::createEndpoint(endpoint_name, definition), sync, query_context);
 }
 
-bool ClusterMetadataManager::dropEndpoint(const String & endpoint_name, bool if_exists)
+BlockIO ClusterMetadataManager::dropEndpoint(const String & endpoint_name, bool if_exists, bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1077,28 +1548,15 @@ bool ClusterMetadataManager::dropEndpoint(const String & endpoint_name, bool if_
         if (!snapshot.endpoints.contains(endpoint_name))
         {
             if (if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
-        }
-
-        for (const auto & [shard_name, shard] : snapshot.shards)
-        {
-            if (std::find(shard.endpoint_names.begin(), shard.endpoint_names.end(), endpoint_name) != shard.endpoint_names.end())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_CLUSTER_DEFINITION,
-                    "Cannot drop cluster metadata endpoint `{}` because shard `{}` references it",
-                    endpoint_name,
-                    shard_name);
-            }
         }
     }
 
-    commitMutation(ClusterMetadataMutation::dropEndpoint(endpoint_name));
-    return true;
+    return finishCommit(ClusterMetadataMutation::dropEndpoint(endpoint_name), sync, query_context);
 }
 
-void ClusterMetadataManager::alterEndpoint(const String & endpoint_name, const SettingsChanges & properties)
+BlockIO ClusterMetadataManager::alterEndpoint(const String & endpoint_name, const SettingsChanges & properties, bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1106,24 +1564,22 @@ void ClusterMetadataManager::alterEndpoint(const String & endpoint_name, const S
     if (properties.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ENDPOINT ... MODIFY PROPERTIES requires at least one assignment");
 
-    EndpointCatalogDefinition record;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.endpoints.contains(endpoint_name))
             throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cluster metadata endpoint `{}` does not exist", endpoint_name);
-        record = snapshot.endpoints.at(endpoint_name);
     }
 
-    applyEndpointPropertiesPatch(record, properties);
-    commitMutation(ClusterMetadataMutation::alterEndpoint(endpoint_name, record));
+    return finishCommit(ClusterMetadataMutation::modifyEndpointProperties(endpoint_name, properties), sync, query_context);
 }
 
-bool ClusterMetadataManager::createShard(
+BlockIO ClusterMetadataManager::createShard(
     const String & shard_name,
     const std::vector<String> & replica_collections,
     UInt32 weight,
     bool internal_replication,
-    bool if_not_exists)
+    bool if_not_exists,
+    bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1134,7 +1590,7 @@ bool ClusterMetadataManager::createShard(
         if (snapshot.shards.contains(shard_name))
         {
             if (if_not_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::SHARD_ALREADY_EXISTS, "SQL SHARD `{}` already exists", shard_name);
         }
 
@@ -1143,11 +1599,10 @@ bool ClusterMetadataManager::createShard(
         definition = buildShardDefinition(shard_name, replica_collections, weight, internal_replication);
     }
 
-    commitMutation(ClusterMetadataMutation::createShard(definition));
-    return true;
+    return finishCommit(ClusterMetadataMutation::createShard(definition), sync, query_context);
 }
 
-void ClusterMetadataManager::dropShard(const String & shard_name, bool if_exists)
+BlockIO ClusterMetadataManager::dropShard(const String & shard_name, bool if_exists, bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1158,24 +1613,15 @@ void ClusterMetadataManager::dropShard(const String & shard_name, bool if_exists
         {
             if (!if_exists)
                 throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "SQL SHARD `{}` does not exist", shard_name);
-            return;
+            return {};
         }
 
-        const auto referencing_clusters = listClustersContainingShard(shard_name);
-        if (!referencing_clusters.empty())
-        {
-            throw Exception(
-                ErrorCodes::SHARD_IS_REFERENCED,
-                "Cannot drop SQL SHARD `{}` because SQL CLUSTER `{}` references it",
-                shard_name,
-                referencing_clusters.front());
-        }
     }
 
-    commitMutation(ClusterMetadataMutation::dropShard(shard_name));
+    return finishCommit(ClusterMetadataMutation::dropShard(shard_name), sync, query_context);
 }
 
-bool ClusterMetadataManager::updateShardPropertiesFromSQL(const ASTAlterShardQuery & query)
+BlockIO ClusterMetadataManager::updateShardPropertiesFromSQL(const ASTAlterShardQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterShardCommand::ModifyShardProperties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::updateShardPropertiesFromSQL expects ModifyShardProperties");
@@ -1186,43 +1632,23 @@ bool ClusterMetadataManager::updateShardPropertiesFromSQL(const ASTAlterShardQue
     if (query.shard_definition_properties.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER SHARD ... MODIFY PROPERTIES requires at least one assignment");
 
-    ShardCatalogDefinition record;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.shards.contains(query.shard_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
         }
 
-        record = snapshot.shards.at(query.shard_name);
-        SQLClusterCatalog::PropertyValidation::assertNoDuplicatePropertyNames(query.shard_definition_properties);
-
-        for (const auto & ch : query.shard_definition_properties)
-        {
-            if (ch.name == "weight")
-                record.weight = SQLClusterCatalog::PropertyValidation::Shard::parseWeightValue(ch.value);
-            else if (ch.name == "internal_replication")
-                SQLClusterCatalog::PropertyValidation::Shard::parseInternalReplicationValue(ch.value, record.internal_replication);
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown property `{}` in ALTER SHARD ... MODIFY PROPERTIES (allowed: weight, internal_replication)",
-                    ch.name);
-            }
-        }
-
-        for (const auto & cluster_name : listClustersContainingShard(query.shard_name))
-            validateClusterTotalShardWeight(cluster_name, snapshot.clusters.at(cluster_name).members, &record);
+        auto record = snapshot.shards.at(query.shard_name);
+        applyShardPropertiesPatch(record, query.shard_definition_properties);
     }
 
-    commitAlterShard(record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::modifyShardProperties(query.shard_name, query.shard_definition_properties), sync, query_context);
 }
 
-bool ClusterMetadataManager::addReplicaToShardFromSQL(const ASTAlterShardQuery & query)
+BlockIO ClusterMetadataManager::addReplicaToShardFromSQL(const ASTAlterShardQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterShardCommand::AddReplica)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::addReplicaToShardFromSQL expects AddReplica");
@@ -1239,7 +1665,7 @@ bool ClusterMetadataManager::addReplicaToShardFromSQL(const ASTAlterShardQuery &
         if (!snapshot.shards.contains(query.shard_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
         }
 
@@ -1277,11 +1703,10 @@ bool ClusterMetadataManager::addReplicaToShardFromSQL(const ASTAlterShardQuery &
         resolveEndpointsForShard(record);
     }
 
-    commitAlterShard(record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::addShardReplicas(query.shard_name, {query.replica_name}), sync, query_context);
 }
 
-bool ClusterMetadataManager::dropReplicaFromShardFromSQL(const ASTAlterShardQuery & query)
+BlockIO ClusterMetadataManager::dropReplicaFromShardFromSQL(const ASTAlterShardQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterShardCommand::DropReplica)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::dropReplicaFromShardFromSQL expects DropReplica");
@@ -1298,7 +1723,7 @@ bool ClusterMetadataManager::dropReplicaFromShardFromSQL(const ASTAlterShardQuer
         if (!snapshot.shards.contains(query.shard_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
         }
 
@@ -1321,11 +1746,10 @@ bool ClusterMetadataManager::dropReplicaFromShardFromSQL(const ASTAlterShardQuer
         resolveEndpointsForShard(record);
     }
 
-    commitAlterShard(record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::dropShardReplicas(query.shard_name, {query.replica_name}), sync, query_context);
 }
 
-bool ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQuery & query)
+BlockIO ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterShardCommand::ReplaceReplicas)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::replaceShardReplicasFromSQL expects ReplaceReplicas");
@@ -1337,12 +1761,13 @@ bool ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQuer
         throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE requires at least one FROM/TO list pair");
 
     ShardCatalogDefinition record;
+    std::vector<ClusterMetadataMutation::Replacement> replacements;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.shards.contains(query.shard_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::SHARD_DOESNT_EXIST, "Cannot alter SQL SHARD `{}`, because it doesn't exist", query.shard_name);
         }
 
@@ -1358,6 +1783,7 @@ bool ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQuer
             {
                 const String & from_name = cl.from_collections[i];
                 const String & to_name = cl.to_collections[i];
+                replacements.push_back({from_name, to_name});
 
                 if (!snapshot.endpoints.contains(to_name))
                 {
@@ -1437,16 +1863,16 @@ bool ClusterMetadataManager::replaceShardReplicasFromSQL(const ASTAlterShardQuer
         resolveEndpointsForShard(record);
     }
 
-    commitAlterShard(record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::replaceShardReplicas(query.shard_name, replacements, query.shard_definition_properties), sync, query_context);
 }
 
-bool ClusterMetadataManager::createCluster(
+BlockIO ClusterMetadataManager::createCluster(
     const String & cluster_name,
     const std::vector<String> & members,
     const String & cluster_secret,
     bool allow_distributed_ddl_queries,
-    bool if_not_exists)
+    bool if_not_exists,
+    bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1459,15 +1885,12 @@ bool ClusterMetadataManager::createCluster(
         if (snapshot.clusters.contains(cluster_name))
         {
             if (if_not_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::CLUSTER_DEFINITION_ALREADY_EXISTS, "SQL CLUSTER `{}` already exists", cluster_name);
         }
 
         assertClusterNameAvailable(cluster_name);
 
-        for (const auto & member : members)
-            validateClusterMemberShardExists(member);
-        validateClusterTotalShardWeight(cluster_name, members);
     }
 
     ClusterCatalogDefinition record;
@@ -1475,11 +1898,10 @@ bool ClusterMetadataManager::createCluster(
     record.secret = cluster_secret;
     record.allow_distributed_ddl_queries = allow_distributed_ddl_queries;
 
-    commitMutation(ClusterMetadataMutation::createCluster(cluster_name, record));
-    return true;
+    return finishCommit(ClusterMetadataMutation::createCluster(cluster_name, record), sync, query_context);
 }
 
-bool ClusterMetadataManager::dropCluster(const String & cluster_name, bool if_exists)
+BlockIO ClusterMetadataManager::dropCluster(const String & cluster_name, bool if_exists, bool sync, ContextPtr query_context)
 {
     if (!isEnabled())
         throwIfDisabled();
@@ -1489,16 +1911,15 @@ bool ClusterMetadataManager::dropCluster(const String & cluster_name, bool if_ex
         if (!snapshot.clusters.contains(cluster_name))
         {
             if (if_exists)
-                return false;
+                return {};
             throw Exception(ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "SQL CLUSTER `{}` does not exist", cluster_name);
         }
     }
 
-    commitMutation(ClusterMetadataMutation::dropCluster(cluster_name));
-    return true;
+    return finishCommit(ClusterMetadataMutation::dropCluster(cluster_name), sync, query_context);
 }
 
-bool ClusterMetadataManager::addClusterMembersFromSQL(const ASTAlterClusterQuery & query)
+BlockIO ClusterMetadataManager::addClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterClusterCommand::AddShard)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::addClusterMembersFromSQL expects AddShard");
@@ -1509,18 +1930,17 @@ bool ClusterMetadataManager::addClusterMembersFromSQL(const ASTAlterClusterQuery
     if (query.add_shard_members.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD SHARD requires at least one member name");
 
-    ClusterCatalogDefinition record;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.clusters.contains(query.cluster_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(
                 ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
         }
 
-        record = snapshot.clusters.at(query.cluster_name);
+        auto record = snapshot.clusters.at(query.cluster_name);
 
         for (const auto & member : query.add_shard_members)
         {
@@ -1539,11 +1959,10 @@ bool ClusterMetadataManager::addClusterMembersFromSQL(const ASTAlterClusterQuery
         validateClusterTotalShardWeight(query.cluster_name, record.members);
     }
 
-    commitAlterCluster(query.cluster_name, record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::addClusterMembers(query.cluster_name, query.add_shard_members), sync, query_context);
 }
 
-bool ClusterMetadataManager::dropClusterMembersFromSQL(const ASTAlterClusterQuery & query)
+BlockIO ClusterMetadataManager::dropClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterClusterCommand::DropShard)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::dropClusterMembersFromSQL expects DropShard");
@@ -1554,18 +1973,17 @@ bool ClusterMetadataManager::dropClusterMembersFromSQL(const ASTAlterClusterQuer
     if (query.drop_shard_members.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DROP SHARD requires at least one member name");
 
-    ClusterCatalogDefinition record;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.clusters.contains(query.cluster_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(
                 ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
         }
 
-        record = snapshot.clusters.at(query.cluster_name);
+        auto record = snapshot.clusters.at(query.cluster_name);
         auto & mems = record.members;
 
         for (const auto & member : query.drop_shard_members)
@@ -1586,11 +2004,10 @@ bool ClusterMetadataManager::dropClusterMembersFromSQL(const ASTAlterClusterQuer
             throw Exception(ErrorCodes::BAD_CLUSTER_DEFINITION, "Cannot DROP all members from SQL CLUSTER `{}`", query.cluster_name);
     }
 
-    commitAlterCluster(query.cluster_name, record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::dropClusterMembers(query.cluster_name, query.drop_shard_members), sync, query_context);
 }
 
-bool ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & query)
+BlockIO ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync, ContextPtr query_context)
 {
     if (query.command != AlterClusterCommand::ReplaceClusterMembers)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataManager::replaceClusterMembersFromSQL expects ReplaceClusterMembers");
@@ -1602,12 +2019,13 @@ bool ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClusterQ
         throw Exception(ErrorCodes::LOGICAL_ERROR, "REPLACE requires at least one FROM/TO list pair");
 
     ClusterCatalogDefinition record;
+    std::vector<ClusterMetadataMutation::Replacement> replacements;
     {
         std::lock_guard lock(mutex);
         if (!snapshot.clusters.contains(query.cluster_name))
         {
             if (query.if_exists)
-                return false;
+                return {};
             throw Exception(
                 ErrorCodes::CLUSTER_DEFINITION_DOESNT_EXIST, "Cannot alter SQL CLUSTER `{}`, because it doesn't exist", query.cluster_name);
         }
@@ -1624,6 +2042,7 @@ bool ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClusterQ
             {
                 const String & from_name = cl.from_members[i];
                 const String & to_name = cl.to_members[i];
+                replacements.push_back({from_name, to_name});
 
                 validateClusterMemberShardExists(to_name);
 
@@ -1703,8 +2122,7 @@ bool ClusterMetadataManager::replaceClusterMembersFromSQL(const ASTAlterClusterQ
         }
     }
 
-    commitAlterCluster(query.cluster_name, record);
-    return true;
+    return finishCommit(ClusterMetadataMutation::replaceClusterMembers(query.cluster_name, replacements, query.cluster_definition_properties), sync, query_context);
 }
 
 }

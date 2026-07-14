@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserDropClusterCatalogQuery.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 
 namespace DB
@@ -44,11 +45,16 @@ bool ParserDropClusterCatalogQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             return false;
     }
 
+    bool sync = false;
+    if (!parseSQLClusterCatalogSyncTail(sync, pos, expected))
+        return false;
+
     auto query = make_intrusive<ASTDropClusterCatalogQuery>();
     query->kind = kind;
     tryGetIdentifierNameInto(name_ast, query->name);
     query->if_exists = if_exists;
     query->cluster = std::move(cluster_str);
+    query->sync = sync;
     node = query;
     return true;
 }

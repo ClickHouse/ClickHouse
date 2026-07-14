@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -120,7 +121,11 @@ void ClusterMetadataStorage::initLayout()
     zookeeper->createIfNotExists(endpointsRoot(), "");
     zookeeper->createIfNotExists(shardsRoot(), "");
     zookeeper->createIfNotExists(clustersRoot(), "");
+    zookeeper->createIfNotExists(refsRoot(), "");
+    zookeeper->createIfNotExists(endpointRefsRoot(), "");
+    zookeeper->createIfNotExists(shardRefsRoot(), "");
     zookeeper->createIfNotExists(snapshotDigestPath(), encodeData(""));
+    rebuildReferenceIndex();
 }
 
 bool ClusterMetadataStorage::metadataInitialized() const
@@ -175,12 +180,16 @@ void ClusterMetadataStorage::appendCreateEndpointOps(
 {
     validateEntityName(name, "Endpoint");
     ops.emplace_back(zkutil::makeCreateRequest(endpointPath(name), encodeData(definition.serialize()), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(endpointRefsPath(name), "", zkutil::CreateMode::Persistent));
 }
 
 void ClusterMetadataStorage::appendDropEndpointOps(Coordination::Requests & ops, const String & name) const
 {
     validateEntityName(name, "Endpoint");
     ops.emplace_back(zkutil::makeRemoveRequest(endpointPath(name), -1));
+    /// Removing the refs directory is the atomic "no shards reference this endpoint" check:
+    /// Keeper rejects non-empty znode removal.
+    ops.emplace_back(zkutil::makeRemoveRequest(endpointRefsPath(name), -1));
 }
 
 void ClusterMetadataStorage::appendUpsertEndpointOps(
@@ -189,6 +198,7 @@ void ClusterMetadataStorage::appendUpsertEndpointOps(
     const EndpointCatalogDefinition & definition) const
 {
     validateEntityName(name, "Endpoint");
+    ops.emplace_back(zkutil::makeCheckRequest(endpointPath(name), -1));
     ops.emplace_back(zkutil::makeSetRequest(endpointPath(name), encodeData(definition.serialize()), -1));
 }
 
@@ -215,7 +225,15 @@ void ClusterMetadataStorage::appendCreateShardOps(
     const ShardCatalogDefinition & definition) const
 {
     validateEntityName(name, "Shard");
+    for (const auto & endpoint_name : definition.endpoint_names)
+    {
+        validateEntityName(endpoint_name, "Endpoint");
+        ops.emplace_back(zkutil::makeCheckRequest(endpointPath(endpoint_name), -1));
+    }
     ops.emplace_back(zkutil::makeCreateRequest(shardPath(name), encodeData(definition.serialize()), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(shardRefsPath(name), "", zkutil::CreateMode::Persistent));
+    for (const auto & endpoint_name : definition.endpoint_names)
+        ops.emplace_back(zkutil::makeCreateRequest(endpointShardRefPath(endpoint_name, name), "", zkutil::CreateMode::Persistent));
 }
 
 void ClusterMetadataStorage::appendUpsertShardOps(
@@ -224,19 +242,53 @@ void ClusterMetadataStorage::appendUpsertShardOps(
     const ShardCatalogDefinition & definition) const
 {
     validateEntityName(name, "Shard");
+    Coordination::Stat current_stat;
+    const auto current = readShard(name, &current_stat);
+
+    std::unordered_set<String> current_endpoints(current.endpoint_names.begin(), current.endpoint_names.end());
+    std::unordered_set<String> new_endpoints(definition.endpoint_names.begin(), definition.endpoint_names.end());
+    for (const auto & endpoint_name : definition.endpoint_names)
+    {
+        validateEntityName(endpoint_name, "Endpoint");
+        ops.emplace_back(zkutil::makeCheckRequest(endpointPath(endpoint_name), -1));
+    }
+
+    ops.emplace_back(zkutil::makeCheckRequest(shardPath(name), current_stat.version));
     ops.emplace_back(zkutil::makeSetRequest(shardPath(name), encodeData(definition.serialize()), -1));
+    for (const auto & endpoint_name : current.endpoint_names)
+    {
+        if (!new_endpoints.contains(endpoint_name))
+            ops.emplace_back(zkutil::makeRemoveRequest(endpointShardRefPath(endpoint_name, name), -1));
+    }
+    for (const auto & endpoint_name : definition.endpoint_names)
+    {
+        if (!current_endpoints.contains(endpoint_name))
+            ops.emplace_back(zkutil::makeCreateRequest(endpointShardRefPath(endpoint_name, name), "", zkutil::CreateMode::Persistent));
+    }
 }
 
 void ClusterMetadataStorage::appendDropShardOps(Coordination::Requests & ops, const String & name) const
 {
     validateEntityName(name, "Shard");
+    Coordination::Stat current_stat;
+    const auto current = readShard(name, &current_stat);
+    ops.emplace_back(zkutil::makeCheckRequest(shardPath(name), current_stat.version));
     ops.emplace_back(zkutil::makeRemoveRequest(shardPath(name), -1));
+    /// Removing the refs directory is the atomic "no clusters reference this shard" check.
+    ops.emplace_back(zkutil::makeRemoveRequest(shardRefsPath(name), -1));
+    for (const auto & endpoint_name : current.endpoint_names)
+        ops.emplace_back(zkutil::makeRemoveRequest(endpointShardRefPath(endpoint_name, name), -1));
 }
 
 ShardCatalogDefinition ClusterMetadataStorage::readShard(const String & name) const
 {
+    return readShard(name, nullptr);
+}
+
+ShardCatalogDefinition ClusterMetadataStorage::readShard(const String & name, Coordination::Stat * stat) const
+{
     validateEntityName(name, "Shard");
-    auto shard = ShardCatalogDefinition::deserialize(readData(shardPath(name)));
+    auto shard = ShardCatalogDefinition::deserialize(decodeData(zookeeper->get(shardPath(name), stat)));
     if (shard.name.empty())
         shard.name = name;
     return shard;
@@ -259,7 +311,14 @@ void ClusterMetadataStorage::appendCreateClusterOps(
     const ClusterCatalogDefinition & definition) const
 {
     validateEntityName(name, "Cluster");
+    for (const auto & shard_name : definition.members)
+    {
+        validateEntityName(shard_name, "Shard");
+        ops.emplace_back(zkutil::makeCheckRequest(shardPath(shard_name), -1));
+    }
     ops.emplace_back(zkutil::makeCreateRequest(clusterPath(name), encodeData(definition.serialize()), zkutil::CreateMode::Persistent));
+    for (const auto & shard_name : definition.members)
+        ops.emplace_back(zkutil::makeCreateRequest(shardClusterRefPath(shard_name, name), "", zkutil::CreateMode::Persistent));
 }
 
 void ClusterMetadataStorage::appendUpsertClusterOps(
@@ -268,19 +327,51 @@ void ClusterMetadataStorage::appendUpsertClusterOps(
     const ClusterCatalogDefinition & definition) const
 {
     validateEntityName(name, "Cluster");
+    Coordination::Stat current_stat;
+    const auto current = readCluster(name, &current_stat);
+
+    std::unordered_set<String> current_members(current.members.begin(), current.members.end());
+    std::unordered_set<String> new_members(definition.members.begin(), definition.members.end());
+    for (const auto & shard_name : definition.members)
+    {
+        validateEntityName(shard_name, "Shard");
+        ops.emplace_back(zkutil::makeCheckRequest(shardPath(shard_name), -1));
+    }
+
+    ops.emplace_back(zkutil::makeCheckRequest(clusterPath(name), current_stat.version));
     ops.emplace_back(zkutil::makeSetRequest(clusterPath(name), encodeData(definition.serialize()), -1));
+    for (const auto & shard_name : current.members)
+    {
+        if (!new_members.contains(shard_name))
+            ops.emplace_back(zkutil::makeRemoveRequest(shardClusterRefPath(shard_name, name), -1));
+    }
+    for (const auto & shard_name : definition.members)
+    {
+        if (!current_members.contains(shard_name))
+            ops.emplace_back(zkutil::makeCreateRequest(shardClusterRefPath(shard_name, name), "", zkutil::CreateMode::Persistent));
+    }
 }
 
 void ClusterMetadataStorage::appendDropClusterOps(Coordination::Requests & ops, const String & name) const
 {
     validateEntityName(name, "Cluster");
+    Coordination::Stat current_stat;
+    const auto current = readCluster(name, &current_stat);
+    ops.emplace_back(zkutil::makeCheckRequest(clusterPath(name), current_stat.version));
     ops.emplace_back(zkutil::makeRemoveRequest(clusterPath(name), -1));
+    for (const auto & shard_name : current.members)
+        ops.emplace_back(zkutil::makeRemoveRequest(shardClusterRefPath(shard_name, name), -1));
 }
 
 ClusterCatalogDefinition ClusterMetadataStorage::readCluster(const String & name) const
 {
+    return readCluster(name, nullptr);
+}
+
+ClusterCatalogDefinition ClusterMetadataStorage::readCluster(const String & name, Coordination::Stat * stat) const
+{
     validateEntityName(name, "Cluster");
-    return ClusterCatalogDefinition::deserialize(readData(clusterPath(name)));
+    return ClusterCatalogDefinition::deserialize(decodeData(zookeeper->get(clusterPath(name), stat)));
 }
 
 bool ClusterMetadataStorage::clusterExists(const String & name) const
@@ -365,6 +456,21 @@ String ClusterMetadataStorage::clustersRoot() const
     return joinPath(metadataRoot(), "clusters");
 }
 
+String ClusterMetadataStorage::refsRoot() const
+{
+    return joinPath(metadataRoot(), "refs");
+}
+
+String ClusterMetadataStorage::endpointRefsRoot() const
+{
+    return joinPath(refsRoot(), "endpoints");
+}
+
+String ClusterMetadataStorage::shardRefsRoot() const
+{
+    return joinPath(refsRoot(), "shards");
+}
+
 String ClusterMetadataStorage::snapshotDigestPath() const
 {
     return joinPath(metadataRoot(), "snapshot_digest");
@@ -385,6 +491,26 @@ String ClusterMetadataStorage::clusterPath(const String & name) const
     return joinPath(clustersRoot(), name);
 }
 
+String ClusterMetadataStorage::endpointRefsPath(const String & endpoint_name) const
+{
+    return joinPath(endpointRefsRoot(), endpoint_name);
+}
+
+String ClusterMetadataStorage::endpointShardRefPath(const String & endpoint_name, const String & shard_name) const
+{
+    return joinPath(endpointRefsPath(endpoint_name), shard_name);
+}
+
+String ClusterMetadataStorage::shardRefsPath(const String & shard_name) const
+{
+    return joinPath(shardRefsRoot(), shard_name);
+}
+
+String ClusterMetadataStorage::shardClusterRefPath(const String & shard_name, const String & cluster_name) const
+{
+    return joinPath(shardRefsPath(shard_name), cluster_name);
+}
+
 String ClusterMetadataStorage::readData(const String & path) const
 {
     return decodeData(zookeeper->get(path));
@@ -393,6 +519,40 @@ String ClusterMetadataStorage::readData(const String & path) const
 void ClusterMetadataStorage::createOrUpdateData(const String & path, const String & data)
 {
     zookeeper->createOrUpdate(path, encodeData(data), zkutil::CreateMode::Persistent);
+}
+
+void ClusterMetadataStorage::rebuildReferenceIndex() const
+{
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataStorage::rebuildReferenceIndex");
+
+    for (const auto & endpoint_name : listEndpointNames())
+    {
+        validateEntityName(endpoint_name, "Endpoint");
+        zookeeper->createIfNotExists(endpointRefsPath(endpoint_name), "");
+    }
+
+    for (const auto & shard_name : listShardNames())
+    {
+        validateEntityName(shard_name, "Shard");
+        const auto shard = readShard(shard_name);
+        zookeeper->createIfNotExists(shardRefsPath(shard_name), "");
+        for (const auto & endpoint_name : shard.endpoint_names)
+        {
+            validateEntityName(endpoint_name, "Endpoint");
+            zookeeper->createIfNotExists(endpointShardRefPath(endpoint_name, shard_name), "");
+        }
+    }
+
+    for (const auto & cluster_name : listClusterNames())
+    {
+        validateEntityName(cluster_name, "Cluster");
+        const auto cluster = readCluster(cluster_name);
+        for (const auto & shard_name : cluster.members)
+        {
+            validateEntityName(shard_name, "Shard");
+            zookeeper->createIfNotExists(shardClusterRefPath(shard_name, cluster_name), "");
+        }
+    }
 }
 
 String ClusterMetadataStorage::encodeData(const String & data) const

@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserAlterEndpointQuery.h>
 #include <Parsers/ParserSQLClusterCatalogProperties.h>
+#include <Parsers/ParserSQLClusterCatalogSyncTail.h>
 
 
 namespace DB
@@ -33,9 +34,14 @@ bool ParserAlterEndpointQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!parseSQLClusterCatalogPropertiesAssignments(properties, pos, expected))
         return false;
 
+    bool sync = false;
+    if (!parseSQLClusterCatalogSyncTail(sync, pos, expected))
+        return false;
+
     auto query = make_intrusive<ASTAlterEndpointQuery>();
     tryGetIdentifierNameInto(endpoint_ast, query->endpoint_name);
     query->properties = std::move(properties);
+    query->sync = sync;
     node = query;
     return true;
 }

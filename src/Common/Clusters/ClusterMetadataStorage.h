@@ -85,14 +85,24 @@ private:
     String endpointsRoot() const;
     String shardsRoot() const;
     String clustersRoot() const;
+    String refsRoot() const;
+    String endpointRefsRoot() const;
+    String shardRefsRoot() const;
     String snapshotDigestPath() const;
 
     String endpointPath(const String & name) const;
     String shardPath(const String & name) const;
     String clusterPath(const String & name) const;
+    String endpointRefsPath(const String & endpoint_name) const;
+    String endpointShardRefPath(const String & endpoint_name, const String & shard_name) const;
+    String shardRefsPath(const String & shard_name) const;
+    String shardClusterRefPath(const String & shard_name, const String & cluster_name) const;
 
     String readData(const String & path) const;
     void createOrUpdateData(const String & path, const String & data);
+    ShardCatalogDefinition readShard(const String & name, Coordination::Stat * stat) const;
+    ClusterCatalogDefinition readCluster(const String & name, Coordination::Stat * stat) const;
+    void rebuildReferenceIndex() const;
 
     String encodeData(const String & data) const;
     String decodeData(const String & data) const;
