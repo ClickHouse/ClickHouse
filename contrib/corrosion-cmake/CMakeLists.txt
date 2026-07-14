@@ -87,9 +87,18 @@ if (USE_MUSL)
 
     set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
 
+    # Mirror the per-build-type selection of the non-musl branch below so that Release and
+    # MinSizeRel musl artifacts do not silently compile Cargo cc/cxx shims with RelWithDebInfo
+    # optimisation/debug flags.
     if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
         set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_DEBUG} ${MUSL_C_INCLUDES}")
         set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_DEBUG} ${MUSL_CXX_INCLUDES}")
+    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_RELEASE} ${MUSL_C_INCLUDES}")
+        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_RELEASE} ${MUSL_CXX_INCLUDES}")
+    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_MINSIZEREL} ${MUSL_C_INCLUDES}")
+        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_MINSIZEREL} ${MUSL_CXX_INCLUDES}")
     else ()
         set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_RELWITHDEBINFO} ${MUSL_C_INCLUDES}")
         set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${MUSL_CXX_INCLUDES}")
@@ -374,79 +383,83 @@ function(clickhouse_config_crate_flags target_name)
 
         # Platform math provider: the library supplying the libm functions
         # libllvmlibc lacks (round, copysign, the ceil/rint/trunc IFUNCs, ...) and
-        # the only such provider on arches without libllvmlibc.  Glibc keeps them
-        # in libm (dynamic, -lm); musl's libm.a is an empty stub and the math
-        # actually lives in libc.a, which the -static -lc link pulls in (see
-        # cmake/linux/default_libs.cmake).  It is a prebuilt sysroot/toolchain
-        # file, so no build dependency is needed.
-        #
-        # Resolve it once with the same constraints the toolchain compiles with
-        # (--target/--sysroot/--gcc-toolchain/--no-default-config); otherwise
-        # -print-file-name can return a host multiarch library.  Reject any result
-        # outside the sysroot/toolchain tree, or one defining no symbols (an empty
-        # stub): a wrong or empty reference would leave Rust's libm exports global
-        # and shadow the platform's (e.g. in the -static musl link).
-        if (NOT DEFINED CACHE{CH_RUST_LOCALIZE_MATHLIB})
-            set(_math_probe_flags "")
-            set(_math_roots "")
-            if (CMAKE_C_COMPILER_TARGET)
-                list(APPEND _math_probe_flags "--target=${CMAKE_C_COMPILER_TARGET}")
-            endif()
-            if (CMAKE_SYSROOT)
-                list(APPEND _math_probe_flags "--sysroot=${CMAKE_SYSROOT}")
-                list(APPEND _math_roots "${CMAKE_SYSROOT}")
-            endif()
-            if (TOOLCHAIN_PATH)
-                list(APPEND _math_probe_flags "--gcc-toolchain=${TOOLCHAIN_PATH}" "--no-default-config")
-                list(APPEND _math_roots "${TOOLCHAIN_PATH}")
-            endif()
-
-            if (USE_MUSL)
-                set(_math_candidates libc.a)
-            else()
-                set(_math_candidates libm.so.6 libm.a libm.so)
-            endif()
-
-            set(_found_math "")
-            foreach (_math_name ${_math_candidates})
-                execute_process(
-                    COMMAND "${CMAKE_C_COMPILER}" ${_math_probe_flags} "-print-file-name=${_math_name}"
-                    OUTPUT_VARIABLE _math_out OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-                if (NOT _math_out OR NOT EXISTS "${_math_out}")
-                    continue()
+        # the only such provider on arches without libllvmlibc.
+        if (USE_MUSL)
+            # musl has no separate libm: the math lives in libc, and libc is the
+            # in-tree `musl` target built from sources (contrib/musl-cmake) — the
+            # -static link uses it instead of a sysroot libc.a / -lc (see
+            # cmake/musl.cmake and cmake/linux/default_libs.cmake).  Probing the
+            # toolchain with -print-file-name would find a glibc library or
+            # nothing, so use the built archive itself as the reference and add a
+            # build dependency on it.
+            list(APPEND _localize_ref_libs "$<TARGET_FILE:musl>")
+            list(APPEND _localize_ref_deps musl)
+        else()
+            # Glibc keeps the math in libm (dynamic, -lm).  It is a prebuilt
+            # sysroot/toolchain file, so no build dependency is needed.
+            #
+            # Resolve it once with the same constraints the toolchain compiles
+            # with (--target/--sysroot/--gcc-toolchain/--no-default-config);
+            # otherwise -print-file-name can return a host multiarch library.
+            # Reject any result outside the sysroot/toolchain tree, or one
+            # defining no symbols (an empty stub): a wrong or empty reference
+            # would leave Rust's libm exports global and shadow the platform's.
+            if (NOT DEFINED CACHE{CH_RUST_LOCALIZE_MATHLIB})
+                set(_math_probe_flags "")
+                set(_math_roots "")
+                if (CMAKE_C_COMPILER_TARGET)
+                    list(APPEND _math_probe_flags "--target=${CMAKE_C_COMPILER_TARGET}")
                 endif()
-                # Must live inside the sysroot/toolchain tree (skipped only for a
-                # sysroot-less native build, where the host library is correct).
-                if (_math_roots)
-                    set(_in_tree FALSE)
-                    get_filename_component(_math_real "${_math_out}" REALPATH)
-                    foreach (_root ${_math_roots})
-                        get_filename_component(_root_real "${_root}" REALPATH)
-                        string(FIND "${_math_real}" "${_root_real}/" _math_pos)
-                        if (_math_pos EQUAL 0)
-                            set(_in_tree TRUE)
-                            break()
-                        endif()
-                    endforeach()
-                    if (NOT _in_tree)
+                if (CMAKE_SYSROOT)
+                    list(APPEND _math_probe_flags "--sysroot=${CMAKE_SYSROOT}")
+                    list(APPEND _math_roots "${CMAKE_SYSROOT}")
+                endif()
+                if (TOOLCHAIN_PATH)
+                    list(APPEND _math_probe_flags "--gcc-toolchain=${TOOLCHAIN_PATH}" "--no-default-config")
+                    list(APPEND _math_roots "${TOOLCHAIN_PATH}")
+                endif()
+
+                set(_found_math "")
+                foreach (_math_name libm.so.6 libm.a libm.so)
+                    execute_process(
+                        COMMAND "${CMAKE_C_COMPILER}" ${_math_probe_flags} "-print-file-name=${_math_name}"
+                        OUTPUT_VARIABLE _math_out OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+                    if (NOT _math_out OR NOT EXISTS "${_math_out}")
                         continue()
                     endif()
-                endif()
-                # Must define symbols (static archive: nm; shared object: nm -D);
-                # an empty stub such as musl's libm.a is unusable.
-                execute_process(COMMAND "${NM_PATH}" "${_math_out}" OUTPUT_VARIABLE _nm_a ERROR_QUIET)
-                execute_process(COMMAND "${NM_PATH}" -D "${_math_out}" OUTPUT_VARIABLE _nm_d ERROR_QUIET)
-                if (NOT "${_nm_a}${_nm_d}" MATCHES "[0-9a-f] [TDBCWVi] ")
-                    continue()
-                endif()
-                set(_found_math "${_math_out}")
-                break()
-            endforeach()
-            set(CH_RUST_LOCALIZE_MATHLIB "${_found_math}" CACHE INTERNAL
-                "Platform libm/libc used as a reference for localizing Rust C symbols")
-        endif()
-        if (CH_RUST_LOCALIZE_MATHLIB)
-            list(APPEND _localize_ref_libs "${CH_RUST_LOCALIZE_MATHLIB}")
+                    # Must live inside the sysroot/toolchain tree (skipped only for a
+                    # sysroot-less native build, where the host library is correct).
+                    if (_math_roots)
+                        set(_in_tree FALSE)
+                        get_filename_component(_math_real "${_math_out}" REALPATH)
+                        foreach (_root ${_math_roots})
+                            get_filename_component(_root_real "${_root}" REALPATH)
+                            string(FIND "${_math_real}" "${_root_real}/" _math_pos)
+                            if (_math_pos EQUAL 0)
+                                set(_in_tree TRUE)
+                                break()
+                            endif()
+                        endforeach()
+                        if (NOT _in_tree)
+                            continue()
+                        endif()
+                    endif()
+                    # Must define symbols (static archive: nm; shared object: nm -D);
+                    # an empty stub is unusable.
+                    execute_process(COMMAND "${NM_PATH}" "${_math_out}" OUTPUT_VARIABLE _nm_a ERROR_QUIET)
+                    execute_process(COMMAND "${NM_PATH}" -D "${_math_out}" OUTPUT_VARIABLE _nm_d ERROR_QUIET)
+                    if (NOT "${_nm_a}${_nm_d}" MATCHES "[0-9a-f] [TDBCWVi] ")
+                        continue()
+                    endif()
+                    set(_found_math "${_math_out}")
+                    break()
+                endforeach()
+                set(CH_RUST_LOCALIZE_MATHLIB "${_found_math}" CACHE INTERNAL
+                    "Platform libm used as a reference for localizing Rust C symbols")
+            endif()
+            if (CH_RUST_LOCALIZE_MATHLIB)
+                list(APPEND _localize_ref_libs "${CH_RUST_LOCALIZE_MATHLIB}")
+            endif()
         endif()
 
         if (_localize_ref_libs)

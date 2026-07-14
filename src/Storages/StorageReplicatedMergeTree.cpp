@@ -9225,7 +9225,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             /// Save deduplication block ids with special prefix replace_partition
 
             if (!canReplacePartition(src_part))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
@@ -9520,7 +9520,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         for (const auto & src_part : src_all_parts)
         {
             if (!dest_table_storage->canReplacePartition(src_part))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot move partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 

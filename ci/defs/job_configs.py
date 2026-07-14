@@ -55,6 +55,7 @@ fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
         "./ci/jobs/scripts/clickhouse_proc.py",
+        "./ci/jobs/scripts/server_cleanup.py",
         "./tests/queries/0_stateless/",
         "./tests/config/",
         "./tests/clickhouse-test",
@@ -103,6 +104,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/praktika/cidb.py",
@@ -622,6 +624,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/queries",
             ],
         ),
@@ -1296,6 +1299,11 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickbench.py",
+                # ClickBench starts the server via `ClickHouseProc.start_light`,
+                # which now clears leftover processes through `server_cleanup.py`.
+                # Track both so changes to the shared start path reschedule the job.
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             ],
@@ -1430,6 +1438,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqltest_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
@@ -1443,6 +1452,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqllogic_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqllogic/",
             ],
         ),
@@ -1457,6 +1467,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1494,6 +1505,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],
