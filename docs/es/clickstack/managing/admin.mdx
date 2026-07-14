@@ -1,0 +1,26 @@
+---
+slug: /use-cases/observability/clickstack/admin
+title: 'ClickStack - administración'
+sidebarTitle: 'Administración'
+description: 'Cómo realizar tareas básicas de administración con ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'administración']
+---
+
+La mayoría de las tareas administrativas en ClickStack se realizan directamente en la base de datos subyacente de ClickHouse. Los usuarios que implementen ClickStack deben estar familiarizados con los conceptos de ClickHouse y con los aspectos básicos de su administración.
+
+Las operaciones administrativas suelen implicar la ejecución de sentencias DDL. Las opciones disponibles dependen de si utiliza Managed ClickStack o ClickStack Open Source.
+
+<div id="clickstack-oss">
+  ## ClickStack Open Source
+</div>
+
+En las implementaciones de ClickStack Open Source, los usuarios realizan tareas administrativas mediante el [cliente de ClickHouse](/es/concepts/features/interfaces/cli). El cliente se conecta a la base de datos a través del protocolo nativo de ClickHouse y admite operaciones DDL y administrativas completas, además de ofrecer respuesta interactiva sobre las consultas.
+
+<div id="clickstack-managed">
+  ## Managed ClickStack
+</div>
+
+En Managed ClickStack, los usuarios también pueden usar tanto el cliente de ClickHouse como la [SQL Console](/es/products/cloud/features/sql-console-features/sql-console). Para conectarse mediante el cliente, deberán obtener las [credenciales del servicio](/es/products/cloud/guides/sql-console/connection-details).
+
+La [SQL Console](/es/products/cloud/features/sql-console-features/sql-console) es una interfaz web que ofrece funcionalidades adicionales, como autocompletado de SQL, historial de consultas y gráficos integrados para visualizar los resultados.

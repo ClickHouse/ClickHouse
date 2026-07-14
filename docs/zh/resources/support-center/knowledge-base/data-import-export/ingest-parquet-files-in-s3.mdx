@@ -1,0 +1,154 @@
+---
+title: 如何从 S3 存储桶摄取 Parquet 文件
+description: "了解如何在 ClickHouse 中使用 S3 表引擎，从 S3 存储桶摄取并查询 Parquet 文件，包括配置、访问权限和数据导入示例。"
+date: 2023-03-22
+tags: ['数据摄取']
+keywords: ['Parquet', 'S3 存储桶']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ingesting-parquet-files-from-an-s3-bucket">
+  ## 从 S3 存储桶摄取 Parquet 文件
+</div>
+
+下面介绍使用 S3 表引擎读取 Parquet 文件的一些基础知识。
+
+* 为 IAM 服务用户创建 access key 和 secret key。
+  普通登录用户通常无法使用，因为它们可能配置了 MFA 策略。
+
+* 在策略中设置权限，允许该服务用户访问存储桶和文件夹。
+
+下面是一个非常简单的示例，你可以先用它测试是否能够成功访问你的 Parquet 文件，然后再应用到实际数据。
+
+如果你需要有关创建用户和存储桶的示例，可以参考前两个部分 (创建用户和创建存储桶) ：
+https://clickhouse.com/docs/guides/sre/configuring-s3-for-clickhouse-use/
+
+我使用了这个示例文件：https://github.com/Teradata/kylo/tree/master/samples/sample-data/parquet
+并将其上传到了我的测试存储桶
+
+你可以像下面这样为存储桶设置策略：
+ (根据需要调整，此策略授予的权限比较宽松，但有助于测试。你可以根据需要进一步收紧权限。) 
+
+```
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::1234567890:user/mars-s3-user"
+                ]
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::mars-doc-test",
+                "arn:aws:s3:::mars-doc-test/*"
+            ]
+        }
+    ]
+}
+```
+
+你可以使用这种语法通过 S3 表引擎运行查询：
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+```
+clickhouse-cloud :)  select count(*) from s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet','ABC123', 'abc+123', 'Parquet', 'first_name String');
+
+SELECT count(*)
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'first_name String')
+
+Query id: fd4f1193-d604-4ac0-9a46-bdd2d5e14727
+
+┌─count()─┐
+│    1000 │
+└─────────┘
+
+1 row in set. Elapsed: 1.274 sec. Processed 1.00 thousand rows, 14.64 KB (784.81 rows/s., 11.49 KB/s.)
+```
+
+Parquet 格式的数据类型参考见：
+https://clickhouse.com/docs/interfaces/formats/#data-format-parquet
+
+要将数据导入原生 ClickHouse 表：
+
+先创建表，例如下面这样 (这里只选了 Parquet 文件中的几列) ：
+
+```
+clickhouse-cloud :) CREATE TABLE my_parquet_table (id UInt64, first_name String) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE my_parquet_table
+(
+    `id` UInt64,
+    `first_name` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 412e3994-bf8e-444e-ac43-a7c82642b7da
+
+Ok.
+
+0 rows in set. Elapsed: 0.600 sec.
+```
+
+选择 S3 存储桶中的数据，将其插入新表：
+
+```
+clickhouse-cloud :) INSERT INTO my_parquet_table (id, first_name) SELECT id, first_name FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123','abc+123', 'Parquet', 'id UInt64, first_name String') FORMAT Parquet
+
+INSERT INTO my_parquet_table (id, first_name) SELECT
+    id,
+    first_name
+FROM s3('https://mars-doc-test.s3.amazonaws.com/s3-parquet-test/userdata1.parquet', 'ABC123', 'abc+123', 'Parquet', 'id UInt64, first_name String')
+
+Query id: c3cdc871-f338-462d-8797-6751b45a0b58
+
+Ok.
+
+0 rows in set. Elapsed: 1.220 sec. Processed 1.00 thousand rows, 22.64 KB (819.61 rows/s., 18.56 KB/s.)
+```
+
+验证导入结果：
+
+```
+clickhouse-cloud :) SELECT * FROM my_parquet_table LIMIT 10;
+
+SELECT *
+FROM my_parquet_table
+LIMIT 10
+
+Query id: 1ccf59dd-d804-46a9-aadd-ed5c57b9e1a0
+
+┌─id─┬─first_name─┐
+│  1 │ Amanda     │
+│  2 │ Albert     │
+│  3 │ Evelyn     │
+│  4 │ Denise     │
+│  5 │ Carlos     │
+│  6 │ Kathryn    │
+│  7 │ Samuel     │
+│  8 │ Harry      │
+│  9 │ Jose       │
+│ 10 │ Emily      │
+└────┴────────────┘
+```
+
+当你准备导入真实数据时，可以使用一些特殊语法 (如通配符和范围) 来指定存储桶中的文件夹、子文件夹和文件。
+我建议先筛选少量目录和文件来测试导入，比如先选定某一年、几个月或某个日期范围进行测试。
+
+除了这里的 path 选项外，新推出的 `**` 语法还可以递归匹配所有子目录。
+https://clickhouse.com/docs/sql-reference/table-functions/s3/
+
+例如，假设 path 和存储桶的结构如下：
+`https://your_s3_bucket.s3.amazonaws.com/<your_folder>/<year>/<month>/<day>/<filename>.parquet`
+`https://mars-doc-test.s3.amazonaws.com/system_logs/2022/11/01/my-app-logs-0001.parquet`
+
+这会获取 2021-2022 年间每个月第 1 天的所有文件。
+`https://mars-doc-test.s3.amazonaws.com/system_logs/{2021-2022}/**/01/*.parquet`

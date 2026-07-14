@@ -1,0 +1,165 @@
+---
+sidebarTitle: 'Amazon RDS MySQL'
+description: 'Guia passo a passo para configurar o Amazon RDS MySQL como origem no ClickPipes'
+slug: /integrations/clickpipes/mysql/source/rds
+title: 'Guia de configuração da origem RDS MySQL'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este guia passo a passo mostra como configurar o Amazon RDS MySQL para replicar dados para o ClickHouse Cloud usando o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index). Para perguntas frequentes sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
+
+<div id="enable-binlog-retention-rds">
+  ## Habilitar a retenção de logs binários
+</div>
+
+O log binário é um conjunto de arquivos de log que contêm informações sobre modificações de dados feitas em uma instância do servidor MySQL, e esses arquivos são necessários para a replicação. Para configurar a retenção de logs binários no RDS MySQL, você deve [habilitar o log binário](#enable-binlog-logging) e [aumentar o intervalo de retenção do binlog](#binlog-retention-interval).
+
+<div id="enable-binlog-logging">
+  ### 1. Ative o binary logging por meio de backups automatizados
+</div>
+
+O recurso de backups automatizados determina se o binary logging do MySQL fica ativado ou desativado. Você pode configurar os backups automatizados da sua instância no Console do RDS acessando **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (caso ela ainda não esteja marcada).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Ativando backups automatizados no RDS" size="lg" border />
+
+Recomendamos definir um valor razoavelmente longo para **Backup retention period**, dependendo do caso de uso da replicação.
+
+<div id="binlog-retention-interval">
+  ### 2. Aumente o intervalo de retenção do binlog
+</div>
+
+<Warning>
+  Se o ClickPipes tentar retomar a replicação e os arquivos de binlog necessários tiverem sido expurgados devido ao valor configurado de retenção do binlog, o ClickPipe entrará em estado de erro e será necessária uma ressincronização.
+</Warning>
+
+Por padrão, o Amazon RDS expurga o log binário o mais rápido possível (isto é, *lazy purging*). Recomendamos aumentar o intervalo de retenção do binlog para pelo menos **72 horas** para garantir a disponibilidade dos arquivos de log binário para replicação em cenários de falha. Para definir um intervalo de retenção do log binário ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), use o procedimento [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+
+[//]: # "OBSERVAÇÃO A maioria dos provedores de CDC recomenda o período máximo de retenção para o RDS (7 dias/168 horas). Como isso afeta o uso de disco, recomendamos de forma conservadora um mínimo de 3 dias/72 horas."
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+```
+
+Se essa configuração não estiver definida ou estiver ajustada com um intervalo muito baixo, isso pode causar lacunas nos logs binários, comprometendo a capacidade do ClickPipes de retomar a replicação.
+
+<div id="binlog-settings">
+  ## Configure as configurações do binlog
+</div>
+
+Você pode encontrar o grupo de parâmetros clicando na instância MySQL no Console do RDS e, em seguida, acessando a aba **Configuration**.
+
+<Tip>
+  Se você tiver um cluster MySQL, os parâmetros abaixo podem ser encontrados no grupo de parâmetros do [cluster de DB](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html), em vez do grupo de instância de DB.
+</Tip>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="Onde encontrar o grupo de parâmetros no RDS" size="lg" border />
+
+<br />
+
+Clique no link do grupo de parâmetros para acessar a página dedicada a ele. Você deverá ver um botão **Edit** no canto superior direito.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Editar grupo de parâmetros" size="lg" border />
+
+Os parâmetros a seguir precisam ser definidos da seguinte forma:
+
+1. `binlog_format` como `ROW`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Formato do binlog como ROW" size="lg" border />
+
+2. `binlog_row_metadata` como `FULL`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Metadados de linha do binlog como FULL" size="lg" border />
+
+3. `binlog_row_image` como `FULL`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Imagem de linha do binlog como FULL" size="lg" border />
+
+<br />
+
+Em seguida, clique em **Save Changes** no canto superior direito. Talvez seja necessário reiniciar a instância para que as alterações entrem em vigor — você saberá disso se `Pending reboot` aparecer ao lado do link do grupo de parâmetros na aba **Configuration** da instância do RDS.
+
+<div id="gtid-mode">
+  ## Ative o modo GTID
+</div>
+
+<Tip>
+  O ClickPipe do MySQL também oferece suporte à replicação sem o modo GTID. No entanto, ativar o modo GTID é recomendado para melhorar o desempenho e facilitar a solução de problemas.
+</Tip>
+
+[Global Transaction Identifiers (GTIDs)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) são IDs exclusivos atribuídos a cada transação confirmada no MySQL. Eles simplificam a replicação do binlog e tornam a solução de problemas mais simples. **Recomendamos** ativar o modo GTID para que o ClickPipe do MySQL possa usar a replicação baseada em GTID.
+
+A replicação baseada em GTID é compatível com o Amazon RDS for MySQL nas versões 5.7, 8.0 e 8.4. Para ativar o modo GTID na sua instância do Aurora MySQL, siga estas etapas:
+
+1. No Console do RDS, clique na sua instância do MySQL.
+2. Clique na guia **Configuration**.
+3. Clique no link do grupo de parâmetros.
+4. Clique no botão **Edit** no canto superior direito.
+5. Defina `enforce_gtid_consistency` como `ON`.
+6. Defina `gtid-mode` como `ON`.
+7. Clique em **Save Changes** no canto superior direito.
+8. Reinicie sua instância para que as alterações entrem em vigor.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="GTID ativado" size="lg" border />
+
+<br />
+
+<Tip>
+  O ClickPipe do MySQL também oferece suporte à replicação sem o modo GTID. No entanto, ativar o modo GTID é recomendado para melhorar o desempenho e facilitar a solução de problemas.
+</Tip>
+
+<div id="configure-database-user">
+  ## Configure um usuário de banco de dados
+</div>
+
+Conecte-se à sua instância do RDS MySQL como um usuário administrador e execute os seguintes comandos:
+
+1. Crie um usuário dedicado para o ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+   ```
+
+2. Conceda permissões no schema. O exemplo a seguir mostra as permissões para o banco de dados `mysql`. Repita esses comandos para cada banco de dados e host que você quiser replicar:
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+   ```
+
+3. Conceda permissões de replicação ao usuário:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<div id="configure-network-access">
+  ## Configure o acesso à rede
+</div>
+
+<div id="ip-based-access-control">
+  ### Controle de acesso por IP
+</div>
+
+Para restringir o tráfego até sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/home#list-of-static-ips) às **regras de entrada** do seu Security Group do RDS.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Onde encontrar o Security Group no RDS MySQL?" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edite as regras de entrada do Security Group acima" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### Acesso privado via AWS PrivateLink
+</div>
+
+Para se conectar à sua instância do RDS por uma rede privada, você pode usar o AWS PrivateLink. Siga o [guia de configuração do AWS PrivateLink para ClickPipes](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para configurar a conexão.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Agora que sua instância do Amazon RDS MySQL está configurada para replicação via binlog e para se conectar com segurança ao ClickHouse Cloud, você pode [criar seu primeiro ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index#create-your-clickpipe). Para perguntas comuns sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).

@@ -205,6 +205,13 @@ def create_clickhouse_glue_database(
         "region": "us-east-1",
     }
 
+    # The Glue catalog API client is subject to the server-managed credential restriction. Unless the session
+    # opts in via `s3_allow_server_credentials_in_user_queries`, the creator must pass explicit catalog
+    # credentials instead of falling back to the server's AWS identity (moto accepts any non-empty values).
+    if not query_settings.get("s3_allow_server_credentials_in_user_queries"):
+        settings["aws_access_key_id"] = minio_access_key
+        settings["aws_secret_access_key"] = minio_secret_key
+
     settings.update(additional_settings)
 
     credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
@@ -218,6 +225,7 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            **query_settings,
         },
     )
 
@@ -321,6 +329,10 @@ def test_no_secrets_in_logs(started_cluster):
         "warehouse": "test",
         "storage_endpoint": "http://minio1:9001/warehouse-glue",
         "region": "us-east-1",
+        # The Glue catalog API client is restricted; pass explicit catalog credentials instead of relying on
+        # the server's AWS identity (moto accepts any non-empty values).
+        "aws_access_key_id": minio_access_key,
+        "aws_secret_access_key": minio_secret_key,
     }
 
     qid_db = uuid.uuid4().hex
@@ -1164,7 +1176,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "wrongsession",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1190,7 +1202,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1242,7 +1254,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "wrong_external_id",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1268,7 +1280,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "miniexternalid",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1329,6 +1341,7 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1392,3 +1405,73 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
     )
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluster):
+    # A Glue `DataLakeCatalog` whose catalog credentials are server-managed (no explicit keys -> resolved from
+    # the server environment) is created under the per-session opt-in. After a restart it is reloaded under the
+    # default restriction (`s3_allow_server_credentials_in_user_queries = 0`); the server must still start, but
+    # the catalog is left unavailable (governed by `s3_load_table_anonymously_if_credentials_restricted`) rather
+    # than silently reusing the server identity or aborting startup.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_server_cred_restart_{uuid.uuid4().hex}"
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        with_credentials=False,
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    # Works while the creating session allows server-managed credentials for the catalog.
+    node.query(
+        f"SHOW TABLES FROM {db_name}",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    node.restart_clickhouse()
+
+    # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
+    assert node.query("SELECT 1").strip() == "1"
+    # Reloaded under the default restriction, the catalog is unavailable. Querying a table goes through the
+    # catalog client (`getCatalog`) and reports the restriction, rather than silently reusing the server
+    # identity. (`SHOW TABLES` intentionally swallows catalog errors so `system.tables` does not fail, so it
+    # is not a reliable probe here.)
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster):
+    # A user ATTACH DATABASE of a catalog that resolves server-managed credentials must stay fail-closed for a
+    # restricted user. The catalog is built lazily (on first access, not at ATTACH), so the ATTACH itself
+    # succeeds but the database is inaccessible: the first query against it is refused because the catalog
+    # resolves server-managed credentials that are restricted for user queries.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_user_attach_{uuid.uuid4().hex}"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+
+    create_clickhouse_glue_database(
+        started_cluster, node, db_name, with_credentials=False, query_settings=allow
+    )
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # Re-attaching as a user query under the default restriction succeeds (lazy), but the database is
+    # fail-closed: accessing a table goes through the catalog client (`getCatalog`), which resolves the
+    # restricted server credentials and is refused. (`SHOW TABLES` intentionally swallows catalog errors, so it
+    # is not a reliable probe.)
+    node.query(f"ATTACH DATABASE {db_name}")
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    # With the opt-in the database is usable again, so it can be cleaned up.
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
