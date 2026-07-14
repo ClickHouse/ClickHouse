@@ -24,6 +24,7 @@
 #include <azure/core/url.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #endif
+#include <base/defines.h>
 
 #include <Poco/URI.h>
 #include <algorithm>
@@ -467,7 +468,7 @@ namespace
     void validateStringArgsForNormalizedIdentity(const BackupInfo & info)
     {
         for (size_t i = 0; i != info.args.size(); ++i)
-            (void)getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
+            UNUSED(getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i));
     }
 
     void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, const ContextPtr & context)
@@ -979,7 +980,7 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     if (!context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", id_arg);
 
-    (void)getParamsMapFromAST(kv_args, context);
+    UNUSED(getParamsMapFromAST(kv_args, context));
 
     ASTs collection_args;
     collection_args.reserve(1 + kv_args.size());
