@@ -324,6 +324,14 @@ void MergeTreeSink::finishDelayedChunk()
             }
         }
 
+        /// If `optimize_on_insert` collapsed the rewritten block to empty, no part was created
+        /// (`partition.temp_part->part` is null after the retry loop broke out of the collapse branch),
+        /// so there is nothing to log. This mirrors `master`, where the loop above simply breaks without
+        /// adding a `system.part_log` row for a part that does not exist, and avoids dereferencing a null
+        /// part in `PartLog::addNewPartsImpl`.
+        if (!partition.temp_part->part)
+            continue;
+
         /// The `group_switcher` above has to be destroyed before taking the snapshot, so that the
         /// thread is detached from the group and its final ProfileEvents and elapsed time (taskstats,
         /// `OSCPUVirtualTimeMicroseconds`, `RealTimeMicroseconds`, ...) are flushed into the group's
