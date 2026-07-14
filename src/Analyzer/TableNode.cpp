@@ -122,7 +122,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
     if (table_expression_modifiers)
-        storage_snapshot = storage_snapshot->cloneWithModifiers(*table_expression_modifiers);
+        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
 }
 
 void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
@@ -130,7 +130,7 @@ void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expre
     table_expression_modifiers = std::move(table_expression_modifiers_value);
 
     if (storage_snapshot)
-        storage_snapshot = storage_snapshot->cloneWithModifiers(*table_expression_modifiers);
+        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
