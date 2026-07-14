@@ -1,3 +1,4 @@
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
@@ -28,6 +29,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_delete[];
+}
+
 #if USE_AWS_S3
 
 namespace S3AuthSetting
@@ -42,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -72,8 +79,15 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         try
         {
             doWithRetries([&]{
+                fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
+                });
                 object_storage->removeObjectsIfExist(objects);
             });
+            /// Only report the objects as removed when the whole batch succeeded.
+            /// On failure the batch may have been partially removed, so publishing the full
+            /// count here would turn the profile event into a false "all cleaned up" signal.
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
         catch (...)
         {
@@ -84,7 +98,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
@@ -114,6 +127,10 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             doWithRetries([&]{
                 object_storage->tagObjects(objects, tag_key, tag_value);
             });
+            /// Only report the objects as tagged when the whole batch succeeded.
+            /// Objects are tagged one by one, so a later failure can leave earlier objects
+            /// already tagged; publishing the full count on failure would misreport the batch.
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
         catch (...)
         {
@@ -124,7 +141,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
 #else
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
