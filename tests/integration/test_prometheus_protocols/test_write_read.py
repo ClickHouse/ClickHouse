@@ -373,3 +373,42 @@ def test_remote_write_dynamic_routing_setting_can_be_altered():
         )
     finally:
         node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_api_v1_url_path_routing_rejects_legacy_fixed_prefix():
+    # Regression test: a `prometheus_api_v1` handler that enables URL path routing on the legacy fixed
+    # `/prometheus/api/v1` prefix must reject a request to `/prometheus/api/v1/write` (the path does not
+    # match `/{database}/{table}/api/v1/write`) instead of silently reinterpreting it as database
+    # `prometheus`, table `api` and inserting into an opted-in `prometheus.api` table.
+    node.query("CREATE DATABASE IF NOT EXISTS prometheus")
+    node.query("DROP TABLE IF EXISTS prometheus.api SYNC")
+    node.query(
+        "CREATE TABLE prometheus.api ENGINE=TimeSeries "
+        "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+    )
+
+    try:
+        timestamp = time.time()
+        write_request = convert_time_series_to_protobuf(
+            [({"__name__": "legacy_prefix_route_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+        )
+
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            "prometheus/api/v1/write",
+            write_request,
+        )
+
+        assert response.status_code == requests.codes.bad_request
+        assert "does not match the expected dynamic routing shape" in response.text
+        assert (
+            node.query(
+                "SELECT count() FROM timeSeriesTags(prometheus.api) "
+                "WHERE metric_name = 'legacy_prefix_route_metric'"
+            ).strip()
+            == "0"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS prometheus.api SYNC")
+        node.query("DROP DATABASE IF EXISTS prometheus SYNC")

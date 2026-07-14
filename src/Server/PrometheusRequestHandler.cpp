@@ -67,6 +67,27 @@ namespace TimeSeriesSetting
 namespace
 {
 #if USE_PROMETHEUS_PROTOBUFS
+    /// Returns the fixed path segments that must follow the `/{database}/{table}` prefix
+    /// for the endpoint that this handler serves with dynamic routing:
+    ///   - `remote_write`      -> `/{database}/{table}/write`
+    ///   - `prometheus_api_v1` -> `/{database}/{table}/api/v1/write`
+    /// Dynamic routing is only supported for these two handler types (and, for `prometheus_api_v1`,
+    /// only for the remote-write endpoint).
+    std::vector<String> getDynamicRoutingPathSuffix(const PrometheusRequestHandlerConfig & config)
+    {
+        switch (config.type)
+        {
+            case PrometheusRequestHandlerConfig::Type::Write:
+                return {"write"};
+            case PrometheusRequestHandlerConfig::Type::APIv1:
+                return {"api", "v1", "write"};
+            default:
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL path routing is supported only for Prometheus remote-write handlers");
+        }
+    }
+
     QualifiedTableName resolveTableNameFromRequest(
         const PrometheusRequestHandlerConfig & config,
         const HTTPServerRequest & request)
@@ -74,17 +95,34 @@ namespace
         if (!config.enable_table_name_url_routing)
             return config.time_series_table_name;
 
+        /// The dynamic routing contract requires the request path to be exactly `/{database}/{table}/<suffix>`,
+        /// so that the first two segments unambiguously identify the target table. Validate the shape (and the
+        /// trailing suffix) instead of blindly using the first two segments: otherwise a fixed-table URL such as
+        /// `/prometheus/api/v1/write` (from a legacy `<url_prefix>/prometheus/api/v1</url_prefix>` handler that
+        /// enabled routing by mistake) would be silently reinterpreted as `database = "prometheus", table = "api"`.
+        const auto expected_suffix = getDynamicRoutingPathSuffix(config);
+
         Poco::URI uri(request.getURI());
         std::vector<String> path_segments;
         uri.getPathSegments(path_segments);
-        if (path_segments.size() < 2)
+
+        bool shape_matches = (path_segments.size() == expected_suffix.size() + 2);
+        for (size_t i = 0; shape_matches && (i < expected_suffix.size()); ++i)
+            shape_matches = (path_segments[i + 2] == expected_suffix[i]);
+
+        if (!shape_matches)
+        {
+            String expected_path = "/{database}/{table}";
+            for (const auto & segment : expected_suffix)
+                expected_path += "/" + segment;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "URL path '{}' does not contain a database and a table name",
-                uri.getPath());
+                "URL path '{}' does not match the expected dynamic routing shape '{}'",
+                uri.getPath(), expected_path);
+        }
 
-        String database = path_segments[0];
-        String table = path_segments[1];
+        const String & database = path_segments[0];
+        const String & table = path_segments[1];
         if (database.empty() || table.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
