@@ -5,6 +5,7 @@
 
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -16,30 +17,37 @@ namespace ErrorCodes
 
 class ZooKeeperWithFaultInjection;
 
-/// Keeper paths of processing nodes and bucket locks owned by executions running
-/// in this process. The TTL-based cleanup thread must not delete these: losing a
-/// live execution's node fails its commit ("Transaction failed: No node"), and
-/// losing a live bucket lock lets another server acquire the same bucket.
+/// Keeper paths of processing nodes and bucket locks owned (or about to be owned)
+/// by executions running in this process. The TTL-based cleanup thread must not
+/// delete these: losing a live execution's node fails its commit ("Transaction
+/// failed: No node"), and losing a live bucket lock lets another server acquire
+/// the same bucket.
 ///
-/// Best-effort: registration happens after the Keeper create succeeds, so a
-/// single-RTT window remains where a node created locally between the cleanup's
-/// revalidation read and its remove is not yet registered. Hitting it requires a
-/// remote actor to delete the stale node in the same instant. Consequences: for a
-/// processing node, a transient commit failure and a retry (not data loss); for a
-/// bucket lock, ordered-mode bucket exclusivity is silently lost until the holder
-/// releases. Register-before-create fencing that closes the window is a follow-up.
+/// Fencing protocol (closes the revalidate/remove vs create race completely for
+/// local owners): a creator registers the path with `tryAdd` BEFORE issuing the
+/// Keeper create and backs off when it fails; the cleanup wraps its revalidate +
+/// remove window in `tryLockForRemoval`/`unlockRemoval`, which fails while the
+/// path is registered. Both sides only try — nobody blocks.
 class ObjectStorageQueueLocalActiveNodes
 {
 public:
-    void add(const std::string & path);
+    /// Register intent to own `path`. Returns false while the cleanup holds a
+    /// removal lock on it — the caller must not create the node and retry later.
+    bool tryAdd(const std::string & path);
     void remove(const std::string & path);
     bool contains(const std::string & path) const;
+
+    /// Exclusive lock for the cleanup's revalidate+remove window.
+    /// Fails while `path` is registered to a live local owner.
+    bool tryLockForRemoval(const std::string & path);
+    void unlockRemoval(const std::string & path);
 
 private:
     mutable std::mutex mutex;
     /// Reference-counted: separate owners (e.g. an uncertain-commit straggler and
     /// a retry, or sibling tables on the same keeper path) can overlap.
     std::unordered_map<std::string, size_t> path_counts;
+    std::unordered_set<std::string> removal_locks;
 };
 using ObjectStorageQueueLocalActiveNodesPtr = std::shared_ptr<ObjectStorageQueueLocalActiveNodes>;
 
@@ -271,11 +279,17 @@ protected:
     LoggerPtr log;
 
     /// Flip `created_processing_node` and keep `local_active_nodes` in sync.
-    /// Both are idempotent per object.
     void setProcessingNodeCreated();
     void clearProcessingNodeCreated();
 
+    /// Register in `local_active_nodes` BEFORE the processing node is created in
+    /// Keeper (see the fencing protocol above). False = cleanup is inspecting the
+    /// path right now, back off. Both are idempotent per object.
+    bool tryRegisterInLocalActiveNodes();
+    void unregisterFromLocalActiveNodes();
+
     ObjectStorageQueueLocalActiveNodesPtr local_active_nodes;
+    bool registered_in_local_active_nodes = false;
     /// Whether processing node was created by us.
     bool created_processing_node = false;
     /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):

@@ -123,10 +123,13 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
     return metadata;
 }
 
-void ObjectStorageQueueLocalActiveNodes::add(const std::string & path)
+bool ObjectStorageQueueLocalActiveNodes::tryAdd(const std::string & path)
 {
     std::lock_guard lock(mutex);
+    if (removal_locks.contains(path))
+        return false;
     ++path_counts[path];
+    return true;
 }
 
 void ObjectStorageQueueLocalActiveNodes::remove(const std::string & path)
@@ -146,6 +149,20 @@ bool ObjectStorageQueueLocalActiveNodes::contains(const std::string & path) cons
 {
     std::lock_guard lock(mutex);
     return path_counts.contains(path);
+}
+
+bool ObjectStorageQueueLocalActiveNodes::tryLockForRemoval(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    if (path_counts.contains(path))
+        return false;
+    return removal_locks.insert(path).second;
+}
+
+void ObjectStorageQueueLocalActiveNodes::unlockRemoval(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    removal_locks.erase(path);
 }
 
 ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
@@ -174,33 +191,52 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 {
 }
 
+bool ObjectStorageQueueIFileMetadata::tryRegisterInLocalActiveNodes()
+{
+    if (registered_in_local_active_nodes)
+        return true;
+    if (local_active_nodes && !local_active_nodes->tryAdd(processing_node_path))
+        return false;
+    registered_in_local_active_nodes = true;
+    return true;
+}
+
+void ObjectStorageQueueIFileMetadata::unregisterFromLocalActiveNodes()
+{
+    if (!registered_in_local_active_nodes)
+        return;
+    registered_in_local_active_nodes = false;
+    if (local_active_nodes)
+        local_active_nodes->remove(processing_node_path);
+}
+
 void ObjectStorageQueueIFileMetadata::setProcessingNodeCreated()
 {
     if (created_processing_node)
         return;
     created_processing_node = true;
-    if (local_active_nodes)
-        local_active_nodes->add(processing_node_path);
+    /// The fencing protocol registered the path before the node was created;
+    /// this only covers flows that did not pass through the registration.
+    [[maybe_unused]] bool registered = tryRegisterInLocalActiveNodes();
+    chassert(registered);
 }
 
 void ObjectStorageQueueIFileMetadata::clearProcessingNodeCreated()
 {
-    if (!created_processing_node)
-        return;
     created_processing_node = false;
-    if (local_active_nodes)
-        local_active_nodes->remove(processing_node_path);
+    unregisterFromLocalActiveNodes();
 }
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata");
+
+    /// Unregister even when the removal below fails or never runs: the owner is
+    /// gone, so the TTL cleanup must be able to reap the node.
+    SCOPE_EXIT({ unregisterFromLocalActiveNodes(); });
+
     if (created_processing_node)
     {
-        /// Unregister even when the removal below fails: the owner is gone,
-        /// so the TTL cleanup must be able to reap the node.
-        SCOPE_EXIT({ clearProcessingNodeCreated(); });
-
         std::string current_exception;
         if (file_status->getException().empty())
         {
@@ -355,6 +391,12 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     if (!processing_lock.try_lock())
         return {};
 
+    if (!tryRegisterInLocalActiveNodes())
+    {
+        LOG_TEST(log, "Processing node path {} is being inspected by the cleanup, will retry later", processing_node_path);
+        return false;
+    }
+
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
@@ -393,6 +435,12 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         return std::nullopt;
     }
 
+    if (!tryRegisterInLocalActiveNodes())
+    {
+        LOG_TEST(log, "Processing node path {} is being inspected by the cleanup, will retry later", processing_node_path);
+        return std::nullopt;
+    }
+
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
@@ -411,6 +459,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
     else
     {
         chassert(!created_processing_node);
+        unregisterFromLocalActiveNodes();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
