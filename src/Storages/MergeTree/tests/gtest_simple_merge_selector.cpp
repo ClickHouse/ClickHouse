@@ -262,12 +262,18 @@ TEST(SimpleMergeSelector, SmallPartsMinCountReducesWriteAmplification)
               << " max_parts=" << with_small.max_parts
               << " final_parts=" << with_small.final_parts << std::endl;
 
-    /// The new setting should reduce write amplification (or at least not increase it significantly)
-    /// and strictly reduce the number of merges. The simulation is deterministic, so a strict
-    /// assertion actually guards the PR's merge-count reduction claim: if the setting ever stops
-    /// affecting the simulation, this test must fail rather than silently pass.
-    EXPECT_LE(with_small.writeAmplification(), baseline.writeAmplification() + 0.5)
-        << "Small parts restriction should not significantly increase write amplification";
+    /// The simulation is fully deterministic (integer part sizes, no randomness), so both
+    /// results are bit-reproducible. Pin them to the measured values with a narrow tolerance
+    /// instead of a wide upper bound: this protects the PR's "negligible write amplification
+    /// change" contract. The previous `baseline + 0.5` bound stayed green even if this workload
+    /// drifted to e.g. 3.8, whereas these assertions fail on any change larger than 0.01. The
+    /// setting trades a tiny write-amplification increase (3.31 -> 3.325) for a large merge-count
+    /// reduction (42 -> 26). If the selector or the simulation legitimately changes, update the
+    /// expected values here rather than widening the tolerance.
+    EXPECT_NEAR(baseline.writeAmplification(), 3.31, 0.01)
+        << "Baseline write amplification changed; update the expected value if this is intended";
+    EXPECT_NEAR(with_small.writeAmplification(), 3.325, 0.01)
+        << "Small parts restriction changed write amplification beyond the expected ~3.325";
     EXPECT_LT(with_small.num_merges, baseline.num_merges)
         << "Small parts restriction should reduce merge count";
 }
