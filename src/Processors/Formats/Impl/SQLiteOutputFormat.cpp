@@ -3,6 +3,7 @@
 #if USE_SQLITE
 
 #    include <Columns/IColumn.h>
+#    include <Databases/SQLite/SQLiteUtils.h>
 #    include <DataTypes/DataTypeLowCardinality.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/IDataType.h>
@@ -14,7 +15,6 @@
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Processors/Formats/Impl/SQLiteCommon.h>
 #    include <Common/NaNUtils.h>
-#    include <Common/quoteString.h>
 
 #    include <sys/stat.h>
 
@@ -31,7 +31,7 @@ namespace
 
 using namespace SQLiteFormatImpl;
 
-SQLitePtr openSQLiteDatabaseForOutput(WriteBuffer & out, bool & write_serialized_database_to_output)
+SQLiteFormatImpl::SQLitePtr openSQLiteDatabaseForOutput(WriteBuffer & out, bool & write_serialized_database_to_output)
 {
     if (auto * file_out = dynamic_cast<WriteBufferFromFile *>(&out))
     {
@@ -80,7 +80,7 @@ String makeCreateTableQuery(const Block & header, const String & table_name)
 {
     WriteBufferFromOwnString query;
     writeCString("CREATE TABLE ", query);
-    writeString(doubleQuoteString(table_name), query);
+    writeString(quoteSQLiteIdentifier(table_name), query);
     writeCString(" (", query);
 
     for (size_t i = 0; i != header.columns(); ++i)
@@ -89,7 +89,7 @@ String makeCreateTableQuery(const Block & header, const String & table_name)
             writeCString(", ", query);
 
         const auto & column = header.getByPosition(i);
-        writeString(doubleQuoteString(column.name), query);
+        writeString(quoteSQLiteIdentifier(column.name), query);
         writeChar(' ', query);
         writeString(sqliteTypeName(column.type), query);
 
@@ -105,14 +105,14 @@ String makeInsertQuery(const Block & header, const String & table_name)
 {
     WriteBufferFromOwnString query;
     writeCString("INSERT INTO ", query);
-    writeString(doubleQuoteString(table_name), query);
+    writeString(quoteSQLiteIdentifier(table_name), query);
     writeCString(" (", query);
 
     for (size_t i = 0; i != header.columns(); ++i)
     {
         if (i)
             writeCString(", ", query);
-        writeString(doubleQuoteString(header.getByPosition(i).name), query);
+        writeString(quoteSQLiteIdentifier(header.getByPosition(i).name), query);
     }
 
     writeCString(") VALUES (", query);
@@ -279,7 +279,7 @@ private:
     FormatSettings settings;
     std::vector<SerializationPtr> serializations;
     bool write_serialized_database_to_output = false;
-    SQLitePtr sqlite_db;
+    SQLiteFormatImpl::SQLitePtr sqlite_db;
     SQLiteStatementPtr insert_statement{nullptr, sqlite3_finalize};
 };
 

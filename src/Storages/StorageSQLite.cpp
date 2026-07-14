@@ -3,7 +3,6 @@
 #if USE_SQLITE
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -87,21 +86,6 @@ bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
     }
 
     return true;
-}
-
-String quoteSQLiteIdentifier(std::string_view identifier)
-{
-    WriteBufferFromOwnString quoted;
-    writeChar('"', quoted);
-    for (char c : identifier)
-    {
-        if (c == '"')
-            writeCString("\"\"", quoted);
-        else
-            writeChar(c, quoted);
-    }
-    writeChar('"', quoted);
-    return quoted.str();
 }
 
 }

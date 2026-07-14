@@ -7,11 +7,16 @@
 #include <Interpreters/Context_fwd.h>
 #include <sqlite3.h>
 
+#include <string_view>
+
 
 namespace DB
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
+
+/// Quote an SQLite identifier. Embedded double quotes are doubled, while backslashes remain literal.
+String quoteSQLiteIdentifier(std::string_view identifier);
 
 /// `allow_create` controls whether a missing database file is implicitly created (as `sqlite3_open` does).
 /// Pass `false` when reopening a persisted table whose file was unavailable at load time, so that a still-missing

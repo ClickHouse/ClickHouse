@@ -3,6 +3,7 @@
 #if USE_SQLITE
 
 #    include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#    include <Databases/SQLite/SQLiteUtils.h>
 #    include <Formats/FormatFactory.h>
 #    include <Formats/SchemaInferenceUtils.h>
 #    include <IO/WriteBufferFromString.h>
@@ -12,7 +13,6 @@
 #    include <Processors/Formats/ISchemaReader.h>
 #    include <Processors/Sources/SQLiteStatementReader.h>
 #    include <Processors/Formats/Impl/SQLiteCommon.h>
-#    include <Common/quoteString.h>
 
 namespace DB
 {
@@ -36,11 +36,11 @@ String makeSelectQuery(const Block & header, const String & table_name)
     {
         if (i)
             writeCString(", ", query);
-        writeString(doubleQuoteString(header.getByPosition(i).name), query);
+        writeString(quoteSQLiteIdentifier(header.getByPosition(i).name), query);
     }
 
     writeCString(" FROM ", query);
-    writeString(doubleQuoteString(table_name), query);
+    writeString(quoteSQLiteIdentifier(table_name), query);
     return query.str();
 }
 

@@ -17,6 +17,22 @@ namespace ErrorCodes
 
 static std::mutex init_sqlite_db_mutex;
 
+String quoteSQLiteIdentifier(std::string_view identifier)
+{
+    String result;
+    result.reserve(identifier.size() + 2);
+    result += '"';
+    for (char c : identifier)
+    {
+        if (c == '"')
+            result += "\"\"";
+        else
+            result += c;
+    }
+    result += '"';
+    return result;
+}
+
 static void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
