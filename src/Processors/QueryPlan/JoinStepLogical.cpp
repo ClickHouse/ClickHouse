@@ -845,6 +845,20 @@ struct IEJoinPlanDescription
     std::array<JoinConditionOperator, 2> operators = {};
 };
 
+/// Whether SQL comparison of the type diverges from the `IColumn::compareAt` total order the
+/// IEJoin operator matches by: comparison of `Tuple` decomposes elementwise (IEEE NaN, NULL
+/// propagation), and comparison of `Dynamic` unwraps the underlying values. Other types
+/// (including `Array`) compare via `compareAt` itself; the operator handles the top-level
+/// NULL/NaN divergence by excluding such rows from matching.
+static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t); };
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 /// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
 /// so that the caller falls back to the generic handling (a CROSS join with a filter).
@@ -881,7 +895,7 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         const auto & [predicate_op, lhs, rhs] = *inequality;
         const auto & lhs_type = lhs.getType();
         const auto & rhs_type = rhs.getType();
-        if (!join_settings.allow_dynamic_type_in_join_keys && (hasDynamicType(lhs_type) || hasDynamicType(rhs_type)))
+        if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
             return {};
         if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
             return {};

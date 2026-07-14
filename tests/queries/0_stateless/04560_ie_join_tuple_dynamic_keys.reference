@@ -1,0 +1,8 @@
+tuple routed	0
+tuple inner result	1
+nullable tuple routed	0
+nullable tuple result	1
+dynamic routed	0
+dynamic result	1
+tuple residual routed	1
+tuple residual semi	1

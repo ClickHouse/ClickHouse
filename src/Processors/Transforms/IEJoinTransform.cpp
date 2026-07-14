@@ -54,7 +54,7 @@ UInt64 encodeSignedKey(Int64 value)
 /// NaNs and greater than all numbers, and -0.0 as equal to +0.0. The plain total-order bit trick
 /// preserves neither (a negative NaN would sort below -inf), so every NaN maps to the greatest
 /// encoding and -0.0 is canonicalized to +0.0 before the trick. (NaN-keyed rows never enter the
-/// union - the validity mask in `buildJoinState` excludes them - so the NaN mapping is defensive.)
+/// union - the validity mask in `materializeSide` excludes them - so the NaN mapping is defensive.)
 UInt64 encodeFloatKey(Float64 value)
 {
     if (isNaN(value))
@@ -307,20 +307,37 @@ bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
     return key_order[1].strict ? oriented > 0 : oriented >= 0;
 }
 
-void IEJoinAlgorithm::buildJoinState()
+void IEJoinAlgorithm::runBuildStage()
 {
-    join_state_built = true;
-
-    std::array<SideValidity, 2> validity;
-    for (size_t side = 0; side < 2; ++side)
-        validity[side] = materializeSide(side);
-    num_union_entries = validity[0].num_valid + validity[1].num_valid;
-
-    auto encoded_keys = encodeKeys();
-    buildL1(validity, encoded_keys[0]);
-    buildL2(validity, encoded_keys[1]);
-
-    bit_array.resize_fill((num_union_entries + 63) / 64);
+    switch (build_stage)
+    {
+        case BuildStage::MaterializeLeft:
+            build_validity[0] = materializeSide(0);
+            build_stage = BuildStage::MaterializeRight;
+            break;
+        case BuildStage::MaterializeRight:
+            build_validity[1] = materializeSide(1);
+            num_union_entries = build_validity[0].num_valid + build_validity[1].num_valid;
+            build_stage = BuildStage::EncodeKeys;
+            break;
+        case BuildStage::EncodeKeys:
+            build_encoded_keys = encodeKeys();
+            build_stage = BuildStage::BuildL1;
+            break;
+        case BuildStage::BuildL1:
+            buildL1(build_validity, build_encoded_keys[0]);
+            build_stage = BuildStage::BuildL2;
+            break;
+        case BuildStage::BuildL2:
+            buildL2(build_validity, build_encoded_keys[1]);
+            bit_array.resize_fill((num_union_entries + 63) / 64);
+            build_validity = {};
+            build_encoded_keys = {};
+            build_stage = BuildStage::Done;
+            break;
+        case BuildStage::Done:
+            break;
+    }
 }
 
 /// Concatenate the accumulated chunks into full (non-replicated) columns of the header's layout.
@@ -1162,8 +1179,12 @@ IMergingAlgorithm::Status IEJoinAlgorithm::merge()
     else if (!source_finished[1])
         return Status(1);
 
-    if (!join_state_built)
-        buildJoinState();
+    if (build_stage != BuildStage::Done)
+    {
+        runBuildStage();
+        /// An empty non-final status: the executor observes cancellation between the stages.
+        return Status(Chunk());
+    }
 
     if (produce_done)
         return Status({}, true);

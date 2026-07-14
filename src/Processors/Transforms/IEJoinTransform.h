@@ -99,9 +99,21 @@ public:
     MergedStats getMergedStats() const override;
 
 private:
-    /// Materialize both sides and build the join state: the L1 union, the L2 permutation and
-    /// the bit array. Runs the stages below in order.
-    void buildJoinState();
+    /// Stages of building the join state (the L1 union, the L2 permutation and the bit array),
+    /// in execution order. One stage runs per merge() call, so that between the whole-input
+    /// passes control returns to the executor, which observes cancellation.
+    enum class BuildStage : uint8_t
+    {
+        MaterializeLeft,
+        MaterializeRight,
+        EncodeKeys,
+        BuildL1,
+        BuildL2,
+        Done,
+    };
+
+    /// Run the stage `build_stage` points at and advance it.
+    void runBuildStage();
 
     /// Rows admitted to the union: byte mask over the side's rows (empty when every row is
     /// valid) and the count of valid rows.
@@ -249,7 +261,7 @@ private:
     std::array<ColumnPtr, 2> last_input_key_column;
 #endif
 
-    /// Populated by buildJoinState:
+    /// Populated by the build stages (see `runBuildStage`):
 
     /// All columns of each side, result rows are gathered from them.
     std::array<Columns, 2> side_columns;
@@ -291,9 +303,13 @@ private:
     /// One past the highest set bit; lets scans stop instead of walking empty words to the end.
     size_t bit_array_end = 0;
 
+    BuildStage build_stage = BuildStage::MaterializeLeft;
+    /// Intermediate build products handed between the stages; freed when the build completes.
+    std::array<SideValidity, 2> build_validity;
+    std::array<PaddedPODArray<UInt64>, 2> build_encoded_keys;
+
     /// Pair-scan state; all of it is resumable, so a call may stop at any point (block full,
     /// work budget exhausted) and the next call continues exactly where it stopped.
-    bool join_state_built = false;
     bool produce_done = false;
     /// L2 position whose entry the scan currently processes.
     size_t l2_cursor = 0;
