@@ -480,6 +480,10 @@ If <a href="/reference/settings/server-settings/settings#logger" target="_blank"
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
+:::note
+In recent versions of ClickHouse the `Running binary search on index range`, `Found (LEFT) boundary mark`, and `Found (RIGHT) boundary mark` messages are logged at the `test` level (the highest verbosity) rather than at `trace`. To see them, raise the log verbosity to `test` (for example, `SET send_logs_level = 'test'` on the client, or `<logger><level>test</level></logger>` in the server configuration). The remaining lines shown above are still logged at `trace`.
+:::
+
 We can see in the trace log above, that one mark out of the 1083 existing marks satisfied the query.
 
 <Accordion title="Trace Log Details">
