@@ -13,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -54,7 +55,7 @@ String testEncodeRow(const Columns & cols, size_t row, size_t max_size = 4096)
     row_cols.reserve(cols.size());
     for (const auto & c : cols)
         row_cols.push_back(c->cut(row, 1));
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     UniqueKeyEncoding::encodeBlock(row_cols, /*permutation=*/nullptr, max_size, out);
     return out.at(0);
 }
@@ -483,7 +484,7 @@ void expectBlockEncodesAs(const std::vector<String> & inputs)
     for (const auto & s : inputs)
         col->insert(Field(s));
     Columns cols{std::move(col)};
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/4096, encoded);
     ASSERT_EQ(encoded.size(), inputs.size());
     for (size_t r = 0; r < inputs.size(); ++r)
@@ -591,7 +592,7 @@ TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
     col->insertData("\x00""1234567", N);
     Columns cols{std::move(col)};
 
-    std::vector<String> got;
+    VectorWithMemoryTracking<String> got;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/4096, got);
     ASSERT_EQ(got.size(), 4u);
 
@@ -872,7 +873,7 @@ TEST(UniqueKeyEncoding, EncodeBlockBasic)
     col->insert(Field(UInt64(3)));
 
     Columns cols{std::move(col)};
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 4096, encoded);
 
     ASSERT_EQ(encoded.size(), 3u);
@@ -889,7 +890,7 @@ TEST(UniqueKeyEncoding, EncodeBlockSizeLimitRejection)
 
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 100, out), DB::Exception);
 
     /// Sufficient limit — both rows should encode successfully.
@@ -907,7 +908,7 @@ TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
     Columns cols{std::move(col)};
 
     IColumn::Permutation perm{2, 0, 1};
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     EXPECT_NO_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out));
     ASSERT_EQ(out.size(), 3u);
 }
@@ -918,7 +919,7 @@ TEST(UniqueKeyEncoding, EncodeBlockEmptyBlock)
     auto col = ColumnUInt64::create();
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     EXPECT_TRUE(out.empty());
 }
@@ -936,7 +937,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchUInt641M)
         col->insert(Field(rng()));
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -960,7 +961,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchString321M)
     }
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -986,7 +987,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
     }
     Columns cols{std::move(col_u), std::move(col_s)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(

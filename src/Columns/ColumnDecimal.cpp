@@ -712,6 +712,24 @@ void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
     }
 }
 
+template <is_decimal T>
+void ColumnDecimal<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation) const
+{
+    if (permutation)
+    {
+        for (size_t r = 0; r < num_rows; ++r)
+            serializeAsComparable((*permutation)[r], out[r]);
+    }
+    else
+    {
+        for (size_t r = 0; r < num_rows; ++r)
+            serializeAsComparable(r, out[r]);
+    }
+}
+
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
