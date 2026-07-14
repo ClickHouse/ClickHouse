@@ -341,3 +341,41 @@ ALTER TABLE dist_over_tf RENAME COLUMN arr TO arr2; -- { serverError ALTER_OF_CO
 ALTER TABLE dist_over_tf DROP COLUMN arr; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'dist_over_tf' ORDER BY name;
 DROP TABLE dist_over_tf;
+
+-- The target table function is bound to the current database at CREATE time: `currentDatabase()` inside it is
+-- replaced with its value, unqualified table identifiers in a nested subquery are qualified, and the qualified
+-- form is persisted - the same normalization `CREATE VIEW` applies to its stored SELECT, and the table-function
+-- analogue of how the classic form evaluates its `database` argument to a literal. Otherwise the stored target
+-- would be resolved against the current database of whatever session queries the table, so the same table would
+-- silently read different data depending on the caller (or fail on a remote shard, where the session database
+-- is the connection default). Verified by querying from a session whose current database is a different one
+-- holding decoy tables of the same name, over both the local fast path and the serialized shard query
+-- (`prefer_localhost_replica = 0`), with both analyzers. The DETACH/ATTACH round-trip from the other database
+-- checks that re-running the normalization on the already-qualified persisted form is a no-op.
+CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO bind_src VALUES (1), (2), (3);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^bind_src$'));
+CREATE TABLE dist_over_tf_subq ENGINE = Distributed(test_shard_localhost, numbers(assumeNotNull((SELECT count() FROM bind_src))));
+SHOW CREATE TABLE dist_over_tf;
+SHOW CREATE TABLE dist_over_tf_subq;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.bind_src VALUES (100), (200), (300), (400), (500);
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 1;
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 0;
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 0, prefer_localhost_replica = 0;
+-- (analyzer only: evaluating a scalar subquery in a table function argument at read time is a pre-existing
+-- limitation of the legacy path, and without `assumeNotNull` of both paths - `cluster()` fails the same way)
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf_subq SETTINGS enable_analyzer = 1;
+DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+ATTACH TABLE {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+USE {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE dist_over_tf_subq;
+DROP TABLE dist_over_tf;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP TABLE bind_src;
