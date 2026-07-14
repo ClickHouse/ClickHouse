@@ -4,7 +4,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/join.hpp>
 
 #include <fmt/ranges.h>
 
@@ -20,24 +19,28 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 {
     Strings split;
     boost::split(split, version, [](char c){ return c == '.'; });
-    components.reserve(split.size());
     if (split.empty())
         throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
 
-    for (size_t i = 0; i < split.size(); ++i)
+    /// A version is 2 to 4 numeric components, optionally followed by a build flavour suffix
+    /// (e.g. "26.1.3.20001.altinityantalya"), which is only valid after a full 4-component version.
+    if (split.back() == "altinityantalya" || split.back() == "altinitystable")
+    {
+        suffix = split.back();
+        split.pop_back();
+        if (split.size() != 4)
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
+    }
+    else if (split.size() < 2 || split.size() > 4)
+        throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
+
+    components.reserve(split.size());
+    for (const auto & token : split)
     {
         size_t component = 0;
-        ReadBufferFromString buf(split[i]);
-        if (!tryReadIntText(component, buf) || !buf.eof())
-        {
-            /// Non-numeric component (e.g. "altinityantalya"): treat this and remaining parts as suffix.
-            /// Valid version must have at least one numeric component (e.g. "26.1.3.20001.altinityantalya").
-            if (components.empty())
-                throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-            Strings suffix_parts(split.begin() + i, split.end());
-            suffix = boost::algorithm::join(suffix_parts, ".");
-            break;
-        }
+        ReadBufferFromString buf(token);
+        if (token.empty() || !tryReadIntText(component, buf) || !buf.eof())
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
         components.push_back(component);
     }
 }
