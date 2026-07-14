@@ -34,7 +34,7 @@ $CLICKHOUSE_LOCAL --query "
     ),
     old_antalya_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_settings_26_1_6_20001_antalya.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_settings_26_3_13_20001_antalya.tsv', 'TSV', 'name String, default String')
     ),
     old_merge_tree_settings AS
     (
