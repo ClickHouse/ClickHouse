@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: no-fasttest, distributed
+# no-fasttest: this test requires that nodes make authenticated connections
+# between each other, but shared secret auth requires encodeSHA256, which is not
+# available in the fast test build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
