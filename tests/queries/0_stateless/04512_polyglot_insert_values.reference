@@ -5,3 +5,6 @@
 --- boolean transpile (expect: 1 2) ---
 1	2
 SYNTAX_ERROR
+SYNTAX_ERROR
+--- no partial insert after rejected multi-statement (expect: 100 5) ---
+100	5

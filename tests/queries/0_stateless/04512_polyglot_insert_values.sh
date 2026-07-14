@@ -33,5 +33,12 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 # Multi-statement input is still rejected in polyglot dialect.
 $CLICKHOUSE_CLIENT $POLY -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"
 
+# A statement following inline INSERT ... VALUES data is also rejected cleanly (the whole
+# multi-statement buffer is transpiled at once, and the transpiler rejects it) rather than
+# being silently mis-executed or reaching the server as unread VALUES tail.
+$CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t VALUES (1); SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"
+echo "--- no partial insert after rejected multi-statement (expect: 100 5) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"
