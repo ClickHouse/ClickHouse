@@ -1,0 +1,15 @@
+-- Reader has SELECT on the view but not the base table: EXPLAIN is denied exactly as the SELECT is
+SELECT: ACCESS_DENIED
+EXPLAIN QUERY TREE: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN QUERY TREE count: ACCESS_DENIED
+SELECT (inline): ACCESS_DENIED
+EXPLAIN QUERY TREE (inline): ACCESS_DENIED
+-- Full user has SELECT on both the view and the base table: EXPLAIN matches SELECT and is allowed
+SELECT: OK
+EXPLAIN QUERY TREE: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN QUERY TREE count: OK
+-- Outsider has no access at all: EXPLAIN is denied
+EXPLAIN QUERY TREE: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED

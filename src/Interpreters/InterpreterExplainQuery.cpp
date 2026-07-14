@@ -583,6 +583,10 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
     return settings;
 }
 
+/// Forward declaration: `checkAccessRightsForQueryTree` recurses into non-inlined regular views through
+/// `resolveThenCheckAccessRights`, which in turn calls `checkAccessRightsForQueryTree` on the view body.
+void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context);
+
 /// `EXPLAIN QUERY TREE` (and `EXPLAIN SYNTAX` in the analyzer) resolve the query and dump table
 /// metadata such as column names and types. Unlike `EXPLAIN PLAN`, they do not build a query plan,
 /// so the access checks the planner performs in `prepareBuildQueryPlanForTableExpression` are skipped.
@@ -646,29 +650,51 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
             /// (`PlannerJoinTree::checkAccessRights` only guards this branch with `hasDatabase`).
             if (storage_id.hasDatabase())
                 scope_context->checkAccess(AccessType::SELECT, storage_id, column_names);
-            continue;
         }
-
-        /// For trivial queries like "SELECT count() FROM table" access is granted if at least one column is accessible.
-        /// This fallback runs even for empty-database table nodes: the planner enforces it unconditionally, and
-        /// `ContextAccess` resolves an empty database name to the current database, so skipping it here (as the
-        /// early `hasDatabase` guard used to) would let `count()`-style queries bypass the check.
-        auto access = scope_context->getAccess();
-        bool has_accessible_column = false;
-        for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
+        else
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// For trivial queries like "SELECT count() FROM table" access is granted if at least one column is accessible.
+            /// This fallback runs even for empty-database table nodes: the planner enforces it unconditionally, and
+            /// `ContextAccess` resolves an empty database name to the current database, so skipping it here (as the
+            /// early `hasDatabase` guard used to) would let `count()`-style queries bypass the check.
+            auto access = scope_context->getAccess();
+            bool has_accessible_column = false;
+            for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
             {
-                has_accessible_column = true;
-                break;
+                if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                {
+                    has_accessible_column = true;
+                    break;
+                }
             }
+
+            if (!has_accessible_column)
+                throw Exception(ErrorCodes::ACCESS_DENIED,
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                    scope_context->getUserName(),
+                    storage_id.getFullTableName());
         }
 
-        if (!has_accessible_column)
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                scope_context->getUserName(),
-                storage_id.getFullTableName());
+        /// The check above enforces `SELECT` on this table (or view) object. A regular, non-parameterized
+        /// view that is not inlined (`analyzer_inline_views = 0`, the default) stays as a single `TableNode`,
+        /// so its inner query — and the base tables it reads — never appear in `query_tree`. Real execution
+        /// still reads them: `StorageView::readImpl` builds the view's inner query under the view's own
+        /// context (the definer for `SQL SECURITY DEFINER`, the invoker otherwise, see
+        /// `StorageView::getViewSubqueryContext`) and checks the base-table privileges there. Reproduce that
+        /// inner pass so a user with `SELECT` on the view but not on its base tables is denied, exactly as a
+        /// plain `SELECT` through the view is. Parameterized views are expanded before the tree is built and
+        /// checked separately; inlined views already expose their base tables as `TableNode`s handled by the
+        /// loop above, so neither is double-checked here.
+        if (const auto * view = typeid_cast<const StorageView *>(table_node->getStorage().get());
+            view && !view->isParameterizedView())
+        {
+            const auto & view_snapshot = table_node->getStorageSnapshot();
+            auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
+            auto view_query_tree = buildQueryTree(view_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
+            QueryTreePassManager view_pass_manager(view_context);
+            addQueryTreePasses(view_pass_manager);
+            resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
+        }
     }
 }
 
