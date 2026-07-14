@@ -904,11 +904,14 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 auto * data_buffer = positions_stream->getDataBuffer();
                 {
                     ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
+                    const size_t pos_file_size = positions_stream->getFileSize();
                     for (size_t i = 0; i < position_offsets.size(); ++i)
                     {
                         positions_stream->seekToMark({position_offsets[i], 0});
                         auto & positions = position_lists.emplace_back();
-                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_cardinalities[i], position_payload_scratch);
+                        /// Bytes left for this token; decode rejects a larger declared size.
+                        const size_t available = pos_file_size > position_offsets[i] ? pos_file_size - position_offsets[i] : 0;
+                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_cardinalities[i], available, position_payload_scratch);
                     }
                 }
 

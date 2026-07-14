@@ -59,7 +59,16 @@ void checkPositionCount(UInt64 count, UInt64 expected_count)
             "Corrupt text index positions: stored entry count {} does not match index cardinality {}", count, expected_count);
 }
 
-void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count)
+/// Reject a declared size larger than the bytes remaining for this token, before any resize.
+void checkFitsAvailable(UInt64 needed_bytes, size_t available_bytes)
+{
+    if (needed_bytes > available_bytes)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: declared size {} bytes exceeds {} bytes available for this token in the .pos stream",
+            needed_bytes, available_bytes);
+}
+
+void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, size_t available_bytes)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
@@ -69,6 +78,7 @@ void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expe
     if (count == 0)
         return;
 
+    checkFitsAvailable(count * sizeof(RoaringishEntry), available_bytes);
     entries.resize(count);
     /// readBigStrict reads the bulk payload straight into the destination, skipping the buffer copy.
     in.readBigStrict(reinterpret_cast<char *>(entries.data()), count * sizeof(RoaringishEntry));
@@ -77,7 +87,7 @@ void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expe
             transformEntryEndianness(e);
 }
 
-void decodeRawSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, PaddedPODArray<char> & scratch)
+void decodeRawSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, size_t available_bytes, PaddedPODArray<char> & scratch)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
@@ -87,6 +97,7 @@ void decodeRawSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, Pad
     if (count == 0)
         return;
 
+    checkFitsAvailable(count * sizeof(RoaringishEntry), available_bytes);
     pl.resize(count);
     /// Bulk-read the AoS payload in one pass, then de-interleave into the lanes.
     const size_t bytes = count * sizeof(RoaringishEntry);
@@ -147,7 +158,7 @@ const uint8_t * decodePforLane(const uint8_t * p, const uint8_t * end, UInt64 co
     return p + consumed;
 }
 
-void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, TextIndexPositionCodec::DecodeScratch & scratch)
+void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, size_t available_bytes, TextIndexPositionCodec::DecodeScratch & scratch)
 {
     UInt64 count = 0;
     readVarUInt(count, in);
@@ -166,6 +177,7 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 exp
             "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
             payload_bytes, min_payload, max_payload, count);
 
+    checkFitsAvailable(payload_bytes, available_bytes);
     /// Reused buffers; PaddedPODArray::resize skips value-init and keeps trailing SIMD padding.
     scratch.payload.resize(payload_bytes);
     if (payload_bytes > 0)
@@ -190,7 +202,7 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 exp
         entries[i] = RoaringishEntry{scratch.doc[i], scratch.group[i], scratch.bitmap[i]};
 }
 
-void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, PaddedPODArray<char> & payload)
+void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, size_t available_bytes, PaddedPODArray<char> & payload)
 {
     UInt64 count = 0;
     readVarUInt(count, in);
@@ -208,6 +220,7 @@ void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, Pa
             "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
             payload_bytes, min_payload, max_payload, count);
 
+    checkFitsAvailable(payload_bytes, available_bytes);
     payload.resize(payload_bytes);
     if (payload_bytes > 0)
         in.readStrict(payload.data(), payload_bytes);
@@ -245,20 +258,20 @@ void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, Wr
         encodeRaw(entries, out);
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, DecodeScratch & scratch)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, DecodeScratch & scratch)
 {
     if (encoding == Encoding::Pfor)
-        decodePfor(in, entries, position_cardinality, scratch);
+        decodePfor(in, entries, position_cardinality, available_bytes, scratch);
     else
-        decodeRaw(in, entries, position_cardinality);
+        decodeRaw(in, entries, position_cardinality, available_bytes);
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, PaddedPODArray<char> & payload_scratch)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, PaddedPODArray<char> & payload_scratch)
 {
     if (encoding == Encoding::Pfor)
-        decodePforSoA(in, pl, position_cardinality, payload_scratch);
+        decodePforSoA(in, pl, position_cardinality, available_bytes, payload_scratch);
     else
-        decodeRawSoA(in, pl, position_cardinality, payload_scratch);
+        decodeRawSoA(in, pl, position_cardinality, available_bytes, payload_scratch);
 }
 
 }

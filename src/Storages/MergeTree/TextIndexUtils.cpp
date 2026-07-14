@@ -519,11 +519,16 @@ bool MergeTextIndexesTask::executeStep()
                 auto * pos_data_buffer = pos_stream->getDataBuffer();
                 pos_stream->seekToMark({token_info.position_offset, 0});
 
+                /// Bytes left for this token; decode rejects a larger declared size.
+                const size_t pos_file_size = pos_stream->getFileSize();
+                const size_t pos_available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+
                 PODArray<RoaringishEntry> position_entries;
                 TextIndexPositionCodec::decode(
                     *pos_data_buffer, position_entries,
                     source_positions_codecs[current->order],
                     token_info.position_cardinality,
+                    pos_available,
                     position_decode_scratch);
 
                 /// Adjust doc_ids if merging parts with offset remapping.
