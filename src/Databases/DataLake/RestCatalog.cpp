@@ -314,6 +314,10 @@ OneLakeCatalog::OneLakeCatalog(
         /// Pre-obtained token scoped to https://storage.azure.com. Used for both the catalog
         /// `Authorization` header (filled by `create` from the bearer token) and Azure Blob
         /// access. Does not support refresh.
+        /// Validate before storing: `createWithBearerToken` appends the `Authorization: Bearer`
+        /// header internally without going through `http_forbid_headers`, so check it here,
+        /// mirroring how `RestCatalog` validates a user-supplied `auth_header` in its constructor.
+        validateAuthHeaders({"Authorization", "Bearer " + bearer_token_});
         bearer_token = bearer_token_;
     }
     else
