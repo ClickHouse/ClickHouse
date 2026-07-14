@@ -1040,6 +1040,74 @@ TEST(RemoveSettingsFromQuery, ToleratesSettingsSlotDesyncedFromChildren)
     }
 }
 
+/// A live ASTStorage SETTINGS node whose slot is desynced from `storage->children` but still reachable
+/// from the root (relocated to another in-tree owner) must keep its surviving engine settings; only the
+/// safety cap is stripped. `ASTStorage::formatImpl` serializes `*storage->settings` directly, so the
+/// strip must mutate the live node in place, not blanket-clear the slot: clearing would silently drop
+/// `index_granularity` instead of stripping only `max_rows_to_read`. This is exactly the reachable-but-
+/// not-storage-backed path the fix added - liveness is judged by whole-tree reachability (a live owning
+/// chain leads to the node), so this node is recognised as live and stripped in place, whereas a check
+/// of storage's own `children` would treat it as gone and clear it. The mixed clause (safety + engine
+/// setting) is what distinguishes "strip in place" from "clear the slot"; the all-safety desync case
+/// (ToleratesSettingsSlotDesyncedFromChildren) cannot catch that difference.
+///
+/// A node held only by a reference OUTSIDE the tree is indistinguishable from a freed node by pointer
+/// value alone, so it is (correctly) not preserved; that case is covered above where the slot is left
+/// unreachable and the transform must not dereference it. In production `storage->children` is the sole
+/// owner of the slot, so an unreachable slot always means freed.
+TEST(RemoveSettingsFromQuery, KeepsSurvivingEngineSettingOnReachableDesyncedStorage)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    const String query
+        = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0, index_granularity = 1024";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast) << "query: " << query;
+
+    auto * create = ast->as<ASTCreateQuery>();
+    ASSERT_NE(nullptr, create);
+    ASSERT_NE(nullptr, create->storage);
+    ASSERT_NE(nullptr, create->storage->settings);
+
+    /// Relocate the owning `ASTPtr` from `storage->children` to the CREATE query's own `children`. The
+    /// slot stays valid and reachable from the root through a live owning chain, just no longer through
+    /// `storage->children`. This mimics a fuzzer that moved the node without dropping it - the case a
+    /// storage-local `children` check would misread as freed.
+    auto & storage_children = create->storage->children;
+    ASTPtr moved;
+    for (const auto & child : storage_children)
+        if (child.get() == create->storage->settings)
+            moved = child;
+    ASSERT_NE(nullptr, moved) << "storage settings node was not in children to begin with";
+    storage_children.erase(
+        std::remove_if(
+            storage_children.begin(),
+            storage_children.end(),
+            [&](const ASTPtr & child) { return child.get() == create->storage->settings; }),
+        storage_children.end());
+    create->children.push_back(moved);
+
+    EXPECT_NO_THROW(removeSettingsFromQuery(ast, safety_settings)) << "query: " << query;
+
+    /// The safety cap is gone, the engine setting survives, and the surviving node still round-trips.
+    ASSERT_NE(nullptr, create->storage->settings) << "dropped a live storage SETTINGS node with a surviving setting";
+    auto * set_query = create->storage->settings->as<ASTSetQuery>();
+    ASSERT_NE(nullptr, set_query);
+    EXPECT_EQ(nullptr, set_query->changes.tryGet("max_rows_to_read")) << "kept the safety cap on the storage clause";
+    ASSERT_NE(nullptr, set_query->changes.tryGet("index_granularity")) << "dropped the surviving engine setting";
+    const String formatted = ast->formatWithSecretsOneLine();
+    EXPECT_NE(String::npos, formatted.find("index_granularity")) << "engine setting missing from output: " << formatted;
+    EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "safety cap survived in output: " << formatted;
+}
+
 /// max_rows_to_read + read_overflow_mode = break bound the number of chunks a fuzzed query reads, but
 /// not the size of the first chunk. The block-forming settings decide that size: for a trivial
 /// INSERT ... SELECT into a table that prefers large blocks, applyTrivialInsertSelectOptimization

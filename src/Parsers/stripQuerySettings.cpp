@@ -9,6 +9,7 @@
 #include <Parsers/IAST.h>
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -70,16 +71,32 @@ void detachChild(IAST & owner, T *& field)
     field = nullptr;
 }
 
-/// True if the raw `ptr` is still owned by `owner.children`. This is a pointer-value comparison and
-/// never dereferences `ptr`, so it is safe even when `ptr` is dangling. Owners like ASTStorage hold
-/// their SETTINGS slot as a bare pointer whose only owner is `children`; a fuzzer-mutated child list
-/// can drop that owning intrusive_ptr while leaving the slot set, leaving the pointer dangling.
-bool isBackedByChildren(const IAST & owner, const IAST * ptr)
+/// Collect the address of every node reachable through `children` from the query root. Membership in
+/// this set is a *liveness* proof: a node reachable from the still-alive root is kept alive by the
+/// owning `intrusive_ptr` chain that leads to it, so its address is valid to dereference. A node
+/// absent from the set has no live owner in the tree - it is either already freed or held only outside
+/// `children` - so its raw slot must be treated as dangling and never dereferenced.
+///
+/// Owners like ASTStorage hold their SETTINGS slot as a bare `ASTSetQuery *` whose only owner is
+/// `children`; a fuzzer-mutated child list can drop that owning `intrusive_ptr` while leaving the slot
+/// set, leaving the pointer dangling. Comparing the slot against this reachable-address set decides
+/// deref-safety by pointer value alone (never touching `*ptr`), while still recognising a node the
+/// fuzzer relocated to another position in the same tree as live.
+std::unordered_set<const IAST *> collectReachableNodes(const ASTPtr & ast)
 {
-    for (const auto & child : owner.children)
-        if (child.get() == ptr)
-            return true;
-    return false;
+    std::unordered_set<const IAST *> reachable;
+    std::vector<const IAST *> nodes_to_process{ast.get()};
+    reachable.insert(ast.get());
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        for (const auto & child : node->children)
+            if (child && reachable.insert(child.get()).second)
+                nodes_to_process.push_back(child.get());
+    }
+    return reachable;
 }
 
 template <typename Visitor>
@@ -129,6 +146,14 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
     /// left untouched - stripping them would only risk the same bare-`SETTINGS` prune problem without
     /// closing any override path. Each owner strips and prunes its own clause in one visit, so a single
     /// traversal suffices.
+    ///
+    /// Snapshot every node reachable through `children` from the root *before* any mutation. The
+    /// ASTStorage branch uses this to decide whether its bare `settings` pointer is safe to touch: a
+    /// slot whose target is in this set has a live owner in the tree, a slot whose target is absent may
+    /// be dangling. Captured up front because the strip detaches emptied clauses, which would otherwise
+    /// shrink the set mid-walk.
+    const auto reachable_nodes = collectReachableNodes(ast);
+
     visitAllNodes(
         ast,
         [&](IAST & node)
@@ -163,14 +188,24 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 /// applySettingsFromQuery moves the non-engine settings from the storage clause onto the
                 /// context, so it must be stripped (and pruned to avoid a bare `SETTINGS`).
                 ///
-                /// `storage->settings` is a bare `ASTSetQuery *` whose only owner is `storage->children`.
+                /// `storage->settings` is a bare `ASTSetQuery *` whose only in-tree owner is `children`.
                 /// A fuzzer-mutated child list can drop that owning intrusive_ptr while leaving the slot
-                /// set, so the pointer may be dangling; dereferencing it would be a use-after-free. Only
-                /// touch it while it is still backed by `children`, and just clear the slot otherwise
-                /// (the node it named is already gone from the tree, so nothing re-serializes it).
+                /// set, so the pointer may be dangling; dereferencing it would be a use-after-free.
+                ///
+                /// Decide deref-safety by *liveness*, using reachability from the root as the proof: a
+                /// node reachable through `children` from the still-alive root is kept alive by that
+                /// owning chain, so it is safe to touch. This is broader than checking this storage's own
+                /// `children`: it also recognises a node the fuzzer relocated to another position in the
+                /// same tree as live, so its surviving engine settings (e.g. `index_granularity`) are
+                /// stripped-in-place rather than dropped. `ASTStorage::formatImpl` serializes
+                /// `*storage->settings` directly, so a slot that is *not* reachable (no live owner in the
+                /// tree, hence possibly freed) must not be dereferenced AND must be cleared, or formatting
+                /// the surrounding CREATE would dereference the dangling pointer. A genuinely live node is
+                /// always reachable, so clearing only ever discards a dead slot - which carries no
+                /// surviving settings to lose.
                 if (storage->settings)
                 {
-                    if (isBackedByChildren(*storage, storage->settings))
+                    if (reachable_nodes.contains(storage->settings))
                     {
                         stripNamesFromSetQuery(*storage->settings, is_stripped);
                         if (isEmptySetQuery(*storage->settings))
