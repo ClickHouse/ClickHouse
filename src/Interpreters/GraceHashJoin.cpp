@@ -837,8 +837,12 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 current_blocks.emplace_back(std::move(blocks[bucket_index]));
             }
 
-            for (const auto & right_block : right_blocks)
+            /// Consume the released blocks one by one: each is decompressed (if the in-memory bucket
+            /// compressed its stored data under memory pressure) and freed right after scattering,
+            /// so rehashing never holds the whole uncompressed bucket in memory at once.
+            while (!right_blocks.empty())
             {
+                Block right_block = right_blocks.next();
                 Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
                 flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
                 current_blocks.emplace_back(std::move(blocks[bucket_index]));

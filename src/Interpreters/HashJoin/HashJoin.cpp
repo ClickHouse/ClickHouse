@@ -2058,80 +2058,68 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     }
 }
 
-BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
+Block HashJoin::ReleasedJoinedBlocks::next()
+{
+    chassert(!columns_list.empty());
+    StoredBlock stored = std::move(columns_list.front());
+    columns_list.pop_front();
+
+    /// Stored columns may be `ColumnCompressed` (when `enable_join_in_memory_compression` triggered).
+    /// The released blocks are handed to another algorithm (grace_hash bucket rehash, switching to
+    /// `GraceHashJoin` or `MergeJoin`, spilling), which reads them as ordinary columns, so decompress here.
+    /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+    if (have_compressed)
+        for (auto & column : stored.columns)
+            column = column->decompress();
+
+    if (!restructure)
+    {
+        Block block = sample_block.cloneWithColumns(stored.columns);
+        stored.columns.clear();
+        /// When used with ConcurrentHashJoin, each slot stores full original block columns
+        /// with a selector indicating which rows belong to that slot. Apply the selector
+        /// to materialize only the selected rows, avoiding duplication across slots.
+        ScatteredBlock scattered(std::move(block), std::move(stored.selector));
+        scattered.filterBySelector();
+        return std::move(scattered.getSourceBlock());
+    }
+
+    Block restored_block;
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        auto column = sample_block.getByPosition(positions[i]);
+        column.column = std::move(stored.columns[positions[i]]);
+        correctNullabilityInplace(column, is_nullable[i]);
+        restored_block.insert(std::move(column));
+    }
+    return restored_block;
+}
+
+HashJoin::ReleasedJoinedBlocks HashJoin::releaseJoinedBlocks(bool restructure)
 {
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [this](StoredBlocksList && columns_list, const Block & sample_block)
-    {
-        BlocksList result;
-        for (auto & columns : columns_list)
-        {
-            /// Stored columns may be `ColumnCompressed` (when `enable_join_in_memory_compression` triggered).
-            /// The released blocks are handed to another algorithm (grace_hash bucket rehash, switching to
-            /// `GraceHashJoin`, spilling), which reads them as ordinary columns, so decompress here.
-            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
-            if (have_compressed)
-                for (auto & column : columns.columns)
-                    column = column->decompress();
-            Block block = sample_block.cloneWithColumns(columns.columns);
-            /// When used with ConcurrentHashJoin, each slot stores full original block columns
-            /// with a selector indicating which rows belong to that slot. Apply the selector
-            /// to materialize only the selected rows, avoiding duplication across slots.
-            ScatteredBlock scattered(std::move(block), std::move(columns.selector));
-            scattered.filterBySelector();
-            result.emplace_back(std::move(scattered.getSourceBlock()));
-        }
-        return result;
-    };
-
-    StoredBlocksList right_columns = std::move(data->columns);
-    if (!restructure)
-    {
-        auto sample_block = std::move(data->sample_block);
-        data.reset();
-        return extract_source_blocks(std::move(right_columns), sample_block);
-    }
-
-    data->maps.clear();
-    data->nullmaps.clear();
-
-    BlocksList restored_blocks;
+    ReleasedJoinedBlocks released;
+    released.columns_list = std::move(data->columns);
+    released.sample_block = std::move(data->sample_block);
+    released.have_compressed = have_compressed;
+    released.restructure = restructure;
 
     /// names to positions optimization
-    std::vector<size_t> positions;
-    std::vector<bool> is_nullable;
-    if (!right_columns.empty())
+    if (restructure && !released.columns_list.empty())
     {
-        positions.reserve(right_sample_block.columns());
+        released.positions.reserve(right_sample_block.columns());
+        released.is_nullable.reserve(right_sample_block.columns());
         for (const auto & sample_column : right_sample_block)
         {
-            positions.emplace_back(data->sample_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
+            released.positions.emplace_back(released.sample_block.getPositionByName(sample_column.name));
+            released.is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
         }
-    }
-
-    for (auto & saved_columns : right_columns)
-    {
-        Block restored_block;
-        for (size_t i = 0; i < positions.size(); ++i)
-        {
-            auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns[positions[i]];
-            /// Decompress stored columns before handing the restructured blocks to another algorithm
-            /// (e.g. `JoinSwitcher` switching to `MergeJoin`), which reads them as ordinary columns.
-            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
-            if (have_compressed)
-                column.column = column.column->decompress();
-            correctNullabilityInplace(column, is_nullable[i]);
-            restored_block.insert(column);
-        }
-        restored_blocks.emplace_back(std::move(restored_block));
     }
 
     data.reset();
-    return restored_blocks;
+    return released;
 }
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const

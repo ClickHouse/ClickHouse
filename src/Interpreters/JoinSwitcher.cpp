@@ -46,14 +46,19 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
 bool JoinSwitcher::switchJoin()
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
+    auto right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
+    /// Consume the released blocks one by one: each is decompressed (if the hash join compressed
+    /// its stored data under memory pressure) and freed right after insertion.
     bool success = true;
-    for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block);
+    while (success && !right_blocks.empty())
+    {
+        Block saved_block = right_blocks.next();
+        success = join->addBlockToJoin(saved_block);
+    }
 
     switched = true;
     return success;

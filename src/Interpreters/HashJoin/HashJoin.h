@@ -512,7 +512,38 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure = false);
+
+    /// Streams the stored right-side blocks out of the join, one block per `next` call.
+    /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
+    /// columns) and materializes a single block, destroying its stored source before returning,
+    /// so the peak memory overhead on top of the remaining stored data is one block instead of
+    /// the whole uncompressed right-hand side. This matters because the consumers (spilling to
+    /// `GraceHashJoin`, grace bucket rehashing, `JoinSwitcher`) run exactly when memory pressure
+    /// has already fired.
+    class ReleasedJoinedBlocks
+    {
+    public:
+        bool empty() const { return columns_list.empty(); }
+        size_t size() const { return columns_list.size(); }
+
+        /// Produces the next block. Must not be called when `empty`.
+        Block next();
+
+    private:
+        friend class HashJoin;
+
+        StoredBlocksList columns_list;
+        Block sample_block;
+        bool have_compressed = false;
+
+        /// Set when `restructure` was requested: mapping of `right_sample_block` columns
+        /// into `sample_block` positions, with nullability to restore.
+        bool restructure = false;
+        std::vector<size_t> positions;
+        std::vector<bool> is_nullable;
+    };
+
+    ReleasedJoinedBlocks releaseJoinedBlocks(bool restructure = false);
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);

@@ -766,7 +766,7 @@ void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<Internal
     hash_join->local_total_bytes = 0;
 }
 
-BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+HashJoin::ReleasedJoinedBlocks ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
     auto & hash_join = hash_joins[slot_idx];
