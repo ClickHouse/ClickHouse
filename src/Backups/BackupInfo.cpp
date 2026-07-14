@@ -21,6 +21,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <azure/storage/common/storage_credential.hpp>
 #endif
 
 #include <Poco/URI.h>
@@ -173,6 +174,7 @@ namespace
         return s;
     }
 
+#if !USE_AZURE_BLOB_STORAGE
     String trimWhitespace(const String & s)
     {
         size_t begin = 0;
@@ -185,6 +187,7 @@ namespace
 
         return s.substr(begin, end - begin);
     }
+#endif
 
     String stripTrailingSlashes(String s)
     {
@@ -269,8 +272,23 @@ namespace
 
     String normalizeAzureConnection(String s)
     {
+#if USE_AZURE_BLOB_STORAGE
+        if (!s.starts_with("http"))
+        {
+            try
+            {
+                s = Azure::Storage::_internal::ParseConnectionString(s).BlobServiceUrl.GetAbsoluteUrl();
+            }
+            catch (const std::logic_error & e)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure connection string: {}", e.what());
+            }
+        }
+
+        return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
+#else
         if (s.find(';') == String::npos)
-            return stripTrailingSlashes(stripURLQuery(s));
+            return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
 
         std::unordered_map<String, String> parts;
         Strings redacted_parts;
@@ -301,7 +319,7 @@ namespace
 
         auto blob_endpoint = parts.find("blobendpoint");
         if (blob_endpoint != parts.end())
-            return stripTrailingSlashes(stripURLQuery(blob_endpoint->second));
+            return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(blob_endpoint->second)));
 
         auto protocol = parts.find("defaultendpointsprotocol");
         auto account_name = parts.find("accountname");
@@ -326,6 +344,7 @@ namespace
             result += part;
         }
         return result;
+#endif
     }
 
     bool isCredentialArgForNormalizedIdentity(const String & backup_engine_name, bool has_named_collection, size_t index)

@@ -621,6 +621,40 @@ TEST(BackupInfo, NormalizedStringRedactsAzureConnectionStringCredentials)
     EXPECT_EQ(second.toNormalizedString().find("key2"), String::npos);
 }
 
+#if USE_AZURE_BLOB_STORAGE
+TEST(BackupInfo, NormalizedStringRedactsAzureURLCredentials)
+{
+    auto direct = BackupInfo::fromString(
+        "AzureBlobStorage('https://user:password@account.blob.core.windows.net', 'container', 'backup')");
+    auto connection_string = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=https://account.blob.core.windows.net;SharedAccessSignature=sig=secret;AccountName=account', "
+        "'container', 'backup')");
+
+    EXPECT_EQ(direct.toNormalizedString().find("password"), String::npos);
+    EXPECT_EQ(connection_string.toNormalizedString().find("secret"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringUsesAzureConnectionStringParserSemantics)
+{
+    auto with_ignored_lowercase_keys = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=accounta;AccountKey=key1;EndpointSuffix=core.windows.net;"
+        "accountname=accountb;endpointsuffix=example.com', 'container', 'backup')");
+    auto effective_destination = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=accounta;AccountKey=key2;EndpointSuffix=core.windows.net', "
+        "'container', 'backup')");
+    auto ignored_destination = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=accountb;AccountKey=key3;EndpointSuffix=example.com', "
+        "'container', 'backup')");
+    auto invalid_blob_endpoint = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=https://user:password@account.blob.core.windows.net;AccountName=account;AccountKey=key', "
+        "'container', 'backup')");
+
+    EXPECT_EQ(with_ignored_lowercase_keys.toNormalizedString(), effective_destination.toNormalizedString());
+    EXPECT_NE(with_ignored_lowercase_keys.toNormalizedString(), ignored_destination.toNormalizedString());
+    EXPECT_THROW((void)invalid_blob_endpoint.toNormalizedString(), Exception);
+}
+#endif
+
 TEST(BackupInfo, NormalizedStringUsesFrozenAzureNamedCollection)
 {
     auto context = getContext().context;
