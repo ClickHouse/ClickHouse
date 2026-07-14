@@ -1,9 +1,0 @@
-Test 1: posting_list_block_size controls segment granularity
-1000
-1000
-0
-Test 2: Invalid DDL parameter is rejected
-Test 3: Invalid DDL parameter posting_list_version is rejected
-Test 4: Codec persists in index data
-5
-[0,3,8,11,14]

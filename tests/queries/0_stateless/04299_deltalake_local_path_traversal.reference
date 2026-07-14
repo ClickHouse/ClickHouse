@@ -1,6 +1,0 @@
---- allow_experimental_delta_kernel_rs = 1 ---
-GOT ACCESS DENIED ERROR
-NO LEAK
---- allow_experimental_delta_kernel_rs = 0 ---
-GOT ACCESS DENIED ERROR
-NO LEAK

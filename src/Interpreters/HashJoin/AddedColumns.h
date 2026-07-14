@@ -32,8 +32,7 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-        bool keep_lowcardinality = false);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
     bool isRowFiltered(size_t i) const
     {
@@ -126,7 +125,6 @@ public:
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
-        , enable_prefetch(join.enableSoftwarePrefetch())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -159,7 +157,7 @@ public:
 
         if (is_asof_join)
         {
-            chassert(join_on_keys.size() == 1);
+            assert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
@@ -234,7 +232,6 @@ public:
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     bool need_filter = false;
-    bool enable_prefetch = true;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;

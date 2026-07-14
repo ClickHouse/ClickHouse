@@ -49,7 +49,6 @@ void registerStorageDeltaLake(StorageFactory & factory);
 
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
-void registerStoragePaimon(StorageFactory & factory);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -153,7 +152,6 @@ void registerStorages()
 
 #if USE_AVRO
     registerStorageIceberg(factory);
-    registerStoragePaimon(factory);
 #endif
 
 #if USE_AWS_S3

@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Columns/ColumnMap.h>
 
+
 namespace DB
 {
 
@@ -28,21 +29,12 @@ private:
         V1 = 0,
     };
 
+public:
     SerializationMap(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
-
-public:
-    static UInt128 getHash(const SerializationPtr & nested_, MergeTreeMapSerializationVersion serialization_version_);
-    static SerializationPtr create(
-        const SerializationPtr & key_serialization_,
-        const SerializationPtr & value_serialization_,
-        const SerializationPtr & nested_serialization_,
-        MergeTreeMapSerializationVersion serialization_version_);
-
-    bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -157,8 +149,8 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
-    VectorWithMemoryTracking<ColumnPtr> splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const;
-    void collectMapFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & map_buckets, IColumn & map_column) const;
+    Columns splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const;
+    void collectMapFromBuckets(const Columns & map_buckets, IColumn & map_column) const;
 };
 
 }

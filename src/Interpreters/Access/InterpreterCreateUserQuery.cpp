@@ -384,7 +384,6 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         max_number_of_authentication_methods);
 }
 
-void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

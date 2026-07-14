@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>

@@ -13,7 +13,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class EnabledQuota;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsList = std::list<StorageLimits>;
 
 
 class ReadProgressCallback

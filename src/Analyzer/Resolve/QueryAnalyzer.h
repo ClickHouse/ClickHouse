@@ -213,7 +213,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveContext identifier_resolve_context = {});
+        IdentifierResolveContext identifier_resolve_settings = {});
 
     /// Resolve query tree nodes functions
 
@@ -230,7 +230,7 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
+    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -284,8 +284,6 @@ private:
     void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
-
-    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 

@@ -10,12 +10,8 @@ class SerializationArray final : public SimpleTextSerialization
 private:
     SerializationPtr nested;
 
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
-
 public:
-    static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

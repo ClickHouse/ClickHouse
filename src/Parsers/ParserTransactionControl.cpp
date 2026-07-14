@@ -9,7 +9,7 @@ namespace DB
 
 bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTTransactionControl::QueryType action = {};
+    ASTTransactionControl::QueryType action;
     UInt64 snapshot = 0;
 
     if (ParserKeyword(Keyword::BEGIN_TRANSACTION).ignore(pos, expected))

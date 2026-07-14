@@ -27,8 +27,8 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-        setInMemoryMetadata(*storage_metadata_snapshot);
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
@@ -37,11 +37,13 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-        setInMemoryMetadata(*storage_metadata_snapshot);
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
 
     void read(
         QueryPlan & query_plan,

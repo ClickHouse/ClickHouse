@@ -13,7 +13,6 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
@@ -49,19 +48,12 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
-    ASTQueryWithTableAndOutput * show_query = nullptr;
+    ASTQueryWithTableAndOutput * show_query;
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
         (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
         (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
-        /// Only `SHOW CREATE TABLE` should resolve temporary tables for an unqualified name —
-        /// `VIEW` and `DICTIONARY` cannot refer to a temporary table, so resolving to one would
-        /// shadow a permanent view/dictionary with the same name and fail with `BAD_ARGUMENTS`.
-        Context::StorageNamespace resolve_table_type = Context::ResolveOrdinary;
-        if (show_query->isTemporary())
-            resolve_table_type = Context::ResolveExternal;
-        else if (query_ptr->as<ASTShowCreateTableQuery>())
-            resolve_table_type = Context::ResolveAll;
+        auto resolve_table_type = show_query->isTemporary() ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
 
         bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
@@ -123,7 +115,6 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         "statement"}})));
 }
 
-void registerInterpreterShowCreateQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

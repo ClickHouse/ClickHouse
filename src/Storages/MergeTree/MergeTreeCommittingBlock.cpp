@@ -51,7 +51,7 @@ void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & ou
 
 CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
 {
-    int64_t op = 0;
+    int64_t op;
     in >> "operation: " >> op >> "\n";
     return fromIntChecked<CommittingBlock::Op>(op);
 }
