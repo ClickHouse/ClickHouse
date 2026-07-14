@@ -98,18 +98,24 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 namespace
 {
 
-String withOrdinalEnding(size_t i)
+String withOrdinalEnding(size_t argument_index)
 {
-    switch (i)
+    const size_t argument_number = argument_index + 1;
+    const size_t last_two_digits = argument_number % 100;
+
+    if (last_two_digits >= 11 && last_two_digits <= 13)
+        return std::to_string(argument_number) + "th";
+
+    switch (argument_number % 10)
     {
-        case 0:
-            return "1st";
         case 1:
-            return "2nd";
+            return std::to_string(argument_number) + "st";
         case 2:
-            return "3rd";
+            return std::to_string(argument_number) + "nd";
+        case 3:
+            return std::to_string(argument_number) + "rd";
         default:
-            return std::to_string(i) + "th";
+            return std::to_string(argument_number) + "th";
     }
 }
 
@@ -125,13 +131,13 @@ void validateArgumentsImpl(
         if (argument_index >= arguments.size())
             break;
 
-        const auto & arg = arguments[i + argument_offset];
+        const auto & arg = arguments[argument_index];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(argument_index),
                 descriptor.name,
                 function_name,
                 descriptor.type_name,
@@ -145,14 +151,14 @@ void validateVariadicArgumentsImpl(
     size_t argument_offset,
     const FunctionArgumentDescriptor & variadic_descriptor)
 {
-    for (size_t i = argument_offset; i < arguments.size(); ++i)
+    for (size_t argument_index = argument_offset; argument_index < arguments.size(); ++argument_index)
     {
-        const auto & arg = arguments[i];
+        const auto & arg = arguments[argument_index];
         if (int error_code = variadic_descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(argument_index),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
