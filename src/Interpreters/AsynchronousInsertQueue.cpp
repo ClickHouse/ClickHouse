@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int TYPE_MISMATCH;
 }
 
 static const NameSet settings_to_skip
@@ -589,7 +590,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto table = interpreter_for_table.getTable(insert_query);
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         const auto format_settings = getFormatSettings(query_context);
-        const bool allow_materialized = query_context->getSettingsRef()[Setting::insert_allow_materialized_columns];
 
         /// Collect and sort column names for deterministic order across all entries
         /// in a batch. The flush loop indexes by position (entry_parsed_idx), so
@@ -614,7 +614,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             auto parsed = col_type->createColumn();
             ReadBufferFromString buf(str_value);
             col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
-            entry->http_header_column_values.emplace_back(col_name, std::move(parsed));
+            entry->http_header_column_values.push_back({col_name, std::move(parsed), col_type});
         }
     }
 
@@ -1391,7 +1391,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         /// batch have the same names in the same order, enforced by the batching key).
         std::unordered_map<String, size_t> injected_name_to_idx;
         for (size_t i = 0; i < first_values.size(); ++i)
-            injected_name_to_idx.emplace(first_values[i].first, i);
+            injected_name_to_idx.emplace(first_values[i].col_name, i);
 
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -1475,11 +1475,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             const_cols.reserve(injected_column_infos.size());
             for (const auto & info : injected_column_infos)
             {
-                const ColumnPtr & stored_col = entry->http_header_column_values[info.entry_parsed_idx].second;
+                const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
+                const ColumnPtr & stored_col = stored.col;
                 /// Handle schema drift (ALTER TABLE ... MODIFY COLUMN during buffering):
                 /// if the push-time column type differs from the flush-time type, convert
                 /// via Field so the DEFAULT expression sees the right type.
-                if (stored_col->getDataType() != info.type->getTypeId())
+                if (!stored.push_time_type->equals(*info.type))
                 {
                     Field value;
                     stored_col->get(0, value);
@@ -1513,6 +1514,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     auto body_columns = executor.getResultColumns();  /// Matches format_header.
 
+    /// Track which entries are still valid after injected-column schema-drift conversion.
+    /// Entries that fail to convert are finished with an exception and excluded from the result.
+    /// Initialized to true; the injected-column loop below may set entries to false.
+    std::vector<bool> entry_valid(data->entries.size(), true);
+
     /// Build the full result matching the pipeline header by interleaving body columns
     /// (from the executor) and injected columns (pre-parsed per-entry at push time).
     MutableColumns result_columns;
@@ -1531,27 +1537,36 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             {
                 /// Injected column: use the pre-parsed 1-row column stored at push
                 /// time — no re-parsing. For schema drift (ALTER TABLE during buffering)
-                /// fall back to Field-based conversion.
+                /// attempt Field-based conversion. Uses IDataType::equals() so parametric
+                /// changes within the same TypeIndex family (e.g. FixedString(4) -> FixedString(2))
+                /// are detected and handled; TypeIndex alone would miss such differences.
                 const auto & info = injected_column_infos[inj_idx++];
                 auto new_col = info.type->createColumn();
                 new_col->reserve(total_rows);
                 size_t ei = 0;
                 for (const auto & entry : data->entries)
                 {
-                    const ColumnPtr & stored_col = entry->http_header_column_values[info.entry_parsed_idx].second;
-                    ColumnPtr col_to_use = stored_col;
-                    if (stored_col->getDataType() != info.type->getTypeId())
+                    if (!entry_valid[ei]) { ++ei; continue; }
+                    const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
+                    ColumnPtr col_to_use = stored.col;
+                    if (!stored.push_time_type->equals(*info.type))
                     {
-                        /// Schema drift: convert the stored value to the current column
-                        /// type via Field (handles common numeric promotions; throws on
-                        /// incompatible types — same behaviour as a raw-string re-parse).
-                        Field value;
-                        stored_col->get(0, value);
-                        auto converted = info.type->createColumn();
-                        converted->insert(value);
-                        col_to_use = std::move(converted);
+                        try
+                        {
+                            Field value;
+                            stored.col->get(0, value);
+                            auto converted = info.type->createColumn();
+                            converted->insert(value);
+                            col_to_use = std::move(converted);
+                        }
+                        catch (...) // Ok: mark entry invalid; handled below after the loop
+                        {
+                            entry_valid[ei] = false;
+                        }
                     }
-                    new_col->insertManyFrom(*col_to_use, 0, entry_num_rows[ei++]);
+                    if (entry_valid[ei])
+                        new_col->insertManyFrom(*col_to_use, 0, entry_num_rows[ei]);
+                    ++ei;
                 }
                 result_columns.push_back(std::move(new_col));
             }
@@ -1561,6 +1576,51 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 result_columns.push_back(std::move(body_columns[body_idx++]));
             }
         }
+    }
+
+    /// Finish entries that failed schema-drift conversion and compact result columns
+    /// to exclude their rows, preserving per-entry failure isolation.
+    bool any_failed = false;
+    for (size_t ei = 0; ei < data->entries.size(); ++ei)
+        if (!entry_valid[ei]) { any_failed = true; break; }
+
+    if (any_failed)
+    {
+        size_t valid_rows = 0;
+        for (size_t ei = 0; ei < data->entries.size(); ++ei)
+            if (entry_valid[ei]) valid_rows += entry_num_rows[ei];
+
+        /// Rebuild every result column keeping only rows from valid entries.
+        for (auto & col : result_columns)
+        {
+            auto new_col = col->cloneEmpty();
+            new_col->reserve(valid_rows);
+            size_t row_offset = 0;
+            for (size_t ei = 0; ei < data->entries.size(); ++ei)
+            {
+                if (entry_valid[ei])
+                    new_col->insertRangeFrom(*col, row_offset, entry_num_rows[ei]);
+                row_offset += entry_num_rows[ei];
+            }
+            col = std::move(new_col);
+        }
+
+        /// Finish failed entries with an exception.
+        size_t ei2 = 0;
+        for (const auto & entry : data->entries)
+        {
+            if (!entry_valid[ei2] && !entry->isFinished())
+            {
+                LOG_ERROR(logger,
+                    "http_column schema drift for entry {}: type changed while buffered, entry dropped.",
+                    entry->query_id);
+                entry->finish(std::make_exception_ptr(
+                    Exception(ErrorCodes::TYPE_MISMATCH,
+                        "http_column value type changed (ALTER TABLE during async buffering)")));
+            }
+            ++ei2;
+        }
+        total_rows = valid_rows;
     }
 
     Chunk chunk(std::move(result_columns), total_rows);

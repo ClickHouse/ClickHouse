@@ -180,7 +180,8 @@ private:
             /// 1-row typed columns in sorted column-name order. Parsed once at push time
             /// so type errors surface immediately to the client. At flush time the stored
             /// column is used directly, avoiding per-entry re-parsing.
-            std::vector<std::pair<String, ColumnPtr>> http_header_column_values;
+            struct HTTPHeaderColumnValue { String col_name; ColumnPtr col; DataTypePtr push_time_type; };
+            std::vector<HTTPHeaderColumnValue> http_header_column_values;
 
             Entry(
                 DataChunk && chunk_,

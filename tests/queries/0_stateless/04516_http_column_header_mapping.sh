@@ -302,3 +302,37 @@ do_default_tests() {
 
 run_modes do_default_tests
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
+
+# ── Async schema drift and per-entry failure isolation ────────────────────────
+# Tests two async-specific behaviours:
+# 1. Same-TypeIndex parametric change (FixedString(4) -> FixedString(2)): the current
+#    TypeIndex comparison treats both as the same type; the value must be converted or
+#    the entry must fail gracefully rather than silently corrupting data.
+# 2. Per-entry failure isolation: an entry whose header value becomes invalid after the
+#    schema change must fail on its own without aborting the valid entries in the same batch.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t;
+    CREATE TABLE t (code FixedString(4), payload String)
+    ENGINE = MergeTree ORDER BY tuple();
+"
+
+# Use a large busy timeout so entries stay buffered until we explicitly flush.
+# Enqueue two entries before the schema change.
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: ab' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"short-valid"}'
+
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: abcd' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"exact-valid"}'
+
+# Shrink the column: 'abcd' (4 bytes) no longer fits in FixedString(2).
+# 'ab' (2 bytes) is still valid.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
+
+echo "--- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+# 'ab' must be inserted; 'abcd' must fail in isolation (not in result).
+${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
