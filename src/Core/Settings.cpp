@@ -3567,6 +3567,8 @@ Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm 
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
+Most algorithms affect a query only when they are the one selected for it. `full_sorting_merge` and `parallel_full_sorting_merge` are an exception: because a merge join cannot join keys of different types (for example `String` and `Nullable(String)`), listing either of them — even as a lower-priority fallback that is not ultimately selected — makes join-key type inference stricter. This can change the result types of `USING` columns and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`, even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not include `full_sorting_merge` / `parallel_full_sorting_merge` in `join_algorithm` for the affected queries.
+
 Possible values:
 
 - grace_hash
