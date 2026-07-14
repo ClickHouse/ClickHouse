@@ -1,0 +1,143 @@
+---
+sidebarTitle: '데이터 로드'
+title: 'BigQuery에서 ClickHouse로 데이터 로드'
+slug: /migrations/bigquery/loading-data
+description: 'BigQuery에서 ClickHouse로 데이터를 로드하는 방법'
+keywords: ['마이그레이션', 'migration', 'migrating', '데이터', 'etl', 'elt', 'BigQuery']
+doc_type: 'guide'
+---
+
+*이 가이드는 ClickHouse Cloud 및 자체 호스팅 ClickHouse v23.5+와 호환됩니다.*
+
+이 가이드에서는 [BigQuery](https://cloud.google.com/bigquery)에서 ClickHouse로 데이터를 마이그레이션하는 방법을 설명합니다.
+
+먼저 테이블을 [Google Cloud Storage(GCS)](https://cloud.google.com/storage)로 내보낸 다음, 해당 데이터를 [ClickHouse Cloud](https://clickhouse.com/cloud)로 가져옵니다. BigQuery에서 ClickHouse로 내보낼 각 테이블에 대해 이 단계를 반복해야 합니다.
+
+<div id="how-long-will-exporting-data-to-clickhouse-take">
+  ## ClickHouse로 데이터를 내보내는 데 얼마나 걸리나요?
+</div>
+
+BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 데이터셋 크기에 따라 달라집니다. 참고로 이 가이드를 따르면 BigQuery에서 ClickHouse로 [4TB 공개 Ethereum 데이터셋](https://cloud.google.com/blog/products/data-analytics/ethereum-bigquery-public-dataset-smart-contract-analytics)을 내보내는 데 약 1시간이 걸립니다.
+
+| 테이블                                                                                               | 행 수           | 내보낸 파일 수 | 데이터 크기  | BigQuery 내보내기 | 슬롯 시간       | ClickHouse 가져오기 |
+| ------------------------------------------------------------------------------------------------- | ------------- | -------- | ------- | ------------- | ----------- | --------------- |
+| [blocks](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/blocks.md)             | 16,569,489    | 73       | 14.53GB | 23초           | 37분         | 15.4초           |
+| [transactions](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/transactions.md) | 1,864,514,414 | 5169     | 957GB   | 1분 38초        | 1일 8시간      | 18분 5초          |
+| [traces](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/traces.md)             | 6,325,819,306 | 17,985   | 2.896TB | 5분 46초        | 5일 19시간     | 34분 55초         |
+| [contracts](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/contracts.md)       | 57,225,837    | 350      | 45.35GB | 16초           | 1시간 51분     | 39.4초           |
+| 합계                                                                                                | 82.6억         | 23,577   | 3.982TB | 8분 3초         | &gt; 6일 5시간 | 53분 45초         |
+
+<Steps>
+  <Step>
+    ## 테이블 데이터를 GCS로 내보내기
+
+    이 단계에서는 [BigQuery SQL 워크스페이스](https://cloud.google.com/bigquery/docs/bigquery-web-ui)를 사용해 SQL 명령을 실행합니다. 아래에서는 [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements) SQL 문을 사용하여 `mytable`이라는 BigQuery 테이블의 데이터를 GCS 버킷으로 내보냅니다.
+
+    ```sql
+    DECLARE export_path STRING;
+    DECLARE n INT64;
+    DECLARE i INT64;
+    SET i = 0;
+
+    -- We recommend setting n to correspond to x billion rows. So 5 billion rows, n = 5
+    SET n = 100;
+
+    WHILE i < n DO
+      SET export_path = CONCAT('gs://mybucket/mytable/', i,'-*.parquet');
+      EXPORT DATA
+        OPTIONS (
+          uri = export_path,
+          format = 'PARQUET',
+          overwrite = true
+        )
+      AS (
+        SELECT * FROM mytable WHERE export_id = i
+      );
+      SET i = i + 1;
+    END WHILE;
+    ```
+
+    위 쿼리에서는 BigQuery 테이블을 [Parquet 데이터 포맷](https://parquet.apache.org/)으로 내보냅니다. 또한 `uri` 매개변수에 `*` 문자가 포함되어 있습니다. 이렇게 하면 내보낸 데이터가 1GB를 초과할 경우 출력이 여러 파일로 분할되고, 각 파일 이름에는 숫자가 증가하는 접미사가 붙습니다.
+
+    이 접근 방식에는 여러 가지 장점이 있습니다.
+
+    * Google은 하루 최대 50TB까지 GCS로 무료로 내보내기를 허용합니다. 사용자는 GCS 스토리지 비용만 지불하면 됩니다.
+    * 내보내기를 수행하면 여러 파일이 자동으로 생성되며, 각 파일은 최대 1GB의 테이블 데이터로 제한됩니다. 따라서 가져오기를 병렬화할 수 있어 ClickHouse에 유리합니다.
+    * Parquet는 컬럼 지향 포맷이므로 더 적합한 데이터 교환 포맷입니다. 기본적으로 압축되어 있어 BigQuery에서 더 빠르게 내보낼 수 있고 ClickHouse에서도 더 빠르게 쿼리할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## GCS에서 ClickHouse로 데이터 가져오기
+
+    내보내기가 완료되면 이 데이터를 ClickHouse 테이블로 가져올 수 있습니다. 아래 명령은 [ClickHouse SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [`clickhouse-client`](/ko/concepts/features/interfaces/cli)를 사용해 실행할 수 있습니다.
+
+    먼저 ClickHouse에서 [테이블을 생성](/ko/reference/statements/create/table)해야 합니다:
+
+    ```sql
+    -- If your BigQuery table contains a column of type STRUCT, you must enable this setting
+    -- to map that column to a ClickHouse column of type Nested
+    SET input_format_parquet_import_nested = 1;
+
+    CREATE TABLE default.mytable
+    (
+            `timestamp` DateTime64(6),
+            `some_text` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp);
+    ```
+
+    테이블을 생성한 후, 클러스터에 ClickHouse 레플리카가 여러 개 있다면 내보내기 속도를 높이려면 `parallel_distributed_insert_select` 설정을 활성화하십시오. ClickHouse 노드가 1개뿐이라면 이 단계는 건너뛰어도 됩니다:
+
+    ```sql
+    SET parallel_distributed_insert_select = 1;
+    ```
+
+    마지막으로, [`INSERT INTO SELECT` 명령](/ko/reference/statements/insert-into#inserting-the-results-of-select)을 사용해 GCS의 데이터를 ClickHouse 테이블에 삽입할 수 있습니다. 이 명령은 `SELECT` 쿼리 결과를 기반으로 테이블에 데이터를 삽입합니다.
+
+    `INSERT`할 데이터를 가져오려면, GCS가 [Amazon S3](https://aws.amazon.com/s3/)와 상호 운용되므로 [s3Cluster function](/ko/reference/functions/table-functions/s3Cluster)을 사용해 GCS 버킷에서 데이터를 가져올 수 있습니다. ClickHouse 노드가 하나뿐이면 `s3Cluster` 함수 대신 [s3 table function](/ko/reference/functions/table-functions/s3)를 사용할 수 있습니다.
+
+    ```sql
+    INSERT INTO mytable
+    SELECT
+        timestamp,
+        ifNull(some_text, '') AS some_text
+    FROM s3Cluster(
+        'default',
+        'https://storage.googleapis.com/mybucket/mytable/*.parquet.gz',
+        '<ACCESS_ID>',
+        '<SECRET>'
+    );
+    ```
+
+    위 쿼리에서 사용하는 `ACCESS_ID` 및 `SECRET`은 GCS 버킷에 연결된 [HMAC key](https://cloud.google.com/storage/docs/authentication/hmackeys)입니다.
+
+    <Info>
+      **널 허용 컬럼을 내보낼 때 `ifNull`을 사용하세요**
+
+      위 쿼리에서는 `some_text` 컬럼에 [`ifNull` 함수](/ko/reference/functions/regular-functions/functions-for-nulls#ifNull)를 사용하여 기본값으로 ClickHouse 테이블에 데이터를 삽입합니다. ClickHouse에서 컬럼을 [`널 허용(Nullable)`](/ko/reference/data-types/nullable)으로 만들 수도 있지만, 성능에 부정적인 영향을 줄 수 있으므로 권장되지 않습니다.
+
+      또는 `SET input_format_null_as_default=1`을 설정하면, 기본값이 지정된 경우 누락되었거나 NULL인 값은 각 컬럼의 기본값으로 대체됩니다.
+    </Info>
+  </Step>
+
+  <Step>
+    ## 데이터 내보내기 성공 여부 확인
+
+    데이터가 올바르게 삽입되었는지 확인하려면 새 테이블에서 `SELECT` 쿼리를 실행하세요:
+
+    ```sql
+    SELECT * FROM mytable LIMIT 10;
+    ```
+
+    BigQuery 테이블을 더 내보내려면 추가 테이블마다 위 단계를 다시 수행하면 됩니다.
+  </Step>
+</Steps>
+
+<div id="further-reading-and-support">
+  ## 추가 읽을거리 및 지원
+</div>
+
+이 가이드와 함께, [ClickHouse를 사용해 BigQuery를 가속화하고 증분 가져오기를 처리하는 방법](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries)을 소개하는 블로그 게시물도 읽어보시기를 권장합니다.
+
+BigQuery에서 ClickHouse로 데이터를 전송하는 데 문제가 있으면 support@clickhouse.com으로 문의해 주십시오.

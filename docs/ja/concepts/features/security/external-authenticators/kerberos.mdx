@@ -1,0 +1,140 @@
+---
+description: '既存の適切に設定されたClickHouseユーザーは、Kerberos認証プロトコルを使用して認証できます。'
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+既存の ClickHouse ユーザーが適切に設定されていれば、Kerberos 認証プロトコルを使用して認証できます。
+
+現時点では、Kerberos は `users.xml` またはローカルのアクセス制御パスで定義された既存ユーザーに対する外部認証機構としてのみ使用できます。これらのユーザーが使用できるのは HTTP リクエストのみで、GSS-SPNEGO メカニズムによる認証に対応している必要があります。
+
+この方式では、システム側で Kerberos を設定し、ClickHouse の設定で有効にする必要があります。
+
+<div id="enabling-kerberos-in-clickhouse">
+  ## ClickHouse で Kerberos を有効にする
+</div>
+
+Kerberos を有効にするには、`config.xml` に `kerberos` セクションを追加する必要があります。このセクションには、追加のパラメータを含めることができます。
+
+<div id="parameters">
+  #### パラメーター
+</div>
+
+* `principal` - セキュリティコンテキストを受け入れる際に取得して使用する、正規化されたサービスプリンシパル名。
+  * このパラメーターは省略可能です。省略した場合は、デフォルトのプリンシパルが使用されます。
+
+* `realm` - レルム。イニシエーターの レルム がこれと一致するリクエストのみに認証を制限するために使用されます。
+  * このパラメーターは省略可能です。省略した場合、レルム による追加のフィルタリングは適用されません。
+
+* `keytab` - サービス keytab ファイルへのパス。
+  * このパラメーターは省略可能です。省略した場合、サービス keytab ファイルへのパスは `KRB5_KTNAME` 環境変数で設定する必要があります。
+
+例 (`config.xml` に記述) :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos />
+</clickhouse>
+```
+
+principal を指定した場合:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+    </kerberos>
+</clickhouse>
+```
+
+レルムでフィルタリングする場合:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</clickhouse>
+```
+
+<Note>
+  `kerberos` セクションは 1 つだけ定義できます。複数の `kerberos` セクションがあると、ClickHouse は Kerberos 認証を無効にします。
+</Note>
+
+<Note>
+  `principal` セクションと `realm` セクションは同時に指定できません。`principal` セクションと `realm` セクションの両方があると、ClickHouse は Kerberos 認証を無効にします。
+</Note>
+
+<div id="kerberos-as-an-external-authenticator-for-existing-users">
+  ## 既存ユーザーの外部認証機構としての Kerberos
+</div>
+
+Kerberos は、ローカルで定義されたユーザー (`users.xml` またはローカルのアクセス制御パスで定義されたユーザー) の identity を検証する方法として使用できます。現在、*Kerberos 認証を適用*できるのは、HTTP インターフェイス経由のリクエスト**のみ**です (GSS-SPNEGO メカニズムを使用) 。
+
+Kerberos プリンシパル名の形式は、通常、次のパターンに従います。
+
+* *primary/instance@REALM*
+
+*/instance* の部分は、0 回以上現れる場合があります。**認証を成功させるには、イニシエーターの正規プリンシパル名の *primary* 部分が、Kerberos 認証を適用するユーザー名と一致している必要があります**
+
+<div id="enabling-kerberos-in-users-xml">
+  ### `users.xml` で Kerberos を有効にする
+</div>
+
+ユーザーに対して Kerberos 認証を有効にするには、ユーザー定義で `password` などのセクションの代わりに `kerberos` セクションを指定します。
+
+パラメータ:
+
+* `realm` - 認証を、イニシエーターの レルム がこれと一致するリクエストのみに制限するために使用する レルム です。
+  * このパラメータは省略可能です。省略した場合、レルム による追加の絞り込みは適用されません。
+
+例 (`users.xml` に記述) :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <!- ... -->
+        <my_user>
+            <!- ... -->
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+        </my_user>
+    </users>
+</clickhouse>
+```
+
+<Note>
+  Kerberos認証は、他の認証方式と併用できない点に注意してください。`kerberos` と並んで `password` などの別のセクションが存在すると、ClickHouse は停止します。
+</Note>
+
+<Info>
+  **リマインダー**
+
+  なお、ユーザー `my_user` が `kerberos` を使用する場合は、前述のとおりメインの `config.xml` ファイルで Kerberos を有効にしておく必要があります。
+</Info>
+
+<div id="enabling-kerberos-using-sql">
+  ### SQL による Kerberos の有効化
+</div>
+
+ClickHouse で [SQL による Access Control and Account Management](/ja/concepts/features/security/access-rights#access-control-usage) が有効な場合は、Kerberos で識別されるユーザーも SQL 文を使って作成できます。
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
+```
+
+...または、レルムで絞り込まずに:
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos
+```

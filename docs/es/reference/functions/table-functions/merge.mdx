@@ -1,0 +1,34 @@
+---
+description: 'Crea una tabla Merge temporal. La estructura se obtiene de las tablas subyacentes mediante la unión de sus columnas y la deducción de tipos comunes.'
+sidebarTitle: 'merge'
+slug: /sql-reference/table-functions/merge
+title: 'merge'
+doc_type: 'reference'
+---
+
+Crea una tabla [Merge](/es/reference/engines/table-engines/special/merge) temporal.
+La estructura de la tabla se obtiene de las tablas subyacentes mediante la unión de sus columnas y la deducción de tipos comunes.
+Están disponibles las mismas columnas virtuales que para el motor de tabla [Merge](/es/reference/engines/table-engines/special/merge).
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+merge(['db_name',] 'tables_regexp')
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento       | Descripción                                                                                                                                                                                                                                                                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db_name`       | Valores posibles (opcional; el valor predeterminado es `currentDatabase()`):<br />    - nombre de la base de datos,<br />    - expresión constante que devuelve una cadena con un nombre de base de datos, por ejemplo, `currentDatabase()`,<br />    - `REGEXP(expression)`, donde `expression` es una expresión regular para que coincida con los nombres de las DB. |
+| `tables_regexp` | Una expresión regular para que coincida con los nombres de las tablas en la DB o las DB especificadas.                                                                                                                                                                                                                                                                 |
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* motor de tabla [Merge](/es/reference/engines/table-engines/special/merge)

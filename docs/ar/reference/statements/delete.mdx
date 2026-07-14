@@ -1,0 +1,116 @@
+---
+description: 'تُبسّط ميزة الحذف الخفيف عملية حذف البيانات من قاعدة البيانات.'
+keywords: ['حذف']
+sidebarTitle: 'DELETE'
+slug: /sql-reference/statements/delete
+title: 'عبارة `DELETE` الخفيفة'
+doc_type: 'مرجع'
+---
+
+تزيل عبارة `DELETE` الخفيفة الصفوف من الجدول `[db.]table` التي تطابق التعبير `expr`. وهي متاحة فقط مع عائلة محركات الجداول *MergeTree.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+```
+
+يُسمّى &quot;الحذف `DELETE` خفيف الوزن&quot; لتمييزه عن الأمر [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete)، وهي عملية ثقيلة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+-- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+<div id="lightweight-delete-does-not-delete-data-immediately">
+  ## لا تحذف عبارة `DELETE` الخفيفة البيانات فورًا
+</div>
+
+يُنفَّذ عبارة `DELETE` الخفيفة على هيئة [mutation](/ar/reference/statements/alter/index#mutations) تضع علامة على الصفوف بأنها محذوفة، لكنها لا تحذفها فعليًا على الفور.
+
+بشكل افتراضي، تنتظر عبارة `DELETE` حتى يكتمل تمييز الصفوف على أنها محذوفة قبل أن تعود. وقد يستغرق ذلك وقتًا طويلًا إذا كان حجم البيانات كبيرًا. وبدلًا من ذلك، يمكنك تشغيلها بشكل غير متزامن في الخلفية باستخدام الإعداد [`lightweight_deletes_sync`](/ar/reference/settings/session-settings#lightweight_deletes_sync). وإذا كان هذا الإعداد معطّلًا، فستعود عبارة `DELETE` فورًا، لكن قد تظل البيانات مرئية للاستعلامات إلى أن تنتهي الـ mutation في الخلفية.
+
+لا تحذف الـ mutation فعليًا الصفوف التي وُضعت عليها علامة الحذف، إذ لن يحدث ذلك إلا أثناء عملية الدمج التالية. ونتيجة لذلك، قد تظل البيانات، لفترة غير محددة، غير محذوفة فعليًا من التخزين، وإنما موسومة فقط بأنها محذوفة.
+
+إذا كنت بحاجة إلى ضمان حذف بياناتك من التخزين خلال مدة يمكن التنبؤ بها، ففكّر في استخدام إعداد الجدول [`min_age_to_force_merge_seconds`](/ar/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds). أو يمكنك استخدام الأمر [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete). لاحظ أن حذف البيانات باستخدام `ALTER TABLE ... DELETE` قد يستهلك موارد كبيرة لأنه يعيد إنشاء جميع الأجزاء المتأثرة.
+
+<div id="deleting-large-amounts-of-data">
+  ## حذف كميات كبيرة من البيانات
+</div>
+
+قد يؤثر حذف كميات كبيرة من البيانات سلبًا على أداء ClickHouse. إذا كنت تحاول حذف جميع الصفوف من جدول، ففكّر في استخدام الأمر [`TRUNCATE TABLE`](/ar/reference/statements/truncate).
+
+إذا كنت تتوقع عمليات حذف متكررة، ففكّر في استخدام [مفتاح تقسيم مخصص](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). بعد ذلك، يمكنك استخدام الأمر [`ALTER TABLE ... DROP PARTITION`](/ar/reference/statements/alter/partition#drop-partitionpart) لحذف جميع الصفوف المرتبطة بهذا القسم بسرعة.
+
+<div id="limitations-of-lightweight-delete">
+  ## قيود عبارة `DELETE` الخفيفة
+</div>
+
+<div id="lightweight-deletes-with-projections">
+  ### عمليات `DELETE` الخفيفة مع الإسقاطات
+</div>
+
+لا تعمل `DELETE` افتراضيًا مع الجداول التي تحتوي على إسقاطات. ويعود ذلك إلى أن الصفوف في الإسقاط قد تتأثر بعملية `DELETE`. لكن يمكن تغيير هذا السلوك باستخدام [إعداد MergeTree](/ar/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode`.
+
+<div id="performance-considerations-when-using-lightweight-delete">
+  ## اعتبارات الأداء عند استخدام عبارة `DELETE` الخفيفة
+</div>
+
+**قد يؤثر حذف كميات كبيرة من البيانات باستخدام عبارة `DELETE` الخفيفة سلبًا على أداء استعلامات SELECT.**
+
+قد تؤثر العوامل التالية أيضًا سلبًا على أداء عبارة `DELETE` الخفيفة:
+
+* وجود شرط `WHERE` معقّد في استعلام `DELETE`.
+* إذا كان صفّ mutations ممتلئًا بعدد كبير من mutations الأخرى، فقد يؤدي ذلك إلى مشكلات في الأداء، لأن جميع mutations على الجدول تُنفَّذ بشكل تسلسلي.
+* يحتوي الجدول المتأثر على عدد كبير جدًا من data parts.
+* وجود كمية كبيرة من البيانات في compact parts. في compact part، تُخزَّن جميع الأعمدة في file واحد.
+
+<div id="delete-permissions">
+  ## أذونات `DELETE`
+</div>
+
+يتطلب `DELETE` امتياز `ALTER DELETE`. لتمكين عبارات `DELETE` على جدول محدد لمستخدم معيّن، نفّذ الأمر التالي:
+
+```sql
+GRANT ALTER DELETE ON db.table to username;
+```
+
+<div id="how-lightweight-deletes-work-internally-in-clickhouse">
+  ## كيف تعمل عمليات `DELETE` الخفيفة داخليًا في ClickHouse
+</div>
+
+1. **يُطبَّق &quot;قناع&quot; على الصفوف المتأثرة**
+
+   عند تنفيذ استعلام `DELETE FROM table ...`، يحفظ ClickHouse قناعًا تُعلَّم فيه كل صفوف الجدول إما على أنها &quot;موجودة&quot; أو &quot;محذوفة&quot;. وتُستبعَد تلك الصفوف &quot;المحذوفة&quot; من الاستعلامات اللاحقة. ومع ذلك، لا تُزال الصفوف فعليًا إلا لاحقًا عبر عمليات الدمج التالية. وتكون كتابة هذا القناع أخف بكثير من الإجراء الذي ينفذه استعلام `ALTER TABLE ... DELETE`.
+
+   يُنفَّذ هذا القناع على شكل عمود نظامي مخفي باسم `_row_exists` يخزّن القيمة `True` لكل الصفوف المرئية و`False` للصفوف المحذوفة. ولا يظهر هذا العمود في أي جزء إلا إذا كانت بعض الصفوف في ذلك الجزء قد حُذفت. ولا يكون هذا العمود موجودًا إذا كانت جميع القيم في الجزء مساوية لـ `True`.
+
+2. **تُحوَّل استعلامات `SELECT` لتتضمن القناع**
+
+   عندما يُستخدم عمود مقنَّع في استعلام، فإن استعلام `SELECT ... FROM table WHERE condition` يُوسَّع داخليًا بإضافة الشرط على `_row_exists` ويُحوَّل إلى:
+
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+
+   عند التنفيذ، يُقرأ العمود `_row_exists` لتحديد الصفوف التي لا ينبغي إرجاعها. وإذا كان هناك عدد كبير من الصفوف المحذوفة، يمكن لـ ClickHouse تحديد الحبيبات التي يمكن تخطيها بالكامل عند قراءة بقية الأعمدة.
+
+3. **تُحوَّل استعلامات `DELETE` إلى استعلامات `ALTER TABLE ... UPDATE`**
+
+   يُترجم `DELETE FROM table WHERE condition` إلى mutation من النوع `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition`.
+
+   داخليًا، يُنفَّذ هذا الـ mutation على خطوتين:
+
+   1. يُنفَّذ الأمر `SELECT count() FROM table WHERE condition` لكل جزء على حدة لتحديد ما إذا كان الجزء متأثرًا.
+
+   2. استنادًا إلى الأوامر أعلاه، تُطبَّق بعد ذلك mutations على الأجزاء المتأثرة، وتُنشأ hardlinks للأجزاء غير المتأثرة. وفي حالة الأجزاء العريضة، يُحدَّث العمود `_row_exists` لكل صف، وتُنشأ hardlinks لملفات جميع الأعمدة الأخرى. أما في الأجزاء المدمجة، فتُعاد كتابة جميع الأعمدة لأنها كلها مخزنة معًا في ملف واحد.
+
+   ومن الخطوات أعلاه، يتضح أن `DELETE` الخفيف باستخدام أسلوب القناع يحسّن الأداء مقارنةً بـ `ALTER TABLE ... DELETE` التقليدي لأنه لا يعيد كتابة ملفات جميع الأعمدة في الأجزاء المتأثرة.
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* المدونة: [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

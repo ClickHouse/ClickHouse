@@ -24,6 +24,8 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            with_minio=True,
             stay_alive=True,
         )
         cluster.add_instance(
@@ -55,6 +57,17 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            stay_alive=True,
+        )
+        # Dedicated node: the background eviction push-fail test enables a process-global
+        # failpoint, so it must not share a node with other tests.
+        cluster.add_instance(
+            "keep_up_push_fail",
+            main_configs=[
+                "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
+            ],
             stay_alive=True,
         )
 
@@ -83,6 +96,8 @@ def non_shared_cluster():
                 "config.d/remove_filesystem_caches_path.xml",
             ],
             stay_alive=True,
+            with_zookeeper=True,
+            with_minio=True,
         )
 
         logging.info("Starting test-exclusive cluster...")
@@ -118,6 +133,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         DROP TABLE IF EXISTS test SYNC;
+        SYSTEM DROP FILESYSTEM CACHE;
 
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
@@ -144,19 +160,19 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         SELECT * FROM test FORMAT Null;
         """
     )
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     count = int(node.query("SELECT count() FROM test"))
 
     cache_count = int(
-        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
+        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test'")
     )
     cache_state = node.query(
-        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
     keys = (
         node.query(
-            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
         )
         .strip()
         .splitlines()
@@ -166,15 +182,15 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
-    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'"))
     keys_set = ",".join(["'" + x + "'" for x in keys])
     assert cache_state == node.query(
-        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
+        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
 
     assert node.contains_in_log("15 listing thread(s) and 15 loading thread(s)")
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     assert (
         int(
             node.query(
@@ -497,6 +513,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
 
+@pytest.mark.skip(reason="In private we always use cache for merges")
 def test_force_filesystem_cache_on_merges(cluster):
     def test(node, forced_read_through_cache_on_merge):
         def to_int(value):
@@ -704,7 +721,7 @@ INSERT INTO test SELECT randomString(200);
     """
     )
 
-    query_id = "test_keep_up_size_ratio_1"
+    query_id = f"test_keep_up_size_ratio_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -808,6 +825,79 @@ SETTINGS disk = disk(type = cache,
         "SELECT sum(cityHash64(a)) FROM test_parallel_eviction"
     ) == node.query(
         "SELECT sum(cityHash64(a)) FROM test_parallel_eviction SETTINGS enable_filesystem_cache = 0"
+    )
+
+
+def test_keep_up_size_ratio_push_fail(cluster):
+    node = cluster.instances["keep_up_push_fail"]
+    max_elements = 100
+    cache_name = "keep_up_size_ratio_push_fail"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_push_fail;
+
+CREATE TABLE test_push_fail (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '10Mi',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio_push_fail",
+            keep_free_space_size_ratio = 0.9,
+            keep_free_space_elements_ratio = 0.9,
+            keep_free_space_remove_batch = 2,
+            keep_free_space_eviction_threads = 3,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_keep_up_size_ratio_push_fail")
+
+    def elems():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+
+    # keep_free_space_elements_ratio = 0.9 over max_elements = 100 -> target 10.
+    expected = max_elements // 10
+
+    node.query("SYSTEM ENABLE FAILPOINT file_cache_background_eviction_push_fail")
+    try:
+        node.query(
+            "INSERT INTO test_push_fail SELECT randomString(1000) FROM numbers(500);"
+        )
+        node.query("SELECT * FROM test_push_fail FORMAT Null")
+
+        # With the failpoint on, every collected batch fails to reach the remover workers,
+        # so background keeping bails out (CANNOT_EVICT) and cannot drop below the fill level.
+        node.wait_for_log_line("Background eviction workers take too much time")
+        blocked = elems()
+        assert blocked > expected
+        time.sleep(3)
+        assert elems() == blocked
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT file_cache_background_eviction_push_fail")
+
+    # After the dropped batches are rolled back, background keeping must converge all the
+    # way to the configured target - not just make partial progress - which proves no
+    # entries were left stuck in the `Evicting` state.
+    for _ in range(60):
+        converged = elems()
+        if converged <= expected:
+            break
+        time.sleep(1)
+    assert converged <= expected
+
+    assert int(node.query("SELECT count() FROM test_push_fail")) == 500
+    assert node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail"
+    ) == node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail SETTINGS enable_filesystem_cache = 0"
     )
 
 

@@ -1,0 +1,136 @@
+---
+description: 'Motor de tabela que permite importar dados de um cluster do YTsaurus.'
+sidebarTitle: 'YTsaurus'
+slug: /engines/table-engines/integrations/ytsaurus
+title: 'Motor de tabela do YTsaurus'
+keywords: ['YTsaurus', 'motor de tabela']
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+O motor de tabela YTsaurus permite importar dados de um cluster YTsaurus.
+
+<div id="creating-a-table">
+  ## Criar uma tabela
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+```
+
+<Info>
+  Este é um recurso experimental que pode mudar de formas incompatíveis com versões anteriores em lançamentos futuros.
+  Habilite o uso do motor de tabela YTsaurus
+  com a configuração [`allow_experimental_ytsaurus_table_engine`](/pt-BR/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine).
+
+  Você pode fazer isso com:
+
+  `SET allow_experimental_ytsaurus_table_engine = 1`.
+</Info>
+
+**Parâmetros do mecanismo**
+
+* `http_proxy_url` — URL do proxy HTTP do YTsaurus.
+* `cypress_path` — caminho do Cypress para a fonte de dados.
+* `oauth_token` — token OAuth.
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Mostra uma consulta que cria a tabela YTsaurus:
+
+```sql title="Query"
+SHOW CREATE TABLE yt_saurus;
+```
+
+```sql title="Response"
+CREATE TABLE yt_saurus
+(
+    `a` UInt32,
+    `b` String
+)
+ENGINE = YTsaurus('http://localhost:8000', '//tmp/table', 'password')
+```
+
+Para obter os dados da tabela, execute:
+
+```sql title="Query"
+SELECT * FROM yt_saurus;
+```
+
+```response title="Response"
+ ┌──a─┬─b──┐
+ │ 10 │ 20 │
+ └────┴────┘
+```
+
+<div id="data-types">
+  ## Tipos de dados
+</div>
+
+<div id="primitive-data-types">
+  ### Tipos de dados primitivos
+</div>
+
+| Tipo de dado do YTsaurus   | Tipo de dado do ClickHouse   |
+| -------------------------- | ---------------------------- |
+| `int8`                     | `Int8`                       |
+| `int16`                    | `Int16`                      |
+| `int32`                    | `Int32`                      |
+| `int64`                    | `Int64`                      |
+| `uint8`                    | `UInt8`                      |
+| `uint16`                   | `UInt16`                     |
+| `uint32`                   | `UInt32`                     |
+| `uint64`                   | `UInt64`                     |
+| `float`                    | `Float32`                    |
+| `double`                   | `Float64`                    |
+| `boolean`                  | `Bool`                       |
+| `string`                   | `String`                     |
+| `utf8`                     | `String`                     |
+| `json`                     | `JSON`                       |
+| `yson(type_v3)`            | `JSON`                       |
+| `uuid`                     | `UUID`                       |
+| `date32`                   | `Date`(ainda não compatível) |
+| `datetime64`               | `Int64`                      |
+| `timestamp64`              | `Int64`                      |
+| `interval64`               | `Int64`                      |
+| `date`                     | `Date`(ainda não compatível) |
+| `datetime`                 | `DateTime`                   |
+| `timestamp`                | `DateTime64(6)`              |
+| `interval`                 | `UInt64`                     |
+| `any`                      | `String`                     |
+| `null`                     | `Nothing`                    |
+| `void`                     | `Nothing`                    |
+| `T` com `required = False` | `Nullable(T)`                |
+
+<div id="composite-data-types">
+  ### Tipos compostos
+</div>
+
+| Tipo de dados do YTsaurus | Tipo de dados do ClickHouse |
+| ------------------------- | --------------------------- |
+| `decimal`                 | `Decimal`                   |
+| `optional`                | `Nullable`                  |
+| `list`                    | `Array`                     |
+| `struct`                  | `NamedTuple`                |
+| `tuple`                   | `Tuple`                     |
+| `variant`                 | `Variant`                   |
+| `dict`                    | &#96;Array(Tuple(...))      |
+| `tagged`                  | `T`                         |
+
+**Veja também**
+
+* função de tabela [ytsaurus](/pt-BR/reference/functions/table-functions/ytsaurus)
+* [schema de dados do ytsaurus](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
+* [tipos de dados do ytsaurus](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
