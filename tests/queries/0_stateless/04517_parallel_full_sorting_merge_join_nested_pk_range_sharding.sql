@@ -23,6 +23,14 @@
 -- the inner join is sharded at the source (`query_plan_join_shard_by_pk_ranges = 1`,
 -- `query_plan_join_swap_table = 0`, small `index_granularity` so several granules split into layers), and
 -- the ordered side reads in order (`optimize_read_in_order = 1`).
+--
+-- Parallel replicas are disabled: under the `ParallelReplicas` CI profile the ordered side is read through
+-- the parallel-replicas coordinator instead of a local in-order MergeTree read, so the primary-key-range
+-- sharding path does not apply and the inner join is not sharded at source (`both_joins_sharded` would drop
+-- to a single `Sharding:` marker). The correctness checks stay valid either way; the plan-shape checks need
+-- the local read.
+
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS pfsmj_pkr_ord;
 DROP TABLE IF EXISTS pfsmj_pkr_dim;
