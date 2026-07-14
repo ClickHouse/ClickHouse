@@ -27,6 +27,13 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extrem
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT TSV" \
     | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
 
+echo '--- framing makes JSONCompactEachRow emit totals and extremes (dropped in the plain output)'
+${CLICKHOUSE_CURL} -sS "${URL}&extremes=1${SINGLE_BLOCK}" \
+    -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSONCompactStringsEachRowWithNamesAndTypes"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&extremes=1${SINGLE_BLOCK}" \
+    -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSONCompactStringsEachRowWithNamesAndTypes" \
+    | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
+
 echo '--- the concatenation of the payloads is exactly the output of the format'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64&extremes=1${SINGLE_BLOCK}" \
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT TSV" \

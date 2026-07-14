@@ -5,6 +5,22 @@
 {"packet":"data","data":"0\t2\n1\t2\n"}
 {"packet":"totals","data":"\n0\t4\n"}
 {"packet":"extremes","data":"\n0\t2\n1\t2\n"}
+--- framing makes JSONCompactEachRow emit totals and extremes (dropped in the plain output)
+["k", "c"]
+["UInt64", "UInt64"]
+["0", "2"]
+["1", "2"]
+data | ["k", "c"]
+data | ["UInt64", "UInt64"]
+data | ["0", "2"]
+data | ["1", "2"]
+data | 
+totals | 
+totals | ["0", "4"]
+totals | 
+extremes | ["0", "2"]
+extremes | ["1", "2"]
+extremes | 
 --- the concatenation of the payloads is exactly the output of the format
 0	2
 1	2
