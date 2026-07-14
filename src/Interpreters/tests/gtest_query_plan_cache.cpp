@@ -31,17 +31,20 @@ TEST(QueryPlanCache, RejectsAndRemovesStaleFormatVersionEntry)
 {
     QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/10);
     auto key = makeKey(1);
+    auto other_key = makeKey(2);
+    other_key.user_id = key.user_id;
 
     auto stale_entry = makeEntry(10);
     stale_entry.format_version = QUERY_PLAN_CACHE_FORMAT_VERSION - 1;
-    cache.set(key, std::move(stale_entry));
+    cache.set(key, std::move(stale_entry), /*max_size_in_bytes_for_user=*/10);
 
     EXPECT_EQ(cache.get(key), nullptr);
     EXPECT_EQ(cache.count(), 0);
 
-    cache.set(key, makeEntry(10));
+    /// Removing the stale entry must also release its per-user quota charge.
+    cache.set(other_key, makeEntry(10), /*max_size_in_bytes_for_user=*/10);
 
-    EXPECT_NE(cache.get(key), nullptr);
+    EXPECT_NE(cache.get(other_key), nullptr);
     EXPECT_EQ(cache.count(), 1);
 }
 

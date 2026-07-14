@@ -143,10 +143,12 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
         if (result->format_version != QUERY_PLAN_CACHE_FORMAT_VERSION)
         {
             std::lock_guard operation_lock(operation_mutex);
-            Base::remove([&](const QueryPlanCacheKey & candidate_key, const MappedPtr & candidate)
+            const bool removed = Base::removeIfMatches(key, [&](const MappedPtr & candidate)
             {
-                return candidate_key == key && candidate.get() == result.get();
+                return candidate.get() == result.get();
             });
+            if (removed)
+                onEntryRemoval(QueryPlanCacheEntryWeight{}(*result), result);
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheMisses);
             return nullptr;
         }
