@@ -1,0 +1,99 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-committed-contract
+title: 'Committed Contract do AWS Marketplace'
+description: 'Assine o ClickHouse Cloud pelo AWS Marketplace (Committed Contract)'
+keywords: ['aws', 'amazon', 'marketplace', 'billing', 'committed', 'committed contract']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Comece a usar o ClickHouse Cloud no [AWS Marketplace](https://aws.amazon.com/marketplace) por meio de um contrato com compromisso de consumo.
+Um contrato com compromisso de consumo, também conhecido como oferta privada, permite que os clientes se comprometam a gastar um determinado valor no ClickHouse Cloud ao longo de um período.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Uma Oferta Privada da ClickHouse com base em termos contratuais específicos.
+* Para conectar uma organização ClickHouse à sua oferta de compromisso de consumo, você precisa ser admin dessa organização.
+
+Permissões necessárias para visualizar e aceitar seu contrato de compromisso de consumo na AWS:
+
+* Se você usa políticas gerenciadas pela AWS, é necessário ter as seguintes permissões:
+  * `AWSMarketplaceRead-only`, `AWSMarketplaceManageSubscriptions`
+  * ou `AWSMarketplaceFullAccess`
+* Se você não usa políticas gerenciadas pela AWS, é necessário ter as seguintes permissões:
+  * ação do IAM `aws-marketplace:ListPrivateListings` e `aws-marketplace:ViewSubscriptions`
+
+<div id="steps-to-sign-up">
+  ## Etapas para se inscrever
+</div>
+
+<Steps>
+  <Step>
+    ### Aceite sua oferta privada
+
+    Você deve ter recebido um e-mail com um link para revisar e aceitar sua oferta privada.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="E-mail de oferta privada do AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### Revise o link da oferta
+
+    Clique no link Review Offer no e-mail.
+    Isso deve levar você à sua página do AWS Marketplace com os detalhes da oferta privada.
+  </Step>
+
+  <Step>
+    ### Configure sua conta
+
+    Conclua as etapas para assinar no portal da AWS e clique em **&quot;Set up your account&quot;**.
+    É fundamental ser redirecionado ao ClickHouse Cloud neste momento e registrar uma nova conta ou entrar com uma conta existente.
+    Sem concluir esta etapa, não poderemos vincular seu contrato do AWS Marketplace ao ClickHouse Cloud.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="E-mail de oferta privada do AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### Faça login no Cloud
+
+    Depois de ser redirecionado ao ClickHouse Cloud, você pode fazer login com uma conta existente ou registrar uma nova conta.
+    Esta etapa é necessária para que possamos vincular sua organização do ClickHouse Cloud ao faturamento do AWS Marketplace.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="E-mail de oferta privada do AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### Registre-se se for novo
+
+    Se você for um novo usuário do ClickHouse Cloud, clique em &quot;Register&quot; na parte inferior da página.
+    Será solicitado que você crie um novo usuário e verifique o e-mail.
+    Depois de verificar seu e-mail, você pode sair da página de login do ClickHouse Cloud e fazer login usando o novo nome de usuário em [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+    Observe que, se você for um novo usuário, também precisará fornecer algumas informações básicas sobre sua empresa.
+    Veja as capturas de tela abaixo.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="Forneça informações da empresa" />
+
+    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="Forneça informações da empresa" />
+
+    Se você já for um usuário do ClickHouse Cloud, basta fazer login usando suas credenciais.
+  </Step>
+
+  <Step>
+    ### Crie ou selecione a organização para faturamento
+
+    Depois de fazer login com sucesso, você poderá decidir se deseja criar uma nova organização para faturar neste contrato do marketplace ou escolher uma organização existente para faturar neste contrato.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="Crie ou selecione uma organização para faturar nesta assinatura" />
+
+    Depois de concluir esta etapa, sua organização será conectada ao seu contrato de committed spend da AWS e todo o uso será faturado por meio da sua conta da AWS.
+    Você pode confirmar na página de faturamento da organização na UI do ClickHouse que o faturamento agora está de fato vinculado ao AWS Marketplace.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="Confirme que a configuração foi concluída" />
+
+    Se tiver qualquer problema, não hesite em entrar em contato com nossa [equipe de suporte](https://clickhouse.com/support/program).
+  </Step>
+</Steps>

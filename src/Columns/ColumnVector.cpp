@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -341,6 +342,120 @@ void ColumnVector<T>::compareColumn(
     }
 #endif
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
+}
+
+MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+size_t), findFirstNotEqualImpl, MULTITARGET_FUNCTION_BODY((
+    const T * data,
+    size_t begin,
+    size_t end,
+    T ref,
+    int nan_direction_hint)
+{
+    size_t i = begin;
+
+    /// Scan fixed-size blocks without an early exit so the comparison vectorizes; only when a block
+    /// contains the boundary do we locate it with a scalar pass (at most once, at the run end).
+    static constexpr size_t block = 16;
+    for (; i + block <= end; i += block)
+    {
+        UInt8 any_not_equal = 0;
+        for (size_t k = 0; k < block; ++k)
+            any_not_equal |= static_cast<UInt8>(!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint));
+        if (any_not_equal)
+        {
+            for (size_t k = 0; k < block; ++k)
+                if (!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint))
+                    return i + k;
+        }
+    }
+
+    /// The tail of the array that doesn't fit into a full block.
+    for (; i < end; ++i)
+        if (!CompareHelper<T>::equals(data[i], ref, nan_direction_hint))
+            return i;
+    return end;
+})
+)
+
+template <typename T>
+static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t end, int nan_direction_hint)
+{
+    /// An empty range contains no run, so its end is `begin`.
+    if (begin >= end)
+        return begin;
+
+    const T ref = d[begin];
+
+    /// Resolve a run of length one with a single comparison. This is the common case for
+    /// high-cardinality keys, where it avoids the fixed cost of the vectorized block scan below.
+    if (begin + 1 < end && !CompareHelper<T>::equals(d[begin + 1], ref, nan_direction_hint))
+        return begin + 1;
+
+    /// First scan a window linearly, which resolves short runs cheaply. The scan compares whole blocks
+    /// without an early exit so it vectorizes, making the per-row cost so small that the window can be
+    /// much longer than the linear probes of the scalar overloads.
+    static constexpr size_t window = 256;
+    size_t window_end = std::min(begin + window, end);
+
+    size_t hit = 0;
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
+    else
+#endif
+        hit = findFirstNotEqualImpl<T>(d, begin, window_end, ref, nan_direction_hint);
+
+    if (hit < window_end)
+        return hit;
+    if (window_end == end)
+        return end;
+
+    /// Gallop forward with an exponentially growing step to bracket the run end between `lo` (still
+    /// equal, as established by the earlier linear scan) and `hi` (the first probe past it).
+    size_t lo = window_end; /// rows in [begin, lo) all equal the value at `begin`
+    size_t hi = end;
+    size_t step = window;
+    while (lo < end)
+    {
+        size_t probe = std::min(lo + step, end);
+        if (CompareHelper<T>::equals(d[probe - 1], ref, nan_direction_hint))
+        {
+            lo = probe;
+            if (probe == end)
+                return end;
+            step <<= 1;
+        }
+        else
+        {
+            hi = probe;
+            break;
+        }
+    }
+
+    /// Binary-search the bracketed range `[lo, hi)` for the first position that is not equal; that is the run end.
+    /// `lo` is known from the gallop to equal the value at `begin`.
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (CompareHelper<T>::equals(d[mid], ref, nan_direction_hint))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+template <typename T>
+size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    const T * d = data.data();
+    const size_t run_end = getEqualRangeEndAssumeSortedImpl<T>(d, begin, end, nan_direction_hint);
+    checkEqualRangeEndAssumeSorted(
+        begin, end, run_end, [&](size_t i) { return CompareHelper<T>::equals(d[i], d[begin], nan_direction_hint); });
+    return run_end;
 }
 
 template <typename T>

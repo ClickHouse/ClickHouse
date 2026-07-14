@@ -1,0 +1,461 @@
+---
+title: 'Работа с JOIN в ClickHouse'
+description: 'Вводное руководство по работе с JOIN в ClickHouse'
+keywords: ['JOINs', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: 'Работа с JOIN в ClickHouse'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse полностью поддерживает стандартные SQL JOIN, обеспечивая эффективный анализ данных.
+В этом руководстве вы познакомитесь с некоторыми распространёнными типами JOIN и узнаете, как использовать их с помощью диаграмм Венна и примеров запросов к нормализованному набору данных [IMDB](https://en.wikipedia.org/wiki/IMDb) из [репозитория реляционных наборов данных](https://relational.fit.cvut.cz/dataset/IMDb).
+
+<div id="test-data-and-resources">
+  ## Тестовые данные и ресурсы
+</div>
+
+Инструкции по созданию и загрузке таблиц можно найти [здесь](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides).
+Набор данных также доступен в [Песочнице ClickHouse](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY), если вы не хотите создавать и загружать
+таблицы локально.
+
+Вы будете использовать следующие четыре таблицы из демонстрационного набора данных:
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Схема IMDB" />
+
+Эти четыре таблицы содержат данные о фильмах, у которых может быть один или несколько жанров.
+Роли в фильмах исполняют актёры.
+
+Стрелки на диаграмме выше обозначают [связи между внешним и первичным ключом](https://en.wikipedia.org/wiki/Foreign_key). Например, столбец `movie_id` в строке таблицы `genres` содержит значение `id` из строки таблицы `movies`.
+
+Между фильмами и актёрами существует [связь многие-ко-многим](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)).
+Эта связь многие-ко-многим нормализуется в две [связи один-ко-многим](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) с помощью таблицы `roles`.
+Каждая строка в таблице `roles` содержит значения из столбцов `id` таблиц `movies` и `actors`.
+
+<div id="join-types-supported-in-clickhouse">
+  ## Поддерживаемые в ClickHouse типы JOIN
+</div>
+
+ClickHouse поддерживает следующие типы JOIN:
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+В следующих разделах мы рассмотрим примеры запросов для каждого из перечисленных выше типов JOIN.
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+`INNER JOIN` возвращает для каждой пары строк, совпадающих по ключам JOIN, значения столбцов строки из левой таблицы, объединённые со значениями столбцов строки из правой таблицы.
+Если для строки находится более одного совпадения, возвращаются все совпадения (то есть для строк с совпадающими ключами JOIN формируется [декартово произведение](https://en.wikipedia.org/wiki/Cartesian_product)).
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="INNER JOIN" />
+
+Этот запрос находит жанры для каждого фильма, объединяя таблицу `movies` с таблицей `genres`:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  Ключевое слово `INNER` можно опустить.
+</Note>
+
+Поведение `INNER JOIN` можно расширить или изменить с помощью одного из следующих типов JOIN.
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+`LEFT OUTER JOIN` работает как `INNER JOIN`, но для несовпадающих строк левой таблицы ClickHouse возвращает [значения по умолчанию](/ru/reference/statements/create/table#default_values) для столбцов правой таблицы.
+
+Запрос `RIGHT OUTER JOIN` устроен аналогично и также возвращает значения из несовпадающих строк правой таблицы вместе со значениями по умолчанию для столбцов левой таблицы.
+
+Запрос `FULL OUTER JOIN` объединяет `LEFT` и `RIGHT OUTER JOIN` и возвращает значения из несовпадающих строк левой и правой таблиц вместе со значениями по умолчанию для столбцов правой и левой таблиц соответственно.
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="Внешнее JOIN-соединение" />
+
+<Note>
+  ClickHouse можно [настроить](/ru/reference/settings/session-settings#join_use_nulls) так, чтобы он возвращал [NULL](/ru/reference/syntax#null) вместо значений по умолчанию (однако по [соображениям производительности](/ru/reference/data-types/nullable#storage-features) это не рекомендуется).
+</Note>
+
+Этот запрос находит все фильмы без жанра: он выбирает все строки из таблицы `movies`, для которых нет совпадений в таблице `genres`, и поэтому они получают (во время выполнения запроса) значение по умолчанию 0 для столбца `movie_id`:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  Ключевое слово `OUTER` можно не указывать.
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+`CROSS JOIN` создает полное декартово произведение двух таблиц без учета ключей JOIN.
+Каждая строка из левой таблицы объединяется с каждой строкой из правой таблицы.
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="Cross Join" />
+
+Таким образом, следующий запрос объединяет каждую строку из таблицы `movies` с каждой строкой из таблицы `genres`:
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+Хотя предыдущий пример запроса сам по себе не имел особого смысла, его можно дополнить условием `WHERE`, чтобы сопоставить совпадающие строки и воспроизвести поведение `INNER JOIN` при поиске жанров для каждого фильма:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+Альтернативный синтаксис `CROSS JOIN` позволяет указать несколько таблиц в предложении `FROM`, разделяя их запятыми.
+
+ClickHouse [переписывает](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896) `CROSS JOIN` в `INNER JOIN`, если в разделе `WHERE` запроса есть выражения для JOIN.
+
+Это можно проверить на примере запроса с помощью [EXPLAIN SYNTAX](/ru/reference/statements/explain#explain-syntax) (он возвращает синтаксически оптимизированную версию, в которую запрос переписывается перед [выполнением](https://youtu.be/hP6G2Nlz_cA)):
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+В синтаксически оптимизированной версии запроса `CROSS JOIN` предложение `INNER JOIN` содержит ключевое слово `ALL`, явно добавленное для сохранения семантики декартова произведения `CROSS JOIN` даже при переписывании в `INNER JOIN`, для которого декартово произведение можно [отключить](/ru/reference/settings/session-settings#join_default_strictness).
+
+```sql
+ALL
+```
+
+И поскольку, как упоминалось выше, ключевое слово `OUTER` в `RIGHT OUTER JOIN` можно опустить, а необязательное ключевое слово `ALL` — добавить, можно написать `ALL RIGHT JOIN`, и это тоже будет работать.
+
+<div id="left--right-semi-join">
+  ## (LEFT / RIGHT) SEMI JOIN
+</div>
+
+Запрос `LEFT SEMI JOIN` возвращает значения столбцов для каждой строки из левой таблицы, у которой есть хотя бы одно совпадение по ключу JOIN в правой таблице.
+Возвращается только первое найденное совпадение (декартово произведение отключено).
+
+Запрос `RIGHT SEMI JOIN` работает аналогично и возвращает значения для всех строк из правой таблицы, у которых есть хотя бы одно совпадение в левой таблице, но возвращается только первое найденное совпадение.
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+
+Этот запрос находит всех актёров и актрис, сыгравших в фильме в 2023 году.
+Обратите внимание: при обычном (`INNER`) JOIN один и тот же актёр или актриса может появиться несколько раз, если в 2023 году у него или у неё было больше одной роли:
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+`LEFT ANTI JOIN` возвращает значения столбцов для всех несовпадающих строк левой таблицы.
+
+Аналогично, `RIGHT ANTI JOIN` возвращает значения столбцов для всех несовпадающих строк правой таблицы.
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+
+Альтернативный вариант запроса из предыдущего примера с outer JOIN — использовать anti JOIN, чтобы найти фильмы, у которых в наборе данных не указан жанр:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## (LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+`LEFT ANY JOIN` — это комбинация `LEFT OUTER JOIN` и `LEFT SEMI JOIN`, то есть ClickHouse возвращает значения столбцов для каждой строки из левой таблицы: либо в сочетании со значениями столбцов совпавшей строки из правой таблицы, либо со значениями столбцов правой таблицы по умолчанию, если совпадения нет.
+Если для строки из левой таблицы в правой таблице найдено более одного совпадения, ClickHouse возвращает только объединённые значения столбцов из первого найденного совпадения (декартово произведение отключено).
+
+Аналогично, `RIGHT ANY JOIN` — это комбинация `RIGHT OUTER JOIN` и `RIGHT SEMI JOIN`.
+
+А `INNER ANY JOIN` — это `INNER JOIN` с отключённым декартовым произведением.
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+
+Следующий пример показывает `LEFT ANY JOIN` на абстрактном примере с использованием двух временных таблиц (`left_table` и `right_table`), созданных с помощью [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [табличной функции](/ru/reference/functions/table-functions/index):
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+Это тот же запрос, но с `RIGHT ANY JOIN`:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+Вот запрос с `INNER ANY JOIN`:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+`ASOF JOIN` предоставляет возможность неточного сопоставления.
+Если для строки из левой таблицы не находится точного совпадения в правой таблице, в качестве совпадения используется наиболее близкая строка из правой таблицы.
+
+Это особенно полезно для анализа временных рядов и может значительно снизить сложность запроса.
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+
+В следующем примере выполняется анализ временных рядов на данных фондового рынка.
+Таблица `quotes` содержит котировки тикеров акций для определённых моментов времени в течение дня.
+В примере цена обновляется каждые 10 секунд.
+Таблица `trades` содержит сделки по тикерам: определённый объём акций был куплен в определённое время:
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+
+Чтобы вычислить фактическую стоимость каждой сделки, нужно сопоставить сделки с ближайшим временем котировки.
+
+С `ASOF JOIN` это делается просто и компактно: условие `ON` используется для задания точного совпадения, а условие `AND` — для задания ближайшего совпадения. Для конкретного тикера (точное совпадение) нужно найти строку с «ближайшим» временем из таблицы `quotes`, которое совпадает со временем сделки по этому тикеру или предшествует ему (неточное совпадение):
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  Условие `ON` в `ASOF JOIN` является обязательным и задаёт условие точного совпадения наряду с условием неточного совпадения в условии `AND`.
+</Note>
+
+<div id="summary">
+  ## Сводка
+</div>
+
+В этом руководстве описано, как ClickHouse поддерживает все стандартные типы SQL JOIN, а также специализированные JOIN для аналитических запросов.
+Подробнее о JOIN см. в документации по оператору [JOIN](/ru/reference/statements/select/join).

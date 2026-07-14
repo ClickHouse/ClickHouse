@@ -1,0 +1,73 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/search
+title: 'البحث في ClickStack وElastic'
+sidebarTitle: 'Search'
+description: 'البحث في ClickStack وElastic'
+doc_type: 'guide'
+keywords: ['clickstack', 'البحث', 'السجلات', 'الرصد', 'البحث النصي الكامل']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## البحث في ClickStack وElastic
+</div>
+
+ClickHouse هو محرك أصيل لـ SQL، صُمِّم من البداية لأحمال العمل التحليلية عالية الأداء. وعلى النقيض من ذلك، يوفّر Elasticsearch واجهة شبيهة بـ SQL، إذ يترجم SQL إلى لغة query DSL الأساسية في Elasticsearch، ما يعني أن دعمها ليس أصيلًا بشكل كامل وأن [تكافؤ الميزات](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) فيه محدود.
+
+لا يكتفي ClickHouse بدعم SQL بالكامل، بل يوسّعها أيضًا بمجموعة من الدوال الموجّهة لحالات الرصد، مثل [`argMax`](/ar/reference/functions/aggregate-functions/argMax) و[`histogram`](/ar/reference/functions/aggregate-functions/parametric-functions#histogram) و[`quantileTiming`](/ar/reference/functions/aggregate-functions/quantileTiming)، ما يسهّل الاستعلام عن السجلات المنظَّمة والمقاييس والتتبعات.
+
+لاستكشاف السجلات والتتبعات البسيطة، توفّر واجهة ClickStack UI ‏(HyperDX) [صياغة بأسلوب Lucene](/ar/clickstack/features/search) لتصفية نصية سهلة وبديهية لاستعلامات الحقل-القيمة، والنطاقات، وأحرف البدل، وغير ذلك. وهذا مماثل لـ [صياغة Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) في Elasticsearch وبعض عناصر [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
+
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Search" size="lg" />
+
+تدعم واجهة البحث هذه الصياغة المألوفة، لكنها تترجمها في الخلفية إلى عبارات SQL `WHERE` فعّالة، مما يجعل التجربة مألوفة لمستخدمي Kibana مع إتاحة الاستفادة من قوة SQL عند الحاجة. ويتيح لك ذلك الاستفادة من المجموعة الكاملة من [دوال البحث في السلاسل النصية](/ar/reference/functions/regular-functions/string-search-functions) و[دوال التشابه](/ar/reference/functions/regular-functions/string-functions#stringJaccardIndex) و[دوال التاريخ والوقت](/ar/reference/functions/regular-functions/date-time-functions) في ClickHouse.
+
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+
+فيما يلي، نقارن بين لغات استعلام Lucene في ClickStack وElasticsearch.
+
+<div id="clickstack-vs-elasticsearch-query-string">
+  ## صياغة البحث في ClickStack مقابل query string في Elasticsearch
+</div>
+
+يوفّر كلٌّ من ClickStack وElasticsearch لغات استعلام مرنة تتيح تصفية السجلات والتتبعات بصورة بديهية. وبينما تكون `query string` في Elasticsearch مدمجة بإحكام مع DSL ومحرك الفهرسة الخاص به، يدعم ClickStack صياغة مستوحاة من Lucene تُترجم داخليًا إلى ClickHouse SQL. يوضّح الجدول أدناه كيفية تعامل النظامين مع أنماط البحث الشائعة، مع إبراز أوجه التشابه في الصياغة والاختلافات في التنفيذ في الجهة الخلفية.
+
+| **الميزة**                          | **صياغة ClickStack**                | **صياغة Elasticsearch**           | **ملاحظات**                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------- | ----------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| البحث النصي الحر                    | `error`                             | `error`                           | يطابق جميع الحقول المفهرسة؛ وفي ClickStack تُعاد كتابته إلى SQL متعدد الحقول باستخدام `ILIKE`.                                                                                                                                                                                                                          |
+| مطابقة الحقل                        | `level:error`                       | `level:error`                     | الصياغة متطابقة. ويطابق ClickStack قيم الحقول مطابقة تامة في ClickHouse.                                                                                                                                                                                                                                                |
+| البحث بالعبارة                      | `"disk full"`                       | `"disk full"`                     | يطابق النص بين علامتَي اقتباس تسلسلاً مطابقًا تمامًا؛ ويستخدم ClickHouse مساواة السلاسل أو `ILIKE`.                                                                                                                                                                                                                     |
+| مطابقة عبارة داخل حقل               | `message:"disk full"`               | `message:"disk full"`             | تُترجم إلى SQL `ILIKE` أو إلى تطابق تام.                                                                                                                                                                                                                                                                                |
+| شروط OR                             | `error OR warning`                  | `error OR warning`                | OR منطقي بين المصطلحات؛ ويدعم النظامان ذلك بصورة أصلية.                                                                                                                                                                                                                                                                 |
+| شروط AND                            | `error AND db`                      | `error AND db`                    | يترجمه كلاهما إلى تقاطع؛ ولا يوجد اختلاف في الصياغة من منظور المستخدم.                                                                                                                                                                                                                                                  |
+| النفي                               | `NOT error` or `-error`             | `NOT error` or `-error`           | مدعوم بالطريقة نفسها؛ ويحوّله ClickStack إلى SQL `NOT ILIKE`.                                                                                                                                                                                                                                                           |
+| التجميع                             | `(error OR fail) AND db`            | `(error OR fail) AND db`          | تجميع Boolean قياسي في كليهما.                                                                                                                                                                                                                                                                                          |
+| Wildcards                           | `error*` or `*fail*`                | `error*`, `*fail*`                | يدعم ClickStack wildcards في البداية أو النهاية؛ بينما يعطّل ES wildcards البادئة افتراضيًا لأسباب تتعلق بالأداء. ولا يدعم wildcards داخل المصطلحات، مثل `f*ail.` ويجب تطبيق wildcards مع مطابقة حقل.                                                                                                                   |
+| النطاقات (رقمية/تاريخ)              | `duration:[100 TO 200]`             | `duration:[100 TO 200]`           | يستخدم ClickStack عبارة SQL `BETWEEN`؛ بينما يوسّع Elasticsearch ذلك إلى استعلامات نطاق. ولا يتم دعم `*` غير المقيّد داخل النطاقات مثل `duration:[100 TO *]`. وعند الحاجة، استخدم `Unbounded ranges` أدناه.                                                                                                             |
+| النطاقات غير المقيّدة (رقمية/تاريخ) | `duration:>10` or `duration:>=10`   | `duration:>10` or `duration:>=10` | يستخدم ClickStack معاملات SQL القياسية                                                                                                                                                                                                                                                                                  |
+| شامل/حصري                           | `duration:{100 TO 200}` (exclusive) | Same                              | تشير `{}` إلى حدود حصرية. ولا يتم دعم `*` داخل النطاقات، مثل `duration:[100 TO *]`                                                                                                                                                                                                                                      |
+| فحص الوجود                          | N/A                                 | `_exists_:user` or `field:*`      | `_exists_` غير مدعوم. استخدم `LogAttributes.log.file.path: *` لأعمدة `Map` مثل `LogAttributes`. أما الأعمدة الجذرية، فيجب أن تكون موجودة وسيكون لها قيمة افتراضية إذا لم تُضمَّن في الحدث. وللبحث عن قيمة افتراضية أو الأعمدة المفقودة، استخدم الصياغة نفسها في Elasticsearch: ` ServiceName:*` أو `ServiceName != ''`. |
+| Regex                               | `match` function                    | `name:/joh?n(ath[oa]n)/`          | غير مدعوم حاليًا في صياغة Lucene. يمكنك استخدام SQL والدالة [`match`](/ar/reference/functions/regular-functions/string-search-functions#match) أو غيرها من [string search functions](/ar/reference/functions/regular-functions/string-search-functions).                                                                      |
+| المطابقة التقريبية                  | `editDistance('quikc', field) = 1`  | `quikc~`                          | غير مدعوم حاليًا في صياغة Lucene. يمكن استخدام دوال المسافة في SQL مثل `editDistance('rror', SeverityText) = 1` أو [other similarity functions](/ar/reference/functions/regular-functions/string-functions#jaroSimilarity).                                                                                                |
+| البحث بالتقارب                      | Not supported                       | `"fox quick"~5`                   | غير مدعوم حاليًا في صياغة Lucene.                                                                                                                                                                                                                                                                                       |
+| تعزيز الأهمية                       | `quick^2 fox`                       | `quick^2 fox`                     | غير مدعوم في ClickStack في الوقت الحالي.                                                                                                                                                                                                                                                                                |
+| wildcard للحقل                      | `service.*:error`                   | `service.*:error`                 | غير مدعوم في ClickStack في الوقت الحالي.                                                                                                                                                                                                                                                                                |
+| الأحرف الخاصة المُهربة              | Escape reserved characters with `\` | Same                              | يلزم تهريب الرموز المحجوزة.                                                                                                                                                                                                                                                                                             |
+
+<div id="empty-value-differences">
+  ## اختلافات الوجود/الفقدان
+</div>
+
+على عكس Elasticsearch، حيث يمكن إغفال حقل بالكامل من حدث ما وبالتالي لا &quot;يكون موجودًا&quot; فعليًا، يتطلب ClickHouse وجود جميع الأعمدة في مخطط الجدول. وإذا لم يتم تمرير حقل في حدث insert:
+
+* بالنسبة إلى الحقول [`Nullable`](/ar/reference/data-types/nullable)، فستُضبط قيمته على `NULL`.
+* بالنسبة إلى الحقول غير القابلة لأن تكون `NULL` (وهو الخيار الافتراضي)، فستُملأ بقيمة افتراضية (غالبًا سلسلة فارغة أو 0 أو ما يعادل ذلك).
+
+في ClickStack، نستخدم الحالة الثانية لأن [`Nullable`](/ar/reference/data-types/nullable) [غير موصى به](/ar/concepts/best-practices/avoidnullablecolumns).
+
+ويعني هذا السلوك أن التحقق مما إذا كان الحقل &quot;موجودًا&quot; بالمعنى المقصود في Elasticsearch ليس مدعومًا بشكل مباشر.
+
+بدلًا من ذلك، يمكنك استخدام `field:*` أو `field != ''` للتحقق من وجود قيمة غير فارغة. لذلك لا يمكن التمييز بين الحقول المفقودة فعليًا والحقول الفارغة صراحةً.
+
+عمليًا، نادرًا ما يسبب هذا الاختلاف مشكلات في حالات استخدام الرصد، لكن من المهم أخذه في الاعتبار عند ترجمة الاستعلامات بين الأنظمة.

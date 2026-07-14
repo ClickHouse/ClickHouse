@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Tableau Online'
+slug: /integrations/tableau-online
+keywords: ['clickhouse', 'tableau', 'en ligne', 'mysql', 'connecter', 'intégrer', 'ui']
+description: 'Tableau Online met la puissance des données au service de chacun pour permettre des prises de décision plus rapides et plus sûres, où que l’on soit.'
+title: 'Tableau Online'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import MySQLCloudSetup from '/snippets/fr/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/fr/_clickhouse_mysql_on_premise_setup.mdx';
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Tableau Online peut se connecter à ClickHouse Cloud ou à un déploiement ClickHouse sur site via l’interface MySQL, à l’aide de la source de données MySQL officielle.
+
+<div id="clickhouse-cloud-setup">
+  ## Configuration de ClickHouse Cloud
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## Configuration d’un serveur ClickHouse sur site
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-tableau-online-to-clickhouse-on-premise-without-ssl">
+  ## Connexion de Tableau Online à ClickHouse (sur site sans SSL)
+</div>
+
+Connectez-vous à votre site Tableau Cloud et ajoutez une nouvelle source de données publiée.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Interface de Tableau Online affichant le bouton 'New' pour créer une source de données publiée" border />
+
+<br />
+
+Sélectionnez &quot;MySQL&quot; dans la liste des connecteurs disponibles.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="Écran de sélection des connecteurs de Tableau Online avec l'option MySQL mise en évidence" border />
+
+<br />
+
+Renseignez les informations de connexion recueillies lors de la configuration de ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="Écran de configuration de la connexion MySQL de Tableau Online avec les champs server, port, database et d'identifiants" border />
+
+<br />
+
+Tableau Online inspectera la base de données et affichera la liste des tables disponibles. Faites glisser la table souhaitée vers le canevas à droite. Vous pouvez également cliquer sur &quot;Update Now&quot; pour prévisualiser les données, ainsi qu&#39;affiner les types ou les noms des champs détectés.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="Page de source de données de Tableau Online affichant les tables de la base de données à gauche et le canevas à droite avec une fonctionnalité de glisser-déposer" border />
+
+<br />
+
+Après cela, il ne vous reste plus qu&#39;à cliquer sur &quot;Publish As&quot; en haut à droite, et vous pourrez utiliser normalement dans Tableau Online le jeu de données nouvellement créé.
+
+N.B. : si vous souhaitez utiliser Tableau Online avec Tableau Desktop et partager des jeux de données ClickHouse entre les deux, veillez à utiliser également dans Tableau Desktop le connecteur MySQL par défaut, en suivant le guide de configuration affiché [ici](https://www.tableau.com/support/drivers) si vous sélectionnez MySQL dans la liste déroulante Data Source. Si vous avez un Mac M1, consultez [ce fil de dépannage](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) pour contourner le problème d&#39;installation du pilote.
+
+<div id="connecting-tableau-online-to-clickhouse-cloud-or-on-premise-setup-with-ssl">
+  ## Connexion de Tableau Online à ClickHouse (configuration Cloud ou sur site avec SSL)
+</div>
+
+Comme il n’est pas possible de fournir les certificats SSL via l’assistant de configuration de connexion MySQL de Tableau Online,
+la seule solution consiste à utiliser Tableau Desktop pour configurer la connexion, puis à l’exporter vers Tableau Online. Le processus reste toutefois assez simple.
+
+Lancez Tableau Desktop sur une machine Windows ou Mac, puis sélectionnez &quot;Connect&quot; -&gt; &quot;To a Server&quot; -&gt; &quot;MySQL&quot;.
+Il sera probablement nécessaire d’installer d’abord le pilote MySQL sur votre machine.
+Vous pouvez le faire en suivant le guide de configuration affiché [ici](https://www.tableau.com/support/drivers) après avoir sélectionné MySQL dans la liste déroulante Source de données.
+Si vous utilisez un Mac M1, consultez [ce fil de dépannage](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) pour une solution de contournement concernant l’installation du pilote.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="Interface de Tableau Desktop affichant le menu Connect avec l’option MySQL mise en évidence" border />
+
+<br />
+
+<Note>
+  Dans l’UI de configuration de la connexion MySQL, assurez-vous que l’option &quot;SSL&quot; est activée.
+  Le certificat SSL de ClickHouse Cloud est signé par [Let&#39;s Encrypt](https://letsencrypt.org/certificates/).
+  Vous pouvez télécharger ce certificat racine [ici](https://letsencrypt.org/certs/isrgrootx1.pem).
+</Note>
+
+Saisissez les credentials de votre utilisateur MySQL de l’instance ClickHouse Cloud, ainsi que le chemin vers le certificat racine téléchargé.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="Boîte de dialogue de connexion MySQL de Tableau Desktop avec l’option SSL activée et des champs pour le server, le username, le password et le certificat" border />
+
+<br />
+
+Choisissez les tables souhaitées comme d’habitude (comme dans Tableau Online),
+puis sélectionnez &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Tableau Desktop affichant le menu Server avec l’option Publish Data Source mise en évidence" border />
+
+<br />
+
+IMPORTANT : vous devez sélectionner &quot;Embedded password&quot; dans les options &quot;Authentication&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Boîte de dialogue de publication de Tableau Desktop affichant les options Authentication avec Embedded password sélectionné" border />
+
+<br />
+
+En outre, choisissez &quot;Update workbook to use the published data source&quot;.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="Boîte de dialogue de publication de Tableau Desktop avec l’option 'Update workbook to use the published data source' cochée" border />
+
+<br />
+
+Enfin, cliquez sur &quot;Publish&quot; et votre source de données avec credentials intégrés s’ouvrira automatiquement dans Tableau Online.
+
+<div id="known-limitations-clickhouse-2311">
+  ## Limitations connues (ClickHouse 23.11)
+</div>
+
+Toutes les limitations connues ont été résolues dans ClickHouse `23.11`. Si vous rencontrez d&#39;autres incompatibilités, n&#39;hésitez pas à [nous contacter](https://clickhouse.com/company/contact) ou à créer un [nouveau ticket](https://github.com/ClickHouse/ClickHouse/issues).

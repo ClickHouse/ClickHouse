@@ -1,0 +1,80 @@
+---
+sidebarTitle: '예약 스케일링'
+slug: /cloud/features/autoscaling/scheduled-scaling
+description: 'ClickHouse Cloud의 예약 스케일링 기능을 설명하는 문서'
+keywords: ['예약 스케일링']
+title: '예약 스케일링'
+doc_type: 'guide'
+---
+
+import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud 서비스는 CPU 및 메모리 사용률에 따라 자동으로 스케일링되지만, 많은 워크로드는 예측 가능한 패턴을 보입니다. 예를 들어 일일 수집 급증, 야간에 실행되는 배치 작업, 또는 주말에 급격히 감소하는 트래픽 등이 있습니다. 이러한 사용 사례에서는 예약 스케일링을 통해 실시간 메트릭과 관계없이 서비스가 정확히 언제 확장 또는 축소되어야 하는지 정의할 수 있습니다.
+
+예약 스케일링을 사용하면 ClickHouse Cloud 콘솔에서 시간 기반 규칙 집합을 직접 구성할 수 있습니다. 각 규칙은 시간, 반복 주기(매일, 매주 또는 사용자 지정), 그리고 대상 크기를 지정합니다. 대상 크기는 레플리카 수(수평) 또는 메모리 티어(수직)입니다. 예약된 시간이 되면 ClickHouse Cloud가 자동으로 변경 사항을 적용하므로, 서비스는 수요가 발생한 후에 대응하는 대신 수요가 도달하기 전에 적절한 크기로 조정됩니다.
+
+이는 CPU 및 메모리 부하에 동적으로 대응하는 메트릭 기반 자동 스케일링과는 다릅니다. 예약 스케일링은 결정적입니다. 즉, 스케일링이 정확히 언제, 어떤 크기로 이루어지는지 명확히 알 수 있습니다. 두 방식은 상호 보완적입니다. 서비스는 기본 스케일링 일정을 설정해 두고, 해당 시간대 내에서 워크로드가 예기치 않게 변동하더라도 자동 스케일링의 이점을 계속 활용할 수 있습니다.
+
+예약 스케일링은 현재 **비공개 프리뷰**로 제공됩니다. 조직에서 이 기능을 활성화하려면 ClickHouse 지원팀에 문의하십시오.
+
+<div id="setting-up-a-scaling-schedule">
+  ## 스케일링 일정 설정
+</div>
+
+일정을 구성하려면 ClickHouse Cloud 콘솔에서 서비스로 이동한 다음 설정으로 이동합니다. 여기에서 **Schedule Override**를 선택하고 새 규칙을 추가합니다.
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="시간 기반 스케일링 규칙을 보여주는 ClickHouse Cloud 콘솔의 Scaling Schedules 인터페이스" border />
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="ClickHouse Cloud 콘솔에서 예약 스케일링 규칙을 구성하는 모습" border />
+
+각 규칙에는 다음 항목이 필요합니다:
+
+* **Time:** 스케일링 작업이 실행될 시간(로컬 시간대 기준)
+* **Recurrence:** 규칙의 반복 주기(예: 매주 평일, 매주 일요일)
+* **Target size:** 스케일링할 레플리카 수 또는 메모리 할당량
+
+여러 규칙을 조합해 전체 주간 일정을 구성할 수 있습니다. 예를 들어, 매주 평일 오전 6시에 5개의 레플리카로 스케일 아웃하고 오후 8시에 다시 2개의 레플리카로 축소하도록 설정할 수 있습니다.
+
+<div id="use-cases">
+  ## 활용 사례
+</div>
+
+**배치 및 ETL 워크로드:** 야간 수집 작업이 실행되기 전에 스케일 업하고 완료되면 다시 축소하면, 낮 동안 유휴 상태인 시간대에 리소스를 과도하게 프로비저닝하지 않아도 됩니다.
+
+**예측 가능한 트래픽 패턴:** 피크 시간이 일정한 서비스(예: 업무 시간대의 쿼리 트래픽)는 부하가 들어온 뒤 자동 스케일링이 반응할 때까지 기다리지 않고, 미리 스케일링하여 부하를 처리할 수 있습니다.
+
+**주말 축소:** 수요가 더 낮은 주말에는 레플리카 수 또는 메모리 티어를 줄이고, 월요일 아침의 급증에 대비해 그 전에 용량을 복원합니다.
+
+**비용 제어:** ClickHouse Cloud 비용을 관리하는 팀은 활용률이 낮은 것으로 예상되는 시간대에 예약된 축소를 적용해 두면, 수동 개입 없이도 리소스 사용량을 의미 있게 줄일 수 있습니다.
+
+<Note>
+  예약 스케일링 작업과 동시에 자동 스케일링 권장 사항이 적용될 수 있으며, 이 경우 트리거 시점에는 예약 일정이 우선합니다.
+</Note>
+
+<div id="handling-bursty-workloads">
+  ## 워크로드 급증 대응
+</div>
+
+워크로드가 곧 급증할 것으로 예상되는 경우
+[ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview)를 사용해
+급증에 대비하여 서비스 규모를 미리 확장하고, 수요가 줄어들면 다시 축소할 수
+있습니다.
+
+각 레플리카에서 현재 사용 중인 CPU 코어 수와 메모리를
+확인하려면 아래 쿼리를 실행할 수 있습니다:
+
+```sql
+SELECT *
+FROM clusterAllReplicas('default', view(
+    SELECT
+        hostname() AS server,
+        anyIf(value, metric = 'CGroupMaxCPU') AS cpu_cores,
+        formatReadableSize(anyIf(value, metric = 'CGroupMemoryTotal')) AS memory
+    FROM system.asynchronous_metrics
+))
+ORDER BY server ASC
+SETTINGS skip_unavailable_shards = 1
+```

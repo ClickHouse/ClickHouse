@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'Документация по формату RowBinaryWithDefaults'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ru/common-row-binary-format-settings.mdx';
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✗     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Похож на формат [`RowBinary`](/ru/reference/formats/RowBinary/RowBinary), но перед каждым столбцом добавляется дополнительный байт, который указывает, следует ли использовать значение по умолчанию.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Примеры:
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* Для столбца `x` есть только один байт `01`, который указывает, что следует использовать значение по умолчанию, и после него больше никаких данных нет.
+* Для столбца `y` данные начинаются с байта `00`, который указывает, что у столбца есть фактическое значение, и его следует считывать из последующих данных `01000000`.
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<RowBinaryFormatSettings />

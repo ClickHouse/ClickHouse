@@ -1,0 +1,504 @@
+---
+slug: /cloud/guides/data-masking
+sidebarTitle: 'Masquage des données'
+title: 'Masquage des données dans ClickHouse'
+description: 'Guide du masquage des données dans ClickHouse'
+keywords: ['masquage des données']
+doc_type: 'guide'
+---
+
+Le masquage des données est une technique de protection des données qui consiste à remplacer les données d’origine par une version qui en conserve le format et la structure, tout en supprimant toute information personnellement identifiable (PII) ou toute donnée sensible.
+
+Ce guide vous montre comment masquer des données dans ClickHouse à l’aide de plusieurs approches :
+
+* **politique de masquage** (ClickHouse Cloud, 25.12+) : masquage dynamique natif appliqué à l’exécution des requêtes pour des utilisateurs/rôles spécifiques
+* **fonction de remplacement de chaînes** : masquage simple à l’aide de fonctions intégrées
+* **VIEW masqué** : création de vues avec une logique de transformation
+* **colonne matérialisée** : stockage de versions masquées en parallèle des données d’origine
+* **règle de masquage des requêtes** : masquage des données sensibles dans les logs (ClickHouse OSS)
+
+<div id="masking-policies">
+  ## Utiliser les politiques de masquage (ClickHouse Cloud)
+</div>
+
+<Note>
+  Les politiques de masquage sont disponibles dans ClickHouse Cloud à partir de la version 25.12.
+</Note>
+
+L’instruction [`CREATE MASKING POLICY`](/fr/reference/statements/create/masking-policy) offre un moyen natif de masquer dynamiquement les valeurs de colonnes pour des utilisateurs ou rôles spécifiques au moment de l’exécution de la requête. Contrairement à d’autres approches, les politiques de masquage n’exigent ni la création de vues distinctes ni le stockage de données masquées : la transformation s’applique de manière transparente lorsque les utilisateurs interrogent la table.
+
+<div id="basic-maasking-policy">
+  ### Politique de masquage de base
+</div>
+
+Pour illustrer les politiques de masquage, créons une table `orders` contenant des informations client :
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Créez maintenant un rôle pour les utilisateurs autorisés à voir des données masquées :
+
+```sql
+CREATE ROLE masked_data_viewer;
+```
+
+Créez une politique de masquage qui s’applique au rôle `masked_data_viewer` :
+
+```sql
+CREATE MASKING POLICY mask_pii_data ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+        phone = replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+        shipping_address = replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+    TO masked_data_viewer;
+```
+
+Lorsqu’un utilisateur disposant du rôle `masked_data_viewer` interroge la table `orders`, il voit automatiquement des données masquées :
+
+```sql title="Query"
+SELECT * FROM orders ORDER BY user_id;
+```
+
+```response title="Response (for masked_data_viewer role)"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+Les utilisateurs qui n’ont pas le rôle `masked_data_viewer` voient les données d’origine non masquées.
+
+<div id="conditional-masking">
+  ### Masquage conditionnel
+</div>
+
+Vous pouvez utiliser la clause `WHERE` pour appliquer le masquage uniquement à certaines lignes. Par exemple, pour masquer uniquement les commandes d’un montant élevé :
+
+```sql
+CREATE MASKING POLICY mask_high_value_orders ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2')
+    WHERE total_amount > 200
+    TO masked_data_viewer;
+```
+
+<div id="multiple-policies-with-priority">
+  ### Plusieurs politiques avec priorité
+</div>
+
+Lorsque plusieurs politiques de masquage s’appliquent à la même colonne, utilisez la clause `PRIORITY` pour déterminer quelle transformation sera appliquée. Les valeurs de priorité les plus élevées sont appliquées en dernier :
+
+```sql
+-- Lower priority: Basic masking for all sensitive data
+CREATE MASKING POLICY basic_masking ON orders
+    UPDATE
+        name = '****',
+        email = '****@****.com'
+    TO masked_data_viewer
+    PRIORITY 0;
+
+-- Higher priority: More refined masking (overrides basic_masking)
+CREATE MASKING POLICY refined_masking ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****')
+    WHERE total_amount > 100
+    TO masked_data_viewer
+    PRIORITY 10;
+```
+
+Dans cet exemple, pour les commandes avec `total_amount > 100`, la politique `refined_masking` (priorité 10) prend le pas sur la politique `basic_masking` (priorité 0) pour la colonne `name`, tandis que `email` continue d’utiliser le masquage de base.
+
+<div id="hash-based-masking">
+  ### Masquage basé sur le hachage
+</div>
+
+Lorsque vous avez besoin d’un masquage constant (une même valeur d’entrée produit toujours le même résultat masqué), utilisez des fonctions de hachage :
+
+```sql
+CREATE MASKING POLICY hash_sensitive_data ON orders
+    UPDATE
+        email = concat(toString(cityHash64(email)), '@masked.com'),
+        phone = concat('555-', toString(cityHash64(phone) % 10000000))
+    TO masked_data_viewer;
+```
+
+<div id="managing-masking-policies">
+  ### Gérer les politiques de masquage
+</div>
+
+Affichez toutes les politiques de masquage :
+
+```sql
+SHOW MASKING POLICIES;
+```
+
+Supprimez une politique de masquage :
+
+```sql
+DROP MASKING POLICY mask_pii_data ON orders;
+```
+
+Remplacez une politique existante :
+
+```sql
+CREATE OR REPLACE MASKING POLICY mask_pii_data ON orders
+    UPDATE name = '[REDACTED]'
+    TO masked_data_viewer;
+```
+
+Pour plus d’informations, consultez la documentation [CREATE MASKING POLICY](/fr/reference/statements/create/masking-policy).
+
+<div id="using-string-functions">
+  ## Utiliser les fonctions de remplacement de chaînes
+</div>
+
+Pour les cas simples de masquage des données, la famille de fonctions `replace` offre un moyen pratique de masquer les données :
+
+| Fonction                                                                                               | Description                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`replaceOne`](/fr/reference/functions/regular-functions/string-replace-functions#replaceOne)             | Remplace la première occurrence d&#39;un motif dans une chaîne source par la chaîne de remplacement fournie.                                                                          |
+| [`replaceAll`](/fr/reference/functions/regular-functions/string-replace-functions#replaceAll)             | Remplace toutes les occurrences d&#39;un motif dans une chaîne source par la chaîne de remplacement fournie.                                                                          |
+| [`replaceRegexpOne`](/fr/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) | Remplace la première occurrence d&#39;une sous-chaîne correspondant à un motif d&#39;expression régulière (syntaxe re2) dans une chaîne source par la chaîne de remplacement fournie. |
+| [`replaceRegexpAll`](/fr/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) | Remplace toutes les occurrences d&#39;une sous-chaîne correspondant à un motif d&#39;expression régulière (syntaxe re2) dans une chaîne source par la chaîne de remplacement fournie. |
+
+Par exemple, vous pouvez remplacer le nom &quot;John Smith&quot; par un espace réservé `[CUSTOMER_NAME]` à l&#39;aide de la fonction `replaceOne` :
+
+```sql title="Query"
+SELECT replaceOne(
+    'Customer John Smith called about his account',
+    'John Smith',
+    '[CUSTOMER_NAME]'
+) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────┐
+│ Customer [CUSTOMER_NAME] called about his account │
+└───────────────────────────────────────────────────┘
+```
+
+De façon plus générale, vous pouvez utiliser `replaceRegexpOne` pour remplacer n’importe quel nom de client :
+
+```sql title="Query"
+SELECT 
+    replaceRegexpAll(
+        'Customer John Smith called. Later, Mary Johnson and Bob Wilson also called.',
+        '\\b[A-Z][a-z]+ [A-Z][a-z]+\\b',
+        '[CUSTOMER_NAME]'
+    ) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────────────────────────────────────────┐
+│ [CUSTOMER_NAME] Smith called. Later, [CUSTOMER_NAME] and [CUSTOMER_NAME] also called. │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Vous pouvez aussi masquer un numéro de sécurité sociale en ne laissant apparaître que les 4 derniers chiffres à l’aide de la fonction `replaceRegexpAll`.
+
+```sql title="Query"
+SELECT replaceRegexpAll(
+    'SSN: 123-45-6789',
+    '(\d{3})-(\d{2})-(\d{4})',
+    'XXX-XX-\3'
+) AS masked_ssn;
+```
+
+Dans la requête ci-dessus, `\3` sert à insérer le troisième groupe de capture dans la chaîne résultante, ce qui produit :
+
+```response title="Response"
+┌─masked_ssn───────┐
+│ SSN: XXX-XX-6789 │
+└──────────────────┘
+```
+
+<div id="masked-views">
+  ## Créer des `VIEW`s masquées
+</div>
+
+Une [`VIEW`](/fr/reference/statements/create/view) peut être utilisée avec les fonctions sur les chaînes de caractères mentionnées ci-dessus pour appliquer des transformations aux colonnes contenant des données sensibles avant qu’elles ne soient présentées à l’utilisateur.
+Ainsi, les données d’origine restent inchangées, et les utilisateurs qui interrogent la vue ne voient que les données masquées.
+
+Pour l’illustrer, imaginons que nous disposions d’une table stockant des enregistrements de commandes clients.
+Nous voulons nous assurer qu’un groupe d’employés puisse consulter ces informations, sans pour autant leur donner accès à l’intégralité des informations sur les clients.
+
+Exécutez la requête ci-dessous pour créer une table d’exemple `orders` et y insérer quelques enregistrements fictifs de commandes clients :
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Créez une vue nommée `masked_orders` :
+
+```sql
+CREATE VIEW masked_orders AS
+SELECT
+    user_id,
+    replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****') AS name,
+    replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2') AS email,
+    replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3') AS phone,
+    total_amount,
+    order_date,
+    replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1') AS shipping_address
+FROM orders;
+```
+
+Dans la clause `SELECT` de la requête de création de la vue ci-dessus, nous définissons des transformations à l’aide de `replaceRegexpOne` sur les champs `name`, `email`, `phone` et `shipping_address`, qui contiennent des informations sensibles que nous souhaitons masquer partiellement.
+
+Sélectionnez les données de la vue :
+
+```sql title="Query"
+SELECT * FROM masked_orders
+```
+
+```response title="Response"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+Notez que les données renvoyées par la vue sont partiellement masquées, ce qui dissimule les informations sensibles.
+Vous pouvez également créer plusieurs vues, avec des niveaux d&#39;obfuscation différents selon le niveau d&#39;accès privilégié aux informations dont dispose l&#39;utilisateur.
+
+Pour vous assurer que les utilisateurs ne peuvent accéder qu&#39;à la vue renvoyant les données masquées, et non à la table contenant les données d&#39;origine non masquées, vous devez utiliser le [contrôle d&#39;accès basé sur les rôles](/fr/products/cloud/reference/security/console-roles) afin que des rôles spécifiques disposent uniquement des autorisations nécessaires pour effectuer des sélections depuis la vue.
+
+Créez d&#39;abord le rôle :
+
+```sql
+CREATE ROLE masked_orders_viewer;
+```
+
+Ensuite, accordez au rôle le privilège `SELECT` sur la vue :
+
+```sql
+GRANT SELECT ON masked_orders TO masked_orders_viewer;
+```
+
+Comme les rôles ClickHouse sont cumulatifs, vous devez vous assurer que les utilisateurs qui ne doivent voir que la vue masquée ne disposent d’aucun privilège `SELECT` sur la table de base, quel que soit le rôle concerné.
+
+Il est donc plus sûr de révoquer explicitement l’accès à la table de base :
+
+```sql
+REVOKE SELECT ON orders FROM masked_orders_viewer;
+```
+
+Enfin, attribuez le rôle aux utilisateurs concernés :
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+Cela garantit que les utilisateurs ayant le rôle `masked_orders_viewer` ne peuvent voir
+que les données masquées de la vue, et non les données d&#39;origine non masquées de la table.
+
+<div id="materialized-ephemeral-column-restrictions">
+  ## Utiliser des colonnes `MATERIALIZED` et des restrictions d’accès au niveau des colonnes
+</div>
+
+Si vous ne souhaitez pas créer de vue distincte, vous pouvez stocker des versions masquées de vos données avec les données d’origine.
+Pour ce faire, vous pouvez utiliser des [colonnes matérialisées](/fr/reference/statements/create/table#materialized).
+Les valeurs de ces colonnes sont automatiquement calculées à partir de l’expression matérialisée spécifiée lors de l’insertion des lignes,
+et vous pouvez les utiliser pour créer de nouvelles colonnes contenant des versions masquées des données.
+
+En reprenant l’exemple précédent, au lieu de créer une `VIEW` distincte pour les données masquées, nous allons maintenant créer des colonnes masquées à l’aide de `MATERIALIZED` :
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2'),
+    phone String,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Si vous exécutez maintenant la requête `SELECT` suivante, vous verrez que les données masquées sont &#39;matérialisées&#39; au moment de l’insertion et stockées avec les données d’origine non masquées.
+Il est nécessaire de sélectionner explicitement les colonnes masquées, car ClickHouse n’inclut pas automatiquement les colonnes matérialisées dans les requêtes `SELECT *` par défaut.
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─name──────────┬─email─────────────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address───────────────────┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked────┐
+1. │    1001 │ John Smith    │ john.smith@gmail.com      │ 555-123-4567 │       299.99 │ 2024-01-15 │ 123 Main St, New York, NY 10001    │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ **** New York, NY 10001    │
+2. │    1002 │ Sarah Johnson │ sarah.johnson@outlook.com │ 555-987-6543 │        149.5 │ 2024-01-16 │ 456 Oak Ave, Los Angeles, CA 90210 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ **** Los Angeles, CA 90210 │
+3. │    1003 │ Michael Brown │ mbrown@company.com        │ 555-456-7890 │          599 │ 2024-01-17 │ 789 Pine Rd, Chicago, IL 60601     │ Michael **** │ mb****@company.com │ 555-***-7890 │ **** Chicago, IL 60601     │
+4. │    1004 │ Emily Rogers  │ emily.rogers@yahoo.com    │ 555-321-0987 │        89.99 │ 2024-01-18 │ 321 Elm St, Houston, TX 77001      │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ **** Houston, TX 77001     │
+5. │    1005 │ David Wilson  │ dwilson@email.net         │ 555-654-3210 │       449.75 │ 2024-01-19 │ 654 Cedar Blvd, Phoenix, AZ 85001  │ David ****   │ dw****@email.net   │ 555-***-3210 │ **** Phoenix, AZ 85001     │
+   └─────────┴───────────────┴───────────────────────────┴──────────────┴──────────────┴────────────┴────────────────────────────────────┴──────────────┴────────────────────┴──────────────┴────────────────────────────┘
+```
+
+Pour garantir que les utilisateurs puissent uniquement accéder aux colonnes contenant des données masquées, vous pouvez à nouveau utiliser le [contrôle d&#39;accès basé sur les rôles](/fr/products/cloud/reference/security/console-roles) pour faire en sorte que certains rôles ne disposent que du privilège SELECT sur les colonnes masquées de `orders`.
+
+Recréez le rôle que nous avons créé précédemment :
+
+```sql
+DROP ROLE IF EXISTS masked_order_viewer;
+CREATE ROLE masked_order_viewer;
+```
+
+Ensuite, accordez le privilège `SELECT` sur la table `orders` :
+
+```sql
+GRANT SELECT ON orders TO masked_data_reader;
+```
+
+Révoquez l’accès aux colonnes sensibles :
+
+```sql
+REVOKE SELECT(name) ON orders FROM masked_data_reader;
+REVOKE SELECT(email) ON orders FROM masked_data_reader;
+REVOKE SELECT(phone) ON orders FROM masked_data_reader;
+REVOKE SELECT(shipping_address) ON orders FROM masked_data_reader;
+```
+
+Enfin, attribuez le rôle aux utilisateurs concernés :
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+Si vous souhaitez stocker uniquement les données masquées dans la table `orders`,
+vous pouvez marquer les colonnes sensibles non masquées comme [`EPHEMERAL`](/fr/reference/statements/create/table#ephemeral),
+ce qui garantit que les colonnes de ce type ne sont pas stockées dans la table.
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String EPHEMERAL,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String EPHEMERAL,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+    phone String EPHEMERAL,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String EPHEMERAL,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^([^,]+),\\s*(.*)$', '*** \\2')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders (user_id, name, email, phone, total_amount, order_date, shipping_address) VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+Si nous exécutons la même requête que précédemment, vous verrez maintenant que seules les données masquées matérialisées ont été insérées dans la table :
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─total_amount─┬─order_date─┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked───┐
+1. │    1001 │       299.99 │ 2024-01-15 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ *** New York, NY 10001    │
+2. │    1002 │        149.5 │ 2024-01-16 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ *** Los Angeles, CA 90210 │
+3. │    1003 │          599 │ 2024-01-17 │ Michael **** │ mb****@company.com │ 555-***-7890 │ *** Chicago, IL 60601     │
+4. │    1004 │        89.99 │ 2024-01-18 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ *** Houston, TX 77001     │
+5. │    1005 │       449.75 │ 2024-01-19 │ David ****   │ dw****@email.net   │ 555-***-3210 │ *** Phoenix, AZ 85001     │
+   └─────────┴──────────────┴────────────┴──────────────┴────────────────────┴──────────────┴───────────────────────────┘
+```
+
+<div id="use-query-masking-rules">
+  ## Utiliser les règles de masquage des requêtes pour les données de journalisation
+</div>
+
+Pour les utilisateurs de ClickHouse OSS qui souhaitent masquer spécifiquement les données de journalisation, il est possible d’utiliser les [règles de masquage des requêtes](/fr/reference/settings/server-settings/settings#query_masking_rules) (masquage des logs) pour masquer les données.
+
+Pour ce faire, vous pouvez définir des règles de masquage basées sur des expressions régulières dans la configuration du serveur.
+Ces règles sont appliquées aux requêtes et à tous les messages de log avant d&#39;être stockés dans les logs du serveur ou les tables système (comme `system.query_log`, `system.text_log` et `system.processes`).
+
+Cela permet uniquement d&#39;éviter que des données sensibles ne se retrouvent dans les **logs**.
+Notez que cela ne masque pas les données dans les résultats de requête.
+
+Par exemple, pour masquer un numéro de sécurité sociale, vous pouvez ajouter la règle suivante à votre [configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) :
+
+```yaml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```

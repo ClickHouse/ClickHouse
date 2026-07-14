@@ -6,7 +6,6 @@ import shlex
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict
 
 from . import Job, Workflow
 from ._environment import _Environment
@@ -33,7 +32,7 @@ def _GH_Auth(force=False):
         return
     from .gh_auth import GHAuth
 
-    if force or not Shell.check(f"gh auth status", verbose=True):
+    if force or not Shell.check("gh auth status", verbose=True):
         GHAuth.auth_from_settings()
 
 
@@ -576,7 +575,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # - all authors who contributed to the PR
     # - the original commit messages before GitHub's ephemeral merge commit
     commands = [
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
     ]
     if env.BASE_BRANCH and env.PR_NUMBER:
         commands.append(
@@ -669,7 +668,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
-            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
+            Result.create_from(
+                name="Pre Hooks",
+                results=res_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
         # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
         env = _Environment.get()
@@ -805,7 +809,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
-        except Exception as e:
+        except Exception:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
@@ -997,7 +1001,12 @@ def _finish_workflow(workflow, job_name):
             results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
-            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            Result.create_from(
+                name="Post Hooks",
+                results=results_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
 
     ready_for_merge_status = Result.Status.OK
@@ -1097,7 +1106,7 @@ def _finish_workflow(workflow, job_name):
         )
         if not fast_test_failed and ready_for_merge_status != Result.Status.OK:
             print(
-                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+                "NOTE: Revert PR detected - setting merge status to success despite failures"
             )
             ready_for_merge_status = Result.Status.OK
             ready_for_merge_description = "Revert PR"
@@ -1110,7 +1119,7 @@ def _finish_workflow(workflow, job_name):
             description=ready_for_merge_description,
             url="",
         ):
-            print(f"ERROR: failed to set ReadyForMerge status")
+            print("ERROR: failed to set ReadyForMerge status")
             env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
@@ -1145,7 +1154,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception as e:
+    except Exception:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)

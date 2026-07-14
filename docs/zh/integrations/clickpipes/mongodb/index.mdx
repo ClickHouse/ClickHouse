@@ -1,0 +1,141 @@
+---
+sidebarTitle: '从 MongoDB 向 ClickHouse 摄取数据'
+description: '介绍如何将 MongoDB 无缝连接到 ClickHouse Cloud。'
+slug: /integrations/clickpipes/mongodb
+title: '从 MongoDB 向 ClickHouse 摄取数据（使用 CDC（变更数据捕获））'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '数据摄取', '实时同步']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  通过 ClickPipes 将 MongoDB 数据摄取到 ClickHouse Cloud 的功能目前处于 Public Beta 阶段。
+</Info>
+
+<Note>
+  在 ClickHouse Cloud 控制台和文档中，对于 MongoDB，&quot;table&quot; 和 &quot;collection&quot; 这两个词可互换使用。
+</Note>
+
+您可以使用 ClickPipes 将 MongoDB 数据库中的数据摄取到 ClickHouse Cloud。源 MongoDB 数据库既可以托管在本地环境中，也可以通过 MongoDB Atlas 等服务托管在云端。
+
+MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+开始之前，您首先需要确保 MongoDB 数据库已正确配置复制。具体配置步骤取决于您部署 MongoDB 的方式，因此请按照下方对应的指南进行操作：
+
+1. [MongoDB Atlas](/zh/integrations/clickpipes/mongodb/source/atlas)
+
+2. [通用 MongoDB](/zh/integrations/clickpipes/mongodb/source/generic)
+
+3. [亚马逊 DocumentDB](/zh/integrations/clickpipes/mongodb/source/documentdb)
+
+源 MongoDB 数据库设置完成后，您就可以继续创建 ClickPipe。
+
+<div id="create-your-clickpipe">
+  ## 创建您的 ClickPipe
+</div>
+
+请确保您已登录 ClickHouse Cloud 账户。如果您还没有账户，可以在[这里](https://cloud.clickhouse.com/)注册。
+
+1. 在 ClickHouse Cloud 控制台中，进入您的 ClickHouse Cloud 服务。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
+
+2. 在左侧菜单中选择 `Data Sources`，然后点击“Set up a ClickPipe”。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+
+3. 选择 `MongoDB CDC` 卡片。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="选择 MongoDB" size="lg" border />
+
+<div id="add-your-source-mongodb-database-connection">
+  ### 添加源 MongoDB 数据库连接
+</div>
+
+4. 填写您在前置条件步骤中配置的源 MongoDB 数据库连接信息。
+
+<Info>
+  在开始添加连接信息之前，请确保已在防火墙规则中将 ClickPipes IP 地址加入允许名单。您可以在下一页查看 [ClickPipes IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+  更多信息，请参阅本页[顶部](#prerequisites)链接的源 MongoDB 设置指南。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="填写连接信息" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### &#x20;(可选) 设置 SSH 隧道
+</div>
+
+如果源 MongoDB 数据库无法通过公网访问，你可以指定 SSH 隧道的相关详细信息。
+
+1. 打开“Use SSH Tunnelling”开关。
+
+2. 填写 SSH 连接详细信息。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 隧道" size="lg" border />
+
+3. 若要使用基于密钥的身份验证，请点击“Revoke and generate key pair”生成新的密钥对，然后将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys` 中。
+
+4. 点击“Verify Connection”验证连接。
+
+<Note>
+  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips) 加入允许列表，以便 ClickPipes 能够建立 SSH 隧道。
+</Note>
+
+填写完连接详细信息后，点击 `Next`。
+
+<div id="advanced-settings">
+  #### 配置高级设置
+</div>
+
+如有需要，您可以配置高级设置。下面简要介绍各项设置：
+
+* **Sync interval**：指 ClickPipes 轮询源数据库变更的时间间隔。该设置会影响目标端 ClickHouse 服务；对于注重成本的用户，建议将其设为较大的值 (大于 `3600`) 。
+* **拉取批次大小**：单个批次中拉取的行数。这是一个尽力而为的设置，因此在某些情况下可能无法严格遵循。
+* **Snapshot number of tables in parallel**：指初始快照期间并行拉取的表数量。如果您有大量表，并希望控制并行拉取的表数，此设置会很有用。
+
+<div id="configure-the-tables">
+  ### 配置表
+</div>
+
+5. 在这里，您可以为 ClickPipe 选择目标数据库。您可以选择现有数据库，也可以新建一个。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="选择目标数据库" size="lg" border />
+
+6. 您可以选择要从源 MongoDB 数据库复制过来的表。选择表时，您还可以为目标 ClickHouse 数据库中的这些表重命名。
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 检查权限并启动 ClickPipe
+</div>
+
+7. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="检查权限" size="lg" border />
+
+<div id="whats-next">
+  ## 接下来呢？
+</div>
+
+在将 ClickPipe 配置为把数据从 MongoDB 复制到 ClickHouse Cloud 后，你就可以着重考虑如何查询和建模数据，以获得最佳性能。
+
+<div id="caveats">
+  ## 注意事项
+</div>
+
+使用此连接器时，请注意以下几点：
+
+* 需要使用 5.1.0 及以上版本的 MongoDB。
+* 我们使用 MongoDB 原生的 Change Streams API 来实现 CDC (变更数据捕获) ，该 API 依赖 MongoDB 的 oplog 捕获实时变更。
+* 默认情况下，MongoDB 中的文档会以 JSON 类型复制到 ClickHouse 中。这让 schema 管理更加灵活，并可使用 ClickHouse 丰富的 JSON 操作符进行查询和分析。你可以在[这里](/zh/reference/data-types/newjson)了解有关查询 JSON 数据的更多信息。
+* 目前暂不支持自助式 PrivateLink 配置。如果你使用 AWS 且需要 PrivateLink，请联系 db-integrations-support@clickhouse.com 或创建支持工单——我们会协助你完成启用。
