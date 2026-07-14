@@ -1,0 +1,120 @@
+---
+slug: /use-cases/AI/MCP/claude-desktop
+sidebarTitle: 'Интеграция с Claude Desktop'
+title: 'Использование MCP-сервера ClickHouse с Claude Desktop'
+description: 'В этом руководстве рассказывается, как настроить Claude Desktop для работы с MCP-сервером ClickHouse.'
+keywords: ['AI', 'Librechat', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+> В этом руководстве рассказывается, как настроить Claude Desktop для работы с MCP-сервером ClickHouse с помощью uv
+> и подключить его к примерам наборов данных ClickHouse.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<Steps>
+  <Step>
+    ## Установка uv
+
+    Чтобы выполнить инструкции из этого руководства, вам потребуется установить [uv](https://docs.astral.sh/uv/).
+    Если вы не хотите использовать uv, вам нужно будет изменить конфигурацию MCP-сервера и указать альтернативный менеджер пакетов.
+  </Step>
+
+  <Step>
+    ## Загрузка Claude Desktop
+
+    Вам также потребуется установить приложение Claude Desktop, которое можно скачать на [сайте Claude Desktop](https://claude.ai/desktop).
+  </Step>
+
+  <Step>
+    ## Настройка MCP-сервера ClickHouse
+
+    После установки Claude Desktop можно переходить к настройке [MCP-сервера ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+    Это можно сделать через [файл конфигурации Claude Desktop](https://claude.ai/docs/configuration).
+
+    Чтобы найти этот файл, сначала откройте страницу настроек (`Cmd+,` на Mac), а затем нажмите вкладку `Developer` в меню слева.
+    После этого вы увидите следующий экран, где нужно нажать кнопку `Edit config`:
+
+    <Image img="/images/use-cases/AI_ML/MCP/claude-desktop-config.webp" alt="Конфигурация Claude Desktop" size="md" />
+
+    Вы попадёте в каталог, содержащий файл конфигурации (`claude_desktop_config.json`).
+    При первом открытии этого файла он, скорее всего, будет содержать следующее:
+
+    ```json
+    {
+      "mcpServers": {}
+    }
+    ```
+
+    Словарь `mcpServers` использует имя MCP-сервера в качестве ключа, а словарь параметров конфигурации — в качестве значения.
+    Например, конфигурация MCP-сервера ClickHouse для подключения к Песочнице ClickHouse будет выглядеть так:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true",
+            "CLICKHOUSE_VERIFY": "true",
+            "CLICKHOUSE_CONNECT_TIMEOUT": "30",
+            "CLICKHOUSE_SEND_RECEIVE_TIMEOUT": "30"
+          }
+        }
+      }
+    }
+    ```
+
+    После обновления конфигурации вам нужно будет перезапустить Claude Desktop, чтобы изменения вступили в силу.
+
+    <Warning>
+      В зависимости от того, как вы установили `uv`, при перезапуске Claude Desktop может появиться следующая ошибка:
+
+      ```text
+      MCP mcp-clickhouse: spawn uv ENOENT
+      ```
+
+      Если это произойдёт, вам нужно будет изменить `command`, указав полный путь к `uv`. Например, если вы устанавливали его через Cargo, путь будет таким: `/Users/<username>/.cargo/bin/uv`
+    </Warning>
+  </Step>
+
+  <Step>
+    ## Использование MCP-сервера ClickHouse
+
+    После перезапуска Claude Desktop вы сможете найти MCP-сервер ClickHouse, нажав на значок `Search and tools`:
+
+    <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="Поиск MCP-серверов" size="md" />
+
+    <br />
+
+    Затем можно выбрать, отключить все инструменты или только некоторые из них.
+
+    Теперь всё готово, чтобы задавать Claude вопросы, при ответе на которые он будет использовать MCP-сервер ClickHouse.
+    Например, можно спросить: `What's the most interesting dataset in the SQL playground?`.
+
+    При первом обращении к инструменту Claude попросит подтвердить использование каждого инструмента MCP-сервера:
+
+    <Image img="/images/use-cases/AI_ML/MCP/mcp-permission.webp" alt="Предоставление разрешения на использование инструмента list_databases" size="md" />
+
+    Ниже показана часть диалога, включающего несколько вызовов инструментов MCP-сервера ClickHouse:
+
+    <Image img="/images/use-cases/AI_ML/MCP/claude-conversation.webp" alt="Диалог Claude" size="md" />
+  </Step>
+</Steps>

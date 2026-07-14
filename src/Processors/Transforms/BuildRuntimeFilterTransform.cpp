@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <algorithm>
 
 
 namespace DB
@@ -28,6 +29,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
+    std::optional<UInt64> distinct_keys_hint_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -54,7 +56,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 bloom_filter_bytes_,
                 exact_values_limit_,
                 bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_);
+                max_ratio_of_set_bits_in_bloom_filter_,
+                distinct_keys_hint_);
         }
         else
         {

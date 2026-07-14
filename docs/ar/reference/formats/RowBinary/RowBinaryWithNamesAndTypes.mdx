@@ -1,0 +1,44 @@
+---
+alias: []
+description: 'وثائق تنسيق RowBinaryWithNamesAndTypes'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNamesAndTypes
+title: 'RowBinaryWithNamesAndTypes'
+doc_type: 'مرجع'
+---
+
+import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-settings.mdx';
+
+| المدخلات | المخرجات | اسم بديل |
+| -------- | -------- | -------- |
+| ✔        | ✔        |          |
+
+<div id="description">
+  ## الوصف
+</div>
+
+مشابه لصيغة [RowBinary](/ar/reference/formats/RowBinary/RowBinary)، ولكن مع إضافة ترويسة:
+
+* عدد الأعمدة (N) مرمَّز باستخدام [`LEB128`](https://en.wikipedia.org/wiki/LEB128).
+* N من قيم `String` التي تحدد أسماء الأعمدة.
+* N من قيم `String` التي تحدد أنواع الأعمدة.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  إذا كان الإعداد [`input_format_with_names_use_header`](/ar/reference/settings/formats#input_format_with_names_use_header) مضبوطًا على 1،
+  فستُطابَق الأعمدة في بيانات الإدخال مع أعمدة الجدول بحسب أسمائها، وسيتم تخطي الأعمدة ذات الأسماء غير المعروفة إذا كان الإعداد [input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats#input_format_skip_unknown_fields) مضبوطًا على 1.
+  وإلا، فسيتم تخطي الصف الأول.
+  إذا كان الإعداد [`input_format_with_types_use_header`](/ar/reference/settings/formats#input_format_with_types_use_header) مضبوطًا على `1`،
+  فستتم مقارنة الأنواع في بيانات الإدخال بأنواع الأعمدة المقابلة في الجدول. وإلا، فسيتم تخطي الصف الثاني.
+</Note>

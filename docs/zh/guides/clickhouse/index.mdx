@@ -1,0 +1,23 @@
+---
+slug: /guides/developer/overview
+sidebarTitle: '高级指南概览'
+description: '高级指南概述'
+title: '高级指南'
+keywords: ['ClickHouse 高级指南', '开发者指南', 'query optimization', 'materialized views', 'deduplication', 'time series', 'query execution']
+doc_type: 'guide'
+---
+
+本节包含以下高级指南：
+
+| Guide                                                                                                                                            | Description                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Alternative Query Languages](/zh/concepts/features/configuration/settings/alternative-query-languages)                                             | 关于受支持的替代查询语言及其使用方法的指南。提供了每种方言中的查询示例。                                                                                                                  |
+| [Cascading Materialized Views](/zh/concepts/features/materialized-views/cascading-materialized-views)                                               | 关于如何创建 materialized views 并将其级联，以及如何将多个源表合并到单个目标表中的指南。包含一个使用级联 materialized views 按月和按年为一组域名聚合数据的示例。                                                  |
+| [Debugging memory issues](/zh/concepts/features/performance/troubleshoot/debugging-memory-issues)                                                   | 关于如何在 ClickHouse 中调试内存问题的指南。                                                                                                                          |
+| [Deduplicating Inserts on Retries](/zh/concepts/features/operations/insert/deduplicating-inserts-on-retries)                                        | 关于如何处理失败 insert 可能需要重试的情况的指南。                                                                                                                         |
+| [Deduplication strategies](/zh/concepts/features/operations/insert/deduplication)                                                                   | 深入介绍数据去重的指南；数据去重是一种从数据库中删除重复行的技术。解释了它与 OLTP 系统中基于主键的去重有何不同、ClickHouse 的去重方式，以及如何在 ClickHouse 查询中处理重复数据场景。                                             |
+| [Filling gaps in time-series data](/zh/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                                   | 该指南介绍了 ClickHouse 处理时间序列数据的能力，包括通过填补数据空缺来构建更完整、更连续的时间序列数据表示的技术。                                                                                       |
+| [Manage Data with TTL (Time-to-live)](/zh/concepts/features/operations/delete/ttl)                                                                  | 该指南讨论了如何使用 `WITH FILL` 子句来填补时间序列数据中的空缺。内容涵盖如何用 0 值填补空缺、如何指定填补空缺的起始点、如何将空缺填补到特定终点，以及如何为累计计算插值。                                                         |
+| [Stored procedures &amp; query parameters](/zh/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                          | 该指南解释了 ClickHouse 不支持传统存储过程，并提供了推荐的替代方案，包括用户自定义函数 (UDF)、parameterized views、materialized views 和外部编排。还介绍了 query parameters，以实现安全的参数化查询 (类似于预处理语句) 。   |
+| [Understanding query execution with the Analyzer](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | 该指南通过引入 analyzer 工具，帮助你理解 ClickHouse 查询执行过程。它解释了 analyzer 如何将查询拆解为一系列步骤，使你能够可视化整个执行过程并进行故障排查，从而获得最佳性能。                                                |
+| [Using JOINs in ClickHouse](/zh/concepts/features/operations/select/joining-tables)                                                                 | 该指南简明介绍了如何在 ClickHouse 中连接表。它涵盖了不同的 join 类型 (`INNER`、`LEFT`、`RIGHT` 等) ，探讨了高效 join 的最佳实践 (例如将较小的表放在右侧) ，并介绍了 ClickHouse 内部的 JOIN 算法，帮助你针对复杂的数据关系优化查询。 |

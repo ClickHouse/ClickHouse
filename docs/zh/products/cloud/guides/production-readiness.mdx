@@ -1,0 +1,242 @@
+---
+slug: /cloud/guides/production-readiness
+sidebarTitle: '生产就绪指南'
+title: 'ClickHouse Cloud 生产就绪指南'
+description: '面向从快速入门过渡到适用于企业的 ClickHouse Cloud 部署的组织指南'
+keywords: ['生产就绪', 'enterprise', 'saml', 'sso', 'terraform', '监控', '备份', '灾难恢复']
+doc_type: 'guide'
+---
+
+适用于已完成快速入门指南，且已有活跃服务并持续接收数据的组织
+
+<Info>
+  **简而言之**
+
+  本指南将帮助您从快速入门过渡到适用于企业的 ClickHouse Cloud 部署。您将了解如何：
+
+  * 建立独立的 dev/staging/production 环境，以安全地进行测试
+  * 将 SAML/SSO 身份验证与您的身份提供商集成
+  * 使用 Terraform 或 Cloud API 实现部署自动化
+  * 将监控接入您的告警基础设施 (Prometheus、PagerDuty)
+  * 验证备份流程并记录灾难恢复流程
+</Info>
+
+<div id="introduction">
+  ## 简介
+</div>
+
+你已经成功运行了用于业务负载的 ClickHouse Cloud。现在，你需要进一步完善部署，使其满足企业级生产标准——无论这是出于合规审计、未经测试的查询引发的生产事故，还是 IT 对接企业系统的要求。
+
+ClickHouse Cloud 的托管平台负责基础设施运维、自动扩缩容和系统维护。而要达到企业生产就绪状态，还需要通过身份验证系统、监控基础设施、自动化工具和业务连续性流程，将 ClickHouse Cloud 接入你更广泛的 IT 环境。
+
+实现企业生产就绪需要你负责以下事项：
+
+* 在生产部署前建立独立环境，以便安全地进行测试
+* 与现有身份提供商和访问管理系统集成
+* 将监控和告警接入你的运维基础设施
+* 实施基础设施即代码实践，以实现一致化管理
+* 建立备份验证和灾难恢复流程
+* 配置成本管理和计费集成
+
+本指南将逐一介绍这些方面，帮助你将一个可正常运行的 ClickHouse Cloud 部署过渡为可满足企业要求的生产就绪系统。
+
+<div id="environment-strategy">
+  ## 环境策略
+</div>
+
+建立彼此独立的环境，以便在影响生产工作负载之前安全地测试变更。大多数生产事故都可以追溯到未经测试就直接部署到生产系统的查询或配置变更。
+
+<Note>
+  **在 ClickHouse Cloud 中，每个环境都是一个独立的服务。** 你需要在所属组织内分别预配独立的生产、暂存和开发服务，每个服务都有各自的计算资源、存储和端点。
+</Note>
+
+**环境结构**：维护生产环境 (实时工作负载) 、暂存环境 (与生产等效的验证) 和开发环境 (个人/团队实验) 。
+
+**测试**：在部署到生产环境之前，先在暂存环境中测试查询。在小型数据集上可以正常工作的查询，在生产规模下往往会导致内存耗尽、CPU 使用过高或执行缓慢。在暂存环境中验证配置变更，包括用户权限、配额和服务设置——如果配置错误到了生产环境才被发现，会立即引发运维事故。
+
+**规模规划**：将暂存服务的规模配置得尽量接近生产负载特征。在明显更小的基础设施上进行测试，可能无法暴露资源争用或扩缩容问题。通过定期刷新数据或生成合成数据，使用具有生产代表性的数据集。有关如何确定暂存环境的规模并适当扩缩容服务，请参阅 [Sizing and hardware recommendations](/zh/guides/oss/best-practices/sizing-and-hardware-recommendations) 和 [Scaling in ClickHouse Cloud](/zh/products/cloud/features/autoscaling/overview) 文档。这些资源提供了关于内存、CPU 和存储规模规划的实用建议，以及纵向和横向扩缩容选项的详细信息，帮助你让暂存环境与生产工作负载相匹配。
+
+<div id="private-networking">
+  ## 私有网络
+</div>
+
+ClickHouse Cloud 中的[私有网络](/zh/products/cloud/guides/security/connectivity/private-networking/index)可让您将 ClickHouse 服务直接连接到云虚拟网络，确保数据不会经过公网传输。这对于有严格安全性或合规要求的组织，以及在私有子网中运行应用程序的用户而言至关重要。
+
+ClickHouse Cloud 通过以下机制支持私有网络：
+
+* [AWS PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink)：可在不将流量暴露到公网的情况下，在您的 VPC 与 ClickHouse Cloud 之间建立安全连接。它支持跨区域连接，并在 Scale 和 Enterprise 方案中可用。设置过程包括创建 PrivateLink 端点，并将其添加到您的 ClickHouse Cloud 组织和服务的允许列表中。更多详细信息和分步说明请参阅此处的文档。
+* [GCP Private Service Connect](/zh/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect) (PSC) ：允许您从 Google Cloud VPC 私有访问 ClickHouse Cloud。与 AWS 类似，它在 Scale 和 Enterprise 方案中可用，并且需要在此处显式配置服务端点和允许列表。
+* [Azure Private Link](/zh/products/cloud/guides/security/connectivity/private-networking/azure-privatelink)：在您的 Azure VNet 与 ClickHouse Cloud 之间提供私有连接，并支持跨区域连接。设置过程包括获取连接别名、创建专用终结点，并在此处更新允许列表。
+
+如果您需要更多技术细节或分步设置说明，请参阅各提供商对应链接中的完整文档指南。
+
+<div id="enterprise-authentication">
+  ## Enterprise 身份验证和用户管理
+</div>
+
+从通过控制台管理用户转向集成 Enterprise 身份验证，是实现生产就绪的关键。
+
+<div id="sso-authentication">
+  ### SSO 和社交身份验证
+</div>
+
+[SAML 单点登录](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)：Enterprise 层级的 ClickHouse Cloud 支持与身份提供商进行 SAML 集成，包括 Okta、Azure Active Directory 和 Google Workspace。SAML 配置需要与 ClickHouse 支持团队协调，并提供你的 IdP 元数据以及配置属性映射。
+
+[Social SSO](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account)：ClickHouse Cloud 还支持社交身份验证提供商 (Google、Microsoft、GitHub) ，可作为与 SAML 单点登录 同样安全的替代方案。对于尚未具备 SAML 基础设施的组织，Social SSO 可实现更快的设置，同时保持企业级安全标准。
+
+<Info>
+  **重要限制**
+
+  通过 SAML 或社交 SSO 完成身份验证的用户默认会被分配 &quot;Member&quot; 角色，并且在首次登录后必须由管理员手动授予额外角色。目前暂不支持组到角色映射和自动角色分配。
+</Info>
+
+<div id="access-control-design">
+  ### 访问控制设计
+</div>
+
+ClickHouse Cloud 使用组织级角色 (Admin、Developer、Billing、Member) 以及服务/数据库级角色 (Service Admin、Read Only、SQL 控制台角色) 。应围绕岗位职责设计角色，并遵循最小权限原则：
+
+* **应用用户**：对特定数据库和表具有访问权限的服务账号
+* **分析师用户**：对精选数据集和报表视图具有只读访问权限
+* **Admin 用户**：具备完整的管理能力
+
+配置配额、限制和 settings profile，以管理不同用户和角色的资源使用。设置内存和执行时间限制，防止单个查询影响系统性能。通过审计日志、会话日志和查询日志监控资源使用情况，以识别经常触及限制的用户或应用程序。利用 ClickHouse Cloud 的审计功能定期开展访问审查。
+
+<div id="user-lifecycle-management">
+  ### 用户生命周期管理的限制
+</div>
+
+ClickHouse Cloud 目前以私有预览形式支持 [SCIM 预配](/zh/products/cloud/guides/security/cloud-access-management/scim-setup)，并支持 Okta。SCIM 可自动管理用户和组的生命周期，因此当你在身份提供商中分配或取消分配用户时，系统会自动创建或移除相应用户。如果未使用 SCIM，则用户从你的 IdP 中移除后，还必须在 ClickHouse Cloud 控制台中手动删除——在这种情况下，请提前规划好手动用户管理流程。
+
+进一步了解[云访问管理](/zh/products/cloud/guides/security/cloud-access-management/index)和 [SAML 单点登录设置](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
+
+<div id="infrastructure-as-code">
+  ## 基础设施即代码与自动化
+</div>
+
+通过基础设施即代码实践和 API 自动化来管理 ClickHouse Cloud，可使您的部署配置保持一致、便于版本控制，并实现可重复部署。
+
+<div id="terraform-provider">
+  ### Terraform Provider
+</div>
+
+使用在 ClickHouse Cloud 控制台中创建的 API 密钥来配置 ClickHouse Terraform provider：
+
+```terraform
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "clickhouse" {
+  environment     = "production"
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+Terraform provider 支持服务预配、IP 访问列表和用户管理。对于 Terraform provider 尚未涵盖的功能，请通过控制台管理，或联系 ClickHouse 支持团队。
+
+如需查看涵盖服务配置和网络访问控制的完整示例，请参阅[关于如何使用 Cloud API 的 Terraform 示例](/zh/resources/support-center/knowledge-base/integrations/terraform-example)。
+
+<div id="cloud-api-integration">
+  ### Cloud API 集成
+</div>
+
+已有自动化框架的组织可以通过 Cloud API 直接集成 ClickHouse Cloud 管理。该 API 提供以编程方式访问服务生命周期管理、用户管理、备份操作以及监控数据检索的能力。
+
+常见的 API 集成模式：
+
+* 与内部工单系统集成的自定义资源预配工作流
+* 根据应用部署计划自动执行扩缩容调整
+* 用于合规工作流的程序化备份验证与报告
+* 与现有基础设施管理平台集成
+
+API 身份验证采用与 Terraform 相同的基于令牌的方法。有关完整的 API 参考文档和集成示例，请参阅 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 文档。
+
+<div id="monitoring-integration">
+  ## 监控与运维集成
+</div>
+
+将 ClickHouse Cloud 接入您现有的监控基础设施，可确保具备可见性，并能主动发现问题。
+
+<div id="built-in-monitoring">
+  ### 内置监控
+</div>
+
+ClickHouse Cloud 提供高级仪表板，内含实时指标，例如每秒查询数、内存使用量、CPU 使用率和存储速率。可在 Cloud Console 的 Monitoring → Advanced dashboard 中访问。你还可以创建针对特定工作负载模式或团队资源消耗定制的仪表板。
+
+<Info>
+  **生产环境中的常见短板**
+
+  缺乏与企业事件管理系统的主动告警集成，以及自动化成本监控。内置仪表板能够提供可观测性，但自动告警仍需借助外部集成来实现。
+</Info>
+
+<div id="production-alerting">
+  ### 生产环境告警设置
+</div>
+
+**内置能力**：ClickHouse Cloud 可通过电子邮件、UI 和 Slack 就计费事件、扩缩容事件以及服务健康发送通知。您可以在控制台的通知设置中配置通知渠道和通知严重性级别。
+
+**Enterprise 集成**：如需高级告警 (PagerDuty、自定义 webhook) ，请使用 Prometheus 端点将指标导出到您现有的监控基础设施：
+
+```yaml
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+```
+
+如需了解完整的设置流程 (包括详细的 Prometheus/Grafana 配置和高级告警) ，请参阅 [ClickHouse Cloud Observability Guide](/zh/guides/use-cases/observability/cloud-monitoring#prometheus)。
+
+<div id="business-continuity">
+  ## 业务连续性与支持集成
+</div>
+
+建立备份验证流程并做好支持对接，可确保您的 ClickHouse Cloud 部署在发生故障后能够恢复，并在需要时及时获得帮助。
+
+<div id="backup-strategy">
+  ### 备份策略评估
+</div>
+
+ClickHouse Cloud 提供自动备份，并支持配置保留期。请根据合规要求和恢复需求评估当前的备份配置。如果您对备份存储位置或加密有特定的合规要求，可以将 ClickHouse Cloud 配置为将备份存储在您自己的云存储 bucket (BYOB) 中。有关 BYOB 配置，请联系 ClickHouse 支持团队。
+
+<div id="validate-test-recovery">
+  ### 验证并测试恢复流程
+</div>
+
+大多数组织都是在实际恢复场景中才发现备份存在空缺。应建立定期验证机制，在事故发生前核实备份完整性并测试恢复流程。定期在非生产环境中执行恢复演练，记录包含时间预估的分步恢复流程，验证恢复后数据的完整性和应用功能，并针对不同故障场景 (服务删除、数据损坏、区域故障) 测试恢复流程。维护最新的恢复运行手册，并确保值班团队能够访问。
+
+对于关键生产服务，至少每季度测试一次备份恢复。合规要求严格的组织可能需要每月甚至每周进行验证。
+
+<div id="disaster-recovery-planning">
+  ### 灾难恢复规划
+</div>
+
+记录恢复时间目标 (RTO) 和恢复点目标 (RPO) ，以确认当前备份配置符合业务要求。建立定期的备份恢复测试机制，并持续维护最新的恢复文档。
+
+**跨区域备份存储**：有地域性灾难恢复需求的组织可以将 ClickHouse Cloud 配置为把备份导出到其他区域中客户自有的存储桶。这样可防范区域级故障，但需要手动执行恢复流程。要启用跨区域备份导出，请联系 ClickHouse 支持团队。未来的平台发行版将提供自动化的跨区域复制能力。
+
+<div id="production-support">
+  ### 集成生产环境支持流程
+</div>
+
+了解您当前支持层级的 SLA 预期和问题处理流程。创建内部运行手册，明确何时联系 ClickHouse 支持团队，并将这些流程纳入您现有的事件管理流程。
+
+进一步了解 [ClickHouse Cloud 备份与恢复](/zh/products/cloud/guides/backups/review-and-restore-backups) 和 [支持服务](/zh/resources/about/support)。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+在实施本指南中的集成和流程后，请访问 [Cloud 资源导览](/zh/products/cloud/getting-started/resource-tour)，查看有关[监控](/zh/products/cloud/getting-started/resource-tour#monitoring)、[安全](/zh/products/cloud/getting-started/resource-tour#security)和[成本优化](/zh/products/cloud/getting-started/resource-tour#cost-optimization)的指南。
+
+如果当前的 [service 层级限制](/zh/products/cloud/features/cloud-tiers)已影响到您的生产环境运行，请考虑选择升级路径，以获得更完善的功能，例如[私有网络](/zh/products/cloud/guides/security/connectivity/private-networking/index)、[TDE/CMEK](/zh/products/cloud/guides/security/cmek) (使用客户管理加密密钥的透明数据加密) ，或[高级备份选项](/zh/products/cloud/guides/backups/configurable-backups)。

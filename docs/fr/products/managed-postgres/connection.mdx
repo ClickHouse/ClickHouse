@@ -1,0 +1,108 @@
+---
+slug: /cloud/managed-postgres/connection
+sidebarTitle: 'Connexion'
+title: 'Connexion à Managed Postgres'
+description: 'Chaînes de connexion, pool de connexions PgBouncer et configuration TLS pour ClickHouse Managed Postgres'
+keywords: ['connexion Postgres', 'chaîne de connexion', 'pgbouncer', 'tls', 'ssl']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
+
+<Tip>
+  **SQL Console**
+
+  Cette page explique comment connecter vos systèmes de production à Postgres. Si vous cherchez un moyen rapide d’exécuter une requête, vous pouvez vous connecter via la [SQL Console](/fr/integrations/connectors/sql-clients/sql-console), comme vous pouvez le faire avec des instances ClickHouse.
+</Tip>
+
+<div id="accessing-connection-details">
+  ## Accéder aux informations de connexion
+</div>
+
+Pour connecter vos applications à Managed Postgres, accédez à la section **Connect** dans la barre latérale gauche de votre instance.
+
+<Image img="/images/managed-postgres/connect-button.webp" alt="Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion" size="md" border />
+
+Un clic sur **Connect** ouvre une fenêtre modale affichant vos identifiants et vos chaînes de connexion dans plusieurs formats.
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion" size="md" border />
+
+La fenêtre modale de connexion affiche les informations suivantes :
+
+* **Nom d’utilisateur** : L’utilisateur de la base de données (par défaut : `postgres`)
+* **Mot de passe** : Le mot de passe de votre base de données (masqué par défaut, cliquez sur l’icône en forme d’œil pour l’afficher)
+* **Serveur** : Le nom d’hôte de votre instance Managed Postgres
+* **Port** : Le port PostgreSQL (par défaut : `5432`)
+
+Managed Postgres vous donne un accès superutilisateur à votre base de données. Utilisez ces identifiants pour vous connecter en tant que superutilisateur, ce qui vous permet de créer des utilisateurs supplémentaires et de gérer les objets de la base de données.
+
+<div id="connection-string">
+  ## Formats de chaîne de connexion
+</div>
+
+Les onglets **Connect via** fournissent votre chaîne de connexion dans plusieurs formats afin de s&#39;adapter aux besoins de votre application :
+
+| Format   | Description                                                                                   |
+| -------- | --------------------------------------------------------------------------------------------- |
+| **url**  | URL de connexion standard au format `postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>` |
+| **psql** | Commande prête à l&#39;emploi pour se connecter via l&#39;outil en ligne de commande psql     |
+| **env**  | Variables d&#39;environnement pour les clients basés sur libpq                                |
+| **yaml** | Configuration au format YAML                                                                  |
+| **jdbc** | Chaîne de connexion JDBC pour les applications Java                                           |
+
+Pour des raisons de sécurité, le mot de passe dans les chaînes de connexion est masqué par défaut. Cliquez sur l&#39;icône de copie à côté de n’importe quel champ ou de n’importe quelle chaîne de connexion pour la copier directement dans votre presse-papiers.
+
+<div id="pgbouncer">
+  ## Pool de connexions PgBouncer
+</div>
+
+Managed Postgres inclut une instance [PgBouncer](https://www.pgbouncer.org/) intégrée pour le pool de connexions côté serveur. PgBouncer améliore la gestion des connexions, les performances et l’utilisation des ressources, en particulier pour les applications qui :
+
+* ouvrent de nombreuses connexions concurrentes
+* créent et ferment fréquemment des connexions
+* utilisent des environnements de calcul serverless ou éphémères
+
+Pour utiliser le pool de connexions, cliquez sur le bouton bascule **via PgBouncer** en haut de la fenêtre modale de connexion. Les informations de connexion seront alors mises à jour afin de faire passer vos connexions par le pooler de connexions plutôt que directement par PostgreSQL.
+
+<Tip>
+  **Quand utiliser PgBouncer**
+
+  Utilisez PgBouncer lorsque votre application ouvre de nombreuses connexions de courte durée. Pour les connexions longues ou les applications qui utilisent des fonctionnalités PostgreSQL incompatibles avec le pool de connexions (comme les prepared statements utilisées d’une transaction à l’autre), connectez-vous directement.
+
+  Le transfert de données vers ClickHouse à l’aide de ClickPipes n’est pas pris en charge via PgBouncer.
+</Tip>
+
+<div id="tls">
+  ## Configuration de TLS
+</div>
+
+Toutes les instances Managed Postgres sont sécurisées par TLS. La version minimale prise en charge est **TLS 1.3**.
+
+<div id="quick-connection">
+  ### Connexion rapide (chiffrée avec TLS)
+</div>
+
+Par défaut, les connexions utilisent le chiffrement TLS sans vérification du certificat :
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
+```
+
+<div id="verified-tls">
+  ### Connexion TLS vérifiée (recommandée pour la production)
+</div>
+
+Pour les charges de travail de production, nous vous recommandons d’utiliser une connexion TLS vérifiée afin de garantir que vous communiquez avec le bon serveur. Pour ce faire, téléchargez le bundle de certificats CA depuis l’onglet **Settings** et ajoutez-le aux certificats de confiance de votre client de base de données.
+
+<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Télécharger le certificat CA depuis l’onglet Settings" size="md" border />
+
+Le certificat CA est propre à votre instance Managed Postgres et ne fonctionnera pas avec d’autres instances.
+
+Pour vous connecter avec une connexion TLS vérifiée, ajoutez `sslmode=verify-full` ainsi que le chemin vers le certificat que vous avez téléchargé :
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
+```

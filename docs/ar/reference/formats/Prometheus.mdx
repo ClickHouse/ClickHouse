@@ -1,0 +1,95 @@
+---
+alias: []
+description: 'توثيق صيغة Prometheus'
+input_format: false
+keywords: ['Prometheus']
+output_format: true
+slug: /interfaces/formats/Prometheus
+title: 'Prometheus'
+doc_type: 'reference'
+---
+
+| الإدخال | الإخراج | الاسم البديل |
+| ------- | ------- | ------------ |
+| ✗       | ✔       |              |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يعرِض المقاييس بصيغة العرض النصي الخاص بـ [Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+
+بالنسبة إلى هذه الصيغة، يُشترط أن يكون جدول الإخراج مُنظَّمًا بشكل صحيح وفقًا للقواعد التالية:
+
+* العمودان `name` ([String](/ar/reference/data-types/string)) و`value` (number) مطلوبان.
+* يمكن أن تتضمن الصفوف اختياريًا `help` ([String](/ar/reference/data-types/string)) و`timestamp` (number).
+* يجب أن تكون قيمة العمود `type` ([String](/ar/reference/data-types/string)) واحدة من `counter` أو `gauge` أو `histogram` أو `summary` أو `untyped` أو أن تكون فارغة.
+* يمكن أن تحتوي كل قيمة مقياس أيضًا على `labels` ([Map(String, String)](/ar/reference/data-types/map)).
+* قد تشير عدة صفوف متتالية إلى المقياس نفسه مع `labels` مختلفة. يجب ترتيب الجدول حسب اسم المقياس (على سبيل المثال، باستخدام `ORDER BY name`).
+
+توجد متطلبات خاصة لـ `labels` الخاصة بـ `histogram` و`summary` — راجع [توثيق Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) للاطلاع على التفاصيل.
+وتُطبَّق قواعد خاصة على الصفوف ذات `labels` `{'count':''}` و`{'sum':''}`، إذ تُحوَّل إلى `<metric_name>_count` و`<metric_name>_sum` على التوالي.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+```yaml
+┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
+│ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.2'}                   │   100392 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.5'}                   │   129389 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'1'}                     │   133988 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'+Inf'}                  │   144320 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'sum':''}                     │    53423 │             0 │
+│ http_requests_total                 │ counter   │ Total number of HTTP requests             │ {'method':'post','code':'200'} │     1027 │ 1395066363000 │
+│ http_requests_total                 │ counter   │                                           │ {'method':'post','code':'400'} │        3 │ 1395066363000 │
+│ metric_without_timestamp_and_labels │           │                                           │ {}                             │    12.47 │             0 │
+│ rpc_duration_seconds                │ summary   │ A summary of the RPC duration in seconds. │ {'quantile':'0.01'}            │     3102 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.05'}            │     3272 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.5'}             │     4773 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.9'}             │     9001 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.99'}            │    76656 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'count':''}                   │     2693 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'sum':''}                     │ 17560473 │             0 │
+│ something_weird                     │           │                                           │ {'problem':'division by zero'} │      inf │      -3982045 │
+└─────────────────────────────────────┴───────────┴───────────────────────────────────────────┴────────────────────────────────┴──────────┴───────────────┘
+```
+
+سيُنسَّق على النحو التالي:
+
+```text
+# HELP http_request_duration_seconds A histogram of the request duration.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.05"} 24054
+http_request_duration_seconds_bucket{le="0.1"} 33444
+http_request_duration_seconds_bucket{le="0.5"} 129389
+http_request_duration_seconds_bucket{le="1"} 133988
+http_request_duration_seconds_bucket{le="+Inf"} 144320
+http_request_duration_seconds_sum 53423
+http_request_duration_seconds_count 144320
+
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{code="200",method="post"} 1027 1395066363000
+http_requests_total{code="400",method="post"} 3 1395066363000
+
+metric_without_timestamp_and_labels 12.47
+
+# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+rpc_duration_seconds{quantile="0.5"} 4773
+rpc_duration_seconds{quantile="0.9"} 9001
+rpc_duration_seconds{quantile="0.99"} 76656
+rpc_duration_seconds_sum 17560473
+rpc_duration_seconds_count 2693
+
+something_weird{problem="division by zero"} +Inf -3982045
+```
+
+<div id="format-settings">
+  ## إعدادات الصيغة
+</div>
