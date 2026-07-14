@@ -207,6 +207,15 @@ Baz	3
 1
 1
 0
+-- Preprocessor on an ALIAS column with direct read from text index disabled (row-level path)
+1
+1
+1
+1
+1
+1
+1
+0
 -- Preprocessor with a lambda parameter shadowing an ALIAS column
 1
 1

@@ -605,6 +605,31 @@ SELECT count() FROM tab WHERE hasToken(name, 'missing');
 
 DROP TABLE tab;
 
+SELECT '-- Preprocessor on an ALIAS column with direct read from text index disabled (row-level path)';
+-- The row-level path must apply the preprocessor to the ALIAS haystack, giving the same result as the
+-- direct-read path. https://github.com/ClickHouse/ClickHouse/issues/95944
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab WHERE hasToken(name, 'hello') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'world') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'bar') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'default') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'name') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(name, 'missing') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
 SELECT '-- Preprocessor with a lambda parameter shadowing an ALIAS column';
 -- The preprocessor references the physical column `val`; its lambda parameter `x` collides with an
 -- ALIAS column named `x`. The lambda parameter must win, i.e. it must not be expanded to the ALIAS
