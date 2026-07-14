@@ -1088,12 +1088,6 @@ BlockIO InterpreterInsertQuery::execute()
                 "Use getClientHTTPHeader() in the SELECT clause instead");
 
         const auto & table_columns = metadata_snapshot->getColumns();
-        if (!query.columns)
-            query.columns = make_intrusive<ASTExpressionList>();
-
-        NameSet existing_columns;
-        for (const auto & child : query.columns->children)
-            existing_columns.insert(child->getColumnName());
 
         for (const auto & [col_name, _] : http_header_columns)
         {
@@ -1102,8 +1096,28 @@ BlockIO InterpreterInsertQuery::execute()
                     ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
                     "http_column mapping references column '{}' which does not exist in table '{}'",
                     col_name, query.table_id.getFullTableName());
-            if (!existing_columns.contains(col_name))
+        }
+
+        /// When the user provides an explicit column list, the http_column columns must not
+        /// appear in it: a column must come from either the body or a header, not both.
+        /// When query.columns is null (all table columns), getSampleBlock already returns the
+        /// full schema including the http_column columns, so no modification is needed.
+        if (query.columns)
+        {
+            NameSet existing_columns;
+            for (const auto & child : query.columns->children)
+                existing_columns.insert(child->getColumnName());
+
+            for (const auto & [col_name, _] : http_header_columns)
+            {
+                if (existing_columns.contains(col_name))
+                    throw Exception(
+                        ErrorCodes::DUPLICATE_COLUMN,
+                        "http_column mapping conflicts with column '{}' already listed in the INSERT column list. "
+                        "A column must come from either the request body or an HTTP header, not both.",
+                        col_name);
                 query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+            }
         }
     }
 

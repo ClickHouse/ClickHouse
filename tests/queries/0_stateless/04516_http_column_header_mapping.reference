@@ -1,3 +1,5 @@
+--- sync: no explicit column list (body provides remaining columns)
+push	s	no-list
 --- sync: basic header-to-column mapping
 push	sha256=abc123	hello
 --- sync: multiple rows
@@ -8,12 +10,16 @@ release	sha256=def456	row3
 issues	case-test
 --- sync: missing header produces empty string
 	no-header
+--- async: no explicit column list (body provides remaining columns)
+push	s	no-list-async
 --- async: different header values per request coalesce into one batch
 push	sig1	async1
 release	sig2	async2
 --- async: multiple rows per entry
 star	multi1
 star	multi2
+--- error: column listed in both INSERT list and http_column_*
+DUPLICATE_COLUMN
 --- error: non-existent column
 NO_SUCH_COLUMN_IN_TABLE
 --- sync: non-String column types

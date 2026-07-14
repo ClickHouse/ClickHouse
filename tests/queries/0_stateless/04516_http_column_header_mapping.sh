@@ -16,6 +16,15 @@ ${CLICKHOUSE_CLIENT} -q "
     ) ENGINE = MergeTree ORDER BY tuple();
 "
 
+echo "--- sync: no explicit column list (body provides remaining columns)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    -d '{"payload":"no-list","signature":"s"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT event_type, signature, payload FROM test_http_columns"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
+
 echo "--- sync: basic header-to-column mapping"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
@@ -55,6 +64,16 @@ ${CLICKHOUSE_CURL} -sS \
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
 
+echo "--- async: no explicit column list (body provides remaining columns)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+test_http_columns+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    -d '{"payload":"no-list-async","signature":"s"}'
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SELECT event_type, signature, payload FROM test_http_columns"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
+
 echo "--- async: different header values per request coalesce into one batch"
 # Two fire-and-forget requests, then explicit flush. Each row must carry its own
 # request's header values to verify per-entry injection works correctly.
@@ -84,6 +103,12 @@ ${CLICKHOUSE_CURL} -sS \
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM test_http_columns ORDER BY payload"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns"
+
+echo "--- error: column listed in both INSERT list and http_column_*"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns+(event_type,payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+    -d '{"payload":"conflict"}' 2>&1 | grep -o 'DUPLICATE_COLUMN'
 
 echo "--- error: non-existent column"
 ${CLICKHOUSE_CURL} -sS \
