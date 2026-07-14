@@ -664,7 +664,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
     if (use_prefetched_read_pool)
     {
-        pool = std::make_shared<MergeTreePrefetchedReadPool>(
+        auto prefetched_pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
@@ -679,6 +679,9 @@ Pipe ReadFromMergeTree::readFromPool(
             block_size,
             context,
             dataflow_cache_updater);
+
+        prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        pool = std::move(prefetched_pool);
     }
     else
     {

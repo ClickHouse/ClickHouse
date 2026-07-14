@@ -4,7 +4,8 @@
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET use_projection_index_in_read_pools = 1;
--- Parallel replicas and prefetched pools do not apply the refiner, pin the plain pools.
+-- Parallel replicas pools do not apply the refiner; pin the plain pools by default
+-- (the prefetched pool is enabled explicitly in a dedicated query below).
 SET enable_parallel_replicas = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 
@@ -30,10 +31,14 @@ OPTIMIZE TABLE t_proj_pools FINAL;
 
 -- Multi-threaded read: MergeTreeReadPool.
 SELECT /* refiner_query_default_pool */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
-SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, merge_tree_min_read_task_size = 1;
+SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, merge_tree_min_read_task_size = 1, optimize_read_in_order = 0;
 
 -- Single-threaded read in order of the primary key: MergeTreeReadPoolInOrder.
 SELECT /* refiner_query_in_order_pool */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY id LIMIT 5 SETTINGS max_threads = 1, optimize_read_in_order = 1;
+
+-- Prefetched read pool: the refine-and-prefetch job never prefetches dropped ranges.
+SELECT /* refiner_query_prefetched_pool */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
+SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', optimize_read_in_order = 0;
 
 -- Correctness on a value that does not exist at all.
 SELECT count() FROM t_proj_pools WHERE region = 'nonexistent';
@@ -59,6 +64,16 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%refiner_query_in_order_pool%'
+    AND query NOT LIKE '%query_log%';
+
+-- The prefetched pool must drop the same marks as the default pool (task boundaries are
+-- pre-split there, so do not assert on the number of fully dropped tasks).
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 200 AS dropped_marks
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%refiner_query_prefetched_pool%'
     AND query NOT LIKE '%query_log%';
 
 DROP TABLE t_proj_pools;
