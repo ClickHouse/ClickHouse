@@ -202,25 +202,67 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 }
 
 
+namespace
+{
+
+/// `standard` matching: an unquoted new name must not be a case sibling of an existing object.
+void throwIfCaseSiblingDatabase(const ASTCreateQuery & create, ContextPtr context)
+{
+    if (create.attach || context->isInternalQuery()
+        || identifierPartQuoteFromAST(create.database) == IdentifierPartQuote::DoubleQuoted)
+        return;
+    const String & database_name = create.getDatabase();
+    String folded_match = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+        database_name, IdentifierPartQuote::Unquoted, context);
+    if (folded_match != database_name)
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS,
+            "Database {} cannot be created: its name differs only in character case from existing database {}. "
+            "Double-quote the new name to create it anyway",
+            backQuoteIfNeed(database_name), backQuoteIfNeed(folded_match));
+}
+
+void throwIfCaseSiblingTable(const DatabasePtr & database, const ASTCreateQuery & create, ContextPtr context)
+{
+    if (!database || create.attach || context->isInternalQuery()
+        || context->getSettingsRef()[Setting::database_and_table_name_matching] != NameMatchMode::Standard
+        || identifierPartQuoteFromAST(create.table) == IdentifierPartQuote::DoubleQuoted)
+        return;
+    try
+    {
+        auto folded = database->resolveTableName({create.getTable(), IdentifierPartQuote::Unquoted}, context);
+        const String * sibling = nullptr;
+        if (folded.outcome == FoldedNameIndex::Outcome::Matched && folded.canonical != create.getTable())
+            sibling = &folded.canonical;
+        else if (folded.outcome == FoldedNameIndex::Outcome::Ambiguous)
+            sibling = &folded.candidates.front();
+        if (sibling)
+            throw Exception(create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS,
+                "{} {} cannot be created: its name differs only in character case from existing {}. "
+                "Double-quote the new name to create it anyway",
+                create.is_dictionary ? "Dictionary" : "Table",
+                backQuoteIfNeed(create.getTable()), backQuoteIfNeed(*sibling));
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+    }
+}
+
+}
+
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
-    /// `standard` matching: an unquoted case sibling of an existing database is rejected.
-    if (!create.attach && !getContext()->isInternalQuery()
-        && identifierPartQuoteFromAST(create.database) != IdentifierPartQuote::DoubleQuoted)
-    {
-        String folded_match = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
-            database_name, IdentifierPartQuote::Unquoted, getContext());
-        if (folded_match != database_name)
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS,
-                "Database {} cannot be created: its name differs only in character case from existing database {}. "
-                "Double-quote the new name to create it anyway",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(folded_match));
-    }
-
+    /// Serialize concurrent creates of case siblings on the folded spelling, then re-check.
+    std::unique_ptr<DDLGuard> folded_guard;
+    if (String folded_name = foldIdentifierCaseASCII(database_name); folded_name != database_name)
+        folded_guard = DatabaseCatalog::instance().getDDLGuard(folded_name, "", nullptr);
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+
+    throwIfCaseSiblingDatabase(create, getContext());
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
@@ -1740,12 +1782,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
             create.setDatabase(database_name);
+            throwIfCaseSiblingTable(database, create, getContext());
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
         }
 
         if (!create.cluster.empty())
+        {
+            /// Validate against the initiator's catalog before dispatch; workers replay with
+            /// exact matching and cannot re-run this policy themselves.
+            if (create.database)
+                throwIfCaseSiblingTable(database, create, getContext());
             return executeQueryOnCluster(create);
+        }
 
         if (!database)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -2067,6 +2116,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
+    /// Guard on the folded spelling too, so concurrent sibling creates re-check serially.
+    std::unique_ptr<DDLGuard> folded_table_guard;
+    if (String folded_table = foldIdentifierCaseASCII(create.getTable()); folded_table != create.getTable())
+        folded_table_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), folded_table, nullptr);
     if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
 
@@ -2079,32 +2132,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
 
-    /// `standard` matching: creating an unquoted case sibling of an existing table is rejected;
-    /// double-quote the new name to create a distinct exact spelling.
-    if (mode == LoadingStrictnessLevel::CREATE && !getContext()->isInternalQuery()
-        && getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard
-        && identifierPartQuoteFromAST(create.table) != IdentifierPartQuote::DoubleQuoted)
-    {
-        try
-        {
-            auto folded = database->resolveTableName({create.getTable(), IdentifierPartQuote::Unquoted}, getContext());
-            const String * sibling = nullptr;
-            if (folded.outcome == FoldedNameIndex::Outcome::Matched && folded.canonical != create.getTable())
-                sibling = &folded.canonical;
-            else if (folded.outcome == FoldedNameIndex::Outcome::Ambiguous)
-                sibling = &folded.candidates.front();
-            if (sibling)
-                throw Exception(storage_already_exists_error_code,
-                    "{} {} cannot be created: its name differs only in character case from existing {}. "
-                    "Double-quote the new name to create it anyway",
-                    storage_name, backQuoteIfNeed(create.getTable()), backQuoteIfNeed(*sibling));
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                throw;
-        }
-    }
+    if (mode == LoadingStrictnessLevel::CREATE)
+        throwIfCaseSiblingTable(database, create, getContext());
 
     /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
     if (database->isTableExist(create.getTable(), getContext()))
@@ -2819,6 +2848,11 @@ BlockIO InterpreterCreateQuery::execute()
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
+
+        /// Validate against the initiator's catalog before dispatch; workers replay the DDL log
+        /// with exact matching and cannot re-run the case-sibling policy themselves.
+        if (is_create_database)
+            throwIfCaseSiblingDatabase(create, getContext());
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
