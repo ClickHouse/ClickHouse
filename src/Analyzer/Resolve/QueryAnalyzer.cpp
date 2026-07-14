@@ -904,13 +904,13 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
             if (table_expression_modifiers->hasStream())
             {
                 #if !defined(OS_LINUX) && !defined(OS_DARWIN)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux and macOS.");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are supported only on Linux and macOS.");
                 #else
                     if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
                         throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
 
                     if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
                     if (!storage->supportsStreaming())
                         throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
@@ -919,7 +919,10 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                     const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                     if (stream_settings->watermark)
+                    {
                         validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watermarks for Streaming Queries are not supported yet");
+                    }
                 #endif
             }
         }
