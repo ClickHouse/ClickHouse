@@ -31,6 +31,27 @@ const FormatSettings & getFormatSettings()
     return settings;
 }
 
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
+
 const SerializationPtr & getDynamicSerialization()
 {
     static thread_local const SerializationPtr dynamic_serialization = DataTypeDynamic().getDefaultSerialization();
@@ -1750,12 +1771,16 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tie(left.first, right.second) < std::tie(right.first, left.second); });
+        const auto compare_paths = [](const auto & left, const auto & right)
+        {
+            return std::tie(left.first, right.second) < std::tie(right.first, left.second);
+        };
 
         /// Fill dynamic_paths with first paths in sorted list until we reach the limit.
         size_t paths_to_add = max_dynamic_paths - dynamic_paths.size();
-        for (size_t i = 0; i != paths_to_add; ++i)
-            addNewDynamicPath(paths_with_sizes[i].second);
+        sortAndKeepTop(paths_with_sizes, paths_to_add, compare_paths);
+        for (const auto & [_, path] : paths_with_sizes)
+            addNewDynamicPath(path);
     }
     /// Otherwise keep all paths.
     else
@@ -1909,17 +1934,18 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
             paths_with_sizes.emplace_back(size, path);
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tuple(right.first, left.second) < std::tuple(left.first, right.second); });
+        const auto compare_paths = [](const auto & left, const auto & right)
+        {
+            return std::tuple(right.first, left.second) < std::tuple(left.first, right.second);
+        };
+        sortAndKeepTop(paths_with_sizes, max_dynamic_paths, compare_paths);
 
         /// Fill dynamic_paths with first max_dynamic_paths paths in sorted list.
-        for (const auto & [size, path] : paths_with_sizes)
+        for (const auto & [_, path] : paths_with_sizes)
         {
-            if (dynamic_paths.size() < max_dynamic_paths)
-            {
-                auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
-                dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
-                sorted_dynamic_paths.insert(it->first);
-            }
+            auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
+            dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+            sorted_dynamic_paths.insert(it->first);
         }
     }
     /// Use all dynamic paths from all source columns.
@@ -2063,9 +2089,9 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
         candidates_with_sizes.reserve(shared_data_candidates.size());
         for (const auto & [path, size] : shared_data_candidates)
             candidates_with_sizes.emplace_back(size, path);
-        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
-        for (size_t i = 0; i < Statistics::MAX_SHARED_DATA_STATISTICS_SIZE; ++i)
-            new_statistics.shared_data_paths_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
+        sortAndKeepTop(candidates_with_sizes, Statistics::MAX_SHARED_DATA_STATISTICS_SIZE, std::greater<>());
+        for (const auto & [size, path] : candidates_with_sizes)
+            new_statistics.shared_data_paths_statistics.emplace(path, size);
     }
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
