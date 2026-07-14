@@ -1,0 +1,91 @@
+---
+slug: /use-cases/observability/clickstack/faq
+title: 'ClickStack FAQ'
+sidebarTitle: 'FAQ'
+description: 'ClickStack의 알림, 대시보드, 드릴다운, 메트릭 탐색에 관한 자주 묻는 질문입니다.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'FAQ', '알림', '대시보드', '드릴다운', '메트릭 탐색']
+---
+
+이 페이지에서는 알림, 대시보드와 드릴다운, 메트릭 탐색 등 ClickStack 기능에 관해 자주 묻는 질문에 답변합니다.
+
+<div id="alerting">
+  ## 알림
+</div>
+
+<Accordion title="ClickStack은 어떤 유형의 알림을 지원하나요?">
+  ClickStack은 두 가지 유형의 알림을 지원합니다.
+
+  * [검색 알림](/ko/clickstack/features/alerts#search-alerts): 일정 시간 범위 내에서 일치하는 로그 또는 트레이스 결과 수가 임계값을 초과하거나 임계값 아래로 떨어지면 알림을 트리거합니다.
+  * [대시보드 차트 알림](/ko/clickstack/features/alerts#dashboard-alerts): 대시보드 타일에 표시된 메트릭이 정의된 임계값을 넘으면 알림을 트리거합니다.
+
+  두 알림 유형 모두 정적 임계값 조건을 사용합니다. 자세한 내용은 [알림](/ko/clickstack/features/alerts)을 참조하십시오.
+</Accordion>
+
+<Accordion title="비율, p95/p99 또는 여러 메트릭 수식과 같은 복잡한 메트릭 조건에 대해 알림을 설정할 수 있나요?">
+  두 메트릭의 비율, p95, p99 값은 [차트 빌더](/ko/clickstack/features/dashboards/overview#navigate-chart-explorer) UI를 사용해 대시보드 타일에 표시할 수 있습니다. 그런 다음 해당 타일에 임계값 기반 알림을 만들 수 있습니다.
+
+  하지만 현재 ClickStack은 다음을 지원하지 않습니다.
+
+  * 메트릭에 대한 사용자 정의 SQL 쿼리 기반 알림
+  * 여러 조건 또는 여러 메트릭 알림 규칙을 하나의 알림으로 결합하는 기능
+  * 동적 알림 조건 또는 이상 탐지 기반 알림 조건(이상 탐지 기능은 제공 예정)
+
+  복잡한 메트릭에 대해 알림이 필요한 경우, 먼저 시각화를 대시보드 차트로 만든 다음 해당 차트에 임계값 알림을 연결하는 방식을 권장합니다.
+</Accordion>
+
+<Accordion title="알림 사용 사례에 구체화된 뷰(Materialized View)를 사용할 수 있나요?">
+  구체화된 뷰(Materialized View)는 해당하는 경우 ClickStack 알림에 자동으로 사용됩니다. 하지만 현재 OpenTelemetry 메트릭 데이터 소스에서는 구체화된 뷰가 지원되지 않습니다. 메트릭의 경우 ClickStack은 기본 [ClickHouse OpenTelemetry 메트릭 스키마](/ko/clickstack/ingesting-data/schemas)와 함께 사용할 때 가장 잘 작동합니다. 구체화된 뷰에 대한 자세한 내용은 [구체화된 뷰](/ko/clickstack/managing/materialized-views)를 참조하십시오.
+</Accordion>
+
+<div id="dashboards-and-drill-downs">
+  ## 대시보드 및 드릴다운
+</div>
+
+<Accordion title="ClickStack은 매개변수화된 대시보드 또는 대시보드 변수를 지원합니까?">
+  ClickStack은 ClickHouse에서 쿰리한 데이터로 채워지는 대시보드용 사용자 지정 드롭다운 필터를 지원합니다. 이러한 필터를 사용하면 대시보드의 모든 타일을 특정 값(예: 서비스 이름, 환경 또는 호스트)에 맞춰 동적으로 한정할 수 있습니다.
+
+  현재 ClickStack은 Grafana 템플릿 변수와 같은 방식의 재사용 가능한 대시보드 변수는 지원하지 않습니다. ClickStack은 데이터 소스로 ClickHouse만 사용하므로, 변수 추상화 계층 없이도 드릴다운 및 필터링 기능을 네이티브하게 제공할 수 있습니다.
+
+  대시보드를 만들고 필터를 적용하는 방법에 대한 자세한 내용은 [대시보드](/ko/clickstack/features/dashboards/overview)를 참조하십시오.
+</Accordion>
+
+<Accordion title="어떤 드릴다운 기능을 사용할 수 있습니까?">
+  ClickStack은 다음과 같은 드릴다운 워크플로를 지원합니다.
+
+  * [대시보드 수준 필터링](/ko/clickstack/features/dashboards/overview#filter-dashboards): 대시보드 수준에서 적용한 Lucene 또는 SQL 필터와 시간 범위 조정이 모든 타일에 반영됩니다.
+  * 사용자 지정 대시보드 필터: 사용자 지정 대시보드는 데이터의 값으로 채워지는 명시적 필터 컨트롤을 지원하므로, 사용자가 쿼리를 직접 작성하지 않고도 모든 타일을 원하는 범위로 한정할 수 있습니다.
+  * 클릭하여 이벤트 보기: 대시보드 타일의 데이터를 클릭한 뒤 **View Events**를 선택하면 로그 및 트레이스 데이터에 대한 관련 필터가 적용된 [검색](/ko/clickstack/features/search) 페이지로 이동합니다.
+  * [테이블 행 클릭 드릴다운](/ko/clickstack/features/dashboards/row-click-drilldowns): table tile은 행을 클릭하면 검색 페이지 또는 다른 대시보드가 열리고, 해당 행의 값을 필터로 전달하도록 구성할 수 있습니다. 이를 통해 서비스 인벤토리에서 서비스별 상세 대시보드로 드릴다운하는 것과 같은 다단계 워크플로를 지원합니다.
+  * [사전 구성된 대시보드 드릴다운](/ko/clickstack/features/dashboards/overview#presets): [Services](/ko/clickstack/features/dashboards/overview#services-dashboard), [ClickHouse](/ko/clickstack/features/dashboards/overview#clickhouse-dashboard), [Kubernetes](/ko/clickstack/features/dashboards/overview#kubernetes-dashboard) 대시보드에는 탭 전반에 걸쳐 더 풍부한 기본 제공 드릴다운 탐색 기능이 포함되어 있습니다.
+
+  <Note>
+    **View Events** 드릴다운은 로그 및 트레이스 데이터에서 가장 잘 작동합니다. 메트릭 데이터는 [검색](/ko/clickstack/features/search) 페이지에서 볼 수 없으므로, 메트릭 타일에서 드릴다운하면 대신 선택한 시간대를 기준으로 인접한 로그로 연결됩니다.
+  </Note>
+</Accordion>
+
+<div id="metrics-discovery">
+  ## 메트릭 탐색
+</div>
+
+<Accordion title="메트릭을 찾아보거나 검색할 수 있는 UI가 있습니까?">
+  ![메트릭 속성 탐색기](/images/clickstack/faq/metrics-explorer.webp)
+
+  메트릭 이름은 [차트 빌더](/ko/clickstack/features/dashboards/overview#navigate-chart-explorer)의 메트릭 이름 드롭다운에서 확인할 수 있습니다. 메트릭을 선택하면 Metric Attribute Explorer 패널에 해당 메트릭의 설명, 단위, 사용 가능한 속성과 각 값이 표시됩니다. 이를 통해 속성을 찾아보고 패널에서 직접 필터 또는 그룹화 필드로 추가할 수 있습니다.
+
+  현재는 로그 검색 환경과 유사한 전용 메트릭 검색 페이지가 없습니다. 메트릭 탐색 기능 개선은 현재 활발히 개발되고 있습니다.
+</Accordion>
+
+<Accordion title="메트릭에서 SQL 기반 탐색이 장기적으로 의도된 방식입니까?">
+  아닙니다. 현재는 SQL 쿼리를 사용해 메트릭을 탐색할 수 있지만, 이것이 장기적으로 의도된 방식은 아닙니다. 더 나은 메트릭 탐색 도구가 현재 활발히 개발되고 있습니다.
+</Accordion>
+
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
+
+* [알림](/ko/clickstack/features/alerts): 검색 알림, 대시보드 차트 알림, 웹훅 통합.
+* [대시보드](/ko/clickstack/features/dashboards/overview): 시각화 생성, 대시보드 구축, 필터 적용.
+* [검색](/ko/clickstack/features/search): Lucene 및 SQL 구문으로 로그와 트레이스를 쿼리.
+* [스키마](/ko/clickstack/ingesting-data/schemas): 로그, 트레이스, 메트릭용 OpenTelemetry 데이터 스키마.
+* [아키텍처](/ko/clickstack/architecture): ClickStack 구성 요소와 각 요소가 어떻게 함께 작동하는지.

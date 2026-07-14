@@ -1,12 +1,10 @@
-import logging
 import time
 from random import randint
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -618,7 +616,7 @@ def test_adding_replica(started_cluster, cleanup):
         node1.query("select last_refresh_replica from system.view_refreshes") == "1\n"
     )
 
-    r = node2.query(
+    node2.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r2');"
         "system sync database replica re"
     )

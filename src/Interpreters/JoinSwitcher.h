@@ -3,6 +3,7 @@
 #include <mutex>
 
 #include <Core/Block.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -16,7 +17,10 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
+    JoinSwitcher(
+        std::shared_ptr<TableJoin> table_join_,
+        SharedHeader right_sample_block_,
+        const StatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }

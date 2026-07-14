@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/audit-splunk
+keywords: ['ClickHouse', 'Splunk', '監査', 'cloud']
+description: 'ClickHouse Cloudの監査ログをSplunkに保存します。'
+title: 'ClickHouse Cloudの監査ログをSplunkに保存する'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Splunk](https://www.splunk.com/) は、データ分析および監視のプラットフォームです。
+
+このアドオンを使用すると、[ClickHouse Cloud 監査ログ](/ja/products/cloud/reference/security/audit-logging) を Splunk に保存できます。監査ログのダウンロードには、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を使用します。
+
+このアドオンに含まれるのは モジュラー入力 のみで、追加の UI は提供されません。
+
+<div id="installation">
+  # インストール
+</div>
+
+<div id="for-splunk-enterprise">
+  ## Splunk Enterprise 向け
+</div>
+
+[Splunkbase](https://splunkbase.splunk.com/app/7709) から、Splunk 用の ClickHouse Cloud Audit Add-on をダウンロードします。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="Splunk 用 ClickHouse Cloud Audit Add-on のダウンロードページが表示されている Splunkbase の Web サイト" border />
+
+Splunk Enterprise で、Apps -&gt; Manage に移動します。次に、Install app from file をクリックします。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="Install app from file オプションが表示されている Apps 管理ページの Splunk Enterprise インターフェイス" border />
+
+Splunkbase からダウンロードしたアーカイブファイルを選択し、Upload をクリックします。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="ClickHouse アドオンをアップロードするための Splunk アプリのインストールダイアログ" border />
+
+問題なく完了すると、ClickHouse 監査ログ アプリケーションがインストールされているはずです。インストールされていない場合は、Splunkd logs を確認してエラーがないか調べてください。
+
+<div id="modular-input-configuration">
+  # モジュラー入力の設定
+</div>
+
+モジュラー入力を設定するには、まず ClickHouse Cloud のデプロイメントから次の情報を取得する必要があります。
+
+* Organization ID
+* Admin [APIキー](/ja/products/cloud/features/admin-features/api/openapi)
+
+<div id="getting-information-from-clickhouse-cloud">
+  ## ClickHouse Cloud から情報を取得する
+</div>
+
+[ClickHouse Cloudコンソール](https://console.clickhouse.cloud/)にログインします。
+
+Organization -&gt; Organization details に移動します。そこで Organization ID をコピーできます。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="Organization ID が表示された Organization details ページを示す ClickHouse Cloudコンソール" border />
+
+次に、左側のメニューから API Keys に移動します。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="左側のナビゲーションメニューにある API Keys セクションを示す ClickHouse Cloudコンソール" border />
+
+APIキー を作成し、わかりやすい名前を付けて、`Admin` 権限を選択します。Generate API Key をクリックします。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="`Admin` 権限が選択された APIキー 作成画面を示す ClickHouse Cloudコンソール" border />
+
+APIキー と secret は安全な場所に保存してください。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="保存対象の生成された APIキー と secret を示す ClickHouse Cloudコンソール" border />
+
+<div id="configure-data-input-in-splunk">
+  ## Splunk でデータ入力を設定する
+</div>
+
+Splunk に戻り、Settings -&gt; Data inputs に移動します。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="Data inputs オプションが表示された Settings メニューの Splunk インターフェイス" border />
+
+ClickHouse Cloud 監査ログ のデータ入力を選択します。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="ClickHouse Cloud 監査ログ オプションが表示された Splunk の Data inputs ページ" border />
+
+&quot;New&quot; をクリックして、データ入力の新しいインスタンスを設定します。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="新しい ClickHouse Cloud 監査ログ データ入力を設定するための Splunk インターフェイス" border />
+
+必要な情報をすべて入力したら、Next をクリックします。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="ClickHouse のデータ入力設定が入力済みの Splunk 設定ページ" border />
+
+データ入力の設定は完了です。監査ログの参照を開始できます。
+
+<div id="usage">
+  # 使用方法
+</div>
+
+モジュラー入力は Splunk にデータを保存します。データを表示するには、Splunk の一般的な検索ビューを使用できます。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="ClickHouse の監査ログデータを表示する Splunk の検索インターフェイス" border />

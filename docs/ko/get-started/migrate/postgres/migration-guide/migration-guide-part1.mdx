@@ -1,0 +1,192 @@
+---
+slug: /migrations/postgresql/dataset
+title: '데이터 마이그레이션'
+description: 'PostgreSQL에서 ClickHouse로 데이터를 마이그레이션하는 데이터셋 예시'
+keywords: ['Postgres']
+show_related_blogs: true
+sidebarTitle: '1부'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 문서는 PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드의 **1부**입니다. 실용적인 예시를 통해 실시간 복제(CDC) 방식으로 마이그레이션을 효율적으로 수행하는 방법을 설명합니다. 여기서 다루는 많은 개념은 PostgreSQL에서 ClickHouse로 수동으로 대량 데이터를 전송할 때에도 적용됩니다.
+
+<div id="dataset">
+  ## 데이터셋
+</div>
+
+Postgres에서 ClickHouse로의 일반적인 마이그레이션을 보여주는 예시 데이터셋으로, [여기](/ko/get-started/sample-datasets/stackoverflow)에 문서화된 Stack Overflow 데이터셋을 사용합니다. 이 데이터셋에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 `post`, `vote`, `user`, `comment`, `badge`가 포함되어 있습니다. 이 데이터에 대한 PostgreSQL 스키마(스키마)는 아래와 같습니다.
+
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow 스키마" />
+
+*PostgreSQL에서 테이블을 생성하는 DDL 명령은 [여기](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)에서 확인할 수 있습니다.*
+
+이 스키마는 반드시 가장 최적화된 형태는 아니지만, 프라이머리 키, 외래 키, 파티셔닝, 인덱스 등 널리 사용되는 여러 PostgreSQL 기능을 활용합니다.
+
+이러한 각 개념을 ClickHouse의 대응 개념으로 마이그레이션할 것입니다.
+
+마이그레이션 단계를 테스트하기 위해 이 데이터셋을 PostgreSQL 인스턴스에 채우려는 사용자를 위해, DDL과 함께 다운로드할 수 있도록 `pg_dump` 포맷의 데이터를 제공했으며, 이후 데이터 로드 명령은 아래에 나와 있습니다.
+
+```bash
+# users
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/users.sql.gz
+gzip -d users.sql.gz
+psql < users.sql
+
+# posts
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posts.sql.gz
+gzip -d posts.sql.gz
+psql < posts.sql
+
+# posthistory
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posthistory.sql.gz
+gzip -d posthistory.sql.gz
+psql < posthistory.sql
+
+# comments
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/comments.sql.gz
+gzip -d comments.sql.gz
+psql < comments.sql
+
+# votes
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/votes.sql.gz
+gzip -d votes.sql.gz
+psql < votes.sql
+
+# badges
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/badges.sql.gz
+gzip -d badges.sql.gz
+psql < badges.sql
+
+# postlinks
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/postlinks.sql.gz
+gzip -d postlinks.sql.gz
+psql < postlinks.sql
+```
+
+ClickHouse 기준으로는 작은 편이지만, 이 데이터셋은 Postgres에서는 상당한 규모입니다. 위 데이터는 2024년 첫 3개월을 다루는 일부 하위 집합입니다.
+
+> 예시 결과에서는 Postgres와 ClickHouse의 성능 차이를 보여주기 위해 전체 데이터셋을 사용하지만, 아래에 설명된 모든 단계는 더 작은 하위 집합에도 동일하게 적용됩니다. 전체 데이터셋을 Postgres에 로드하려는 사용자는 [여기](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)를 참조하십시오. 위 스키마에 적용된 외래 키 제약 조건 때문에 PostgreSQL용 전체 데이터셋에는 참조 무결성을 만족하는 행만 포함됩니다. 이러한 제약 조건이 없는 [Parquet 버전](/ko/get-started/sample-datasets/stackoverflow)이 필요한 경우, 이를 ClickHouse에 직접 쉽게 로드할 수 있습니다.
+
+<div id="migrating-data">
+  ## 데이터 마이그레이션
+</div>
+
+<div id="real-time-replication-or-cdc">
+  ### 실시간 복제 (CDC)
+</div>
+
+ClickPipes for PostgreSQL을 설정하려면 이 [가이드](/ko/integrations/clickpipes/postgres/index)를 참조하십시오. 이 가이드에서는 다양한 유형의 소스 Postgres 인스턴스를 다룹니다.
+
+ClickPipes 또는 PeerDB를 사용하는 CDC 방식에서는 PostgreSQL 데이터베이스의 각 테이블이 ClickHouse로 자동 복제됩니다.
+
+업데이트와 삭제를 거의 실시간으로 처리하기 위해 ClickPipes는 Postgres 테이블을 ClickHouse에 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 엔진으로 매핑합니다. 이 엔진은 ClickHouse에서 업데이트와 삭제를 처리하도록 특별히 설계되었습니다. ClickPipes를 사용해 데이터가 ClickHouse로 복제되는 방식에 대한 자세한 내용은 [여기](/ko/integrations/clickpipes/postgres/deduplication#how-does-data-get-replicated)에서 확인할 수 있습니다. 중요한 점은 CDC를 사용한 복제에서는 업데이트 또는 삭제 작업을 복제할 때 ClickHouse에 중복된 행이 생성된다는 것입니다. ClickHouse에서 이를 처리하는 방법은 [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자를 사용하는 [기법](/ko/integrations/clickpipes/postgres/deduplication#deduplicate-using-final-keyword)을 참고하십시오.
+
+이제 ClickPipes를 사용해 ClickHouse에서 테이블 `users`가 어떻게 생성되는지 살펴보겠습니다.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+설정이 완료되면 ClickPipes가 PostgreSQL의 모든 데이터를 ClickHouse로 마이그레이션하기 시작합니다. 네트워크 상태와 배포 규모에 따라 Stack Overflow 데이터셋은 몇 분이면 마이그레이션이 완료됩니다.
+
+<div id="initial-bulk-load-with-periodic-updates">
+  ### 수동 대량 로드 및 주기적 업데이트
+</div>
+
+수동 방식으로 데이터셋의 초기 대량 로드는 다음 방법으로 수행할 수 있습니다.
+
+* **테이블 함수** - ClickHouse에서 [Postgres table function](/ko/reference/functions/table-functions/postgresql)을 사용해 Postgres에서 데이터를 `SELECT`한 뒤 ClickHouse 테이블에 `INSERT`합니다. 수백 GB 규모의 데이터셋까지 대량 로드하는 경우에 적합합니다.
+* **내보내기** - CSV 또는 SQL 스크립트 파일과 같은 중간 포맷으로 내보냅니다. 그런 다음 이 파일들을 `INSERT FROM INFILE` 절을 통해 클라이언트에서 ClickHouse로 로드하거나, 객체 스토리지와 관련 함수(예: s3, gcs)를 사용해 로드할 수 있습니다.
+
+PostgreSQL에서 데이터를 수동으로 로드할 때는 먼저 ClickHouse에 테이블을 생성해야 합니다. Stack Overflow 데이터셋을 사용해 ClickHouse에서 테이블 스키마를 최적화하는 방법은 이 [데이터 모델링 문서](/ko/guides/clickhouse/data-modelling/schema-design#establish-initial-schema)를 참조하십시오.
+
+PostgreSQL과 ClickHouse의 데이터 타입은 서로 다를 수 있습니다. 각 테이블 컬럼의 대응 타입을 확인하려면 [Postgres table function](/ko/reference/functions/table-functions/postgresql)과 함께 `DESCRIBE` 명령을 사용할 수 있습니다. 다음 명령은 PostgreSQL의 `posts` 테이블 구조를 보여줍니다. 환경에 맞게 수정하십시오:
+
+```sql title="Query"
+DESCRIBE TABLE postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+SETTINGS describe_compact_output = 1
+```
+
+PostgreSQL과 ClickHouse 간 데이터 타입 매핑의 개요는 [부록 문서](/ko/get-started/migrate/postgres/appendix#data-type-mappings)를 참조하십시오.
+
+이 스키마의 타입을 최적화하는 단계는 데이터가 S3의 Parquet와 같은 다른 소스에서 로드된 경우와 동일합니다. [Parquet를 사용하는 대체 가이드](/ko/guides/clickhouse/data-modelling/schema-design)에서 설명한 과정을 적용하면 다음과 같은 스키마가 됩니다:
+
+```sql title="Query"
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+간단한 `INSERT INTO SELECT`를 사용해 PostgresSQL에서 데이터를 읽어 ClickHouse에 삽입할 수 있습니다:
+
+```sql title="Query"
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+증분 적재는 주기적으로 예약 실행할 수도 있습니다. Postgres 테이블에 `삽입`만 이루어지고 증가하는 id 또는 timestamp가 있는 경우, 위의 테이블 함수 접근 방식을 사용해 증분 데이터를 적재할 수 있습니다. 즉, `SELECT`에 `WHERE` 절을 적용할 수 있습니다. 이 접근 방식은 업데이트가 항상 동일한 컬럼을 갱신한다고 보장되는 경우 업데이트를 지원하는 데에도 사용할 수 있습니다. 다만 삭제를 지원하려면 전체 재적재가 필요하며, 테이블이 커질수록 이를 구현하기 어려울 수 있습니다.
+
+여기서는 `CreationDate`를 사용한 초기 적재와 증분 적재를 보여줍니다(행이 업데이트되면 이 값도 함께 업데이트된다고 가정합니다)..
+
+```sql
+-- 초기 적재
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
+
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
+```
+
+> ClickHouse는 `=`, `!=`, `>`,`>=`, `<`, `<=`, IN과 같은 단순한 `WHERE` 절을 PostgreSQL 서버로 푸시다운합니다. 따라서 변경 집합을 식별하는 데 사용하는 컬럼에 인덱스가 있도록 하면 증분 로드를 더 효율적으로 수행할 수 있습니다.
+
+> 쿼리 복제를 사용할 때 UPDATE 작업을 감지하는 한 가지 방법은 [`XMIN` 시스템 컬럼](https://www.postgresql.org/docs/9.1/ddl-system-columns.html)(트랜잭션 ID)을 워터마크로 사용하는 것입니다. 이 컬럼의 값이 변경되면 데이터가 변경되었음을 의미하므로 대상 테이블에 적용할 수 있습니다. 이 방식을 사용할 경우 `XMIN` 값이 래핑될 수 있고, 비교를 위해 전체 테이블 스캔이 필요하므로 변경 사항 추적이 더 복잡해질 수 있다는 점에 유의해야 합니다.
+
+[2부는 여기를 클릭하세요](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part2)

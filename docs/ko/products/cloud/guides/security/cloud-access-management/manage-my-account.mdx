@@ -1,0 +1,137 @@
+---
+sidebarTitle: '내 계정 관리'
+slug: /cloud/security/manage-my-account
+title: '내 계정 관리'
+description: '이 페이지에서는 초대를 수락하고 MFA 설정을 관리하며 비밀번호를 재설정하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['계정 관리', '사용자 프로필', '보안', 'Cloud Console', '설정']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="accept-invitation">
+  ## 초대 수락하기
+</div>
+
+조직 참여 초대는 여러 방법으로 수락할 수 있습니다. 처음 받는 초대라면 아래에서 해당 조직에 맞는 인증 메서드를 선택하십시오.
+
+이미 다른 조직에 속해 있다면 기존 조직으로 먼저 로그인한 다음 페이지 왼쪽 하단에서 초대를 수락하거나, 이메일에서 초대를 수락한 후 기존 계정으로 로그인하십시오.
+
+<Info>
+  **SAML 사용자**
+
+  SAML을 사용하는 조직은 ClickHouse 조직마다 별도의 로그인을 사용합니다. 로그인하려면 관리자가 제공한 직접 링크를 사용하십시오.
+</Info>
+
+<div id="email-and-password">
+  ### 이메일 및 비밀번호
+</div>
+
+ClickHouse Cloud에서는 이메일 주소와 비밀번호로 인증할 수 있습니다. 이 방법을 사용할 경우 ClickHouse 계정을 보호하는 가장 좋은 방법은 강력한 비밀번호를 사용하는 것입니다. 기억할 수 있는 비밀번호를 만드는 데 도움이 되는 온라인 자료도 많습니다. 또는 보안을 강화하기 위해 무작위 비밀번호 생성기를 사용하고, 비밀번호 관리자에 비밀번호를 저장할 수 있습니다.
+
+비밀번호는 최소 12자여야 하며, 대문자, 소문자, 숫자, 특수 문자로 이루어진 4가지 복잡성 요구 사항 중 3가지를 충족해야 합니다.
+
+<div id="social-sso">
+  ### 소셜 싱글 사인온(SSO)
+</div>
+
+서비스에 가입하거나 초대를 수락하려면 `Continue with Google` 또는 `Continue with Microsoft Account`를 사용하십시오.
+
+회사에서 Google Workspace 또는 Microsoft 365를 사용하는 경우 현재 사용 중인 싱글 사인온 설정을 ClickHouse Cloud에서도 활용할 수 있습니다. 이렇게 하려면 회사 이메일 주소로 가입하고, 다른 사용자도 회사 이메일 주소로 초대하면 됩니다. 그러면 사용자는 ClickHouse Cloud에 인증하기 전에 IdP(Identity Provider)를 통하든 Google 또는 Microsoft 인증을 직접 통하든 관계없이 회사의 로그인 절차를 통해 로그인해야 합니다.
+
+<div id="saml-sso">
+  ### SAML 싱글 사인온(SSO)
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+SAML SSO를 사용하는 사용자는 로그인할 때 IdP(Identity Provider)에 의해 자동으로 추가됩니다. Organization 관리자 역할을 가진 ClickHouse Cloud 사용자는 SAML 사용자에게 할당된 [역할을 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)하고 SAML을 유일한 인증 메서드로 강제할 수 있습니다.
+
+<div id="mfa">
+  ## 다중 인증(MFA) 관리
+</div>
+
+이메일 + 비밀번호 또는 소셜 인증을 사용하는 사용자는 다중 인증(MFA)으로 계정을 더욱 안전하게 보호할 수 있습니다. MFA를 설정하려면 다음 단계를 수행하세요:
+
+1. [console.clickhouse.cloud](https://console.clickhouse.cloud/)에 로그인합니다
+2. ClickHouse 로고 옆 왼쪽 상단에 있는 이니셜을 클릭합니다
+3. &quot;Profile&quot;을 선택합니다
+4. 왼쪽에서 &quot;Security&quot;를 선택합니다
+5. &quot;Authenticator app&quot; 타일에서 &quot;Set up&quot;을 클릭합니다
+6. Authy, 1Password 또는 Google Authenticator와 같은 인증 앱을 사용해 QR 코드를 스캔합니다
+7. 확인을 위해 코드를 입력합니다
+8. 다음 화면에서 복구 코드를 복사해 안전한 곳에 보관합니다
+9. `I have safely recorded this code` 옆의 확인란을 선택합니다
+10. &quot;Continue&quot;를 클릭합니다
+
+<div id="obtain-recovery-code">
+  ### 새 복구 코드 받기
+</div>
+
+이전에 MFA를 등록했지만 복구 코드를 생성하지 않았거나 분실한 경우, 다음 단계에 따라 새 복구 코드를 받으십시오.
+
+1. https://console.clickhouse.cloud로 이동하세요
+2. 자격 증명으로 로그인하고 MFA를 완료하세요
+3. 왼쪽 상단의 프로필로 이동하세요
+4. 왼쪽에서 Security를 클릭하세요
+5. Authenticator app 옆의 휴지통 아이콘을 클릭하세요
+6. Remove authenticator app을 클릭하세요
+7. 코드를 입력한 다음 Continue를 클릭하세요
+8. Authenticator app 섹션에서 Set up을 클릭하세요
+9. QR 코드를 스캔하고 새 코드를 입력하세요
+10. 복구 코드를 복사하여 안전한 곳에 보관하세요
+11. `I have safely recorded this code` 옆의 확인란을 선택하세요
+12. Continue를 클릭하세요
+
+<div id="account-recovery">
+  ## 계정 복구
+</div>
+
+<div id="forgot-password">
+  ### 비밀번호를 잊은 경우
+</div>
+
+비밀번호를 잊은 경우 다음 단계에 따라 직접 복구할 수 있습니다:
+
+1. https://console.clickhouse.cloud로 이동합니다
+2. 이메일 주소를 입력한 후 Continue를 클릭합니다
+3. Forgot your password?를 클릭합니다
+4. Send password reset link를 클릭합니다
+5. 이메일을 확인한 후, 메일에서 Reset password를 클릭합니다
+6. 새 password를 입력하고 password를 다시 입력해 확인한 후 Update password를 클릭합니다
+7. Back to sign in을 클릭합니다
+8. 새 password로 평소와 같이 로그인합니다
+
+<div id="mfa-self-serivce-recovery">
+  ### MFA 셀프서비스 복구
+</div>
+
+MFA 장치를 분실했거나 토큰을 삭제한 경우, 다음 단계에 따라 복구한 후 새 토큰을 생성하십시오:
+
+1. https://console.clickhouse.cloud로 이동합니다
+2. 자격 증명을 입력하고 Continue를 클릭합니다
+3. Multi-factor authentication 화면에서 Cancel을 클릭합니다
+4. Recovery code를 클릭합니다
+5. 코드를 입력하고 Continue를 클릭합니다
+6. 새 복구 코드를 복사하여 안전한 곳에 저장합니다
+7. `I have safely recorded this code` 옆의 상자를 선택한 다음 Continue를 클릭합니다
+8. 로그인한 후 왼쪽 상단의 프로필로 이동합니다
+9. 왼쪽 상단에서 Security를 클릭합니다
+10. 기존 인증 앱을 제거하려면 Authenticator app 옆의 휴지통 아이콘을 클릭합니다
+11. Remove authenticator app을 클릭합니다
+12. Multi-factor authentication 입력 메시지가 표시되면 Cancel을 클릭합니다
+13. Recovery code를 클릭합니다
+14. 복구 코드를 입력합니다(7단계에서 생성된 새 코드입니다). 그런 다음 Continue를 클릭합니다
+15. 새 복구 코드를 복사하여 안전한 곳에 저장합니다 - 삭제 프로세스 중 화면을 벗어나는 경우에 대비한 안전장치입니다
+16. `I have safely recorded this code` 옆의 상자를 선택한 다음 Continue를 클릭합니다
+17. 위 절차에 따라 새 MFA 인증 수단을 설정합니다
+
+<div id="lost-mfa-and-recovery-code">
+  ### MFA 장치와 복구 코드를 분실한 경우
+</div>
+
+MFA 장치와 복구 코드를 모두 분실했거나, MFA 장치를 분실한 뒤 복구 코드를 발급받지 못했다면 다음 단계에 따라 재설정을 요청하십시오:
+
+**티켓 제출**: 조직에 다른 관리자 사용자가 있는 경우, 단일 사용자 조직에 대한 접근을 시도하는 상황이더라도 관리자 역할이 할당된 조직 구성원에게 조직에 로그인한 후 사용자를 대신해 MFA 재설정 지원 티켓을 제출해 달라고 요청하십시오. 요청이 정상적으로 인증된 것임을 확인하면 MFA를 재설정하고 관리자에게 알려드립니다. 이후 평소처럼 MFA 없이 로그인한 다음, 원할 경우 프로필 설정으로 이동해 새 인증 요소를 등록하십시오.
+
+**이메일을 통한 재설정**: 조직 내 유일한 사용자라면 계정에 연결된 이메일 주소를 사용해 이메일(support@clickhouse.com)로 지원 요청을 제출하십시오. 요청이 올바른 이메일 주소에서 발송된 것임을 확인하면 MFA와 비밀번호를 모두 재설정합니다. 이메일에서 비밀번호 재설정 링크를 열어 새 비밀번호를 설정한 다음, 원할 경우 프로필 설정으로 이동해 새 인증 요소를 등록하십시오.

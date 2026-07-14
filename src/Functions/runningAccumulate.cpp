@@ -196,6 +196,7 @@ You can use setting [`allow_deprecated_error_prone_window_functions`](/operation
     {
         "Usage example with initializeAggregation",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,

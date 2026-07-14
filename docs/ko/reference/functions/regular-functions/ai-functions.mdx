@@ -1,0 +1,455 @@
+---
+description: 'AI 함수 문서'
+sidebarTitle: 'AI'
+slug: /sql-reference/functions/ai-functions
+title: 'AI 함수'
+doc_type: 'reference'
+---
+
+AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩을 생성해 데이터를 활용하고, 정보를 추출하고, 데이터를 분류하는 등의 작업에 사용할 수 있습니다...
+
+<Note>
+  AI 함수는 실험적 기능입니다. 이를 활성화하려면 [`allow_experimental_ai_functions`](/ko/reference/settings/session-settings#allow_experimental_ai_functions)을 설정하십시오.
+</Note>
+
+<Note>
+  AI 함수는 예측하기 어려운 출력을 반환할 수 있습니다. 결과는 프롬프트의 품질과 사용된 모델에 크게 좌우됩니다.
+</Note>
+
+모든 함수는 다음을 제공하는 공통 인프라를 기반으로 합니다:
+
+* **Quota 적용**: 토큰에 대한 쿼리별 제한([`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) 및 API 호출 제한([`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **백오프를 사용하는 재시도**: 일시적인 실패는 지수형 백오프([`ai_function_retry_initial_delay_ms`](/ko/reference/settings/session-settings#ai_function_retry_initial_delay_ms))를 적용하여 재시도됩니다([`ai_function_max_retries`](/ko/reference/settings/session-settings#ai_function_max_retries)).
+
+<div id="configuration">
+  ## 구성
+</div>
+
+AI 함수는 [**명명된 컬렉션**](/ko/concepts/features/configuration/server-config/named-collections)에서 provider 자격 증명과 구성을 가져옵니다. 자격 증명에 사용할 명명된 컬렉션을 설정하려면 [`ai_function_credentials`](/ko/reference/settings/session-settings#ai_function_credentials) 설정을 사용하십시오.
+
+provider 자격 증명이 포함된 명명된 컬렉션을 생성하는 예시 구문:
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+세션 또는 단일 쿼리에서 `ai_function_credentials` 설정을 사용해 컬렉션을 선택합니다:
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+`ai_function_credentials`가 비어 있는 경우(기본값) 예외가 발생합니다.
+
+<div id="named-collection-parameters">
+  ### 명명된 컬렉션 매개변수
+</div>
+
+| 매개변수          | 유형     | 기본값    | 설명                                                                                                                     |
+| ------------- | ------ | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `provider`    | String | —      | 모델 제공자입니다. 지원값: `'openai'`, `'anthropic'`. 아래 참고를 확인하십시오.                                                              |
+| `endpoint`    | String | —      | API endpoint URL입니다.                                                                                                   |
+| `model`       | String | —      | 모델 이름입니다(예: `'gpt-4o-mini'`, `'text-embedding-3-small'`).                                                              |
+| `api_key`     | String | —      | 제공자 authentication 키입니다. 선택 사항: 생략하면 auth header가 전송되지 않으므로 authentication이 필요하지 않은 OpenAI 호환 server를 대상으로 지정할 수 있습니다. |
+| `max_tokens`  | UInt64 | `1024` | API 호출당 최대 출력 token 수입니다.                                                                                              |
+| `api_version` | String | —      | API 버전 문자열입니다. Anthropic에서 사용됩니다(`'2023-06-01'`).                                                                      |
+
+<Note>
+  `provider = 'openai'`로 설정하고 `endpoint`가 해당 서비스를 가리키도록 지정하면 모든 OpenAI 호환 API(예: vLLM, Ollama, LiteLLM)를 사용할 수 있습니다.
+</Note>
+
+<div id="query-level-settings">
+  ### 쿼리 수준 설정
+</div>
+
+사용할 명명된 컬렉션은 [`ai_function_credentials`](/ko/reference/settings/session-settings#ai_function_credentials) 설정으로 제어됩니다. 다른 AI 관련 설정은 [설정](/ko/reference/settings/session-settings) 문서에서 `ai_function_` 접두사 아래에 나열되어 있습니다.
+
+<div id="default-and-materialized-columns">
+  ### `DEFAULT` 및 `MATERIALIZED` 컬럼에서 사용
+</div>
+
+`ai_function_credentials` 설정은 컬럼을 정의할 때가 아니라 기본 표현식을 평가할 때 읽습니다. 컬렉션 이름은 컬럼 정의에 저장되지 않습니다:
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+표현식을 평가하려면 세 가지가 필요합니다. `allow_experimental_ai_functions` 및 `ai_function_credentials`가 설정되어 있어야 하고, 평가를 수행하는 사용자는 해당 컬렉션에 대해 `GRANT NAMED COLLECTION` 권한을 가지고 있어야 합니다(자격 증명을 확인할 때 `NAMED COLLECTION` 액세스 검사가 수행됩니다). 이들 중 하나라도 누락되면 예외가 발생합니다(`SUPPORT_IS_DISABLED`, 빈 자격 증명 오류 또는 `ACCESS_DENIED`).
+
+`DEFAULT` 컬럼은 `INSERT` 시점에 평가되므로, 두 설정 모두 삽입을 수행하는 세션 또는 쿼리에서 설정되어 있어야 합니다:
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+이러한 테이블에 세션별로 설정하지 않고도 데이터를 삽입할 수 있게 하려면, [설정 프로필](/ko/concepts/features/configuration/settings/settings-profiles)에서 두 항목을 모두 설정하십시오:
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+`MATERIALIZED` 컬럼은 `DEFAULT` 컬럼처럼 `INSERT` 시점에 계산되며, `ALTER TABLE ... MATERIALIZE COLUMN`과 같은 뮤테이션에 의해 다시 계산되기도 합니다. 뮤테이션은 사용자 세션 외부에서 실행되므로 쿼리의 `SETTINGS` 절은 상속하지 않지만, 설정 프로필의 설정은 상속합니다. 뮤테이션 기반 재계산이 성공하도록 두 설정을 모두 설정 프로필에 지정하고, 테이블 소유자에게 `NAMED COLLECTION`을 부여하십시오.
+
+<div id="restricting-endpoint-hosts">
+  ### `endpoint` 호스트 제한
+</div>
+
+AI 명명된 컬렉션의 `endpoint` URL은 서버가 자체 아이덴티티로 연결하는 아웃바운드 대상입니다. 이때 요청 헤더에는 지정된 경우 명명된 컬렉션의 `api_key`가 포함될 수 있습니다. 기본적으로 ClickHouse는 모든 호스트를 허용합니다. 함수를 특정 프로바이더 집합으로 제한하려면 서버 config에서 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings#remote_url_allow_hosts)를 구성하십시오. 예:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+이 설정은 서버 전체에 적용되며 HTTP를 사용하는 모든 기능에 영향을 미친다는 점에 유의하십시오.
+
+<div id="supported-providers">
+  ## 지원되는 프로바이더
+</div>
+
+| 프로바이더     | `provider` 값  | 채팅 함수 | 참고                              |
+| --------- | ------------- | ----- | ------------------------------- |
+| OpenAI    | `'openai'`    | 예     | 기본 프로바이더입니다.                    |
+| Anthropic | `'anthropic'` | 예     | `/v1/messages` endpoint를 사용합니다. |
+
+<div id="observability">
+  ## 관측성
+</div>
+
+AI 함수 활동은 ClickHouse [ProfileEvents](/ko/reference/system-tables/query_log)를 통해 추적됩니다.
+
+| ProfileEvent      | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `AIAPICalls`      | AI 프로바이더로 전송된 HTTP 요청 수입니다.                                              |
+| `AIInputTokens`   | 사용된 총 입력 토큰 수입니다.                                                        |
+| `AIOutputTokens`  | 사용된 총 출력 토큰 수입니다.                                                        |
+| `AIRowsProcessed` | 결과를 받은 행 수입니다.                                                           |
+| `AIRowsSkipped`   | 건너뛴 행 수입니다(QUOTA를 초과했거나 `ai_function_throw_on_error = 0`일 때 오류가 발생한 경우). |
+
+다음과 같이 이 이벤트를 조회합니다.
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  아래 태그의 내부 내용은 문서 프레임워크 빌드 시
+  system.functions에서 생성된 문서로 대체됩니다. 태그를 수정하거나 제거하지 마십시오.
+  참고: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+도입 버전: v26.4.0
+
+LLM provider를 사용해 주어진 텍스트를 제공된 범주 중 하나로 분류합니다.
+
+이 함수는 텍스트를 고정된 분류 프롬프트 및 JSON 스키마 응답 포맷과 함께 전송하여
+모델이 제공된 레이블 중 정확히 하나만 반환하도록 제한합니다. 응답이 JSON
+객체 `{"category": "..."}` 형태로 반환되면 레이블을 추출해 레이블 문자열을 반환합니다.
+
+공급자 자격 증명과 구성은 `ai_function_credentials` 설정에 지정된 명명된 컬렉션에서 가져옵니다.
+
+**구문**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**별칭**: `AIClassify`
+
+**인수**
+
+* `text` — 분류할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `categories` — 후보 카테고리 레이블의 상수 목록입니다. [`Array(String)`](/ko/reference/data-types/array)
+* `temperature` — 무작위성을 제어하는 샘플링 온도입니다. 기본값: `0.0`. [`Float64`](/ko/reference/data-types/float)
+
+**반환 값**
+
+제공된 카테고리 레이블 중 하나를 반환합니다. 요청이 실패하고 `ai_function_throw_on_error`가 비활성화된 경우에는 컬럼 타입의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**감정 분류**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**컬럼 분류**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+도입 버전: v26.6.0
+
+구성된 AI 프로바이더를 사용해 지정된 텍스트의 임베딩 벡터를 생성합니다.
+
+이 함수는 텍스트를 구성된 임베딩 엔드포인트로 전송하고, 결과 벡터를 `Array(Float32)`로 반환합니다.
+단일 데이터 블록 내에서는 호출당 오버헤드를 줄이기 위해 입력을 HTTP 요청당 최대
+[`ai_function_embedding_max_batch_size`](/ko/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+개 항목씩 배치로 묶어 처리합니다.
+
+AI 프로바이더 자격 증명과 구성은 `ai_function_credentials` 설정에 지정된 명명된 컬렉션에서 가져옵니다.
+선택적 `dimensions` 인수는 모델이 이를 지원하는 경우(예: OpenAI&#39;s `text-embedding-3-*`)
+지정된 크기의 벡터를 요청하며, 그렇지 않으면 모델의 네이티브 크기가 반환됩니다.
+
+**구문**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**인수**
+
+* `text` — 임베딩할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `dimensions` — 출력 벡터의 목표 차원을 지정하는 선택적 값입니다. `0`이거나 생략하면 모델의 네이티브 크기가 사용됩니다. [`UInt64`](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+임베딩 벡터 또는 빈 배열입니다. 입력이 NULL이거나 비어 있는 경우, 요청이 실패했고 `ai_function_throw_on_error`가 비활성화된 경우, 또는 `ai_function_throw_on_quota_exceeded`가 비활성화된 상태에서 할당량을 초과한 경우에는 빈 배열이 반환됩니다. [`Array(Float32)`](/ko/reference/data-types/array)
+
+**예시**
+
+**단일 문자열 임베딩**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**명시적 차원 사용**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**텍스트 컬럼 임베드하기**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+도입 버전: v26.4.0
+
+LLM provider를 사용해 비구조화 텍스트에서 구조화된 정보를 추출합니다.
+
+두 번째 인수는 자유 형식의 자연어 지시문(예: `'the main complaint'`)이거나
+`'{"field_a": "description of field a", "field_b": "description of field b"}'` 형태의 JSON 인코딩 스키마일 수 있습니다.
+
+지시문 모드에서 이 함수는 추출된 값을 일반 문자열로 반환하고, 아무것도 찾지 못하면 빈 문자열을 반환합니다.
+스키마 모드에서 이 함수는 키가 요청한 스키마와 일치하는 JSON 객체 문자열을 반환하며, 누락된 필드는 `null`로 반환됩니다.
+
+provider 자격 증명과 구성은 `ai_function_credentials` 설정으로 지정된 명명된 컬렉션에서 가져옵니다.
+
+**구문**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**별칭**: `AIExtract`
+
+**인수**
+
+* `text` — 정보를 추출할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `instruction_or_schema` — 자유 형식의 추출 지침 또는 추출할 필드를 설명하는 상수 JSON 객체입니다. [`const String`](/ko/reference/data-types/string)
+* `temperature` — 무작위성을 제어하는 샘플링 temperature입니다. 기본값: `0.0`입니다. [`const Float64`](/ko/reference/data-types/float)
+
+**반환 값**
+
+단일 추출 값(지침 모드) 또는 JSON 객체 문자열(스키마 모드)입니다. 요청이 실패하고 `ai_function_throw_on_error`가 비활성화되어 있으면 컬럼 유형의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**자유 형식 추출 지침**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**스키마 추출**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+도입 버전: v26.4.0
+
+LLM 프로바이더를 사용해 프롬프트로부터 자유 형식의 텍스트 콘텐츠를 생성합니다.
+
+이 함수는 프롬프트를 구성된 AI 프로바이더로 전송한 뒤, 생성된 텍스트를 반환합니다.
+선택적으로 system prompt를 제공하여 모델의 동작(예: 어조, 포맷, 역할)을 유도할 수 있습니다.
+system prompt를 지정하지 않으면 기본 system prompt는 다음과 같습니다: `You are a helpful assistant. Provide a clear and concise response.`
+
+provider 자격 증명 및 구성은 `ai_function_credentials` 설정에 지정된 명명된 컬렉션에서 가져옵니다.
+
+**구문**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**별칭**: `AIGenerate`
+
+**인수**
+
+* `prompt` — 모델에 보낼 사용자 프롬프트 또는 질문입니다. [`String`](/ko/reference/data-types/string)
+* `system_prompt` — 각 프롬프트와 함께 전송되며 모델의 동작(예: 페르소나, 출력 형식)을 안내하는 선택적 상수 시스템 수준 지침입니다. [`String`](/ko/reference/data-types/string)
+* `temperature` — 무작위성을 제어하는 샘플링 온도입니다. 기본값은 `0.7`입니다. [`Float64`](/ko/reference/data-types/float)
+
+**반환 값**
+
+생성된 텍스트 응답 또는 요청이 실패했고 `ai_function_throw_on_error`가 비활성화된 경우 컬럼 타입의 기본값(빈 문자열)입니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**간단한 질문**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**시스템 프롬프트 사용 시**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**컬럼 값 요약**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+도입 버전: v26.4.0
+
+지정된 LLM provider를 사용해 주어진 텍스트를 지정한 대상 언어로 번역합니다.
+
+추가 스타일 또는 방언 지침은 세 번째 인수로 전달할 수 있습니다(예: `'기술 용어는 번역하지 않기'`).
+
+provider 자격 증명과 구성은 `ai_function_credentials` 설정에서 지정한 명명된 컬렉션에서 가져옵니다.
+
+**구문**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**별칭**: `AITranslate`
+
+**인수**
+
+* `text` — 번역할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `target_language` — 대상 언어 이름 또는 BCP-47 코드입니다(예: `'French'`, `'es-MX'`). [`String`](/ko/reference/data-types/string)
+* `instructions` — 번역기에 전달할 선택적 상수 추가 지침입니다. [`String`](/ko/reference/data-types/string)
+* `temperature` — 무작위성을 제어하는 샘플링 온도입니다. 기본값: `0.3`. [`Float64`](/ko/reference/data-types/float)
+
+**반환 값**
+
+번역된 텍스트 또는 요청이 실패했고 `ai_function_throw_on_error`가 비활성화된 경우 컬럼 타입의 기본값(빈 문자열)입니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**프랑스어로 번역**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**스타일 지침에 따라 일본어로 번역하세요**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

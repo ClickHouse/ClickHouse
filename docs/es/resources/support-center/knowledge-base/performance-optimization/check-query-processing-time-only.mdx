@@ -1,0 +1,38 @@
+---
+title: Cómo medir el tiempo de procesamiento de consultas sin devolver filas
+description: Aprende a usar la opción `FORMAT Null` de ClickHouse para medir el tiempo de procesamiento de consultas sin devolver ninguna fila al cliente.
+date: 2023-06-07
+tags: ['Rendimiento y optimización']
+keywords: ['Tiempo de procesamiento de consultas']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+Mi consulta devuelve muchas filas, pero solo me interesa el tiempo de procesamiento de consulta. ¿Cómo omito la salida de la consulta y verifico el tiempo de procesamiento de consulta?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Añade `FORMAT Null` a tu consulta para establecer el formato de salida en `Null`. Esto impide que los datos se envíen al cliente.
+
+Por ejemplo:
+
+```sql
+SELECT
+    customer_id,
+    count() AS total,
+    any(review_headline)
+FROM amazon_reviews
+GROUP BY customer_id
+ORDER BY total DESC
+FORMAT Null
+```
+
+La respuesta devolverá el número de filas procesadas y el tiempo transcurrido, pero no se devolverá ninguna fila:
+
+```response
+0 rows in set. Elapsed: 25.288 sec. Processed 222.04 million rows, 13.50 GB (8.78 million rows/s., 533.77 MB/s.)
+```
