@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+-- Correlated subqueries are only supported by the new analyzer; the old analyzer
+-- rejects every correlated reference with UNKNOWN_IDENTIFIER (Code 47) before this
+-- feature's NOT_IMPLEMENTED path is reached.
+
 -- Nested EXISTS whose inner subquery references a column from a scope beyond its
 -- immediate outer query (skipping an intermediate scope) is not supported yet. It
 -- must fail with a clear NOT_IMPLEMENTED error, not an internal NOT_FOUND_COLUMN_IN_BLOCK.
