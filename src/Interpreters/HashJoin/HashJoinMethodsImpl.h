@@ -905,7 +905,7 @@ static ColumnPtr buildAdditionalFilter(
         executed_block.clear();
     } while (false);
 
-    result_column = result_column->convertToFullIfNeeded();
+    result_column = result_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     if (result_column->isNullable())
     {
         /// Convert Nullable(UInt8) to UInt8 ensuring that nulls are zeros
