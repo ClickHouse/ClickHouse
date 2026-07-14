@@ -1,0 +1,116 @@
+---
+description: 'Documentation des fonctions régulières'
+sidebarTitle: 'Vue d’ensemble'
+slug: /sql-reference/functions/overview
+title: 'Fonctions régulières'
+doc_type: 'reference'
+---
+
+Il existe au moins* deux types de fonctions : les fonctions régulières (qu’on appelle simplement « fonctions ») et les fonctions d’agrégation. Ce sont des concepts complètement différents. Les fonctions régulières s’appliquent comme si elles l’étaient à chaque ligne séparément (pour chaque ligne, le résultat de la fonction ne dépend pas des autres lignes). Les fonctions d’agrégation accumulent un ensemble de valeurs provenant de différentes lignes (c’est-à-dire qu’elles dépendent de l’ensemble complet des lignes).
+
+Dans cette section, nous abordons les fonctions régulières. Pour les fonctions d’agrégation, voir la section « Fonctions d’agrégation ».
+
+<Note>
+  Il existe un troisième type de fonction auquel appartient la fonction [&#39;arrayJoin&#39;](/fr/reference/functions/regular-functions/array-join). Les [fonctions de table](/fr/reference/functions/table-functions/index) peuvent également être mentionnées séparément.
+</Note>
+
+<div id="strong-typing">
+  ## Typage fort
+</div>
+
+Contrairement au SQL standard, ClickHouse utilise un typage fort. En d&#39;autres termes, il n&#39;effectue pas de conversions implicites entre les types. Chaque fonction ne s&#39;applique qu&#39;à un ensemble spécifique de types. Cela signifie qu&#39;il faut parfois utiliser des fonctions de conversion de type.
+
+<div id="common-subexpression-elimination">
+  ## Élimination des sous-expressions communes
+</div>
+
+Toutes les expressions d’une requête qui ont le même AST (le même enregistrement, c’est-à-dire le même résultat de l’analyse syntaxique) sont considérées comme ayant des valeurs identiques. Ces expressions sont regroupées et exécutées une seule fois. Les sous-requêtes identiques sont également éliminées de la même manière.
+
+<div id="types-of-results">
+  ## Types de résultats
+</div>
+
+Toutes les fonctions renvoient une seule valeur en résultat (jamais plusieurs, ni aucune). Le type du résultat est généralement défini uniquement par le type des arguments, et non par leurs valeurs. Les exceptions sont la fonction tupleElement (l&#39;opérateur a.N) et la fonction toFixedString.
+
+<div id="constants">
+  ## Constantes
+</div>
+
+Par souci de simplicité, certaines fonctions ne peuvent accepter que des constantes pour certains arguments. Par exemple, l&#39;argument de droite de l&#39;opérateur LIKE doit être une constante.
+Presque toutes les fonctions renvoient une constante lorsque leurs arguments sont constants. Font exception les fonctions qui génèrent des nombres aléatoires.
+La fonction &#39;now&#39; renvoie des valeurs différentes pour des requêtes exécutées à des moments différents, mais le résultat est considéré comme constant, car la constance n&#39;a d&#39;importance qu&#39;au sein d&#39;une seule requête.
+Une expression constante est elle aussi considérée comme une constante (par exemple, la partie droite de l&#39;opérateur LIKE peut être construite à partir de plusieurs constantes).
+
+Les fonctions peuvent être implémentées différemment selon que les arguments sont constants ou non (un code différent est exécuté). Mais les résultats obtenus avec une constante et avec une colonne réelle ne contenant que cette même valeur doivent être identiques.
+
+<div id="null-processing">
+  ## Traitement des NULL
+</div>
+
+Les fonctions se comportent comme suit :
+
+* Si au moins un des arguments de la fonction est `NULL`, le résultat de la fonction est lui aussi `NULL`.
+* Comportement particulier précisé individuellement dans la description de chaque fonction. Dans le code source de ClickHouse, ces fonctions ont `UseDefaultImplementationForNulls=false`.
+
+<div id="constancy">
+  ## Constance
+</div>
+
+Les fonctions ne peuvent pas modifier les valeurs de leurs arguments : toute modification est renvoyée en résultat. Ainsi, le résultat du calcul de fonctions distinctes ne dépend pas de l&#39;ordre dans lequel elles sont écrites dans la requête.
+
+<div id="higher-order-functions">
+  ## Fonctions d’ordre supérieur
+</div>
+
+<div id="arrow-operator-and-lambda">
+  ### Opérateur `->` et fonctions lambda(params, expr)
+</div>
+
+Les fonctions d’ordre supérieur ne peuvent accepter que des fonctions lambda comme argument de fonction. Pour transmettre une fonction lambda à une fonction d’ordre supérieur, utilisez l’opérateur `->`. À gauche de la flèche figure un paramètre formel, qui peut être n’importe quel identifiant, ou plusieurs paramètres formels — n’importe quels identifiants dans un tuple. À droite de la flèche figure une expression qui peut utiliser ces paramètres formels ainsi que n’importe quelles colonnes de la table.
+
+Exemples :
+
+```python
+x -> 2 * x
+str -> str != Referer
+```
+
+Une fonction lambda qui accepte plusieurs arguments peut également être transmise à une fonction d’ordre supérieur. Dans ce cas, plusieurs tableaux de même longueur sont transmis à la fonction d’ordre supérieur, auxquels correspondent ces arguments.
+
+Pour certaines fonctions, le premier argument (la fonction lambda) peut être omis. Dans ce cas, une correspondance identique est supposée.
+
+<div id="bare-function-names-as-lambdas">
+  ### Noms de fonctions utilisés directement comme lambdas
+</div>
+
+Au lieu d’écrire une expression lambda complète, vous pouvez passer directement un nom de fonction à une fonction d’ordre supérieur. Le nom de la fonction est automatiquement converti en une expression lambda équivalente.
+
+Par exemple, les paires suivantes sont équivalentes :
+
+```sql
+SELECT arrayMap(negate, [1, 2, 3]);            -- [-1, -2, -3]
+SELECT arrayMap(x -> negate(x), [1, 2, 3]);    -- [-1, -2, -3]
+
+SELECT arrayMap(plus, [1, 2, 3], [10, 20, 30]);            -- [11, 22, 33]
+SELECT arrayMap((x, y) -> plus(x, y), [1, 2, 3], [10, 20, 30]); -- [11, 22, 33]
+
+SELECT arrayFilter(isNotNull, [1, NULL, 3, NULL, 5]);            -- [1, 3, 5]
+SELECT arrayFilter(x -> isNotNull(x), [1, NULL, 3, NULL, 5]);    -- [1, 3, 5]
+
+SELECT arrayFold(plus, [1, 2, 3, 4, 5], toUInt64(0));                      -- 15
+SELECT arrayFold((acc, x) -> plus(acc, x), [1, 2, 3, 4, 5], toUInt64(0));  -- 15
+```
+
+Cela fonctionne avec les fonctions intégrées, les UDF SQL, les UDF exécutables et les UDF WebAssembly. En cas d&#39;ambiguïté, les noms de colonnes et d&#39;alias priment sur les noms de fonctions.
+
+L&#39;arité de la lambda est déduite de la fonction interne. Par exemple, `arrayMap(plus, ...)` utilise une arité de 2, car `plus` prend deux arguments ; cela fonctionne donc aussi avec des entrées de tuple telles que `arrayMap(plus, [(1, 10), (2, 20)])`, où les éléments du tuple sont dépaquetés dans les arguments de la lambda.
+
+Pour les fonctions internes variadiques (comme `concat`, qui accepte un nombre quelconque d&#39;arguments), l&#39;arité de la lambda retombe sur le nombre d&#39;arguments de tableau. C&#39;est correct pour les fonctions d&#39;ordre supérieur comme `arrayMap`, `arrayFilter` et `arrayFold`. Pour les fonctions d&#39;ordre supérieur qui acceptent des paramètres fixes non-tableau en plus des tableaux — par exemple, `arrayPartialSort(f, limit, arr)` — les noms de fonctions variadiques utilisés seuls peuvent produire une arité incorrecte ; dans ce cas, une lambda explicite est requise.
+
+Les fonctions internes variadiques ne dépaquettent pas non plus automatiquement les entrées de tuple. Par exemple, `arrayMap(concat, [('a', 'b'), ('c', 'd')])` se réécrit en une lambda unaire et n&#39;est pas équivalent à `arrayMap((x, y) -> concat(x, y), [('a', 'b'), ('c', 'd')])`. Utilisez une lambda explicite lorsque vous souhaitez déstructurer les éléments du tuple dans un appel variadique.
+
+<div id="user-defined-functions-udfs">
+  ## Fonctions définies par l’utilisateur (UDFs)
+</div>
+
+ClickHouse prend en charge les fonctions définies par l’utilisateur. Voir [UDFs](/fr/reference/functions/regular-functions/udf).

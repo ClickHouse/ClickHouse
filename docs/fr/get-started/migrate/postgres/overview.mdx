@@ -1,0 +1,56 @@
+---
+slug: /migrations/postgresql/overview
+title: 'Comparaison entre PostgreSQL et ClickHouse'
+description: 'Guide de migration de PostgreSQL vers ClickHouse'
+keywords: ['postgres', 'postgresql', 'migrer', 'migration']
+sidebarTitle: 'Vue d’ensemble'
+doc_type: 'guide'
+---
+
+<div id="why-use-clickhouse-over-postgres">
+  ## Pourquoi utiliser ClickHouse plutôt que Postgres ?
+</div>
+
+En bref : parce que ClickHouse est conçu pour l’analytics rapide, en particulier pour les requêtes `GROUP BY`, en tant que base de données OLAP, tandis que Postgres est une base de données OLTP conçue pour des charges de travail transactionnelles.
+
+Les bases de données OLTP, ou de traitement transactionnel en ligne, sont conçues pour gérer des données transactionnelles. L’objectif principal de ces bases de données, dont Postgres est l’exemple classique, est de garantir qu’un ingénieur puisse soumettre un bloc de mises à jour à la base de données en ayant l’assurance qu’il sera, dans son intégralité, soit appliqué, soit rejeté. Ces garanties transactionnelles fondées sur les propriétés ACID sont au cœur des bases de données OLTP et constituent l’un des grands points forts de Postgres. Compte tenu de ces exigences, les bases de données OLTP atteignent généralement leurs limites de performance lorsqu’elles sont utilisées pour des requêtes analytiques sur de grands jeux de données.
+
+Les bases de données OLAP, ou de traitement analytique en ligne, sont conçues pour répondre à ces besoins, c’est-à-dire gérer des charges de travail analytiques. L’objectif principal de ces bases de données est de permettre aux ingénieurs d’interroger et d’agréger efficacement de vastes jeux de données. Les systèmes OLAP en temps réel comme ClickHouse permettent d’effectuer cette analyse à mesure que les données sont ingérées en temps réel.
+
+Voir [ici](/fr/get-started/migrate/postgres/appendix#postgres-vs-clickhouse-equivalent-and-different-concepts) pour une comparaison plus approfondie entre ClickHouse et PostgreSQL.
+
+Pour voir les différences de performance potentielles entre ClickHouse et Postgres sur des requêtes analytiques, consultez [Rewriting PostgreSQL Queries in ClickHouse](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part2).
+
+<div id="migration-strategies">
+  ## Stratégies de migration
+</div>
+
+Lors d’une migration de PostgreSQL vers ClickHouse, la stratégie à adopter dépend de votre cas d’usage, de votre infrastructure et de vos exigences en matière de données. En règle générale, la capture des changements de données (CDC) en temps réel constitue la meilleure approche pour la plupart des cas d’usage modernes, tandis qu’un chargement en masse manuel suivi de mises à jour périodiques convient mieux aux scénarios plus simples ou aux migrations ponctuelles.
+
+La section ci-dessous présente les deux principales stratégies de migration : **capture des changements de données (CDC) en temps réel** et **Chargement en masse manuel + mises à jour périodiques**.
+
+<div id="real-time-replication-cdc">
+  ### Réplication en temps réel (CDC)
+</div>
+
+La capture des changements de données (CDC) est le processus qui permet de maintenir les tables synchronisées entre deux bases de données. C’est l’approche la plus efficace pour la plupart des migrations depuis PostgreSQL, mais elle est aussi plus complexe, car elle prend en charge les insertions, les mises à jour et les suppressions de PostgreSQL vers ClickHouse en quasi temps réel. Elle est idéale pour les cas d’usage où l’analytique en temps réel est importante.
+
+La capture des changements de données (CDC) en temps réel peut être mise en œuvre dans ClickHouse à l’aide de [ClickPipes](/fr/integrations/clickpipes/postgres/deduplication), si vous utilisez ClickHouse Cloud, ou de [PeerDB](https://github.com/PeerDB-io/peerdb) si vous exécutez ClickHouse sur site. Ces solutions gèrent les complexités de la synchronisation des données en temps réel, y compris le chargement initial, en capturant les insertions, les mises à jour et les suppressions depuis PostgreSQL, puis en les répliquant dans ClickHouse. Cette approche garantit que les données dans ClickHouse restent toujours à jour et exactes, sans nécessiter d’intervention manuelle.
+
+<div id="manual-bulk-load-periodic-updates">
+  ### Chargement en masse manuel + mises à jour périodiques
+</div>
+
+Dans certains cas, une approche plus simple, comme un chargement en masse manuel suivi de mises à jour périodiques, peut suffire. Cette stratégie est idéale pour les migrations ponctuelles ou les situations où une réplication en temps réel n&#39;est pas nécessaire. Elle consiste à charger les données de PostgreSQL vers ClickHouse en masse, soit à l&#39;aide de commandes SQL `INSERT` directes, soit en exportant puis en important des fichiers CSV. Après la migration initiale, vous pouvez mettre à jour périodiquement les données dans ClickHouse en synchronisant les modifications depuis PostgreSQL à intervalles réguliers.
+
+Le processus de chargement en masse est simple et flexible, mais il a l&#39;inconvénient de ne pas fournir de mises à jour en temps réel. Une fois les données initiales chargées dans ClickHouse, les mises à jour ne sont pas répercutées immédiatement ; vous devez donc planifier des mises à jour périodiques pour synchroniser les modifications depuis PostgreSQL. Cette approche convient bien aux cas d&#39;usage moins sensibles au facteur temps, mais elle introduit un délai entre le moment où les données changent dans PostgreSQL et celui où ces modifications apparaissent dans ClickHouse.
+
+<div id="which-strategy-to-choose">
+  ### Quelle stratégie choisir ?
+</div>
+
+Pour la plupart des applications qui nécessitent des données récentes et à jour dans ClickHouse, le CDC en temps réel via ClickPipes est l’approche recommandée. Il assure une synchronisation continue des données avec un minimum de configuration et de maintenance. À l’inverse, le chargement en masse manuel avec des mises à jour périodiques reste une option pertinente pour des migrations ponctuelles plus simples ou des charges de travail pour lesquelles les mises à jour en temps réel ne sont pas essentielles.
+
+***
+
+**[Commencez le guide de migration PostgreSQL ici](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part1).**

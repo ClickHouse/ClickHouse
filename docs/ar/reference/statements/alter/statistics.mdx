@@ -1,0 +1,41 @@
+---
+description: 'توثيق لإدارة إحصاءات الأعمدة'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: 'إدارة إحصاءات الأعمدة'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+العمليات التالية متاحة:
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - يضيف وصف الإحصاءات إلى البيانات الوصفية للجداول.
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - يعدّل وصف الإحصاءات في البيانات الوصفية للجداول.
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - يزيل الإحصاءات من البيانات الوصفية للأعمدة المحددة، ويحذف جميع كائنات الإحصاءات في كل الأجزاء لتلك الأعمدة.
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - يحذف جميع كائنات الإحصاءات في كل الأجزاء للأعمدة المحددة. ويمكن إعادة بناء كائنات الإحصاءات باستخدام `ALTER TABLE MATERIALIZE STATISTICS`.
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - يعيد بناء الإحصاءات للأعمدة. ويُنَفَّذ ذلك على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
+
+الأمران الأولان lightweight بمعنى أنهما لا يغيّران سوى البيانات الوصفية أو يزيلان الملفات.
+
+كما أنهما مكرران، إذ تُزامَن البيانات الوصفية للإحصاءات عبر ZooKeeper.
+
+<div id="example">
+  ## مثال:
+</div>
+
+إضافة نوعَي إحصاءات إلى عمودين:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  لا تتوفر الإحصاءات إلا للجداول التي تستخدم المحرك [&#96;*MergeTree&#96;](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك الأشكال [المكررة](/ar/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

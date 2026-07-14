@@ -1,0 +1,64 @@
+---
+title: 'Bring Your Own Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: 'Visão geral'
+keywords: ['BYOC', 'nuvem', 'Bring Your Own Cloud']
+description: 'Implante o ClickHouse em sua própria infraestrutura de Cloud'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+BYOC (Bring Your Own Cloud) permite implantar o ClickHouse Cloud na sua própria infraestrutura em nuvem. Isso é útil se você tiver requisitos ou restrições específicos que impeçam o uso do serviço gerenciado do ClickHouse Cloud.
+
+> **Se quiser acesso, [entre em contato conosco](https://clickhouse.com/cloud/bring-your-own-cloud).** Consulte nossos [Termos de Serviço](https://clickhouse.com/legal/agreements/terms-of-service) para obter mais informações.
+
+Atualmente, o BYOC é compatível apenas com a AWS. Você pode entrar na lista de espera para GCP e Azure [aqui](https://clickhouse.com/cloud/bring-your-own-cloud).
+
+<Note>
+  O BYOC foi projetado especificamente para implantações em grande escala e exige que os clientes firmem um contrato de longo prazo.
+</Note>
+
+<div id="glossary">
+  ## Glossário
+</div>
+
+* **ClickHouse VPC:**  A VPC de propriedade da ClickHouse Cloud.
+* **Customer BYOC VPC:** A VPC de propriedade da conta de nuvem do cliente, provisionada e gerenciada pela ClickHouse Cloud e dedicada a uma implantação BYOC da ClickHouse Cloud.
+* **Customer VPC** Outras VPCs de propriedade da conta de nuvem do cliente, usadas por aplicações que precisam se conectar à Customer BYOC VPC.
+
+<div id="features">
+  ## Funcionalidades
+</div>
+
+<div id="supported-features">
+  ### Recursos compatíveis
+</div>
+
+* **SharedMergeTree**: o ClickHouse Cloud e o BYOC usam o mesmo binário e a mesma configuração. Por isso, o BYOC oferece suporte a todos os recursos centrais do ClickHouse, como o SharedMergeTree.
+* **Acesso ao Console para gerenciar o estado do serviço**:
+  * Suporta operações como iniciar, parar e encerrar.
+  * Visualização de serviços e status.
+* **Backup e restauração.**
+* **Escalonamento vertical e horizontal manual.**
+* **Modo ocioso.**
+* **Warehouses**: separação compute-compute
+* **Rede Zero Trust via Tailscale.**
+* **monitoramento**:
+  * O console da Cloud inclui dashboards integrados de integridade para monitorar a saúde do serviço.
+  * Coleta via Prometheus para monitoramento centralizado com Prometheus, Grafana e Datadog. Consulte a [documentação do Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus) para obter instruções de configuração.
+* **VPC Peering.**
+* **Integrations**: veja a lista completa [nesta página](/pt-BR/integrations/home).
+* **S3 seguro.**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/).**
+
+<div id="planned-features-currently-unsupported">
+  ### Funcionalidades planejadas (atualmente sem suporte)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/), também conhecido como CMEK (chaves de criptografia gerenciadas pelo cliente)
+* ClickPipes para ingestão
+* Autoescalonamento
+* Interface MySQL

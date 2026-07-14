@@ -1,0 +1,108 @@
+---
+slug: /cloud/managed-postgres/connection
+sidebarTitle: '接続'
+title: 'Managed Postgres に接続する'
+description: 'ClickHouse Managed Postgres の接続文字列、PgBouncer の接続プーリング、TLS 設定'
+keywords: ['postgres 接続', '接続文字列', 'pgbouncer', 'tls', 'ssl']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
+
+<Tip>
+  **SQL Console**
+
+  このページでは、本番システムを Postgres に接続する方法を説明します。クエリを手早く実行したい場合は、ClickHouse インスタンスと同様に、[SQL Console](/ja/integrations/connectors/sql-clients/sql-console) 経由で接続できます。
+</Tip>
+
+<div id="accessing-connection-details">
+  ## 接続情報の確認
+</div>
+
+アプリケーションを Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
+
+<Image img="/images/managed-postgres/connect-button.webp" alt="接続情報を表示するには、左側のサイドバーで Connect をクリックします" size="md" border />
+
+**Connect** をクリックするとモーダルが開き、接続資格情報と複数のフォーマットの接続文字列が表示されます。
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="資格情報と接続文字列のフォーマットを表示する接続モーダル" size="md" border />
+
+接続モーダルには、次の情報が表示されます。
+
+* **Username**: データベースユーザー名 (デフォルト: `postgres`)
+* **Password**: データベースのパスワード (デフォルトではマスク表示。表示するには目のアイコンをクリックします)
+* **Server**: Managed Postgres インスタンスのホスト名
+* **Port**: PostgreSQL のポート (デフォルト: `5432`)
+
+Managed Postgres では、データベースへのスーパーユーザーアクセスが提供されます。これらの認証情報を使用してスーパーユーザーとして接続すると、追加のユーザーを作成したり、データベースオブジェクトを管理したりできます。
+
+<div id="connection-string">
+  ## 接続文字列のフォーマット
+</div>
+
+**Connect via** タブでは、アプリケーションの要件に合わせて、接続文字列を複数のフォーマットで確認できます。
+
+| フォーマット   | 説明                                                                      |
+| -------- | ----------------------------------------------------------------------- |
+| **url**  | `postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>` 形式の標準的な接続 URL |
+| **psql** | psql コマンドラインツールで接続するための、そのまま使用できるコマンド                                   |
+| **env**  | libpq ベースのクライアント用の環境変数                                                  |
+| **yaml** | YAML 形式の設定                                                              |
+| **jdbc** | Java アプリケーション用の JDBC 接続文字列                                              |
+
+セキュリティ上の理由により、接続文字列内のパスワードはデフォルトでマスクされています。任意のフィールドまたは接続文字列の横にあるコピーアイコンをクリックすると、内容を直接クリップボードにコピーできます。
+
+<div id="pgbouncer">
+  ## PgBouncer 接続プーリング
+</div>
+
+Managed Postgres には、サーバー側の接続プーリング用に [PgBouncer](https://www.pgbouncer.org/) インスタンスが付属しています。PgBouncer は、特に次のようなアプリケーションで、接続管理、パフォーマンス、リソース使用状況の改善に役立ちます。
+
+* 多数の接続を同時に開く
+* 接続の作成と切断を頻繁に行う
+* サーバーレスまたは一時的なコンピュート環境を使用する
+
+接続プーリングを使用するには、接続モーダル上部にある **via PgBouncer** トグルをクリックします。接続の詳細が更新され、PostgreSQL に直接接続する代わりに、接続プーラー経由で接続するようになります。
+
+<Tip>
+  **PgBouncer を使用するタイミング**
+
+  アプリケーションが短時間の接続を多数開く場合は、PgBouncer を使用してください。長時間維持される接続や、接続プーリングと互換性のない PostgreSQL 機能 (トランザクションをまたいだプリペアドステートメントなど) を使用するアプリケーションでは、直接接続してください。
+
+  PgBouncer 経由で ClickPipes を使用してデータを ClickHouse に移動することはサポートされていません。
+</Tip>
+
+<div id="tls">
+  ## TLS 設定
+</div>
+
+すべての Managed Postgres インスタンスは TLS によって保護されています。サポートされる最小バージョンは **TLS 1.3** です。
+
+<div id="quick-connection">
+  ### クイック接続 (TLS で暗号化)
+</div>
+
+デフォルトでは、接続には証明書の検証を行わない TLS 暗号化が使用されます。
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
+```
+
+<div id="verified-tls">
+  ### 検証済み TLS 接続 (本番環境に推奨)
+</div>
+
+本番ワークロードでは、正しいサーバーと通信していることを確実にするため、検証済み TLS 接続の使用を推奨します。これを行うには、**Settings** タブから CA 証明書バンドルをダウンロードし、データベースクライアントの信頼済み証明書に追加します。
+
+<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Settings タブから CA 証明書をダウンロード" size="md" border />
+
+CA 証明書は Managed Postgres インスタンスごとに固有であり、他のインスタンスでは使用できません。
+
+検証済み TLS 接続で接続するには、`sslmode=verify-full` とダウンロードした証明書へのパスを追加します:
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
+```

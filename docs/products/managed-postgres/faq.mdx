@@ -1,0 +1,122 @@
+---
+slug: /cloud/managed-postgres/faq
+sidebarTitle: 'FAQ'
+title: 'Managed Postgres FAQ'
+description: 'Frequently asked questions about ClickHouse Managed Postgres'
+keywords: ['managed postgres faq', 'postgres questions', 'metrics', 'extensions', 'migration', 'terraform', 'pgbouncer', 'prepared statements']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
+## Monitoring and metrics {#monitoring-and-metrics}
+
+### How can I access metrics for my Managed Postgres instance? {#metrics-access}
+
+You can monitor CPU, memory, IOPS, and storage usage directly from the ClickHouse Cloud console in the **Monitoring** tab of your Managed Postgres instance.
+
+In addition, you can explore [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) for detailed analysis of your queries in the **Query Insights** tab.
+
+## Backup and recovery {#backup-and-recovery}
+
+### What backup options are available? {#backup-options}
+
+Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in S3.
+
+For complete details on backup frequency, retention, and how to perform point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) documentation.
+
+## Infrastructure and automation {#infrastructure-and-automation}
+
+### Is Terraform support available for Managed Postgres? {#terraform-support}
+
+Terraform support for Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
+
+## Extensions and configuration {#extensions-and-configuration}
+
+### What extensions are supported? {#extensions-supported}
+
+Managed Postgres includes over 90 PostgreSQL extensions, including popular ones like PostGIS, pgvector, pg_cron, and many more. For the complete list of available extensions and installation instructions, see the [Extensions](/products/managed-postgres/extensions) documentation.
+
+### Can I customize PostgreSQL configuration parameters? {#config-customization}
+
+Yes, you can modify PostgreSQL and PgBouncer configuration parameters through the **Settings** tab in the console. For details on available parameters and how to change them, see the [Settings](/products/managed-postgres/settings) documentation.
+
+<Tip>
+If you need a parameter that isn't currently available, contact [support](https://clickhouse.com/support/program) to request it.
+</Tip>
+
+## Connection pooling {#connection-pooling}
+
+### Why am I seeing `prepared statement does not exist` errors through PgBouncer? {#prepared-statement-errors}
+
+Managed Postgres runs PgBouncer in **transaction pooling** mode. In this mode, a backend Postgres connection is only assigned to your client for the duration of a single transaction, then returned to the pool — the next transaction from the same client may land on a different backend.
+
+That breaks **server-side prepared statements**, which are tied to the specific backend that ran the `PREPARE` (or the extended-query `Parse`). When the matching `EXECUTE` lands on a different backend, you get errors like:
+
+```text
+ERROR:  prepared statement "..." does not exist
+ERROR:  unnamed prepared statement does not exist
+```
+
+Symptoms that often trace back to this same root cause:
+
+- Bursts of `prepared statement does not exist` errors, especially during backfills or high-concurrency writes
+- Inserts that appear to "silently fail" — the statement errors, the driver retries, and a batch can end up partially applied or dropped
+- Returned values with the wrong type (for example, a `BIGINT` column decoded as a `float64` bit pattern) — this happens when a cached client-side plan reuses stale type/format codes against a backend that was never sent the matching `Parse`
+
+**Fix: disable server-side prepared statements in your driver.** The exact knob depends on your client library:
+
+| Driver | Setting |
+|---|---|
+| **pgx** (Go) | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
+| **psycopg3** (Python) | `prepare_threshold=None` |
+| **asyncpg** (Python) | `statement_cache_size=0` |
+| **JDBC** (Java) | `prepareThreshold=0` |
+| **node-postgres / pg** (Node.js) | Don't pass a `name` to `query()` (named queries become server-prepared) |
+
+If your workload depends on prepared statements, connect **directly to PostgreSQL** (port 5432) rather than the PgBouncer pooler — direct connections support prepared statements normally. See [Connection](/products/managed-postgres/connection) for details on choosing between the pooled and direct endpoints.
+
+### What does the `max_client_conn` setting in PgBouncer mean, and how does it relate to `max_connections` in Postgres? {#pgbouncer-vs-pg-connections}
+
+They control different things:
+
+- **Postgres `max_connections`** caps the number of **backend** connections to PostgreSQL itself. This is the expensive number — each backend uses memory and a process slot.
+- **PgBouncer `max_client_conn`** caps the number of **client** connections that can be open in the pooler at once. PgBouncer multiplexes these many client connections onto a much smaller set of backend connections.
+
+A typical Managed Postgres instance is configured so PgBouncer accepts roughly **10× more client connections than there are Postgres backends** (e.g. 5000 client / 500 backend). If you see connection errors at the pooler, you're far more likely to be hitting a per-pool backend limit (`default_pool_size`) than the headline client limit.
+
+## Database capabilities {#database-capabilities}
+
+### Can I create multiple databases and schemas? {#multiple-databases-schemas}
+
+Yes. Managed Postgres provides full native PostgreSQL functionality, including support for multiple databases and schemas within a single instance. You can create and manage databases and schemas using standard PostgreSQL commands.
+
+### Is role-based access control (RBAC) supported? {#rbac-support}
+
+You have full superuser access to your Managed Postgres instance, which allows you to create roles and manage permissions using standard PostgreSQL commands.
+
+<Note>
+Enhanced RBAC features with console integration are planned for this year.
+</Note>
+
+## Upgrades {#upgrades}
+
+### How are PostgreSQL version upgrades handled? {#version-upgrades}
+
+Both minor and major version upgrades are performed via failover and typically result in only a few seconds of downtime. You can configure a maintenance window to control when upgrades are applied. For complete details, see the [Upgrades](/products/managed-postgres/upgrades) documentation.
+
+## Migration {#migration}
+
+### What tools are available for migrating to Managed Postgres? {#migration-tools}
+
+Managed Postgres supports several migration approaches:
+
+- **pg_dump and pg_restore**: For smaller databases or one-time migrations. See the [pg_dump and pg_restore](/products/managed-postgres/migrations/pg_dump-pg_restore) guide.
+- **Logical replication**: For larger databases requiring minimal downtime. See the [Logical replication](/products/managed-postgres/migrations/logical-replication) guide.
+- **PeerDB**: For CDC-based replication from other Postgres sources. See the [PeerDB migration](/products/managed-postgres/migrations/peerdb) guide.
+
+<Note>
+A fully managed migration experience is coming soon.
+</Note>
