@@ -631,29 +631,15 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
     UInt64 prev_offset = offset_values[offset - 1];
-    if constexpr (std::endian::native == std::endian::big)
-    {
-        for (size_t i = offset; i < end; ++i)
-        {
-            UInt64 current_offset = offset_values[i];
-            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
-            prev_offset = current_offset;
-        }
-    }
-    else
-    {
-        size_t count = end - offset;
-        PaddedPODArray<UInt64> sizes;
-        sizes.resize(count);
 
-        for (size_t i = 0; i < count; ++i)
-        {
-            UInt64 current_offset = offset_values[offset + i];
-            sizes[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
-        ostr.write(reinterpret_cast<const char *>(sizes.data()), sizeof(UInt64) * count);
+    /// Written value by value, without a temporary buffer: serialization happens in the middle of
+    /// writing a block, and an allocation here can throw (for example, on reaching the query memory
+    /// limit) leaving a partially written block in the stream.
+    for (size_t i = offset; i < end; ++i)
+    {
+        UInt64 current_offset = offset_values[i];
+        writeBinaryLittleEndian(current_offset - prev_offset, ostr);
+        prev_offset = current_offset;
     }
 }
 
@@ -853,6 +839,18 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 
     appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     size_t bytes_to_read = offsets.back() - prev_last_offset;
+
+    /// The total size is derived from the size stream before any data is read. If the stream is
+    /// corrupted or desynchronized, the sizes are garbage and the total can be absurdly large;
+    /// report a regular error instead of attempting the allocation and reaching the allocator
+    /// sanity check, which is a logical error and aborts debug and sanitizer builds.
+    static constexpr size_t max_total_string_size = 1ULL << 48;
+    if (bytes_to_read > max_total_string_size)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Too large total size ({}) of String column computed from the size stream: most likely the data is corrupted",
+            bytes_to_read);
+
     auto & data = mutable_string_column.getChars();
     size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);

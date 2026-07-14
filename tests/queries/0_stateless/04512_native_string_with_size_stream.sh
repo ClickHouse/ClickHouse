@@ -31,3 +31,34 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Native"
 echo
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n'
 echo
+
+# Native bytes produced with an explicit client_protocol_version can be inserted back through the
+# Native input format at the same protocol version (the reader side honors it too).
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_04512_rt"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_04512_rt2"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_04512_rt (s String, a Array(String), n Nullable(String)) ENGINE = MergeTree ORDER BY tuple()"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_04512_rt2 AS t_04512_rt"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_04512_rt SELECT concat('v', toString(number), repeat('y', number % 7)), arrayMap(i -> toString(i), range(number % 3)), if(number % 2 = 0, NULL, toString(number)) FROM numbers(100)"
+
+for version in "" "&client_protocol_version=54487"; do
+    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
+    # async_insert=0: the async-insert flush re-parses the buffered data in a context that does
+    # not carry client_protocol_version, so a nonzero protocol version requires a synchronous insert.
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native"
+    $CLICKHOUSE_CLIENT -q "SELECT count() = 100 AND groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) = (SELECT groupBitXor(cityHash64(s, arrayStringConcat(a), coalesce(n, ''))) FROM t_04512_rt) FROM t_04512_rt2"
+done
+# A corrupted size stream is reported as a regular error (INCORRECT_DATA), not as a logical error
+# that aborts debug and sanitizer builds.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&query=SELECT+'abcdefgh'+AS+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
+python3 -c "
+data = bytearray(open('${CLICKHOUSE_TMP}/04512_rt.native', 'rb').read())
+data[-9] = 0x80  # the most significant byte of the UInt64 size of the only value
+open('${CLICKHOUSE_TMP}/04512_rt.native', 'wb').write(bytes(data))
+"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54487&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native" | grep -oF "INCORRECT_DATA" | head -1
+
+rm -f "${CLICKHOUSE_TMP}/04512_rt.native"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_04512_rt"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_04512_rt2"
