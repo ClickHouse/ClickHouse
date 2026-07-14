@@ -129,6 +129,14 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
     return {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
 }
 
+bool ReplicatedDatabaseQueryStatusSource::wantsFinishedNodeData() const
+{
+    /// checkStatus reads the cached payload as a serialized finished/<host_id> ExecutionStatus. That is only valid
+    /// when we actually wait on finished/. Under synchronous settings getNodesToWait() waits on synced/, whose
+    /// nodes have an empty payload, so keep the plain listing and let checkStatus do the per-host finished/ get.
+    return !context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings];
+}
+
 Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
 {
     timeout_exceeded = true;
