@@ -146,6 +146,31 @@ def test_disk_cache_respects_memory_quota_after_restart(start_cluster):
     assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Memory'").strip() == "0"
 
 
+def test_disk_cache_ignores_memory_quota(start_cluster):
+    # The on-disk tier exists so the query cache "can grow beyond the available memory" (see the query cache
+    # documentation). The per-user *memory* quota `query_cache_max_size_in_bytes` must therefore NOT gate disk
+    # writes: a profile that caps DRAM (the documented way to cap memory, here `query_cache_max_size_in_bytes = 1`)
+    # blocks the in-memory entry, but the result must still be written to disk. Previously the disk cache reused
+    # this memory-only quota, so the same tiny limit also blocked disk writes, defeating the feature. Disk usage is
+    # bounded only by the global server settings `query_cache.max_disk_size_in_bytes` / `query_cache.max_disk_entries`.
+    setup_table()
+
+    node.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_max_size_in_bytes": 1,
+            "query_cache_ttl": 600,
+        },
+    )
+    # The tiny per-user memory quota blocks the in-memory entry ...
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Memory'").strip() == "0"
+    # ... but the disk write is bounded only by the global disk limits, so it still succeeds.
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+
+
 def test_disk_cache_user_isolation_after_restart(start_cluster):
     setup_table()
     # `other` is granted `SELECT ON default.t` via `configs/users.xml` (it lives in the readonly
@@ -548,3 +573,25 @@ def test_unsafe_disk_path_disables_cache_and_preserves_data(start_cluster):
     # `escaped_qrc` is where the path lexically normalizes (and where a normalized-only check would wrongly enable
     # the cache); assert no disk entry is created there and the cache is reported disabled.
     _assert_unsafe_path_disables_disk_cache("/var/lib/clickhouse/escaped_qrc")
+
+    # A plain *symlink* component escapes the disk root without any `..`: create `<disk_root>/qrc_symlink` pointing
+    # at `/var/lib/protected_qrc_symlink` (outside the `/var/lib/clickhouse` disk root) and set
+    # `query_cache.path = 'qrc_symlink'`. The path passes the lexical checks (relative, no `..`), but on `DiskLocal`
+    # `<disk_root>/qrc_symlink` resolves through the symlink to `/var/lib/protected_qrc_symlink`, so every cache
+    # operation would run outside the disk root. The safety check must resolve symlinks and reject it.
+    node_bad_path.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -sfn /var/lib/protected_qrc_symlink /var/lib/clickhouse/qrc_symlink",
+        ],
+        user="root",
+    )
+    node_bad_path.replace_in_config(
+        "/etc/clickhouse-server/config.d/unsafe_query_cache_path.xml",
+        "qrc_link/../escaped_qrc",
+        "qrc_symlink",
+    )
+    # The cache would resolve to the symlink target; assert no disk entry is created there, the planted data
+    # survives, and the cache is reported disabled.
+    _assert_unsafe_path_disables_disk_cache("/var/lib/protected_qrc_symlink")

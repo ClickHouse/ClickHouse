@@ -1180,10 +1180,11 @@ namespace
 /// and a `..` component escapes it. Because the on-disk query result cache scans `path`, writes entries under it,
 /// and `removeRecursive`s cache-shaped subdirectories (broken/expired/evicted entries and `SYSTEM DROP QUERY
 /// CACHE`), a misconfigured `path` could otherwise read, write and recursively delete data outside the configured
-/// cache directory. Fail closed: accept only a non-empty relative path with no `..` component at all; reject
-/// absolute paths and any parent-traversal. An unsafe path disables the on-disk cache entirely (see the
-/// constructor) rather than risking destructive operations outside the cache root.
-bool isQueryResultCacheDiskPathSafe(const fs::path & path)
+/// cache directory. Fail closed: accept only a non-empty relative path with no `..` component that, once symlinks
+/// are resolved, still resolves to a real subdirectory *within* the configured disk root. An unsafe path disables
+/// the on-disk cache entirely (see the constructor) rather than risking destructive operations outside the cache
+/// root.
+bool isQueryResultCacheDiskPathSafe(const String & disk_root, const fs::path & path)
 {
     if (path.empty() || path.is_absolute())
         return false;
@@ -1202,6 +1203,27 @@ bool isQueryResultCacheDiskPathSafe(const fs::path & path)
     /// a real subdirectory to own and clean up, not the disk root.
     const fs::path normalized = path.lexically_normal();
     if (normalized.empty() || normalized == ".")
+        return false;
+
+    /// The lexical checks above reject `..` and absolute paths, but a plain *symlink* component inside the disk
+    /// root still redirects every `DiskLocal` operation (`fs::path(disk_root) / path`) to the symlink's target:
+    /// with `query_cache.path = 'link'` and `<disk_root>/link -> /var/lib/protected`, startup scanning, writes
+    /// and `SYSTEM DROP QUERY CACHE TYPE 'Disk'` (`removeRecursive`) would operate under `/var/lib/protected`,
+    /// outside the configured disk root. Canonicalize both the disk root and the full cache path (resolving
+    /// symlinks in the existing prefix) and require the resolved cache path to stay within the resolved disk
+    /// root. Canonicalizing both means a symlinked prefix shared by the root cancels out. This is a
+    /// configuration-time guard against misconfiguration, not a defense against an attacker racing symlink
+    /// creation. Fail closed if canonicalization fails.
+    std::error_code ec;
+    const fs::path canonical_root = fs::weakly_canonical(fs::path(disk_root), ec);
+    if (ec)
+        return false;
+    const fs::path canonical_full = fs::weakly_canonical(fs::path(disk_root) / path, ec);
+    if (ec)
+        return false;
+
+    const fs::path relative = canonical_full.lexically_relative(canonical_root);
+    if (relative.empty() || relative == "." || *relative.begin() == "..")
         return false;
 
     return true;
@@ -1228,12 +1250,13 @@ QueryResultCache::QueryResultCache(
     /// Disable the on-disk cache when `path` is not a safe relative path within the disk root: every disk
     /// operation (load, write, read, cleanup) is gated on `disk`, so clearing it here fails closed in one place
     /// and prevents scanning/writing/`removeRecursive` outside the configured cache directory.
-    if (disk && !isQueryResultCacheDiskPathSafe(path))
+    if (disk && !isQueryResultCacheDiskPathSafe(disk->getPath(), path))
     {
         LOG_ERROR(
             logger,
             "Query result cache path '{}' is not a safe relative path within the disk root "
-            "(absolute paths and '..' components are rejected); the on-disk query result cache is disabled.",
+            "(absolute paths, '..' components and symlinks escaping the disk root are rejected); "
+            "the on-disk query result cache is disabled.",
             path.string());
         disk = nullptr;
     }
@@ -1304,11 +1327,15 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     if (key.user_id.has_value())
     {
         memory_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
-        /// `disk_cache` uses the same `PerUserTTLCachePolicyUserQuota`. Without registering the quota here a user
-        /// whose per-user query-cache quota blocks memory entries could still fill the disk cache up to the global
-        /// `query_cache.max_disk_size_in_bytes` / `query_cache.max_disk_entries` limits. Apply the same per-user
-        /// limits to the disk cache so they are enforced consistently for memory and disk writes.
-        disk_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+        /// Deliberately do *not* apply the per-user query-cache quota (`query_cache_max_size_in_bytes` /
+        /// `query_cache_max_entries`) to `disk_cache`. Those settings are documented as the amount of *memory* a
+        /// user may allocate in the query cache, and the on-disk tier exists precisely so that the cache "can grow
+        /// beyond the available memory" (see the query cache documentation). A profile that caps DRAM - e.g. the
+        /// documented `query_cache_max_size_in_bytes = 10000` - would otherwise also cap that user's disk writes
+        /// at 10 KB, defeating the feature. Disk usage is instead bounded by the global server settings
+        /// `query_cache.max_disk_size_in_bytes` / `query_cache.max_disk_entries` (set via `setMaxSizeInBytes` /
+        /// `setMaxCount` in `updateConfiguration`); with no per-user disk quota registered, `approveWrite` uses no
+        /// per-user threshold for the disk cache.
     }
 
     std::lock_guard lock(mutex);
@@ -1799,7 +1826,7 @@ void QueryResultCache::loadEntrysFromDisk()
     /// cache (sets `disk = nullptr`) for an unsafe path, so this is normally unreachable; re-check defensively
     /// before any `iterateDirectory`/`removeRecursive`. Fail closed: skip loading and cleanup rather than risk
     /// recursively deleting unrelated data on the configured disk.
-    if (!isQueryResultCacheDiskPathSafe(path))
+    if (!isQueryResultCacheDiskPathSafe(disk->getPath(), path))
     {
         LOG_ERROR(
             logger,
