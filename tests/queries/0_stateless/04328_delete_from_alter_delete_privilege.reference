@@ -1,0 +1,27 @@
+-- ALTER DELETE user: DELETE FROM and ALTER DELETE work; ALTER UPDATE denied
+OK
+OK
+ACCESS_DENIED
+-- ALTER UPDATE user: DELETE FROM and ALTER DELETE denied; ALTER UPDATE works
+ACCESS_DENIED
+ACCESS_DENIED
+OK
+-- DELETE FROM in lightweight-update mode also needs only ALTER DELETE
+OK
+ACCESS_DENIED
+-- _row_exists = 0 is a delete (ALTER DELETE); _row_exists = <non-zero> is an update (ALTER UPDATE) -- ALTER TABLE path
+OK
+ACCESS_DENIED
+ACCESS_DENIED
+OK
+-- same split via the direct UPDATE statement (lightweight update)
+OK
+ACCESS_DENIED
+ACCESS_DENIED
+OK
+-- physical _row_exists column (Memory): _row_exists = 0 is an ordinary update, needs ALTER UPDATE
+ACCESS_DENIED
+OK
+-- escalation guard (Memory, no _row_exists marker): ADD COLUMN alone OK; ADD COLUMN + UPDATE _row_exists = 0 needs ALTER UPDATE
+OK
+ACCESS_DENIED
