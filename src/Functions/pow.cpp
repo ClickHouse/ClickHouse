@@ -96,12 +96,16 @@ private:
         return assert_cast<const ColumnFloat64 &>(*holder).getData();
     }
 
+    /// Squaring doubles the base's accumulated error, so accuracy decays like `|n| * eps`: measured
+    /// 6.6e-15 at 64, 1.0e-13 at 1024. 64 is where it still meets the ~1e-14 documented for
+    /// `fast_float_math`. It also keeps the `Int64` cast below in range - `floor` alone admits 1e19.
+    static constexpr Float64 max_fast_integer_exponent = 64;
+
     /// pow(x, y) with a constant exponent. Only the integer-exponent cases are fast-pathed;
     /// a non-integer constant exponent returns nullptr so the caller falls back to precise pow.
     static ColumnPtr executeConstExponent(const ColumnPtr & base_col, Float64 y, size_t rows)
     {
-        /// Restrict to exponents that map exactly to an integer of moderate magnitude.
-        if (y != std::floor(y) || std::abs(y) > 64)
+        if (y != std::floor(y) || std::abs(y) > max_fast_integer_exponent)
             return nullptr;
 
         auto dst = ColumnFloat64::create(rows);

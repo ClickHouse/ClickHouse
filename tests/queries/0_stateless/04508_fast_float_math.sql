@@ -45,6 +45,11 @@ SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 3)) AND pow(0, 3) = 0 AND pow(0, -1)
 -- the intermediate overflow to +Inf and collapse the reciprocal to 0, wiping out this representable
 -- subnormal. The result must stay non-zero and match precise pow.
 SELECT pow(65698.5552524023369, -64) > 0 AND abs(pow(65698.5552524023369, -64) / 4.74709109243818793e-309 - 1) < 1e-9;
+-- Integer exponents past |n| <= 64 fall back to precise pow, so pow(x, 65) is bit-identical to it.
+SELECT sum(pow(materialize(b), 65) = pow(materialize(b), materialize(65))) = count()
+FROM (SELECT number / 991.0 + 0.5 AS b FROM numbers(1000));
+-- An integral exponent too large for Int64 must not reach the integer path - the cast would overflow.
+SELECT pow(materialize(2.0), 1e19) = inf AND pow(materialize(0.5), 1e19) = 0;
 -- pow over a Dynamic argument keeps returning Nullable(Float64), not Dynamic.
 SELECT toTypeName(pow(2::Dynamic, 3)) = 'Nullable(Float64)';
 

@@ -4092,7 +4092,7 @@ When disabled (the default), these functions use precise scalar libm implementat
 Results become inaccurate. Measured worst-case relative error over the finite domain:
 - `exp2`, `exp10`: ~`1e-12` (about 12 significant digits);
 - `log2`, `log10`: ~`5e-9` (matching the accuracy of the already-vectorized `exp`/`log`);
-- `pow`: ~`1e-14` for integer exponents (computed by repeated multiplication, not bit-identical to precise `pow`); ~`1e-12` for a constant positive base; other cases fall back to precise `pow`.
+- `pow`: ~`1e-14` for a constant integer exponent `n` with `|n| <= 64` (computed by repeated multiplication, not bit-identical to precise `pow`; the error grows like `|n| * eps`, and `64` is where it reaches ~`1e-14`); ~`1e-12` for a constant positive base. Every other case - a larger integer exponent, a non-integer constant exponent, a non-positive constant base, or two non-constant arguments - falls back to precise `pow` and is bit-for-bit unchanged.
 
 Special values (zero, negatives, `NaN`, `Inf`, and the overflow/underflow boundaries) are handled correctly in both modes; only the last few mantissa bits of finite results differ.
 :::
