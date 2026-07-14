@@ -258,10 +258,6 @@ public:
     /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 
-    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header is
-    /// sent when it is empty).
-    ReadWriteBufferFromHTTPPtr create(const std::string & bearer_token_);
-
     /// Authenticate with the bearer token when it is non-empty and with the Basic
     /// credentials otherwise: both occupy the `Authorization` header, so a request
     /// carries one or the other, never both.
