@@ -21,6 +21,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <azure/core/url.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #endif
 
@@ -312,7 +313,15 @@ namespace
             }
         }
 
-        return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
+        s = stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
+        try
+        {
+            return Azure::Core::Url(s).GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure blob URL: {}", e.what());
+        }
 #else
         if (s.find(';') == String::npos)
             return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));

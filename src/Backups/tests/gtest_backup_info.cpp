@@ -720,10 +720,18 @@ TEST(BackupInfo, NormalizedStringCanonicalizesAzureEndpointTrailingSlash)
         "AzureBlobStorage('https://account.blob.core.windows.net/account.zip', 'container', 'backup')");
     auto archive_name_with_slash = BackupInfo::fromString(
         "AzureBlobStorage('https://account.blob.core.windows.net/account.zip/', 'container', 'backup')");
+    auto prefix = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/prefix', 'container', 'backup')");
+    auto prefix_with_slash = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/prefix/', 'container', 'backup')");
+    auto prefix_with_two_slashes = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net/prefix//', 'container', 'backup')");
 
     EXPECT_EQ(no_slash.toNormalizedString(), one_slash.toNormalizedString());
-    EXPECT_NE(no_slash.toNormalizedString(), two_slashes.toNormalizedString());
+    EXPECT_EQ(no_slash.toNormalizedString(), two_slashes.toNormalizedString());
     EXPECT_EQ(archive_name.toNormalizedString(), archive_name_with_slash.toNormalizedString());
+    EXPECT_EQ(prefix.toNormalizedString(), prefix_with_slash.toNormalizedString());
+    EXPECT_NE(prefix.toNormalizedString(), prefix_with_two_slashes.toNormalizedString());
 }
 #endif
 
