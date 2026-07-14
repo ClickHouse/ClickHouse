@@ -20,11 +20,13 @@ void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
+void registerCodecSZ3(CompressionCodecFactory & factory);
 
 CompressionCodecPtr getCompressionCodecLZ4(int level);
 CompressionCodecPtr getCompressionCodecZSTD(int level);
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size);
 CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size);
+CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size);
 
 }
