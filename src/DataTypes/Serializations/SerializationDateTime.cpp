@@ -12,9 +12,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
-#include <base/arithmeticOverflow.h>
-
-#include <limits>
 
 namespace DB
 {
@@ -76,24 +73,33 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
 /// to the `DateTime` range.
 constexpr UInt32 datetime_number_precision = DecimalUtils::max_precision<Decimal128>;
 
+/// The multiplication is bound-checked with truncating division rather than `common::mulOverflow`,
+/// which is a stub for big-int types that never reports overflow. The multiplier is a positive power
+/// of ten, so the product exceeds the upper bound iff `value > bound / multiplier`, and it is only
+/// computed when it cannot overflow; a value outside the `DateTime` range clamps to the nearest bound.
 inline time_t timestampNumberToSeconds(Int128 value, UInt32 unread_scale)
 {
-    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int128>(unread_scale), value))
-        value = value > 0 ? std::numeric_limits<Int128>::max() : std::numeric_limits<Int128>::min();
-    value = std::clamp<Int128>(value, 0, static_cast<Int128>(0xFFFFFFFF));
-    return static_cast<time_t>(value);
+    static constexpr Int128 max_seconds = 0xFFFFFFFF;
+    if (value < 0)
+        return 0;
+    const Int128 multiplier = DecimalUtils::scaleMultiplier<Int128>(unread_scale);
+    if (value > max_seconds / multiplier)
+        return static_cast<time_t>(max_seconds);
+    return static_cast<time_t>(value * multiplier);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
 {
     if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
     {
-        /// Accumulate into a 128-bit temporary rather than directly into `time_t`: `readIntText` does not
-        /// check for overflow, so a value beyond the `time_t` range (e.g. `18446744073709551615`) would wrap
-        /// around and then clamp to the wrong end. The wide temporary makes the clamp to the `DateTime` range
-        /// match the default (non-raw) path, and keeps this throwing path consistent with `tryReadAsIntText`.
+        /// Read into a 128-bit temporary with saturation rather than directly into `time_t`: `readIntText`
+        /// does not check for overflow, so a value beyond the `time_t` range (e.g. `18446744073709551615`)
+        /// would wrap around and then clamp to the wrong end, and a literal wider than `Int128` (39 or more
+        /// digits) would wrap modulo 2^128 even in a 128-bit temporary. The saturating read keeps the sign,
+        /// so the clamp to the `DateTime` range matches the default (non-raw) path, and this throwing path
+        /// stays consistent with `tryReadAsIntText`.
         Int128 tmp = 0;
-        readIntText(tmp, istr);
+        readIntText128Saturating(tmp, istr);
         x = timestampNumberToSeconds(tmp, 0);
         return;
     }
@@ -133,11 +139,12 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
 {
     if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
     {
-        /// Read into a 128-bit temporary and clamp, exactly like the throwing `readAsIntText` above, so that
-        /// an out-of-range integer clamps to the `DateTime` range in both paths instead of `tryReadIntText`
-        /// rejecting the value (which would make plain and `Nullable`/`Variant` columns disagree on it).
+        /// Read into a 128-bit temporary with saturation and clamp, exactly like the throwing `readAsIntText`
+        /// above, so that an out-of-range integer clamps to the `DateTime` range in both paths instead of
+        /// `tryReadIntText` rejecting the value (which would make plain and `Nullable`/`Variant` columns
+        /// disagree on it) or a literal wider than `Int128` wrapping modulo 2^128.
         Int128 tmp = 0;
-        if (!tryReadIntText(tmp, istr))
+        if (!readIntText128Saturating<bool>(tmp, istr))
             return false;
         x = timestampNumberToSeconds(tmp, 0);
         return true;

@@ -75,3 +75,17 @@ SELECT '-- DateTime64 compatibility: a raw tick value beyond Int64 is out of ran
 SET input_format_read_datetime_number_as_raw_value = 1;
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":9223372036854775808}'); -- { serverError DECIMAL_OVERFLOW }
 SET input_format_read_datetime_number_as_raw_value = 0;
+
+SELECT '-- DateTime compatibility: an integer wider than Int128 saturates and clamps instead of wrapping modulo 2^128';
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":340282366920938463463374607431768211456}');
+SELECT t FROM format(JSONEachRow, 't Nullable(DateTime)', '{"t":340282366920938463463374607431768211456}');
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":-340282366920938463463374607431768211456}');
+SET input_format_read_datetime_number_as_raw_value = 0;
+
+SELECT '-- DateTime64 compatibility: an integer wider than Int128 is out of range instead of wrapping modulo 2^128';
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":340282366920938463463374607431768211456}'); -- { serverError DECIMAL_OVERFLOW }
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":340282366920938463463374609135132064491}'); -- { serverError DECIMAL_OVERFLOW }
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":-340282366920938463463374607431768211456}'); -- { serverError DECIMAL_OVERFLOW }
+SET input_format_read_datetime_number_as_raw_value = 0;

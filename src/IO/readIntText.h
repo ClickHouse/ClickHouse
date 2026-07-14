@@ -4,6 +4,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <base/Decimal_fwd.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -264,6 +266,69 @@ template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CH
 bool tryReadIntText(T & x, ReadBuffer & buf)
 {
     return tryReadIntTextInBase<10, check_overflow>(x, buf);
+}
+
+
+/// Reads a decimal integer into an `Int128`, saturating to the `Int128` range instead of wrapping:
+/// `readIntText` skips the overflow check for big-int types (see above), so a literal wider than
+/// `Int128` (39 or more digits) is silently accepted modulo 2^128. The overflow is detected with an
+/// explicit threshold check on each digit (`common::mulOverflow` cannot be used: it is a stub for
+/// big-int types that never reports overflow). The whole run of digits is consumed either way, and
+/// the saturated value keeps the sign of the input, so a subsequent range check or clamp in the
+/// caller sees the value on the correct side of its bounds. Like `readIntText`, parsing stops at the
+/// first character that is not part of the number, and a sign without any digits is an error
+/// (an exception for `ReturnType = void`, `false` for `ReturnType = bool`).
+template <typename ReturnType = void>
+ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// `res * 10 + digit` overflows the non-negative accumulator iff `res > max / 10`, or
+    /// `res == max / 10` and `digit > max % 10`.
+    constexpr Int128 max_div_10 = std::numeric_limits<Int128>::max() / 10;
+    constexpr Int128 max_mod_10 = std::numeric_limits<Int128>::max() % 10;
+
+    bool negative = false;
+    bool has_sign = false;
+    bool has_number = false;
+    bool overflow = false;
+    Int128 res = 0;
+
+    if (!buf.eof() && (*buf.position() == '-' || *buf.position() == '+'))
+    {
+        negative = *buf.position() == '-';
+        has_sign = true;
+        ++buf.position();
+    }
+
+    while (!buf.eof() && *buf.position() >= '0' && *buf.position() <= '9')
+    {
+        Int128 digit = *buf.position() - '0';
+        ++buf.position();
+        has_number = true;
+
+        if (overflow)
+            continue;
+        if (res > max_div_10 || (res == max_div_10 && digit > max_mod_10))
+            overflow = true;
+        else
+            res = res * 10 + digit;
+    }
+
+    if (has_sign && !has_number)
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
+        else
+            return ReturnType(false);
+    }
+
+    if (overflow)
+        x = negative ? std::numeric_limits<Int128>::min() : std::numeric_limits<Int128>::max();
+    else
+        x = negative ? -res : res;
+
+    return ReturnType(true);
 }
 
 

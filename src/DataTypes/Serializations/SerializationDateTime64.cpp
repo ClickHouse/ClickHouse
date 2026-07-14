@@ -10,7 +10,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
-#include <base/arithmeticOverflow.h>
 
 #include <limits>
 
@@ -141,13 +140,17 @@ static constexpr UInt32 datetime64_number_precision = DecimalUtils::max_precisio
 
 /// Applies the `unread_scale` decimal places still pending after `readDecimalText` to scale the
 /// parsed `value` to ticks, then writes it into `x`. Returns false on overflow instead of throwing.
+/// The multiplication is bound-checked with truncating division rather than `common::mulOverflow`,
+/// which is a stub for big-int types that never reports overflow. The multiplier is a positive power
+/// of ten, so `value * multiplier` fits the `Int64` tick range iff `value` is within `bound / multiplier`,
+/// and the product is only computed when it cannot overflow.
 static bool scaleAndStoreDateTime64(DateTime64 & x, Int128 value, UInt32 unread_scale)
 {
-    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int128>(unread_scale), value)
-        || value > std::numeric_limits<DateTime64::NativeType>::max()
-        || value < std::numeric_limits<DateTime64::NativeType>::min())
+    const Int128 multiplier = DecimalUtils::scaleMultiplier<Int128>(unread_scale);
+    if (value > std::numeric_limits<DateTime64::NativeType>::max() / multiplier
+        || value < std::numeric_limits<DateTime64::NativeType>::min() / multiplier)
         return false;
-    x.value = static_cast<DateTime64::NativeType>(value);
+    x.value = static_cast<DateTime64::NativeType>(value * multiplier);
     return true;
 }
 
@@ -179,14 +182,16 @@ bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
 
 /// Legacy: interpret the number as the raw scaled value (ticks) stored directly into `DateTime64`, enabled
 /// by `input_format_read_datetime_number_as_raw_value`. Only a bare integer is read; a fractional or
-/// exponent form is left unread for the format parser to reject. The integer is accumulated into a 128-bit
-/// temporary and range-checked (through `scaleAndStoreDateTime64` with no pending scale), so a value outside
-/// the `Int64` tick range reports `DECIMAL_OVERFLOW` rather than wrapping to a negative timestamp. This keeps
-/// the throwing and try deserializers consistent with each other and with the default seconds-based path.
+/// exponent form is left unread for the format parser to reject. The integer is read into a 128-bit
+/// temporary with saturation (`readIntText` would wrap a literal wider than `Int128` modulo 2^128, e.g.
+/// accept a 39-digit number as `0` ticks) and range-checked through `scaleAndStoreDateTime64` with no
+/// pending scale, so a value outside the `Int64` tick range reports `DECIMAL_OVERFLOW` rather than being
+/// accepted as a wrapped-around timestamp. This keeps the throwing and try deserializers consistent with
+/// each other and with the default seconds-based path.
 static void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
 {
     Int128 tmp = 0;
-    readIntText(tmp, istr);
+    readIntText128Saturating(tmp, istr);
     if (!scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0))
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
 }
@@ -194,7 +199,7 @@ static void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
 static bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
 {
     Int128 tmp = 0;
-    if (!tryReadIntText(tmp, istr))
+    if (!readIntText128Saturating<bool>(tmp, istr))
         return false;
     return scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0);
 }
