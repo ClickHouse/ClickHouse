@@ -273,6 +273,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
+    /// The buffer keeps a reference to the credentials, hence the immutable static.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
     auto create_buffer = [&, this]()
     {
         std::unordered_map<String, String> query_parameters_map;
@@ -301,7 +303,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             .withHeaders(request_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .create(bearer_token);
+            .create(bearer_token, no_credentials);
     };
 
     bool refresh_token = true;

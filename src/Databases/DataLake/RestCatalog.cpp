@@ -647,6 +647,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
+    /// The buffer keeps a reference to the credentials, hence the immutable static.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
     auto create_buffer = [&](bool update_token)
     {
         auto auth = getAuthHeaders(update_token);
@@ -661,7 +663,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             .withHeaders(result_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .create(auth.bearer_token);
+            .create(auth.bearer_token, no_credentials);
     };
 
     LOG_DEBUG(log, "Requesting: {}", url.toString());
@@ -1217,6 +1219,8 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
+    /// The buffer keeps a reference to the credentials, hence the immutable static.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
@@ -1226,7 +1230,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         .withHeaders(headers)
         .withOutCallback(out_stream_callback)
         .withSkipNotFound(false)
-        .create(auth.bearer_token);
+        .create(auth.bearer_token, no_credentials);
 
     String response_str;
     if (!ignore_result)
