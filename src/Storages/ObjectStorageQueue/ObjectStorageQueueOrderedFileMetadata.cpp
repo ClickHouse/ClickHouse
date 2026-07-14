@@ -249,7 +249,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
     if (released)
         return;
 
-    bool refreshed = false;
+    bool ownership_lost = false;
+    std::optional<std::string> current_owner;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -258,23 +259,37 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         Coordination::Stat stat;
         std::string data;
         if (!zk_client->tryGet(bucket_info->bucket_lock_path, data, &stat) || data != bucket_info->processor_info)
+        {
+            ownership_lost = true;
+            if (!data.empty())
+                current_owner = data;
             return;
+        }
 
         /// Rewrite the same data to update mtime of the lock node.
         /// Version check protects from updating a lock re-created by another server.
         auto code = zk_client->trySet(bucket_info->bucket_lock_path, data, stat.version);
         if (code == Coordination::Error::ZOK)
-            refreshed = true;
-        else if (code != Coordination::Error::ZBADVERSION && code != Coordination::Error::ZNONODE)
+            return;
+        if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE)
+            ownership_lost = true;
+        else
             throw zkutil::KeeperException::fromPath(code, bucket_info->bucket_lock_path);
     });
 
-    if (refreshed)
-        LOG_TEST(log, "Refreshed bucket lock {}", bucket_info->bucket_lock_path);
-    else
-        LOG_WARNING(log, "Cannot refresh bucket lock {}: ownership changed", bucket_info->bucket_lock_path);
+    if (ownership_lost)
+    {
+        /// The bucket lock was removed as abandoned by the TTL cleanup
+        /// and possibly acquired by another server.
+        /// Make sure release() and the destructor do not remove someone else's lock node.
+        released = true;
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Lost ownership of bucket lock {} (processor: {}, current owner: {})",
+            bucket_info->bucket_lock_path, bucket_info->processor_info, current_owner.value_or("none"));
+    }
 
-    /// Restart the watch even on failure, to avoid retrying on every iterator step.
+    LOG_TEST(log, "Refreshed bucket lock {}", bucket_info->bucket_lock_path);
     age_watch.restart();
 }
 

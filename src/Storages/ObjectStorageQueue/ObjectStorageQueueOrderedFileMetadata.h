@@ -184,6 +184,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
     /// Update mtime of the bucket lock node,
     /// so that it is not removed as abandoned by the TTL cleanup.
+    /// Throws if the lock ownership is lost (marking the holder released,
+    /// so that someone else's lock node is not removed later).
     void refresh();
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
