@@ -11,19 +11,27 @@ In the following steps you'll be creating a service account user (not a login us
 
 2. In the `Users` menu, select `Create user`
 
-<Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console - Adding a new user" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console - Adding a new user" />
+</Frame>
 
 3. Enter the username and set the credential type to `Access key - Programmatic access` and select `Next: Permissions`
 
-<Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="Setting user name and access type for IAM user" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-2.webp" alt="Setting user name and access type for IAM user" />
+</Frame>
 
 4. Don't add the user to any group; select `Next: Tags`
 
-<Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="Skipping group assignment for IAM user" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-3.webp" alt="Skipping group assignment for IAM user" />
+</Frame>
 
 5. Unless you need to add any tags, select `Next: Review`
 
-<Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="Skipping tag assignment for IAM user" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-4.webp" alt="Skipping tag assignment for IAM user" />
+</Frame>
 
 6. Select `Create User`
 
@@ -31,7 +39,9 @@ In the following steps you'll be creating a service account user (not a login us
 The warning message stating that the user has no permissions can be ignored; permissions will be granted on the bucket for the user in the next section
 </Note>
 
-<Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="Creating the IAM user with no permissions warning" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-5.webp" alt="Creating the IAM user with no permissions warning" />
+</Frame>
 
 7. The user is now created; click on `show` and copy the access and secret keys.
 
@@ -39,21 +49,29 @@ The warning message stating that the user has no permissions can be ignored; per
 Save the keys somewhere else; this is the only time that the secret access key will be available.
 </Note>
 
-<Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="Viewing and copying the IAM user access keys" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-6.webp" alt="Viewing and copying the IAM user access keys" />
+</Frame>
 
 8. Click close, then find the user in the users screen.
 
-<Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="Finding the newly created IAM user in the users list" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-7.webp" alt="Finding the newly created IAM user in the users list" />
+</Frame>
 
 9. Copy the ARN (Amazon Resource Name) and save it for use when configuring the access policy for the bucket.
 
-<Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="Copying the ARN of the IAM user" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-8.webp" alt="Copying the ARN of the IAM user" />
+</Frame>
 
 ### Create an S3 bucket {#create-an-s3-bucket}
 
 1. In the S3 bucket section, select `Create bucket`
 
-<Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="Starting the S3 bucket creation process" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-9.webp" alt="Starting the S3 bucket creation process" />
+</Frame>
 
 2. Enter a bucket name, leave other options default
 
@@ -63,37 +81,53 @@ The bucket name must be unique across AWS, not just the organization, or it will
 
 3. Leave `Block all Public Access` enabled; public access isn't needed.
 
-<Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="Configuring the S3 bucket settings with public access blocked" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-a.webp" alt="Configuring the S3 bucket settings with public access blocked" />
+</Frame>
 
 4. Select `Create Bucket` at the bottom of the page
 
-<Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="Finalizing S3 bucket creation" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-b.webp" alt="Finalizing S3 bucket creation" />
+</Frame>
 
 5. Select the link, copy the ARN, and save it for use when configuring the access policy for the bucket.
 
 6. Once the bucket has been created, find the new S3 bucket in the S3 bucket list and select the link
 
-<Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="Finding the newly created S3 bucket in the buckets list" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-c.webp" alt="Finding the newly created S3 bucket in the buckets list" />
+</Frame>
 
 7. Select `Create folder`
 
-<Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="Creating a new folder in the S3 bucket" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-d.webp" alt="Creating a new folder in the S3 bucket" />
+</Frame>
 
 8. Enter a folder name that will be the target for the ClickHouse S3 disk and select `Create folder`
 
-<Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="Setting the folder name for ClickHouse S3 disk usage" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-e.webp" alt="Setting the folder name for ClickHouse S3 disk usage" />
+</Frame>
 
 9. The folder should now be visible on the bucket list
 
-<Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="Viewing the newly created folder in the S3 bucket" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-f.webp" alt="Viewing the newly created folder in the S3 bucket" />
+</Frame>
 
 10. Select the checkbox for the new folder and click on `Copy URL` Save the URL copied to be used in the ClickHouse storage configuration in the next section.
 
-<Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="Copying the S3 folder URL for ClickHouse configuration" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-g.webp" alt="Copying the S3 folder URL for ClickHouse configuration" />
+</Frame>
 
 11. Select the `Permissions` tab and click on the `Edit` button in the `Bucket Policy` section
 
-<Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="Accessing the S3 bucket policy configuration" border force/>
+<Frame>
+  <img src="/images/_snippets/s3/s3-h.webp" alt="Accessing the S3 bucket policy configuration" />
+</Frame>
 
 12. Add a bucket policy, example below:
 
