@@ -672,7 +672,7 @@ This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
-    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache policy name.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
 Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
 :::note
