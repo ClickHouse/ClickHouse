@@ -37,6 +37,8 @@ void ReplicatedMergeTreeGeoReplicationController::onLeader()
     auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
     current_zookeeper->createAncestors(lease_path);
     leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
+    /// Publish the leader role to the worker threads only after the lease is actually held.
+    is_leader = true;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
@@ -46,6 +48,7 @@ void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
     /// from the destructor - none of which establish a ZooKeeper component otherwise - so set one here to satisfy
     /// the mandatory component tracking (`enforce_component_tracking`).
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm");
+    is_leader = false;
     region_holder.reset();
     leader_lease_holder.reset();
     leader_election.reset();
@@ -65,6 +68,9 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
         {
             if (shutdown)
                 return;
+            /// A new election round starts: drop any previous leader role before we know the new outcome, so
+            /// worker threads do not keep seeing this replica as a leader across a handoff.
+            is_leader = false;
             leader_lease_holder.reset();
             initialized = true;
         },
@@ -129,9 +135,17 @@ void ReplicatedMergeTreeGeoReplicationController::threadFunction()
 
 bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
 {
-    if (!isValid())
+    /// Feature disabled for this table (`region` is set once in the constructor and never mutated afterwards, so
+    /// reading it here is race-free): every replica may fetch from any region.
+    if (region.empty())
         return true;
-    return current_zookeeper && !current_zookeeper->expired() && leader_lease_holder;
+
+    /// Read only the atomic role flag here. This is called from the queue worker threads, while the
+    /// `current_zookeeper` / `leader_lease_holder` shared_ptr members are mutated on the controller and
+    /// leader-election threads; reading those pointers here would be a data race. `is_leader` stays false until
+    /// this replica has actually won an election, so a replica whose controller has not entered a term yet is
+    /// treated as a follower rather than assuming leadership.
+    return is_leader;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()

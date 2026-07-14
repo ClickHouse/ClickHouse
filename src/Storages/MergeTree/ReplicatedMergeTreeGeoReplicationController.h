@@ -73,6 +73,11 @@ private:
     zkutil::EphemeralNodeHolderPtr region_holder;
     std::atomic_bool shutdown = false;
     std::atomic_bool initialized = false;
+    /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
+    /// Exposing an atomic role flag - instead of letting worker threads read the `current_zookeeper` and
+    /// `leader_lease_holder` shared_ptr members that those threads mutate - avoids a data race on the pointer
+    /// objects during a leader handoff or restart.
+    std::atomic_bool is_leader = false;
 
     void threadFunction();
 
