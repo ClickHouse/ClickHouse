@@ -183,9 +183,7 @@ struct Fixture
 /// stopChoosingReplicas() cancels an in-progress establisher but leaves its result entry
 /// null, which used to look "eligible" - so getNextIndex() returned it forever while
 /// resumeConnectionEstablisher() only ever yields CANNOT_CHOOSE, spinning
-/// startNewConnectionImpl(). The factory now skips cancelled establishers. This drives the
-/// factory directly, so it isn't masked by the higher-level `if (cancelled) return;` guard
-/// in HedgedConnections::startNewReplica().
+/// startNewConnectionImpl(). The factory now skips cancelled establishers.
 TEST(HedgedConnectionsFactory, CancelledEstablisherDoesNotLoop)
 {
     auto fixture = std::make_shared<Fixture>();

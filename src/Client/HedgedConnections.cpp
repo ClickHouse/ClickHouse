@@ -544,9 +544,6 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
 
 void HedgedConnections::startNewReplica()
 {
-    if (cancelled)
-        return;
-
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.startNewConnection(connection);
 
