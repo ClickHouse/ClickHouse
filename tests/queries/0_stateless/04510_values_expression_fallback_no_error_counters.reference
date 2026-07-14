@@ -23,6 +23,7 @@ no new parse errors
 [1.23]	Array(Decimal(9, 2))
 --- JSON data ---
 {"a":1}
+{"b":2}
 {}
 --- decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND

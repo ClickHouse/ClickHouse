@@ -72,7 +72,7 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 
 # Serializations without a native non-throwing probe must not see obvious SQL function expressions.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
-    "INSERT INTO t_values_json VALUES (CAST('{\"a\":1}', 'JSON')), (NULL)"
+    "INSERT INTO t_values_json VALUES (CAST('{\"a\":1}', 'JSON')), ((CAST('{\"b\":2}', 'JSON'))), (NULL)"
 
 counters_after=$(get_parse_error_counters)
 

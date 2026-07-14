@@ -339,6 +339,28 @@ void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 template <typename Parser>
+bool SerializationJSON<Parser>::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String object;
+    if (!tryReadQuotedStringWithSQLStyle(object, istr))
+        return false;
+
+    updateMaxDynamicPathsLimitIfNeeded(column, settings);
+
+    typename Parser::Element document;
+    auto parser = parsers_pool.get([] { return new Parser; });
+    if (!parser->parse(object, document))
+        return false;
+
+    String error;
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+    return json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error);
+}
+
+template <typename Parser>
 void SerializationJSON<Parser>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     WriteBufferFromOwnString buf;
