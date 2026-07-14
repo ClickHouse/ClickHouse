@@ -23,7 +23,6 @@
 #include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -34,7 +33,6 @@
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
@@ -334,189 +332,6 @@ private:
 };
 
 
-namespace
-{
-
-/// a qualifier that isn't a database selects a table path in the current database
-void canonicalizeBackupElements(ASTBackupQuery::Elements & elements, const String & current_database)
-{
-    for (auto & element : elements)
-    {
-        if (element.type == ASTBackupQuery::DATABASE)
-        {
-            std::set<DatabaseAndTableName> folded_except_tables;
-            for (const auto & except_table : element.except_tables)
-            {
-                auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(
-                    StorageID(except_table.first, except_table.second), element.database_name);
-                /// the except table must be inside the backed-up database: an existing
-                /// database qualifier stays a database and is rejected as before
-                if (folded.database_name != element.database_name)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Database name in EXCEPT TABLES clause doesn't match the database name in DATABASE clause: {} != {}",
-                        folded.database_name, element.database_name);
-                folded_except_tables.emplace(DatabaseAndTableName{folded.database_name, folded.table_name});
-            }
-            element.except_tables = std::move(folded_except_tables);
-            continue;
-        }
-
-        if (element.type == ASTBackupQuery::ALL)
-        {
-            std::set<DatabaseAndTableName> folded_except_tables;
-            for (const auto & except_table : element.except_tables)
-            {
-                if (except_table.first.empty())
-                {
-                    folded_except_tables.emplace(except_table);
-                    continue;
-                }
-                auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(
-                    StorageID(except_table.first, except_table.second), current_database);
-                folded_except_tables.emplace(DatabaseAndTableName{folded.database_name, folded.table_name});
-            }
-            element.except_tables = std::move(folded_except_tables);
-            continue;
-        }
-
-        if (element.type != ASTBackupQuery::TABLE)
-            continue;
-
-        const bool new_name_matches_source
-            = element.new_database_name == element.database_name && element.new_table_name == element.table_name;
-
-        if (!element.database_name.empty())
-        {
-            auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(
-                StorageID(element.database_name, element.table_name), current_database);
-            element.database_name = folded.database_name;
-            element.table_name = folded.table_name;
-        }
-
-        /// AS defaults to the source name; an explicitly different AS target folds the same way
-        if (new_name_matches_source)
-        {
-            element.new_database_name = element.database_name;
-            element.new_table_name = element.table_name;
-        }
-        else if (!element.new_database_name.empty())
-        {
-            auto folded_new = DatabaseCatalog::instance().applyNamespaceQualifier(
-                StorageID(element.new_database_name, element.new_table_name), current_database);
-            element.new_database_name = folded_new.database_name;
-            element.new_table_name = folded_new.table_name;
-        }
-    }
-}
-
-/// restore sources name objects inside the backup, so only backup metadata decides:
-/// the literal interpretation wins; the namespace-path candidate applies only when the
-/// literal is absent from the backup; both present is an ambiguity error
-void canonicalizeRestoreElements(ASTBackupQuery::Elements & elements, const String & current_database, const BackupPtr & backup, bool fold_new_targets)
-{
-    /// candidate metadata roots, mirroring BackupMetadataFinder ("", shards/N/,
-    /// shards/N/replicas/M/); an over-approximation is fine for an existence probe
-    std::vector<std::filesystem::path> roots;
-    roots.emplace_back("");
-    for (const auto & shard : backup->listFiles("shards", /*recursive*/ false))
-    {
-        roots.emplace_back(std::filesystem::path{"shards"} / shard);
-        for (const auto & replica : backup->listFiles((std::filesystem::path{"shards"} / shard / "replicas").string(), /*recursive*/ false))
-            roots.emplace_back(std::filesystem::path{"shards"} / shard / "replicas" / replica);
-    }
-
-    auto backup_has_table = [&](const String & database, const String & table)
-    {
-        for (const auto & root : roots)
-            if (backup->fileExists((root / "metadata" / escapeForFileName(database) / (escapeForFileName(table) + ".sql")).string()))
-                return true;
-        return false;
-    };
-    auto backup_has_database = [&](const String & database)
-    {
-        for (const auto & root : roots)
-            if (backup->fileExists((root / "metadata" / (escapeForFileName(database) + ".sql")).string()))
-                return true;
-        return false;
-    };
-
-    /// resolve one written name against backup contents; base_database is where a
-    /// namespace-path candidate would live
-    auto resolve_in_backup = [&](String & database, String & table, const String & base_database)
-    {
-        const bool literal_in_backup = backup_has_database(database) || backup_has_table(database, table);
-        const String folded_table = database + "." + table;
-        const bool folded_in_backup = !base_database.empty() && backup_has_table(base_database, folded_table);
-
-        if (literal_in_backup && folded_in_backup)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The backup contains both {}.{} (as a database or a table) and table {} in database {}; "
-                "qualify the name explicitly",
-                backQuoteIfNeed(database), backQuoteIfNeed(table),
-                backQuoteIfNeed(folded_table), backQuoteIfNeed(base_database));
-
-        if (!literal_in_backup && folded_in_backup)
-        {
-            database = base_database;
-            table = folded_table;
-        }
-    };
-
-    for (auto & element : elements)
-    {
-        /// DATABASE and ALL exclusions name backup contents too: an excluded namespace
-        /// table must actually match the flattened name stored in the backup
-        if (element.type == ASTBackupQuery::DATABASE || element.type == ASTBackupQuery::ALL)
-        {
-            const String & base_database = element.type == ASTBackupQuery::DATABASE ? element.database_name : current_database;
-            std::set<DatabaseAndTableName> resolved_except_tables;
-            for (const auto & except_table : element.except_tables)
-            {
-                auto resolved = except_table;
-                if (!resolved.first.empty() && resolved.first != base_database)
-                    resolve_in_backup(resolved.first, resolved.second, base_database);
-                /// a DATABASE exclusion must name something inside that database, or the
-                /// finder would silently never match it (cross-database exclusions are
-                /// meaningful only for RESTORE ALL)
-                if (element.type == ASTBackupQuery::DATABASE && resolved.first != element.database_name)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "EXCEPT TABLE {}.{} does not belong to the restored database {}; "
-                        "qualify the excluded table as a name inside that database",
-                        backQuoteIfNeed(resolved.first), backQuoteIfNeed(resolved.second),
-                        backQuoteIfNeed(element.database_name));
-                resolved_except_tables.emplace(std::move(resolved));
-            }
-            element.except_tables = std::move(resolved_except_tables);
-            continue;
-        }
-
-        if (element.type != ASTBackupQuery::TABLE || element.database_name.empty())
-            continue;
-
-        const bool new_name_matches_source
-            = element.new_database_name == element.database_name && element.new_table_name == element.table_name;
-
-        resolve_in_backup(element.database_name, element.table_name, current_database);
-
-        /// AS defaults to the source name; an explicitly different AS target is a live
-        /// destination and folds against the live catalog - a local-only decision
-        if (new_name_matches_source)
-        {
-            element.new_database_name = element.database_name;
-            element.new_table_name = element.table_name;
-        }
-        else if (fold_new_targets && !element.new_database_name.empty())
-        {
-            auto folded_new = DatabaseCatalog::instance().applyNamespaceQualifier(
-                StorageID(element.new_database_name, element.new_table_name), current_database);
-            element.new_database_name = folded_new.database_name;
-            element.new_table_name = folded_new.table_name;
-        }
-    }
-}
-
-}
-
 BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
@@ -669,8 +484,7 @@ struct BackupsWorker::BackupStarter
         /// For ON CLUSTER queries, access rights are checked in executeDDLQueryOnCluster() before distributing the query.
         if (!on_cluster)
         {
-            canonicalizeBackupElements(backup_query->elements, backup_context->getCurrentDatabase());
-            backup_query->setCurrentDatabase(backup_context->getCurrentDatabaseInfo());
+            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
             auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
             query_context->checkAccess(required_access);
         }
@@ -863,24 +677,6 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        /// the shipped query bypasses the session scope on remote hosts: fill only genuinely
-        /// unqualified names; explicit qualifiers ship as written - the initiator's catalog
-        /// is not authoritative for remote hosts
-        const auto backup_database_info = context->getCurrentDatabaseInfo();
-        if (!backup_database_info.table_prefix.empty())
-            backup_query->setCurrentDatabase(backup_database_info);
-
-        /// a DATABASE-clause exclusion naming another qualifier cannot be resolved here
-        /// without the initiator's catalog; fail instead of silently excluding nothing
-        for (const auto & element : backup_query->elements)
-            if (element.type == ASTBackupQuery::DATABASE)
-                for (const auto & except_table : element.except_tables)
-                    if (!except_table.first.empty() && except_table.first != element.database_name)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Database name in EXCEPT TABLES clause doesn't match the database name in DATABASE clause: {} != {}; "
-                            "namespace paths in exclusions are not supported with ON CLUSTER",
-                            except_table.first, element.database_name);
-
         auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
 
         /// Send the BACKUP query to other hosts.
@@ -894,11 +690,7 @@ void BackupsWorker::doBackup(
     }
     else
     {
-        /// an internal worker received canonical names from the initiator; reinterpreting
-        /// them against this host's catalog would be nondeterministic
-        if (!is_internal_backup)
-            canonicalizeBackupElements(backup_query->elements, context->getCurrentDatabase());
-        backup_query->setCurrentDatabase(context->getCurrentDatabaseInfo());
+        backup_query->setCurrentDatabase(context->getCurrentDatabase());
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
 
@@ -1305,13 +1097,6 @@ void BackupsWorker::doRestore(
         setEngineSettings(restore_id, backup->getEngineSettings());
 
     String current_database = context->getCurrentDatabase();
-
-    /// under a namespace scope pin the names now: remote hosts and the access check below
-    /// cannot reproduce the session scope
-    const auto current_database_info = context->getCurrentDatabaseInfo();
-    canonicalizeRestoreElements(restore_query->elements, current_database_info.database, backup, /*fold_new_targets*/ !on_cluster);
-    if (!current_database_info.table_prefix.empty())
-        restore_query->setCurrentDatabase(current_database_info);
 
     /// Checks access rights if this is ON CLUSTER query.
     /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)

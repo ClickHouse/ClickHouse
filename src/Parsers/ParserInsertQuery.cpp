@@ -12,7 +12,6 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
@@ -130,9 +129,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             database = table;
             if (!name_p.parse(pos, table, expected))
-                return false;
-
-            if (!foldNamespacesIntoTableName(pos, expected, table))
                 return false;
         }
     }

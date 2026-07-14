@@ -27,40 +27,18 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
     {
-        /// the shipped query bypasses local name resolution: qualify only genuinely
-        /// unqualified names and preserve explicit qualifiers - the initiator's
-        /// catalog is not authoritative for remote hosts
-        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-            StorageID(ast.getDatabase(), ast.getTable()), getContext()->getCurrentDatabaseInfo());
-        if (!scoped.database_name.empty())
-            ast.setDatabase(scoped.database_name);
-        ast.setTable(scoped.table_name);
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    /// Resolve before authorization: the resolver may namespace-qualify the table
-    /// (DataLakeCatalog), and access checks must target the executed table.
-    /// The try-variant keeps authorization ahead of existence errors.
-    auto table_id = getContext()->tryResolveStorageIDFromQuery(ast);
-    if (table_id)
-    {
-        ast.setDatabase(table_id.database_name);
-        /// A temporary table resolves to its internal global name — keep the user-visible one.
-        if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-            ast.setTable(table_id.table_name);
-    }
-
     getContext()->checkAccess(getRequiredAccess());
-    /// Report a resolution error (e.g. unknown database) only after authorization.
-    if (!table_id)
-        table_id = getContext()->resolveStorageIDFromQuery(ast);
+
+    auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

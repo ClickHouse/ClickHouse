@@ -28,6 +28,9 @@ private:
     ASTPtr query_ptr;
 
     String getRewrittenQuery();
+    /// Database and namespace prefix the query applies to: an explicit (possibly
+    /// multipart) FROM, else the session scope.
+    CurrentDatabaseInfo getFromInfo() const;
 };
 
 

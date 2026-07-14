@@ -537,11 +537,9 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the SQL `USE database` statement (InterpreterUseQuery): "db.namespace" selects
-    /// a namespace inside a DataLakeCatalog database, and access is checked on the database.
-    const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
-    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database_name);
-    session->sessionContext()->setCurrentDatabase(database_name, table_prefix);
+    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
 
@@ -550,16 +548,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
-    /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
-    /// (a default database "db.namespace" selects a namespace for unqualified table names).
-    auto storage_id = session_context->tryResolveStorageID({"", packet.table}, Context::ResolveOrdinary);
-    if (!storage_id)
-        storage_id = StorageID{session_context->getCurrentDatabase(), packet.table};
-    const String & database = storage_id.database_name;
+    String database = session_context->getCurrentDatabase();
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.
-    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, storage_id.table_name);
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable(storage_id, session_context);
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {

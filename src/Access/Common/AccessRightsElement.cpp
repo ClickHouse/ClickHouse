@@ -313,29 +313,6 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
         database = current_database;
 }
 
-void AccessRightsElement::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
-{
-    if (!isEmptyDatabase())
-        return;
-
-    database = current_database.database;
-
-    if (!current_database.table_prefix.empty())
-    {
-        if (!table.empty())
-        {
-            table = current_database.table_prefix + "." + table;
-        }
-        else
-        {
-            /// A whole-database target scopes to the namespace: the `namespace.` prefix
-            /// of namespace-qualified table names (the trailing dot keeps `namespace2` out).
-            table = current_database.table_prefix + ".";
-            wildcard = true;
-        }
-    }
-}
-
 void AccessRightsElement::replaceDeprecated()
 {
     if (!access_flags)
@@ -452,12 +429,6 @@ void AccessRightsElements::replaceDeprecated()
 }
 
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
-{
-    for (auto & element : *this)
-        element.replaceEmptyDatabase(current_database);
-}
-
-void AccessRightsElements::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     for (auto & element : *this)
         element.replaceEmptyDatabase(current_database);

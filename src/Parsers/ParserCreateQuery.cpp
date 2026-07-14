@@ -16,7 +16,6 @@
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 #include <Parsers/ParserProjectionSelectQuery.h>
@@ -998,9 +997,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                     {
                         as_database = as_table;
                         if (!name_p.parse(pos, as_table, expected))
-                            return false;
-
-                        if (!foldNamespacesIntoTableName(pos, expected, as_table))
                             return false;
                     }
 

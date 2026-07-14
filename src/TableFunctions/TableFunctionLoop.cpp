@@ -59,8 +59,9 @@ namespace DB
             {
                 String id_name = id->name();
 
-                /// extra parts are a table path inside the database: db.ns1.ns2.table
                 size_t dot_pos = id_name.find('.');
+                if (id_name.find('.', dot_pos + 1) != String::npos)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "There are more than one dot");
                 if (dot_pos != String::npos)
                 {
                     loop_database_name = id_name.substr(0, dot_pos);
@@ -104,16 +105,17 @@ namespace DB
             return inner_table_function->getActualTableStructureWithAccess(context, is_insert_query);
         }
 
-        const auto storage_id = context->resolveStorageIDFromQuery(
-            StorageID(loop_database_name, loop_table_name), Context::ResolveOrdinary);
+        String database_name = loop_database_name;
+        if (database_name.empty())
+            database_name = context->getCurrentDatabase();
 
         /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
-        context->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
+        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
 
-        auto database = DatabaseCatalog::instance().getDatabase(storage_id.database_name);
-        auto storage = database->tryGetTable(storage_id.table_name, context);
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto storage = database->tryGetTable(loop_table_name, context);
         if (!storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", storage_id.table_name, storage_id.database_name);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         return metadata_snapshot->getColumns();
@@ -129,15 +131,15 @@ namespace DB
         StoragePtr storage;
         if (!inner_table_function_ast)
         {
-            const auto storage_id = context->resolveStorageIDFromQuery(
-                StorageID(loop_database_name, loop_table_name), Context::ResolveOrdinary);
-            const String & database_name = storage_id.database_name;
+            String database_name = loop_database_name;
+            if (database_name.empty())
+                database_name = context->getCurrentDatabase();
 
             auto database = DatabaseCatalog::instance().getDatabase(database_name);
-            storage = database->tryGetTable(storage_id.table_name, context);
+            storage = database->tryGetTable(loop_table_name, context);
             if (!storage)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", storage_id.table_name, database_name);
-            context->checkAccess(AccessType::SELECT, database_name, storage_id.table_name);
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+            context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
         }
         else
         {

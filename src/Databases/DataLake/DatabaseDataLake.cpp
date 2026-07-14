@@ -1170,6 +1170,20 @@ void DatabaseDataLake::checkDatabase() const
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
+void DatabaseDataLake::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    /// runs before storage creation on CREATE, i.e. before any object-storage write:
+    /// validate the path so no side effect can target an unrepresentable name
+    const auto parsed = DataLake::tryParseTableName(table_name);
+    if (!parsed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table name {} must be namespace-qualified (namespace.table)", backQuote(table_name));
+    if (getCatalog()->hasFlatNamespaces() && parsed->first.find('.') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A dotted namespace {} cannot address this catalog: its namespaces are single-level",
+            backQuote(parsed->first));
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
@@ -1181,6 +1195,15 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         table_metadata.withForceAddBucket();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    /// a dotted namespace cannot address a flat catalog (authorization uses the
+    /// flattened path; the native lookup must not diverge from it)
+    if (catalog->hasFlatNamespaces() && namespace_name.find('.') != String::npos)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+        return {};
+    }
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {

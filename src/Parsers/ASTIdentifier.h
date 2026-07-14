@@ -80,8 +80,6 @@ public:
     explicit ASTTableIdentifier(const String & table_name, ASTs && name_params = {});
     explicit ASTTableIdentifier(const StorageID & table_id, ASTs && name_params = {});
     ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params = {});
-    /// unfolded table path; used while some parts are still query parameters
-    explicit ASTTableIdentifier(std::vector<String> && name_parts_, ASTs && name_params = {});
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;

@@ -1,3 +1,5 @@
+#include <Common/quoteString.h>
+#include <unordered_set>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
@@ -92,6 +94,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
@@ -99,6 +102,54 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// Statements that resolve table names through the central resolver (which applies the
+/// `USE db.namespace` prefix) or that name no tables at all. Everything else would
+/// silently target the database while ignoring the selected namespace, so it is
+/// rejected while a namespace scope is active (fail-closed for the experimental feature).
+/// The legacy analyzer ships distributed subqueries with bare-name qualification that
+/// ignores the namespace prefix, so reads under a scope require the new analyzer.
+bool isAllowedUnderTableNamespaceScope(std::string_view interpreter_name, bool has_analyzer)
+{
+    if (!has_analyzer
+        && (interpreter_name.starts_with("InterpreterSelect") || interpreter_name == "InterpreterInsertQuery"
+            || interpreter_name == "InterpreterExplainQuery"))
+        return false;
+
+    static const std::unordered_set<std::string_view> allowed
+    {
+        "InterpreterSelectQueryAnalyzer",
+        "InterpreterInsertQuery",
+        "InterpreterExplainQuery",
+        "InterpreterDescribeQuery",
+        "InterpreterDescribeCacheQuery",
+        "InterpreterExistsQuery",
+        "InterpreterShowCreateQuery",
+        "InterpreterShowTablesQuery",
+        "InterpreterShowColumnsQuery",
+        "InterpreterShowIndexesQuery",
+        "InterpreterShowSettingQuery",
+        "InterpreterShowEnginesQuery",
+        "InterpreterShowFunctionsQuery",
+        "InterpreterShowProcesslistQuery",
+        "InterpreterShowGrantsQuery",
+        "InterpreterShowPrivilegesQuery",
+        "InterpreterShowAccessEntitiesQuery",
+        "InterpreterShowCreateAccessEntityQuery",
+        "InterpreterUseQuery",
+        "InterpreterSetQuery",
+        "InterpreterSetRoleQuery",
+        "InterpreterKillQueryQuery",
+        "InterpreterTransactionControlQuery",
+    };
+    return allowed.contains(interpreter_name);
+}
+
 }
 
 InterpreterFactory & InterpreterFactory::instance()
@@ -409,6 +460,18 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
+
+    if (context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
+        && !isAllowedUnderTableNamespaceScope(interpreter_name, context->getSettingsRef()[Setting::allow_experimental_analyzer]))
+    {
+        const auto database_info = context->getCurrentDatabaseInfo();
+        if (!database_info.table_prefix.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "This statement is not supported while a table namespace is selected (USE {}.{}); "
+                "select the database itself with USE {} and qualify table names with the full path",
+                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
+                backQuoteIfNeed(database_info.database));
+    }
 
     // creator_fn creates and returns a InterpreterPtr with the supplied arguments
     auto creator_fn = interpreters.at(interpreter_name);

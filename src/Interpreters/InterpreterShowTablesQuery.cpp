@@ -13,6 +13,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
@@ -22,6 +23,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_table_namespaces;
+}
 
 namespace ErrorCodes
 {
@@ -34,6 +40,35 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
 {
+}
+
+CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
+{
+    const auto & query = query_ptr->as<ASTShowTablesQuery &>();
+
+    /// `FROM db.ns` is a multipart identifier: first part is the database, the rest is
+    /// a namespace path (the parser only builds it when the experimental setting is on).
+    if (const auto * identifier = query.from ? query.from->as<ASTIdentifier>() : nullptr;
+        identifier && identifier->name_parts.size() > 1)
+    {
+        CurrentDatabaseInfo info;
+        info.database = identifier->name_parts[0];
+        info.table_prefix = identifier->name_parts[1];
+        for (size_t i = 2; i < identifier->name_parts.size(); ++i)
+            info.table_prefix += "." + identifier->name_parts[i];
+        return info;
+    }
+
+    if (const auto from = query.getFrom(); !from.empty())
+        return {from, ""};
+
+    /// the session prefix is inert while the experimental setting is off
+    auto info = getContext()->getCurrentDatabaseInfo();
+    if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        info.table_prefix.clear();
+    if (info.database.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+    return info;
 }
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
@@ -166,8 +201,9 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    /// FROM may carry a namespace suffix: SHOW TABLES FROM catalog.namespace
-    const auto database_info = getContext()->resolveDatabaseInfo(query.getFrom());
+    /// FROM may carry a namespace path: SHOW TABLES FROM db.namespace (experimental).
+    /// With no FROM, the session scope applies, including a `USE db.namespace` prefix.
+    const auto database_info = getFromInfo();
     const String & database = database_info.database;
     const String & table_namespace = database_info.table_prefix;
     DatabaseCatalog::instance().assertDatabaseExists(database);
@@ -272,10 +308,15 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabaseInfo(query.getFrom()).database;
+    String database = getFromInfo().database;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    /// the rewritten query is fully qualified; drop the namespace prefix so the
+    /// inner SELECT is not subject to scope restrictions
+    if (const auto info = query_context->getCurrentDatabaseInfo(); !info.table_prefix.empty())
+        query_context->setCurrentDatabase(info.database);
+
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
     {
         /// Explicit `SHOW TABLES` should include tables from the requested data lake catalog.

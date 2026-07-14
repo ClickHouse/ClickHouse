@@ -7,8 +7,6 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <IO/Operators.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -88,38 +86,6 @@ public:
     }
 
     const Elements & getElements() const { return elements; }
-
-    Elements & getElements() { return elements; }
-
-    /// fold the session scope into unqualified names: t -> db.`prefix.t`
-    void qualifyUnqualifiedNames(const String & scope_database, const String & table_prefix)
-    {
-        auto apply = [&](Table & ref)
-        {
-            if (ref.database || !ref.table)
-                return;
-            ASTPtr renamed = make_intrusive<ASTIdentifier>(table_prefix + "." + ref.getTable());
-            std::replace(children.begin(), children.end(), ref.table, renamed);
-            ref.table = renamed;
-            ref.database = make_intrusive<ASTIdentifier>(scope_database);
-            children.push_back(ref.database);
-        };
-        for (auto & elem : elements)
-        {
-            apply(elem.from);
-            apply(elem.to);
-        }
-    }
-
-    void resetTableName(Table & ref, const String & database_name, const String & table_name)
-    {
-        ASTPtr new_database = make_intrusive<ASTIdentifier>(database_name);
-        ASTPtr new_table = make_intrusive<ASTIdentifier>(table_name);
-        std::replace(children.begin(), children.end(), ref.database, new_database);
-        std::replace(children.begin(), children.end(), ref.table, new_table);
-        ref.database = new_database;
-        ref.table = new_table;
-    }
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }

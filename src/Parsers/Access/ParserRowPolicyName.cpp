@@ -34,12 +34,6 @@ namespace
                 || (res_database.empty() && res_table_name.empty() && !default_database))
                 return false;
 
-            /// Row policies match tables by exact name (or a whole database via `ON db.*`);
-            /// there is no wildcard-prefix matching, so accepting `ON db.namespace.*` or
-            /// `ON table*` would create policies that silently never apply.
-            if (wildcard)
-                return false;
-
             if (res_table_name.empty())
                 res_table_name = RowPolicyName::ANY_TABLE_MARK;
 

@@ -42,17 +42,6 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
-    /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
-    /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
-    /// The try-variant keeps EXISTS tolerant of missing databases (it must answer 0, not
-    /// throw) and keeps the access check ahead of any existence disclosure.
-    auto resolve_table = [&](const ASTQueryWithTableAndOutput & q)
-    {
-        if (auto resolved = getContext()->tryResolveStorageIDFromQuery({q.getDatabase(), q.getTable()}, Context::ResolveOrdinary))
-            return resolved;
-        return StorageID{getContext()->resolveDatabase(q.getDatabase()), q.getTable()};
-    };
-
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->isTemporary())
@@ -60,8 +49,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             result = static_cast<bool>(getContext()->tryResolveStorageID(
                 {"", exists_query->getTable()}, Context::ResolveExternal));
         }
-        else if (auto storage_id = resolve_table(*exists_query))
+        else
         {
+            /// central resolution fills the namespace prefix under `USE db.namespace`
+            const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
             const String & database = storage_id.database_name;
             const String & table = storage_id.table_name;
             /// A dictionary created by a DDL query is also registered among tables, so a plain `EXISTS <name>`
@@ -103,8 +94,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 result = false;
             }
         }
-        else if (auto storage_id = resolve_table(*exists_query))
+        else
         {
+            /// central resolution fills the namespace prefix under `USE db.namespace`
+            const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
             getContext()->checkAccess(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name);
             auto table = DatabaseCatalog::instance().tryGetTable(storage_id, getContext());
             result = table && table->isView();
@@ -120,11 +113,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     {
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
-        if (auto storage_id = resolve_table(*exists_query))
-        {
-            getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, storage_id.database_name, storage_id.table_name);
-            result = DatabaseCatalog::instance().isDictionaryExist(storage_id);
-        }
+        /// central resolution fills the namespace prefix under `USE db.namespace`
+        const auto storage_id = getContext()->resolveStorageID({exists_query->getDatabase(), exists_query->getTable()}, Context::ResolveOrdinary);
+        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, storage_id.database_name, storage_id.table_name);
+        result = DatabaseCatalog::instance().isDictionaryExist(storage_id);
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{

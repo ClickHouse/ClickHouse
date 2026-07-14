@@ -467,7 +467,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     /// the JSON subcolumn delimiters make no sense in a table path, leave them unconsumed
-    if (!table_name_with_optional_uuid)
+    if (!(table_name_with_optional_uuid && pos.allow_multipart_table_paths))
     {
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
@@ -502,7 +502,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             parts.push_back(getIdentifierName(element));
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
-            if (!is_first && !table_name_with_optional_uuid && array_of_json_identifier_addition.check(pos, expected))
+            if (!is_first && !(table_name_with_optional_uuid && pos.allow_multipart_table_paths)
+                && array_of_json_identifier_addition.check(pos, expected))
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
         }
 
@@ -545,30 +546,26 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
-        if (parts.size() == 1)
+        if (parts.size() > 2)
         {
-            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
-        }
-        else if (std::any_of(parts.begin() + 1, parts.end(), [](const auto & part) { return part.empty(); }))
-        {
-            /// a query parameter among the parts: keep them separate until substitution,
-            /// which folds the path (see ReplaceQueryParameterVisitor)
-            node = make_intrusive<ASTTableIdentifier>(std::move(parts), std::move(params));
-        }
-        else
-        {
-            /// fold a multipart path into the table name: db.ns1.ns2.table -> (db, `ns1.ns2.table`).
-            /// when actually folding, a quoted component with a literal dot would alias
-            /// another path - reject it; the two-part form db.`ns.t` stays as written
-            if (parts.size() > 2)
-                for (size_t i = 1; i < parts.size(); ++i)
-                    if (parts[i].find('.') != String::npos)
-                        return false;
+            /// hierarchical table path (experimental): fold db.ns1.ns2.table into
+            /// (db, `ns1.ns2.table`). the two-part form db.`ns.t` stays as written
+            if (!pos.allow_multipart_table_paths)
+                return false;
+            /// no query parameters inside a path, and no quoted components with a
+            /// literal dot: a substituted or quoted dot would alias another path
+            for (size_t i = 1; i < parts.size(); ++i)
+                if (parts[i].empty() || parts[i].find('.') != String::npos)
+                    return false;
             String table_name = parts[1];
             for (size_t i = 2; i < parts.size(); ++i)
                 table_name += "." + parts[i];
             node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(table_name), std::move(params));
         }
+        else if (parts.size() == 1)
+            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
+        else
+            node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }

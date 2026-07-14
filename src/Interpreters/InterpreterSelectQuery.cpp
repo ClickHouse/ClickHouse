@@ -50,7 +50,6 @@
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/additionalTableFilterMatches.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -454,8 +453,7 @@ void checkAccessRightsForSelect(
 
 ASTPtr parseAdditionalFilterConditionForTable(
     const Map & additional_table_filters,
-    const String & table_expression_alias,
-    const StorageID & storage_id,
+    const DatabaseAndTableWithAlias & target,
     const Context & context)
 {
     for (const auto & additional_filter : additional_table_filters)
@@ -464,8 +462,9 @@ ASTPtr parseAdditionalFilterConditionForTable(
         const auto & table = tuple.at(0).safeGet<String>();
         const auto & filter = tuple.at(1).safeGet<String>();
 
-        /// shared with the new analyzer so both match the same tables
-        if (additionalTableFilterMatches(table, table_expression_alias, storage_id, context))
+        if (table == target.alias ||
+            (table == target.table && context.getCurrentDatabase() == target.database) ||
+            (table == target.database + '.' + target.table))
         {
             /// Try to parse expression
             ParserExpression parser;
@@ -774,7 +773,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
-            settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table.alias, table_id, *context);
+            settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
     if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())

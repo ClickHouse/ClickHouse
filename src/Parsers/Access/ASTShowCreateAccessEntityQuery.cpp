@@ -1,18 +1,12 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/parseAccessEntityName.h>
-#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 namespace
 {
     void formatNames(const Strings & names, WriteBuffer & ostr)
@@ -91,31 +85,6 @@ void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const String & current
         String & database = database_and_table_name->first;
         if (database.empty())
             database = current_database;
-    }
-}
-
-void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
-{
-    if (row_policy_names)
-        row_policy_names->replaceEmptyDatabase(current_database);
-
-    if (database_and_table_name)
-    {
-        String & database = database_and_table_name->first;
-        String & table = database_and_table_name->second;
-        if (database.empty())
-        {
-            /// there is no namespace-scoped wildcard: ON * would widen to the whole database
-            if (!current_database.table_prefix.empty() && table.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ON * is not supported while a namespace is selected "
-                    "(it would target the whole database {}); specify a table "
-                    "or use the database without a namespace", backQuoteIfNeed(current_database.database));
-            database = current_database.database;
-            /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
-            if (!current_database.table_prefix.empty() && !table.empty())
-                table = current_database.table_prefix + "." + table;
-        }
     }
 }
 

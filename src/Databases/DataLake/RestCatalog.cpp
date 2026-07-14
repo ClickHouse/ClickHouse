@@ -941,15 +941,6 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
             {
                 continue;
             }
-            /// a component with a literal dot cannot be represented in the flattened
-            /// dot-separated path (it would alias another namespace) - skip it loudly
-            if (current_namespace.find('.') != String::npos)
-            {
-                LOG_WARNING(log, "Skipping namespace component {} under {}: literal dots in namespace components are not supported",
-                    current_namespace, base_namespace.empty() ? "<root>" : base_namespace);
-                continue;
-            }
-
             const auto full_namespace = base_namespace.empty()
                 ? current_namespace
                 : base_namespace + "." + current_namespace;
@@ -1070,15 +1061,6 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             const auto table_name_raw = current_table_json->get("name").extract<String>();
             std::string table_name;
             Poco::URI::encode(table_name_raw, "/", table_name);
-
-            /// a table component with a literal dot cannot be represented in the flattened
-            /// dot-separated path (it would alias another table) - skip it loudly
-            if (table_name.find('.') != std::string::npos)
-            {
-                LOG_WARNING(log, "Skipping table {} in namespace {}: literal dots in table components are not supported",
-                    table_name, base_namespace);
-                continue;
-            }
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)

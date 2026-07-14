@@ -1652,8 +1652,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    const auto current_database_info = getContext()->getCurrentDatabaseInfo();
-    const String & current_database = current_database_info.database;
+    String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
@@ -1825,31 +1824,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.setDatabase(current_database);
 
     if (create.targets)
-        create.targets->setCurrentDatabase(current_database_info);
+        create.targets->setCurrentDatabase(current_database);
 
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(
-            getContext(), current_database, /*only_replace_current_database_function*/ false,
-            /*only_replace_in_join*/ false, current_database_info.table_prefix);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
 
     if (create.refresh_strategy)
     {
-        AddDefaultDatabaseVisitor visitor(
-            getContext(), current_database, /*only_replace_current_database_function*/ false,
-            /*only_replace_in_join*/ false, current_database_info.table_prefix);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.refresh_strategy);
     }
 
     if (create.columns_list)
     {
-        AddDefaultDatabaseVisitor visitor(
-            getContext(), current_database, /*only_replace_current_database_function*/ false,
-            /*only_replace_in_join*/ false, current_database_info.table_prefix);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.columns_list);
     }
 
@@ -2694,16 +2687,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
-    /// bake the session scope into the shipped inner SELECT: workers cannot reproduce it
-    const auto database_info = getContext()->getCurrentDatabaseInfo();
-    if (!database_info.table_prefix.empty() && create.select)
-    {
-        AddDefaultDatabaseVisitor visitor(getContext(), database_info.database,
-            /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, database_info.table_prefix);
-        ASTPtr select_ptr = create.select->ptr();
-        visitor.visit(select_ptr);
-    }
-
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
@@ -2716,59 +2699,6 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
-
-    /// qualify created names before the access check, so authorization matches what is created.
-    /// a two-part CREATE with a non-database qualifier is deliberately not reinterpreted:
-    /// a misspelled database must fail, not silently create a dotted table
-    if (!create.isTemporary() && create.table)
-    {
-        const auto database_info = getContext()->getCurrentDatabaseInfo();
-        if (!database_info.table_prefix.empty())
-        {
-            if (!create.database)
-            {
-                create.setTable(database_info.table_prefix + "." + create.getTable());
-                /// pin the database too: the distributed-DDL access fold prefixes
-                /// empty-database elements and must not re-prefix this one
-                create.setDatabase(database_info.database);
-            }
-            if (create.targets)
-                create.targets->setCurrentDatabase(database_info);
-        }
-
-        /// a target qualifier that isn't a database selects a table path in the
-        /// current database: CREATE MATERIALIZED VIEW ... TO ns.t under USE db.
-        /// initiator only: never on workers (their catalogs differ) or when shipping
-        if (create.targets && create.cluster.empty() && !getContext()->isDDLOrOnClusterInternal())
-            for (auto & target : create.targets->targets)
-                if (!target.table_id.database_name.empty())
-                    target.table_id = DatabaseCatalog::instance().applyNamespaceQualifier(target.table_id, database_info.database);
-    }
-
-    /// under a scope an unqualified AS source must not ship bare: fill it deterministically
-    if (!create.as_table.empty() && !create.cluster.empty() && create.as_database.empty())
-    {
-        const auto database_info = getContext()->getCurrentDatabaseInfo();
-        if (!database_info.table_prefix.empty())
-        {
-            create.as_database = database_info.database;
-            create.as_table = database_info.table_prefix + "." + create.as_table;
-        }
-    }
-
-    /// Normalize the `AS <table>` source through the shared resolver so DataLakeCatalog
-    /// namespaces are honored, before access checks. On resolution failure the names are
-    /// kept and downstream code reports the error after authorization.
-    /// local only: the initiator's catalog is not authoritative for remote hosts
-    if (!create.as_table.empty() && create.cluster.empty())
-    {
-        if (auto as_table_id = getContext()->tryResolveStorageIDFromQuery({create.as_database, create.as_table}, Context::ResolveOrdinary);
-            as_table_id && as_table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        {
-            create.as_database = as_table_id.database_name;
-            create.as_table = as_table_id.table_name;
-        }
-    }
 
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

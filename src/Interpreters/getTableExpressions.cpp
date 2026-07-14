@@ -101,8 +101,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         if (is_create_parameterized_view)
         {
             query_context = Context::createCopy(query_context);
-            auto current_db_info = context->getCurrentDatabaseInfo();
-            query_context->setCurrentDatabase(current_db_info.database, current_db_info.table_prefix);
+            query_context->setCurrentDatabase(context->getCurrentDatabase());
         }
 
         const auto & function_storage = query_context->executeTableFunction(table_function);
@@ -115,7 +114,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = context->resolveStorageIDFromQuery(table_expression.database_and_table_name);
+        auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
         const auto & columns = table_metadata_snapshot->getColumns();

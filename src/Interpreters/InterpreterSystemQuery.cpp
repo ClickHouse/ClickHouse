@@ -351,24 +351,6 @@ BlockIO InterpreterSystemQuery::execute()
 
     if (!query.cluster.empty())
     {
-        /// the shipped query bypasses local name resolution, so canonicalize the names here
-        if (query.table && query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY)
-        {
-            auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-                StorageID(query.getDatabase(), query.getTable()), getContext()->getCurrentDatabaseInfo());
-            if (!scoped.database_name.empty())
-                query.setDatabase(scoped.database_name);
-            query.setTable(scoped.table_name);
-        }
-        for (auto & [table_database, table_name] : query.tables)
-        {
-            auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-                StorageID(table_database, table_name), getContext()->getCurrentDatabaseInfo());
-            if (!scoped.database_name.empty())
-                table_database = scoped.database_name;
-            table_name = scoped.table_name;
-        }
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -398,9 +380,9 @@ BlockIO InterpreterSystemQuery::execute()
         /// reached, so use `tryResolveStorageID` here when `if_exists` is set.
         /// The handler still validates table existence via the catalog.
         if (query.if_exists)
-            table_id = getContext()->tryResolveStorageIDFromQuery(id_in_query, Context::ResolveOrdinary);
+            table_id = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary);
         else
-            table_id = getContext()->resolveStorageIDFromQuery(id_in_query, Context::ResolveOrdinary);
+            table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
     }
 
 
@@ -1067,7 +1049,7 @@ BlockIO InterpreterSystemQuery::execute()
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
             {
-                tables.push_back(getContext()->resolveStorageIDFromQuery({database, table}, Context::ResolveOrdinary));
+                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
                 getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
             }
 

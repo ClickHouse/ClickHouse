@@ -44,15 +44,14 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const auto * table_id = from1->as<ASTIdentifier>();
     if (!table_id)
         return false;
-    if (table_id->compound())
+    if (table_id->compound() && table_id->name_parts.size() > 2 && pos.allow_multipart_table_paths)
     {
+        /// hierarchical table path (experimental): catalog.ns1.ns2.table -> table `ns1.ns2.table`.
+        /// a quoted component with a literal dot would alias another path - reject it
         const auto & parts = table_id->name_parts;
         query->database = parts[0];
-        /// Fold namespace parts into the table name (DataLakeCatalog databases):
-        /// catalog.ns1.ns2.table -> table `ns1.ns2.table`
-        /// a quoted component with a literal dot would alias another path - reject it
         for (size_t i = 1; i < parts.size(); ++i)
-            if (parts.size() > 2 && parts[i].find('.') != String::npos)
+            if (parts[i].find('.') != String::npos)
                 return false;
         query->table = parts[1];
         for (size_t i = 2; i < parts.size(); ++i)
@@ -61,13 +60,15 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
     {
         query->table = table_id->shortName();
-        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-            if (!ParserCompoundIdentifier().parse(pos, from2, expected))
-                return false;
-        if (from2)
+        if (table_id->compound())
         {
-            /// keep the operand as one (possibly dotted) database name;
-            /// runtime resolution decides between a real database and a namespace
+            query->database = table_id->name_parts[0];
+        }
+        else
+        {
+            if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
+                if (!ParserIdentifier().parse(pos, from2, expected))
+                    return false;
             tryGetIdentifierNameInto(from2, query->database);
         }
     }

@@ -96,11 +96,9 @@ ASTPtr rewriteSelectQuery(
     /// But only for JOIN section, since the following should work using default_database:
     /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
     ///   (see 01487_distributed_in_not_default_db)
-    const auto current_database_info = context->getCurrentDatabaseInfo();
-    AddDefaultDatabaseVisitor visitor(context, current_database_info.database,
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
         /* only_replace_current_database_function_= */false,
-        /* only_replace_in_join_= */true,
-        current_database_info.table_prefix);
+        /* only_replace_in_join_= */true);
     visitor.visit(modified_query_ast);
 
     return modified_query_ast;

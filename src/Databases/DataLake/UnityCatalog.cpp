@@ -93,11 +93,7 @@ DB::Names UnityCatalog::getTables() const
 DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
 {
     /// Unity schemas are flat — they cannot contain nested namespaces.
-    auto namespaces = getSchemas("");
-    /// a native name with a literal dot collides with namespace-path semantics
-    /// (prefix grants, table paths); such namespaces are hidden and not addressable
-    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
-    return namespaces;
+    return getSchemas("");
 }
 
 DB::Names UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
@@ -346,9 +342,6 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
                 const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
 
-                /// a component with a literal dot cannot be represented in the flattened path
-                if (table_name.find('.') != String::npos)
-                    continue;
                 tables.push_back(schema + "." + table_name);
                 if (limit && tables.size() >= limit)
                     break;

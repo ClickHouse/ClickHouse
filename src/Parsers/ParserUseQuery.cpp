@@ -44,31 +44,31 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// `USE db.namespace` for DataLakeCatalog databases: fold the dot-separated parts into
-    /// a single database name; the interpreter splits it back into database and prefix.
-    if (s_dot.ignore(pos, expected))
+    /// `USE db.namespace` selects a namespace inside a database (experimental).
+    /// The parts stay separate so the interpreter sees the structure, not a dotted string.
+    if (pos.allow_multipart_table_paths && s_dot.ignore(pos, expected))
     {
-        String database_name;
-        /// A query-parameter database identifier extracts as an empty name and cannot be folded.
-        if (!tryGetIdentifierNameInto(database, database_name) || database_name.empty())
-            return false;
-        /// a quoted component with a literal dot would alias another path - reject it
-        if (database_name.find('.') != String::npos)
+        String first_part;
+        /// no query parameters in a path, and no quoted components with a literal dot:
+        /// a substituted or quoted dot would alias another path
+        if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
+            || first_part.find('.') != String::npos)
             return false;
 
+        std::vector<String> parts{first_part};
         ParserIdentifier part_p;
         do
         {
             ASTPtr part;
             if (!part_p.parse(pos, part, expected))
                 return false;
-            /// a quoted component with a literal dot would alias another path - reject it
-            if (getIdentifierName(part).find('.') != String::npos)
+            const String part_name = getIdentifierName(part);
+            if (part_name.empty() || part_name.find('.') != String::npos)
                 return false;
-            database_name += "." + getIdentifierName(part);
+            parts.push_back(part_name);
         } while (s_dot.ignore(pos, expected));
 
-        database = make_intrusive<ASTIdentifier>(database_name);
+        database = make_intrusive<ASTIdentifier>(std::move(parts));
     }
 
     auto query = make_intrusive<ASTUseQuery>();

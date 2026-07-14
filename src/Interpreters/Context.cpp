@@ -285,6 +285,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -1454,18 +1455,6 @@ String Context::resolveDatabase(const String & database_name) const
     return res;
 }
 
-CurrentDatabaseInfo Context::resolveDatabaseInfo(const String & database_name) const
-{
-    if (database_name.empty())
-    {
-        auto info = getCurrentDatabaseInfo();
-        if (info.database.empty())
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
-        return info;
-    }
-    return DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database_name);
-}
-
 String Context::getPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -2110,9 +2099,8 @@ ConfigurationPtr Context::getUsersConfig()
 namespace
 {
 
-/// every entry point that selects a namespace (USE, protocol handshakes, DEFAULT DATABASE)
-/// must agree with USE on whether it exists; may reach a remote catalog, so never call
-/// this under the Context mutex
+/// `USE db.namespace` must fail if the namespace does not exist; the check may reach
+/// a remote catalog, so never call this under the Context mutex
 void validateTableNamespacePrefix(const String & database_name, const String & table_prefix, ContextPtr context)
 {
     if (table_prefix.empty())
@@ -2138,15 +2126,6 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
-    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
-    /// "db.namespace" selects a namespace inside a database; validate before taking the mutex.
-    CurrentDatabaseInfo default_database_info;
-    if (!database.empty())
-    {
-        default_database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
-        validateTableNamespacePrefix(default_database_info.database, default_database_info.table_prefix, shared_from_this());
-    }
-
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
@@ -2159,8 +2138,9 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
+    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(default_database_info.database, default_database_info.table_prefix, lock);
+        setCurrentDatabaseWithLock(database, /*table_prefix*/ "", lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -2994,7 +2974,7 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name;
+    String database_name = getCurrentDatabase();
     String table_name = function->name;
 
     if (function->isCompoundName())
@@ -3002,24 +2982,12 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         std::vector<std::string> parts;
         splitInto<'.'>(parts, function->name);
 
-        if (parts.size() >= 2)
+        if (parts.size() == 2)
         {
             database_name = std::move(parts[0]);
-            table_name = parts[1];
-            for (size_t i = 2; i < parts.size(); ++i)
-                table_name += "." + parts[i];
+            table_name = std::move(parts[1]);
         }
     }
-
-    /// resolve like an ordinary written table name, so a namespace scope or a
-    /// non-database qualifier finds the right (parameterized view) table
-    if (auto resolved = tryResolveStorageIDFromQuery(StorageID(database_name, table_name), StorageNamespace::ResolveOrdinary))
-    {
-        database_name = resolved.database_name;
-        table_name = resolved.table_name;
-    }
-    else if (database_name.empty())
-        database_name = getCurrentDatabase();
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -3578,21 +3546,11 @@ void Context::setCurrentDatabaseWithLock(const String & name, const String & tab
 
 void Context::setCurrentDatabase(const String & name, const String & table_prefix)
 {
-    String database_name = name;
-    String database_table_prefix = table_prefix;
-    /// A dotted name may select a namespace inside a DataLakeCatalog database ("db.namespace"),
-    /// e.g. a client default database persisted after `USE db.namespace` and sent on reconnect.
-    if (database_table_prefix.empty() && !name.empty())
-    {
-        const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
-        database_name = info.database;
-        database_table_prefix = info.table_prefix;
-    }
-
-    validateTableNamespacePrefix(database_name, database_table_prefix, shared_from_this());
+    /// the (possibly remote) namespace check must happen before taking the mutex
+    validateTableNamespacePrefix(name, table_prefix, shared_from_this());
 
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(database_name, database_table_prefix, lock);
+    setCurrentDatabaseWithLock(name, table_prefix, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -7775,22 +7733,6 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     return resolved;
 }
 
-StorageID Context::resolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
-{
-    /// a secondary distributed-DDL execution received canonical names from the initiator;
-    /// reinterpreting a qualifier against this host's catalog would be nondeterministic
-    if (isDDLOrOnClusterInternal())
-        return resolveStorageID(std::move(storage_id), where);
-    return resolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
-}
-
-StorageID Context::tryResolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
-{
-    if (isDDLOrOnClusterInternal())
-        return tryResolveStorageID(std::move(storage_id), where);
-    return tryResolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
-}
-
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
@@ -7883,9 +7825,9 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
-        /// Under `USE db.namespace` (DataLakeCatalog databases) unqualified table names resolve
-        /// within the selected namespace: tables in such databases are named `namespace.table`.
-        if (!current_table_prefix.empty())
+        /// Under `USE db.namespace` unqualified table names resolve within the selected
+        /// namespace. Disabling the experimental setting makes a stale prefix inert.
+        if (!current_table_prefix.empty() && getSettingsRef()[Setting::allow_experimental_table_namespaces])
             storage_id.table_name = current_table_prefix + "." + storage_id.table_name;
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;

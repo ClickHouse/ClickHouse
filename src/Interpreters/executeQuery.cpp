@@ -136,6 +136,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -1261,7 +1262,8 @@ static BlockIO executeQueryImpl(
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks],
+                settings[Setting::allow_experimental_table_namespaces]);
 
 #ifndef NDEBUG
             try
@@ -1303,7 +1305,8 @@ static BlockIO executeQueryImpl(
                         "",
                         new_max_query_size,
                         settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                        settings[Setting::max_parser_backtracks],
+                        settings[Setting::allow_experimental_table_namespaces]);
                 }
                 catch (const Exception & e)
                 {
@@ -1573,9 +1576,9 @@ static BlockIO executeQueryImpl(
         if (insert_query)
         {
             if (insert_query->table_id)
-                insert_query->table_id = context->resolveStorageIDFromQuery(insert_query->table_id);
+                insert_query->table_id = context->resolveStorageID(insert_query->table_id);
             else if (auto table = insert_query->getTable(); !table.empty())
-                insert_query->table_id = context->resolveStorageIDFromQuery(StorageID{insert_query->getDatabase(), table});
+                insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
             {

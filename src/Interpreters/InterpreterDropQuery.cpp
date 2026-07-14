@@ -100,13 +100,6 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
-        /// the shipped query bypasses local name resolution, so canonicalize the name here
-        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-            StorageID(drop.getDatabase(), drop.getTable()), getContext()->getCurrentDatabaseInfo());
-        if (!scoped.database_name.empty())
-            drop.setDatabase(scoped.database_name);
-        drop.setTable(scoped.table_name);
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
@@ -171,21 +164,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        /// Resolve through the shared resolver: applies the `USE db.namespace` prefix.
-        /// The try-variant keeps `DROP TABLE IF EXISTS` tolerant of missing databases.
-        if (auto resolved = context_->tryResolveStorageID(StorageID(query), Context::ResolveCurrentDatabase))
-            table_id = resolved;
-        else
-            table_id.database_name = context_->getCurrentDatabase();
-        query.setDatabase(table_id.database_name);
-        query.setTable(table_id.table_name);
-    }
-    else if (auto resolved = context_->tryResolveStorageIDFromQuery(table_id, Context::ResolveGlobal))
-    {
-        /// `USE catalog; DROP TABLE namespace.table` — resolve namespace qualifiers too.
-        table_id = resolved;
-        query.setDatabase(table_id.database_name);
-        query.setTable(table_id.table_name);
+        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
     if (query.isTemporary())

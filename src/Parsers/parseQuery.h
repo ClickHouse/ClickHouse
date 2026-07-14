@@ -22,7 +22,8 @@ ASTPtr tryParseQuery(
                                     /// Disabled if zero. Is used in order to check query size if buffer can contains data for INSERT query.
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    bool skip_insignificant,   /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    bool allow_multipart_table_paths = false); /// Experimental `db.ns.table` paths (see IParser::Pos)
 
 
 /// Parse query or throw an exception with error message.
@@ -34,7 +35,8 @@ ASTPtr parseQueryAndMovePosition(
     bool allow_multi_statements,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_backtracks,
+    bool allow_multipart_table_paths = false);
 
 ASTPtr parseQuery(
     IParser & parser,
@@ -43,7 +45,8 @@ ASTPtr parseQuery(
     const std::string & description,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_backtracks,
+    bool allow_multipart_table_paths = false);
 
 ASTPtr parseQuery(
     IParser & parser,

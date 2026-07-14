@@ -82,7 +82,6 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/additionalTableFilterMatches.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -822,8 +821,9 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
         auto const & table = tuple.at(0).safeGet<String>();
         auto const & filter = tuple.at(1).safeGet<String>();
 
-        /// shared with the legacy analyzer so both match the same tables
-        if (additionalTableFilterMatches(table, table_expression_alias, storage_id, *query_context))
+        if (table == table_expression_alias ||
+            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
+            (table == storage_id.getFullNameNotQuoted()))
         {
             ParserExpression parser;
             table_expression_query_info.additional_filter_ast = parseQuery(

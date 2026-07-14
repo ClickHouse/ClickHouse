@@ -7808,6 +7808,15 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 
 Cloud default value: `1`.
 )", BETA, allow_database_iceberg) \
+    DECLARE(Bool, allow_experimental_table_namespaces, false, R"(
+Allow hierarchical table paths (`db.namespace.table`) and `USE db.namespace` scoping.
+The rules are deterministic: a two-part name always means `database.table`, three or
+more parts always mean a table path inside the first-part database, and an unqualified
+name under `USE db.namespace` resolves inside the selected namespace. Statements that
+do not support namespaces fail with an error while a namespace is selected.
+When disabled, multipart paths are syntax errors and no namespace interpretation
+happens anywhere; quoted dotted table names (`db.` `` `ns.table` ``) keep working.
+)", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 

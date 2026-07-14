@@ -552,17 +552,21 @@ def test_three_part_identifiers(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    result = node.query(f"SELECT id, data FROM {CATALOG_NAME}.{test_namespace}.{test_table_name} ORDER BY id")
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+    result = node.query(
+        f"SELECT id, data FROM {CATALOG_NAME}.{test_namespace}.{test_table_name} ORDER BY id",
+        settings=ns_settings,
+    )
     expected = "\n".join([f"{i}\trow_{i}" for i in range(5)])
     assert result.strip() == expected, f"SELECT failed: got {result}, expected {expected}"
 
-    result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
     assert result.strip() == "1", f"EXISTS TABLE failed: got {result}"
 
-    result = node.query(f"DESCRIBE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    result = node.query(f"DESCRIBE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
     assert "id" in result and "data" in result, f"DESCRIBE failed: got {result}"
 
-    result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
     assert f"`{test_namespace}.{test_table_name}`" in result, f"SHOW CREATE TABLE failed: got {result}"
 
 

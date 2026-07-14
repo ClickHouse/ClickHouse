@@ -19,7 +19,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <set>
@@ -38,11 +37,9 @@ public:
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false,
-        const String & table_prefix_ = {})
+        bool only_replace_in_join_ = false)
         : context(context_)
         , database_name(database_name_)
-        , table_prefix(table_prefix_)
         , only_replace_current_database_function(only_replace_current_database_function_)
         , only_replace_in_join(only_replace_in_join_)
     {
@@ -110,8 +107,6 @@ private:
     ContextPtr context;
 
     const String database_name;
-    /// Namespace prefix selected by USE db.namespace (DataLakeCatalog databases).
-    const String table_prefix;
     std::set<String> external_tables;
     mutable std::unordered_set<String> with_aliases;
 
@@ -180,24 +175,9 @@ private:
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
+        /// Already has database.
         if (identifier.compound())
-        {
-            /// a qualifier that isn't a database selects a namespace inside the current
-            /// database; persist the canonical form so the reference never re-interprets.
-            /// never on secondary distributed-DDL execution: worker catalogs differ
-            if (context->isDDLOrOnClusterInternal())
-                return;
-            auto table_id = identifier.getTableId();
-            auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(table_id, database_name);
-            if (folded.table_name != table_id.table_name)
-            {
-                auto qualified_identifier = make_intrusive<ASTTableIdentifier>(folded.database_name, folded.table_name);
-                if (!identifier.alias.empty())
-                    qualified_identifier->setAlias(identifier.alias);
-                ast = qualified_identifier;
-            }
             return;
-        }
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
@@ -205,12 +185,7 @@ private:
         if (with_aliases.contains(identifier.name()))
             return;
 
-        String table_name = identifier.name();
-        /// Under `USE db.namespace` an unqualified name resolves to the namespace-qualified
-        /// table, so the rewritten query must reference the same table.
-        if (!table_prefix.empty())
-            table_name = table_prefix + "." + table_name;
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;

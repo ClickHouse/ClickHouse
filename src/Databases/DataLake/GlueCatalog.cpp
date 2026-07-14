@@ -262,12 +262,6 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
 
                 if (limit != 0 && result.size() >= limit)
                     break;
-                /// a component with a literal dot cannot be represented in the flattened path
-                if (table.GetName().find('.') != std::string::npos)
-                {
-                    LOG_WARNING(log, "Skipping table {} in database {}: literal dots in table components are not supported", table.GetName(), db_name);
-                    continue;
-                }
                 result.push_back(db_name + "." + table.GetName());
             }
             next_token = tables_result.GetNextToken();
@@ -299,11 +293,7 @@ DB::Names GlueCatalog::getTables() const
 DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
 {
     /// Glue databases are flat — they cannot contain nested namespaces.
-    auto namespaces = getDatabases("");
-    /// a native name with a literal dot collides with namespace-path semantics
-    /// (prefix grants, table paths); such namespaces are hidden and not addressable
-    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
-    return namespaces;
+    return getDatabases("");
 }
 
 DB::Names GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const

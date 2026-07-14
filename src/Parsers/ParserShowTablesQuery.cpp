@@ -178,38 +178,33 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!name_p.parse(pos, database, expected))
                 return false;
 
+            /// `FROM db.namespace` (experimental): keep the parts separate so the
+            /// interpreter sees the structure, not a dotted string.
             ParserToken dot(TokenType::Dot);
-            std::vector<String> parts;
-            ASTs params;
-            auto append_part = [&](const ASTPtr & part_node)
+            if (pos.allow_multipart_table_paths && dot.ignore(pos, expected))
             {
-                parts.push_back(getIdentifierName(part_node));
-                if (parts.back().empty())
-                    params.push_back(part_node->as<ASTIdentifier>()->getParam());
-            };
-            bool folded = false;
-            while (dot.ignore(pos, expected))
-            {
-                if (!folded)
+                String first_part;
+                /// no query parameters in a path, and no quoted components with a literal
+                /// dot: a substituted or quoted dot would alias another path
+                if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
+                    || first_part.find('.') != String::npos)
+                    return false;
+
+                std::vector<String> parts{first_part};
+                ParserIdentifier part_p;
+                do
                 {
-                    /// a quoted component with a literal dot would alias another path - reject it
-                    if (getIdentifierName(database).find('.') != String::npos)
+                    ASTPtr part;
+                    if (!part_p.parse(pos, part, expected))
                         return false;
-                    append_part(database);
-                }
-                ASTPtr part;
-                if (!name_p.parse(pos, part, expected))
-                    return false;
-                /// a quoted component with a literal dot would alias another path - reject it
-                if (getIdentifierName(part).find('.') != String::npos)
-                    return false;
-                append_part(part);
-                folded = true;
+                    const String part_name = getIdentifierName(part);
+                    if (part_name.empty() || part_name.find('.') != String::npos)
+                        return false;
+                    parts.push_back(part_name);
+                } while (dot.ignore(pos, expected));
+
+                database = make_intrusive<ASTIdentifier>(std::move(parts));
             }
-            /// a compound identifier keeps parameter children; substitution fills them later.
-            /// `special` marks it as a database path so substituted parts are validated
-            if (folded)
-                database = make_intrusive<ASTIdentifier>(std::move(parts), /*special*/ true, std::move(params));
         }
 
         if (s_not.ignore(pos, expected))

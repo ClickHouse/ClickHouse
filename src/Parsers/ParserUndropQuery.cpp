@@ -1,7 +1,6 @@
 #include <Parsers/ASTUndropQuery.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/UUID.h>
@@ -35,8 +34,6 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         database = table;
         if (!name_p.parse(pos, table, expected))
-            return false;
-        if (!foldNamespacesIntoTableName(pos, expected, table))
             return false;
     }
     if (ParserKeyword(Keyword::UUID).ignore(pos, expected))

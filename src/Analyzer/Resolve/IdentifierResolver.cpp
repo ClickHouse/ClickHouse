@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool allow_experimental_table_namespaces;
 }
 
 namespace ErrorCodes
@@ -283,9 +284,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1)
+    if (parts_size < 1
+        || (parts_size > 2 && !context->getSettingsRef()[Setting::allow_experimental_table_namespaces]))
         throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to be non-empty. Actual '{}'",
+            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
     std::string database_name;
@@ -310,7 +312,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageIDFromQuery(storage_id);
+    storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
@@ -800,31 +802,32 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 namespace
 {
 
-/// how many identifier parts a (possibly dotted) table name consumes starting at `start`; 0 if no match.
-/// a dotted name matches either as a single back-quoted part or component by component.
+/// How many identifier parts a (possibly dotted) table name consumes starting at `start`:
+/// table name "ns.t" consumes 2 parts of identifier ns.t.column. 0 if it does not match.
+/// A quoted part with a literal dot matches only a whole dotted component ("ns.t" as 1 part).
 size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name)
 {
-    if (table_name.empty() || start >= identifier.getPartsSize())
-        return 0;
-    if (identifier[start] == table_name)
-        return 1;
-    if (table_name.find('.') == String::npos)
+    if (table_name.empty())
         return 0;
 
+    const auto & parts = identifier.getParts();
     size_t part = start;
-    size_t pos = 0;
-    while (true)
+    size_t offset = 0;
+
+    while (part < parts.size())
     {
-        auto dot = table_name.find('.', pos);
-        std::string_view component(table_name.data() + pos, (dot == String::npos ? table_name.size() : dot) - pos);
-        if (part >= identifier.getPartsSize() || identifier[part] != component)
+        const String & component = parts[part];
+        if (table_name.compare(offset, component.size(), component) != 0)
             return 0;
+        offset += component.size();
         ++part;
-        if (dot == String::npos)
-            break;
-        pos = dot + 1;
+        if (offset == table_name.size())
+            return part - start;
+        if (table_name[offset] != '.')
+            return 0;
+        ++offset;
     }
-    return part - start;
+    return 0;
 }
 
 }

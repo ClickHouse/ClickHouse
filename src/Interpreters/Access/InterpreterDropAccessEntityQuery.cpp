@@ -26,9 +26,6 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    /// fold on the original query so getRequiredAccess sees the dropped names
-    query_ptr->as<ASTDropAccessEntityQuery &>().replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
-
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
 
@@ -44,6 +41,8 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {

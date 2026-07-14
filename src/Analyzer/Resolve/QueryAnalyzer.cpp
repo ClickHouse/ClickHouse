@@ -714,9 +714,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         /// initiator.
         if (scope.context->isPositionalArgumentsAlreadyResolved())
             return;
-        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
-        /// paths not covered by setPositionalArgumentsAlreadyResolved.
-        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             return;
     }
 
@@ -4526,7 +4528,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
-        String database_name;
+        String database_name = scope_context->getCurrentDatabase();
         String table_name;
 
         auto function_ast = table_function_node->toAST();
@@ -4535,23 +4537,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             table_name = table_identifier[0];
         }
-        else if (table_identifier.getPartsSize() >= 2)
+        else if (table_identifier.getPartsSize() == 2)
         {
             database_name = table_identifier[0];
             table_name = table_identifier[1];
-            for (size_t i = 2; i < table_identifier.getPartsSize(); ++i)
-                table_name += "." + table_identifier[i];
         }
-
-        /// resolve like an ordinary written table name, so a namespace scope or a
-        /// non-database qualifier finds the right (parameterized view) table
-        if (auto resolved = scope_context->tryResolveStorageIDFromQuery(StorageID(database_name, table_name), Context::ResolveOrdinary))
-        {
-            database_name = resolved.database_name;
-            table_name = resolved.table_name;
-        }
-        else if (database_name.empty())
-            database_name = scope_context->getCurrentDatabase();
 
         /// Collect parameterized view arguments
         NameToNameMap view_params;

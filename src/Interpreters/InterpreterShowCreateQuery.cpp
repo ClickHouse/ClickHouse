@@ -62,7 +62,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             resolve_table_type = Context::ResolveExternal;
         else if (query_ptr->as<ASTShowCreateTableQuery>())
             resolve_table_type = Context::ResolveAll;
-        auto table_id = getContext()->resolveStorageIDFromQuery(*show_query, resolve_table_type);
+        auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
 
         bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
 

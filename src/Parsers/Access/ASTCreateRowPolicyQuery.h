@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Common/RowPolicyDefs.h>
-#include <Interpreters/Context_fwd.h>
 #include <optional>
 
 
@@ -52,7 +51,6 @@ public:
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
-    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

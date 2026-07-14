@@ -409,99 +409,23 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
+
+    if (table_id)
+    {
+        query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        /// the shipped query bypasses local name resolution: qualify only genuinely
-        /// unqualified names and preserve explicit qualifiers - the initiator's
-        /// catalog is not authoritative for remote hosts
-        const auto database_info = getContext()->getCurrentDatabaseInfo();
-        auto & alter_query = query_ptr->as<ASTAlterQuery &>();
-        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-            StorageID(alter.getDatabase(), alter.getTable()), database_info);
-        if (!scoped.database_name.empty())
-            alter_query.setDatabase(scoped.database_name);
-        alter_query.setTable(scoped.table_name);
-        if (alter.command_list)
-        {
-            for (const auto & child : alter.command_list->children)
-            {
-                auto * command_ast = child->as<ASTAlterCommand>();
-                if (!command_ast->from_table.empty() && command_ast->from_database.empty() && !database_info.table_prefix.empty())
-                    command_ast->from_table = database_info.table_prefix + "." + command_ast->from_table;
-                if (!command_ast->to_table.empty() && command_ast->to_database.empty() && !database_info.table_prefix.empty())
-                    command_ast->to_table = database_info.table_prefix + "." + command_ast->to_table;
-                /// bake the session scope into a shipped MODIFY QUERY: workers cannot reproduce it
-                if (command_ast->select && !database_info.table_prefix.empty())
-                {
-                    AddDefaultDatabaseVisitor visitor(getContext(), database_info.database,
-                        /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, database_info.table_prefix);
-                    ASTPtr select_ptr = command_ast->select->ptr();
-                    visitor.visit(select_ptr);
-                }
-            }
-        }
-
-        /// look up the local table by the written name only (no namespace fold), so the
-        /// checks below match exactly the AST being shipped
-        table = DatabaseCatalog::instance().tryGetTable(
-            StorageID(scoped.database_name.empty() ? getContext()->getCurrentDatabase() : scoped.database_name, scoped.table_name),
-            getContext());
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
-
-    auto table_id = getContext()->tryResolveStorageIDFromQuery(alter);
-
-    if (table_id)
-    {
-        /// The resolver may namespace-qualify the table (DataLakeCatalog); keep the AST in
-        /// sync so access checks target the executed table.
-        auto & alter_query = query_ptr->as<ASTAlterQuery &>();
-        alter_query.setDatabase(table_id.database_name);
-        /// A temporary table resolves to its internal global name — keep the user-visible one.
-        if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-            alter_query.setTable(table_id.table_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-    }
-
-    /// Resolve partition-command table references (REPLACE/ATTACH PARTITION ... FROM,
-    /// MOVE PARTITION ... TO TABLE) the same way.
-    if (alter.command_list)
-    {
-        for (const auto & child : alter.command_list->children)
-        {
-            auto * command_ast = child->as<ASTAlterCommand>();
-            /// Temporary tables (e.g. REPLACE PARTITION FROM tmp) and missing databases keep
-            /// their names untouched: downstream code resolves them with master semantics.
-            if (!command_ast->from_table.empty()
-                && !getContext()->tryResolveStorageID(
-                    {command_ast->from_database, command_ast->from_table}, Context::ResolveExternal))
-            {
-                if (auto from_id = getContext()->tryResolveStorageIDFromQuery(
-                        {command_ast->from_database, command_ast->from_table}, Context::ResolveOrdinary))
-                {
-                    command_ast->from_database = from_id.database_name;
-                    command_ast->from_table = from_id.table_name;
-                }
-            }
-            if (!command_ast->to_table.empty()
-                && !getContext()->tryResolveStorageID(
-                    {command_ast->to_database, command_ast->to_table}, Context::ResolveExternal))
-            {
-                if (auto to_id = getContext()->tryResolveStorageIDFromQuery(
-                        {command_ast->to_database, command_ast->to_table}, Context::ResolveOrdinary))
-                {
-                    command_ast->to_database = to_id.database_name;
-                    command_ast->to_table = to_id.table_name;
-                }
-            }
-        }
     }
 
     getContext()->checkAccess(getRequiredAccess(table));
@@ -550,13 +474,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    /// These references are qualified with the target table's database; the session namespace
-    /// prefix (USE db.namespace) applies only when that is the session's current database.
-    const auto current_database_info = getContext()->getCurrentDatabaseInfo();
-    const String & expression_table_prefix
-        = table_id.database_name == current_database_info.database ? current_database_info.table_prefix : "";
-    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName(),
-        /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, expression_table_prefix);
+    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

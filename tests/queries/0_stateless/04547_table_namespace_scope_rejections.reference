@@ -1,0 +1,22 @@
+-- DDL and management statements are rejected under a namespace scope
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+-- reads, writes and introspection keep working under the scope
+1
+2
+1
+x	Int32					
+SELECT 1
+FROM system.one
+-- outside the scope, DDL over an explicit path works and is deterministic
+created_via_path

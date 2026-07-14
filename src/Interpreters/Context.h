@@ -999,15 +999,8 @@ public:
     };
 
     String resolveDatabase(const String & database_name) const;
-    /// Same, but a dotted name may select a namespace: "db.ns" -> {db, ns}.
-    CurrentDatabaseInfo resolveDatabaseInfo(const String & database_name) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
-
-    /// Same, for table names written in a query: the qualifier may be a namespace of the
-    /// current database (see DatabaseCatalog::applyNamespaceQualifier).
-    StorageID resolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
-    StorageID tryResolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
 
     Tables getExternalTables() const;
@@ -1131,6 +1124,8 @@ public:
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
+    /// `table_prefix` selects a namespace inside the database (`USE db.namespace`);
+    /// only InterpreterUseQuery passes it. A raw name is always an exact database name.
     void setCurrentDatabase(const String & name, const String & table_prefix = {});
     /// Set current_database without validating that database exists.
     /// Use during bootstrap/restore scenarios where database may not be loaded yet.

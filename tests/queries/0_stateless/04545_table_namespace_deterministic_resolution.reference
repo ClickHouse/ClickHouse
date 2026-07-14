@@ -1,0 +1,31 @@
+-- flag off: multipart paths are syntax errors (master behavior)
+1
+1
+-- flag on: three-part path addresses the dotted table
+1
+-- USE db.ns scopes unqualified names
+1
+2
+2
+-- a two-part name always means database.table: no namespace fallback
+1
+-- deterministic even when a database with the same name exists
+42
+-- USE of a namespace that has no tables fails
+1
+-- introspection under the scope
+1
+0
+x	Int32					
+1
+-- qualified column references over a table path
+1
+2
+1
+2
+1
+2
+-- a stale prefix is inert once the setting is off
+100
+-- quoted components with literal dots cannot be smuggled into a path
+1

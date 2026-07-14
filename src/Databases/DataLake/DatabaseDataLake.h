@@ -34,6 +34,9 @@ public:
     bool isDatalakeCatalog() const override { return true; }
 
     TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::Native; }
+
+    /// validates the table path before CREATE performs any side effect
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
     void validateTableNamespace(const Names & namespace_parts, ContextPtr context) const override;
 
     bool empty() const override;

@@ -166,12 +166,7 @@ DB::Names HiveCatalog::getTables() const
         DB::Names current_tables;
         executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
         for (const auto & table : current_tables)
-        {
-            /// a component with a literal dot cannot be represented in the flattened path
-            if (table.find('.') != std::string::npos)
-                continue;
             result.push_back(db + "." + table);
-        }
     }
     return result;
 }
@@ -179,12 +174,9 @@ DB::Names HiveCatalog::getTables() const
 DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
 {
     /// HMS databases are flat — they cannot contain nested namespaces.
-    DB::Names namespaces;
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(namespaces); });
-    /// a native name with a literal dot collides with namespace-path semantics
-    /// (prefix grants, table paths); such namespaces are hidden and not addressable
-    std::erase_if(namespaces, [](const auto & namespace_name) { return namespace_name.find('.') != std::string::npos; });
-    return namespaces;
+    DB::Names databases;
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    return databases;
 }
 
 DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
@@ -196,12 +188,7 @@ DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace
     DB::Names result;
     result.reserve(current_tables.size());
     for (const auto & table : current_tables)
-    {
-        /// a component with a literal dot cannot be represented in the flattened path
-        if (table.find('.') != std::string::npos)
-            continue;
         result.push_back(namespace_name + "." + table);
-    }
     return result;
 }
 

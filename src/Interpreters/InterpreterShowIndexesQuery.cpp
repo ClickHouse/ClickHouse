@@ -25,11 +25,8 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
-    /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
-    auto storage_id = getContext()->tryResolveStorageIDFromQuery({query.database, query.table}, Context::ResolveOrdinary);
-    if (!storage_id)
-        storage_id = StorageID{getContext()->resolveDatabase(query.database), query.table};
+    /// central resolution fills the namespace prefix under `USE db.namespace`
+    auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
     String table = escapeString(storage_id.table_name);
     String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
@@ -129,12 +126,15 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->tryResolveStorageIDFromQuery({query.database, query.table}, Context::ResolveOrdinary).database_name;
-    if (database.empty())
-        database = getContext()->resolveDatabase(query.database);
+    String database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    /// the rewritten query is fully qualified; drop the namespace prefix so the
+    /// inner SELECT is not subject to scope restrictions
+    if (const auto info = query_context->getCurrentDatabaseInfo(); !info.table_prefix.empty())
+        query_context->setCurrentDatabase(info.database);
+
     /// Explicit introspection of a data lake catalog should see its tables in system tables.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);

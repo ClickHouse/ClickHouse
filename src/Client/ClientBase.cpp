@@ -506,7 +506,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         if (dialect == Dialect::kusto)
             res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length,
+                settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], /*allow_multipart_table_paths*/ true);
     }
 
     return res;

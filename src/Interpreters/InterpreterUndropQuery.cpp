@@ -34,13 +34,6 @@ BlockIO InterpreterUndropQuery::execute()
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        /// the shipped query bypasses local name resolution, so canonicalize the name here
-        auto scoped = DatabaseCatalog::instance().applyNamespaceScope(
-            StorageID(undrop.getDatabase(), undrop.getTable()), getContext()->getCurrentDatabaseInfo());
-        if (!scoped.database_name.empty())
-            undrop.setDatabase(scoped.database_name);
-        undrop.setTable(scoped.table_name);
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -58,26 +51,8 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     auto context = getContext();
     if (table_id.database_name.empty())
     {
-        const auto database_info = context->getCurrentDatabaseInfo();
-        table_id.database_name = database_info.database;
-        if (!database_info.table_prefix.empty())
-        {
-            table_id.table_name = database_info.table_prefix + "." + table_id.table_name;
-            query.setTable(table_id.table_name);
-        }
+        table_id.database_name = context->getCurrentDatabase();
         query.setDatabase(table_id.database_name);
-    }
-    else if (!context->isDDLOrOnClusterInternal())
-    {
-        /// a qualifier that isn't a database selects a table path in the current database;
-        /// initiator only: worker catalogs differ
-        if (auto folded = DatabaseCatalog::instance().applyNamespaceQualifier(table_id, context->getCurrentDatabase());
-            folded.table_name != table_id.table_name)
-        {
-            table_id = folded;
-            query.setDatabase(table_id.database_name);
-            query.setTable(table_id.table_name);
-        }
     }
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);

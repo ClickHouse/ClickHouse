@@ -63,21 +63,29 @@ The following settings are supported:
 
 ## Referencing tables in namespaces {#referencing-tables-in-namespaces}
 
+:::note
+Table namespaces are an experimental feature, disabled by default. Enable them
+with `SET allow_experimental_table_namespaces = 1`. While the setting is off,
+everything below is unavailable and multipart paths are syntax errors; the
+quoted form `` catalog_name.`namespace.table` `` always works.
+:::
+
 Data lake catalogs organize tables into namespaces, which can be nested to
 several levels. A table's fully-qualified name inside the catalog is therefore
-`namespace.table` (or `namespace1.namespace2.table` for a nested namespace).
-
-You can reference such a table by quoting the namespace-qualified name as a
-single table identifier:
+`namespace.table` (or `namespace1.namespace2.table` for a nested namespace),
+and it can always be referenced by quoting that name as a single identifier:
 
 ```sql
 SELECT * FROM catalog_name.`namespace.table`;
-SELECT * FROM catalog_name.`namespace1.namespace2.table`;
 ```
 
-As a more convenient alternative, you can also spell out every part with dots.
-The part before the first dot is the catalog database; the remaining parts are
-joined back into the namespace-qualified table name:
+With `allow_experimental_table_namespaces` enabled, you can also spell out
+every part with dots. The rules are deterministic and do not depend on what
+currently exists in any catalog:
+
+- `a.b` always means database `a`, table `b`.
+- `db.ns.table` (three or more parts) always means the table path `ns.table`
+  inside database `db`:
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`
@@ -87,13 +95,13 @@ SELECT * FROM catalog_name.namespace.table;
 SELECT * FROM catalog_name.namespace1.namespace2.table;
 ```
 
-This works anywhere a table is referenced, for example `EXISTS TABLE`,
-`DESCRIBE`, and `SHOW CREATE TABLE`.
+This works for reads and introspection: `SELECT`, `INSERT`, `EXISTS TABLE`,
+`DESCRIBE`, `SHOW CREATE TABLE`, `SHOW COLUMNS`, and `SHOW INDEXES`.
 
-### Using a namespace as a prefix {#using-a-namespace-as-a-prefix}
+### Using a namespace as a scope {#using-a-namespace-as-a-scope}
 
 You can select a namespace with `USE catalog_name.namespace` so that
-unqualified table names are automatically resolved within that namespace:
+unqualified table names are resolved within that namespace:
 
 ```sql
 USE catalog_name.namespace;
@@ -105,50 +113,31 @@ SELECT * FROM table;
 catalog and fails otherwise. While a namespace is selected, `currentDatabase`
 still returns the physical database (`catalog_name`), and `SHOW TABLES` lists
 only the direct children of the namespace, by their names relative to it.
-The prefix is cleared as soon as you switch to another database with `USE`.
+`SHOW TABLES FROM catalog_name.namespace` does the same without changing the
+scope. The scope is cleared as soon as you switch to another database with
+`USE`.
 
-A namespace or table component cannot contain a literal dot: a back-quoted
-component like `` catalog_name.`a.b`.table `` is rejected, because after parsing
-it would be indistinguishable from `catalog_name.a.b.table`. Catalog objects
-whose native components contain literal dots are not supported: they are skipped
-in listings and cannot be addressed.
+Because a two-part name always means `database.table`, writing
+`namespace.table` without the catalog prefix does **not** resolve inside the
+current database - use the full path or `USE catalog_name.namespace`.
+
+While a namespace is selected, statements that do not support namespace
+scoping - DDL (`CREATE`, `DROP`, `ALTER`, `RENAME`, `OPTIMIZE`, `TRUNCATE`),
+`ON CLUSTER` queries, `BACKUP`/`RESTORE`, access-control statements, `SYSTEM`
+commands, and similar - fail with an error instead of silently targeting the
+database without the namespace. Switch to the plain database with
+`USE catalog_name` and use quoted canonical names for those operations.
+
+A path component cannot contain a literal dot: a back-quoted component like
+`` catalog_name.`a.b`.table `` is rejected, because after parsing it would be
+indistinguishable from `catalog_name.a.b.table`. Catalog objects whose native
+names contain literal dots remain visible in listings, but they cannot be
+addressed through a multipart path - only through the quoted canonical name.
 
 The same mechanism works for regular databases (`Atomic`, `Memory`), where a
 dot inside a table name lexically defines a namespace: a table named
 `ns.table` in database `db` can be addressed as `db.ns.table` or through
 `USE db.ns`.
-
-Selecting the catalog without a namespace still lets you
-reference tables by their namespace-qualified name:
-
-```sql
-USE catalog_name;
-SELECT * FROM namespace.table;
-```
-
-When a name can be interpreted both as `database.table` and as
-`namespace.table` (for example, when a regular database exists with the same
-name as a namespace), the `database.table` interpretation takes priority. To
-force the namespace interpretation in that case, quote the namespace-qualified
-name:
-
-```sql
-USE catalog_name;
-SELECT * FROM `namespace.table`;
-```
-
-While a namespace is selected, `GRANT ... ON *` applies to that namespace
-recursively - to its tables and to the tables of all nested namespaces, but not
-to anything outside it.
-
-Access-control statements (`GRANT`, row policies) always interpret a two-part name
-`a.b` as `database.table` and do not fall back to namespaces, because grants may
-legitimately reference databases that do not exist yet. Use the full
-`catalog_name.namespace.table` form (or the quoted table name) there:
-
-```sql
-GRANT SELECT ON catalog_name.namespace.table TO user;
-```
 
 ## Examples {#examples}
 
