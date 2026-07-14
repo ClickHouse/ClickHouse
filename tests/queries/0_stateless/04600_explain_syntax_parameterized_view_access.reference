@@ -1,0 +1,11 @@
+-- Full access (base table + view object): EXPLAIN SYNTAX matches SELECT and is allowed
+SELECT via parameterized view: OK
+EXPLAIN SYNTAX parameterized view: OK
+EXPLAIN QUERY TREE parameterized view: OK
+-- Access to the base table but not the view: EXPLAIN SYNTAX is denied exactly as SELECT is
+SELECT via parameterized view: ACCESS_DENIED
+EXPLAIN SYNTAX parameterized view: ACCESS_DENIED
+EXPLAIN QUERY TREE parameterized view: ACCESS_DENIED
+-- Access to the view but not the base table: still denied (INVOKER reads the base as the invoker)
+SELECT via parameterized view: ACCESS_DENIED
+EXPLAIN SYNTAX parameterized view: ACCESS_DENIED
