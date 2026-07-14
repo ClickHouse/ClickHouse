@@ -291,12 +291,17 @@ public:
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations;
+    /// Formats loaded from `system.formats`. The defaults are used until the server is queried.
+    DB::Strings in_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
+    DB::Strings out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native", "Null"};
+    DB::Strings in_out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
     DB::Strings storage_policies;
     DB::Strings timezones;
     DB::Strings keeper_disks;
     std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
+    DB::Strings function_implementations;
     DB::Strings failpoints;
     DB::Strings remote_servers;
     DB::Strings remote_secure_servers;
@@ -380,6 +385,7 @@ public:
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
     uint32_t max_policies = 8;
+    uint32_t max_hypotheticals = 8;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -433,6 +439,19 @@ public:
     String getConnectionHostAndPort(bool secure) const;
 
     String getHTTPURL(bool secure) const;
+
+    /// The name of the input format that can read what the given output format wrote, when there is one.
+    /// The `WithProgress` output variants are read back by their plain counterparts.
+    std::optional<String> formatToRead(const String & out_format) const
+    {
+        String base = out_format;
+
+        if (base.ends_with("WithProgress"))
+        {
+            base.resize(base.size() - String("WithProgress").size());
+        }
+        return std::find(in_formats.begin(), in_formats.end(), base) != in_formats.end() ? std::optional<String>(base) : std::nullopt;
+    }
 
     void loadSystemTables(std::vector<SystemTable> & tables);
 

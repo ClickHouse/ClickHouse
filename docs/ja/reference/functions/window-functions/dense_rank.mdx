@@ -1,0 +1,71 @@
+---
+description: 'dense_rank ウィンドウ関数のドキュメント'
+sidebarTitle: 'dense_rank'
+slug: /sql-reference/window-functions/dense_rank
+title: 'dense_rank'
+doc_type: 'reference'
+---
+
+現在の行を、そのパーティション内で欠番のない順位にランク付けします。つまり、新たに現れた行の値が、それ以前のいずれかの行の値と同じ場合、その行には欠番なしで次の連続した順位が割り当てられます。
+
+[rank](/ja/reference/functions/window-functions/rank) 関数も同様の動作をしますが、順位に欠番が生じます。
+
+**構文**
+
+別名: `denseRank` (大文字と小文字を区別)
+
+```sql
+dense_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+window function の構文の詳細については、[Window Functions - Syntax](/ja/reference/functions/window-functions/index#syntax)を参照してください。
+
+**戻り値**
+
+* 現在の行が属するパーティション内での順位を表す数値。順位に欠番はありません。[UInt64](/ja/reference/data-types/int-uint)。
+
+**例**
+
+次の例は、解説ビデオ [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA) で紹介されている例に基づいています。
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─dense_rank─┐
+1. │ Gary Chen       │ 195000 │          1 │
+2. │ Robert George   │ 195000 │          1 │
+3. │ Charles Juarez  │ 190000 │          2 │
+4. │ Michael Stanley │ 150000 │          3 │
+5. │ Douglas Benson  │ 150000 │          3 │
+6. │ Scott Harrison  │ 150000 │          3 │
+7. │ James Henderson │ 140000 │          4 │
+   └─────────────────┴────────┴────────────┘
+```

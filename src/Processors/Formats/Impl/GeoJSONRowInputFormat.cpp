@@ -91,12 +91,15 @@ String readStrictJSONNumberText(ReadBuffer & buf)
 
 /// Read a coordinate number using the strict JSON grammar and return it as `Float64`, additionally
 /// rejecting values that overflow `Float64` to a non-finite result (e.g. a huge exponent like `1e400`).
-Float64 readStrictJSONNumber(ReadBuffer & buf)
+Float64 readStrictJSONNumber(ReadBuffer & buf, bool precise_float_parsing)
 {
     String number = readStrictJSONNumberText(buf);
     Float64 result = 0;
     ReadBufferFromString number_buf(number);
-    readFloatText(result, number_buf);
+    if (precise_float_parsing)
+        readFloatTextPrecise(result, number_buf);
+    else
+        readFloatImpreciseForCompatibility(result, number_buf);
     if (!std::isfinite(result))
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: coordinate value is not finite");
     return result;
@@ -105,18 +108,21 @@ Float64 readStrictJSONNumber(ReadBuffer & buf)
 /// Read a GeoJSON position `[lon, lat, ...]` and return it as `(lon, lat)`. Any extra coordinates
 /// (such as an altitude) are read and discarded. When `lon_col`/`lat_col` are provided the position is
 /// appended to them directly; otherwise it is only read and validated.
-std::pair<Float64, Float64> readGeoJSONPosition(ReadBuffer & buf, ColumnFloat64 * lon_col, ColumnFloat64 * lat_col)
+std::pair<Float64, Float64> readGeoJSONPosition(ReadBuffer & buf, ColumnFloat64 * lon_col, ColumnFloat64 * lat_col, bool precise_float_parsing)
 {
     JSONUtils::skipArrayStart(buf);
 
-    Float64 lon = readStrictJSONNumber(buf);
+    Float64 lon = readStrictJSONNumber(buf, precise_float_parsing);
     JSONUtils::skipComma(buf);
-    Float64 lat = readStrictJSONNumber(buf);
+    Float64 lat = readStrictJSONNumber(buf, precise_float_parsing);
 
+    /// Any extra position elements (a third altitude coordinate, or more) are discarded, so they are
+    /// validated only for JSON-number grammar, not finiteness: a valid but out-of-`Float64`-range value
+    /// such as `1e400` in an ignored slot must not reject the document, since it is not stored.
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         JSONUtils::skipComma(buf);
-        readStrictJSONNumber(buf);
+        readStrictJSONNumberText(buf);
     }
 
     if (lon_col)
@@ -143,7 +149,7 @@ void forEachElementInJSONArray(ReadBuffer & buf, ElementHandler && handle_elemen
 }
 
 /// The shape invariant to enforce on an array of positions: a `LineString`/`MultiLineString` line (at
-/// least two positions), a `Polygon`/`MultiPolygon` ring (at least four positions and closed), or a
+/// least two points), a `Polygon`/`MultiPolygon` ring (at least four points and closed), or a
 /// `MultiPoint` (no invariant).
 enum class PositionArrayKind
 {
@@ -155,7 +161,7 @@ enum class PositionArrayKind
 /// Read an array of positions `[[lon,lat],...]` and enforce the shape invariant for `kind`. When
 /// `array_col` (an `Array(Tuple(Float64, Float64))`) is provided, each position is appended to its
 /// nested tuple and one array offset is pushed; otherwise the positions are only read and validated.
-void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind)
+void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind, bool validate, bool precise_float_parsing)
 {
     ColumnFloat64 * lon_col = nullptr;
     ColumnFloat64 * lat_col = nullptr;
@@ -172,25 +178,30 @@ void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArr
     std::pair<Float64, Float64> last{};
     forEachElementInJSONArray(buf, [&]
     {
-        auto position = readGeoJSONPosition(buf, lon_col, lat_col);
+        auto position = readGeoJSONPosition(buf, lon_col, lat_col, precise_float_parsing);
         if (count == 0)
             first = position;
         last = position;
         ++count;
     });
 
-    if (kind == PositionArrayKind::Line && count < 2)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "GeoJSON: a LineString must have at least two positions, but got {}", count);
-    if (kind == PositionArrayKind::Ring)
+    /// Enforce the GeoJSON shape invariants only when geometry validation is enabled
+    /// (`format_geojson_validate_geometry`). When disabled, degenerate lines and rings are read as-is.
+    if (validate)
     {
-        if (count < 4)
+        if (kind == PositionArrayKind::Line && count < 2)
             throw Exception(
-                ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon ring must have at least four positions, but got {}", count);
-        if (first != last)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "GeoJSON: a Polygon ring must be closed (its first and last positions must be equal)");
+                ErrorCodes::INCORRECT_DATA, "GeoJSON: a LineString must have at least two points, but got {}", count);
+        if (kind == PositionArrayKind::Ring)
+        {
+            if (count < 4)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon ring must have at least four points, but got {}", count);
+            if (first != last)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "GeoJSON: a Polygon ring must be closed (its first and last points must be equal)");
+        }
     }
 
     if (array_col)
@@ -244,15 +255,17 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
     else
     {
         /// A scalar: string, boolean, null, or number. Strings/booleans/null have no internal
-        /// separators to validate, so the permissive `skipJSONField` is fine for them. Numbers,
-        /// however, must be validated against the strict JSON grammar even in ignored fields (e.g.
-        /// a skipped `bbox`), so that non-JSON spellings such as `+Inf` or `+NaN` are rejected
-        /// rather than silently tolerated in an otherwise-rejecting parser.
+        /// separators to validate, so the permissive `skipJSONField` is fine for them. A number is
+        /// validated against the strict JSON grammar (so non-JSON spellings such as `+Inf` or `+NaN`
+        /// are rejected even in an ignored field) but its text is discarded. Finiteness is deliberately
+        /// not enforced here: the value is in an ignored field (a `bbox`, a foreign member, an
+        /// unrequested `properties` value), so a valid JSON number that merely overflows `Float64`
+        /// (such as `1e400`) must not reject the document, since it is never stored as a coordinate.
         const char c = *buf.position();
         if (c == '"' || c == 't' || c == 'f' || c == 'n')
             skipJSONField(buf, "<ignored>", json_settings);
         else
-            readStrictJSONNumber(buf);
+            readStrictJSONNumberText(buf);
     }
 }
 
@@ -412,7 +425,7 @@ size_t readGeoJSONNestedArray(ReadBuffer & buf, ColumnArray * array_col, Element
 /// `sub_col` is null the coordinates are only read and validated. `Ring` is a synonym for `LineString`
 /// because it is part of the `Geometry` type, and `MultiPoint` is read in validation-only mode because
 /// it can be stored as NULL.
-void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col)
+void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col, bool validate, bool precise_float_parsing)
 {
     if (geo_type == "Point")
     {
@@ -424,7 +437,7 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
             lon_col = &assert_cast<ColumnFloat64 &>(tuple_col.getColumn(0));
             lat_col = &assert_cast<ColumnFloat64 &>(tuple_col.getColumn(1));
         }
-        readGeoJSONPosition(buf, lon_col, lat_col);
+        readGeoJSONPosition(buf, lon_col, lat_col, precise_float_parsing);
         return;
     }
 
@@ -432,22 +445,24 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
 
     if (geo_type == "LineString" || geo_type == "Ring")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line, validate, precise_float_parsing);
     }
     else if (geo_type == "MultiPoint")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint, validate, precise_float_parsing);
     }
     else if (geo_type == "MultiLineString")
     {
         /// A `MultiLineString` is an array of lines.
-        if (readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line); }) == 0)
+        const size_t lines = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line, validate, precise_float_parsing); });
+        if (validate && lines == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiLineString must have at least one LineString");
     }
     else if (geo_type == "Polygon")
     {
         /// A `Polygon` is an array of rings.
-        if (readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring); }) == 0)
+        const size_t rings = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate, precise_float_parsing); });
+        if (validate && rings == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
     }
     else if (geo_type == "MultiPolygon")
@@ -455,10 +470,12 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
         /// A `MultiPolygon` is an array of polygons, each an array of rings.
         auto read_polygon = [&](ColumnArray * polygon_col)
         {
-            if (readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring); }) == 0)
+            const size_t rings = readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate, precise_float_parsing); });
+            if (validate && rings == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
         };
-        if (readGeoJSONNestedArray(buf, array_col, read_polygon) == 0)
+        const size_t polygons = readGeoJSONNestedArray(buf, array_col, read_polygon);
+        if (validate && polygons == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiPolygon must have at least one Polygon");
     }
 }
@@ -545,7 +562,7 @@ void validateGeoJSONGeometryMembers(
             "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
     ReadBufferFromString coord_buf(raw_coordinates);
-    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
 }
 
 } /// anonymous namespace
@@ -565,10 +582,14 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         const auto & col = header.getByPosition(i);
         if (col.name == "id")
         {
-            if (!WhichDataType(col.type).isString())
+            /// Accept both `String` and `Nullable(String)`. Schema inference yields `Nullable(String)`
+            /// so that an absent or `null` GeoJSON `id` becomes NULL (distinct from an explicit empty
+            /// string), mirroring how `properties` is `Nullable(JSON)`.
+            if (!WhichDataType(removeNullable(col.type)).isString())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "The 'id' column of the GeoJSON input format must have type 'String', but it has type '{}'",
+                    "The 'id' column of the GeoJSON input format must have type 'String' or 'Nullable(String)', "
+                    "but it has type '{}'",
                     col.type->getName());
             id_col_idx = i;
         }
@@ -886,7 +907,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 
     if (!col)
     {
-        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr);
+        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
         return;
     }
 
@@ -896,7 +917,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();
 
-    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
     variant_col.getLocalDiscriminators().push_back(local_discr);
     variant_col.getOffsets().push_back(offset);
 }
@@ -904,7 +925,9 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 NamesAndTypesList GeoJSONExternalSchemaReader::readSchema()
 {
     return {
-        {"id", std::make_shared<DataTypeString>()},
+        /// `id` is `Nullable` so that a feature with an absent or explicit `"id": null` member is
+        /// stored as NULL, kept distinct from a feature whose `id` is an explicit empty string `""`.
+        {"id", makeNullable(std::make_shared<DataTypeString>())},
         {"geometry", DataTypeFactory::instance().get("Geometry")},
         /// `properties` is `Nullable` so that an explicit GeoJSON `"properties": null` is preserved
         /// as NULL rather than being indistinguishable from a default (empty) JSON object.
