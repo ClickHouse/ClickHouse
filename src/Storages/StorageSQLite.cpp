@@ -167,6 +167,24 @@ StorageSQLite::StorageSQLite(
     generated_columns_reclassification_pending = generated_columns_reclassification_pending_;
 }
 
+StorageSQLite::SQLitePtr StorageSQLite::openConnectionIfNeeded(bool throw_on_error, bool allow_create)
+{
+    /// Guard the one-time lazy connection bootstrap. `read`, `write`, and the
+    /// `updateExternalDynamicMetadataIfExists` metadata hook all funnel through here, so the `sqlite_db`
+    /// shared_ptr member is only ever written under this mutex - a plain unsynchronized
+    /// `if (!sqlite_db) sqlite_db = openSQLiteDB(...)` in each of them would be a data race on the shared_ptr
+    /// when two first queries run concurrently (e.g. after an `ATTACH`-while-unavailable).
+    std::lock_guard lock(connection_mutex);
+    if (!sqlite_db)
+    {
+        auto opened = openSQLiteDB(database_path, getContext(), throw_on_error, allow_create);
+        if (!opened)
+            return nullptr;
+        sqlite_db = opened;
+    }
+    return sqlite_db;
+}
+
 void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context)
 {
     if (!generated_columns_reclassification_pending.load(std::memory_order_acquire))
@@ -211,16 +229,12 @@ void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// Best-effort: if the file is still unavailable, keep the classification pending and do nothing. The
     /// subsequent `read`/`write` reopen the database with `throw_on_error = true` and surface the error, so no
     /// operation runs on a stale classification silently.
-    if (!sqlite_db)
-    {
-        /// Non-creating probe: if the database file is still missing, keep the classification pending rather
-        /// than opening a freshly created empty database (which contains no table and would otherwise mark the
-        /// repair as done). The real file becoming reachable later then still repairs the classification.
-        auto reopened_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, /* allow_create */ false);
-        if (!reopened_db)
-            return;
-        sqlite_db = reopened_db;
-    }
+    /// Non-creating probe: if the database file is still missing, keep the classification pending rather
+    /// than opening a freshly created empty database (which contains no table and would otherwise mark the
+    /// repair as done). The real file becoming reachable later then still repairs the classification. The
+    /// guarded helper keeps this open race-free against a concurrent first `read`/`write`.
+    if (!openConnectionIfNeeded(/* throw_on_error */ false, /* allow_create */ false))
+        return;
 
     reclassifyGeneratedColumnsFromRemote(query_context);
 }
@@ -260,9 +274,8 @@ Pipe StorageSQLite::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true,
-                                 /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
+    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true,
+                             /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -299,7 +312,7 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SQLiteSource>(sqlite_db, query, sample_block, max_block_size));
+    return Pipe(std::make_shared<SQLiteSource>(sqlite_db_local, query, sample_block, max_block_size));
 }
 
 
@@ -386,16 +399,15 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true,
-                                 /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
+    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true,
+                             /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.
     /// Idempotent - it runs at most once and is a no-op once the classification has been repaired.
     reclassifyGeneratedColumnsFromRemote(context_);
 
-    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_or_query.getTableName());
+    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db_local, remote_table_or_query.getTableName());
 }
 
 

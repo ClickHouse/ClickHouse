@@ -64,6 +64,12 @@ public:
 private:
     friend class SQLiteSink; /// for write_context
 
+    /// Lazily open the SQLite connection on first use. Guards the one-time initialization so that concurrent
+    /// first queries (`read`, `write`, and the `updateExternalDynamicMetadataIfExists` metadata hook) do not
+    /// race on the `sqlite_db` shared_ptr member. Returns the open connection (also stored in `sqlite_db`), or
+    /// nullptr when the file is still unavailable and `throw_on_error` is false.
+    SQLitePtr openConnectionIfNeeded(bool throw_on_error, bool allow_create);
+
     /// Re-derive the generated-column classification from the remote schema on the first successful open,
     /// when it could not be applied at construction time because the database file was unavailable. Runs at
     /// most once. See the constructor and `generated_columns_reclassification_pending`.
@@ -82,6 +88,10 @@ private:
     /// from `read`/`write`.
     std::atomic<bool> generated_columns_reclassification_pending{false};
     std::mutex reclassify_mutex;
+
+    /// Serializes the one-time lazy open of `sqlite_db` in `openConnectionIfNeeded` (see B3 / the data-race
+    /// review finding): the member must never be written by two concurrent first queries at once.
+    std::mutex connection_mutex;
 };
 
 }
