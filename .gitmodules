@@ -399,6 +399,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/libdeflate"]
+	path = contrib/libdeflate
+	url = https://github.com/ClickHouse/libdeflate
 [submodule "contrib/wagyu"]
 	path = contrib/wagyu
 	url = https://github.com/ClickHouse/wagyu
