@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ErrorCodes
@@ -312,9 +313,12 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
-    /// Only S3 enforces `StoredObject::etag` on the GET (via `If-Match`), so only there does an old
-    /// worker actually lose generation-pinning; used to gate the fail-close in the response's serialize.
-    const bool read_pins_generation = object_storage->getType() == ObjectStorageType::S3;
+    /// The read pins to the propagated ETag generation only when S3 enforces `StoredObject::etag` on
+    /// the GET (via `If-Match`) AND `s3_validate_etag_on_read` is enabled (`createReadBuffer` copies the
+    /// ETag onto the GET only then). Only in that case does an old worker actually lose generation
+    /// pinning, so the fail-close in the response's serialize is gated on both.
+    const bool read_pins_generation = object_storage->getType() == ObjectStorageType::S3
+        && local_context->getSettingsRef()[Setting::s3_validate_etag_on_read];
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context, read_pins_generation](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
