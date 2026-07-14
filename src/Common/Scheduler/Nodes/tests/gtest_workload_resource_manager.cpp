@@ -2519,6 +2519,32 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
     EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // no limits: the workload has no `AllocationLimit` node at all
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 150);
+    a.waitSync();
+    a.reportReclaimable(120); // reported before any soft limit exists — nothing can spill yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    // Enable transition: this inserts a fresh soft-only `AllocationLimit` above the existing branch
+    // (the Add path of `updateSchedulingSettings`, not the Update path taken when a limit already
+    // exists). The subtree is already over the new threshold with reclaimable memory, so the spill
+    // must fire right away — no later resize or `setReclaimable` happens in this test to trigger it.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_spill = 100");
+
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
 {
     ResourceTest t;
