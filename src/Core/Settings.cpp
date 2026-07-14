@@ -2397,7 +2397,7 @@ Possible values:
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
-Possible values: Numbers from 1 to 9.
+Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
 )", 0) \
     \
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(

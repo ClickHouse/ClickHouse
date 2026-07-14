@@ -252,6 +252,10 @@
     "destination": "/get-started/setup/cloud"
   },
   {
+    "source": "/cloud/bestpractices",
+    "destination": "/products/cloud/guides/best-practices"
+  },
+  {
     "source": "/cloud/bestpractices/asynchronous-inserts",
     "destination": "/concepts/best-practices/use-materialized-views"
   },
@@ -2138,6 +2142,10 @@
   {
     "source": "/faq/general/",
     "destination": "/resources/support-center/knowledge-base/general-faqs"
+  },
+  {
+    "source": "/faq/general/columnar-database",
+    "destination": "/resources/support-center/knowledge-base/general-faqs/columnar-database"
   },
   {
     "source": "/faq/general/concurrency",
@@ -14984,6 +14992,162 @@
     "destination": "/ja/reference/functions/table-functions/gcs"
   },
   {
+    "source": "/knowledgebase/Insert_select_settings_tuning",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning"
+  },
+  {
+    "source": "/knowledgebase/are_materialized_views_inserted_asynchronously",
+    "destination": "/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously"
+  },
+  {
+    "source": "/knowledgebase/async_vs_optimize_read_in_order",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order"
+  },
+  {
+    "source": "/knowledgebase/backing_up_a_specific_partition",
+    "destination": "/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition"
+  },
+  {
+    "source": "/knowledgebase/calculate_ratio_of_zero_sparse_serialization",
+    "destination": "/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization"
+  },
+  {
+    "source": "/knowledgebase/certificate_verify_failed_error",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error"
+  },
+  {
+    "source": "/knowledgebase/check_query_processing_time_only",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only"
+  },
+  {
+    "source": "/knowledgebase/check_users_roles",
+    "destination": "/resources/support-center/knowledge-base/security/check-users-roles"
+  },
+  {
+    "source": "/knowledgebase/clickhouse_cloud_api_usage",
+    "destination": "/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage"
+  },
+  {
+    "source": "/knowledgebase/collect-and-draw-traces",
+    "destination": "/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces"
+  },
+  {
+    "source": "/knowledgebase/compare_resultsets",
+    "destination": "/resources/support-center/knowledge-base/queries-sql/compare-resultsets"
+  },
+  {
+    "source": "/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
+  },
+  {
+    "source": "/knowledgebase/connection_timeout_remote_remoteSecure",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure"
+  },
+  {
+    "source": "/knowledgebase/dictionary_using_strings",
+    "destination": "/resources/support-center/knowledge-base/data-management/dictionary-using-strings"
+  },
+  {
+    "source": "/knowledgebase/difference_between_official_builds_and_3rd_party",
+    "destination": "/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party"
+  },
+  {
+    "source": "/knowledgebase/finding_expensive_queries_by_memory_usage",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage"
+  },
+  {
+    "source": "/knowledgebase/how_to_display_queries_using_MV",
+    "destination": "/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv"
+  },
+  {
+    "source": "/knowledgebase/how_to_use_parametrised_views",
+    "destination": "/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views"
+  },
+  {
+    "source": "/knowledgebase/importing_and_working_with_JSON_array_objects",
+    "destination": "/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects"
+  },
+  {
+    "source": "/knowledgebase/json_extract_example",
+    "destination": "/resources/support-center/knowledge-base/data-import-export/json-extract-example"
+  },
+  {
+    "source": "/knowledgebase/json_simple_example",
+    "destination": "/resources/support-center/knowledge-base/data-import-export/json-simple-example"
+  },
+  {
+    "source": "/knowledgebase/maximum_number_of_tables_and_databases",
+    "destination": "/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
+  },
+  {
+    "source": "/knowledgebase/optimize_final_vs_final",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final"
+  },
+  {
+    "source": "/knowledgebase/part_intersects_previous_part",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part"
+  },
+  {
+    "source": "/knowledgebase/projection_example",
+    "destination": "/resources/support-center/knowledge-base/materialized-views/projection-example"
+  },
+  {
+    "source": "/knowledgebase/python_http_requests",
+    "destination": "/resources/support-center/knowledge-base/integrations/python-http-requests"
+  },
+  {
+    "source": "/knowledgebase/query_max_execution_time",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time"
+  },
+  {
+    "source": "/knowledgebase/read_consistency",
+    "destination": "/resources/support-center/knowledge-base/data-management/read-consistency"
+  },
+  {
+    "source": "/knowledgebase/recreate_table_across_terminals",
+    "destination": "/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals"
+  },
+  {
+    "source": "/knowledgebase/s3_export_data_year_month_folders",
+    "destination": "/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders"
+  },
+  {
+    "source": "/knowledgebase/schema_migration_tools",
+    "destination": "/resources/support-center/knowledge-base/tables-schema/schema-migration-tools"
+  },
+  {
+    "source": "/knowledgebase/send_logs_level",
+    "destination": "/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level"
+  },
+  {
+    "source": "/knowledgebase/terraform_example",
+    "destination": "/resources/support-center/knowledge-base/integrations/terraform-example"
+  },
+  {
+    "source": "/knowledgebase/view_number_of_active_mutations",
+    "destination": "/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations"
+  },
+  {
+    "source": "/knowledgebase/when_is_ttl_applied",
+    "destination": "/resources/support-center/knowledge-base/data-management/when-is-ttl-applied"
+  },
+  {
+    "source": "/knowledgebase/why_default_logging_verbose",
+    "destination": "/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose"
+  },
+  {
+    "source": "/knowledgebase/why_is_my_primary_key_not_used",
+    "destination": "/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used"
+  },
+  {
+    "source": "/knowledgebase/why_recommend_clickhouse_keeper_over_zookeeper",
+    "destination": "/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
+  },
+  {
+    "source": "/knowledgebase/windows_active_directory_to_ch_roles",
+    "destination": "/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
+  },
+  {
     "source": "/knowledgebase/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
     "destination": "/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector"
   },
@@ -15212,6 +15376,10 @@
     "destination": "/resources/support-center/knowledge-base/general-faqs/olap"
   },
   {
+    "source": "/knowledgebase/opt-out-core-dump-collection",
+    "destination": "/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection"
+  },
+  {
     "source": "/knowledgebase/oracle-odbc",
     "destination": "/resources/support-center/knowledge-base/integrations/oracle-odbc"
   },
@@ -15244,12 +15412,24 @@
     "destination": "/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example"
   },
   {
+    "source": "/knowledgebase/recovering-from-corrupt-keeper-snapshot",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot"
+  },
+  {
     "source": "/knowledgebase/remove-default-user",
     "destination": "/resources/support-center/knowledge-base/security/remove-default-user"
   },
   {
+    "source": "/knowledgebase/restore-replica-after-storage-failure",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
+  },
+  {
     "source": "/knowledgebase/row-column-policy",
     "destination": "/resources/support-center/knowledge-base/security/row-column-policy"
+  },
+  {
+    "source": "/knowledgebase/runbook-json",
+    "destination": "/resources/support-center/knowledge-base/tables-schema/runbook-json"
   },
   {
     "source": "/knowledgebase/search-across-node-for-tables-with-a-wildcard",
@@ -15266,6 +15446,10 @@
   {
     "source": "/knowledgebase/unable-to-access-cloud-service",
     "destination": "/resources/support-center/knowledge-base/cloud-services/unable-to-access-cloud-service"
+  },
+  {
+    "source": "/knowledgebase/understanding-part-types-and-storage-formats",
+    "destination": "/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats"
   },
   {
     "source": "/knowledgebase/use-clickhouse-for-log-analytics",
