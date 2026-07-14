@@ -100,3 +100,8 @@ UNKNOWN_TABLE
 1
 --- legacy analyzer: sibling databases stay ambiguous
 AMBIGUOUS_IDENTIFIER
+--- standard: unquoted case-sibling creation is rejected, quoted is allowed
+differs only in character case
+0
+differs only in character case
+2

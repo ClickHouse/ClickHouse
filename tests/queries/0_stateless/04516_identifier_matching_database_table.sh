@@ -197,3 +197,14 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_m
 echo '--- legacy analyzer: sibling databases stay ambiguous'
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=0 --database_and_table_name_matching=standard --query "SELECT x FROM ${DB_ONE_FOLDED}.legacytable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+
+echo '--- standard: unquoted case-sibling creation is rejected, quoted is allowed'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.CaseTab (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.CASETAB (y Int32) ENGINE = Memory" 2>&1 | grep -oF "differs only in character case" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.\"CASETAB\" (y Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SELECT count() FROM ${DB_ONE}.\"CASETAB\""
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE DATABASE ${DB_ONE_FOLDED}" 2>&1 | grep -oF "differs only in character case" | uniq
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.SENS1 (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.sens1 (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${DB_ONE}' AND lower(name) = 'sens1'"

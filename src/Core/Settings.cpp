@@ -7913,7 +7913,8 @@ Possible values:
   matched exactly. Backtick-quoted components fold like unquoted ones.
 
 The mode applies to references to existing objects. Names of newly created objects are stored as
-written.
+written; creating an unquoted database or table whose name differs only in character case from an
+existing one is rejected, while a double-quoted new name is allowed and later matched exactly.
 )", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.

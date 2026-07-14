@@ -152,6 +152,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
+    extern const SettingsNameMatchMode database_and_table_name_matching;
 }
 
 namespace ServerSetting
@@ -205,6 +206,19 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
+
+    /// `standard` matching: an unquoted case sibling of an existing database is rejected.
+    if (!create.attach && !getContext()->isInternalQuery()
+        && identifierPartQuoteFromAST(create.database) != IdentifierPartQuote::DoubleQuoted)
+    {
+        String folded_match = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            database_name, IdentifierPartQuote::Unquoted, getContext());
+        if (folded_match != database_name)
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS,
+                "Database {} cannot be created: its name differs only in character case from existing database {}. "
+                "Double-quote the new name to create it anyway",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(folded_match));
+    }
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
@@ -2064,6 +2078,33 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
+
+    /// `standard` matching: creating an unquoted case sibling of an existing table is rejected;
+    /// double-quote the new name to create a distinct exact spelling.
+    if (mode == LoadingStrictnessLevel::CREATE && !getContext()->isInternalQuery()
+        && getContext()->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard
+        && identifierPartQuoteFromAST(create.table) != IdentifierPartQuote::DoubleQuoted)
+    {
+        try
+        {
+            auto folded = database->resolveTableName({create.getTable(), IdentifierPartQuote::Unquoted}, getContext());
+            const String * sibling = nullptr;
+            if (folded.outcome == FoldedNameIndex::Outcome::Matched && folded.canonical != create.getTable())
+                sibling = &folded.canonical;
+            else if (folded.outcome == FoldedNameIndex::Outcome::Ambiguous)
+                sibling = &folded.candidates.front();
+            if (sibling)
+                throw Exception(storage_already_exists_error_code,
+                    "{} {} cannot be created: its name differs only in character case from existing {}. "
+                    "Double-quote the new name to create it anyway",
+                    storage_name, backQuoteIfNeed(create.getTable()), backQuoteIfNeed(*sibling));
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+        }
+    }
 
     /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
     if (database->isTableExist(create.getTable(), getContext()))
