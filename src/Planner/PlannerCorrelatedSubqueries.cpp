@@ -71,9 +71,6 @@ extern const SettingsBool join_use_nulls;
 extern const SettingsBool use_variant_as_common_type;
 extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
 extern const SettingsMaxThreads max_threads;
-extern const SettingsUInt64 max_rows_in_distinct;
-extern const SettingsUInt64 max_bytes_in_distinct;
-extern const SettingsOverflowMode distinct_overflow_mode;
 extern const SettingsNonZeroUInt64 max_block_size;
 
 }
@@ -254,11 +251,13 @@ QueryPlan decorrelateQueryPlan(
         /// duplicate correlated values (e.g. from a CROSS JOIN) the inner subplan is evaluated once per
         /// duplicate, inflating aggregates. Deduplicate here; the outer duplicates are restored by the
         /// final equi-join back onto the full outer plan.
+        /// This DISTINCT is an internal implementation detail, not a user DISTINCT, so it must run
+        /// unbounded with THROW (like makeInternalDecorrelationJoinUnbounded). Inheriting the user's
+        /// max_rows_in_distinct / distinct_overflow_mode would let overflow_mode='break' truncate the
+        /// domain to a partial result (re-introducing the missing-rows/under-counted bug this fix
+        /// restores), or raise SET_SIZE_LIMIT_EXCEEDED on queries with no user-visible DISTINCT.
         {
-            SizeLimits distinct_limits(
-                settings[Setting::max_rows_in_distinct],
-                settings[Setting::max_bytes_in_distinct],
-                settings[Setting::distinct_overflow_mode]);
+            SizeLimits distinct_limits(/*max_rows_=*/0, /*max_bytes_=*/0, OverflowMode::THROW);
             rhs_plan.addStep(std::make_unique<DistinctStep>(
                 rhs_plan.getCurrentHeader(),
                 distinct_limits,

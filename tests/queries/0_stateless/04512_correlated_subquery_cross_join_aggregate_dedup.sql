@@ -43,5 +43,20 @@ SELECT o.id, n.number, EXISTS(SELECT 1 FROM inner_04512 i WHERE i.id = o.id) AS 
 FROM outer_04512 o CROSS JOIN numbers(2) n
 ORDER BY o.id, n.number;
 
+-- The internal deduplication of the decorrelation domain must NOT inherit the user's DISTINCT
+-- size limits. With max_rows_in_distinct=1 + distinct_overflow_mode='break', a user DISTINCT would
+-- truncate the domain to a single correlated key, so every other outer key would miss in the final
+-- join (NULL / under-counted). Since the step runs unbounded, all keys are still evaluated.
+INSERT INTO inner_04512 VALUES (1, 'b'), (2, 'c');
+SELECT '-- internal distinct must ignore user distinct limits --';
+SET max_rows_in_distinct = 1;
+SET distinct_overflow_mode = 'break';
+SELECT o.id, (SELECT count() FROM inner_04512 i WHERE i.id = o.id) AS c
+FROM outer_04512 o CROSS JOIN numbers(3) n
+GROUP BY o.id
+ORDER BY o.id;
+SET max_rows_in_distinct = 0;
+SET distinct_overflow_mode = 'throw';
+
 DROP TABLE outer_04512;
 DROP TABLE inner_04512;
