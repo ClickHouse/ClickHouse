@@ -2920,7 +2920,7 @@ bool ReplicatedMergeTreeQueue::shouldRespectEntryOrder(const LogEntry & entry) c
     /// the relative order of data manipulation entries
     return (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART || entry.type == LogEntry::MERGE_PARTS
             || entry.type == LogEntry::MUTATE_PART)
-        && storage.geo_replication_controller.isValid()
+        && storage.geo_replication_controller.isConfigured()
         && (*storage.getSettings())[MergeTreeSetting::fetch_covered_part_within_region_only]
         && (*storage.getSettings())[MergeTreeSetting::fetch_merged_part_within_region_only];
 }
