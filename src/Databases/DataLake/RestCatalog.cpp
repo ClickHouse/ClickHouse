@@ -262,7 +262,7 @@ void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
     getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
 }
 
-AuthHeaders RestCatalog::getAuthHeaders(bool update_token) const
+String RestCatalog::getAuthHeaders(DB::HTTPHeaderEntries & extra_headers, bool update_token) const
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
     {
@@ -275,9 +275,8 @@ AuthHeaders RestCatalog::getAuthHeaders(bool update_token) const
     /// than reinterpreted as a bearer token.
     if (auth_header.has_value())
     {
-        AuthHeaders result;
-        result.extra_headers.push_back(auth_header.value());
-        return result;
+        extra_headers.push_back(auth_header.value());
+        return {};
     }
 
     /// Option 2: user provided grant_type, client_id and client_secret.
@@ -291,10 +290,7 @@ AuthHeaders RestCatalog::getAuthHeaders(bool update_token) const
             access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
             current = access_token.get();
         }
-
-        AuthHeaders result;
-        result.bearer_token = current->token;
-        return result;
+        return current->token;
     }
     return {};
 }
@@ -334,16 +330,12 @@ OneLakeCatalog::OneLakeCatalog(
     config = loadConfig();
 }
 
-AuthHeaders OneLakeCatalog::getAuthHeaders(bool update_token) const
+String OneLakeCatalog::getAuthHeaders(DB::HTTPHeaderEntries & extra_headers, bool update_token) const
 {
-    AuthHeaders auth;
-    if (!bearer_token.empty())
-        /// Pre-obtained token: hand it to `create` as the bearer rather than splicing a header.
-        auth.bearer_token = bearer_token;
-    else
-        auth = RestCatalog::getAuthHeaders(update_token);
-    auth.extra_headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
-    return auth;
+    /// Pre-obtained token: hand it to `create` as the bearer rather than splicing a header.
+    const String bearer = bearer_token.empty() ? RestCatalog::getAuthHeaders(extra_headers, update_token) : bearer_token;
+    extra_headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return bearer;
 }
 
 String OneLakeCatalog::getBearerToken() const
@@ -469,7 +461,7 @@ BigLakeCatalog::BigLakeCatalog(
     config = loadConfig();
 }
 
-AuthHeaders BigLakeCatalog::getAuthHeaders(bool update_token) const
+String BigLakeCatalog::getAuthHeaders(DB::HTTPHeaderEntries & extra_headers, bool update_token) const
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
@@ -484,9 +476,6 @@ AuthHeaders BigLakeCatalog::getAuthHeaders(bool update_token) const
             current = access_token.get();
         }
 
-        AuthHeaders result;
-        result.bearer_token = current->token;
-
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
         {
@@ -495,13 +484,13 @@ AuthHeaders BigLakeCatalog::getAuthHeaders(bool update_token) const
 
         if (!project_id.empty())
         {
-            result.extra_headers.emplace_back("x-goog-user-project", project_id);
+            extra_headers.emplace_back("x-goog-user-project", project_id);
         }
 
-        return result;
+        return current->token;
     }
 
-    return RestCatalog::getAuthHeaders(update_token);
+    return RestCatalog::getAuthHeaders(extra_headers, update_token);
 }
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() const
@@ -649,9 +638,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     auto create_buffer = [&](bool update_token)
     {
-        auto auth = getAuthHeaders(update_token);
-        DB::HTTPHeaderEntries result_headers = std::move(auth.extra_headers);
-        std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
+        DB::HTTPHeaderEntries result_headers(headers);
+        const String bearer_token = getAuthHeaders(result_headers, update_token);
 
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -661,7 +649,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             .withHeaders(result_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .createWithBearerToken(auth.bearer_token);
+            .createWithBearerToken(bearer_token);
     };
 
     LOG_DEBUG(log, "Requesting: {}", url.toString());
@@ -1200,8 +1188,8 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    auto auth = getAuthHeaders(/* update_token = */ true);
-    DB::HTTPHeaderEntries headers = std::move(auth.extra_headers);
+    DB::HTTPHeaderEntries headers;
+    const String bearer_token = getAuthHeaders(headers, /* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
 
     const auto & context = getContext();
@@ -1226,7 +1214,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         .withHeaders(headers)
         .withOutCallback(out_stream_callback)
         .withSkipNotFound(false)
-        .createWithBearerToken(auth.bearer_token);
+        .createWithBearerToken(bearer_token);
 
     String response_str;
     if (!ignore_result)
