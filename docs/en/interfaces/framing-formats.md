@@ -13,6 +13,8 @@ A framing format multiplexes different response parts of the query in a single s
 
 Framing formats are independent of [output formats](/interfaces/formats): they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
 
+Framing can also make an output format more expressive. The `JSONCompactEachRow` family of formats drops totals and extremes in its plain output, because their rows would be indistinguishable from ordinary data rows. Under a framing format the packet kind tells them apart, so these formats emit totals and extremes rows (in their usual row syntax) into the `totals` and `extremes` packets.
+
 The framing format is selected by the query-level setting `framing_output_format`. It currently applies to the HTTP protocol and is ignored for other interfaces.
 
 Server logs are included as packets if the `send_logs_level` setting is set. Profile events are included if the `send_profile_events` setting is enabled (default). Progress and profile events packets are sent at most once in `interactive_delay` microseconds.
@@ -47,6 +49,8 @@ Server-sent events is a text protocol that treats line breaks (including carriag
 - output formats that may emit raw carriage returns because of the settings: `TSV` with `output_format_tsv_crlf_end_of_line` enabled (the `\r\n` row terminator), and `CustomSeparated` with a `CSV` or `XML` escaping rule or with delimiters containing `\r`.
 
 When the payloads are base64-encoded, `EventStream` signals it by adding a `payload=base64` parameter to the `Content-Type` (`text/event-stream; charset=UTF-8; payload=base64`). The client then base64-decodes those payloads; the concatenation of the decoded payloads is exactly what the output format would have produced without framing. The auxiliary JSON packets (`progress`, `log`, `profile_events`, `exception`) are never encoded. Text output formats without raw carriage returns are still embedded as plain text (no `payload=base64`).
+
+Byte-exact transport of arbitrary binary values is only guaranteed for the base64-encoded payloads. Escaping-based text formats (for example `TSV`, or the JSON formats with `output_format_json_validate_utf8 = 0`, the default) pass non-UTF-8 bytes of `String` values through verbatim; such payloads are embedded as plain text, and a client that decodes the stream as UTF-8 (for example a browser `EventSource`) replaces the invalid sequences. This matches the plain HTTP response of these formats, which declares `charset=UTF-8` just the same.
 
 The `*WithProgress` output formats (`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`) write progress as in-band rows that are part of their own output. A framing format delivers progress as separate `progress` packets instead, so it is not compatible with these output formats and rejects them - use the base output format (for example `JSONEachRow`) with framing, or the `None` framing with a `*WithProgress` format.
 
