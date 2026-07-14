@@ -47,6 +47,10 @@ This format is only available when ClickHouse is built with the `flatbuffers` co
 
 A `Nullable` value that is not `NULL` is serialized as its underlying value.
 
+The wide numeric types serialized as `Blob` (`(U)Int128`, `(U)Int256`, `Decimal128`, `Decimal256`)
+are written as little-endian byte sequences, so the output is identical on every architecture.
+`IPv6` is written as its 16-byte network-order representation.
+
 Other types (for example [`Map`](/sql-reference/data-types/map.md)) are not supported and raise an
 exception.
 

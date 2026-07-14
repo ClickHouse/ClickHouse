@@ -101,6 +101,15 @@ FORMAT Flatbuffers" | python3 -c "$DECODER"
 # Value-level check: several rows keep their own per-row values in order.
 $CLICKHOUSE_LOCAL -q "SELECT number AS n, toString(number) AS s FROM numbers(3) FORMAT Flatbuffers" | python3 -c "$DECODER"
 
+# Value-level check: FixedString and UUID map to String, and wide integers are serialized as
+# little-endian Blobs. 256 makes the byte order observable (0x00 0x01 ... in little-endian).
+$CLICKHOUSE_LOCAL -q "
+SELECT
+    'abcd'::FixedString(4) AS fs,
+    toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid,
+    256::Int128 AS le
+FORMAT Flatbuffers" | python3 -c "$DECODER"
+
 # Numeric / string / temporal / container / nullable / low-cardinality types.
 $CLICKHOUSE_LOCAL -q "
 SELECT
