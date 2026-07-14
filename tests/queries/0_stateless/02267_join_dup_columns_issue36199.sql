@@ -1,5 +1,4 @@
 SET enable_analyzer = 0;
-SET optimize_normalize_count_variants = 1;
 
 SET join_algorithm = 'hash';
 

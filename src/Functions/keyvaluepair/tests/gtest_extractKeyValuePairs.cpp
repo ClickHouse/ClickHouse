@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -33,7 +32,7 @@ auto ToColumnMap(const auto & keys, const auto & values, const ColumnPtr offsets
 std::string PrintMap(const auto & keys, const auto & values)
 {
     auto map_column = ToColumnMap(keys, values);
-    auto serialization = DataTypeFactory::instance().get("Map(String, String)")->getDefaultSerialization();
+    auto serialization = DataTypeFactory::instance().get("Map(String, String)")->getSerialization(ISerialization::Kind::DEFAULT);
 
     WriteBufferFromOwnString buff;
     serialization->serializeTextJSON(*map_column, 0, buff, FormatSettings{});

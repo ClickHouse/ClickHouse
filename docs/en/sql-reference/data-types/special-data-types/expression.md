@@ -4,7 +4,8 @@ sidebar_label: 'Expression'
 sidebar_position: 58
 slug: /sql-reference/data-types/special-data-types/expression
 title: 'Expression'
-doc_type: 'reference'
 ---
+
+# Expression
 
 Expressions are used for representing lambdas in high-order functions.

@@ -25,7 +25,7 @@ public:
 private:
     void fillColumnsFromSubquery(const ASTTableExpression & table_expression);
     void fillColumnsFromTableFunction(const ASTTableExpression & table_expression);
-    void fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary = false);
+    void fillColumnsFromTable(const ASTTableExpression & table_expression);
 
     void addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns);
     void addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns);
@@ -35,6 +35,7 @@ private:
 
     std::vector<ColumnDescription> columns;
     std::vector<ColumnDescription> virtual_columns;
+    StorageSnapshotPtr storage_snapshot;
 };
 
 

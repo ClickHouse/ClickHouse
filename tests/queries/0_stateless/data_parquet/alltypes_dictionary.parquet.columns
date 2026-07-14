@@ -1,0 +1,1 @@
+`id` Nullable(Int32), `bool_col` Nullable(UInt8), `tinyint_col` Nullable(Int32), `smallint_col` Nullable(Int32), `int_col` Nullable(Int32), `bigint_col` Nullable(Int64), `float_col` Nullable(Float32), `double_col` Nullable(Float64), `date_string_col` Nullable(String), `string_col` Nullable(String), `timestamp_col` Nullable(Int64)

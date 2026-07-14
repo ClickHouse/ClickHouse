@@ -76,14 +76,6 @@ if(NOT DEFINED PROTOBUF_GENERATE_CPP_APPEND_PATH)
 endif()
 
 function(protobuf_generate)
-  # ClickHouse build: Use the native plugins when cross-compiling
-  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
-    set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
-  else ()
-    set(NATIVE_protoc $<TARGET_FILE:protoc>)
-  endif()
-
-
   set(_options APPEND_PATH DESCRIPTORS)
   set(_singleargs LANGUAGE OUT_VAR EXPORT_MACRO PROTOC_OUT_DIR)
   if(COMMAND target_sources)
@@ -187,9 +179,9 @@ function(protobuf_generate)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND ${NATIVE_protoc}
+      COMMAND $<TARGET_FILE:protoc>
       ARGS --${protobuf_generate_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_PROTOC_OUT_DIR} ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} ${NATIVE_protoc}
+      DEPENDS ${_abs_file} protoc
       COMMENT "Running ${protobuf_generate_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()

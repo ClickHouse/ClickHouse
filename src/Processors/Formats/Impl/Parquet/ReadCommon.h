@@ -9,6 +9,7 @@ struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 struct FormatFilterInfo;
 using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
+class KeyCondition;
 }
 
 namespace DB::Parquet
@@ -23,9 +24,9 @@ struct ReadOptions
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
 
-    /// Use dictionary filter if the dictionary page is at most this size (the maximum is inclusive)
-    /// and all values in the column chunk are dictionary-encoded. This takes precedence over bloom
-    /// filter. 0 to disable.
+    /// Not implemented.
+    /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
+    /// chunk are dictionary-encoded). This takes precedence over bloom filter. 0 to disable.
     size_t dictionary_filter_limit_bytes = 0;
 
     size_t min_bytes_for_seek = 64 << 10;
@@ -51,6 +52,11 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+};
+
+struct FilterInfoExt
+{
+    std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 };
 
 
@@ -87,8 +93,11 @@ enum class ReadStage
     BloomFilterBlocksOrDictionary,
     ColumnIndexAndOffsetIndex,
 
-    OffsetIndex,
-    ColumnData,
+    PrewhereOffsetIndex,
+    PrewhereData,
+
+    MainOffsetIndex, // "main" means columns that are not in prewhere
+    MainData,
 
     Deliver,
 

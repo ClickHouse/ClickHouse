@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -20,7 +19,7 @@ namespace ErrorCodes
 }
 
 /// arrayRandomSample(arr, k) - Returns k random elements from the input array
-class FunctionArrayRandomSample final : public IFunction
+class FunctionArrayRandomSample : public IFunction
 {
 public:
     static constexpr auto name = "arrayRandomSample";
@@ -31,10 +30,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -53,8 +50,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        ColumnPtr col = arguments[0].column->convertToFullColumnIfConst();
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(col.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be an array", getName());
 
@@ -75,7 +71,7 @@ public:
         const auto & array_offsets = col_array->getOffsets();
         auto & res_offsets = col_res->getOffsets();
 
-        VectorWithMemoryTracking<size_t> indices;
+        std::vector<size_t> indices;
         size_t prev_array_offset = 0;
         size_t prev_res_offset = 0;
 
@@ -117,7 +113,7 @@ REGISTER_FUNCTION(ArrayRandomSample)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayRandomSample>(documentation);
 }

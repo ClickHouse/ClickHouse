@@ -19,23 +19,18 @@ namespace DeltaLake
 /// Get table schema and physical column map (logical name to physical name mapping).
 /// Represents table schema from DeltaLake metadata.
 /// Contains partition columns.
-/// `engine` is required by `ffi::get_from_string_map` (v0.23.0).
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
-    ffi::SharedSnapshot * snapshot,
-    ffi::SharedExternEngine * engine);
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot);
 
 /// Get read schema.
 /// Represents read schema based on data files.
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine);
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan);
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine);
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context);
 
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,
 /// therefore partition columns are passed separately.
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
-
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
 
 }
 

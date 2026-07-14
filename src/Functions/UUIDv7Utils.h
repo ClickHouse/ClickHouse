@@ -2,8 +2,6 @@
 #include <Common/SharedMutex.h>
 #include <DataTypes/DataTypeUUID.h>
 
-#include <mutex>
-
 /// Common functionality for UUIDv7-related functions.
 
 namespace DB

@@ -1,5 +1,4 @@
 #include <Analyzer/TableFunctionNode.h>
-#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -47,13 +46,9 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// No underlying storage engine
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "Explain"; }
 
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -64,7 +59,7 @@ private:
     ASTPtr query = nullptr;
 };
 
-VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
@@ -96,7 +91,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
-    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
+    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
@@ -162,7 +157,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
 
     PullingPipelineExecutor pulling_executor(pipeline);
-    Blocks blocks;
+    std::vector<Block> blocks;
     while (true)
     {
         Block block;
@@ -202,7 +197,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({
+    factory.registerFunction<TableFunctionExplain>({.documentation = {
             .description=R"(
                 Returns result of EXPLAIN query.
                 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
@@ -212,7 +207,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 )",
             .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
             .category = FunctionDocumentation::Category::TableFunction
-        });
+        }});
 }
 
 }

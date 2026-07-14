@@ -3,12 +3,11 @@ description: 'Documentation for the CustomSeparatedIgnoreSpaces format'
 keywords: ['CustomSeparatedIgnoreSpaces']
 slug: /interfaces/formats/CustomSeparatedIgnoreSpaces
 title: 'CustomSeparatedIgnoreSpaces'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     | ✗      |       |
+| ✔     |        |       |
 
 ## Description {#description}
 

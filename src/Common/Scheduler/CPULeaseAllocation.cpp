@@ -1,10 +1,8 @@
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
-#include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -12,7 +10,7 @@
 #include <atomic>
 #include <utility>
 
-#ifdef SCHEDULER_DEBUG
+#if 0
 #define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
     lease_id, settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, requests.hasEnqueued())
@@ -54,7 +52,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
@@ -194,7 +191,7 @@ void CPULeaseAllocation::RequestChain::scheduled()
         cancel_cv.notify_one();
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
     , log(getLogger("CPULeaseAllocation"))
@@ -204,13 +201,6 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
-    // initial_max_slots_ == 0 is the eager default: request all max_threads up front.
-    // A lazy caller passes a smaller value (typically 1 for the master thread) and grows
-    // the ceiling later via setMax.
-    current_max_slots = (initial_max_slots_ == 0 || initial_max_slots_ > max_threads)
-        ? max_threads
-        : initial_max_slots_;
-
     // Capture query-level counters (ThreadGroup) that outlive all worker threads.
     // Cannot use CurrentThread::getProfileEvents() in schedule() — it returns the calling
     // thread's counters, which may be destroyed before the timer is flushed (UAF).
@@ -317,10 +307,9 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
-void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
+void CPULeaseAllocation::downscale(size_t thread_num)
 {
-    if (!shutdown_)
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -446,32 +435,8 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
         else
             break; // No preempted threads, we are done
     }
-}
 
-void CPULeaseAllocation::setMax(SlotCount new_max)
-{
-    chassert(new_max > 0);
-    std::unique_lock lock{mutex};
-
-    // Clamp to the hard cap that all internal vectors (`requests` chain, `threads` bitsets)
-    // were sized for in the constructor. Growing beyond `max_threads` is not supported.
-    new_max = std::min(new_max, max_threads);
-    if (new_max == current_max_slots)
-        return;
-
-    const bool growing = new_max > current_max_slots;
-    current_max_slots = new_max;
-
-    // Only growth needs an immediate kick: it may need to enqueue a new resource request
-    // for the additional capacity. The grant chain (driven by grantImpl after each scheduler
-    // grant) then naturally fills up to `current_max_slots` one request at a time.
-    // Shrinking does not reclaim already-granted slots — it simply caps future grants
-    // because the next `schedule()` will see `allocated >= current_max_slots` and bail out.
-    if (growing && !shutdown && allocated < current_max_slots && !requests.hasEnqueued())
-    {
-        if (!schedule(lock))
-            grantImpl(lock); // Non-competing path: grant immediately and chain.
-    }
+    // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning, but this requires modification of the PipelineExecutor as well
 }
 
 bool CPULeaseAllocation::renew(Lease & lease)
@@ -504,7 +469,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     if (shutdown) // Allocation is being destroyed, worker thread should stop
     {
-        downscale(lease.slot_id, /* shutdown = */ true);
+        downscale(lease.slot_id);
         lease.reset();
         return false;
     }
@@ -546,12 +511,10 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            bool wait_succeeded = waitForGrant(lock, thread_num);
-            if (!wait_succeeded || shutdown)
+            if (!waitForGrant(lock, thread_num) || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
-                // Only count as downscale if actually timed out, not just shutdown
-                downscale(thread_num, /* shutdown = */ wait_succeeded);
+                downscale(thread_num);
                 lease.reset();
                 return false;
             }
@@ -630,7 +593,7 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
 
 bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
 {
-    if (allocated >= current_max_slots || shutdown)
+    if (allocated == max_threads || shutdown)
         return true;
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
@@ -654,18 +617,7 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Report the last chunk of consumed resource
     std::unique_lock lock{mutex};
-    try
-    {
-        consume(lock, delta_ns);
-    }
-    catch (const Exception & e)
-    {
-        // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
-        // that is being destructed (e.g. when a workload is dropped while queries are still running).
-        // Since `release` is called from Lease destructor, we must not throw.
-        if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
-            throw;
-    }
+    consume(lock, delta_ns);
 
     // Release the slot
     downscale(lease.slot_id);

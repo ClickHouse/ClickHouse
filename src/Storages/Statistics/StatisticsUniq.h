@@ -17,11 +17,10 @@ public:
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    void deserialize(ReadBuffer & buf) override;
 
     UInt64 estimateCardinality() const override;
 
-    String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
@@ -29,7 +28,7 @@ private:
 
 };
 
-bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+void uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

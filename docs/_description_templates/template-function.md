@@ -36,10 +36,14 @@ Input table (Optional):
 ```text
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 ```
 
-```text title="Response"
+Result:
+
+```text
 ```
 
 **See Also** (Optional)

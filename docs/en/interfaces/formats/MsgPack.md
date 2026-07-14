@@ -6,7 +6,6 @@ keywords: ['MsgPack']
 output_format: true
 slug: /interfaces/formats/MsgPack
 title: 'MsgPack'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

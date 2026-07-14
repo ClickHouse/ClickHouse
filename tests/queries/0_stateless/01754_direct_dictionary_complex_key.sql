@@ -1,10 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-USE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS 01754_dictionary_db;
+CREATE DATABASE 01754_dictionary_db;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_source_table
+CREATE TABLE 01754_dictionary_db.complex_key_simple_attributes_source_table
 (
    id UInt64,
    id_key String,
@@ -13,11 +12,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_so
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
+INSERT INTO 01754_dictionary_db.complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
+INSERT INTO 01754_dictionary_db.complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
+INSERT INTO 01754_dictionary_db.complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_simple_attributes
+CREATE DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes
 (
    id UInt64,
    id_key String DEFAULT 'test_default_id_key',
@@ -30,26 +29,26 @@ LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT 'Dictionary direct_dictionary_complex_key_simple_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
-    dictGet('direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
+    dictGet('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
-    dictGet('direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
+    dictGet('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
-    dictGetOrDefault('direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
+    dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
-    dictGetOrDefault('direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
+    dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('direct_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
+SELECT dictHas('01754_dictionary_db.direct_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_simple_attributes ORDER BY ALL;
+SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes ORDER BY ALL;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_simple_attributes;
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_simple_attributes_source_table;
+DROP DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_simple_attributes;
+DROP TABLE 01754_dictionary_db.complex_key_simple_attributes_source_table;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_source_table
+CREATE TABLE 01754_dictionary_db.complex_key_complex_attributes_source_table
 (
    id UInt64,
    id_key String,
@@ -58,11 +57,11 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_s
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
+INSERT INTO 01754_dictionary_db.complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
+INSERT INTO 01754_dictionary_db.complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
+INSERT INTO 01754_dictionary_db.complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_complex_attributes
+CREATE DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes
 (
     id UInt64,
     id_key String,
@@ -76,23 +75,23 @@ LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT 'Dictionary direct_dictionary_complex_key_complex_attributes';
 SELECT 'dictGet existing value';
-SELECT dictGet('direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
-    dictGet('direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGet('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
+    dictGet('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGet with non existing value';
-SELECT dictGet('direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
-    dictGet('direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGet('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number)))) as value_first,
+    dictGet('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number)))) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictGetOrDefault existing value';
-SELECT dictGetOrDefault('direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
-    dictGetOrDefault('direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 3;
+SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
+    dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 3;
 SELECT 'dictGetOrDefault non existing value';
-SELECT dictGetOrDefault('direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
-    dictGetOrDefault('direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 4;
+SELECT dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_first', (number, concat('id_key_', toString(number))), toString('default')) as value_first,
+    dictGetOrDefault('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', 'value_second', (number, concat('id_key_', toString(number))), toString('default')) as value_second FROM system.numbers LIMIT 4;
 SELECT 'dictHas';
-SELECT dictHas('direct_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
+SELECT dictHas('01754_dictionary_db.direct_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_complex_attributes ORDER BY ALL;
+SELECT * FROM 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes ORDER BY ALL;
 
-DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.direct_dictionary_complex_key_complex_attributes;
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.complex_key_complex_attributes_source_table;
+DROP DICTIONARY 01754_dictionary_db.direct_dictionary_complex_key_complex_attributes;
+DROP TABLE 01754_dictionary_db.complex_key_complex_attributes_source_table;
 
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE 01754_dictionary_db;

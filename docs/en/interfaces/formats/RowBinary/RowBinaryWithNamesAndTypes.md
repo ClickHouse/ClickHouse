@@ -6,7 +6,6 @@ keywords: ['RowBinaryWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/RowBinaryWithNamesAndTypes
 title: 'RowBinaryWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

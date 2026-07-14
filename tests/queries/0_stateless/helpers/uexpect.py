@@ -14,6 +14,7 @@
 import os
 import pty
 import re
+import sys
 import time
 from queue import Empty, Queue
 from subprocess import Popen

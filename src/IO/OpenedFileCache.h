@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <map>
 #include <mutex>
 
@@ -37,7 +35,7 @@ class OpenedFileCache
         using Key = std::pair<std::string /* path */, int /* flags */>;
 
         using OpenedFileWeakPtr = std::weak_ptr<OpenedFile>;
-        using Files = MapWithMemoryTracking<Key, OpenedFileWeakPtr>;
+        using Files = std::map<Key, OpenedFileWeakPtr>;
 
         Files files;
         std::mutex mutex;
@@ -88,7 +86,7 @@ class OpenedFileCache
     };
 
     static constexpr size_t buckets = 1024;
-    VectorWithMemoryTracking<OpenedFileMap> impls{buckets};
+    std::vector<OpenedFileMap> impls{buckets};
 
 public:
     using OpenedFilePtr = OpenedFileMap::OpenedFilePtr;

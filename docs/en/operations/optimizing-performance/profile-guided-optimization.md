@@ -4,7 +4,6 @@ sidebar_label: 'Profile guided optimization (PGO)'
 sidebar_position: 54
 slug: /operations/optimizing-performance/profile-guided-optimization
 title: 'Profile guided optimization'
-doc_type: 'guide'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

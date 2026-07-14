@@ -40,21 +40,21 @@ struct UniqVariadicHash<false, false>
 {
     static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
-        UInt64 hash = 0;
+        UInt64 hash;
 
         const IColumn ** column = columns;
         const IColumn ** columns_end = column + num_args;
 
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            StringRef value = (*column)->getDataAt(row_num);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = (*column)->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            StringRef value = (*column)->getDataAt(row_num);
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 
@@ -70,7 +70,7 @@ struct UniqVariadicHash<false, true>
         if (!num_args)
             return 0;
 
-        UInt64 hash = 0;
+        UInt64 hash;
 
         const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
 
@@ -78,15 +78,15 @@ struct UniqVariadicHash<false, true>
         const auto * columns_end = column + num_args;
 
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            StringRef value = column->get()->getDataAt(row_num);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
-            auto value = column->get()->getDataAt(row_num);
-            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data(), value.size()), hash));
+            StringRef value = column->get()->getDataAt(row_num);
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 

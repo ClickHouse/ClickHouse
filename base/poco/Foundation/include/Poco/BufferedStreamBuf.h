@@ -134,16 +134,12 @@ private:
     int flushBuffer()
     {
         int n = int(this->pptr() - this->pbase());
-        int offset = 0;
-        while (offset < n)
+        if (writeToDevice(this->pbase(), n) == n)
         {
-            int written = writeToDevice(this->pbase() + offset, n - offset);
-            if (written <= 0)
-                return -1;
-            offset += written;
+            this->pbump(-n);
+            return n;
         }
-        this->pbump(-n);
-        return n;
+        return -1;
     }
 
     std::streamsize _bufsize;

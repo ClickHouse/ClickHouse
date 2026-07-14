@@ -1,9 +1,7 @@
 #include <Access/ContextAccess.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -18,12 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
-}
-
-
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
     auto description = ColumnsDescription
@@ -34,8 +26,7 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
-        {"comment", std::make_shared<DataTypeString>(), "Database comment."},
-        {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
     };
 
     description.setAliases({
@@ -120,16 +111,13 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-    /// Data lake catalogs and remote databases are always shown in `system.databases` regardless of system-table settings.
-    /// Listing a database name is purely local metadata and never requires expensive calls to an external service.
-    /// The settings only guard operations like `system.tables` / `system.columns` that enumerate a database's contents.
-    const auto databases = DatabaseCatalog::instance().getDatabases(
-        GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
+
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
-        auto database_name = filtered_databases_column->getDataAt(i);
+        auto database_name = filtered_databases_column->getDataAt(i).toString();
 
         if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
@@ -137,10 +125,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
-        auto database_it = databases.find(database_name);
-        if (database_it == databases.end())
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", database_name);
-        const auto & database = database_it->second;
+        const auto & database = databases.at(database_name);
 
         size_t src_index = 0;
         size_t res_index = 0;
@@ -158,12 +143,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(getEngineFull(context, database));
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->getDatabaseComment());
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database->isExternal());
    }
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabases) }

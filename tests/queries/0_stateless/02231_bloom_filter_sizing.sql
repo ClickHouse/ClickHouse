@@ -1,4 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Affects secondary_indices_uncompressed_bytes size
 SELECT 'Bloom filter on sort key';
 DROP TABLE IF EXISTS bloom_filter_sizing_pk;
 CREATE TABLE bloom_filter_sizing_pk(
@@ -7,7 +6,7 @@ CREATE TABLE bloom_filter_sizing_pk(
 
   -- Very high granularity to have one filter per part.
   INDEX key_bf key TYPE bloom_filter(0.01) GRANULARITY 2147483648
-) ENGINE=MergeTree ORDER BY key SETTINGS add_minmax_index_for_numeric_columns=0;
+) ENGINE=MergeTree ORDER BY key;
 
 INSERT INTO bloom_filter_sizing_pk
 SELECT
@@ -34,7 +33,7 @@ CREATE TABLE bloom_filter_sizing_sec(
 
   -- Very high granularity to have one filter per part.
   INDEX key_bf key2 TYPE bloom_filter(0.01) GRANULARITY 2147483648
-) ENGINE=MergeTree ORDER BY key1 SETTINGS add_minmax_index_for_numeric_columns=0;
+) ENGINE=MergeTree ORDER BY key1;
 
 INSERT INTO bloom_filter_sizing_sec
 SELECT

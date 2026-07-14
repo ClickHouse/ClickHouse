@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
+
 namespace DB
 {
 
@@ -15,15 +16,8 @@ namespace ErrorCodes
 /// Serialization of shared data for a sub-object Object subcolumns.
 class SerializationSubObjectSharedData final : public SimpleTextSerialization
 {
-private:
-    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
-
 public:
-    static UInt128 getHash(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
-
-    static SerializationPtr create(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
-
-    size_t allocatedBytes() const override;
+    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
