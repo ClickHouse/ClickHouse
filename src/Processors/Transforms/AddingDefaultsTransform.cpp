@@ -141,12 +141,14 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
-    ContextPtr context_)
+    ContextPtr context_,
+    ColumnsWithTypeAndName injected_columns_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
+    , injected_columns(std::move(injected_columns_))
 {
 }
 
@@ -164,20 +166,44 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
     auto res = header.cloneWithColumns(chunk.detachColumns());
 
-    /// Identify columns that need defaults computed
+    /// Temporarily append header-injected columns so DEFAULT expressions that reference
+    /// them (e.g. `b DEFAULT a + 1` where `a` comes from an HTTP header) evaluate against
+    /// the real value. Appended at the end, so body-column positions used against
+    /// BlockMissingValues stay aligned. Stripped before output via output_columns below.
+    const size_t num_body_columns = res.columns();
+    for (const auto & injected : injected_columns)
+    {
+        if (!res.has(injected.name))
+            res.insert({ColumnConst::create(injected.column, num_rows), injected.type, injected.name});
+    }
+
+    /// Identify columns that need defaults computed.
+    /// Skip columns at position >= num_body_columns: those are injected columns appended
+    /// temporarily for DEFAULT evaluation; they have no entry in block_missing_values
+    /// (which only covers the body columns) and must not be accessed there.
     std::vector<std::pair<String, size_t>> columns_needing_defaults;
     for (const auto & [col_name, col_default] : column_defaults)
     {
         if (!res.has(col_name))
             continue;
         size_t column_idx = res.getPositionByName(col_name);
+        if (column_idx >= num_body_columns)
+            continue;  /// injected column — no block_missing_values entry
         if (block_missing_values->hasDefaultBits(column_idx))
             columns_needing_defaults.emplace_back(col_name, column_idx);
     }
 
+    /// Returns the body columns only (drops any appended injected columns).
+    auto body_columns = [&]()
+    {
+        Columns cols = res.getColumns();
+        cols.resize(num_body_columns);
+        return cols;
+    };
+
     if (columns_needing_defaults.empty())
     {
-        chunk.setColumns(res.getColumns(), num_rows);
+        chunk.setColumns(body_columns(), num_rows);
         return;
     }
 
@@ -325,7 +351,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         }
     }
 
-    chunk.setColumns(res.getColumns(), num_rows);
+    chunk.setColumns(body_columns(), num_rows);
 }
 
 }

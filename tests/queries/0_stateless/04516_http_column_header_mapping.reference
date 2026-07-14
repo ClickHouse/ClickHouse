@@ -73,7 +73,11 @@ mat-test	42
 remote-event	remote
 --- async: INSERT INTO FUNCTION remote()
 remote-event	remote
---- sync: DEFAULT expression referencing injected column
+--- sync: DEFAULT expression referencing injected column (explicit column list)
 5	6	default-test
---- async: DEFAULT expression referencing injected column
+--- sync: DEFAULT expression referencing injected column (no explicit column list)
+7	8	default-no-list
+--- async: DEFAULT expression referencing injected column (explicit column list)
 5	6	default-test
+--- async: DEFAULT expression referencing injected column (no explicit column list)
+7	8	default-no-list

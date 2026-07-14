@@ -271,11 +271,18 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 do_default_tests() {
-    echo "--- ${mode}: DEFAULT expression referencing injected column"
+    echo "--- ${mode}: DEFAULT expression referencing injected column (explicit column list)"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-A: 5' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
         -d '{"payload":"default-test"}'
+    flush
+
+    echo "--- ${mode}: DEFAULT expression referencing injected column (no explicit column list)"
+    ${CLICKHOUSE_CURL} -sS \
+        -H 'X-A: 7' \
+        "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
+        -d '{"payload":"default-no-list"}'
     flush
     ${CLICKHOUSE_CLIENT} -q "SELECT a, b, payload FROM t"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
