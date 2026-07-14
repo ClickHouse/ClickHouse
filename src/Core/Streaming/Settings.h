@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
-
 #include <Core/Streaming/CursorTree_fwd.h>
 
 #include <chrono>
 
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 struct WatermarkSettings
 {
@@ -23,12 +24,5 @@ struct StreamingSettings
     WatermarkSettingsPtr watermark;
 };
 using StreamingSettingsPtr = std::shared_ptr<StreamingSettings>;
-
-///////////////////////////////////////////////////////////////////////////////////
-
-bool isIdleExpired(
-    const std::chrono::steady_clock::time_point & now,
-    const std::chrono::steady_clock::time_point & last_active,
-    const WatermarkSettingsPtr & watermark);
 
 }
