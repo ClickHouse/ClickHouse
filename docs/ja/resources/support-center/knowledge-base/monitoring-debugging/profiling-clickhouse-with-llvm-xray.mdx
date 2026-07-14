@@ -1,0 +1,194 @@
+---
+title: "LLVM の XRay で ClickHouse をプロファイリングする"
+date: 2024-11-13
+description: "LLVM の XRay インストルメンテーションプロファイラを使用して ClickHouse をプロファイリングし、トレースを可視化してパフォーマンスを分析する方法を学びます。"
+tags: ['パフォーマンスと最適化', 'ツールとユーティリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="types-of-profilers">
+  ## プロファイラの種類
+</div>
+
+LLVM にはすでに、コードをインストルメントして [インストルメンテーション
+プロファイリング](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation) を行えるツールが含まれています。[サンプリングまたは統計的プロファイリング](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers)
+とは異なり、コードのインストルメントが必要で、リソース消費も大きくなる一方、
+呼び出しを一切取りこぼさずに非常に高い精度を実現できます。
+
+簡単に言うと、インストルメンテーションプロファイラは、すべての関数呼び出しを追跡するためのコードを新たに挿入します。
+一方、統計的プロファイラではコードを変更する必要がなく、定期的にスナップショットを取得して
+アプリケーションの状態を確認します。そのため、スナップショット取得時に実行中だった関数だけが
+対象になります。[perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) は非常によく知られた
+統計的プロファイラです。
+
+<div id="profiling-clickhouse-using-xray-integration">
+  ## XRay のインテグレーションを使用した ClickHouse のプロファイリング
+</div>
+
+ClickHouse 25.12 では、XRay が統合されており、関数に新しいインストルメンテーションポイントをシームレスに追加できます。
+そのため、公式リリースにはこの機能がすでに含まれており、有効化されていないときの全体的なパフォーマンスに
+影響を与えることなく、必要に応じてトリガーできます。重要なのは、有用な情報を得るために必要最小限の
+インストルメンテーションポイントだけを有効にすることです。
+
+新しいプロファイル用インストルメンテーションポイントは、[SYSTEM INSTRUMENT ADD
+PROFILE](/ja/reference/statements/system#instrument-add-profile)
+ステートメントを使って追加できます。インストルメントする対象の関数は、
+[system.symbols](/ja/reference/system-tables/symbols) システムテーブルから取得できます。たとえば、
+`sleepForNanoseconds` 関数をプロファイリングしたいとします。これは、実行にどれくらい時間がかかるかを確認するのに
+便利な関数です。
+
+```sql
+SYSTEM INSTRUMENT ADD 'sleepForNanoseconds' PROFILE
+```
+
+その後、プロファイリングしたい時間だけ実行したままにしてから、停止します。
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+system.trace&#95;log に収集されたデータを [Chrome
+形式](/ja/reference/system-tables/trace_log#chrome-event-trace-format) に変換し、[Perfetto](https://ui.perfetto.dev) で
+可視化します。各エントリの query&#95;id、cpu&#95;id、stacktrace に
+注目してください。
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+
+<div id="profiling-a-native-application-using-xray">
+  ## XRay を使用したネイティブアプリケーションのプロファイリング
+</div>
+
+以下のセクションは、XRay の内部的な仕組みと、ネイティブアプリケーションのプロファイリングにそのまま利用する方法を理解するための参考として残しています。
+
+<div id="instrument-the-code">
+  ### コードをインストルメントする
+</div>
+
+次のソースコードを想像してください。
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void one()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void two()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+int main()
+{
+    printf("Start\n");
+
+    for (int i = 0; i < 10; ++i)
+    {
+        one();
+        two();
+    }
+
+    printf("Finish\n");
+}
+```
+
+XRayでインストルメントするには、次のようないくつかのフラグを追加する必要があります。
+
+```bash
+clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
+```
+
+* コードをインストルメントするには `-fxray-instrument` が必要です。
+* `-fxray-instruction-threshold=1` は、この例のように
+  非常に小さい関数であっても、すべての関数をインストルメントするために使用します。デフォルトでは、[命令数が少なくとも 200 の
+  関数](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application)がインストルメントされます。
+
+コードが正しくインストルメントされていることは、バイナリに新しいセクションが追加されているかどうかを確認することで確かめられます。
+
+```bash
+objdump -h -j xray_instr_map test
+
+test:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 17 xray_instr_map 000005c0  000000000002f91c  000000000002f91c  0002f91c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+```
+
+<div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
+  ### 適切な環境変数の値を設定してプロセスを実行し、トレースを収集する
+</div>
+
+デフォルトでは、明示的に要求しない限り、プロファイラによる収集は行われません。つまり、
+profiling を行っていない限り、オーバーヘッドはごくわずかです。`XRAY_OPTIONS` にさまざまな値を設定することで、
+プロファイラがいつ収集を開始するか、またどのように収集するかを構成できます。
+
+```bash
+XRAY_OPTIONS="patch_premain=true xray_mode=xray-basic verbosity=1" ./test
+==74394==XRay: Log file in 'xray-log.test.14imlN'
+Start
+Finish
+==74394==Cleaned up log for TID: 74394
+```
+
+<div id="convert-the-trace">
+  ### トレースを変換する
+</div>
+
+XRay のトレースは、いくつかのフォーマットに変換できます。`trace_event` フォーマットは、パースしやすく、
+すでに対応しているツールもいくつかあるため、ここではこれを使用します:
+
+```bash
+llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xray-log.test.14imlN | gzip > test-trace.txt.gz
+```
+
+<div id="visualize-the-trace">
+  ### トレースを可視化する
+</div>
+
+[speedscope.app](https://www.speedscope.app/) や
+[Perfetto](https://ui.perfetto.dev) のような Web ベースの UI を使用できます。
+
+Perfetto は複数のスレッドの可視化やデータのクエリをしやすくしますが、speedscope は
+データのフレームグラフやサンドイッチビューの生成に適しています。
+
+<div id="time-order">
+  #### 時系列順
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="時系列順" />
+
+<div id="left-heavy">
+  #### 左側に偏る
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左側に偏る" />
+
+<div id="sandwitch">
+  #### サンドイッチ
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="サンドイッチ" />
+
+<div id="check-out-the-docs">
+  ## ドキュメントを確認する
+</div>
+
+* [SYSTEM INSTRUMENT](/ja/reference/statements/system#instrument) — インストルメンテーションポイントを追加
+  または削除します。
+* [system.instrumentation](/ja/reference/system-tables/instrumentation)
+  — インストルメントされたポイントを確認します。
+* [system.symbols](/ja/reference/system-tables/symbols) — インストルメンテーションポイントを追加するための
+  シンボルを確認します。
+* [system.trace&#95;log](/ja/reference/system-tables/trace_log) — インストルメンテーションポイントを使用して収集されたデータを確認します。
+* [XRay Instrumentation](https://llvm.org/docs/XRay.html)
+* 詳細については、[Debugging with XRay](https://llvm.org/docs/XRayExample.html) のドキュメントを参照してください。

@@ -286,19 +286,26 @@ void considerEnablingParallelReplicas(
     // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
     // so they are allowed to pass through the check.
     bool plan_is_simple_enough = true;
+    String unsupported_steps;
     traverseQueryPlan(
         stack,
         root,
         [&](auto & frame_node)
         {
-            plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+            if (!step_is_supported)
+                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
+            plan_is_simple_enough &= step_is_supported;
         });
     if (!plan_is_simple_enough)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
+            unsupported_steps);
         return;
     }
 
@@ -397,15 +404,17 @@ void considerEnablingParallelReplicas(
 
                 /// Transplant the single-node index analysis onto the parallel-replicas branch read to honor
                 /// parallel_replicas_index_analysis_only_on_coordinator (analyze once, reuse on the replica).
-                /// For a plain table-on-top plan the freshly built branch read has no analysis yet. But when a
-                /// JOIN sits on top, findReadingStep descends into one side, and that side's read may already
-                /// have been analyzed while planning the join (e.g. a top-level DISTINCT or a scalar subquery in
-                /// the query). In that case keep its own analysis instead of overwriting it: it is the same
-                /// parallelized table (findReadingStep runs the same descent on the hash-matched JOIN node in
-                /// both plans, and the swap_streams case is already diverted to the throw above), so the existing
-                /// result is equivalent. A read for a *different* table would mean the single-node and
-                /// parallel-replicas plans diverged at the matched node - a broken invariant, so fail loudly
-                /// rather than silently apply a mismatched analysis.
+                /// For a plain table-on-top plan the freshly built branch read has no analysis yet. But the step
+                /// may already carry an analysis: the planner runs index analysis on it when
+                /// parallel_replicas_min_number_of_rows_per_replica > 0, and when a JOIN sits on top
+                /// findReadingStep descends into one side whose read may already have been analyzed while
+                /// planning the join (e.g. a top-level DISTINCT or a scalar subquery in the query). In that case
+                /// keep its own analysis instead of overwriting it: it is the same parallelized table
+                /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
+                /// swap_streams case is already diverted to the throw above), so the existing result is
+                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
+                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
+                /// apply a mismatched analysis.
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);

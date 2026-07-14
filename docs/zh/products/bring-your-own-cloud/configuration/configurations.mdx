@@ -1,0 +1,122 @@
+---
+title: '基础设施配置'
+slug: /cloud/reference/byoc/configurations
+sidebarTitle: '基础设施配置'
+keywords: ['BYOC', '云', '自备 Cloud', '基础设施', '配置']
+description: '配置负载均衡器、节点组及其他 BYOC 基础设施组件'
+doc_type: 'reference'
+---
+
+本页介绍适用于您的 BYOC 部署的各种基础设施配置选项。这些配置可让您自定义网络、安全和计算资源，以满足特定需求。
+
+<div id="load-balancers">
+  ## 负载均衡器
+</div>
+
+BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路由到您的 ClickHouse 服务。您可以根据自身的网络模型，选择 *public* 或 *private* 负载均衡器端点。
+
+| 负载均衡器类型         | ClickHouse 管理的专用 VPC | 客户管理的 VPC |
+| --------------- | :------------------: | :-------: |
+| **Public NLB**  |         默认启用         |    默认禁用   |
+| **Private NLB** |         默认禁用         |    默认启用   |
+
+**公共负载均衡器：**
+
+* 为您的 ClickHouse 服务提供公共 (面向互联网的) 访问。
+* 使用 ClickHouse 管理的专用 VPC 时，通常默认启用。
+* 使用客户管理的 VPC 时，默认禁用，以增强安全性。
+
+**私有负载均衡器：**
+
+* 提供私有 (内部) 访问，只能从已连接的网络内部访问。
+* 使用客户管理的 VPC 时，通常默认启用。
+* 使用 ClickHouse 管理的专用 VPC 时，通常默认禁用。
+
+您可以联系 **ClickHouse Cloud Support**，根据您的需求调整启用哪些端点。
+
+<div id="private-load-balancer-security-group">
+  ### AWS 的私有负载均衡器安全组 (Security Group)
+</div>
+
+如果你为 BYOC 部署选择使用私有负载均衡器，则必须确保已配置相应的安全组 (Security Group) 规则，以允许来自所需私有网络 (例如已对等连接的 VPC) 的访问。默认情况下，安全组 (Security Group) 仅允许 VPC 内部流量。
+
+要为私有负载均衡器配置安全组 (Security Group) ：
+
+**联系 ClickHouse 支持团队**，请求调整入站安全组 (Security Group) 规则，以允许来自特定源网络的流量：
+
+* **VPC Peering**：请求添加规则，允许来自对等 VPC 的 CIDR 范围的流量。
+* **PrivateLink**：无需更改安全组 (Security Group) ，因为这类流量不受负载均衡器安全组 (Security Group) 的约束。
+* **其他网络设置**：请说明你的具体场景，以便支持团队提供相应协助。
+
+<Note>
+  对私有负载均衡器安全组 (Security Group) 的所有更改都必须由 ClickHouse 支持团队执行。这样可以确保配置一致，并避免与 ClickHouse Cloud 管理环境中的设置发生冲突。
+</Note>
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink 或 Private Service Connect
+</div>
+
+为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink** 或 **GCP Private Service Connect**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC peering，也不必将端点暴露在公共互联网中。
+
+如需分步设置说明，请参阅 [私有网络设置指南](/zh/products/bring-your-own-cloud/onboarding/network)。
+
+<div id="k8s-api-private-connection">
+  ## Kubernetes API 私有连接
+</div>
+
+默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问，但会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过 Tailscale 的私有网络连接访问。
+
+<Note>
+  如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
+</Note>
+
+**联系 ClickHouse 支持团队** 申请配置私有 API 端点。
+
+<div id="node-groups">
+  ## 节点组
+</div>
+
+Kubernetes 节点组是一组计算实例，为在 BYOC 部署中运行 ClickHouse 服务提供所需的资源。ClickHouse Cloud 负责管理这些节点组，并自动处理其配置和扩缩容。
+
+<div id="default-configuration">
+  ### 默认配置
+</div>
+
+BYOC 集群预配了两类主要的节点组：
+
+* **系统节点组**
+  承载关键系统工作负载，例如 ClickHouse Operator、Istio (用于服务网格) 、监控组件 (Prometheus、Grafana、AlertManager) 、集群自动扩缩器 以及其他核心服务。这些节点通常使用标准的 x86 实例类型。
+
+* **工作负载节点组**
+  专门用于 ClickHouse 数据工作负载，包括 server 和 Keeper 服务。默认情况下，工作负载节点运行在基于 ARM 的实例上，在性能与成本之间实现了良好的平衡。不过，也可以按需将其配置为其他 CPU/内存规格，或切换为 x86 架构。
+
+<div id="customizing-node-groups">
+  ### 自定义节点组
+</div>
+
+需要特定资源或架构？支持以下自定义选项——请联系 ClickHouse 支持团队进行讨论和实施：
+
+* **实例类型选择**
+  选择特定实例类型，以满足性能、合规性、高内存/CPU 等需求，或利用预留资源。
+* **CPU/内存配比**
+  根据需要调整工作负载节点组的计算 profile。
+* **架构**
+  如有需要，可将工作负载节点组从 ARM 切换为 x86。
+
+> **注意：** 不支持 Spot (可抢占) 实例；默认情况下，所有 BYOC 节点组均运行在按需实例上。
+
+<Note>
+  所有节点组自定义和 configuration 变更都必须通过 ClickHouse 支持团队统一协调，以确保兼容性、稳定性和最佳性能。
+</Note>
+
+<div id="auto-scaling">
+  ### 自动扩缩容
+</div>
+
+集群节点组会根据以下因素，通过集群自动扩缩器自动进行扩缩容：
+
+* pod (容器组) 资源请求和限制
+* 集群整体容量和利用率
+* ClickHouse 服务的扩缩容需求
+
+无需人工干预。ClickHouse Cloud 会持续负责您的部署的资源管理和扩缩容。

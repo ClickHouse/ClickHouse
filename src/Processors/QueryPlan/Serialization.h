@@ -24,6 +24,9 @@ struct IQueryPlanStep::Serialization
     // MUST be kept in sync with `for_cache_key` on `SerializedSetsRegistry` (the registry one drives
     // `ActionsDAG::serialize`, this one drives the step's own `serialize`): set both or neither.
     bool for_cache_key = false;
+
+    /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+    UInt64 version = 0;
 };
 
 struct SerializedSetsRegistry;
@@ -40,6 +43,14 @@ struct IQueryPlanStep::Deserialization
     const SharedHeaders & input_headers;
     const SharedHeader & output_header;
     const QueryPlanSerializationSettings & settings;
+
+    /// Binary type-decoding complexity limit resolved once at the deserialization entry point (0 == unlimited).
+    /// A client QueryPlan packet (TCPHandler::receiveQueryPlan) passes the effective
+    /// input_format_binary_max_type_complexity; trusted server-to-server plans pass 0.
+    size_t max_type_complexity = 0;
+
+    /// Query-plan serialization version the stream was written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+    UInt64 version = 0;
 };
 
 }
