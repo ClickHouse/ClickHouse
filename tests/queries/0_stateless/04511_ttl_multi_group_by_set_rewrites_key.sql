@@ -418,3 +418,51 @@ OPTIMIZE TABLE ttl_j2;
 SELECT countIf(d != toDate(ts)) AS stale_d FROM ttl_j2;
 
 DROP TABLE ttl_j2;
+
+SELECT '--- K1';
+
+-- K1 (round 9, merge-side): a later TTL whose expiry reads a MATERIALIZED column derived from an
+-- earlier SET target must be included in the firing set so its own SET target's dependent MATERIALIZED
+-- columns are recomputed. d2 MATERIALIZED toDate(ts2), d MATERIALIZED toDate(ts), ORDER BY d2.
+-- TTL1 (ts1 old, fires) GROUP BY d2 SET ts2 = min(ts2) - 20y; TTL2 expires on d2 (= toDate(ts2), moved
+-- to the past by TTL1) GROUP BY d2 SET ts = max(ts) + 50y. getFiringGroupByTTLSetTargets only saw TTL2's
+-- DIRECT expiry column d2 (not d2 -> toDate(ts2) -> ts2), so ts was left out of firing_set_targets and
+-- the merge repair never recomputed d = toDate(ts): d written stale. The fix expands the expiry through
+-- the materialized dependency graph. Result: d stays consistent with toDate(ts).
+CREATE TABLE ttl_k1 (ts1 DateTime, ts2 DateTime, d2 Date MATERIALIZED toDate(ts2), ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64)
+ENGINE = MergeTree ORDER BY d2
+TTL ts1 + toIntervalDay(1) GROUP BY d2 SET ts2 = min(ts2) - toIntervalYear(20),
+    d2 + toIntervalDay(1) GROUP BY d2 SET ts = max(ts) + toIntervalYear(50)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_k1 (ts1, ts2, ts, payload) SELECT toDateTime('2020-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), 1 FROM numbers(8);
+OPTIMIZE TABLE ttl_k1 FINAL;
+SELECT countIf(d != toDate(ts)) AS stale_d, countIf(d2 != toDate(ts2)) AS stale_d2 FROM ttl_k1;
+
+DROP TABLE ttl_k1;
+
+SELECT '--- K2';
+
+-- K2 (round 9, in-transform): a later TTL whose expiry reads a MATERIALIZED column derived from an
+-- earlier SET target must have that column refreshed before its algorithm runs, otherwise it evaluates
+-- expiry on the stale in-stream value and skips aggregation. d MATERIALIZED toDate(ts2), ORDER BY k.
+-- TTL1 (ts1 old, fires) GROUP BY k SET ts2 = min(ts2) - 20y moves d from the future into the past;
+-- TTL2 (d + 1d) GROUP BY k SET payload = toYear(max(d)) then must fire and read the POST-SET d.
+-- The bug reads the stale in-stream d (still 2040, future) so TTL2 either skips (background merge) or
+-- aggregates the pre-SET d = 2040 (forced merge). The fix rebuilds d from the post-SET ts2 first, so
+-- max(d) reflects the post-SET year (< 2040) and d stays consistent with toDate(ts2). The exact post-SET
+-- year depends on how many times the forced merge re-applies the SET; assert only that TTL2 saw a fresh
+-- (non-2040) d and that no stored d is stale.
+CREATE TABLE ttl_k2 (k UInt32, ts1 DateTime, ts2 DateTime, d Date MATERIALIZED toDate(ts2), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts1 + toIntervalDay(1) GROUP BY k SET ts2 = min(ts2) - toIntervalYear(20),
+    d + toIntervalDay(1) GROUP BY k SET payload = toUInt64(toYear(max(d)))
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_k2 (k, ts1, ts2, payload) SELECT 1, toDateTime('2020-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), 10 FROM numbers(8);
+OPTIMIZE TABLE ttl_k2 FINAL;
+-- TTL2's SET reads d (payload = toYear(max(d))). The bug reads a stale in-stream d that no longer
+-- matches the value finally written, so payload diverges from the stored toYear(d). The fix refreshes
+-- d before TTL2 runs, so the year TTL2 aggregated equals the year of the stored d. Assert that equality
+-- (payload_matches_stored_d = 1) and that no stored d is stale (stale_d = 0).
+SELECT max(payload) = toYear(max(d)) AS payload_matches_stored_d, countIf(d != toDate(ts2)) AS stale_d FROM ttl_k2;
+
+DROP TABLE ttl_k2;

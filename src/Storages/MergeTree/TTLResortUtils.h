@@ -35,22 +35,31 @@ bool groupByKeysAffectedByEarlierSet(
 /// UNMODIFIED part; once an earlier `SET` rewrites a column this TTL's expiry depends on, that proof
 /// is void and this TTL may now fire in the same run. Callers then treat it as firing (conservative),
 /// so it is not wrongly kept on the streaming fast path / excluded from the merge repairs. A `SET`
-/// target is always a physical column, so subcolumn reads are mapped to their storage parent.
+/// target is always a physical column; subcolumn reads are mapped to their storage parent, and an
+/// expiry that reads a MATERIALIZED column derived from a `SET` target (e.g. `d MATERIALIZED
+/// toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2`) is detected via the materialized dependency graph.
 bool groupByTTLExpiryAffectedByEarlierSet(
     const TTLDescription & group_by_ttl,
     const NameSet & earlier_set_targets,
-    const StorageMetadataPtr & metadata_snapshot);
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context);
 
-/// Build an `ActionsDAG` over `header` that refreshes the derived `group_by_keys` columns whose
-/// in-stream value went stale after an earlier `GROUP BY` TTL `SET`: computed/subcolumn keys are
-/// recomputed from the primary-key expression, and a MATERIALIZED column used as a key is recomputed
-/// from its default expression (together with its transitive affected MATERIALIZED sources). Returns
-/// nullopt when no key needs refreshing (all keys are plain physical columns). Applied before the
-/// later `TTLAggregationAlgorithm` consumes the block, so it groups by the post-`SET` key values.
+/// Build an `ActionsDAG` over `header` that refreshes the derived columns whose in-stream value went
+/// stale after an earlier `GROUP BY` TTL `SET`, so this TTL's `TTLAggregationAlgorithm` sees post-`SET`
+/// values. Two kinds of staleness are repaired:
+///  - `group_by_keys`: computed/subcolumn keys are recomputed from the primary-key expression, and a
+///    MATERIALIZED column used as a key is recomputed from its default expression (together with its
+///    transitive affected MATERIALIZED sources). Otherwise the aggregation would group by the pre-`SET`
+///    key value.
+///  - the columns this TTL's expiry/`WHERE` expression reads: a MATERIALIZED expiry input derived from
+///    a `SET` target (e.g. `d MATERIALIZED toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2`) still holds
+///    its pre-`SET` value, so `isTTLExpired` would read the stale `d` and wrongly skip aggregation.
+/// Returns nullopt when nothing needs refreshing (all keys are plain physical columns and no derived
+/// expiry input is affected). Applied before the later `TTLAggregationAlgorithm` consumes the block.
 std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
-    const Names & group_by_keys,
+    const TTLDescription & group_by_ttl,
     const ContextPtr & context);
 
 /// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
@@ -94,7 +103,8 @@ NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
-    bool force);
+    bool force,
+    const ContextPtr & context);
 
 /// The MATERIALIZED sort-key storage columns whose source columns are rewritten by a
 /// `TTL ... GROUP BY ... SET` (e.g. `d` for `d MATERIALIZED toDate(ts)` when `ts` is SET). These

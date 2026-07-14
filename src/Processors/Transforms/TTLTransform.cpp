@@ -140,17 +140,24 @@ TTLTransform::TTLTransform(
         /// expired in the same block, so it may aggregate/rewrite its own key here. Treat it as firing
         /// (conservative) so it propagates its `SET` targets and lost-order state to the NEXT TTL, keeping
         /// the streaming fast path off a stream a chained `SET` can scramble.
-        const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl)
-            || groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, earlier_group_by_set_targets, metadata_snapshot_);
+        /// The earlier SET can also invalidate THIS TTL's expiry: its expiry expression may read a
+        /// MATERIALIZED column derived from a SET target (e.g. d MATERIALIZED toDate(ts2), expiry d + 1d,
+        /// earlier SET ts2). The stored d is stale, so the algorithm would read the pre-SET value.
+        const bool expiry_affected_by_earlier_set = groupByTTLExpiryAffectedByEarlierSet(
+            group_by_ttl, earlier_group_by_set_targets, metadata_snapshot_, context);
+
+        const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl) || expiry_affected_by_earlier_set;
 
         ExpressionActionsPtr key_refresh_actions;
-        /// Only THIS TTL's own key being rewritten by an earlier SET makes its in-stream key value stale
-        /// and in need of refreshing. Losing input order (the cascade case above) does not change the key
-        /// values, so no refresh is required there.
-        if (affected_by_earlier_set)
+        /// Refresh the block's derived columns before this algorithm runs when an earlier SET made either
+        /// THIS TTL's group_by key stale (aggregation would group by the pre-SET key) OR a MATERIALIZED
+        /// column its expiry reads stale (isTTLExpired would read the pre-SET value and skip aggregation).
+        /// Losing input order (the cascade case above) does not change any column value, so no refresh is
+        /// needed there.
+        if (affected_by_earlier_set || expiry_affected_by_earlier_set)
         {
             if (auto refresh_dag = buildRefreshGroupByKeysDAG(
-                    getInputPort().getHeader(), metadata_snapshot_, group_by_ttl.group_by_keys, context))
+                    getInputPort().getHeader(), metadata_snapshot_, group_by_ttl, context))
                 key_refresh_actions = std::make_shared<ExpressionActions>(std::move(*refresh_dag));
         }
 

@@ -521,14 +521,24 @@ bool groupByKeysAffectedByEarlierSet(
 bool groupByTTLExpiryAffectedByEarlierSet(
     const TTLDescription & group_by_ttl,
     const NameSet & earlier_set_targets,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
 {
     if (earlier_set_targets.empty())
         return false;
 
+    /// A `SET` target is always a physical column, but this TTL's expiry can read it INDIRECTLY through a
+    /// MATERIALIZED column: e.g. `d MATERIALIZED toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2 = ...`.
+    /// The stored `d` is stale after the `SET`, so its expiry proof is void just as if the expiry read
+    /// `ts2` directly. Compare the expiry storage columns against the earlier `SET` targets PLUS every
+    /// MATERIALIZED column (transitively) derived from them, not only the direct targets.
+    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
+    NameSet affected = getMaterializedColumnsAffectedBySet(materialized_sources, earlier_set_targets);
+    affected.insert(earlier_set_targets.begin(), earlier_set_targets.end());
+
     const auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
     for (const auto & expiry_column : getGroupByTTLExpiryStorageColumns(group_by_ttl, storage_columns))
-        if (earlier_set_targets.contains(expiry_column))
+        if (affected.contains(expiry_column))
             return true;
     return false;
 }
@@ -536,12 +546,13 @@ bool groupByTTLExpiryAffectedByEarlierSet(
 std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
-    const Names & group_by_keys,
+    const TTLDescription & group_by_ttl,
     const ContextPtr & context)
 {
     if (!metadata_snapshot->hasPrimaryKey())
         return std::nullopt;
 
+    const auto & group_by_keys = group_by_ttl.group_by_keys;
     const auto & columns_desc = metadata_snapshot->getColumns();
     const auto storage_names = columns_desc.getAllPhysical().getNameSet();
     const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
@@ -579,6 +590,14 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
                     needs_materialized_refresh = true;
         }
     }
+
+    /// This TTL's expiry/`WHERE` expression may also read a MATERIALIZED column derived from a `SET`
+    /// target (e.g. `d MATERIALIZED toDate(ts2)`, expiry `d + 1d`, earlier `SET ts2`). The in-stream `d`
+    /// is stale, so `isTTLExpired` would read the pre-`SET` value and wrongly skip aggregation. Refresh
+    /// the affected MATERIALIZED columns first so the expiry is evaluated on post-`SET` values.
+    for (const auto & expiry_column : getGroupByTTLExpiryStorageColumns(group_by_ttl, storage_names))
+        if (affected_materialized.contains(expiry_column))
+            needs_materialized_refresh = true;
 
     if (expression_keys.empty() && !needs_materialized_refresh)
         return std::nullopt;
@@ -644,7 +663,8 @@ NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
-    bool force)
+    bool force,
+    const ContextPtr & context)
 {
     /// Forward pass in TTL order (the same order `TTLTransform` runs the algorithms). A later TTL's
     /// precomputed `min` proves "won't fire" only for the UNMODIFIED part; once an earlier firing
@@ -662,7 +682,7 @@ NameSet getFiringGroupByTTLSetTargets(
             fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
         }
         if (!fires)
-            fires = groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, targets, metadata_snapshot);
+            fires = groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, targets, metadata_snapshot, context);
         if (fires)
             for (const auto & set_part : group_by_ttl.set_parts)
                 targets.insert(set_part.column_name);

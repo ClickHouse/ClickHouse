@@ -3246,7 +3246,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// only the FIRING `GROUP BY` TTLs. Forced merges (empty part-level infos) keep the safe
         /// (repair) path via `force`.
         const auto firing_set_targets = getFiringGroupByTTLSetTargets(
-            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, ctx->force_ttl);
+            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, ctx->force_ttl,
+            merge_context);
 
         /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
         /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and
