@@ -5,6 +5,7 @@ SELECT tokens(toNullable('hello world'));
 SELECT tokens(materialize(toNullable('hello world')));
 SELECT tokens(CAST(NULL AS Nullable(String)));
 SELECT tokens('hello world', NULL);
+SELECT tokens('hello world', NULL, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT tokens(toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Test with different tokenizer';
@@ -20,6 +21,12 @@ SELECT '-- Test alphaTokens with nullable';
 SELECT alphaTokens(toNullable('abc123def456'));
 SELECT alphaTokens(CAST(NULL AS Nullable(String)));
 SELECT alphaTokens(toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test mixed nullable rows';
+SELECT tokens(s) FROM (SELECT arrayJoin([toNullable('hello world'), NULL, toNullable('click house')]) AS s);
+SELECT splitByChar(',', s) FROM (SELECT arrayJoin([toNullable('a,b'), NULL, toNullable('c,d')]) AS s);
+SELECT extractAll(s, '\\d+') FROM (SELECT arrayJoin([toNullable('a1b22'), NULL, toNullable('c333')]) AS s);
+SELECT extractURLParameterNames(s) FROM (SELECT arrayJoin([toNullable('http://example.com/?a=1&b=2'), NULL, toNullable('http://example.com/?c=3')]) AS s);
 
 SELECT '-- Test arrayStringConcat with nullable array elements';
 SELECT arrayStringConcat([toNullable('hello'), toNullable('world')]);
@@ -52,8 +59,13 @@ SELECT ngrams('ClickHouse', toNullable(3)); -- { serverError BAD_ARGUMENTS }
 SELECT ngrams('ClickHouse', toNullable(CAST(NULL AS Nullable(INT)))); -- { serverError BAD_ARGUMENTS }
 SELECT ngrams('ClickHouse', toNullable(NULL)); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Test sparseGrams with nullable';
+SELECT sparseGrams(CAST(NULL AS Nullable(String)));
+SELECT sparseGrams(toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT '-- Test splitByChar with nullable';
 SELECT splitByChar(',', toNullable('a,b,c'));
+SELECT splitByChar(',', toNullable('a,b')) FROM numbers(2);
 SELECT splitByChar(',', CAST(NULL AS Nullable(String)));
 SELECT splitByChar(',', toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 

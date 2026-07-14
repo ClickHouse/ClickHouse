@@ -86,7 +86,7 @@ public:
         };
 
         FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(is_string_or_fixed_string_nullable), nullptr, "String, FixedString, or Nullable String"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(is_string_or_fixed_string_nullable), nullptr, "String or FixedString"},
             {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArguments(*this, arguments, args);
@@ -106,7 +106,8 @@ public:
         if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
         {
             column_haystack = col_nullable->getNestedColumnPtr();
-            // preserve legacy behavior for NULL which is represented as Nothing and resulted in a call to ColumnNothing::getDataAt(size_t) which returns an empty string_view
+            // Preserve legacy behavior for NULL which is represented as Nothing and resulted in a call to
+            // ColumnNothing::getDataAt(size_t) which returns an empty string_view.
             if (!isNothing(column_haystack->getDataType()))
                 null_map = &col_nullable->getNullMapData();
         }

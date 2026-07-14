@@ -1,5 +1,6 @@
 #include <string_view>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
@@ -31,28 +32,32 @@ namespace
 constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 
+std::string_view getTokenizerNameOrDefault(const ColumnsWithTypeAndName & arguments)
+{
+    if (arguments.size() < 2 || arguments[arg_tokenizer].column == nullptr)
+        return SplitByNonAlphaTokenExtractor::getExternalName();
+
+    const IColumn * column = arguments[arg_tokenizer].column.get();
+
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
+        column = &column_const->getDataColumn();
+
+    if (checkAndGetColumn<ColumnNothing>(column) || column->size() == 0)
+        return SplitByNonAlphaTokenExtractor::getExternalName();
+
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
+    {
+        if (column_nullable->isNullAt(0))
+            return SplitByNonAlphaTokenExtractor::getExternalName();
+        column = &column_nullable->getNestedColumn();
+    }
+
+    return column->getDataAt(0);
+}
+
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer = [&arguments]() -> std::string_view
-    {
-        if (arguments.size() >= 2 && arguments[arg_tokenizer].column != nullptr)
-        {
-            const DB::IColumn* column = arguments[arg_tokenizer].column.get();
-
-            if (const auto* column_const = checkAndGetColumn<ColumnConst>(column))
-                column = column_const->getDataColumn().getPtr().get();
-
-            if (const auto* column_nullable = checkAndGetColumn<ColumnNullable>(column))
-            {
-                if (column_nullable->isNullAt(0))
-                    return SplitByNonAlphaTokenExtractor::getExternalName();
-                column = column_nullable->getNestedColumn().getPtr().get();
-            }
-            
-            return arguments[arg_tokenizer].column->getDataAt(0);
-        }
-        return SplitByNonAlphaTokenExtractor::getExternalName();
-    }();
+    const auto tokenizer = getTokenizerNameOrDefault(arguments);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -270,12 +275,12 @@ public:
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", is_string_nullable_string_or_nothing, is_column_const_or_nullable_nothing, "String");
+            optional_args.emplace_back("tokenizer", is_string_nullable_string_or_nothing, is_column_const_or_nullable_nothing, "const String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)
             {
-                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
+                const auto tokenizer = getTokenizerNameOrDefault(arguments);
 
                 if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
@@ -284,7 +289,7 @@ public:
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
+                const auto tokenizer = getTokenizerNameOrDefault(arguments);
 
                 if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {

@@ -19,6 +19,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
+#include <string_view>
 
 namespace DB
 {
@@ -97,19 +98,47 @@ public:
 
         const auto & array_argument = arguments[generator.strings_argument_position];
 
-        const auto * column = array_argument.column->getPtr().get();
+        const auto * column = array_argument.column.get();
         const NullMap * null_map = nullptr;
 
-        if (const auto * col_const = checkAndGetColumn<ColumnConst>(column))
-            column = &col_const->getDataColumn();
+        auto execute_constant = [&](std::string_view src, size_t rows) -> ColumnPtr
+        {
+            Array dst;
 
-        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column)) {
+            generator.set(src.data(), src.data() + src.size());
+            Pos token_begin = nullptr;
+            Pos token_end = nullptr;
+
+            while (generator.get(token_begin, token_end))
+                dst.push_back(String(token_begin, token_end - token_begin));
+
+            return result_type->createColumnConst(rows, dst);
+        };
+
+        if (const auto * col_const = checkAndGetColumn<ColumnConst>(column))
+        {
+            if (col_const->onlyNull())
+                return result_type->createColumnConst(col_const->size(), Array{});
+
+            const auto * data_column = &col_const->getDataColumn();
+            if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(data_column))
+            {
+                if (col_nullable->isNullAt(0))
+                    return result_type->createColumnConst(col_const->size(), Array{});
+                data_column = &col_nullable->getNestedColumn();
+            }
+
+            if (checkColumn<ColumnString>(data_column) || checkColumn<ColumnFixedString>(data_column))
+                return execute_constant(data_column->getDataAt(0), col_const->size());
+        }
+
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column))
+        {
             column = col_nullable->getNestedColumnPtr().get();
             null_map = &col_nullable->getNullMapData();
         }
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(column);
-        const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(column);
 
         auto col_res = ColumnArray::create(ColumnString::create());
 
@@ -136,16 +165,16 @@ public:
             ColumnString::Offset current_dst_strings_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                /// For NULL values, produce empty array
+                Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
+                current_src_offset = src_offsets[i];
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
+
+                /// For NULL values, produce empty array.
                 if (null_map && (*null_map)[i])
                 {
                     res_offsets.push_back(current_dst_offset);
                     continue;
                 }
-
-                Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
-                current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
@@ -166,20 +195,6 @@ public:
             }
 
             return col_res;
-        }
-        if (col_str_const)
-        {
-            String src = col_str_const->getValue<String>();
-            Array dst;
-
-            generator.set(src.data(), src.data() + src.size());
-            Pos token_begin = nullptr;
-            Pos token_end = nullptr;
-
-            while (generator.get(token_begin, token_end))
-                dst.push_back(String(token_begin, token_end - token_begin));
-
-            return result_type->createColumnConst(col_str_const->size(), dst);
         }
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
@@ -222,7 +237,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
 {
     FunctionArgumentDescriptors mandatory_args{
         {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
-        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String or Nullable(String)"}
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String"}
     };
 
     FunctionArgumentDescriptors optional_args{
@@ -235,7 +250,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     FunctionArgumentDescriptors mandatory_args{
-        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String or Nullable(String)"},
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String"},
     };
 
     FunctionArgumentDescriptors optional_args{

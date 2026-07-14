@@ -50,7 +50,7 @@ public:
         auto ngram_input_argument_type = WhichDataType(input_type);
         if (!ngram_input_argument_type.isStringOrFixedString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String, FixedString, Nullable(String) or Nullable(FixedString). Actual {}",
+                "Function {} first argument type should be String or FixedString. Actual {}",
                 getName(),
                 arguments[0].type->getName());
 

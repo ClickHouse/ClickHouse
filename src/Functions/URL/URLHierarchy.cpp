@@ -29,7 +29,7 @@ public:
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String"},
         };
 
         validateFunctionArguments(func, arguments, mandatory_args);

@@ -55,7 +55,7 @@ public:
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String"},
             {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 

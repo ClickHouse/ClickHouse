@@ -11,6 +11,19 @@
 -- Test alphaTokens with nullable
 ['abc','def']
 []
+-- Test mixed nullable rows
+['hello','world']
+[]
+['click','house']
+['a','b']
+[]
+['c','d']
+['1','22']
+[]
+['333']
+['a','b']
+[]
+['c']
 -- Test arrayStringConcat with nullable array elements
 helloworld
 helloworld
@@ -33,8 +46,12 @@ hello, world
 -- Test ngrams with nullable
 ['Cli','lic','ick','ckH','kHo','Hou','ous','use']
 []
+-- Test sparseGrams with nullable
+[]
 -- Test splitByChar with nullable
 ['a','b','c']
+['a','b']
+['a','b']
 []
 -- Test splitByNonAlpha with nullable
 ['hello','world','123']
