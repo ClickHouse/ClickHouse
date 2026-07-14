@@ -2540,35 +2540,31 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         GeometryEntry geom_entry;
         geom_entry.tier = cache->tier();
         geom_entry.whole_cell = cache->fillsWholeCell();
-        PlanTier buf_entry;
-        buf_entry.provider = cache.get();
+        PlanTier plan_tier;
+        plan_tier.provider = cache.get();
 
-        extractResidentRuns(*view, plan_range, resident_clip_end, geom_entry);
+        extractResidentRuns(*view, plan_range, resident_clip_end, geom_entry, upper_hits);
         extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry);
 
-        /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
-        /// against them. Read BEFORE the move below. Same-tier hits/misses are disjoint,
-        /// so this never prunes a later piece of the same tier.
-        for (const auto & r : geom_entry.resident)
-            upper_hits.add(r);
-
         /// Drop records that are neither resident nor a populatable gap — nothing to
-        /// read or write. Otherwise keep the view (its hit read buffers pin the
-        /// resident segments) alongside the writers.
+        /// read or write. Otherwise keep the view: its hit read buffers pin the
+        /// resident segments and its upgraded miss entries hold the write buffers.
         if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
         {
-            buf_entry.view = std::move(view);
+            plan_tier.view = std::move(view);
             geom->entries.push_back(std::move(geom_entry));
-            plan.tiers.push_back(std::move(buf_entry));
+            plan.tiers.push_back(std::move(plan_tier));
         }
     }
 
     chassert(geom->entries.size() == plan.tiers.size());
 
-    /// The cross-cache expansion already pulled the touched MISS segments inside
-    /// `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment straddling the
-    /// expanded end (fewer replans): no dead zone, and the schedule may cover the whole span
-    /// because a miss tail a faster tier holds is filled DOWN (`UpperCacheRead`), not fetched.
+    /// HIT-TAIL EXTENSION: a hit segment straddling the span's end was folded in whole
+    /// (`resident_clip_end`), and serving it needs no fetch and no further residency
+    /// knowledge - so extend `plan_end` over it (fewer replans). MISS overhang must NOT
+    /// extend the horizon: serving it would need fetch scheduling over territory whose
+    /// other-tier residency was never probed - it stays fill-only work via the cell
+    /// closure, and the next plan finds it resident.
     {
         size_t hit_end = geom->plan_end;
         for (const auto & e : geom->entries)
@@ -2686,8 +2682,15 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
     return ByteRange{physical_start, want};
 }
 
-void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_range, size_t resident_clip_end, GeometryEntry & geom_entry)
+void ReaderExecutor::extractResidentRuns(
+    const CacheView & view, ByteRange plan_range, size_t resident_clip_end,
+    GeometryEntry & geom_entry, IntervalSet & upper_hits)
 {
+    /// Each clamped run also folds into `upper_hits` - the prune input for the SLOWER
+    /// tiers that follow (the pass is cache-major, fastest first). Folding before this
+    /// tier's own miss extraction is a no-op on it: hits and misses tile the probed
+    /// range disjointly, so a non-empty miss cell is never fully covered by its own
+    /// tier's hits.
     for (const auto & hit : view.hits())
     {
         /// Hits are segment-aligned and may extend past the plan span. Clamp the left
@@ -2698,7 +2701,10 @@ void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_
         const size_t lo = std::max(hit.range.offset, plan_range.offset);
         const size_t hi = std::min(hit.range.end(), resident_clip_end);
         if (lo < hi)
+        {
             geom_entry.resident.push_back(ByteRange{lo, hi - lo});
+            upper_hits.add(ByteRange{lo, hi - lo});
+        }
     }
 }
 

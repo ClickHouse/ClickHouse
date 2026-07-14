@@ -680,12 +680,15 @@ private:
 
     /// Translate ONE tier's `planResidencyView` into its 1:1
     /// `GeometryEntry`/`PlanTier`. `extractResidentRuns` records the tier's
-    /// hits (clamped to the plan span). `extractMissesAndOpenWriters` PRUNES
-    /// miss cells fully covered by `upper_hits` (the union of faster tiers'
+    /// hits (clamped to the plan span) and folds them into `upper_hits` - the
+    /// prune input for the slower tiers that follow. `extractMissesAndOpenWriters`
+    /// PRUNES miss cells fully covered by `upper_hits` (the union of faster tiers'
     /// hits - that range already lives upstream) via `CacheView::dropMiss`,
     /// records the survivors in the geometry, and has the provider UPGRADE
     /// them with write buffers in place (populatable tiers only).
-    static void extractResidentRuns(const CacheView & view, ByteRange plan_range, size_t resident_clip_end, GeometryEntry & geom_entry);
+    static void extractResidentRuns(
+        const CacheView & view, ByteRange plan_range, size_t resident_clip_end,
+        GeometryEntry & geom_entry, IntervalSet & upper_hits);
     static void extractMissesAndOpenWriters(
         ICacheProvider & cache, CacheView & view,
         const StoredObject & object, size_t object_file_offset,
