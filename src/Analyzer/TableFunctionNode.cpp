@@ -35,9 +35,21 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false, table_expression_modifiers);
-    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
+
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    if (table_expression_modifiers)
+        storage_snapshot = std::make_shared<StorageSnapshot>(std::move(storage_snapshot), *table_expression_modifiers);
+}
+
+void TableFunctionNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+{
+    table_expression_modifiers = std::move(table_expression_modifiers_value);
+
+    if (storage_snapshot)
+        storage_snapshot = std::make_shared<StorageSnapshot>(std::move(storage_snapshot), *table_expression_modifiers);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const

@@ -454,10 +454,9 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-/// NOLINTNEXTLINE(google-default-arguments)
-StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers) const
+StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
+    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
         return base_metadata;
 
@@ -474,7 +473,7 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
             return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name);
         }))
         {
-            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
+            const auto source_table_metadata = first_table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
             for (const auto & column : source_table_metadata->virtuals)
             {
                 if (virtuals.has(column.name))

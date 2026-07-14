@@ -69,7 +69,6 @@ public:
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const std::optional<TableExpressionModifiers> & table_expression_modifiers,
         const ContextPtr & context);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
@@ -82,7 +81,6 @@ public:
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const std::optional<TableExpressionModifiers> & table_expression_modifiers,
         const ContextPtr & context);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,

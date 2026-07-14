@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/TableExpressionModifiers.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -210,11 +209,7 @@ public:
     /// used without any locks.
     /// Pass query context to enable metadata caching in MergeTree.
     /// Pass nullptr when no query context is available.
-    /// NOLINTNEXTLINE(google-default-arguments)
-    virtual StorageMetadataHandle getInMemoryMetadataPtr(
-        ContextPtr /*context*/,
-        bool /*bypass_metadata_cache*/,
-        std::optional<TableExpressionModifiers> /*modifiers*/ = std::nullopt) const
+    virtual StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
     {
         return metadata.get();
     }

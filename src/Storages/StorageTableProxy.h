@@ -44,13 +44,12 @@ public:
     /// the proxy's stale metadata but build the sink from the nested's current metadata,
     /// causing a `Block structure mismatch` `LOGICAL_ERROR` in `Chain::addSink`.
     /// Forwarding here keeps metadata observers in sync with the nested storage.
-    /// NOLINTNEXTLINE(google-default-arguments)
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context_, bool bypass_metadata_cache, std::optional<TableExpressionModifiers> modifiers) const override
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context_, bool bypass_metadata_cache) const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache, modifiers);
-        return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache, modifiers);
+            return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+        return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
     StoragePtr getNested() const override

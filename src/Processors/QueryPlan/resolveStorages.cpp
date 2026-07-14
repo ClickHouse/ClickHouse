@@ -71,9 +71,9 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
 
-std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const std::optional<TableExpressionModifiers> & table_expression_modifiers, const ContextPtr & context)
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, table_expression_modifiers, context);
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
@@ -139,7 +139,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (reading_from_table)
     {
         Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
-        auto table_node = resolveTable(identifier, reading_from_table->getTableExpressionModifiers(), context);
+        auto table_node = resolveTable(identifier, context);
 
         storage = table_node->getStorage();
         snapshot = table_node->getStorageSnapshot();
@@ -187,6 +187,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
+
+    if (select_query_info.table_expression_modifiers)
+        snapshot = std::make_shared<StorageSnapshot>(std::move(snapshot), *select_query_info.table_expression_modifiers);
 
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
