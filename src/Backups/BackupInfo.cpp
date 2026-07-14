@@ -239,35 +239,48 @@ namespace
         return arg.safeGet<String>();
     }
 
+    void appendNormalizedIdentityComponent(String & result, bool & first, const String & component)
+    {
+        if (!first)
+            result += ',';
+        first = false;
+        result += std::to_string(component.size());
+        result += ':';
+        result += component;
+    }
+
     String normalizeS3URL(String s)
     {
+        String result;
+        bool first = true;
 #if USE_AWS_S3
         S3::URI uri(stripURLUserInfo(s), /* allow_archive_path_syntax = */ false);
-        return "endpoint=" + uri.endpoint
-            + ";bucket=" + uri.bucket
-            + ";key=" + stripTrailingSlashes(uri.key)
-            + ";version_id=" + uri.version_id;
+        appendNormalizedIdentityComponent(result, first, "endpoint=" + uri.endpoint);
+        appendNormalizedIdentityComponent(result, first, "bucket=" + uri.bucket);
+        appendNormalizedIdentityComponent(result, first, "key=" + stripTrailingSlashes(uri.key));
+        appendNormalizedIdentityComponent(result, first, "version_id=" + uri.version_id);
 #else
         /// Without AWS support the `S3` backup engine cannot be used. Strip the
         /// whole query because exact presigned-parameter parsing is unavailable.
-        return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
+        appendNormalizedIdentityComponent(result, first, "url=" + stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s))));
 #endif
+        appendNormalizedIdentityComponent(result, first, hasRegisteredArchiveFileExtension(s) ? "mode=archive" : "mode=directory");
+        return result;
     }
 
     String normalizeS3Path(String s)
     {
+        String result;
+        bool first = true;
 #if USE_AWS_S3
         S3::URI uri("s3://bucket/" + s, /* allow_archive_path_syntax = */ false);
-        String result = stripTrailingSlashes(uri.key);
-        if (!uri.version_id.empty())
-        {
-            result += "?versionId=";
-            result += uri.version_id;
-        }
-        return result;
+        appendNormalizedIdentityComponent(result, first, "key=" + stripTrailingSlashes(uri.key));
+        appendNormalizedIdentityComponent(result, first, "version_id=" + uri.version_id);
 #else
-        return stripTrailingSlashes(stripURLQuery(s));
+        appendNormalizedIdentityComponent(result, first, "path=" + stripTrailingSlashes(stripURLQuery(s)));
 #endif
+        appendNormalizedIdentityComponent(result, first, hasRegisteredArchiveFileExtension(s) ? "mode=archive" : "mode=directory");
+        return result;
     }
 
     String normalizeAzureConnection(String s)
@@ -421,16 +434,6 @@ namespace
         if (backup_engine_name == "AzureBlobStorage" && (key == "connection_string" || key == "storage_account_url"))
             return normalizeAzureConnection(value);
         return stripTrailingSlashes(value);
-    }
-
-    void appendNormalizedIdentityComponent(String & result, bool & first, const String & component)
-    {
-        if (!first)
-            result += ',';
-        first = false;
-        result += std::to_string(component.size());
-        result += ':';
-        result += component;
     }
 
     String appendPath(String base, const String & path)

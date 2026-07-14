@@ -365,6 +365,22 @@ TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
     EXPECT_EQ(s3.toNormalizedString(), virtual_hosted.toNormalizedString());
     EXPECT_EQ(s3.toNormalizedString(), path_style.toNormalizedString());
 }
+
+TEST(BackupInfo, NormalizedStringDistinguishesS3ArchiveMode)
+{
+    auto archive = BackupInfo::fromString("S3('s3://bucket/backup.zip')");
+    auto directory = BackupInfo::fromString("S3('s3://bucket/backup.zip#directory')");
+
+    EXPECT_NE(archive.toNormalizedString(), directory.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringEncodesS3FieldsUnambiguously)
+{
+    auto key_contains_delimiter = BackupInfo::fromString("S3('s3://bucket/foo;version_id=bar?versionId=baz')");
+    auto version_contains_delimiter = BackupInfo::fromString("S3('s3://bucket/foo?versionId=bar;version_id=baz')");
+
+    EXPECT_NE(key_contains_delimiter.toNormalizedString(), version_contains_delimiter.toNormalizedString());
+}
 #endif
 
 TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollection)
