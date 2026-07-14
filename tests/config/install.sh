@@ -535,6 +535,17 @@ fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
 
+if [ "$WASM_ENGINE" == "wasmedge" ]; then
+    # WasmEdge is compiled out on some platforms (e.g. musl builds, see
+    # contrib/wasmedge-cmake). Configuring it anyway would fail every WASM UDF
+    # with SUPPORT_IS_DISABLED, so keep the default engine instead: the tests
+    # still run, just under wasmtime.
+    if [ "$(clickhouse local --query "SELECT value FROM system.build_options WHERE name = 'USE_WASMEDGE'")" != "1" ]; then
+        echo "WasmEdge engine requested, but the binary is built without WasmEdge support; keeping wasmtime"
+        WASM_ENGINE=""
+    fi
+fi
+
 if [ ! -z "$WASM_ENGINE" ]; then
     # ensure that default entry exists and we correctly replace it
     grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
