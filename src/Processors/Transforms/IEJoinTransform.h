@@ -267,6 +267,7 @@ private:
     /// Prepared key columns, one entry per condition.
     std::array<ConditionKeyColumns, 2> key_columns;
     std::array<size_t, 2> num_side_rows = {0, 0};
+    /// Number of union entries: rows of both sides minus the rows with NULL/NaN keys.
     size_t num_union_entries = 0;
 
     /// Union entry at each L1 position. Entry u is left row u if u < num_side_rows[0],
@@ -286,12 +287,18 @@ private:
     /// One past the highest set bit; lets scans stop instead of walking empty words to the end.
     size_t bit_array_end = 0;
 
-    /// Merge loop state.
+    /// Pair-scan state; all of it is resumable, so a call may stop at any point (block full,
+    /// work budget exhausted) and the next call continues exactly where it stopped.
     bool join_state_built = false;
     bool produce_done = false;
+    /// L2 position whose entry the scan currently processes.
     size_t l2_cursor = 0;
+    /// Number of L2 entries folded into the bit array; the qualifying entries form an L2 prefix
+    /// that only grows as the cursor advances, so the frontier never re-visits an entry.
     size_t frontier = 0;
+    /// L1 position where the search for the current left row's next match resumes.
     size_t scan_pos = 0;
+    /// The left row being scanned (signed 1-based id, see `l1_row_ids`), if there is one.
     Int64 current_left_row_id = 0;
     bool has_current_left = false;
 
