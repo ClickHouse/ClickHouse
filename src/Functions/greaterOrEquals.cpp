@@ -66,4 +66,23 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
         x, y, tuple_size, input_rows_count);
 }
 
+template <>
+ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeArray(
+    const DataTypePtr & /*result_type*/,
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+    FunctionOverloadResolverPtr order_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(params));
+
+    return executeArrayLexicographicImpl(
+        column_type_name0, column_type_name1, input_rows_count,
+        /*is_equals=*/false, /*is_not_equals=*/false, /*is_less=*/false,
+        /*is_less_or_equals=*/false, /*is_greater=*/false, /*is_greater_or_equals=*/true,
+        equals_resolver, order_resolver);
+}
+
 }
