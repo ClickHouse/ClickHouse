@@ -599,7 +599,38 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
         if (affected_materialized.contains(expiry_column))
             needs_materialized_refresh = true;
 
-    if (expression_keys.empty() && !needs_materialized_refresh)
+    /// This TTL's expiry/`WHERE` can also read a SUBCOLUMN of a rewritten physical parent, not only a
+    /// MATERIALIZED column: e.g. `ORDER BY tup.ts` pre-extracts `tup.ts` into the stream, earlier
+    /// `SET tup = ...` rewrites the parent `tup`, and `TTL2 tup.ts + 1d` reads that pre-extracted
+    /// `tup.ts`. The subcolumn is neither a physical `SET` target nor a MATERIALIZED column, so the two
+    /// refreshes above miss it; `executeExpressionAndGetColumn` then prefers the stale in-stream
+    /// `tup.ts` (via `getColumnOrSubcolumnByName`) over re-extracting it from the post-`SET` `tup`, and
+    /// the TTL evaluates expiry/`WHERE` on the pre-`SET` value (skips aggregation or fires on wrong
+    /// rows). Collect such stale subcolumns so they are dropped and re-extracted fresh below. Parent
+    /// rewritten by an earlier `SET` directly (a `SET` target) OR indirectly (an affected MATERIALIZED
+    /// column, refreshed by the step above before this re-extraction runs). Subcolumn-granular: only a
+    /// subcolumn actually read by this TTL's expiry/`WHERE` whose parent was rewritten is stale -- an
+    /// unrelated pass-through subcolumn of the same parent must be kept (dropping it would make the
+    /// later `TTLAggregationAlgorithm` throw NOT_FOUND_COLUMN_IN_BLOCK).
+    NameSet stale_expiry_subcolumns;
+    auto collect_stale_expiry_subcolumns = [&](const NamesAndTypesList & expiry_columns)
+    {
+        for (const auto & column : expiry_columns)
+        {
+            if (storage_names.contains(column.name))
+                continue;
+            auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names);
+            if (!parent)
+                continue;
+            if (set_targets.contains(*parent) || affected_materialized.contains(*parent))
+                if (header.has(column.name) && header.has(*parent))
+                    stale_expiry_subcolumns.insert(column.name);
+        }
+    };
+    collect_stale_expiry_subcolumns(group_by_ttl.expression_columns);
+    collect_stale_expiry_subcolumns(group_by_ttl.where_expression_columns);
+
+    if (expression_keys.empty() && !needs_materialized_refresh && stale_expiry_subcolumns.empty())
         return std::nullopt;
 
     std::optional<ActionsDAG> result;
@@ -630,6 +661,36 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
             result = ActionsDAG::merge(std::move(*result), std::move(recompute_keys_dag));
         else
             result = std::move(recompute_keys_dag);
+    }
+
+    /// Drop and re-extract the stale expiry/`WHERE` subcolumns so this TTL's expiry is evaluated on the
+    /// post-`SET` parent. The stale copies were extracted before the TTL step (from the pre-`SET`
+    /// parent), so drop them from the stream and re-extract fresh from the now-rewritten physical
+    /// parent (which the earlier aggregation already rewrote in the block, or the materialized refresh
+    /// above rebuilt). Done last so a subcolumn of a MATERIALIZED parent reads the refreshed value.
+    if (!stale_expiry_subcolumns.empty())
+    {
+        const Block & drop_input_header = result ? Block(result->getResultColumns()) : header;
+
+        /// Drop the stale subcolumns so they are missing from the stream; the re-extraction below then
+        /// rebuilds them from the post-`SET` parent instead of reusing the pre-`SET` copy.
+        ActionsDAG drop_stale_dag(drop_input_header.getColumnsWithTypeAndName());
+        ActionsDAG::NodeRawConstPtrs kept_outputs;
+        kept_outputs.reserve(drop_stale_dag.getOutputs().size());
+        for (const auto * output : drop_stale_dag.getOutputs())
+            if (!stale_expiry_subcolumns.contains(output->result_name))
+                kept_outputs.push_back(output);
+        drop_stale_dag.getOutputs() = std::move(kept_outputs);
+
+        Block header_after_drop(drop_stale_dag.getResultColumns());
+        Names required_subcolumns(stale_expiry_subcolumns.begin(), stale_expiry_subcolumns.end());
+        auto extract_dag = createSubcolumnsExtractionActions(header_after_drop, required_subcolumns, context);
+
+        auto refresh_subcolumns_dag = ActionsDAG::merge(std::move(drop_stale_dag), std::move(extract_dag));
+        if (result)
+            result = ActionsDAG::merge(std::move(*result), std::move(refresh_subcolumns_dag));
+        else
+            result = std::move(refresh_subcolumns_dag);
     }
 
     return result;

@@ -466,3 +466,30 @@ OPTIMIZE TABLE ttl_k2 FINAL;
 SELECT max(payload) = toYear(max(d)) AS payload_matches_stored_d, countIf(d != toDate(ts2)) AS stale_d FROM ttl_k2;
 
 DROP TABLE ttl_k2;
+
+
+SELECT '--- L1';
+
+-- L1 (round 10, subcolumn expiry, in-transform): a later TTL that expires on a SUBCOLUMN of a SET
+-- target must have that subcolumn re-extracted from the post-SET parent before its algorithm runs.
+-- ORDER BY (k, tup.ts) pre-extracts tup.ts into the TTL stream. TTL1 (ts1 old, fires) GROUP BY k
+-- SET tup = (min(tup.ts) - 20y, 9) rewrites the parent tup, moving tup.ts from the future (2040) into
+-- the past; TTL2 (tup.ts + 1d) GROUP BY k SET payload = toYear(max(tup.ts)) must then fire on the
+-- POST-SET tup.ts. The bug leaves the stale pre-extracted tup.ts (2040, future) in the block:
+-- executeExpressionAndGetColumn prefers it (getColumnOrSubcolumnByName) over re-extracting from the
+-- post-SET tup, so TTL2 evaluates expiry on 2040, is not expired, and never runs its SET. The post-TTL
+-- resort still repairs the STORED tup.ts, so the bug shows only as payload diverging from toYear(the
+-- stored tup.ts). The exact stored year depends on how many times the forced merge re-applies TTL1's
+-- min()-20y; assert only that TTL2 saw the same value it finally stored (payload_matches_stored = 1).
+-- sib is an unrelated pass-through subcolumn of the same parent that TTL2 does NOT read; it must
+-- survive (dropping it by parent name would make TTLAggregationAlgorithm throw NOT_FOUND_COLUMN_IN_BLOCK).
+CREATE TABLE ttl_l1 (k UInt32, ts1 DateTime, tup Tuple(ts DateTime, sib UInt32), payload UInt64)
+ENGINE = MergeTree ORDER BY (k, tup.ts)
+TTL ts1 + toIntervalDay(1) GROUP BY k SET tup = tuple(min(tup.ts) - toIntervalYear(20), 9),
+    tup.ts + toIntervalDay(1) GROUP BY k SET payload = toUInt64(toYear(max(tup.ts)))
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_l1 (k, ts1, tup, payload) SELECT 1, toDateTime('2020-01-01 00:00:00'), tuple(toDateTime('2040-01-01 00:00:00'), 7), 10 FROM numbers(8);
+OPTIMIZE TABLE ttl_l1 FINAL;
+SELECT max(payload) = toUInt64(toYear(max(tup.1))) AS payload_matches_stored, any(tup.2) AS sib_survived FROM ttl_l1;
+
+DROP TABLE ttl_l1;
