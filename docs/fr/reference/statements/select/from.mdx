@@ -1,0 +1,112 @@
+---
+description: 'Documentation de la clause FROM'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'Clause FROM'
+doc_type: 'reference'
+---
+
+La clause `FROM` spécifie la source depuis laquelle lire les données :
+
+* [Table](/fr/reference/engines/table-engines/index)
+* [Sous-requête](/fr/reference/statements/select/index)
+* [Fonction de table](/fr/reference/functions/table-functions/index)
+
+Les clauses [JOIN](/fr/reference/statements/select/join) et [ARRAY JOIN](/fr/reference/statements/select/array-join) peuvent également être utilisées pour étendre les possibilités de la clause `FROM`.
+
+Une sous-requête est une autre requête `SELECT` qui peut être spécifiée entre parenthèses dans la clause `FROM`.
+
+Une clause `VALUES` du standard SQL peut également être utilisée comme expression de table :
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+Voir [la fonction de table Values](/fr/reference/functions/table-functions/values#sql-standard-values-clause) pour plus de détails.
+
+`FROM` peut contenir plusieurs sources de données, séparées par des virgules, ce qui revient à effectuer un [CROSS JOIN](/fr/reference/statements/select/join) entre elles.
+
+`FROM` peut également apparaître avant une clause `SELECT`. Il s&#39;agit d&#39;une extension spécifique à ClickHouse du SQL standard, qui rend les requêtes `SELECT` plus faciles à lire. Exemple :
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## Modificateur FINAL
+</div>
+
+Lorsque `FINAL` est spécifié, ClickHouse fusionne complètement les données avant de renvoyer le résultat. Cela applique également toutes les transformations de données effectuées lors des fusions pour le moteur de table donné.
+
+Il s&#39;applique à la sélection de données à partir de tables utilisant les moteurs de table suivants :
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+Les requêtes `SELECT` avec `FINAL` sont exécutées en parallèle. Le paramètre [max&#95;final&#95;threads](/fr/reference/settings/session-settings#max_final_threads) limite le nombre de threads utilisés.
+
+<div id="drawbacks">
+  ### Inconvénients
+</div>
+
+Les requêtes qui utilisent `FINAL` s’exécutent légèrement plus lentement que des requêtes similaires qui n’utilisent pas `FINAL`, car :
+
+* Les données sont fusionnées pendant l’exécution de la requête.
+* Les requêtes avec `FINAL` peuvent lire les colonnes de clé primaire en plus de celles spécifiées dans la requête.
+
+`FINAL` nécessite davantage de ressources de calcul et de mémoire, car le traitement qui se ferait normalement au moment de la fusion doit ici être effectué en mémoire au moment de la requête. Cependant, l’utilisation de `FINAL` est parfois nécessaire pour obtenir des résultats exacts (car les données peuvent ne pas encore être entièrement fusionnées). Cela reste moins coûteux que d’exécuter `OPTIMIZE` pour forcer une fusion.
+
+Comme alternative à l’utilisation de `FINAL`, il est parfois possible d’employer d’autres requêtes qui partent du principe que les processus d’arrière-plan du moteur `MergeTree` n’ont pas encore eu lieu, et de gérer cela en appliquant une agrégation (par exemple pour éliminer les doublons). Si vous devez utiliser `FINAL` dans vos requêtes pour obtenir les résultats souhaités, c’est tout à fait acceptable, mais gardez à l’esprit le traitement supplémentaire que cela implique.
+
+`FINAL` peut être appliqué automatiquement à toutes les tables d’une requête à l’aide du paramètre [FINAL](/fr/reference/settings/session-settings#final), via une session ou un profil utilisateur.
+
+<div id="example-usage">
+  ### Exemple d’utilisation
+</div>
+
+Utilisation du mot-clé `FINAL`
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+Utilisation de `FINAL` comme paramètre de requête
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+Utilisation de `FINAL` comme paramètre de session
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### Alias et FINAL
+</div>
+
+Lorsqu&#39;une table possède un alias, `FINAL` se place après celui-ci. C&#39;est particulièrement visible dans les requêtes [`JOIN`](/fr/reference/statements/select/join), où les tables sont généralement associées à un alias :
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` est un modificateur de la référence de table ; il doit donc suivre l&#39;expression complète `table [AS alias]`. Le placer avant l&#39;alias (`FROM table1 FINAL AS t1`) constitue une erreur de syntaxe.
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+Si la clause `FROM` est omise, les données sont lues depuis la table `system.one`.
+La table `system.one` contient exactement une ligne (cette table remplit le même rôle que la table DUAL présente dans d’autres SGBD).
+
+Pour exécuter une requête, toutes les colonnes indiquées dans la requête sont extraites de la table appropriée. Les colonnes inutiles pour la requête externe sont écartées des sous-requêtes.
+Si une requête ne mentionne aucune colonne (par exemple, `SELECT count() FROM t`), une colonne est malgré tout extraite de la table (de préférence la plus petite), afin de calculer le nombre de lignes.

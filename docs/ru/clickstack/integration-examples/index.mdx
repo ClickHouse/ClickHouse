@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'Ингестия данных для ClickStack — стека обсервабилити ClickHouse'
+title: 'Руководства по интеграциям'
+doc_type: 'landing-page'
+keywords: ['ингестия данных ClickStack', 'ингестия данных обсервабилити', 'руководства по интеграциям ClickStack']
+---
+
+ClickStack предоставляет несколько способов настроить ингестию данных обсервабилити в ваш экземпляр ClickHouse. В этом разделе собраны руководства по быстрому старту для различных источников журналов, трасс и метрик.
+
+<Note>
+  Некоторые из этих руководств по интеграции используют встроенный OpenTelemetry Collector в ClickStack с открытым исходным кодом для быстрого тестирования и оценки.
+
+  Для production-развертываний мы рекомендуем запускать интеграции в виде агентов OpenTelemetry Collector рядом с вашими рабочими нагрузками. Эти агенты должны пересылать данные телеметрии по OTLP в коллектор ClickStack OpenTelemetry, который затем доставляет данные либо в самоуправляемый экземпляр ClickHouse для дистрибутива ClickStack с открытым исходным кодом, либо в Управляемый ClickStack. Сведения о конфигурации для production см. в разделе [&quot;Отправка данных OpenTelemetry&quot;](/ru/clickstack/ingesting-data/opentelemetry).
+</Note>
+
+| Раздел                                                                                   | Описание                                           |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [Журналы хоста](/ru/clickstack/integration-examples/host-logs)                              | Собирать системные журналы хоста                   |
+| [Журналы хоста EC2](/ru/clickstack/integration-examples/host-logs/ec2)                      | Отслеживать журналы экземпляра EC2                 |
+| [Журналы AWS Lambda с использованием Rotel](/ru/clickstack/integration-examples/aws-lambda) | Пересылать журналы Lambda с помощью Rotel          |
+| [AWS CloudWatch](/ru/clickstack/integration-examples/cloudwatch)                            | Пересылать группы журналов CloudWatch              |
+| [Метрики JVM](/ru/clickstack/integration-examples/jvm-metrics)                              | Отслеживать производительность JVM                 |
+| [Журналы Kafka](/ru/clickstack/integration-examples/kafka-logs)                             | Собирать журналы брокеров Kafka                    |
+| [Метрики Kafka](/ru/clickstack/integration-examples/kafka-metrics)                          | Отслеживать производительность Kafka               |
+| [Kubernetes](/ru/clickstack/integration-examples/kubernetes)                                | Отслеживать кластеры K8s                           |
+| [Журналы MongoDB](/ru/clickstack/integration-examples/mongodb-logs)                         | Собирать серверные журналы MongoDB                 |
+| [Журналы MySQL](/ru/clickstack/integration-examples/mysql)                                  | Собирать журналы медленных запросов и ошибок MySQL |
+| [Журналы Nginx](/ru/clickstack/integration-examples/nginx-logs)                             | Собирать журналы доступа и ошибок Nginx            |
+| [Трассы Nginx](/ru/clickstack/integration-examples/nginx-traces)                            | Трассировать HTTP-запросы Nginx                    |
+| [Трассы Node.js](/ru/clickstack/integration-examples/nodejs-traces)                         | Трассировать HTTP-запросы Node.js                  |
+| [Журналы PostgreSQL](/ru/clickstack/integration-examples/postgres-logs)                     | Собирать журналы Postgres                          |
+| [Метрики PostgreSQL](/ru/clickstack/integration-examples/postgres-metrics)                  | Отслеживать производительность Postgres            |
+| [Журналы Redis](/ru/clickstack/integration-examples/redis-logs)                             | Собирать серверные журналы Redis                   |
+| [Метрики Redis](/ru/clickstack/integration-examples/redis-metrics)                          | Отслеживать производительность Redis               |
+| [Журналы Systemd](/ru/clickstack/integration-examples/systemd)                              | Собирать журналы Systemd/Journald                  |
+| [Метрики Temporal](/ru/clickstack/integration-examples/temporal)                            | Отслеживать метрики Temporal Cloud                 |

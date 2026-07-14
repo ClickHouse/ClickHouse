@@ -23,15 +23,21 @@ SETTINGS max_insert_threads = 1;
 
 OPTIMIZE TABLE bool_pk FINAL;
 
--- Disable trivial-count optimisations so `SelectedMarks` reflects actual
--- granule reads (otherwise count-from-stats can hide pruning differences).
-SELECT 'count'          AS predicate, count() FROM bool_pk                       SETTINGS enable_parallel_replicas = 0;
-SELECT 'IS TRUE'        AS predicate, count() FROM bool_pk WHERE b IS TRUE       SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS TRUE';
-SELECT 'IS FALSE'       AS predicate, count() FROM bool_pk WHERE b IS FALSE      SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS FALSE';
-SELECT 'IS UNKNOWN'     AS predicate, count() FROM bool_pk WHERE b IS UNKNOWN    SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS UNKNOWN';
-SELECT 'IS NOT TRUE'    AS predicate, count() FROM bool_pk WHERE b IS NOT TRUE   SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS NOT TRUE';
-SELECT 'IS NOT FALSE'   AS predicate, count() FROM bool_pk WHERE b IS NOT FALSE  SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS NOT FALSE';
-SELECT 'IS NOT UNKNOWN' AS predicate, count() FROM bool_pk WHERE b IS NOT UNKNOWN SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, log_comment = '04304 IS NOT UNKNOWN';
+-- Disable trivial-count, implicit projections, and sparsity pruning so
+-- `SelectedMarks` reflects the primary key alone; otherwise those paths
+-- can bypass the read or drop additional granules and hide the PK assertion.
+SET enable_parallel_replicas = 0,
+    optimize_trivial_count_query = 0,
+    optimize_use_implicit_projections = 0,
+    optimize_trivial_count_with_sparsity_filter = 0;
+
+SELECT 'count'          AS predicate, count() FROM bool_pk;
+SELECT 'IS TRUE'        AS predicate, count() FROM bool_pk WHERE b IS TRUE        SETTINGS log_comment = '04304 IS TRUE';
+SELECT 'IS FALSE'       AS predicate, count() FROM bool_pk WHERE b IS FALSE       SETTINGS log_comment = '04304 IS FALSE';
+SELECT 'IS UNKNOWN'     AS predicate, count() FROM bool_pk WHERE b IS UNKNOWN     SETTINGS log_comment = '04304 IS UNKNOWN';
+SELECT 'IS NOT TRUE'    AS predicate, count() FROM bool_pk WHERE b IS NOT TRUE    SETTINGS log_comment = '04304 IS NOT TRUE';
+SELECT 'IS NOT FALSE'   AS predicate, count() FROM bool_pk WHERE b IS NOT FALSE   SETTINGS log_comment = '04304 IS NOT FALSE';
+SELECT 'IS NOT UNKNOWN' AS predicate, count() FROM bool_pk WHERE b IS NOT UNKNOWN SETTINGS log_comment = '04304 IS NOT UNKNOWN';
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -14,7 +14,6 @@ set(DBMS_FUNCTIONS
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
-    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
@@ -133,6 +132,10 @@ endif()
 
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
+endif()
+
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
 endif()
 
 if (TARGET ch_contrib::vectorscan)

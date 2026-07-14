@@ -82,6 +82,12 @@ def started_cluster():
 
 CHUNK_SIZE = 4096  # matches snapshot_transfer_chunk_size in small-chunk configs
 
+# Recovery here means replaying raft logs and installing a snapshot (over S3, with a
+# 1 KiB read buffer) before the node accepts connections. Under msan/tsan that legitimately
+# took ~95 s in CI, so the wait must be generous: start_clickhouse returns as soon as the
+# server is ready, so a large upper bound costs nothing on fast runs.
+RESTART_TIMEOUT_SECONDS = 180
+
 CHUNKED_TRANSFER_PARAMS = [
     pytest.param({"leader": node1, "middle": node2, "lagging": node3, "disk_type": "local"}, id="local_disk"),
     pytest.param({"leader": node7, "middle": node8, "lagging": node9, "disk_type": "remote"}, id="remote_disk"),
@@ -122,7 +128,7 @@ def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
     node_lagging.stop_clickhouse(kill=True)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
     assert received is not None
@@ -179,7 +185,7 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         user="root",
     )
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         node_lagging.query("SYSTEM ENABLE FAILPOINT keeper_save_snapshot_pause_mid_transfer")
     except Exception:
         _drop_rule()
@@ -229,7 +235,7 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         ).strip()
         assert tmp_snapshot_path, "No tmp_snapshot file on disk after killing mid-transfer"
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
     lagging_zk.sync(prefix)  # wait until all committed entries (including snapshot) are applied
@@ -287,7 +293,7 @@ def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
     leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
 
@@ -324,7 +330,7 @@ def test_recover_after_s3_read_error_during_transfer(started_cluster):
 
     node_leader.query("SYSTEM ENABLE FAILPOINT s3_read_buffer_throw_expired_token")
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         keeper_utils.wait_until_connected(cluster, node_lagging)
 
         received = get_received_snapshot_info(node_lagging, kill_time, timeout=30)
@@ -360,7 +366,7 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     leader_zk = keeper_utils.get_fake_zk(cluster, node_old_leader.name)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
 

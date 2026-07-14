@@ -1,0 +1,352 @@
+---
+title: '오픈 테이블 포맷 직접 쿼리하기'
+sidebarTitle: '직접 쿼리'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: '사전 설정 없이 ClickHouse 테이블 함수를 사용해 객체 스토리지에 있는 Iceberg, Delta Lake, Hudi, Paimon 테이블을 읽습니다.'
+toc_max_heading_level: 2
+keywords: ['데이터 레이크', '레이크하우스', 'Iceberg', 'Delta Lake', 'Hudi', 'Paimon', '테이블 함수']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의 데이터를 바로 쿼리할 수 있는 테이블 함수를 제공합니다. 이를 위해 외부 catalog에 연결할 필요가 없습니다. AWS Athena가 S3에서 읽는 방식과 마찬가지로, 저장된 위치에서 데이터를 직접 쿼리합니다.
+
+함수 호출에서 스토리지 경로와 자격 증명을 직접 전달하면 나머지는 ClickHouse가 처리합니다. 모든 ClickHouse SQL 구문과 함수를 사용할 수 있으며, 쿼리는 ClickHouse의 병렬 실행과 [효율적인 네이티브 Parquet 리더](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics)의 이점을 활용할 수 있습니다.
+
+<Info>
+  **서버, local 또는 chDB**
+
+  이 가이드의 단계는 기존 ClickHouse 서버 설치 환경에서 실행할 수 있습니다. 애드혹 쿼리의 경우에는 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 대신 사용하여 서버를 실행하지 않고도 동일한 워크플로를 완료할 수 있습니다. 약간만 조정하면 ClickHouse의 인프로세스 배포판인 [chDB](/ko/products/chdb/index)로도 같은 과정을 수행할 수 있습니다.
+</Info>
+
+다음 예시는 S3의 각 lakehouse 포맷에 저장된 [hits](/ko/get-started/sample-datasets/star-schema) 데이터셋을 사용합니다. 각 lake 포맷에는 각 객체 스토리지 제공자별 전용 함수가 있습니다.
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    [`iceberg`](/ko/reference/functions/table-functions/iceberg) 테이블 함수(`icebergS3`의 별칭)는 객체 스토리지에서 Iceberg 테이블을 직접 읽습니다. 각 스토리지 백엔드에 대응하는 변형으로 `icebergS3`, `icebergAzure`, `icebergHDFS`, `icebergLocal`이 있습니다.
+
+    **예시 구문:**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS 지원**
+
+      이 함수들의 S3 변형은 Google Cloud Storage(GCS)에서도 사용할 수 있습니다.
+    </Info>
+
+    **예시:**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329만
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163만
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### 클러스터 Variant
+
+    [`icebergS3Cluster`](/ko/reference/functions/table-functions/icebergCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드는 모든 노드에 연결을 설정하고 데이터 파일을 동적으로 배분합니다. 각 워커(worker) 노드는 모든 파일을 읽을 때까지 작업을 요청하고 처리합니다. `icebergCluster`는 `icebergS3Cluster`의 별칭(alias)입니다. Azure([`icebergAzureCluster`](/ko/reference/functions/table-functions/icebergCluster)) 및 HDFS([`icebergHDFSCluster`](/ko/reference/functions/table-functions/icebergCluster))용 변형도 제공됩니다.
+
+    **예시 구문:**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster는 icebergS3Cluster의 별칭(alias)입니다
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **예시 (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### 테이블 엔진
+
+    매 쿼리마다 테이블 함수를 사용하는 대신, [`Iceberg` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)을 사용하여 영구 테이블을 생성할 수 있습니다. 데이터는 여전히 객체 스토리지에 저장되며 필요 시 읽어오므로 ClickHouse로 데이터가 복사되지 않습니다. 이 방식의 장점은 테이블 정의가 ClickHouse에 저장되어, 사용자마다 스토리지 경로와 자격 증명을 별도로 지정하지 않아도 여러 사용자와 세션에서 공유할 수 있다는 점입니다. 각 스토리지 백엔드에 대응하는 엔진 변형은 다음과 같습니다: `IcebergS3`(또는 `Iceberg` 별칭), `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`.
+
+    테이블 엔진과 테이블 함수 모두 S3, AzureBlobStorage, HDFS 스토리지 엔진과 동일한 캐싱 메커니즘을 사용하는 [데이터 캐싱](/ko/reference/engines/table-engines/integrations/iceberg#data-cache)을 지원합니다. 또한 [메타데이터 캐시](/ko/reference/engines/table-engines/integrations/iceberg#metadata-cache)는 manifest 파일 정보를 메모리에 저장하여 Iceberg 메타데이터를 반복적으로 읽는 횟수를 줄여줍니다. 이 캐시는 `use_iceberg_metadata_files_cache` 설정을 통해 기본적으로 활성화되어 있습니다.
+
+    **예시 구문:**
+
+    테이블 엔진 `Iceberg`는 `IcebergS3`의 별칭(alias)입니다.
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS 지원**
+
+      Google Cloud Storage (GCS)에서는 테이블 엔진의 S3 버전을 사용할 수 있습니다.
+    </Info>
+
+    **예시:**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    Peak memory usage: 10.53 GiB.
+    ```
+
+    파티션 프루닝, 스키마 진화, 타임 트래블, 캐싱 등 지원되는 기능에 대한 자세한 내용은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 문서는 [`iceberg` 테이블 함수](/ko/reference/functions/table-functions/iceberg) 및 [`Iceberg` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg) 문서를 참조하십시오.
+  </Tab>
+
+  <Tab title="Delta Lake">
+    [`deltaLake`](/ko/reference/functions/table-functions/deltalake) 테이블 함수(`deltaLakeS3`의 별칭)는 객체 스토리지에서 Delta Lake 테이블을 읽습니다. 다른 백엔드용 변형으로는 `deltaLakeAzure` 및 `deltaLakeLocal`이 있습니다.
+
+    **예시 구문:**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **GCS 지원**
+
+      함수의 S3 변형은 Google Cloud Storage(GCS)에도 사용할 수 있습니다.
+    </Info>
+
+    **예시:**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329만
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163만
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### 클러스터 Variant
+
+    [`deltaLakeCluster`](/ko/reference/functions/table-functions/deltalakeCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드가 데이터 파일을 워커(worker) 노드에 동적으로 배분하여 병렬 처리를 수행합니다. `deltaLakeS3Cluster`는 `deltaLakeCluster`의 별칭(alias)입니다. Azure 변형인 [`deltaLakeAzureCluster`](/ko/reference/functions/table-functions/deltalakeCluster)도 사용할 수 있습니다.
+
+    **예시 구문:**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster는 deltaLakeCluster의 별칭입니다
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS 지원**
+
+      함수의 S3 버전은 Google Cloud Storage (GCS)에서도 사용할 수 있습니다.
+    </Info>
+
+    **예시 (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### 테이블 엔진
+
+    모든 쿼리에서 테이블 함수를 사용하는 대신, S3 호환 스토리지를 사용하는 경우 [`DeltaLake` 테이블 엔진](/ko/reference/engines/table-engines/integrations/deltalake)을 사용해 영구 테이블을 생성할 수 있습니다. 데이터는 계속 객체 스토리지에 저장되며 필요할 때만 읽히므로 ClickHouse로 복사되지 않습니다. 이 방식의 장점은 테이블 정의가 ClickHouse에 저장되어 각 사용자가 스토리지 경로와 자격 증명을 따로 지정하지 않고도 사용자와 세션 간에 공유할 수 있다는 점입니다.
+
+    테이블 엔진과 테이블 함수 모두 S3, AzureBlobStorage, HDFS 스토리지 엔진과 동일한 캐싱 메커니즘을 사용하는 [데이터 캐싱](/ko/reference/engines/table-engines/integrations/deltalake#data-cache)을 지원합니다.
+
+    **예시 구문:**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **GCS 지원**
+
+      이 테이블 엔진은 Google Cloud Storage (GCS)에서 사용할 수 있습니다.
+    </Info>
+
+    **예시:**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
+    ```
+
+    스토리지 백엔드, 캐싱 등 지원되는 기능에 대한 자세한 내용은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 내용은 [`deltaLake` 테이블 함수](/ko/reference/functions/table-functions/deltalake) 및 [`DeltaLake` 테이블 엔진](/ko/reference/engines/table-engines/integrations/deltalake) 문서를 참조하십시오.
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    [`hudi`](/ko/reference/functions/table-functions/hudi) 테이블 함수는 S3에 있는 Hudi 테이블을 읽어옵니다.
+
+    **구문:**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### 클러스터용 변형
+
+    [`hudiCluster`](/ko/reference/functions/table-functions/hudiCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기 작업을 분산 처리합니다. initiator 노드는 병렬 처리를 위해 데이터 파일을 worker 노드로 동적으로 분배합니다.
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### 테이블 엔진
+
+    모든 쿼리에서 매번 테이블 함수를 사용하는 대신, [`Hudi` 테이블 엔진](/ko/reference/engines/table-engines/integrations/hudi)을 사용해 영구 테이블을 생성할 수 있습니다. 데이터는 계속 객체 스토리지에 저장되며 필요할 때 읽어 옵니다. 즉, 데이터가 ClickHouse로 복사되지는 않습니다. 장점은 테이블 정의가 ClickHouse에 저장되므로, 각 사용자가 스토리지 경로와 자격 증명을 일일이 지정하지 않아도 사용자와 세션 간에 공유할 수 있다는 점입니다.
+
+    **구문:**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    스토리지 백엔드 등을 비롯한 지원 기능은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 내용은 [`hudi` 테이블 함수](/ko/reference/functions/table-functions/hudi) 및 [`Hudi` 테이블 엔진](/ko/reference/engines/table-engines/integrations/hudi) 문서를 참조하십시오.
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    [`paimon`](/ko/reference/functions/table-functions/paimon) 테이블 함수(`paimonS3`의 별칭)는 객체 스토리지에서 Paimon 테이블을 읽습니다. 스토리지 backend별로 `paimonS3`, `paimonAzure`, `paimonHDFS`, `paimonLocal` 변형이 제공됩니다.
+
+    **구문:**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### 클러스터 변형
+
+    [`paimonS3Cluster`](/ko/reference/functions/table-functions/paimonCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기 작업을 분산합니다. initiator 노드는 병렬 처리를 위해 데이터 파일을 worker 노드로 동적으로 전달합니다. `paimonCluster`는 `paimonS3Cluster`의 별칭입니다. Azure([`paimonAzureCluster`](/ko/reference/functions/table-functions/paimonCluster)) 및 HDFS([`paimonHDFSCluster`](/ko/reference/functions/table-functions/paimonCluster))용 변형도 있습니다.
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster는 paimonS3Cluster의 별칭(alias)입니다
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### 테이블 엔진
+
+    현재 ClickHouse에는 Paimon 전용 테이블 엔진이 없습니다. Paimon 테이블을 쿼리하려면 위의 테이블 함수를 사용하십시오.
+
+    스토리지 백엔드를 비롯한 지원 기능은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 내용은 [`paimon` 테이블 함수](/ko/reference/functions/table-functions/paimon) 문서를 참조하십시오.
+  </Tab>
+</Tabs>

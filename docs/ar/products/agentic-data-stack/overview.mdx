@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'نظرة عامة'
+title: 'Agentic Data Stack'
+description: 'التحليلات المعتمدة على الوكلاء على ClickHouse: مُدارة بالكامل في ClickHouse Cloud، أو ذاتية الاستضافة كمكدس مفتوح المصدر يضم ClickHouse وخادم MCP وLibreChat وLangfuse.'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+أسهل طريقة لتشغيل التحليلات المعتمدة على الوكلاء على ClickHouse هي [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents) في ClickHouse Cloud: مُدار بالكامل، من دون الحاجة إلى تشغيل أي بنية تحتية. يطرح المستخدمون أسئلة بلغة طبيعية، ويجيب عنها وكيل ذكاء اصطناعي عبر الاستعلام من قاعدة البيانات مباشرةً.
+
+للاستضافة الذاتية، تُعد **Agentic Data Stack** حزمةً مفتوحة المصدر قابلة للتركيب. أنت تشغّلها بنفسك، وتربط نماذجك الخاصة، وتُبقي محادثاتك وبياناتك داخل بيئتك الخاصة. وهي تتكوّن من [ClickHouse](/ar/get-started/setup/install)، و[ClickHouse MCP server](/ar/products/agentic-data-stack/components/mcp-server)، و[LibreChat](/ar/products/agentic-data-stack/components/librechat)، و[Langfuse](/ar/products/agentic-data-stack/components/langfuse).
+
+<div id="what-is-agentic-analytics">
+  ## ما المقصود بالتحليلات المعتمدة على الوكلاء؟
+</div>
+
+في التحليلات المعتمدة على الوكلاء، يرتكز النموذج في إجاباته على تشغيل استعلامات على بياناتك. فعند طرح سؤال، يفحص الوكيل قواعد البيانات والجداول المتاحة، ويحدِّد الاستعلامات التي ينبغي تشغيلها، ثم ينفِّذها على ClickHouse ويُنشئ إجابةً استنادًا إلى النتائج. ويمكنه تنقيح استعلام، أو تشغيل استعلام لاحق، أو ربط عدة خطوات معًا. وعندما يفشل استعلام أو يعيد نتيجة غير متوقعة، فإنه يُعدِّل مساره ويحاول مرةً أخرى بدلًا من التوقف.
+
+<div id="what-you-can-do">
+  ## ما الذي يمكنك القيام به
+</div>
+
+* **اطرح أسئلة بلغة طبيعية** واحصل على إجابات مستندة إلى بياناتك الخاصة.
+* **أنشئ وكلاء من دون كتابة أي تعليمات برمجية** عبر تزويد الوكيل بتعليمات الوكيل والأدوات، ثم إعادة استخدامه.
+* **شارك الوكلاء والمحادثات** على شكل روابط للقراءة فقط، بحيث يتمكن الآخرون من تتبّع الاستعلامات التي تستند إليها الإجابة.
+* **أنشئ مخططات تفاعلية ومرئيات** من نتائج الاستعلامات داخل المحادثة.
+* **قيّم الإجابات وحسّنها** عبر تقييم الردود في Langfuse باستخدام مراجعة بشرية أو مُحكِّم LLM، وتحسين المطالبات والوكلاء.
+
+<div id="architecture">
+  ## كيف تتكامل مكوّنات Agentic Data Stack
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="بنية Agentic Data Stack: يتفاعل المستخدمون مع LibreChat، الذي يتصل بنموذج لغوي كبير، وبـ ClickHouse عبر خادم MCP، وبـ Langfuse لأغراض التتبّع" size="md" />
+
+يطرح المستخدم سؤالًا في LibreChat. يضع النموذج خطةً للاستجابة، ومن خلال خادم MCP في ClickHouse يستدعي أدوات لاستكشاف ClickHouse وتنفيذ استعلامات عليه. ثم تعود النتائج، ويصوغ الوكيل الإجابة. ويسجّل Langfuse، المبني على OpenTelemetry، كل تشغيل بدءًا من الموجّه مرورًا باستدعاء الأداة ووصولًا إلى الاستجابة، ويتيح لك تقييم المخرجات تلقائيًا أو عبر مراجعة بشرية، كما يتتبّع الجودة والتكلفة وزمن الاستجابة.
+
+يعتمد خادم MCP في ClickHouse على [Model Context Protocol](https://modelcontextprotocol.io/)، وهو معيار مفتوح، لذا فهو يعمل مع أي client أو إطار عمل للوكلاء متوافق مع MCP، وليس مع LibreChat فقط. راجع [أدلة MCP](/ar/guides/use-cases/ai-ml/MCP) الخاصة بالعملاء ومكتبات الوكلاء.
+
+<div id="components">
+  ## المكوّنات
+</div>
+
+| المكوّن               | الدور                                                              | تعرّف على المزيد                                                 |
+| --------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| ClickHouse            | المحرّك التحليلي الذي يوجّه إليه الوكيل الاستعلامات                | [ابدأ مع ClickHouse](/ar/get-started/setup/install)            |
+| خادم MCP في ClickHouse | المعيار المفتوح الذي يتيح للوكيل استخدام ClickHouse على شكل أدوات  | [خادم MCP](/ar/products/agentic-data-stack/components/mcp-server) |
+| LibreChat             | واجهة الدردشة والواجهة الأمامية للوكيل التي يتفاعل معها المستخدمون | [LibreChat](/ar/products/agentic-data-stack/components/librechat)   |
+| Langfuse              | observability لكل prompt واستدعاء أداة وكل استجابة                 | [Langfuse](/ar/products/agentic-data-stack/components/langfuse)     |
+
+<div id="get-started">
+  ## البدء
+</div>
+
+هناك طريقتان لتشغيل التحليلات المعتمدة على الوكلاء على ClickHouse:
+
+* **مُدارة (ClickHouse Cloud):** أسرع طريقة، ومن دون أي إعداد. يوفّر [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents) دردشة مستضافة ووكلاء يعملون على بياناتك. كما تتوفر المكوّنات المنفصلة أيضًا كخدمات مُدارة: [Remote MCP server](/ar/products/cloud/features/ai-ml/remote-mcp) و[Langfuse Cloud](https://cloud.langfuse.com).
+* **ذاتي الاستضافة (مفتوحة المصدر):** شغّل المكدس الكامل بنفسك باستخدام [Docker Compose](/ar/products/agentic-data-stack/docker-setup)، مع ربط نماذجك الخاصة والإبقاء على بياناتك داخل بيئتك.
+
+لتجربة المكدس مع مجموعات بيانات عامة من دون تثبيت أي شيء، استخدم [AgentHouse](https://llm.clickhouse.com)، وهو العرض التوضيحي المستضاف.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+إمكانات الذكاء الاصطناعي الأخرى مفتوحة المصدر في ClickHouse:
+
+* [توليد SQL بالذكاء الاصطناعي](/ar/guides/use-cases/ai-ml/ai-powered-sql-generation): من اللغة الطبيعية إلى SQL في ClickHouse Client وclickhouse-local
+* [البحث المتجهي باستخدام QBit](/ar/guides/use-cases/ai-ml/vector-search): بحث متجهي قابل للضبط أثناء التشغيل
