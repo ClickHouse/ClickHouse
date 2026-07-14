@@ -3,9 +3,11 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
@@ -16,10 +18,55 @@ namespace ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace Setting
+{
+extern const SettingsBool use_puffin_files_cache;
+}
+
 }
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
+    ObjectStoragePtr object_storage,
+    const String & puffin_path,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    const IcebergPathFromMetadata & expected_data_file,
+    ContextPtr context,
+    LoggerPtr log,
+    bool disable_filesystem_cache)
+{
+    RelativePathWithMetadata puffin_object{puffin_path};
+    auto read_settings = context->getReadSettings();
+    if (disable_filesystem_cache)
+        read_settings.enable_filesystem_cache = false;
+
+    auto read_buffer = createReadBuffer(puffin_object, object_storage, context, log, read_settings);
+    auto deleted_positions = readDeletionVectorFromPuffin(*read_buffer, content_offset, content_size_in_bytes);
+
+    if (deleted_positions.empty())
+        return nullptr;
+
+    auto bitmap = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+    for (UInt64 position : deleted_positions)
+        bitmap->add(static_cast<size_t>(position));
+
+    LOG_DEBUG(
+        log,
+        "Loaded deletion vector from puffin file '{}' for data file '{}': {} deleted rows",
+        puffin_path,
+        expected_data_file.serialize(),
+        deleted_positions.size());
+
+    return bitmap;
+}
+
+}
 
 DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     ObjectStoragePtr object_storage,
@@ -40,25 +87,37 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             expected_data_file.serialize());
     }
 
+    const bool use_cache = context->getSettingsRef()[Setting::use_puffin_files_cache];
+    if (!use_cache)
+    {
+        LOG_TRACE(log, "Not using Puffin files cache for '{}', because the setting use_puffin_files_cache is false", puffin_path);
+        return loadDeletionVectorUncached(
+            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, false);
+    }
+
     RelativePathWithMetadata puffin_object{puffin_path};
-    auto read_buffer = createReadBuffer(puffin_object, object_storage, context, log);
-    auto deleted_positions = readDeletionVectorFromPuffin(*read_buffer, content_offset, content_size_in_bytes);
+    if (!puffin_object.metadata)
+        puffin_object.metadata = object_storage->getObjectMetadata(puffin_object.getPath(), /*with_tags=*/ false);
 
-    if (deleted_positions.empty())
-        return nullptr;
-
-    auto bitmap = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
-    for (UInt64 position : deleted_positions)
-        bitmap->add(static_cast<size_t>(position));
-
-    LOG_DEBUG(
-        log,
-        "Loaded deletion vector from puffin file '{}' for data file '{}': {} deleted rows",
+    auto cache_key = PuffinFilesCache::tryCreateKey(
         puffin_path,
-        expected_data_file.serialize(),
-        deleted_positions.size());
+        puffin_object.metadata->etag,
+        content_offset,
+        content_size_in_bytes);
 
-    return bitmap;
+    if (!cache_key)
+    {
+        LOG_TRACE(log, "Not using Puffin files cache for '{}', because etag is empty", puffin_path);
+        return loadDeletionVectorUncached(
+            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, false);
+    }
+
+    auto cache = context->getPuffinFilesCache();
+    return cache->getOrSetDeletionVector(*cache_key, [&]()
+    {
+        return loadDeletionVectorUncached(
+            object_storage, puffin_path, content_offset, content_size_in_bytes, expected_data_file, context, log, true);
+    });
 }
 
 }
