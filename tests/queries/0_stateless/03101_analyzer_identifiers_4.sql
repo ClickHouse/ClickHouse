@@ -46,9 +46,11 @@ SELECT * EXCEPT('hello|world');
 
 SELECT * EXCEPT(hello) REPLACE(x + 1 AS x);
 
-SELECT COLUMNS('^c') FROM t;
-SELECT t.COLUMNS('^c') FROM t, u;
-SELECT t.COLUMNS('^c') EXCEPT (test_hello, test_world) FROM t, u;
+-- Qualify table names so resolution does not depend on session USE state
+-- (a client reconnect mid-test resets the current database, causing UNKNOWN_TABLE).
+SELECT COLUMNS('^c') FROM {CLICKHOUSE_DATABASE:Identifier}.t;
+SELECT t.COLUMNS('^c') FROM {CLICKHOUSE_DATABASE:Identifier}.t, {CLICKHOUSE_DATABASE:Identifier}.u;
+SELECT t.COLUMNS('^c') EXCEPT (test_hello, test_world) FROM {CLICKHOUSE_DATABASE:Identifier}.t, {CLICKHOUSE_DATABASE:Identifier}.u;
 
 SELECT '---';
 
