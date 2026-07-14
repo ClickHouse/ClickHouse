@@ -15,3 +15,9 @@
 2
 -- _partition_value filter, forced projection
 2
+-- modulo partition key, folding off
+498
+-- modulo partition key, folding on
+498
+-- no parts over-pruned with folding on
+1

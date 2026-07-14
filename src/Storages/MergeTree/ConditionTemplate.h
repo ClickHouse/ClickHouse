@@ -60,6 +60,10 @@ private:
     ContextPtr context;
     bool skip_folding;
 
+    /// Legacy-adjusted partition key (modulo -> moduloLegacy) used to match the predicate
+    /// against the expression that actually produced the stored partition value. Computed once.
+    KeyDescription partition_key_for_substitution;
+
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
     mutable std::unordered_map<std::string, Cond> cache;

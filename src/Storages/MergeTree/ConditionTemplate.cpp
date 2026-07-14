@@ -35,10 +35,9 @@ namespace
 void fillPartitionConstantsSubstitution(
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
     const ActionsDAG & predicate_dag,
-    const StorageMetadataPtr & metadata_snapshot,
+    const KeyDescription & partition_key,
     const MergeTreePartition & partition)
 {
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto & key_dag = partition_key.expression->getActionsDAG();
     const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
     const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
@@ -90,6 +89,7 @@ ActionsDAG substituteConstantInputs(
     const MergeTreePartition & partition,
     const std::string & virtual_partition_id,
     const MergeTreePartition & virtual_partition,
+    const KeyDescription & partition_key_for_substitution,
     const StorageMetadataPtr & metadata_snapshot)
 {
     chassert(predicate_node);
@@ -97,7 +97,7 @@ ActionsDAG substituteConstantInputs(
     auto dag = ActionsDAG::cloneSubDAG({predicate_node}, /*remove_aliases=*/false);
 
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, partition);
+    fillPartitionConstantsSubstitution(substitutions, dag, partition_key_for_substitution, partition);
     fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, virtual_partition_id, virtual_partition);
 
     dag.substitute(substitutions);
@@ -175,6 +175,17 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , context(std::move(context_))
     , skip_folding(skip_folding_)
 {
+    /// The stored partition value is computed with the backward-compatible `moduloLegacy`
+    /// rewrite (see MergeTreePartition::adjustPartitionKey), so it can differ from what the
+    /// query-time expression yields: e.g. `id % 200` stores `moduloLegacy(-199, 200) = 57`
+    /// (Int8) while the filter evaluates `modulo(-199, 200) = -199` (Int16). Match the
+    /// predicate against the same legacy-adjusted key that produced the value; a modern
+    /// `modulo` predicate node then cannot match the key's `moduloLegacy` node, so no unsound
+    /// substitution is made for modulo partition keys. Non-modulo keys are unaffected.
+    partition_key_for_substitution = (skip_folding || !metadata_snapshot->isPartitionKeyDefined())
+        ? metadata_snapshot->getPartitionKey()
+        : MergeTreePartition::adjustPartitionKey(metadata_snapshot, context);
+
     generateUnsubstituted();
 }
 
@@ -214,7 +225,8 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const IMergeTreeDataP
     try
     {
         auto specialized = substituteConstantInputs(
-            dag->predicate, part.partition, virtual_partition_id, parent.partition, metadata_snapshot);
+            dag->predicate, part.partition, virtual_partition_id, parent.partition,
+            partition_key_for_substitution, metadata_snapshot);
         chassert(!specialized.getOutputs().empty());
 
         Cond produced = generate(&specialized, specialized.getOutputs().front());

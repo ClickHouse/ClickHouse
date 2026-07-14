@@ -53,3 +53,24 @@ SELECT k FROM t_04510_virt WHERE _partition_value.1 = 202002 AND v BETWEEN 20 AN
     SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_constant_folding_in_index_analysis = 1;
 
 DROP TABLE t_04510_virt;
+
+-- Regression test for wrong results with a modulo partition key.
+-- The stored partition value uses the backward-compatible moduloLegacy (8-bit) result, e.g.
+-- `id % 200` stores moduloLegacy(-199, 200) = 57, while the filter evaluates modulo(-199, 200)
+-- = -199. Folding the stored value into the modern modulo predicate turned `id % 200 < 0` into
+-- `57 < 0` and over-pruned parts. The count must match the folding-off baseline, and no parts
+-- may be dropped for this whole-partition filter.
+
+DROP TABLE IF EXISTS t_04510_mod;
+
+CREATE TABLE t_04510_mod (id Int64) ENGINE = MergeTree PARTITION BY id % 200 ORDER BY id;
+INSERT INTO t_04510_mod SELECT number - 500 FROM numbers(1000) SETTINGS max_partitions_per_insert_block = 0;
+
+SELECT '-- modulo partition key, folding off';
+SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 0;
+SELECT '-- modulo partition key, folding on';
+SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1;
+SELECT '-- no parts over-pruned with folding on';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Parts: 256/256%';
+
+DROP TABLE t_04510_mod;
