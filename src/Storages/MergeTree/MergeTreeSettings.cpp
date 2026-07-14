@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -199,6 +200,15 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+)", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -687,9 +697,9 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -1626,7 +1636,11 @@ The maximum postpone time for failed replicated task. The value is used if the t
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0) \
+    )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
+    )", 0) \
     DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
 When enabled, individual elements within Tuple columns participate in
 aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
@@ -1931,15 +1945,6 @@ with `add_minmax_index_for_numeric_columns`).
 The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
-
-Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
-`system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
-substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
-monitoring with one functional consequence:
-`distributed_index_analysis_min_indexes_bytes_to_activate` compares against
-`data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
-strings) may not cross the activation threshold even if the real uncompressed size would.
-The fallback is the normal query plan, not a wrong result.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1948,6 +1953,21 @@ the partition or sorting key.
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
 the partition or sorting key.
+)", 0) \
+    DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(
+In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
+key, combining their aggregate states. A column that is neither part of the sorting key nor an
+aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`) is a *dimension*: after
+a merge it keeps an arbitrary value of one of the collapsed rows, which silently produces wrong
+results for queries that `GROUP BY` or filter on it (see
+https://github.com/ClickHouse/ClickHouse/issues/751).
+
+By default, such a schema is rejected when the table is created. Enable this setting if the column is
+functionally dependent on the sorting key (so all collapsed rows share the same value) and the
+behavior is intentional.
+
+The check applies only to tables that actually aggregate (those with at least one aggregate-state
+column) and is skipped when `allow_tuple_element_aggregation` is enabled.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
 Enables writing attributes into virtual parts and committing blocks in keeper
@@ -2588,6 +2608,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
+    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

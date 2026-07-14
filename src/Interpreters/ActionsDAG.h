@@ -158,7 +158,10 @@ public:
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
+    /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
+    /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
@@ -223,12 +226,12 @@ public:
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
+    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
@@ -293,6 +296,9 @@ public:
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
+
+    /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
+    void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.

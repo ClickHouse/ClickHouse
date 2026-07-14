@@ -34,13 +34,11 @@ To start the onboarding process, please [contact us](https://clickhouse.com/clou
 Prepare a fresh AWS account, GCP project, or Azure subscription under your organization.
 
 <Steps>
-<Step>
-### Choose a Cloud Provider {#choose-cloud-provider}
+<Step title="Choose a Cloud Provider" id="choose-cloud-provider">
 
 <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background='black'/>
 </Step>
-<Step>
-### Account/project/subscription setup {#account-setup}
+<Step title="Account/project/subscription setup" id="account-setup">
 
 The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
 
@@ -63,8 +61,7 @@ module "clickhouse_onboarding" {
 }
 ```
 </Step>
-<Step>
-### Set up BYOC infrastructure {#setup-byoc-infrastructure}
+<Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
 
 You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
 
