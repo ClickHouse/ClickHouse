@@ -1,0 +1,23 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>card</name>
+            <values>
+                <value>1000000</value>
+                <value>100</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE test_u64_left_{card} (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE test_u64_right_{card} (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO test_u64_left_{card} SELECT number % {card} FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO test_u64_right_{card} SELECT number FROM numbers({card})</fill_query>
+    <fill_query>OPTIMIZE TABLE test_u64_left_{card} FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE test_u64_right_{card} FINAL</fill_query>
+
+    <query>SELECT count() FROM test_u64_left_{card} AS a JOIN test_u64_right_{card} AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
+</test>

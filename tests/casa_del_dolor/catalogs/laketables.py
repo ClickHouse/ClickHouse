@@ -133,6 +133,28 @@ class SparkTable:
         self.file_format = _file_format
         self.storage = _storage
         self.catalog = _catalog
+        self.check_constraints: dict[str, str] = {}
+        # Delta liquid clustering (CLUSTER BY). Kept in sync at CREATE and by the
+        # ALTER ... CLUSTER BY / CLUSTER BY NONE statements. Databricks/Delta treats
+        # clustered tables differently in OPTIMIZE: FULL reclusters them, ZORDER BY is
+        # rejected, and a WHERE predicate is not supported.
+        self.clustered: bool = False
+        # Plain partition-key column names (PARTITIONED BY). OPTIMIZE ... WHERE only
+        # accepts partition predicates, so the WHERE column must come from here.
+        # NOTE: this is the WHERE-usable column list, NOT a partitioned-vs-unpartitioned
+        # flag -- it stays empty for transformed Iceberg specs (bucket/year/truncate/void)
+        # and for tables created via the pyiceberg catalog path. Use `partitioned` for
+        # "is this table partitioned at all".
+        self.partition_keys: list[str] = []
+        # Whether the table has ANY partitioning (plain or transformed, SQL DDL or catalog
+        # PartitionSpec). Operations that assume no partition tuple / partition filter
+        # (e.g. Iceberg equality deletes, add_files) must gate on this, not partition_keys.
+        self.partitioned: bool = False
+        # Active Iceberg partition-transform clauses, exactly as they appear in Spark SQL
+        # (e.g. `bucket(16, c0)`, `year(c1)`, `c2`). Kept in sync at CREATE and by
+        # ALTER ... ADD/DROP/REPLACE PARTITION FIELD so DROP/REPLACE can target a field that
+        # actually exists. Iceberg-only; empty for Delta/Paimon.
+        self.partition_fields: list[str] = []
 
     def get_namespace_path(self) -> str:
         return f"test.{self.table_name}"

@@ -1,0 +1,370 @@
+---
+description: 'Страница с описанием анализатора запросов ClickHouse'
+keywords: ['анализатор']
+sidebarTitle: 'Анализатор'
+slug: /operations/analyzer
+title: 'Анализатор'
+doc_type: 'reference'
+---
+
+В ClickHouse версии `24.3` новый анализатор запросов включен по умолчанию.
+Подробнее о принципах его работы можно прочитать [здесь](/ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
+
+<div id="known-incompatibilities">
+  ## Известные несовместимости
+</div>
+
+Несмотря на исправление большого количества ошибок и внедрение новых оптимизаций, это также приводит к некоторым несовместимым изменениям в поведении ClickHouse. Ознакомьтесь со следующими изменениями, чтобы понять, как переписать ваши запросы для анализатора.
+
+<div id="invalid-queries-are-no-longer-optimized">
+  ### Некорректные запросы больше не оптимизируются
+</div>
+
+Прежняя инфраструктура планирования запросов применяла оптимизации на уровне AST до этапа проверки запроса.
+Оптимизации могли переписать исходный запрос так, чтобы он стал корректным и исполнимым.
+
+В анализаторе проверка запроса выполняется до этапа оптимизации.
+Это означает, что некорректные запросы, которые раньше можно было выполнить, теперь не поддерживаются.
+В таких случаях запрос необходимо исправить вручную.
+
+<div id="example-1">
+  #### Пример 1
+</div>
+
+Следующий запрос использует столбец `number` в списке проекций, хотя после агрегации доступно только `toString(number)`.
+В старом анализаторе `GROUP BY toString(number)` оптимизировалось до `GROUP BY number,`, что делало запрос корректным.
+
+```sql
+SELECT number
+FROM numbers(1)
+GROUP BY toString(number)
+```
+
+<div id="example-2">
+  #### Пример 2
+</div>
+
+Та же проблема возникает и в этом запросе. Столбец `number` используется после агрегации с другим ключом.
+Прежний анализатор запросов исправлял этот запрос, перемещая фильтр `number > 5` из условия `HAVING` в условие `WHERE`.
+
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+GROUP BY n
+HAVING number > 5
+```
+
+Чтобы исправить запрос, перенесите все условия, относящиеся к неагрегированным столбцам, в раздел `WHERE`, чтобы привести его в соответствие со стандартным синтаксисом SQL:
+
+```sql
+SELECT
+    number % 2 AS n,
+    sum(number)
+FROM numbers(10)
+WHERE number > 5
+GROUP BY n
+```
+
+<div id="create-view-with-invalid-query">
+  ### `CREATE VIEW` с некорректным запросом
+</div>
+
+Анализатор всегда выполняет проверку типов.
+Ранее можно было создать `VIEW` с некорректным запросом `SELECT`.
+В этом случае ошибка возникала при первом `SELECT` или `INSERT` (в случае `MATERIALIZED VIEW`).
+
+Теперь создать `VIEW` таким способом нельзя.
+
+<div id="example-view">
+  #### Пример
+</div>
+
+```sql
+CREATE TABLE source (data String)
+ENGINE=MergeTree
+ORDER BY tuple();
+
+CREATE VIEW some_view
+AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
+FROM source;
+```
+
+<div id="known-incompatibilities-of-the-join-clause">
+  ### Известные несовместимости предложения `JOIN`
+</div>
+
+<div id="join-using-column-from-projection">
+  #### `JOIN` с использованием столбца из проекции
+</div>
+
+По умолчанию псевдоним из списка `SELECT` нельзя использовать в качестве ключа `JOIN USING`.
+
+Новая настройка `analyzer_compatibility_join_using_top_level_identifier`, если она включена, меняет поведение `JOIN USING`: при разрешении идентификаторов предпочтение отдается выражениям из списка проекций запроса `SELECT`, а не столбцам из левой таблицы напрямую.
+
+Например:
+
+```sql
+SELECT a + 1 AS b, t2.s
+FROM VALUES('a UInt64, b UInt64', (1, 1)) AS t1
+JOIN VALUES('b UInt64, s String', (1, 'one'), (2, 'two')) t2
+USING (b);
+```
+
+Если `analyzer_compatibility_join_using_top_level_identifier` установлено в `true`, условие JOIN интерпретируется как `t1.a + 1 = t2.b`, что соответствует поведению в более ранних версиях.
+Результат будет `2, 'two'`.
+Если эта настройка имеет значение `false`, по умолчанию используется условие JOIN `t1.b = t2.b`, и запрос вернёт `2, 'one'`.
+Если `b` отсутствует в `t1`, запрос завершится ошибкой.
+
+<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
+  #### Изменения в поведении `JOIN USING` со столбцами `ALIAS`/`MATERIALIZED`
+</div>
+
+В анализаторе использование `*` в запросе `JOIN USING` со столбцами `ALIAS` или `MATERIALIZED` по умолчанию включает эти столбцы в результирующий набор.
+
+Например:
+
+```sql
+CREATE TABLE t1 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 VALUES (1), (2);
+
+CREATE TABLE t2 (id UInt64, payload ALIAS sipHash64(id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t2 VALUES (2), (3);
+
+SELECT * FROM t1
+FULL JOIN t2 USING (payload);
+```
+
+В анализаторе результат этого запроса будет включать столбец `payload` вместе с `id` из обеих таблиц.
+В отличие от него, предыдущий анализатор включал эти столбцы `ALIAS` только при включении определённых настроек (`asterisk_include_alias_columns` или `asterisk_include_materialized_columns`),
+при этом столбцы могли отображаться в другом порядке.
+
+Чтобы результаты были предсказуемыми и согласованными, особенно при миграции старых запросов на анализатор, рекомендуется явно указывать столбцы в секции `SELECT`, а не использовать `*`.
+
+<div id="handling-of-type-modifiers-for-columns-in-using-clause">
+  #### Обработка модификаторов типов столбцов в предложении `USING`
+</div>
+
+В новой версии анализатора правила определения общего супертипа для столбцов, указанных в предложении `USING`, были унифицированы, чтобы результаты стали более предсказуемыми,
+особенно при работе с такими модификаторами типов, как `LowCardinality` и `Nullable`.
+
+* `LowCardinality(T)` и `T`: если столбец типа `LowCardinality(T)` участвует в JOIN со столбцом типа `T`, результирующим общим супертипом будет `T`, то есть модификатор `LowCardinality` фактически отбрасывается.
+* `Nullable(T)` и `T`: если столбец типа `Nullable(T)` участвует в JOIN со столбцом типа `T`, результирующим общим супертипом будет `Nullable(T)`, что гарантирует сохранение свойства nullable.
+
+Например:
+
+```sql
+SELECT id, toTypeName(id)
+FROM VALUES('id LowCardinality(String)', ('a')) AS t1
+FULL OUTER JOIN VALUES('id String', ('b')) AS t2
+USING (id);
+```
+
+В этом запросе общий супертип для `id` определяется как `String`, а модификатор `LowCardinality` из `t1` отбрасывается.
+
+<div id="projection-column-names-changes">
+  ### Изменения в именах столбцов проекции
+</div>
+
+При вычислении имён проекции псевдонимы не подставляются.
+
+```sql
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 0
+FORMAT PrettyCompact
+
+   ┌─x─┬─plus(plus(1, 1), 1)─┐
+1. │ 2 │                   3 │
+   └───┴─────────────────────┘
+
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 1
+FORMAT PrettyCompact
+
+   ┌─x─┬─plus(x, 1)─┐
+1. │ 2 │          3 │
+   └───┴────────────┘
+```
+
+<div id="incompatible-function-arguments-types">
+  ### Несовместимые типы аргументов функции
+</div>
+
+В анализатор вывод типов происходит на этапе начального анализа запроса.
+Это означает, что проверка типов выполняется до укороченного вычисления, поэтому аргументы функции `if` всегда должны иметь общий супертип.
+
+Например, следующий запрос завершается ошибкой `There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not`:
+
+```sql
+SELECT toTypeName(if(0, [2, 3, 4], 'String'))
+```
+
+<div id="heterogeneous-clusters">
+  ### Неоднородные кластеры
+</div>
+
+Анализатор существенно меняет протокол обмена данными между серверами в кластере. Поэтому выполнять распределённые запросы на серверах с разными значениями настройки `enable_analyzer` невозможно.
+
+<div id="mutations-are-interpreted-by-previous-analyzer">
+  ### Мутации обрабатываются предыдущим анализатором
+</div>
+
+Мутации по-прежнему используют старый анализатор.
+Это означает, что некоторые новые возможности ClickHouse SQL нельзя использовать в мутациях. Например, оператор `QUALIFY`.
+Текущий статус можно проверить [здесь](https://github.com/ClickHouse/ClickHouse/issues/61563).
+
+<div id="unsupported-features">
+  ### Неподдерживаемые возможности
+</div>
+
+Ниже приведен список возможностей, которые анализатор пока не поддерживает:
+
+* Индекс Annoy.
+* Индекс Hypothesis. Работа над ним ведется [здесь](https://github.com/ClickHouse/ClickHouse/pull/48381).
+* Оконное представление не поддерживается. Его поддержка в будущем не планируется.
+
+<div id="cloud-migration">
+  ## Миграция в Cloud
+</div>
+
+Мы включаем новый анализатор запросов на всех экземплярах, где он сейчас отключен, чтобы обеспечить новые функциональные возможности и оптимизации производительности. Это изменение ужесточает правила области видимости в SQL, поэтому клиентам потребуется вручную обновить запросы, которые им не соответствуют.
+
+<div id="migration-workflow">
+  ### Процесс миграции
+</div>
+
+1. Определите запрос, отфильтровав записи в `system.query_log` по `normalized_query_hash`:
+
+```sql
+SELECT query 
+FROM clusterAllReplicas(default, system.query_log)
+WHERE normalized_query_hash='{hash}' 
+LIMIT 1 
+SETTINGS skip_unavailable_shards=1
+```
+
+2. Выполните запрос при включенном анализаторе, добавив следующие настройки.
+
+```sql
+SETTINGS
+    enable_analyzer=1,
+    analyzer_compatibility_join_using_top_level_identifier=1
+```
+
+3. Доработайте запрос и проверьте, что его результаты совпадают с выводом при отключённом анализаторе.
+
+Ознакомьтесь с наиболее частыми несовместимостями, обнаруженными в ходе внутреннего тестирования.
+
+<div id="unknown-expression-identifier">
+  ### Неизвестный идентификатор выражения
+</div>
+
+Ошибка: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. Код исключения: 47
+
+Причина: запросы, зависящие от нестандартного устаревшего поведения, допускающего неоднозначности, — например, обращения к вычисляемым псевдонимам в фильтрах, неоднозначных проекций подзапросов или «динамической» области видимости CTE, — теперь корректно определяются как недопустимые и сразу отклоняются.
+
+Решение: обновите SQL-шаблоны следующим образом:
+
+* Логика фильтрации: перенесите условие из WHERE в HAVING, если фильтрация идёт по результатам, или продублируйте выражение в WHERE, если фильтрация идёт по исходным данным.
+* Область видимости подзапроса: явно выберите все столбцы, необходимые внешнему запросу.
+* Ключи JOIN: используйте ON с полными выражениями вместо USING, если ключ — это псевдоним.
+* Во внешних запросах обращайтесь к псевдониму самого подзапроса/CTE, а не к таблицам внутри него.
+
+<div id="non-aggregated-columns-in-group-by">
+  ### Неагрегированные столбцы в GROUP BY
+</div>
+
+Ошибка: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Код исключения: 215
+
+Причина: Старый анализатор позволял выбирать столбцы, которых нет в GROUP BY (часто подставляя произвольное значение). Анализатор следует стандарту SQL: каждый выбранный столбец должен быть либо агрегатом, либо ключом группировки.
+
+Решение: Оберните столбец в `any()`, `argMax()` или добавьте его в GROUP BY.
+
+```sql
+/* ИСХОДНЫЙ ЗАПРОС */
+-- device_id неоднозначен
+SELECT user_id, device_id FROM table GROUP BY user_id
+
+/* ИСПРАВЛЕННЫЙ ЗАПРОС */
+SELECT user_id, any(device_id) FROM table GROUP BY user_id
+-- ИЛИ
+SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="duplicate-cte-names">
+  ### Дублирующиеся имена CTE
+</div>
+
+Ошибка: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Код исключения: 179
+
+Причина: Старый анализатор допускал определение нескольких общих табличных выражений (WITH ...) с одним и тем же именем, когда более позднее выражение перекрывало предыдущее. Анализатор не допускает такой неоднозначности.
+
+Решение: Переименуйте повторяющиеся CTE, чтобы их имена были уникальными.
+
+```sql
+/* ИСХОДНЫЙ ЗАПРОС */
+WITH 
+  data AS (SELECT 1 AS id), 
+  data AS (SELECT 2 AS id) -- Переопределено
+SELECT * FROM data;
+
+/* ИСПРАВЛЕННЫЙ ЗАПРОС */
+WITH 
+  raw_data AS (SELECT 1 AS id), 
+  processed_data AS (SELECT 2 AS id)
+SELECT * FROM processed_data;
+```
+
+<div id="ambiguous-column-identifiers">
+  ### Неоднозначные идентификаторы столбцов
+</div>
+
+Ошибка: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Код исключения: 207
+
+Причина: В запросе используется имя столбца, которое присутствует в нескольких таблицах в JOIN, без указания исходной таблицы. Старый анализатор часто определял нужный столбец на основе внутренней логики, тогда как анализатор требует явного указания имени.
+
+Решение: Полностью указывайте столбец в виде table&#95;alias.column&#95;name.
+
+```sql
+/* ИСХОДНЫЙ ЗАПРОС */
+SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
+
+/* ИСПРАВЛЕННЫЙ ЗАПРОС */
+SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
+```
+
+<div id="invalid-usage-of-final">
+  ### Недопустимое использование FINAL
+</div>
+
+Ошибка: `Table expression modifiers FINAL are not supported for subquery...` или `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Коды исключений: 1, 181
+
+Причина: FINAL — это модификатор хранения таблицы (в частности, для [Shared]ReplacingMergeTree). Анализатор отклоняет FINAL, если он применяется к:
+
+* Подзапросам или производным таблицам (например, FROM (SELECT ...) FINAL).
+* Движкам таблиц, которые его не поддерживают (например, SharedMergeTree).
+
+Решение: Применяйте FINAL только к исходной таблице внутри подзапроса или уберите его, если движок его не поддерживает.
+
+```sql
+/* ИСХОДНЫЙ ЗАПРОС */
+SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
+
+/* ИСПРАВЛЕННЫЙ ЗАПРОС */
+SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
+```
+
+<div id="countdistinct-case-insensitivity">
+  ### Чувствительность функции `countDistinct()` к регистру
+</div>
+
+Ошибка: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Код исключения: 46
+
+Причина: имена функций чувствительны к регистру, либо в анализаторе для них используется строгое сопоставление. `countdistinct` (полностью в нижнем регистре) больше не распознаётся автоматически.
+
+Решение: используйте стандартную `countDistinct` (camelCase) или специфичную для ClickHouse функцию uniq.

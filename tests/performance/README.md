@@ -55,6 +55,45 @@ Test template:
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Shell-script queries
+
+In addition to SQL queries sent over the native protocol, a benchmark query can be a shell script, marked with `type="shell"`. This is useful for end-to-end measurements that the native protocol cannot express: HTTP latency, response compression, tool startup time, etc.
+
+``` xml
+<test>
+    <!-- How fast clickhouse-local starts up. -->
+    <query type="shell"><![CDATA[
+        $CLICKHOUSE_LOCAL --query "SELECT 1" > /dev/null
+    ]]></query>
+
+    <!-- Reading ~1 MB of gzip-compressed data over HTTP. -->
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} -H 'Accept-Encoding: gzip' \
+            "${CLICKHOUSE_URL}?enable_http_compression=1" \
+            --data-binary "SELECT number FROM numbers(500000) FORMAT TSV" \
+            -o /dev/null
+    ]]></query>
+</test>
+```
+
+Each shell-script query is run with `bash -e -o pipefail` once per server (the reference build and the patched build), and timed by its wall-clock time, the same way a SQL query's time becomes the `client_time` metric in the report. Wrap the script in `<![CDATA[ ... ]]>` so that `<`, `>` and `&` do not need XML escaping. A non-zero exit code is treated as a failed query.
+
+The script talks to the server using environment variables that mirror the stateless tests in `tests/queries/shell_config.sh`, prepared per-server so that the reference and the patched build (which listen on different ports) are measured each on their own:
+
+* `CLICKHOUSE_BINARY` — path to the `clickhouse` binary,
+* `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT_TCP`, `CLICKHOUSE_PORT_HTTP` — server endpoints,
+* `CLICKHOUSE_CLIENT`, `CLICKHOUSE_LOCAL` — ready-to-run client and local commands,
+* `CLICKHOUSE_CURL`, `CLICKHOUSE_URL` — `curl` invocation and the HTTP URL,
+* `CLICKHOUSE_DATABASE` — the database name (`default`).
+
+Notes:
+
+* Parameter `{substitutions}` are **not** applied to shell scripts, because they use `${var}` and `{a,b}` brace expansion that would collide with the substitution syntax. Use shell loops or environment variables instead.
+* The `<settings>` element is **not** applied to shell scripts; pass settings through the URL or client arguments inside the script.
+* Profiler runs and server-side `ProfileEvents` are not collected for shell scripts (there is no single query to attribute them to); only the timing difference is reported.
+* `CLICKHOUSE_CURL` is `curl -q -sS --fail --max-time 120`. Unlike `tests/queries/shell_config.sh`, it adds `--fail` so that an HTTP 4xx/5xx response makes `curl` exit non-zero and the query fails — a benchmark must never time a server error response as a fast successful sample.
+* On timeout (`--max-query-seconds`, `--prewarm-max-query-seconds`) the whole process group of the script is killed, not just the immediate `bash`, so a script blocked inside a child such as `curl` or `$CLICKHOUSE_LOCAL` cannot keep running and pollute later measurements.
+
 ### How to run performance test
 
 TODO

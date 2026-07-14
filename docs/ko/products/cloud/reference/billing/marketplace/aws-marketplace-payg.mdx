@@ -1,0 +1,103 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-payg
+title: 'AWS Marketplace PAYG'
+description: 'AWS Marketplace에서 ClickHouse Cloud(PAYG)를 구독합니다.'
+keywords: ['aws', 'marketplace', '청구', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[AWS Marketplace](https://aws.amazon.com/marketplace)에서 PAYG(사용량 기반 과금) Public Offer를 통해 ClickHouse Cloud를 시작하세요.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 청구 관리자가 구매 권한을 활성화한 AWS 계정.
+* 구매하려면 이 계정으로 AWS Marketplace에 로그인한 상태여야 합니다.
+* ClickHouse 조직을 subscription에 연결하려면 해당 조직의 관리자여야 합니다.
+
+<div id="steps-to-sign-up">
+  ## 가입 단계
+</div>
+
+<Steps>
+  <Step>
+    ### ClickHouse Cloud - Pay as you go 검색
+
+    [AWS Marketplace](https://aws.amazon.com/marketplace)로 이동한 다음 &quot;ClickHouse Cloud - Pay As You Go&quot;를 검색합니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="ClickHouse용 AWS Marketplace 검색" border />
+  </Step>
+
+  <Step>
+    ### 구매 옵션 보기
+
+    [listing](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu)을 클릭한 다음 **View purchase options**를 클릭합니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="AWS Marketplace 구매 옵션 보기" border />
+  </Step>
+
+  <Step>
+    ### 구독
+
+    다음 화면에서 subscribe를 클릭합니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="AWS Marketplace 구독" border />
+  </Step>
+
+  <Step>
+    ### 계정 설정
+
+    이 단계에서는 아직 설정이 완료되지 않았으며, ClickHouse Cloud 조직에도 아직 marketplace를 통한 청구가 적용되지 않습니다. 이제 설정을 완료하려면 marketplace subscription에서 Set up your account를 클릭해 ClickHouse Cloud로 이동해야 합니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="계정 설정" border />
+
+    ClickHouse Cloud로 이동한 후에는 기존 계정으로 로그인하거나 새 계정을 등록할 수 있습니다. 이 단계는 ClickHouse Cloud 조직을 AWS Marketplace 청구에 연결할 수 있도록 하는 매우 중요한 단계입니다.
+
+    <Info>
+      **새로운 ClickHouse Cloud 사용자**
+
+      ClickHouse Cloud를 처음 사용하는 경우 아래 단계를 따르십시오.
+    </Info>
+
+    <Accordion title="신규 사용자를 위한 단계">
+      ClickHouse Cloud를 처음 사용하는 경우 페이지 하단의 Register를 클릭합니다. 그러면 새 사용자를 생성하고 이메일을 확인하라는 안내가 표시됩니다. 이메일 확인을 마친 후에는 ClickHouse Cloud 로그인 페이지를 나와 https://console.clickhouse.cloud 에서 새 username으로 로그인할 수 있습니다.
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud 가입" />
+
+      <Info>
+        **신규 사용자**
+
+        비즈니스에 대한 몇 가지 기본 정보도 입력해야 합니다. 아래 스크린샷을 참조하십시오.
+      </Info>
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="시작하기 전에" />
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="시작하기 전에, 계속" />
+    </Accordion>
+
+    기존 ClickHouse Cloud 사용자라면 자격 증명을 사용해 로그인하면 됩니다.
+  </Step>
+
+  <Step>
+    ### marketplace subscription을 조직에 추가
+
+    로그인에 성공하면 이 marketplace subscription으로 청구할 새 조직을 만들거나, 이 subscription으로 청구할 기존 조직을 선택할 수 있습니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="marketplace subscription 추가" border />
+
+    이 단계를 완료하면 조직이 이 AWS subscription에 연결되며, 모든 사용량은 AWS 계정을 통해 청구됩니다.
+
+    이제 ClickHouse UI의 조직 Billing page에서 청구가 AWS marketplace에 연결되었는지 확인할 수 있습니다.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="Billing page 확인" border />
+  </Step>
+</Steps>
+
+<div id="support">
+  ## 지원
+</div>
+
+문제가 발생하면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

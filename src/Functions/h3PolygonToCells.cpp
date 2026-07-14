@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -119,9 +120,11 @@ public:
 
             // polygonToCells does not work for points and lines
             if constexpr (std::is_same_v<ColumnToPointsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be Point", getName());
             if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be LineString", getName());
+            if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, Converter>)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be MultiLineString", getName());
 
             if (input_rows_count == 0)
                 return;
@@ -169,6 +172,7 @@ public:
                 if (process_list_element && process_list_element->isKilled())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
+                const size_t row_start_offset = current_offset;
                 for (const auto & polygon : multi_polygon)
                 {
                     VectorWithMemoryTracking<LatLng> exterior;
@@ -191,16 +195,28 @@ public:
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
                     int64_t polygon_size = 0;
-                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
+                    H3Error size_err = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
+                    if (size_err != E_SUCCESS)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Failed to estimate H3 polygon to cells size in function {}: {}",
+                            getName(), describeH3Error(size_err));
+
                     const size_t vec_size = static_cast<size_t>(polygon_size);
-                    if (vec_size > MAX_ARRAY_SIZE)
+                    const size_t row_size_so_far = current_offset - row_start_offset;
+                    if (vec_size > MAX_ARRAY_SIZE || row_size_so_far + vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
                             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
-                            getName(), vec_size, toString(resolution));
+                            getName(), row_size_so_far + vec_size, toString(resolution));
 
                     hindex_vec.assign(vec_size, 0);
-                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
+                    H3Error fill_err = polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
+                    if (fill_err != E_SUCCESS)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Failed to compute H3 polygon to cells in function {}: {}",
+                            getName(), describeH3Error(fill_err));
 
                     dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
@@ -211,9 +227,15 @@ public:
                             dst_data.insert(hindex);
                         }
                     }
-
-                    dst_offsets[row] = current_offset;
                 }
+
+                if (current_offset - row_start_offset > MAX_ARRAY_SIZE)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
+                        getName(), current_offset - row_start_offset, toString(resolution));
+
+                dst_offsets[row] = current_offset;
             }
         });
 

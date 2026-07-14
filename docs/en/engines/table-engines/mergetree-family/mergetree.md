@@ -71,7 +71,7 @@ For a detailed description of the parameters, see the [CREATE TABLE](/sql-refere
 
 A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID + 1, EventDate)`.
 
-If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
+If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
 Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
@@ -572,7 +572,9 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -1255,7 +1257,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
@@ -1288,6 +1290,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
+- `Basic`
+
+    A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+
+    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `MinMax`, `Basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+
+    Syntax: `basic`
+
 - `MinMax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
@@ -1295,6 +1308,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     Syntax: `minmax`
 
 - `TDigest`
+
+:::warning
+Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
+:::
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
@@ -1308,27 +1325,39 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `CountMin`
 
+:::warning
+Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
+:::
+
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
     Syntax `countmin`
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|-----------|----------------------------------------------------|------|-----------------------|
+| Basic     | ✔                                                  | ✔    | ✔                     |
+| CountMin  | ✔                                                  | ✔    | ✔                     |
+| MinMax    | ✔                                                  | ✔    | ✗                     |
+| TDigest   | ✔                                                  | ✗    | ✗                     |
+| Uniq      | ✔                                                  | ✔    | ✔                     |
+
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
 ### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|-----------|-----------------------|--------------------------------|
+| Basic     | ✗                     | ✔ (numeric columns only)       |
+| CountMin  | ✔                     | ✗                              |
+| MinMax    | ✗                     | ✔ (numeric columns only)       |
+| TDigest   | ✗                     | ✔ (numeric columns only)       |
+| Uniq      | ✔                     | ✗                              |
+
+For `Basic` on `String` / `FixedString` columns the statistic only records the total
+non-NULL byte length (used to estimate average string length) and the null count;
+range filters and part pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 

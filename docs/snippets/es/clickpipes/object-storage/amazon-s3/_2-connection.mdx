@@ -1,0 +1,15 @@
+---
+title: 2 Conexión
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step2.webp" alt="Complete los datos de conexión" size="lg" border />
+
+* **Método de autenticación**: ClickPipe de S3 admite [credenciales de IAM](/es/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) y [autenticación basada en roles de IAM](/es/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`). Consulte la [documentación de referencia](/es/integrations/clickpipes/object-storage/amazon-s3/overview#access-control) para obtener información sobre la autenticación y los permisos.
+
+  * **Ruta de archivo de S3**: ClickPipe de S3 requiere una [URI con estilo de host virtual](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access).
+
+    ```bash
+    https://bucket-name.s3.region-code.amazonaws.com/key-name
+    ```
+
+    Puede usar comodines POSIX para coincidir con varios archivos o prefijos. Consulte la [documentación de referencia](/es/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching) para obtener información sobre los patrones compatibles.

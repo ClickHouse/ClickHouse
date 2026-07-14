@@ -38,7 +38,7 @@ SELECT
     log_comment,
     ProfileEvents['QueryPlanCachePreAnalysisHits'] AS pre_analysis_hits,
     ProfileEvents['QueryPlanCacheValidationMisses'] AS validation_misses,
-    notEmpty(query_columns) AS has_query_columns,
+    notEmpty(columns) AS has_query_columns,
     arrayExists(policy -> position(policy, 'qpc_pre_analysis_policy_2') > 0, used_row_policies) AS has_current_row_policy
 FROM system.query_log
 WHERE event_date >= yesterday()

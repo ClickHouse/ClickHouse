@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: 'الإعدادات'
+title: 'الإعدادات'
+description: 'كوّن معلمات PostgreSQL وPgBouncer وأدِر إعدادات المثيل في Managed Postgres'
+keywords: ['تهيئة Postgres', 'إعدادات PostgreSQL', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+يمكنك تعديل معلمات التكوين وإدارة إعدادات مثيل Managed Postgres لديك من خلال علامة التبويب **Settings** في الشريط الجانبي.
+
+<div id="service-actions">
+  ## إجراءات الخدمة والتحجيم
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="إجراءات الخدمة والتحجيم" size="md" border />
+
+يوفّر شريط الأدوات **إجراءات الخدمة** عناصر تحكم لإدارة مثيل Managed Postgres لديك:
+
+* **إعادة تعيين كلمة المرور**: حدِّث كلمة مرور المستخدم الفائق (فقط عندما تكون حالة المثيل `Running`)
+* **إعادة التشغيل**: أعد تشغيل مثيل قاعدة البيانات (فقط عندما تكون حالة المثيل `Running`)
+* **حذف**: احذف المثيل
+
+يتيح لك قسم **التحجيم** تغيير أنواع المثيلات للمثيل الأساسي والمثيلات الاحتياطية لزيادة موارد الحوسبة وسعة التخزين أو تقليلها.
+راجع [صفحة التحجيم](/ar/products/managed-postgres/scaling) لمزيد من التفاصيل.
+
+<div id="changing-configuration">
+  ## تغيير معلمات التكوين
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="تكوين معلمات Postgres" size="md" border />
+
+لتعديل معلمة، حدِّد زر **تعديل المعلمات**. ثم حدِّد المعلمات التي تريد تعديلها وغيّر قيمها حسب الحاجة. بعد الانتهاء من التغييرات والتأكد منها، اضغط زر **حفظ التغييرات**.
+
+عادةً ما تُحفَظ جميع التغييرات التي تُجرى على معلمات التكوين في المثيل خلال دقيقة واحدة. وتتطلب بعض المعلمات إعادة تشغيل قاعدة البيانات حتى تدخل حيّز التنفيذ. وستُطبَّق هذه التغييرات بعد إعادة التشغيل التالية، والتي يمكنك تشغيلها يدويًا من شريط أدوات **إجراءات الخدمة**.
+
+راجِع [الوثائق](https://www.postgresql.org/docs/current/runtime-config.html) الرسمية الخاصة بمعلمات التكوين. وسيجري قريبًا توسيع قائمة المعلمات المتاحة للإعداد. وحتى ذلك الحين، تواصل مع [الدعم](https://clickhouse.com/support/program) لطلب معلمة غير مدعومة حاليًا.

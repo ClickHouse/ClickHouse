@@ -79,6 +79,7 @@ IProcessor::Status BufferChunksTransform::prepare()
             input.setNotNeeded();
             return Status::PortFull;
         }
+        compactReplicatedColumns(chunk);
         num_buffered_rows += chunk.getNumRows();
         num_buffered_bytes += chunk.bytes();
         chunks.push(std::move(chunk));

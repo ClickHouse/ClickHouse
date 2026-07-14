@@ -109,7 +109,15 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("ytsaurus", create_dictionary_source);
+    factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
+        .description = "Reads dictionary data from a YTsaurus cluster."
+            " This source is experimental; set the `allow_experimental_ytsaurus_dictionary_source` setting to enable it."
+#if !USE_YTSAURUS
+            " Currently unavailable, because this ClickHouse build does not include YTsaurus support."
+#endif
+        ,
+        .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",
+        .related = {}});
 }
 
 #if USE_YTSAURUS

@@ -1,0 +1,10 @@
+OK fuzzer query
+OK foreign state
+0
+OK total count mismatch
+OK marginal count mismatch
+OK zero pair count
+OK cramersV
+OK cramersVBiasCorrected
+OK theilsU
+1	1	1	1

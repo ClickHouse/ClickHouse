@@ -9,9 +9,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/TableLockHolder.h>
-#if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
-#endif
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
@@ -90,9 +88,7 @@ struct ExplainPlanOptions
 
     SettingsChanges toSettingsChanges() const;
 };
-#if CLICKHOUSE_CLOUD
 struct DistributedQueryPlan;
-#endif
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -115,7 +111,10 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
+    /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
+    /// server-to-server plans pass 0.
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
 
     /// Local-only serialization for the query plan cache. It may use a newer private
     /// format than the distributed query plan protocol.
@@ -137,11 +136,9 @@ public:
     void resolveStorages(const ContextPtr & context, std::vector<QueryPlanStorageBinding> storage_bindings);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
-#if CLICKHOUSE_CLOUD
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
-#endif
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -199,6 +196,7 @@ public:
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
 
     Node * getRootNode() const { return root; }
+    void replaceRootNode(Node * new_root) { root = new_root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);
@@ -213,10 +211,10 @@ private:
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -260,5 +258,59 @@ struct QueryPlanAndSets
 
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
+
+
+struct ExchangeDescription
+{
+    enum class Kind
+    {
+        Persisted = 1,  /// Exchange data between tasks using temporary files
+        Streaming = 2,  /// Exchange data between tasks using network
+    };
+
+    String name;
+    Kind kind = Kind::Persisted;
+    size_t source_bucket_count = 0;
+    size_t destination_bucket_count = 0;
+};
+
+using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
+
+
+/// Stores named parameters for query plan.
+/// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
+struct QueryPlanParameters
+{
+    std::unordered_map<String, Field> parameters;
+};
+
+/// Represents a single local task in a distributed query plan
+struct DistributedQueryTask
+{
+    String task_id;
+    QueryPlanParameters parameters;
+    std::vector<ExchangeStreamId> input_exchange_streams;
+    std::vector<ExchangeStreamId> output_exchange_streams;
+};
+
+/// A group of tasks with the same plan fragment and differenet parameters
+/// Tasks can be executed in parallel on different partitions of data
+struct DistributedQueryStage
+{
+    QueryPlan query_plan_fragment;   /// Common for all tasks
+    std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+};
+
+/// Represents a graph of stages
+/// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
+struct DistributedQueryPlan
+{
+    std::unordered_map<String, DistributedQueryStage> stages;
+    /// Maps stage name to stages it depends on and the corresponding exchange_id
+    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps exchange_id to exchange description
+    ExchangeDescriptions exchange_descriptions;
+    String final_result_stream_name;
+};
 
 }

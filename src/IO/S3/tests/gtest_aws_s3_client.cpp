@@ -187,6 +187,7 @@ static void testServerSideEncryption(
         {
             .use_environment_credentials = use_environment_credentials,
             .use_insecure_imds_request = use_insecure_imds_request,
+            .forbid_implicit_credentials = false,
         }
     );
 
@@ -387,7 +388,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
         /*server_side_encryption_customer_key_base64=*/"",
         {},
         headers,
-        DB::S3::CredentialsConfiguration{});
+        DB::S3::CredentialsConfiguration{.forbid_implicit_credentials = false});
 
     ASSERT_TRUE(client);
     EXPECT_EQ(client->getRegion(), "eu-north-1");
@@ -413,8 +414,9 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name)
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
 {
+    bool external_id_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -423,7 +425,14 @@ void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params
             ASSERT_EQ(value, expected_role_arn);
         else if (param == "RoleSessionName")
             ASSERT_EQ(value, expected_role_session_name);
+        else if (param == "ExternalId")
+        {
+            external_id_present = true;
+            ASSERT_EQ(value, expected_external_id);
+        }
     }
+    /// ExternalId is optional and must be sent only when configured.
+    ASSERT_EQ(external_id_present, !expected_external_id.empty());
 }
 
 }
@@ -516,7 +525,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     bool use_insecure_imds_request = false;
 
 
-    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name)
+    const auto read_from_s3 = [&](const std::string & role_arn, const std::string & role_session_name, const std::string & external_id = "")
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
@@ -537,7 +546,9 @@ TEST(IOTestAwsS3Client, AssumeRole)
                 .use_insecure_imds_request = use_insecure_imds_request,
                 .role_arn = role_arn,
                 .role_session_name = role_session_name,
-                .sts_endpoint_override = sts_http.getUrl()
+                .external_id = external_id,
+                .sts_endpoint_override = sts_http.getUrl(),
+                .forbid_implicit_credentials = false,
             }
         );
 
@@ -601,6 +612,118 @@ TEST(IOTestAwsS3Client, AssumeRole)
         validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
     }
+
+    {
+        SCOPED_TRACE("With role arn and external id set");
+
+        sts_http.resetLastRequest();
+
+        std::string role_arn = "arn::role/my_role";
+        std::string role_session_name = "session_name";
+        std::string external_id = "my_external_id";
+
+        read_from_s3(role_arn, role_session_name, external_id);
+
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+
+        ASSERT_TRUE(sts_http.hasLastRequest());
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
+    }
+}
+
+TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
+{
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+
+    std::shared_ptr<DB::S3::ClientCache> cache_ab1 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    std::shared_ptr<DB::S3::ClientCache> cache_ab2 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    EXPECT_EQ(cache_ab1.get(), cache_ab2.get()) << "Same (endpoint, bucket) should return the same cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_b1 = registry.getOrCreateCacheForKey("endpoint1", "bucket2");
+    EXPECT_NE(cache_ab1.get(), cache_b1.get()) << "Different bucket should return different cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_e2 = registry.getOrCreateCacheForKey("endpoint2", "bucket1");
+    EXPECT_NE(cache_ab1.get(), cache_e2.get()) << "Different endpoint should return different cache";
+
+    auto cache_concat1 = registry.getOrCreateCacheForKey("ab", "c");
+    auto cache_concat2 = registry.getOrCreateCacheForKey("a", "bc");
+    EXPECT_NE(cache_concat1.get(), cache_concat2.get())
+        << "Pairs with identical concatenation but different boundary must not share a cache";
+}
+
+TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri("https://s3.eu-central-1.amazonaws.com/my-bucket/key");
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-central-1",
+        remote_host_filter,
+        10,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        true,
+        true,
+        false,
+        false,
+        {},
+        {},
+        "https");
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    auto shared_cache = DB::S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(uri.endpoint, uri.bucket);
+    std::unique_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "access",
+        "secret",
+        "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
+        "",
+        shared_cache);
+
+    ASSERT_TRUE(client);
+    std::unique_ptr<DB::S3::Client> clone = client->clone();
+    ASSERT_TRUE(clone);
+
+    EXPECT_EQ(client->getRawCache(), shared_cache.get()) << "Client should use the shared cache";
+    EXPECT_EQ(clone->getRawCache(), client->getRawCache()) << "Clone should share the same cache as original";
+}
+
+TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
+{
+    /// Verify ClientCacheRegistry refcounting directly via the test-only refcount accessor.
+    /// We can't go through Client construction/destruction because Client::~Client catches
+    /// and logs exceptions from unregisterClient, so a refcount bug would be invisible;
+    /// and we can't probe via the throwing path (the entry was already removed) because in
+    /// debug/sanitizer builds LOGICAL_ERROR aborts the process instead of throwing.
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+    auto shared_cache = registry.getOrCreateCacheForKey(
+        "https://s3.us-east-1.amazonaws.com",
+        "test-refcount-bucket");
+
+    ASSERT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
+
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    /// Second registration of the same cache must bump the refcount, not silently no-op.
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 2u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 }
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
@@ -682,6 +805,301 @@ TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
         response.set("x-amz-bucket-region", "ap-south-1");
         EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(404, response));
     }
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// Mock S3 endpoint that serves a fixed body and a fixed ETag for every GET, simulating an object
+/// whose current generation (ETag) differs from the one captured at listing time.
+class FixedETagHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+    FixedETagHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
+    {
+        response.set("ETag", etag);
+        response.setContentType("application/octet-stream");
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentLength(static_cast<std::streamsize>(body.size()));
+        auto & os = response.send();
+        os << body;
+        os.flush();
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class FixedETagHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    FixedETagHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new FixedETagHandler(body, etag);
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class FixedETagServer
+{
+public:
+    FixedETagServer(std::string body, std::string etag)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(
+              new FixedETagHandlerFactory(std::move(body), std::move(etag)),
+              *server_socket, new Poco::Net::HTTPServerParams()))
+    {
+        server->start();
+    }
+    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+private:
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
+/// Like FixedETagServer, but honors the `If-Match` conditional header the way S3/GCS do: if the
+/// request carries an `If-Match` that differs from the object's ETag, it responds 412 Precondition
+/// Failed (before sending any body) instead of 200. Used to exercise the server-enforced overwrite
+/// detection path, as opposed to FixedETagServer which ignores If-Match (the defense-in-depth path).
+class IfMatchAwareHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+    IfMatchAwareHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+    {
+        const std::string if_match = request.get("If-Match", "");
+        if (!if_match.empty() && if_match != etag)
+        {
+            const std::string error_body =
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<Error><Code>PreconditionFailed</Code>"
+                "<Message>At least one of the preconditions you specified did not hold.</Message>"
+                "<Condition>If-Match</Condition></Error>";
+            response.setContentType("application/xml");
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED);
+            response.setContentLength(static_cast<std::streamsize>(error_body.size()));
+            auto & os = response.send();
+            os << error_body;
+            os.flush();
+            return;
+        }
+        response.set("ETag", etag);
+        response.setContentType("application/octet-stream");
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentLength(static_cast<std::streamsize>(body.size()));
+        auto & os = response.send();
+        os << body;
+        os.flush();
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class IfMatchAwareHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    IfMatchAwareHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new IfMatchAwareHandler(body, etag);
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class IfMatchAwareServer
+{
+public:
+    IfMatchAwareServer(std::string body, std::string etag)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(
+              new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
+              *server_socket, new Poco::Net::HTTPServerParams()))
+    {
+        server->start();
+    }
+    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+private:
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
+std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects= */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error= */ true,
+        /* s3_slow_all_threads_after_retryable_error= */ true,
+        /* enable_s3_requests_logging= */ false,
+        /* for_disk_s3= */ false,
+        /* opt_disk_name= */ {},
+        /* request_throttler= */ {},
+        uri.uri.getScheme());
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+    return DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64= */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
+}
+
+DB::ReadBufferFromS3 makeReadBuffer(
+    std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri, size_t file_size, const String & expected_etag,
+    const String & version_id = "")
+{
+    DB::ReadSettings read_settings;
+    DB::S3::S3RequestSettings request_settings;
+    request_settings[DB::S3RequestSetting::max_single_read_retries] = 3;
+    return DB::ReadBufferFromS3(
+        std::move(client),
+        uri.bucket,
+        uri.key,
+        version_id,
+        request_settings,
+        read_settings,
+        /* use_external_buffer= */ false,
+        /* offset= */ 0,
+        /* read_until_position= */ 0,
+        /* restricted_seek= */ false,
+        /* file_size= */ std::optional<size_t>(file_size),
+        /* credentials_refresh_callback= */ [] { return nullptr; },
+        /* blob_storage_log= */ {},
+        /* expected_etag= */ expected_etag);
+}
+
+}
+
+/// The object's ETag changed between listing and reading (an in-place overwrite). The read must
+/// fail with S3_OBJECT_CHANGED_DURING_READ instead of returning bytes from the wrong generation.
+/// FixedETagServer ignores the If-Match header (returns 200 with the new ETag), so this exercises the
+/// client-side response-ETag comparison - the defense-in-depth layer for backends that drop If-Match.
+TEST(IOTestAwsS3Client, ReadDetectsObjectReplacedDuringRead)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-after-overwrite\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
+
+    String content;
+    try
+    {
+        DB::readStringUntilEOF(content, read_buffer);
+        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
+    }
+}
+
+/// When the ETag matches the listed one (no concurrent overwrite) the read proceeds normally.
+TEST(IOTestAwsS3Client, ReadAcceptsMatchingETag)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-stable\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
+}
+
+/// For an explicit pinned-version read (?versionId=), the requested generation is immutable, so the
+/// ETag check must be skipped even when the (current-version) expected ETag differs from the GET's.
+/// Otherwise a versioned read would spuriously fail with S3_OBJECT_CHANGED_DURING_READ.
+TEST(IOTestAwsS3Client, ReadSkipsETagCheckForVersionedRead)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-of-requested-version\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    /// expected_etag is the *current* version's etag (differs from the requested version's), but a
+    /// version_id is pinned, so validation must be skipped and the read must succeed.
+    auto read_buffer = makeReadBuffer(
+        client, uri, body.size(), /* expected_etag= */ "\"etag-of-current-version\"", /* version_id= */ "some-version-id");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
+}
+
+/// Server-enforced overwrite detection: the backend honors If-Match and answers 412 Precondition
+/// Failed when the conditional GET's ETag no longer matches. The 412 must be mapped to
+/// S3_OBJECT_CHANGED_DURING_READ rather than surfacing as a generic S3 error.
+TEST(IOTestAwsS3Client, ReadMapsIfMatchPreconditionFailedToObjectChanged)
+{
+    const std::string body(128, 'x');
+    IfMatchAwareServer server(body, "\"etag-after-overwrite\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    /// expected_etag (the listed generation) differs from the server's current ETag, so the
+    /// If-Match the read sends will not match and the server returns 412.
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
+
+    String content;
+    try
+    {
+        DB::readStringUntilEOF(content, read_buffer);
+        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
+    }
+}
+
+/// When the conditional GET's If-Match matches the current ETag, the If-Match-honoring server returns
+/// the body normally - no spurious failure.
+TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
+{
+    const std::string body(128, 'x');
+    IfMatchAwareServer server(body, "\"etag-stable\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
 }
 
 #endif

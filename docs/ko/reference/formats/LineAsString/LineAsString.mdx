@@ -1,0 +1,43 @@
+---
+alias: []
+description: 'LineAsString 포맷 문서'
+input_format: true
+keywords: ['LineAsString']
+output_format: true
+slug: /interfaces/formats/LineAsString
+title: 'LineAsString'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`LineAsString` 포맷은 입력 데이터의 각 줄을 하나의 문자열 값으로 해석합니다.
+이 포맷은 [String](/ko/reference/data-types/string) 타입의 단일 필드가 있는 테이블에서만 파싱할 수 있습니다.
+나머지 컬럼은 [`DEFAULT`](/ko/reference/statements/create/table#default) 또는 [`MATERIALIZED`](/ko/reference/statements/create/view#materialized-view)로 설정하거나 생략해야 합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+```sql title="Query"
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+```text title="Response"
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

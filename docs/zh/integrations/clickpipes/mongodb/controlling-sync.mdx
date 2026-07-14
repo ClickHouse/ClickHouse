@@ -1,0 +1,66 @@
+---
+title: '控制 MongoDB ClickPipe 同步'
+description: '关于控制 MongoDB ClickPipe 同步的文档'
+slug: /integrations/clickpipes/mongodb/sync_control
+sidebarTitle: '同步控制'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC（变更数据捕获）', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文档介绍如何在 ClickPipe 处于 **CDC (运行中) 模式** 时控制 MongoDB ClickPipe 的同步过程。
+
+<div id="overview">
+  ## 概览
+</div>
+
+数据库 ClickPipes 的架构由两个并行过程组成：从源数据库拉取，以及向目标数据库推送。拉取过程由同步配置控制，该配置定义了数据拉取的频率，以及每次拉取的数据量。这里的“每次”是指一个批次——因为 ClickPipe 会按批次拉取和推送数据。
+
+控制 MongoDB ClickPipe 同步主要有两种方式。当以下任一设置触发时，ClickPipe 就会开始推送。
+
+<div id="interval">
+  ### 同步间隔
+</div>
+
+管道的同步间隔是指 ClickPipe 从源数据库拉取记录的持续时间 (以秒为单位) 。将已拉取的数据推送到 ClickHouse 所花费的时间不计入此间隔。
+
+默认值为 **1 分钟**。
+同步间隔可以设置为任意正整数，但建议保持在 10 秒以上。
+
+<div id="batch-size">
+  ### 拉取批次大小
+</div>
+
+拉取批次大小是指 ClickPipe 单次从源数据库拉取的记录数。这里的记录包括属于该管道的 collection 上发生的插入、更新和删除操作。
+
+默认值为 **100,000** 条记录。
+建议的安全最大值为 1000 万。
+
+<div id="configuring">
+  ### 配置同步设置
+</div>
+
+创建 ClickPipe 或编辑现有 ClickPipe 时，您可以设置同步间隔和拉取批次大小。
+创建 ClickPipe 时，这些设置会显示在创建向导的第二步，如下所示：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="创建同步设置" size="md" />
+
+编辑现有 ClickPipe 时，您可以前往该管道的 **Settings** 选项卡，先暂停管道，然后点击此处的 **Configure**：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="编辑同步按钮" size="md" />
+
+此时会打开一个包含同步设置的弹出面板，您可以在其中更改同步间隔和拉取批次大小：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="编辑同步设置" size="md" />
+
+<div id="monitoring">
+  ### 监控同步控制行为
+</div>
+
+你可以在 ClickPipe 的 **指标** 选项卡中的 **CDC Syncs** 表中查看每个批次的耗时。请注意，这里的耗时既包括推送时间，也包括在没有行传入时 ClickPipe 的等待时间。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs 表" size="md" />

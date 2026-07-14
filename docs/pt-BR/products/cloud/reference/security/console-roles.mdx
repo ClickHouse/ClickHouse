@@ -1,0 +1,97 @@
+---
+sidebarTitle: 'Funções e permissões do Console'
+slug: /cloud/security/console-roles
+title: 'Funções e permissões do Console'
+description: 'Esta página descreve as funções padrão e as permissões associadas no console do ClickHouse Cloud'
+doc_type: 'referência'
+keywords: ['funções do console', 'permissões', 'controle de acesso', 'segurança', 'RBAC']
+---
+
+<div id="organization-roles">
+  ## Funções da organização
+</div>
+
+Consulte [Gerenciar usuários do Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) para obter instruções sobre como atribuir funções da organização.
+
+O ClickHouse oferece quatro funções no nível da organização para gerenciamento de usuários. Somente a função Admin tem acesso padrão aos serviços. Todas as outras funções precisam ser combinadas com funções no nível do serviço para interagir com os serviços.
+
+| Role           | Description                                                                                                                                                                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin          | Executa todas as atividades administrativas de uma organização e controla todas as configurações. Essa função é atribuída por padrão ao primeiro usuário da organização e automaticamente recebe permissões de Service Admin em todos os serviços. |
+| Billing        | Visualiza o uso e as faturas, e gerencia as formas de pagamento.                                                                                                                                                                                   |
+| Org API reader | Permissões de API para gerenciar configurações e usuários no nível da organização, sem acesso a serviços.                                                                                                                                          |
+| Member         | Somente acesso, com capacidade de gerenciar as configurações do perfil pessoal. Atribuída por padrão a usuários de SAML SSO.                                                                                                                       |
+
+<div id="service-roles">
+  ## Funções de serviço
+</div>
+
+Consulte [Gerenciar usuários do Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) para ver instruções sobre como atribuir funções de serviço.
+
+As permissões de serviço devem ser concedidas explicitamente por um Admin a usuários com funções diferentes da função de Admin. A função de Admin do serviço vem pré-configurada com acesso de Admin ao Console SQL, mas pode ser modificada para reduzir ou remover permissões.
+
+| Função                         | Descrição                                                                          |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| Leitor de serviço              | Visualiza serviços e configurações.                                                |
+| Admin de serviço               | Gerencia configurações do serviço.                                                 |
+| Leitor da API de serviço       | Permissões de API para ler as configurações de serviço de todos os serviços.       |
+| Admin da API de serviço        | Permissões de API para gerenciar as configurações de serviço de todos os serviços. |
+| Leitor Basic da API de serviço | Permissões de API para usar endpoints de API de consulta.                         |
+
+<div id="sql-console-roles">
+  ## Funções do Console SQL
+</div>
+
+Consulte [Gerenciar atribuições de funções do Console SQL](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) para ver instruções sobre como atribuir funções do Console SQL.
+
+| Função                      | Descrição                                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Console SQL somente leitura | Acesso somente leitura aos bancos de dados no serviço.                                                |
+| Admin do Console SQL        | Acesso administrativo aos bancos de dados no serviço, equivalente à função Default do banco de dados. |
+
+<div id="console-permissions">
+  ## Permissões do Console
+</div>
+
+A tabela abaixo descreve as permissões do console do ClickHouse e do console SQL. Mais informações estão nos links do cabeçalho de cada categoria.
+
+| Permissão                                                                                                                               | Descrição                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **organização** ([more info](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | Permissões no nível da organização                                                                                                                                                                           |
+| control-plane:organization:view                                                                                                         | Ver detalhes da organização e metadados em modo somente leitura.                                                                                                                                             |
+| control-plane:organization:manage                                                                                                       | Gerenciar as configurações da organização e os usuários.                                                                                                                                                     |
+| **Billing** ([more info](/pt-BR/products/cloud/reference/billing/index))                                                                      | Gerenciamento de faturamento e faturas                                                                                                                                                                       |
+| control-plane:organization:manage-billing                                                                                               | Gerenciar configurações de faturamento, formas de pagamento e faturas.                                                                                                                                       |
+| control-plane:organization:view-billing                                                                                                 | Ver uso de faturamento e faturas.                                                                                                                                                                            |
+| **API keys** ([more info](/pt-BR/products/cloud/features/admin-features/api/index))                                                           | Gerenciamento de chaves de API da organização                                                                                                                                                                |
+| control-plane:organization:view-api-keys                                                                                                | Ver as chaves de API da organização.                                                                                                                                                                         |
+| control-plane:organization:create-api-keys                                                                                              | Criar novas chaves de API para a organização.                                                                                                                                                                |
+| control-plane:organization:update-api-keys                                                                                              | Atualizar chaves de API existentes e suas permissões.                                                                                                                                                        |
+| control-plane:organization:delete-api-keys                                                                                              | Revogar ou excluir chaves de API.                                                                                                                                                                            |
+| **Support** ([more info](/pt-BR/products/cloud/features/support))                                                                             | Gerenciamento de casos de suporte                                                                                                                                                                            |
+| control-plane:support:manage                                                                                                            | Criar e gerenciar casos de suporte e interações com o suporte do ClickHouse.                                                                                                                                 |
+| **serviço (general)**                                                                                                                   | Permissões gerais no nível do serviço                                                                                                                                                                        |
+| control-plane:service:view                                                                                                              | Ver metadados, configurações e status no nível do serviço.                                                                                                                                                   |
+| control-plane:service:manage                                                                                                            | Gerenciar a configuração do serviço e as operações do ciclo de vida.                                                                                                                                         |
+| **Backups** ([more info](/pt-BR/products/cloud/features/backups/overview))                                                                    | Backups do serviço e pontos de restauração                                                                                                                                                                   |
+| control-plane:service:view-backups                                                                                                      | Ver backups e pontos de restauração de um serviço.                                                                                                                                                           |
+| control-plane:service:manage-backups                                                                                                    | Criar, gerenciar e restaurar backups do serviço.                                                                                                                                                             |
+| **IP access list** ([more info](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | Gerenciar listas de acesso IP e filtragem de rede                                                                                                                                                            |
+| control-plane:service:manage-ip-access-list                                                                                             | Gerenciar listas de acesso IP e filtragem de rede de um serviço.                                                                                                                                             |
+| **Generative AI** ([more info](/pt-BR/products/cloud/features/ai-ml/ask-ai))                                                                  | Configurar recursos de IA generativa                                                                                                                                                                         |
+| control-plane:service:manage-generative-ai                                                                                              | Configurar e gerenciar recursos e definições de IA generativa de um serviço.                                                                                                                                 |
+| **Query API endpoints** ([more info](/pt-BR/products/cloud/guides/sql-console/query-endpoints))                                               | Endpoints de API de consulta                                                                                                                                                                                 |
+| control-plane:service:view-query-api-endpoints                                                                                          | Ver endpoints de API de consulta e sua configuração.                                                                                                                                                         |
+| control-plane:service:manage-query-api-endpoints                                                                                        | Criar e gerenciar endpoints de API de consulta.                                                                                                                                                              |
+| **Private endpoints** ([more info](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index))                              | Rede privada e endpoints privados                                                                                                                                                                            |
+| control-plane:service:view-private-endpoints                                                                                            | Ver a configuração de endpoint privado de um serviço.                                                                                                                                                        |
+| control-plane:service:manage-private-endpoints                                                                                          | Criar e gerenciar endpoints privados e rede privada.                                                                                                                                                         |
+| **ClickPipes** ([more info](/pt-BR/integrations/clickpipes/home))                                                                             | Integração com o ClickPipes                                                                                                                                                                                  |
+| control-plane:service:manage-clickpipes                                                                                                 | Gerenciar a integração com o ClickPipes e as configurações relacionadas. No momento, o acesso à aba **Data Sources** exige `control-plane:service:manage` (&quot;Manage and Delete Selected Services&quot;). |
+| **Scaling** ([more info](/pt-BR/products/cloud/features/autoscaling/overview))                                                                | Configuração de escalonamento e autoscaling                                                                                                                                                                  |
+| control-plane:service:view-scaling-config                                                                                               | Ver a configuração de escalonamento e as definições de autoscaling de um serviço.                                                                                                                            |
+| control-plane:service:manage-scaling-config                                                                                             | Modificar a configuração de escalonamento e acionar operações de escalonamento.                                                                                                                              |
+| **ClickStack** ([more info](/pt-BR/clickstack/overview))                                                                                      | Integrações de observabilidade do ClickStack                                                                                                                                                                 |
+| control-plane:service:manage-clickstack-api                                                                                             | Gerenciar o acesso à API do ClickStack e as integrações relacionadas.                                                                                                                                        |
+| **SQL console role mapping** ([more info](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | Gerenciar atribuições de funções do console SQL                                                                                                                                                              |
+| sql-console:database:access                                                                                                             | Acesso sem senha ao banco de dados via console SQL (só pode ser usado com sql-console-admin ou sql-console-readonly)                                                                                         |

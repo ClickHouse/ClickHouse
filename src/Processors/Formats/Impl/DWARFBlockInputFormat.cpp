@@ -77,7 +77,7 @@ enum DwarfColumn
 
 static NamesAndTypesList getHeaderForDWARF()
 {
-    std::vector<NameAndTypePair> cols(COL_COUNT);
+    NamesAndTypes cols(COL_COUNT);
     cols[COL_OFFSET] = {"offset", std::make_shared<DataTypeUInt64>()};
     cols[COL_SIZE] = {"size", std::make_shared<DataTypeUInt32>()};
     cols[COL_TAG] = {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -786,8 +786,18 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
+            {
+                /// A unit without DW_AT_stmt_list has no filename table; use a minimal dictionary instead of null.
+                ColumnPtr filename_table = unit.filename_table;
+                if (filename_table == nullptr)
+                {
+                    auto dict = ColumnString::create();
+                    dict->insertDefault();
+                    filename_table = ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false);
+                }
+                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
                 break;
+            }
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));
                 break;
@@ -859,9 +869,10 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_addr section.");
     if (addr_base == UINT64_MAX)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_addr_base");
+    uint64_t section_size = debug_addr_section->size();
+    if (addr_base > section_size || idx >= (section_size - addr_base) / 8)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: addr_base {}, idx {} vs {}.", addr_base, idx, section_size);
     uint64_t offset = addr_base + idx * 8;
-    if (offset + 8 > debug_addr_section->size())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: {} vs {}.", offset, debug_addr_section->size());
     uint64_t res = 0;
     memcpy(&res, debug_addr_section->data() + offset, 8);
     return res;
@@ -900,14 +911,19 @@ void DWARFBlockInputFormat::parseRanges(
             if (unit.rnglists_base == UINT64_MAX)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_rnglists_base");
             uint64_t entry_size = unit.dwarf_unit->getFormParams().getDwarfOffsetByteSize();
+            uint64_t section_size = debug_rnglists_extractor->size();
+            if (entry_size == 0 || unit.rnglists_base > section_size
+                || offset >= (section_size - unit.rnglists_base) / entry_size)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: rnglists_base {}, idx {} vs {}", unit.rnglists_base, offset, section_size);
             uint64_t lists_offset = unit.rnglists_base + offset * entry_size;
-            if (lists_offset + entry_size > debug_rnglists_extractor->size())
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: {} vs {}", lists_offset, debug_rnglists_extractor->size());
 
-            offset = 0;
-            memcpy(&offset, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
+            uint64_t list_entry = 0;
+            memcpy(&list_entry, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
 
-            offset += unit.rnglists_base;
+            /// The offset read from the table is untrusted; the subtraction also stops rnglists_base + list_entry from wrapping.
+            if (list_entry > section_size - unit.rnglists_base)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx points out of bounds: rnglists_base {}, entry {} vs {}", unit.rnglists_base, list_entry, section_size);
+            offset = unit.rnglists_base + list_entry;
         }
 
         llvm::DWARFDebugRnglist list;
@@ -1024,6 +1040,83 @@ void registerInputFormatDWARF(FormatFactory & factory)
                 buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
+
+    factory.setDocumentation("DWARF", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✔     | ✗       |       |
+
+## Description {#description}
+
+The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file).
+It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL.
+It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
+and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
+
+:::info
+`.debug_info` consists of *units*, which correspond to compilation units:
+- Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
+- Each DIE has a *tag* and a list of *attributes*.
+- Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded).
+
+The DIEs represent things from the source code, and their *tag* tells you what kind of thing it is. For example, there are:
+
+- functions (tag = `subprogram`)
+- classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`)
+- variables (`variable`)
+- function arguments (`formal_parameter`).
+
+The tree structure mirrors the corresponding source code. For example, a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
+:::
+
+The `DWARF` format outputs the following columns:
+
+- `offset` - position of the DIE in the `.debug_info` section
+- `size` - number of bytes in the encoded DIE (including attributes)
+- `tag` - type of the DIE; the conventional "DW_TAG_" prefix is omitted
+- `unit_name` - name of the compilation unit containing this DIE
+- `unit_offset` - position of the compilation unit containing this DIE in the `.debug_info` section
+- `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
+- `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
+- a few common attributes duplicated from the attributes array for convenience:
+  - `name`
+  - `linkage_name` - mangled fully qualified name; typically only functions have it (but not all functions)
+  - `decl_file` - name of the source code file where this entity was declared
+  - `decl_line` - line number in the source code where this entity was declared
+- parallel arrays describing attributes:
+  - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
+  - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
+  - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
+  - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
+
+## Example usage {#example-usage}
+
+The `DWARF` format can be used to find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+
+```sql title="Query"
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+```text title="Response"
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
+Peak memory usage: 271.92 MiB.
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

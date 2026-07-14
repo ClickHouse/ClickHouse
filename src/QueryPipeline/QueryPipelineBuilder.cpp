@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/SortDescription.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
@@ -19,6 +20,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -173,7 +175,21 @@ void QueryPipelineBuilder::addDefaultTotals()
 
     for (size_t i = 0; i < current_header->columns(); ++i)
     {
-        auto column = current_header->getByPosition(i).type->createColumn();
+        const auto & elem = current_header->getByPosition(i);
+        /// Keep the value of a constant column in the synthesized totals row.
+        /// Every row of a constant column carries the same value, so the totals
+        /// row must carry it too; otherwise it collapses to a type default. This
+        /// matters for JOINs with `WITH TOTALS`: the default totals are produced
+        /// for the side that has no totals of its own (e.g. a constant subquery),
+        /// and which side that is can change depending on build/probe ordering
+        /// (`query_plan_join_swap_table`).
+        if (elem.column && isColumnConst(*elem.column))
+        {
+            columns.emplace_back(elem.column->cloneResized(1));
+            continue;
+        }
+
+        auto column = elem.type->createColumn();
         column->insertDefault();
         columns.emplace_back(std::move(column));
     }
@@ -787,13 +803,38 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
+namespace
+{
+
+/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
+/// construction / CTE materialization) using a `DroppingTransform` instead of a
+/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
+/// forwards the data streams and discards totals/extremes. Unlike a childless
+/// `NullSink`, it keeps the dropping node connected to the data path, so
+/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
+/// gated source sub-pipeline before its materialized CTE has been built.
+void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
+{
+    if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
+        return;
+
+    bool has_totals = pipe.getTotalsPort() != nullptr;
+    bool has_extremes = pipe.getExtremesPort() != nullptr;
+    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
+    auto * totals_in = dropping->getTotalsPort();
+    auto * extremes_in = dropping->getExtremesPort();
+    pipe.addTransform(std::move(dropping), totals_in, extremes_in);
+}
+
+}
+
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -812,7 +853,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(
