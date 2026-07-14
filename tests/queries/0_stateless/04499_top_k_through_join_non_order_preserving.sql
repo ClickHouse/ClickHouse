@@ -1,17 +1,20 @@
--- topKThroughJoin must still push `Sort + Limit` below the join for join algorithms that
--- do NOT preserve the left block order (partial_merge / prefer_partial_merge / full_sorting_merge).
+-- topKThroughJoin must still push `Sort + Limit` below the join for join algorithms that do NOT
+-- preserve the left block order. The pass-1 deferral proves order preservation only for `hash`
+-- (HashJoin) and `direct` (DirectKeyValueJoin), which unconditionally stream the left side through
+-- once. Every other algorithm (partial_merge / prefer_partial_merge / full_sorting_merge / auto /
+-- parallel_hash / grace_hash) is treated as possibly reordering.
 --
--- Those algorithms return `preservesLeftBlockOrder() == false`, so the read-in-order-through-join
--- second pass (findReadingStep in optimizeReadInOrder.cpp) refuses to propagate the left sort
--- order through the join. Before the fix, topKThroughJoin's pass-1 deferral only checked for
--- delayed blocks, so it still deferred to that second pass; the second pass then bailed and
--- NEITHER optimization fired, leaving a full join plus a full sort. The deferral now also
--- requires preservesLeftBlockOrder(), so the pushdown runs in pass 1 for these algorithms.
+-- The physical joins for the merge algorithms return `preservesLeftBlockOrder() == false`, so the
+-- read-in-order-through-join second pass (findReadingStep in optimizeReadInOrder.cpp) refuses to
+-- propagate the left sort order through the join. Before the fix, topKThroughJoin's pass-1 deferral
+-- only checked for delayed blocks, so it still deferred to that second pass; the second pass then
+-- bailed and NEITHER optimization fired, leaving a full join plus a full sort. The deferral now also
+-- requires order preservation, so the pushdown runs in pass 1 for these algorithms.
 --
 -- All plan-affecting settings are pinned in each query's SETTINGS clause (query-level settings
 -- take precedence over the CI settings randomizer): read-in-order enabled so the deferral path
 -- is live; spilling off so joinMayHaveDelayedBlocks is false; join side pinned so the deferral
--- is otherwise satisfiable and preservesLeftBlockOrder() is the only remaining gate. Parallel
+-- is otherwise satisfiable and order preservation is the only remaining gate. Parallel
 -- replicas is pinned off too: it is a plan-affecting setting the ParallelReplicas CI variant
 -- turns on in the default profile, under which the MergeTree read is remote and the local
 -- read-in-order / topK plan (and the direct key-value join path) do not apply.
@@ -33,10 +36,8 @@ CREATE TABLE tl_04499 (pk UInt64, j UInt64) ENGINE = MergeTree ORDER BY pk
 CREATE TABLE tr_04499 (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j
     AS SELECT number, number FROM numbers(100000);
 
--- key8 join key (UInt8): its ConcurrentHashJoin builds a single-level `key8` map (the two-level
--- map switch in HashJoin::chooseMethod leaves key8/key16 single-level), which scatters the left
--- block across slots, so multi-slot parallel_hash on this shape does NOT preserve the left order.
--- Used to prove the key-shape split: multi-slot parallel_hash still pushes down here.
+-- A second key shape (UInt8 join key). The deferral no longer inspects the key type, so this behaves
+-- like the UInt64 shape; kept to confirm the parallel_hash pushdown is independent of the key type.
 CREATE TABLE tl8_04499 (pk UInt64, j UInt8) ENGINE = MergeTree ORDER BY pk
     AS SELECT number, toUInt8(number % 256) FROM numbers(100000);
 CREATE TABLE tr8_04499 (j UInt8, v UInt64) ENGINE = MergeTree ORDER BY j
@@ -84,25 +85,22 @@ SELECT count() > 0 FROM (
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
--- parallel_hash (ConcurrentHashJoin) preserves the left order only for two-level maps; it scatters
--- it for single-level map key shapes (key8 / key16: a single numeric key of at most 2 bytes). The
--- logical deferral mirrors that key-shape split (see parallelHashMultiSlotSingleLevelMap):
+-- parallel_hash is not one of the algorithms the logical deferral proves order-preserving: only
+-- `hash` / `direct` (which unconditionally stream the left side through once) are. The physical
+-- ConcurrentHashJoin preserves the left order only for some slot-count / map-type combinations that
+-- are not known at this logical stage, so the deferral treats parallel_hash conservatively as
+-- possibly reordering and fires the pushdown here (count = 1). The second probe is an invariant: the
+-- pushed inner Sort is still satisfied by a plain read-in-order scan directly above the MergeTree
+-- read (count > 0). Both hold regardless of the key shape (UInt64 here, UInt8/key8 below, multi-key,
+-- or a residual filter) and the slot count (multi-slot here, single-slot below) - the deferral no
+-- longer inspects either.
 --
---  - Two-level key (UInt64 here): multi-slot parallel_hash keeps the order, so this DEFERS to the
---    read-in-order-through-join second pass. First probe: NO explicit pushed Limit on the left
---    (count = 0). Before the key-shape split every multi-slot parallel_hash was flagged and this
---    returned 1, forcing the pushdown and losing the cheaper through-join plan. Second probe: the
---    left MergeTree read streams InOrder (count > 0), confirming read-in-order really fired.
---  - Single-level key (UInt8 / key8, below): multi-slot parallel_hash reorders, so the pushdown
---    must still fire in pass 1 (the pass-2 physical gate would otherwise refuse and lose both).
---
--- max_threads is pinned above 1 so the join has several slots (single-slot is covered separately
--- below). enable_analyzer is pinned to 1: this deferral runs on the logical JoinStepLogical, which
--- only exists in the new analyzer; under the old analyzer topKThroughJoin sees the already-built
--- physical ConcurrentHashJoin and reads its exact preservesLeftBlockOrder(), a different (also
--- correct) path. The stateless runner randomizes max_threads and the in-order trio, so both are
--- pinned per query. Pinned on both the wrapper and the EXPLAIN because the old-analyzer job forbids
--- changing enable_analyzer in a subquery.
+-- enable_analyzer is pinned to 1: this deferral runs on the logical JoinStepLogical, which only
+-- exists in the new analyzer; under the old analyzer topKThroughJoin sees the already-built physical
+-- ConcurrentHashJoin and reads its exact preservesLeftBlockOrder(), a different (also correct) path.
+-- The stateless runner randomizes max_threads and the in-order trio, so both are pinned per query.
+-- Pinned on both the wrapper and the EXPLAIN because the old-analyzer job forbids changing
+-- enable_analyzer in a subquery.
 SELECT count() FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
@@ -131,10 +129,8 @@ SELECT count() > 0 FROM (
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
 
--- Single-level key8 (UInt8): multi-slot parallel_hash scatters the left block, so the pushdown must
--- still fire (count > 0). This is the key-shape split's other side: without it, a two-level-only gate
--- would defer here and the pass-2 physical gate would then bail on !preservesLeftBlockOrder(), losing
--- both optimizations.
+-- Same parallel_hash contract with a UInt8 key: the pushdown fires (count > 0) independent of the
+-- key type, since the deferral no longer inspects it.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT tl8_04499.pk, tr8_04499.v
@@ -149,11 +145,9 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
 
--- The default `direct,parallel_hash,hash` list on a single-level key8: `PlannerJoins::tryCreateJoin`
--- can still pick `ConcurrentHashJoin` (no right-side estimate or right side at least
--- `parallel_hash_join_threshold`) even with the hash fallback, and on key8 that scatters the left
--- order. The right-side size is unknown at this logical stage, so the deferral must treat a
--- single-level parallel_hash in the list as non-order-preserving and fire the pushdown.
+-- A `direct,parallel_hash,hash` list: the deferral proves order preservation only if EVERY configured
+-- algorithm is order-preserving. `parallel_hash` is in the list and is not proven order-preserving, so
+-- the whole list is treated as possibly reordering and the pushdown fires.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT tl8_04499.pk, tr8_04499.v
@@ -168,16 +162,13 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
 
--- Single-slot parallel_hash (max_threads = 1) preserves the left order: dispatchBlock short-circuits
--- on one slot and passes the left block through unscattered regardless of the map type, so
--- ConcurrentHashJoin::preservesLeftBlockOrder() is true. The logical topKThroughJoin deferral mirrors
--- that (max_threads == 1 -> not flagged as reordering), so it defers to the read-in-order-through-join
--- second pass instead of injecting a Sort + Limit.
--- First probe is the guard: with the fix there is NO explicit pushed Limit on the left (count = 0);
--- before threading max_threads into the logical check the pushdown fired here and this returned 1.
--- Second probe is an invariant: the left MergeTree read must stream InOrder (count > 0), confirming
--- the recovered plan really reads in primary-key order through the join. max_threads = 1 and the
--- in-order trio are pinned per-query (the stateless runner randomizes both).
+-- Single-slot parallel_hash (max_threads = 1): the physical ConcurrentHashJoin would preserve the
+-- left order here, but the logical deferral does not special-case the slot count (it no longer reads
+-- max_threads), so it still treats parallel_hash conservatively and fires the pushdown (count = 1).
+-- This is a perf-only difference (an explicit Sort + Limit instead of read-in-order-through-join),
+-- never a correctness one. Second probe is the invariant: the pushed inner Sort still reads InOrder
+-- from the MergeTree primary key (count > 0). max_threads = 1 and the in-order trio are pinned
+-- per-query (the stateless runner randomizes both).
 SELECT count() FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
@@ -221,19 +212,11 @@ SELECT count() FROM (
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
--- The logical deferral must key off the number and type of the actual equi-join keys, not the
--- number of `ON` conjuncts: `HashJoin::chooseMethod` leaves only a single 1/2-byte numeric key
--- single-level, so every other shape is two-level and preserves the left order under multi-slot
--- parallel_hash. Two shapes have more than one `ON` conjunct yet are two-level, and must DEFER to
--- the read-in-order-through-join second pass (no explicit pushed Limit, count = 0):
---
---  - A multi-key equi-join (two UInt64 keys): `chooseMethod` packs them into `two_level_keys*`.
---  - A single UInt64 equi-key plus a residual range filter: the range condition is applied after
---    the join and adds no hash key, so this is still a single `two_level_key64`.
---
--- Before keying off the equi-key set (when the guard counted raw `ON` conjuncts), both were flagged
--- as single-level and wrongly forced the pushdown, losing the cheaper through-join plan. The second
--- probe of each pair is an invariant: the left MergeTree read streams InOrder (count > 0).
+-- More complex ON shapes (a multi-key equi-join, and a single equi-key plus a residual range filter)
+-- behave the same as the plain single-key shape: parallel_hash is treated conservatively regardless
+-- of the key shape, so the pushdown fires (count = 1). The deferral no longer inspects the ON
+-- expression. The second probe of each pair is the invariant: the pushed inner Sort reads InOrder
+-- from the MergeTree primary key (count > 0).
 SELECT count() FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
@@ -262,8 +245,8 @@ SELECT count() > 0 FROM (
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
 
--- Single UInt64 equi-key + residual range filter (`tl.pk > tr.v`): still one `two_level_key64`, so
--- multi-slot parallel_hash preserves the order and this DEFERS (no pushed Limit, count = 0).
+-- Single equi-key + residual range filter (`tl.pk > tr.v`): same as above, the pushdown fires
+-- (count = 1) since parallel_hash is treated conservatively regardless of the residual filter.
 SELECT count() FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
@@ -294,8 +277,7 @@ SETTINGS enable_analyzer = 1;
 
 -- Correctness pins the pushed limit's value and side. Because the join is one-to-one, the top-10
 -- pk are exactly 0..9: a pushdown that keeps only the first row (a wrong `Limit 1`) would return a
--- single 0, and a limit pushed onto the right side would drop or reorder left rows. This is the
--- one-to-one form the earlier fan-out data could not prove: ten equal pk = 0 hid a wrong limit.
+-- single 0, and a limit pushed onto the right side would drop or reorder left rows.
 SELECT tl_04499.pk
 FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
 ORDER BY tl_04499.pk LIMIT 10
