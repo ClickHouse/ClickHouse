@@ -14,7 +14,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     last-run snapshot (and the refreshed entry must drop the `run=1` marker);
 #   - a same-session Back-then-Forward round-trip must preserve a newer unrun draft
 #     instead of clobbering it with the entry's older query, while a clean editor
-#     (no draft) keeps restoring entries verbatim;
+#     (no draft) keeps restoring entries verbatim; "draft" means dirty since the tab's
+#     last history write (`tab.query !== tab.lastSavedQuery`), NOT `!tabReflectsRun`,
+#     so a clean `Run selected` (whose result snapshots only the selected statement) is
+#     not mistaken for a draft and Back/Forward still restore its entry queries;
 #   - the preserved draft carries its parameter bindings too: Back must not restore the
 #     older entry's params under the newer draft query (with a clean editor, entry params
 #     keep restoring verbatim);
@@ -221,6 +224,16 @@ async function run(q)
     await drain();
 }
 
+/// A "Run selected" execution: the editor holds the full text, but only the selected
+/// statement produced the result, so `saveHistory` stores the full editor in `tab.query`
+/// and the selected statement in `tab.result.query` — exactly as the real page does.
+async function runSelected(editorText, selectedStatement)
+{
+    type(editorText);
+    sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1 });
+    await drain();
+}
+
 function reset()
 {
     sandbox.tabs.length = 0;
@@ -301,7 +314,11 @@ async function reload()
 
     /// The preserved draft carries its parameter bindings too: Back must not restore the
     /// older entry's params under the newer draft query — that would silently drop edited
-    /// values and let the scheduled save persist an incoherent query/params pair.
+    /// values and let the scheduled save persist an incoherent query/params pair. A parameter
+    /// edit calls `syncHistory`, which stamps the current query + params into a history entry
+    /// (so a param-edited draft is itself saved, not at-risk); a keystroke AFTER it makes the
+    /// editor dirty again (`tab.query !== tab.lastSavedQuery`), so this draft — with its live
+    /// bindings — is genuinely preserved across the round-trip.
     reset();
     await run('SELECT 0');
     type('SELECT {x:Int32}');
@@ -309,14 +326,15 @@ async function reload()
     await run('SELECT {x:Int32}');
     type('SELECT {x:Int32} + {y:Int32}');
     setParam('y', '2');
+    type('SELECT {x:Int32} + {y:Int32} -- edited');
     sandbox.history.back();
     await drain();
-    assert_eq('param back: the draft query is preserved', active().query, 'SELECT {x:Int32} + {y:Int32}');
+    assert_eq('param back: the draft query is preserved', active().query, 'SELECT {x:Int32} + {y:Int32} -- edited');
     assert_params('param back: the draft params are preserved', active().params, { x: '1', y: '2' });
     assert_params('param back: the param inputs keep the draft bindings', sandbox.param_inputs, { x: '1', y: '2' });
     sandbox.history.forward();
     await drain();
-    assert_eq('param forward: the draft query survives the round-trip', active().query, 'SELECT {x:Int32} + {y:Int32}');
+    assert_eq('param forward: the draft query survives the round-trip', active().query, 'SELECT {x:Int32} + {y:Int32} -- edited');
     assert_params('param forward: the draft params survive the round-trip', active().params, { x: '1', y: '2' });
 
     /// Control: with a clean editor (the tab still reflects its run), entry params keep
@@ -345,6 +363,32 @@ async function reload()
     sandbox.history.forward();
     await drain();
     assert_eq('forward with a clean editor: the entry query is restored', active().query, 'SELECT 1');
+
+    /// A clean `Run selected` is NOT a draft. Its result snapshots only the selected statement,
+    /// so `tabReflectsRun` is false while the editor keeps the full text, but the editor was not
+    /// edited after the run. Back/Forward must restore the older / full-editor entry query, not
+    /// mistake the run-backed editor for a newer unrun draft. The preserve check keys off
+    /// `tab.query !== tab.lastSavedQuery` ("dirty since this entry was written"), which stays false
+    /// here, so navigation restores the entry queries verbatim.
+    reset();
+    await run('SELECT 0');
+    await runSelected('SELECT 1; SELECT 2', 'SELECT 2');
+    sandbox.history.back();
+    await drain();
+    assert_eq('run-selected back: the older entry query is restored', active().query, 'SELECT 0');
+    sandbox.history.forward();
+    await drain();
+    assert_eq('run-selected forward: the full run-selected editor is restored', active().query, 'SELECT 1; SELECT 2');
+
+    /// But a genuine draft typed AFTER a `Run selected` is still preserved on Back: the edit makes
+    /// `tab.query` diverge from `lastSavedQuery`, so the dirty check fires and the draft rides along.
+    reset();
+    await run('SELECT 0');
+    await runSelected('SELECT 1; SELECT 2', 'SELECT 2');
+    type('SELECT 1; SELECT 2; SELECT 3');
+    sandbox.history.back();
+    await drain();
+    assert_eq('run-selected+draft back: the newer draft is preserved', active().query, 'SELECT 1; SELECT 2; SELECT 3');
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

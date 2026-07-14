@@ -5924,12 +5924,25 @@ window.onpopstate = function(event) {
     /// `event.state.query` here would clobber that draft on an
     /// ordinary same-session Back/Forward round-trip: run `SELECT 1`, type `SELECT 2`, press Back
     /// to an older entry, then Forward — the forward entry still carries `SELECT 1`. Keep the draft
-    /// when it diverges from the entry AND does not merely reflect the entry's own produced result
-    /// (`tabReflectsRun` false); the entry's result snapshot is still rendered below, reproducing
-    /// the pre-navigation edited-but-unrun state. A freshly recreated tab (closed then revisited)
-    /// has `tab.query === event.state.query`, and normal Back/Forward between two runs of the same
-    /// tab reports `tabReflectsRun` true, so both keep restoring the entry's query exactly as before.
-    const preserve_draft = tab.query !== event.state.query && !tabReflectsRun(tab);
+    /// when it diverges from the entry AND the editor is dirty since the tab's last history write,
+    /// i.e. `tab.query !== tab.lastSavedQuery`: an unrun edit updates `tab.query` in memory but
+    /// leaves `lastSavedQuery` at the last run / structural-change value, so the two diverge exactly
+    /// when there is a genuine unrun draft. The entry's result snapshot is still rendered below,
+    /// reproducing the pre-navigation edited-but-unrun state.
+    ///
+    /// The dirty check must NOT be `tabReflectsRun(tab)` (whether the editor still reproduces the
+    /// current result): that predicate is also false for a clean `Run selected`, whose result
+    /// snapshots only the selected statement while `tab.query` keeps the full editor, so it does
+    /// not reproduce the result even without any post-run edit. Keying off it made Back/Forward
+    /// after a `Run selected` mistake the run-backed editor for a draft and stop restoring older
+    /// query text. `lastSavedQuery` is written alongside every entry (`writeHistoryEntry`), so it
+    /// tracks the last saved editor regardless of the `Run` / `Run all` / `Run selected` distinction.
+    ///
+    /// A freshly recreated tab (closed then revisited) has `tab.query === event.state.query`, so
+    /// the first clause short-circuits; and after a clean Back/Forward this handler sets both
+    /// `tab.query` and `lastSavedQuery` to the entry query (below), so a subsequent navigation with
+    /// no edit stays non-dirty and keeps restoring the entry's query exactly as before.
+    const preserve_draft = tab.query !== event.state.query && tab.query !== tab.lastSavedQuery;
     if (!preserve_draft) tab.query = event.state.query;
     /// This history entry is now the tab's URL-synced query, so it is also the query the saved
     /// tab is "in sync" with: keep `lastSavedQuery` aligned with it. Otherwise a later edit and

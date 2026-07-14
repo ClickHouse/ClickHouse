@@ -18,6 +18,9 @@ clean param forward: the entry query is restored
 clean param forward: the entry params are restored verbatim
 back with a clean editor: the entry query is restored
 forward with a clean editor: the entry query is restored
+run-selected back: the older entry query is restored
+run-selected forward: the full run-selected editor is restored
+run-selected+draft back: the newer draft is preserved
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 reload after a color toggle over a draft: the draft is restored as editor text
