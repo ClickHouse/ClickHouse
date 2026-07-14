@@ -432,16 +432,17 @@ IEJoinAlgorithm::SideValidity IEJoinAlgorithm::materializeSide(size_t side)
             exclude_rows([&](size_t row) { return null_map[row] != 0; });
             key = &nullable->getNestedColumn();
         }
+        auto exclude_nan_rows = [&](const auto & typed_key)
+        {
+            const auto & data = typed_key.getData();
+            exclude_rows([&](size_t row) { return isNaN(data[row]); });
+        };
         if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
-        {
-            const auto & data = float64_key->getData();
-            exclude_rows([&](size_t row) { return isNaN(data[row]); });
-        }
+            exclude_nan_rows(*float64_key);
         else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
-        {
-            const auto & data = float32_key->getData();
-            exclude_rows([&](size_t row) { return isNaN(data[row]); });
-        }
+            exclude_nan_rows(*float32_key);
+        else if (const auto * bfloat16_key = checkAndGetColumn<ColumnBFloat16>(key))
+            exclude_nan_rows(*bfloat16_key);
     }
 
     validity.num_valid = rows;
