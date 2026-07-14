@@ -59,6 +59,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -970,7 +972,19 @@ public:
                 }
                 case ElementType::UINT64:
                     if (format_settings.read_datetime_number_as_raw_value)
-                        value.value = element.getUInt64();
+                    {
+                        /// The raw ticks are stored in the `Int64` native type of `DateTime64`. A `UInt64`
+                        /// above `Int64` max would narrow to a negative timestamp, so range-check it and fail
+                        /// on overflow (degrading to the default value, or a clean error in typed `JSON`) just
+                        /// like the `DOUBLE` and non-raw paths do, rather than wrapping around silently.
+                        const UInt64 raw = element.getUInt64();
+                        if (raw > static_cast<UInt64>(std::numeric_limits<DateTime64::NativeType>::max()))
+                        {
+                            error = fmt::format("raw DateTime64 tick value {} is out of range", raw);
+                            return false;
+                        }
+                        value.value = static_cast<DateTime64::NativeType>(raw);
+                    }
                     /// Use the non-throwing conversion so that an out-of-range timestamp degrades to the default
                     /// value, matching the `DOUBLE` case above and the best-effort contract of `JSONExtract`.
                     else if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale, value))

@@ -35,3 +35,11 @@ SELECT CAST('{"t":9223372036854775808}', 'JSON(t DateTime64(3))'); -- { serverEr
 
 -- The compatibility setting only affects integers (raw ticks); a fractional number is still seconds.
 SELECT JSONExtract('{"t":0.58}', 't', 'DateTime64(2)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
+
+-- In compatibility mode an integer is the raw scaled value (ticks) stored directly in the Int64 native
+-- type: 1703363853035 ticks at scale 3 is 2023-12-23 20:37:33.035. A value beyond Int64 (2^63) is out of
+-- range and must fail like the seconds path above -- JSONExtract yields the default value and the typed
+-- JSON path reports a clean INCORRECT_DATA error -- rather than narrowing to a negative timestamp.
+SELECT JSONExtract('{"t":1703363853035}', 't', 'DateTime64(3)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
+SELECT JSONExtract('{"t":9223372036854775808}', 't', 'DateTime64(3)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
+SELECT CAST('{"t":9223372036854775808}', 'JSON(t DateTime64(3))') SETTINGS input_format_read_datetime_number_as_raw_value = 1; -- { serverError INCORRECT_DATA }

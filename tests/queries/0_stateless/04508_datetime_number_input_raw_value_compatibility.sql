@@ -61,3 +61,17 @@ SET input_format_read_datetime_number_as_raw_value = 1;
 SELECT JSONExtract('{"t":1703363853.7}', 't', 'DateTime');
 SELECT JSONExtract('{"t":1703363853}', 't', 'DateTime');
 SET input_format_read_datetime_number_as_raw_value = 0;
+
+-- Boundary cases under the compatibility setting: the legacy integer path must not wrap around on
+-- overflow, and the throwing (plain column) and non-throwing (Nullable) paths must agree.
+
+SELECT '-- DateTime compatibility: an out-of-range integer clamps to the DateTime range (plain == Nullable)';
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":18446744073709551615}');
+SELECT t FROM format(JSONEachRow, 't Nullable(DateTime)', '{"t":18446744073709551615}');
+SET input_format_read_datetime_number_as_raw_value = 0;
+
+SELECT '-- DateTime64 compatibility: a raw tick value beyond Int64 is out of range, not a wrapped negative';
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":9223372036854775808}'); -- { serverError DECIMAL_OVERFLOW }
+SET input_format_read_datetime_number_as_raw_value = 0;

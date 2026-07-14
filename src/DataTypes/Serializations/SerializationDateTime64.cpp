@@ -177,6 +177,28 @@ bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
     return scaleAndStoreDateTime64(x, tmp.value, unread_scale);
 }
 
+/// Legacy: interpret the number as the raw scaled value (ticks) stored directly into `DateTime64`, enabled
+/// by `input_format_read_datetime_number_as_raw_value`. Only a bare integer is read; a fractional or
+/// exponent form is left unread for the format parser to reject. The integer is accumulated into a 128-bit
+/// temporary and range-checked (through `scaleAndStoreDateTime64` with no pending scale), so a value outside
+/// the `Int64` tick range reports `DECIMAL_OVERFLOW` rather than wrapping to a negative timestamp. This keeps
+/// the throwing and try deserializers consistent with each other and with the default seconds-based path.
+static void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
+{
+    Int128 tmp = 0;
+    readIntText(tmp, istr);
+    if (!scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
+}
+
+static bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
+{
+    Int128 tmp = 0;
+    if (!tryReadIntText(tmp, istr))
+        return false;
+    return scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0);
+}
+
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
 {
     return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
@@ -225,7 +247,7 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        readIntText(x, istr);
+        readDateTime64AsRawValue(x, istr);
     }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
@@ -244,7 +266,7 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadDateTime64AsRawValue(x, istr))
             return false;
     }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
@@ -273,7 +295,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        readIntText(x, istr);
+        readDateTime64AsRawValue(x, istr);
     }
     else
     {
@@ -292,7 +314,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadDateTime64AsRawValue(x, istr))
             return false;
     }
     else

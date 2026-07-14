@@ -86,10 +86,15 @@ inline time_t timestampNumberToSeconds(Int128 value, UInt32 unread_scale)
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
 {
-    if (read_as_raw) /// Legacy: a whole number of seconds via `readIntText` (no fractional/exponent forms).
+    if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
     {
-        readIntText(x, istr);
-        x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+        /// Accumulate into a 128-bit temporary rather than directly into `time_t`: `readIntText` does not
+        /// check for overflow, so a value beyond the `time_t` range (e.g. `18446744073709551615`) would wrap
+        /// around and then clamp to the wrong end. The wide temporary makes the clamp to the `DateTime` range
+        /// match the default (non-raw) path, and keeps this throwing path consistent with `tryReadAsIntText`.
+        Int128 tmp = 0;
+        readIntText(tmp, istr);
+        x = timestampNumberToSeconds(tmp, 0);
         return;
     }
     Decimal128 tmp;
@@ -126,11 +131,15 @@ inline bool tryReadText(
 
 inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
 {
-    if (read_as_raw) /// Legacy: a whole number of seconds via `readIntText` (no fractional/exponent forms).
+    if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
     {
-        if (!tryReadIntText(x, istr))
+        /// Read into a 128-bit temporary and clamp, exactly like the throwing `readAsIntText` above, so that
+        /// an out-of-range integer clamps to the `DateTime` range in both paths instead of `tryReadIntText`
+        /// rejecting the value (which would make plain and `Nullable`/`Variant` columns disagree on it).
+        Int128 tmp = 0;
+        if (!tryReadIntText(tmp, istr))
             return false;
-        x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+        x = timestampNumberToSeconds(tmp, 0);
         return true;
     }
     Decimal128 tmp;

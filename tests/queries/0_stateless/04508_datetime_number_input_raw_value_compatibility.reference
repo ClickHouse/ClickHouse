@@ -26,3 +26,7 @@
 -- JSONExtract compatibility: a fractional DateTime number is rejected (returns the default)
 1970-01-01 00:00:00
 2023-12-23 20:37:33
+-- DateTime compatibility: an out-of-range integer clamps to the DateTime range (plain == Nullable)
+2106-02-07 06:28:15
+2106-02-07 06:28:15
+-- DateTime64 compatibility: a raw tick value beyond Int64 is out of range, not a wrapped negative
