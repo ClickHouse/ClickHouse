@@ -1075,8 +1075,39 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
             {
+                /// An index may be defined over a persistent virtual column (e.g. the implicit
+                /// minmax index created by add_minmax_index_for_block_{number,offset}_column over
+                /// _block_number/_block_offset). Freshly inserted 0-level parts do not materialize
+                /// those columns on disk, so they are absent from the part's column list and hence
+                /// from `all_columns`. Analyzing the index expression against `all_columns` would
+                /// fail with UNKNOWN_IDENTIFIER. The read infrastructure can still synthesize these
+                /// columns on the fly (_block_offset == _part_offset in MergeTreeRangeReader,
+                /// _block_number == the part's min block in IMergeTreeReader), exactly as a merge
+                /// does when it (re)builds the same index. Add the index's persistent virtual
+                /// columns to the analysis set so the index is actually built rather than silently
+                /// skipped.
+                auto index_all_columns = all_columns;
+                const auto index_all_column_names = all_columns.getNames();
+                NameSet index_all_columns_set(index_all_column_names.begin(), index_all_column_names.end());
+                for (const auto & column : it->column_names)
+                {
+                    if (index_all_columns_set.contains(column))
+                        continue;
+                    auto virtual_column = metadata_snapshot->virtuals.tryGet(
+                        column, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader);
+                    if (virtual_column)
+                    {
+                        index_all_columns.emplace_back(virtual_column->name, virtual_column->type);
+                        index_all_columns_set.insert(column);
+                        /// Make the synthesized virtual available to the read pipeline too, so the
+                        /// recalculation stage reads it (the reader fills it) and the index is built.
+                        if (available_columns_set.emplace(column).second)
+                            available_columns.push_back(column);
+                    }
+                }
+
                 auto query = (*it).expression_list_ast->clone();
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                auto syntax_result = TreeRewriter(context).analyze(query, index_all_columns);
                 const auto required_columns = syntax_result->requiredSourceColumns();
                 for (const auto & column : required_columns)
                     dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
