@@ -138,16 +138,16 @@ SELECT 'Check total_bytes/total_rows for Set';
 -- total_bytes reports allocated memory (the hash table buffer plus the string pool of the set),
 -- which depends on internal allocation sizes.
 CREATE TABLE check_system_tables Engine=Set() AS SELECT * FROM numbers(50);
-SELECT total_bytes BETWEEN 2048 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
-SELECT total_bytes BETWEEN 2048 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Join';
 CREATE TABLE check_system_tables Engine=Join(ANY, LEFT, number) AS SELECT * FROM numbers(50);
-SELECT total_bytes BETWEEN 4000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
-SELECT total_bytes BETWEEN 4000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 -- Build MergeTree table for Materialized view
