@@ -1041,14 +1041,16 @@ The id-generator expression for an external tags target is resolved at INSERT ti
 
 ## Altering settings {#altering-settings}
 
-Two settings can be changed after `CREATE`:
+Three settings can be changed after `CREATE`:
 
 - `id_generator`
 - `filter_by_min_time_and_max_time`
+- `prometheus_remote_write_dynamic_routing_enabled`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
@@ -1067,6 +1069,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `prometheus_remote_write_dynamic_routing_enabled` | Bool | false | Allow Prometheus remote-write dynamic URL routing to insert into this `TimeSeries` table |
 
 # Functions {#functions}
 
