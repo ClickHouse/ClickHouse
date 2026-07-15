@@ -25,6 +25,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
 }
 
@@ -520,6 +521,31 @@ TEST(BackupInfo, NormalizedStringValidatesS3ExtraCredentials)
     {
         EXPECT_NE(e.message().find("extra_credentials"), String::npos);
         EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
+}
+
+TEST(BackupInfo, NormalizedStringHidesS3ParseFailureCredentials)
+{
+    auto invalid_url = BackupInfo::fromString(
+        "S3('https://s3.region.amazonaws.com/bucket-name//?X-Amz-Signature=TOPSECRET')");
+    auto invalid_path = BackupInfo::fromString(
+        "S3(collection, 'backup//path?X-Amz-Signature=TOPSECRET')");
+    auto invalid_percent_encoding = BackupInfo::fromString(
+        "S3('https://s3.region.amazonaws.com/bucket-name/path?X-Amz-Signature=TOPSECRET%')");
+
+    for (const auto * info : {&invalid_url, &invalid_path, &invalid_percent_encoding})
+    {
+        try
+        {
+            (void)info->toNormalizedString();
+            FAIL() << "Expected invalid S3 locator exception";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+            EXPECT_NE(e.message().find("S3"), String::npos);
+            EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+        }
     }
 }
 #endif

@@ -317,12 +317,29 @@ namespace
         return "a non-function expression";
     }
 
+#if USE_AWS_S3
+    S3::URI parseS3URIForNormalizedIdentity(const String & uri, std::string_view argument_description)
+    {
+        try
+        {
+            return S3::URI(uri, /* allow_archive_path_syntax = */ false);
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Failed to parse S3 {} for normalized backup identity",
+                argument_description);
+        }
+    }
+#endif
+
     String normalizeS3URL(String s)
     {
         String result;
         bool first = true;
 #if USE_AWS_S3
-        S3::URI uri(stripURLUserInfo(s), /* allow_archive_path_syntax = */ false);
+        S3::URI uri = parseS3URIForNormalizedIdentity(stripURLUserInfo(s), "URL");
         appendNormalizedIdentityComponent(result, first, "endpoint=" + uri.endpoint);
         appendNormalizedIdentityComponent(result, first, "bucket=" + uri.bucket);
         appendNormalizedIdentityComponent(result, first, "key=" + stripAllTrailingSlashes(uri.key));
@@ -341,7 +358,7 @@ namespace
         String result;
         bool first = true;
 #if USE_AWS_S3
-        S3::URI uri("s3://bucket/" + s, /* allow_archive_path_syntax = */ false);
+        S3::URI uri = parseS3URIForNormalizedIdentity("s3://bucket/" + s, "path");
         appendNormalizedIdentityComponent(result, first, "key=" + stripAllTrailingSlashes(uri.key));
         appendNormalizedIdentityComponent(result, first, "version_id=" + uri.version_id);
 #else
