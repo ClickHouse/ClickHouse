@@ -320,7 +320,15 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
+            {
+                /// Clamp in the unsigned domain first: converting a huge unsigned `from` (e.g. above `Int64::max`)
+                /// straight to `time_t` is implementation-defined and typically wraps to a negative value, which
+                /// would then map to the wrong day instead of saturating to the maximum representable timestamp.
+                if constexpr (is_unsigned_v<FromType>)
+                    return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(std::min<FromType>(from, static_cast<FromType>(MAX_DATETIME_TIMESTAMP)))));
+                else
+                    return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
+            }
 
         return static_cast<UInt16>(from);
     }
@@ -354,7 +362,7 @@ struct ToDate32TransformFromSecondsOrDays
 
         /// Date32 spans [1900, 2299] (unlike DateTime64, which now goes up to 9999), so it keeps its own upper bound.
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
-            if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
+            if (from > static_cast<FromType>(MAX_DATE32_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -365,7 +373,12 @@ struct ToDate32TransformFromSecondsOrDays
                 /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
                 if constexpr (is_floating_point<FromType>)
                     return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
+                /// Likewise, casting a huge unsigned `from` (e.g. above `Int64::max`) straight to `Int64` is
+                /// implementation-defined and typically wraps to a negative value. Clamp in the unsigned domain first.
+                else if constexpr (is_unsigned_v<FromType>)
+                    return time_zone.toDayNum(static_cast<time_t>(std::min<FromType>(from, static_cast<FromType>(MAX_DATE32_TIMESTAMP))));
+                else
+                    return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
             }
 
         return static_cast<Int32>(from);
@@ -386,7 +399,13 @@ struct ToDateTimeTransform64
             if (from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+
+        /// Clamp in the unsigned domain first: converting a huge unsigned `from` (e.g. above `Int64::max`) straight
+        /// to `time_t` is implementation-defined and typically wraps to a negative value, breaking saturation.
+        if constexpr (is_unsigned_v<FromType>)
+            return static_cast<ToType>(std::min<FromType>(from, static_cast<FromType>(MAX_DATETIME_TIMESTAMP)));
+        else
+            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
@@ -544,7 +563,9 @@ struct ToDateTime64TransformUnsigned
         const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > max_whole) [[unlikely]]
+            /// `from` is unsigned and `max_whole` is always non-negative here: compare in the unsigned domain
+            /// to avoid a signed/unsigned comparison warning.
+            if (static_cast<UInt64>(from) > static_cast<UInt64>(max_whole)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
@@ -610,7 +631,7 @@ struct ToDateTime64TransformFloat
         const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < min_whole || from > max_whole) [[unlikely]]
+            if (from < static_cast<FromType>(min_whole) || from > static_cast<FromType>(max_whole)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
