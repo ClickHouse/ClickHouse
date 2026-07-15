@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Core/HTTPHeaderColumns.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -682,9 +683,9 @@ protected:
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
-    NameToNameMap http_header_columns;  /// HTTP header values mapped to INSERT columns via
-                                        /// http_column_<Header>=<column> URL params.
-                                        /// (key=column_name, value=header_value)
+    HTTPHeaderColumns http_header_columns;  /// HTTP header values mapped to INSERT columns via
+                                            /// http_column_<Header>=<column> URL params, kept in
+                                            /// declaration order (first declaration wins per column).
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -1810,8 +1811,8 @@ public:
     void addQueryParameters(const NameToNameMap & parameters);
 
     /// HTTP header-to-column mappings for INSERT (set by http_column_* URL params).
-    const NameToNameMap & getHTTPHeaderColumns() const;
-    void setHTTPHeaderColumns(NameToNameMap mapping);
+    const HTTPHeaderColumns & getHTTPHeaderColumns() const;
+    void setHTTPHeaderColumns(HTTPHeaderColumns mapping);
     /// Add one mapping; first occurrence wins (duplicates silently ignored).
     void addHTTPHeaderColumn(const String & column_name, const String & header_value);
 

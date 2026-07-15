@@ -758,7 +758,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
     ASTInsertQuery & query,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameToNameMap & http_header_columns,
+    const HTTPHeaderColumns & http_header_columns,
     bool allow_materialized)
 {
     const auto & columns_desc = metadata_snapshot->getColumns();

@@ -7454,19 +7454,19 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
         query_parameters.insert_or_assign(name, value);
 }
 
-const NameToNameMap & Context::getHTTPHeaderColumns() const
+const HTTPHeaderColumns & Context::getHTTPHeaderColumns() const
 {
     return http_header_columns;
 }
 
-void Context::setHTTPHeaderColumns(NameToNameMap mapping)
+void Context::setHTTPHeaderColumns(HTTPHeaderColumns mapping)
 {
     http_header_columns = std::move(mapping);
 }
 
 void Context::addHTTPHeaderColumn(const String & column_name, const String & header_value)
 {
-    http_header_columns.emplace(column_name, header_value);  /// first wins; emplace is a no-op on duplicate key
+    http_header_columns.add(column_name, header_value);
 }
 
 

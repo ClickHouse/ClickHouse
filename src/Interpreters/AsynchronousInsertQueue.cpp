@@ -591,18 +591,13 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto metadata = table->getInMemoryMetadataPtr(query_context, false);
         const auto format_settings = getFormatSettings(query_context);
 
-        /// Collect and sort column names for deterministic order across all entries
-        /// in a batch. The flush loop indexes by position (entry_parsed_idx), so
-        /// unordered NameToNameMap iteration would cause cross-column value swaps.
+        /// The mapping is already in declaration order. Use it as-is so the batch key
+        /// (http_col_names), the per-entry values, and the query expansion all share
+        /// one canonical order. The flush loop indexes by position, so values and
+        /// names must be pushed in lockstep here.
         http_col_names.reserve(http_header_columns.size());
-        for (const auto & [col_name, _] : http_header_columns)
-            http_col_names.push_back(col_name);
-        std::sort(http_col_names.begin(), http_col_names.end());
-
-        for (const auto & col_name : http_col_names)
+        for (const auto & [col_name, str_value] : http_header_columns)
         {
-
-            const auto & str_value = http_header_columns.at(col_name);
             /// expandInsertQueryWithHTTPHeaderColumns already validated insertability;
             /// here we just retrieve the type for parsing.
             const auto & col_type = metadata->getColumns().get(col_name).type;
@@ -612,7 +607,10 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             /// We store only the raw string; flush time re-parses against the
             /// then-current column type, which handles schema drift naturally.
             parseColumnValueFromString(col_type, str_value, format_settings);
-            entry->http_header_column_values.push_back({col_name, str_value});
+            /// Store only the value; its position matches http_col_names, so the
+            /// column name is recovered from the key at flush.
+            entry->http_header_column_values.push_back(str_value);
+            http_col_names.push_back(col_name);
         }
     }
 
@@ -1381,15 +1379,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     };
     std::vector<InjectedColumnInfo> injected_column_infos;
     Block format_header;  /// Body-only block passed to the format and AddingDefaultsTransform.
-    if (!data->entries.empty() && !data->entries.front()->http_header_column_values.empty())
+    if (!key.http_header_column_names.empty())
     {
-        const auto & first_values = data->entries.front()->http_header_column_values;
-
-        /// Build column-name → position map for the first entry (all entries in a
-        /// batch have the same names in the same order, enforced by the batching key).
+        /// The batch key carries the sorted injected-column names, and each entry's
+        /// http_header_column_values is positionally aligned to that list. So the
+        /// injected column set is authoritative from the key alone, without inspecting
+        /// any entry, and the position doubles as entry_parsed_idx.
         std::unordered_map<String, size_t> injected_name_to_idx;
-        for (size_t i = 0; i < first_values.size(); ++i)
-            injected_name_to_idx.emplace(first_values[i].col_name, i);
+        for (size_t i = 0; i < key.http_header_column_names.size(); ++i)
+            injected_name_to_idx.emplace(key.http_header_column_names[i], i);
 
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -1413,9 +1411,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     if (!injected_column_infos.empty())
     {
         auto ctx = Context::createCopy(insert_context);
-        NameToNameMap http_cols;
+        /// Only the column names matter here (they feed the FormatSettings guard);
+        /// values are irrelevant, so leave them empty.
+        HTTPHeaderColumns http_cols;
+        http_cols.reserve(injected_column_infos.size());
         for (const auto & info : injected_column_infos)
-            http_cols.emplace(header.getByPosition(info.header_col_idx).name, String{});
+            http_cols.add(header.getByPosition(info.header_col_idx).name, String{});
         ctx->setHTTPHeaderColumns(std::move(http_cols));
         format_context = ctx;
     }
@@ -1492,7 +1493,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             ep.injected.reserve(injected_column_infos.size());
             for (const auto & info : injected_column_infos)
             {
-                const auto & raw = entry->http_header_column_values[info.entry_parsed_idx].raw_value;
+                const auto & raw = entry->http_header_column_values[info.entry_parsed_idx];
                 try
                 {
                     auto col = parseColumnValueFromString(info.type, raw, fmt_settings);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Core/HTTPHeaderColumns.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/parseColumnFromString.h>
 #include <Processors/ISimpleTransform.h>
@@ -29,7 +30,7 @@ public:
     HTTPHeaderColumnsTransform(
         const Block & input_header,
         const Block & output_header,
-        const NameToNameMap & http_header_columns,
+        const HTTPHeaderColumns & http_header_columns,
         const FormatSettings & format_settings)
         : ISimpleTransform(input_header, output_header, false)
     {
@@ -44,9 +45,10 @@ public:
             }
             else
             {
-                /// Injected column: parse the header value once.
-                auto it = http_header_columns.find(col_name);
-                const String & str_value = (it != http_header_columns.end()) ? it->second : "";
+                /// Injected column: parse the header value once. A missing column
+                /// contributes an empty value.
+                const String * mapped = http_header_columns.find(col_name);
+                const String str_value = mapped ? *mapped : String{};
                 const auto & col_type = output_header.getByPosition(i).type;
                 auto parsed = parseColumnValueFromString(col_type, str_value, format_settings);
                 col_sources.push_back({true, 0, std::move(parsed), col_type});

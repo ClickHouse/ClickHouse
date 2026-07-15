@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/HTTPHeaderColumns.h>
 #include <Core/Names.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
@@ -65,7 +66,7 @@ public:
     static void expandInsertQueryWithHTTPHeaderColumns(
         ASTInsertQuery & query,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameToNameMap & http_header_columns,
+        const HTTPHeaderColumns & http_header_columns,
         bool allow_materialized = false);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);

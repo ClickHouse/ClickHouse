@@ -176,15 +176,15 @@ private:
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
-            /// HTTP header values from http_column_* URL params, stored as pre-parsed
-            /// 1-row typed columns in sorted column-name order. Parsed once at push time
-            /// so type errors surface immediately to the client. At flush time the stored
-            /// column is used directly, avoiding per-entry re-parsing.
-            /// Raw header value stored at push time; parsed against the current column
-            /// type at flush time so schema drift is handled naturally without any
-            /// explicit drift detection or round-trip re-serialization.
-            struct HTTPHeaderColumnValue { String col_name; String raw_value; };
-            std::vector<HTTPHeaderColumnValue> http_header_column_values;
+            /// Raw HTTP header values for the injected columns, positionally aligned
+            /// to InsertQuery::http_header_column_names. Both are kept in URL parameter
+            /// declaration order (the order the http_column_* params appear in the
+            /// request URL). Declaration order defines the batch key: two requests with
+            /// the same mappings in different URL order land in different batches. This
+            /// is intentional — declaration order is stable per client and avoids a sort
+            /// on every push. The injected column set is part of the batch key, so it is
+            /// the same for every entry in a batch and need not be stored per entry.
+            std::vector<String> http_header_column_values;
 
             Entry(
                 DataChunk && chunk_,
