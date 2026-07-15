@@ -37,6 +37,14 @@
 
 set -eu
 
+# Force byte-order collation for the whole script.  sort and comm must agree on
+# ordering: under a UTF-8 locale many symbol names collate as equal (leading
+# underscores, digits, ...) and sort/comm break those ties differently, so comm
+# rejects sort's output ("file N is not in sorted order") and, even when it does
+# not, computes a wrong, under-sized intersection.  LC_ALL=C makes sort and comm
+# use plain byte comparison, which is deterministic and locale-independent.
+export LC_ALL=C
+
 LIB_PATH="${1:-}"
 AR="${2:-}"
 OBJCOPY="${3:-}"
