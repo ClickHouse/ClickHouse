@@ -8,7 +8,7 @@ SET enable_analyzer = 0;
 -- fill column, so a gap-fill row would be inserted twice into that column. This must be rejected.
 SELECT * FROM (SELECT 1 AS a0, a0 AS a4 ORDER BY a0 WITH FILL INTERPOLATE (a4)); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
--- The new analyzer materializes a separate interpolate column, so the same query is valid there.
+-- The analyzer materializes a separate interpolate column, so the same query is valid there.
 SELECT * FROM (SELECT 1 AS a0, a0 AS a4 ORDER BY a0 WITH FILL INTERPOLATE (a4)) SETTINGS enable_analyzer = 1;
 
 -- INTERPOLATE on a column that is not a fill column stays valid on the old analyzer.
