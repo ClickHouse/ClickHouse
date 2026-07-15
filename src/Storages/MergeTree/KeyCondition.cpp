@@ -3604,8 +3604,6 @@ bool KeyCondition::tryPrepareTupleLexicographicComparison(
         else
             out.range = Range::createRightBounded(mapped_constant[0], !strict);
         out.relaxed = relaxed_atom;
-        if (relaxed_atom)
-            relaxed = true;
         return true;
     }
 
@@ -3616,8 +3614,6 @@ bool KeyCondition::tryPrepareTupleLexicographicComparison(
     out.tuple_lexicographic_greater = greater;
     out.tuple_lexicographic_strict = strict;
     out.relaxed = relaxed_atom;
-    if (relaxed_atom)
-        relaxed = true;
     return true;
 }
 
@@ -5380,8 +5376,8 @@ bool isRealNull(const Field & f)
 /// Lexicographically compare a corner of the box `ranges` against the constant tuple `c`.
 /// If `use_lower` is true, use the lower corner (each range's left bound); otherwise the upper corner
 /// (each range's right bound). An open bound at an otherwise-tying coordinate means the real corner is
-/// strictly beyond the constant there. Returns Indeterminate if a real NULL is encountered, because the
-/// SQL comparison is then unknown and we must not prune.
+/// strictly beyond the constant there. Returns Indeterminate if a real NULL or NaN is encountered,
+/// because the SQL comparison is then unknown or false and we must not prune.
 TupleLexCornerCmp compareTupleCorner(const std::vector<Range> & ranges, const Tuple & c, bool use_lower)
 {
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -5391,7 +5387,7 @@ TupleLexCornerCmp compareTupleCorner(const std::vector<Range> & ranges, const Tu
         const bool included = use_lower ? r.left_included : r.right_included;
         const Field & ci = c[i];
 
-        if (isRealNull(bound) || isRealNull(ci))
+        if (isRealNull(bound) || isRealNull(ci) || bound.isNaN() || ci.isNaN())
             return TupleLexCornerCmp::Indeterminate;
 
         if (Range::less(bound, ci))
