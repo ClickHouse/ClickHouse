@@ -1443,6 +1443,14 @@ template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS
 template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
+#if USE_LANCE && USE_AWS_S3
+template class TableFunctionObjectStorage<LanceS3Definition, StorageS3LanceConfiguration, true>;
+#endif
+
+#if USE_LANCE
+template class TableFunctionObjectStorage<LanceLocalDefinition, StorageLocalLanceConfiguration, true>;
+#endif
+
 #if USE_AWS_S3
 template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
 #endif
@@ -2478,6 +2486,24 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 }
 #endif
 
+#if USE_LANCE
+void registerTableFunctionLance(TableFunctionFactory & factory)
+{
+#if USE_AWS_S3
+    factory.registerFunction<TableFunctionLanceS3>(
+         {.description = R"(The table function can be used to read the Lance table stored on S3 object store.)",
+            .examples{{LanceS3Definition::name, "SELECT * FROM lanceS3(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         {.allow_readonly = false});
+#endif
+    factory.registerFunction<TableFunctionLanceLocal>(
+         {.description = R"(The table function can be used to read the Lance table stored locally.)",
+            .examples{{LanceLocalDefinition::name, "SELECT * FROM lanceLocal(path)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         {.allow_readonly = false});
+}
+#endif
+
 #if USE_AWS_S3
 void registerTableFunctionHudi(TableFunctionFactory & factory);
 void registerTableFunctionHudi(TableFunctionFactory & factory)
@@ -2537,6 +2563,9 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerTableFunctionDeltaLake(factory);
+#endif
+#if USE_LANCE
+    registerTableFunctionLance(factory);
 #endif
 #if USE_AWS_S3
     registerTableFunctionHudi(factory);
