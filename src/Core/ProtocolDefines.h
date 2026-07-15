@@ -161,6 +161,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
 
+/// Authenticate interserver `TablesStatusRequest` with a cluster-secret hash
+/// (sent right after the request, validated before the response).
+static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 54487;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -169,5 +173,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54486;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54487;
 }
