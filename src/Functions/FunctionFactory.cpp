@@ -163,7 +163,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
             logging_context = context;
         /// Skip internal functions (e.g. `_CAST` from the analyzer); user query lists `CAST` and logging both is noisy.
         if (logging_context && !logging_context->isGlobalContext() && logging_context->getSettingsRef()[Setting::log_queries]
-            && !name.starts_with('_'))
+            && it->second.second.category != FunctionDocumentation::Category::Internal)
             logging_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 
         /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
