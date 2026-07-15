@@ -812,7 +812,11 @@ namespace
 
 /** Replaces ALIAS column nodes with their underlying expressions, so that the query
   * sent to remote shards contains explicit computations rather than references to
-  * columns that may not exist on the shard tables.
+  * columns that may not exist on the shard tables. The replacement is recursive:
+  * the expression of an ALIAS column may itself reference other ALIAS columns
+  * (e.g. `d Float64 ALIAS b + c, e Float64 ALIAS d`), and none of them can be
+  * assumed to exist on the shard tables, so every expansion is inlined all the way
+  * down to physical columns.
   *
   * When several ALIAS columns of one table share the same expression
   * (e.g. `d Float64 ALIAS b + c, e Float64 ALIAS b + c`), the naive replacement
@@ -831,7 +835,9 @@ namespace
   * derived from the ALIAS column name, so all occurrences of one ALIAS column resolve
   * to the same action name and are correctly recognized as the same column, while
   * different ALIAS columns stay distinct regardless of how many of them share one
-  * expression.
+  * expression. Expressions are compared in their fully inlined form, so
+  * `e Float64 ALIAS d` collides with `d Float64 ALIAS b + c` the same way
+  * `e Float64 ALIAS b + c` does.
   *
   * Occurrences inside WHERE and PREWHERE are expanded bare, without the wrapper:
   * filters are computed entirely on the shard and do not contribute columns to the
@@ -869,6 +875,37 @@ private:
         return expression->getTreeHash({.compare_aliases = false, .ignore_cte = false});
     }
 
+    /// Return a copy of the expression with every reference to an ALIAS column
+    /// recursively replaced by the ALIAS column's own expression, so that the result
+    /// references only physical columns. Cycles are impossible: they are rejected
+    /// when the table is created.
+    static QueryTreeNodePtr inlineAliasColumns(const QueryTreeNodePtr & expression)
+    {
+        auto result = expression->clone();
+        inlineAliasColumnsInPlace(result);
+        return result;
+    }
+
+    static void inlineAliasColumnsInPlace(QueryTreeNodePtr & node)
+    {
+        while (true)
+        {
+            const auto * column_node = node->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression() || !getSupportedColumnSource(*column_node))
+                break;
+
+            auto expression = column_node->getExpression()->clone();
+            expression->removeAlias();
+            node = std::move(expression);
+        }
+
+        for (auto & child : node->getChildren())
+        {
+            if (child)
+                inlineAliasColumnsInPlace(child);
+        }
+    }
+
     /// Remember the names of all ALIAS columns sharing one expression, per column source.
     void collectAliasColumns(const QueryTreeNodePtr & node)
     {
@@ -877,7 +914,7 @@ private:
             if (const auto * column_source = getSupportedColumnSource(*column_node))
             {
                 source_ordinals.emplace(column_source, source_ordinals.size());
-                alias_names_by_expression[{column_source, getExpressionHash(column_node->getExpression())}].insert(column_node->getColumnName());
+                alias_names_by_expression[{column_source, getExpressionHash(inlineAliasColumns(column_node->getExpression()))}].insert(column_node->getColumnName());
             }
         }
 
@@ -893,8 +930,9 @@ private:
         if (auto column_expression = getColumnNodeAliasExpression(node, is_filter_context))
             node = std::move(column_expression);
 
-        /// Continue into the children of the replaced node as well: the expression
-        /// of an ALIAS column may reference other ALIAS columns.
+        /// The expansion is fully inlined and contains no ALIAS column references,
+        /// so descending into a replaced node is a no-op; the traversal continues
+        /// uniformly for all other children.
         if (auto * query_node = node->as<QueryNode>())
         {
             for (auto & child : query_node->getChildren())
@@ -924,7 +962,7 @@ private:
         if (!column_source)
             return nullptr;
 
-        auto column_expression = column_node->getExpression();
+        auto column_expression = inlineAliasColumns(column_node->getExpression());
         const String & column_name = column_node->getColumnName();
 
         bool is_duplicate = false;
@@ -939,9 +977,8 @@ private:
 
         if (is_filter_context)
         {
-            auto bare_expression = column_expression->clone();
-            bare_expression->removeAlias();
-            return bare_expression;
+            column_expression->removeAlias();
+            return column_expression;
         }
 
         column_expression->removeAlias();

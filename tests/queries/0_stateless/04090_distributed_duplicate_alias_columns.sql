@@ -102,6 +102,34 @@ SELECT read_rows < 500000 FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = '04090_alias_pk_prune' AND type = 'QueryFinish' AND is_initial_query
     ORDER BY event_time_microseconds DESC LIMIT 1;
 
+-- ALIAS columns referencing other ALIAS columns: the expansion must be inlined
+-- recursively (none of the aliases exist on the shard table), and the duplicate
+-- detection must compare the fully inlined expressions, so the chained
+-- `e ALIAS d` collides with `d ALIAS b + c` the same way `e ALIAS b + c` would.
+DROP TABLE IF EXISTS shard_nested_alias;
+DROP TABLE IF EXISTS dist_nested_alias;
+
+CREATE TABLE shard_nested_alias (a String, b Float64, c Float64) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO shard_nested_alias VALUES ('x', 1, 2);
+
+CREATE TABLE dist_nested_alias (a String, b Float64, c Float64, d Float64 ALIAS b + c, e Float64 ALIAS d, f Float64 ALIAS e + 1)
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), shard_nested_alias, rand());
+
+-- A chained ALIAS column alone.
+SELECT sum(e) FROM dist_nested_alias;
+
+-- A longer chain.
+SELECT sum(f) FROM dist_nested_alias;
+
+-- The chained ALIAS column together with its base: duplicates after inlining.
+SELECT sum(d), sum(e) FROM dist_nested_alias;
+
+-- All of them, with and without aggregation, and in a filter.
+SELECT d, e, f FROM dist_nested_alias;
+SELECT sum(d), sum(e), sum(f) FROM dist_nested_alias WHERE e > 0 AND f > 0;
+
+DROP TABLE dist_nested_alias;
+DROP TABLE shard_nested_alias;
 DROP TABLE dist_pk_alias;
 DROP TABLE shard_pk_alias;
 DROP TABLE dist_other_alias;
