@@ -44,6 +44,8 @@ SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, allow_p
 SELECT /* refiner_query_parallel_replicas */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
 SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, optimize_read_in_order = 0,
     enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
+    -- projection support under parallel replicas requires a local plan and no aggregation-in-order
+    parallel_replicas_local_plan = 1, optimize_aggregation_in_order = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Correctness on a value that does not exist at all.
@@ -53,9 +55,11 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The part has 256 marks and all matching rows live in a single one,
 -- so the full scan must drop almost all marks at task-cut time.
+-- Do not assert on ReadPoolRangeRefinerDroppedCuts: whether a cut is dropped as a whole
+-- depends on the task sizing regime (storage type, stream count, read method), which is
+-- environment-dependent and randomized in CI.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 200 AS dropped_marks,
-    ProfileEvents['ReadPoolRangeRefinerDroppedCuts'] > 0 AS dropped_cuts
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 200 AS dropped_marks
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
