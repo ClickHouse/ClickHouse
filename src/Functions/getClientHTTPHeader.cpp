@@ -28,7 +28,7 @@ class FunctionGetClientHTTPHeader final : public IFunction, WithContext
 {
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
-        : WithContext(context_)
+        : WithContext(context_), is_distributed(context_->isDistributed())
     {
         if (!getContext()->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
@@ -37,6 +37,11 @@ public:
     String getName() const override { return "getClientHTTPHeader"; }
 
     bool isDeterministic() const override { return false; }
+
+    /// The headers are not propagated to secondary queries: in a distributed query the function
+    /// returns a non-empty result only on the initiator (as documented). Folding the call on the
+    /// initiator would ship the (potentially sensitive) header value as a literal to every shard.
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -73,6 +78,9 @@ public:
 
         return result;
     }
+
+private:
+    bool is_distributed;
 };
 
 }
