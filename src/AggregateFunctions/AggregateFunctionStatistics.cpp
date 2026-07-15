@@ -581,7 +581,8 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
             assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
         },
-        documentation_varSampStable
+        documentation_varSampStable,
+        {.is_float_promoting = true}
     });
 
     /// varPopStable documentation
@@ -634,7 +635,8 @@ FROM test_data;
             assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
         },
-        documentation_varPopStable
+        documentation_varPopStable,
+        {.is_float_promoting = true}
     });
 
     FunctionDocumentation::Description description_stddevSampStable = R"(
@@ -682,7 +684,7 @@ FROM test_data;
         assertUnary(name, argument_types);
         assertNoDynamicOrVariantArguments(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    }, documentation_stddevSampStable});
+    }, documentation_stddevSampStable, {.is_float_promoting = true}});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
@@ -729,7 +731,7 @@ FROM test_data;
         assertUnary(name, argument_types);
         assertNoDynamicOrVariantArguments(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    }, documentation_stddevPopStable});
+    }, documentation_stddevPopStable, {.is_float_promoting = true}});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
@@ -804,7 +806,8 @@ FROM
             assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
         },
-        covarSampStable_documentation
+        covarSampStable_documentation,
+        {.is_float_promoting = true}
     });
 
     FunctionDocumentation::Description covarPopStable_description = R"(
@@ -855,7 +858,8 @@ FROM series
             assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
         },
-        covarPopStable_documentation
+        covarPopStable_documentation,
+        {.is_float_promoting = true}
     });
 
     FunctionDocumentation::Description corrStable_description = R"(
@@ -914,7 +918,8 @@ FROM series
             assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
         },
-        corrStable_documentation
+        corrStable_documentation,
+        {.is_float_promoting = true}
     });
 }
 

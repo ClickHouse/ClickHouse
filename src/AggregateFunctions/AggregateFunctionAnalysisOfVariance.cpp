@@ -148,7 +148,7 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
     FunctionDocumentation::Category category_analysisOfVariance = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_analysisOfVariance = {description_analysisOfVariance, syntax_analysisOfVariance, arguments_analysisOfVariance, {}, returned_value_analysisOfVariance, examples_analysisOfVariance, introduced_in_analysisOfVariance, category_analysisOfVariance};
 
-    AggregateFunctionProperties properties = { .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .is_order_dependent = false, .is_float_promoting = true };
     factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, documentation_analysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is widely used term

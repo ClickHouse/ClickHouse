@@ -314,7 +314,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, documentation, {}});
+    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, documentation, {.is_float_promoting = true}});
 }
 
 }
