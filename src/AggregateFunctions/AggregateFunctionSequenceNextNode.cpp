@@ -303,7 +303,7 @@ public:
         const auto & data_ref = data(place);
         VectorWithMemoryTracking<Node *> sorted_value(data_ref.value.begin(), data_ref.value.end());
         if (!data_ref.sorted)
-            ::stableSort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
+            std::stable_sort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
 
         writeBinary(true, buf);
 
