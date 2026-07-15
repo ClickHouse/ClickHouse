@@ -1888,12 +1888,15 @@ EOF""",
 
 
 def test_persisted_legacy_negative_interval_quota_loads_inert():
-    # A persisted FOR INTERVAL -1 SECOND quota must load inert (like the zero-interval case)
-    # and must not surface its interval, which would otherwise wrap to 4294967295 when
-    # system.quotas / system.quota_limits cast the duration to UInt32.
+    # A persisted FOR INTERVAL -1 SECOND quota must load inert (like the zero-interval case).
+    # The negative duration is normalized to 0 on load, so it shares the inert zero carve-out
+    # and never surfaces as 4294967295 (the UInt32 cast of -1 in system.quotas / quota_limits).
+    # An inert quota must not accumulate system.quotas_usage rows for any key, including a
+    # KEYED BY normalized_query_hash quota that would otherwise cache one entry per query shape.
     instance.stop_clickhouse()
 
     quota_id = uuid.uuid4()
+    quota_hash_id = uuid.uuid4()
     instance.exec_in_container(
         [
             "bash",
@@ -1901,6 +1904,9 @@ def test_persisted_legacy_negative_interval_quota_loads_inert():
             f"""
         cat > /var/lib/clickhouse/access/{quota_id}.sql << 'EOF'
 ATTACH QUOTA q_legacy_neg KEYED BY user_name FOR INTERVAL -1 SECOND MAX queries = 1000 TO ALL;
+EOF
+        cat > /var/lib/clickhouse/access/{quota_hash_id}.sql << 'EOF'
+ATTACH QUOTA q_legacy_neg_hash KEYED BY normalized_query_hash FOR INTERVAL -1 SECOND MAX queries = 1000 TO ALL;
 EOF""",
         ]
     )
@@ -1910,20 +1916,39 @@ EOF""",
     instance.start_clickhouse()
 
     try:
-        # The negative interval is dropped on load, so no interval is exposed.
+        # The negative interval is normalized to 0 on load (inert carve-out), not dropped and
+        # not wrapped to 4294967295.
         assert (
             instance.query(
                 "SELECT durations FROM system.quotas WHERE name = 'q_legacy_neg'"
             )
-            == "[]\n"
+            == "[0]\n"
         )
         # It never shows up as 4294967295 in the read-only surfaces.
         assert (
             instance.query(
-                "SELECT count() FROM system.quota_limits WHERE quota_name = 'q_legacy_neg'"
+                "SELECT duration FROM system.quota_limits WHERE quota_name = 'q_legacy_neg'"
             )
             == "0\n"
         )
+        # Queries succeed (no divide-by-zero) and the inert quota is not enforced.
         assert instance.query("SELECT count() FROM numbers(3)") == "3\n"
+        # No usage rows accumulate for the inert quota, even after several distinct query
+        # shapes drive the KEYED BY normalized_query_hash quota.
+        for i in range(5):
+            instance.query(f"SELECT count() FROM numbers({i + 1})")
+        assert (
+            instance.query(
+                "SELECT count() FROM system.quotas_usage WHERE quota_name = 'q_legacy_neg'"
+            )
+            == "0\n"
+        )
+        assert (
+            instance.query(
+                "SELECT count() FROM system.quotas_usage WHERE quota_name = 'q_legacy_neg_hash'"
+            )
+            == "0\n"
+        )
     finally:
         instance.query("DROP QUOTA IF EXISTS q_legacy_neg")
+        instance.query("DROP QUOTA IF EXISTS q_legacy_neg_hash")

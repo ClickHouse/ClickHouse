@@ -114,12 +114,20 @@ namespace
             }
         }
 
-        /// CREATE/ALTER drops every non-positive interval; the deserialize path keeps only the legacy
-        /// zero-interval carve-out inert and still drops negatives (they would wrap to UInt32 max in system.quotas).
-        std::erase_if(quota_all_limits, [&](const Quota::Limits & x)
+        /// CREATE/ALTER drops every non-positive interval. The deserialize path keeps a persisted
+        /// non-positive interval, but normalizes negatives to 0 so they share the inert zero carve-out
+        /// (QuotaCache marks the quota inert) instead of surfacing as 4294967295 via the UInt32 cast in
+        /// system.quotas / system.quota_limits.
+        if (validate)
         {
-            return validate ? x.duration.count() <= 0 : x.duration.count() < 0;
-        });
+            std::erase_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration.count() <= 0; });
+        }
+        else
+        {
+            for (auto & x : quota_all_limits)
+                if (x.duration.count() < 0)
+                    x.duration = std::chrono::seconds::zero();
+        }
 
         if (override_to_roles)
             quota.to_roles = *override_to_roles;
