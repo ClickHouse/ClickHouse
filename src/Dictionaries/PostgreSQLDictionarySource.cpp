@@ -39,7 +39,8 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority",
+    "sslmode", "sslrootcert", "sslcert", "sslkey"};
 
 #if USE_LIBPQXX
 
@@ -243,6 +244,10 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
             common_configuration.schema = named_collection->getOrDefault<String>("schema", "");
             common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection->getOrDefault<String>("table", ""));
+            common_configuration.ssl_mode = named_collection->getOrDefault<String>("sslmode", "");
+            common_configuration.ssl_root_cert = named_collection->getOrDefault<String>("sslrootcert", "");
+            common_configuration.ssl_cert = named_collection->getOrDefault<String>("sslcert", "");
+            common_configuration.ssl_key = named_collection->getOrDefault<String>("sslkey", "");
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
                 .db = common_configuration.database,
@@ -271,6 +276,10 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
             common_configuration.schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
             common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, config.getString(fmt::format("{}.table", settings_config_prefix), ""));
+            common_configuration.ssl_mode = config.getString(fmt::format("{}.sslmode", settings_config_prefix), "");
+            common_configuration.ssl_root_cert = config.getString(fmt::format("{}.sslrootcert", settings_config_prefix), "");
+            common_configuration.ssl_cert = config.getString(fmt::format("{}.sslcert", settings_config_prefix), "");
+            common_configuration.ssl_key = config.getString(fmt::format("{}.sslkey", settings_config_prefix), "");
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration
             {

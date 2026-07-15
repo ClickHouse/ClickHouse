@@ -608,7 +608,9 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     }
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+        named_collection, required_arguments,
+        {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
+         "sslmode", "sslrootcert", "sslcert", "sslkey"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -636,6 +638,11 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     }
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+
+    configuration.ssl_mode = named_collection.getOrDefault<String>("sslmode", "");
+    configuration.ssl_root_cert = named_collection.getOrDefault<String>("sslrootcert", "");
+    configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
+    configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
 
     return configuration;
 }

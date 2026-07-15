@@ -72,6 +72,10 @@ Setting fields:
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
 | `query` | The custom query. Optional. |
+| `sslmode` | TLS/SSL mode forwarded to `libpq` as `sslmode`: `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. When unset, `libpq` defaults to `prefer`. Optional. |
+| `sslrootcert` | Path to the CA certificate file (`libpq` `sslrootcert`), or `system`. Used with `verify-ca`/`verify-full`. Optional. |
+| `sslcert` | Path to the client certificate file (`libpq` `sslcert`). Optional. |
+| `sslkey` | Path to the client private key file (`libpq` `sslkey`). Optional. |
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.

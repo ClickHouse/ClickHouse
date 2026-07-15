@@ -29,6 +29,8 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
+TLS/SSL parameters can be supplied through a [named collection](/operations/named-collections.md) and are forwarded to `libpq`: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`).
+
 ## Data types support {#data_types-support}
 
 | PostgreSQL       | ClickHouse                                                   |

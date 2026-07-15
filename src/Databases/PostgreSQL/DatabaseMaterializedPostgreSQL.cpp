@@ -45,6 +45,10 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_mode;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_root_cert;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_cert;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_key;
 }
 
 namespace ErrorCodes
@@ -628,17 +632,34 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
+        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        /// TLS/SSL parameters can be provided either through a named collection
+        /// (`sslmode`/`sslrootcert`/... keys) or through the engine SETTINGS clause
+        /// (`materialized_postgresql_ssl_*`). A non-empty SETTINGS value takes precedence.
+        const auto & ssl_settings = *postgresql_replica_settings;
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode].value.empty())
+            configuration.ssl_mode = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].value.empty())
+            configuration.ssl_root_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].value.empty())
+            configuration.ssl_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].value.empty())
+            configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
             configuration.port,
             configuration.username,
             configuration.password,
-            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
-
-        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-        if (engine_define->settings)
-            postgresql_replica_settings->loadFromQuery(*engine_define);
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            {configuration.ssl_mode,
+             configuration.ssl_root_cert,
+             configuration.ssl_cert,
+             configuration.ssl_key});
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,

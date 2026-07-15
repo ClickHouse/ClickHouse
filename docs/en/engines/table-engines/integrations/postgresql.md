@@ -66,6 +66,23 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+### TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys (or key-value arguments): `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). For example, to require an encrypted connection and verify the server certificate:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
 ## Implementation details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.

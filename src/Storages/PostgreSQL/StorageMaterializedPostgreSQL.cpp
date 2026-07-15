@@ -53,6 +53,10 @@ namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_mode;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_root_cert;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_cert;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_ssl_key;
 }
 
 namespace ErrorCodes
@@ -637,19 +641,37 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, {}, args.getContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
-        auto connection_info = postgres::formatConnectionString(
-            configuration.database,
-            configuration.host,
-            configuration.port,
-            configuration.username,
-            configuration.password,
-            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
+
+        /// TLS/SSL parameters can be provided either through a named collection
+        /// (`sslmode`/`sslrootcert`/... keys) or through the engine SETTINGS clause
+        /// (`materialized_postgresql_ssl_*`). A non-empty SETTINGS value takes precedence.
+        const auto & ssl_settings = *postgresql_replication_settings;
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode].value.empty())
+            configuration.ssl_mode = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].value.empty())
+            configuration.ssl_root_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].value.empty())
+            configuration.ssl_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert];
+        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].value.empty())
+            configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
+
+        auto connection_info = postgres::formatConnectionString(
+            configuration.database,
+            configuration.host,
+            configuration.port,
+            configuration.username,
+            configuration.password,
+            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            {configuration.ssl_mode,
+             configuration.ssl_root_cert,
+             configuration.ssl_cert,
+             configuration.ssl_key});
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,

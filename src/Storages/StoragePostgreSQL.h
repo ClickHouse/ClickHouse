@@ -66,6 +66,12 @@ public:
         String schema;
         String on_conflict;
 
+        /// TLS/SSL parameters forwarded to libpq. Empty values keep libpq's defaults.
+        String ssl_mode;       /// libpq `sslmode`: disable, allow, prefer, require, verify-ca or verify-full.
+        String ssl_root_cert;  /// libpq `sslrootcert`: path to the CA certificate (or the special value `system`).
+        String ssl_cert;       /// libpq `sslcert`: path to the client certificate.
+        String ssl_key;        /// libpq `sslkey`: path to the client private key.
+
         std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
         String addresses_expr;
     };
