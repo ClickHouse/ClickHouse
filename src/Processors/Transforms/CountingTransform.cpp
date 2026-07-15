@@ -32,17 +32,20 @@ void CountingTransform::onConsume(Chunk chunk)
     ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
     ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
 
-    switch (source)
+    if (source)
     {
-        case InsertSource::Direct:
-            ProfileEvents::increment(ProfileEvents::DirectInsertedRows, local_progress.written_rows);
-            ProfileEvents::increment(ProfileEvents::DirectInsertedBytes, written_bytes);
-            break;
+        switch (*source)
+        {
+            case InsertSource::Direct:
+                ProfileEvents::increment(ProfileEvents::DirectInsertedRows, local_progress.written_rows);
+                ProfileEvents::increment(ProfileEvents::DirectInsertedBytes, written_bytes);
+                break;
 
-        case InsertSource::MaterializedView:
-            ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedRows, local_progress.written_rows);
-            ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedBytes, written_bytes);
-            break;
+            case InsertSource::MaterializedView:
+                ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedRows, local_progress.written_rows);
+                ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedBytes, written_bytes);
+                break;
+        }
     }
 
     if (process_elem)
