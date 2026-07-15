@@ -47,11 +47,12 @@ void FunctionSecretArgumentsFinder::maskNestedSecretMaps()
     }
 }
 
-std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t start)
+std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t start, bool positionals_allowed_after_named)
 {
     maskNestedSecretMaps();
 
     std::vector<size_t> positional;
+    bool seen_named = false;
     for (size_t i = start; i < function->arguments->size(); ++i)
     {
         if (const auto f = function->arguments->at(i)->getFunction())
@@ -61,14 +62,29 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                 continue;
             if (name == "equals" && f->hasArguments() && f->arguments->size() == 2)
             {
+                seen_named = true;
                 String key;
                 if (f->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
                     if (std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys))
                         markSecretArgument(i, /* argument_is_named= */ true);
-                    continue;
                 }
+                else
+                {
+                    /// The parsers evaluate the key as a constant expression, so it can name any secret
+                    /// key. We cannot evaluate it here, so fail closed and hide the value (the key
+                    /// expression itself stays visible; keys are not secrets).
+                    markSecretArgument(i, /* argument_is_named= */ true);
+                }
+                continue;
             }
+        }
+        if (seen_named && !positionals_allowed_after_named)
+        {
+            /// The parsers reject positional arguments after the first `key = value` argument, but the
+            /// query is logged before validation and the intended slot is unknowable; fail closed.
+            markSecretArgument(i);
+            continue;
         }
         positional.push_back(i);
     }
@@ -846,8 +862,28 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
     const auto & nested_args = *storage_function->arguments;
     const bool is_named_collection = nested_args.size() >= 1 && nested_args.at(0)->isIdentifier();
 
+    /// Count the positional arguments first (everything that is not `key = value` or a nested map):
+    /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
+    /// positionals independently of named overrides.
+    size_t total_positionals = 0;
+    for (size_t i = 0; i < nested_args.size(); ++i)
+    {
+        const auto f = nested_args.at(i)->getFunction();
+        if (f && (f->name() == "extra_credentials"
+                  || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
+            continue;
+        ++total_positionals;
+    }
+
+    /// Named-collection locator: slot 0 is the collection and slot 1 the non-secret filename.
+    /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
+    /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
+    /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
+    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
+
     std::string replacement = "S3(";
     bool has_secret = false;
+    size_t positional_slot = 0;
     for (size_t i = 0; i < nested_args.size(); ++i)
     {
         if (i > 0)
@@ -875,8 +911,15 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     replacement += "'" + value + "'";
                 else
                     replacement += "'[HIDDEN]'"; /// Cannot reconstruct the literal safely; hide it rather than leak.
-                continue;
             }
+            else
+            {
+                /// The key is a constant expression the parser would evaluate, so it can name any
+                /// secret key; fail closed and hide the whole argument.
+                replacement += "'[HIDDEN]'";
+                has_secret = true;
+            }
+            continue;
         }
 
         /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden. Build into
@@ -911,10 +954,10 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
             continue;
         }
 
-        /// Positional argument. In the explicit-key form the secret is at position 2, and the locator
-        /// accepts no further positional argument, so hide everything from position 2 on: fail closed
-        /// on an invalid extra positional (e.g. a session token) rather than emit it verbatim.
-        if (!is_named_collection && i >= 2)
+        /// Positional argument: the slot is counted over positionals only, and its visibility follows
+        /// the signature rule computed above.
+        const size_t slot = positional_slot++;
+        if (slot >= first_hidden_slot)
         {
             replacement += "'[HIDDEN]'";
             has_secret = true;
@@ -952,14 +995,22 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     {
         if (isNamedCollectionName(0))
         {
-            /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-            findS3NamedCollectionSecretArguments(1);
+            /// BACKUP ... TO S3(named_collection[, 'filename'], ..., secret_access_key = '...', ...):
+            /// unlike the other named-collection S3 forms, the backup locator accepts one positional
+            /// (the non-secret filename), in any position relative to the named overrides; anything
+            /// positional beyond it is invalid, so fail closed there.
+            maskS3PositionalsFrom(classifyS3Arguments(1, /* positionals_allowed_after_named= */ true), 1);
             return;
         }
-        /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key] [, session_token = ..., google_adc_* = ...]):
-        /// the locator accepts no positional argument beyond secret_access_key, so fail closed from
-        /// slot 2 on.
-        maskS3PositionalsFrom(classifyS3Arguments(), 2);
+        /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
+        /// the locator accepts exactly one or three positionals; the valid triple carries its secret at
+        /// slot 2. Any other positional count is invalid but logged before validation, and the intended
+        /// slots are unknowable, so fail closed on everything after the url.
+        const auto positional = classifyS3Arguments(0, /* positionals_allowed_after_named= */ true);
+        if (positional.size() == 3)
+            markSecretArgument(positional[2]);
+        else if (positional.size() > 1)
+            maskS3PositionalsFrom(positional, 1);
     }
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {
@@ -1015,7 +1066,10 @@ bool FunctionSecretArgumentsFinder::findSecretNamedArgument(std::string_view key
 
 void FunctionSecretArgumentsFinder::findS3NamedCollectionSecretArguments(size_t start)
 {
-    classifyS3Arguments(start);
+    /// After the collection name every argument must be a named `option = value` override or a nested
+    /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
+    /// and hide every positional the classification returns.
+    maskS3PositionalsFrom(classifyS3Arguments(start), 0);
 }
 
 }

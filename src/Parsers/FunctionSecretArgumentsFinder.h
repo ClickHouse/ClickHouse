@@ -96,7 +96,11 @@ protected:
     /// rejects it); everything else (literals and constant expressions) occupies positional slots
     /// in order. Returns the raw AST indices of the positional arguments; all slot arithmetic must
     /// use them instead of raw indices.
-    std::vector<size_t> classifyS3Arguments(size_t start = 0);
+    /// Most parsers reject a positional after the first `key = value` argument, so such positionals
+    /// are masked (the query is logged before validation and the intended slot is unknowable). The
+    /// backup locator (`BackupInfo::fromAST`) instead collects positionals independently of named
+    /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
+    std::vector<size_t> classifyS3Arguments(size_t start = 0, bool positionals_allowed_after_named = false);
 
     /// Masks the positional secrets of the explicit-url S3 form: `secret_access_key` at slot
     /// `url_slot + 2`, and a positional `session_token` at slot `url_slot + 3` unless that slot is

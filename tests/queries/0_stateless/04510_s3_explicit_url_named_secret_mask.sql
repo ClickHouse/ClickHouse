@@ -75,6 +75,17 @@ SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
                  extra_credentials('SEKRIT_RAWCRED'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION }
 
+-- The parser rejects a positional after the first key = value argument, but the query is logged
+-- first and the intended slot is unknowable, so the positional must be masked.
+SELECT * FROM s3('url_posafter', access_key_id = 'ak', 'SEKRIT_SK',
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- The parser evaluates constant-expression keys, so this can be an effective session_token override;
+-- the value must be masked without evaluating the key.
+SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
+                 concat('session_', 'token') = 'SEKRIT_EXPRTOK',
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
 -- Named-collection form: an extra_credentials override alongside a collection must be masked too.
 -- The collection need not exist; masking runs on the AST before the collection is resolved.
 SELECT * FROM s3(nc_04510_missing, extra_credentials(external_id = 'SEKRIT_EID'),
@@ -93,6 +104,16 @@ SELECT * FROM s3(nc_span_missing, secret_access_key = 'SEKRIT_SPAN1', 'SEKRIT_MI
                  session_token = 'SEKRIT_SPAN2',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
+-- A constant-expression key can be an effective secret override for a named collection too.
+SELECT * FROM s3(nc_exprkey_missing, concat('secret_', 'access_key') = 'SEKRIT_EXPRVAL',
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+-- The named-collection form permits no positional argument at all, so one placed before the first
+-- named override must also be masked.
+SELECT * FROM s3(nc_prepos_missing, 'SEKRIT_PREPOS',
+                 secret_access_key = 'SEKRIT_SK',
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
 -- BACKUP ... TO S3 explicit-url form.
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_named', 'ak', 'SEKRIT_SAK',
                  session_token = 'SEKRIT_ST',
@@ -105,6 +126,20 @@ BACKUP TABLE nonexistent_04510 TO S3('url_bkp_named', 'ak', 'SEKRIT_SAK',
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_BACKUPTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The backup named-collection locator accepts one positional: the non-secret filename, which must
+-- stay visible; any positional beyond it is invalid and must be masked.
+BACKUP TABLE nonexistent_04510 TO S3(nc_bkp_missing, 'visible_bkp_dir',
+                 'SEKRIT_BKPNCPOS'); -- { serverError BAD_ARGUMENTS }
+
+-- The filename is collected independently of named overrides, so it stays visible after one too.
+BACKUP TABLE nonexistent_04510 TO S3(nc_bkporder_missing,
+                 secret_access_key = 'SEKRIT_BKPORD', 'visible_bkp_dir2'); -- { serverError BAD_ARGUMENTS }
+
+-- An explicit-url locator with an invalid positional count (neither 1 nor 3): the intended slots
+-- are unknowable, so everything after the url must be masked.
+BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
+                 access_key_id = 'ak', 'SEKRIT_BKPMIX'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
@@ -112,6 +147,19 @@ CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK
 -- The reconstructor must fail closed on an invalid extra positional argument (a session token).
 CREATE DATABASE db_04510_postok ENGINE = Backup('', S3('url_dbpostok', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_DBTOK')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- Named-collection locator in the reconstructor: the filename stays visible, but a second positional
+-- is invalid and must be masked.
+CREATE DATABASE db_04510_ncpos ENGINE = Backup('', S3(nc_dbnc_missing, 'visible_dbnc_dir',
+                 'SEKRIT_DBNCPOS')); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor also keeps the filename visible when it follows a named override.
+CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
+                 secret_access_key = 'SEKRIT_DBORD', 'visible_dbnc_dir2')); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor masks everything after the url on an invalid positional count too.
+CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
+                 access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
@@ -134,29 +182,16 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak'
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM FLUSH LOGS query_log;
--- One row per form: it must be logged with '[HIDDEN]' (masked = 1) and leak no tagged secret
--- (leaked = 0). Add a marker here for every new query above.
-SELECT
-    m.marker AS marker,
-    countIf(query LIKE '%' || marker || '%' AND query LIKE '%[HIDDEN]%') > 0 AS masked,
-    countIf(query LIKE '%' || marker || '%' AND query LIKE '%SEKRIT%') AS leaked
-FROM system.query_log
-CROSS JOIN (SELECT arrayJoin([
-    'url_basic', 'url_interleaved', 'url_postoken', 'url_midtok', 'url_dup', 'url_badmap',
-    'nc_04510_missing', 'nc_headers_missing', 'nc_badhdr_missing', 'nc_span_missing',
-    'url_bkp_named', 'url_bkp_pos',
-    'db_04510_ec', 'db_04510_postok', 'db_04510_hdr', 'db_04510_expr', 'db_04510_s3pos']) AS marker) AS m
-WHERE current_database = currentDatabase()
-  AND query NOT LIKE '%query_log%' -- exclude this counting query itself
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
-GROUP BY marker
-ORDER BY marker;
 
--- The valid named override stays visible, and no logged query leaks any tagged secret at all.
-SELECT
-    countIf(query LIKE '%url_dbenv%' AND query LIKE '%use_environment_credentials = 1%') > 0 AS env_override_visible,
-    countIf(query LIKE '%SEKRIT%') AS total_leaked
+-- The exact logged text of every query above, in execution order: secrets must appear as '[HIDDEN]'
+-- while every non-secret part (urls, formats, structures, filenames, non-secret overrides) stays
+-- visible verbatim. Each query has exactly one terminal event: QueryFinish for the successful ones,
+-- an exception event for the rejected ones.
+SELECT query
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND query NOT LIKE '%query_log%' -- exclude this counting query itself
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;
+  AND type != 'QueryStart'
+  AND query_kind != 'Set' -- sent by the test harness, not by this test
+  AND query NOT ILIKE 'SYSTEM FLUSH%' -- its own terminal event races with the flush it performs
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
+ORDER BY event_time_microseconds;
