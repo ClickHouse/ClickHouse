@@ -4,11 +4,18 @@ use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::Stream;
 use futures::StreamExt;
+use futures::TryStreamExt;
 use lance::Dataset;
+use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+use object_store::path::Path as ObjectStorePath;
+use object_store::ObjectStore;
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr;
+use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 #[repr(C)]
@@ -19,6 +26,18 @@ pub struct ch_lance_error {
 #[repr(C)]
 pub struct ch_lance_dataset_options {
     uri: *const c_char,
+    use_s3: bool,
+    s3_region: *const c_char,
+    s3_endpoint: *const c_char,
+    s3_access_key_id: *const c_char,
+    s3_secret_access_key: *const c_char,
+    s3_session_token: *const c_char,
+    s3_role_arn: *const c_char,
+    s3_role_session_name: *const c_char,
+    s3_use_environment_credentials: bool,
+    s3_no_sign_request: bool,
+    s3_allow_http: bool,
+    s3_virtual_hosted_style_request: bool,
 }
 
 #[repr(C)]
@@ -46,6 +65,7 @@ pub struct ch_lance_scan_options {
 pub struct ch_lance_dataset {
     runtime: Runtime,
     dataset: Dataset,
+    _s3_cache: Option<TempDir>,
 }
 
 #[repr(C)]
@@ -94,8 +114,163 @@ fn required_cstr_to_string(ptr: *const c_char, name: &str) -> Result<String, Str
     }
 }
 
-unsafe fn apply_dataset_options(options: &ch_lance_dataset_options) -> Result<String, String> {
-    required_cstr_to_string(options.uri, "uri")
+#[derive(Clone)]
+struct DatasetOpenOptions {
+    uri: String,
+    storage_options: Option<HashMap<String, String>>,
+}
+
+struct OpenedDataset {
+    dataset: Dataset,
+    s3_cache: Option<TempDir>,
+}
+
+unsafe fn apply_dataset_options(
+    options: &ch_lance_dataset_options,
+) -> Result<DatasetOpenOptions, String> {
+    let uri = required_cstr_to_string(options.uri, "uri")?;
+    let storage_options = if options.use_s3 {
+        let mut values = HashMap::new();
+
+        let fields = [
+            ("aws_region", options.s3_region),
+            ("aws_endpoint", options.s3_endpoint),
+            ("aws_access_key_id", options.s3_access_key_id),
+            ("aws_secret_access_key", options.s3_secret_access_key),
+            ("aws_session_token", options.s3_session_token),
+            ("aws_role_arn", options.s3_role_arn),
+            ("aws_role_session_name", options.s3_role_session_name),
+        ];
+        for (name, value_ptr) in fields {
+            let value = cstr_to_string(value_ptr)?;
+            if !value.is_empty() {
+                values.insert(name.to_string(), value);
+            }
+        }
+        if options.s3_no_sign_request {
+            values.insert("aws_skip_signature".to_string(), "true".to_string());
+        }
+        if options.s3_use_environment_credentials {
+            values.insert(
+                "aws_use_environment_credentials".to_string(),
+                "true".to_string(),
+            );
+        }
+        if options.s3_allow_http {
+            values.insert("aws_allow_http".to_string(), "true".to_string());
+        }
+        values.insert(
+            "aws_virtual_hosted_style_request".to_string(),
+            if options.s3_virtual_hosted_style_request {
+                "true"
+            } else {
+                "false"
+            }
+            .to_string(),
+        );
+        Some(values)
+    } else {
+        None
+    };
+    Ok(DatasetOpenOptions {
+        uri,
+        storage_options,
+    })
+}
+
+fn build_s3_store(
+    uri: &str,
+    storage_options: &HashMap<String, String>,
+) -> Result<object_store::aws::AmazonS3, String> {
+    let mut builder = if storage_options
+        .get("aws_use_environment_credentials")
+        .is_some_and(|value| value == "true")
+    {
+        AmazonS3Builder::from_env()
+    } else {
+        AmazonS3Builder::new()
+    }
+    .with_url(uri);
+    for (key, value) in storage_options {
+        if let Ok(config_key) = key.parse::<AmazonS3ConfigKey>() {
+            builder = builder.with_config(config_key, value);
+        }
+    }
+    builder.build().map_err(|err| err.to_string())
+}
+
+async fn download_s3_dataset(
+    uri: &str,
+    storage_options: &HashMap<String, String>,
+) -> Result<TempDir, String> {
+    let url = url::Url::parse(uri).map_err(|err| err.to_string())?;
+    let prefix = url.path().trim_start_matches('/').trim_end_matches('/');
+    if prefix.is_empty() {
+        return Err("Lance S3 dataset path must not be empty".to_string());
+    }
+
+    let store = build_s3_store(uri, storage_options)?;
+    let cache_dir = tempfile::Builder::new()
+        .prefix("ch_lance_s3_")
+        .tempdir()
+        .map_err(|err| err.to_string())?;
+    let prefix_path = ObjectStorePath::from(prefix);
+    let objects = store
+        .list(Some(&prefix_path))
+        .try_collect::<Vec<_>>()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    for object in objects {
+        let object_path = object.location.to_string();
+        let relative_path = object_path
+            .strip_prefix(prefix)
+            .unwrap_or(&object_path)
+            .trim_start_matches('/');
+        if relative_path.is_empty() {
+            continue;
+        }
+
+        let local_path: PathBuf = cache_dir.path().join(relative_path);
+        if let Some(parent) = local_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        let bytes = store
+            .get(&object.location)
+            .await
+            .map_err(|err| err.to_string())?
+            .bytes()
+            .await
+            .map_err(|err| err.to_string())?;
+        tokio::fs::write(&local_path, bytes)
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(cache_dir)
+}
+
+async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
+    if let Some(storage_options) = options.storage_options {
+        let cache_dir = download_s3_dataset(&options.uri, &storage_options).await?;
+        let dataset = Dataset::open(cache_dir.path().to_string_lossy().as_ref())
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset {
+            dataset,
+            s3_cache: Some(cache_dir),
+        })
+    } else {
+        let dataset = Dataset::open(&options.uri)
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset {
+            dataset,
+            s3_cache: None,
+        })
+    }
 }
 
 fn projection_from_ffi(list: &ch_lance_string_list) -> Result<Vec<String>, String> {
@@ -219,8 +394,8 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
         return std::ptr::null_mut();
     }
 
-    let uri = match apply_dataset_options(&*options) {
-        Ok(uri) => uri,
+    let open_options = match apply_dataset_options(&*options) {
+        Ok(options) => options,
         Err(message) => {
             set_error(error, &message);
             return std::ptr::null_mut();
@@ -235,8 +410,12 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
         }
     };
 
-    match runtime.block_on(Dataset::open(&uri)) {
-        Ok(dataset) => Box::into_raw(Box::new(ch_lance_dataset { runtime, dataset })),
+    match runtime.block_on(open_dataset(open_options)) {
+        Ok(opened) => Box::into_raw(Box::new(ch_lance_dataset {
+            runtime,
+            dataset: opened.dataset,
+            _s3_cache: opened.s3_cache,
+        })),
         Err(err) => {
             set_error(error, &err.to_string());
             std::ptr::null_mut()
@@ -496,6 +675,24 @@ mod tests {
     use std::ptr::addr_of_mut;
     use std::sync::Arc;
 
+    fn dataset_options(uri: &CString) -> ch_lance_dataset_options {
+        ch_lance_dataset_options {
+            uri: uri.as_ptr(),
+            use_s3: false,
+            s3_region: ptr::null(),
+            s3_endpoint: ptr::null(),
+            s3_access_key_id: ptr::null(),
+            s3_secret_access_key: ptr::null(),
+            s3_session_token: ptr::null(),
+            s3_role_arn: ptr::null(),
+            s3_role_session_name: ptr::null(),
+            s3_use_environment_credentials: false,
+            s3_no_sign_request: false,
+            s3_allow_http: false,
+            s3_virtual_hosted_style_request: false,
+        }
+    }
+
     fn make_batch(values: Vec<i32>) -> RecordBatch {
         let batch = RecordBatch::try_from_iter(vec![(
             "id",
@@ -521,7 +718,7 @@ mod tests {
     fn ffi_open_schema_and_scan_local_dataset() {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
-        let options = ch_lance_dataset_options { uri: uri.as_ptr() };
+        let options = dataset_options(&uri);
         let mut error = ch_lance_error {
             message: ptr::null_mut(),
         };
@@ -592,7 +789,7 @@ mod tests {
     fn ffi_total_rows_uses_requested_snapshot() {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
-        let options = ch_lance_dataset_options { uri: uri.as_ptr() };
+        let options = dataset_options(&uri);
         let mut error = ch_lance_error {
             message: ptr::null_mut(),
         };
@@ -690,5 +887,137 @@ mod tests {
         let error = validate_schema(&schema).unwrap_err();
         assert!(error.contains("Unsupported Lance column `m`"));
         assert!(error.contains("not supported by the read-only MVP"));
+    }
+
+    #[test]
+    fn open_s3_dataset_from_env_when_configured() {
+        let Ok(uri) = std::env::var("CH_LANCE_TEST_S3_URI") else {
+            return;
+        };
+
+        let mut storage_options = HashMap::new();
+        for (env_name, option_name) in [
+            ("CH_LANCE_TEST_S3_ENDPOINT", "aws_endpoint"),
+            ("CH_LANCE_TEST_S3_REGION", "aws_region"),
+            ("CH_LANCE_TEST_S3_ACCESS_KEY_ID", "aws_access_key_id"),
+            (
+                "CH_LANCE_TEST_S3_SECRET_ACCESS_KEY",
+                "aws_secret_access_key",
+            ),
+        ] {
+            if let Ok(value) = std::env::var(env_name) {
+                storage_options.insert(option_name.to_string(), value);
+            }
+        }
+        storage_options.insert("aws_allow_http".to_string(), "true".to_string());
+        storage_options.insert(
+            "aws_virtual_hosted_style_request".to_string(),
+            "false".to_string(),
+        );
+
+        let runtime = Runtime::new().unwrap();
+        let opened = runtime
+            .block_on(open_dataset(DatasetOpenOptions {
+                uri,
+                storage_options: Some(storage_options),
+            }))
+            .unwrap();
+        let rows = runtime.block_on(opened.dataset.count_rows(None)).unwrap();
+        assert_eq!(rows, 3);
+
+        let scan_rows = runtime.block_on(async {
+            let mut stream = opened.dataset.scan().try_into_stream().await.unwrap();
+            let mut rows = 0;
+            while let Some(batch) = stream.next().await {
+                rows += batch.unwrap().num_rows();
+            }
+            rows
+        });
+        assert_eq!(scan_rows, 3);
+
+        let uri = CString::new(std::env::var("CH_LANCE_TEST_S3_URI").unwrap()).unwrap();
+        let endpoint = CString::new(std::env::var("CH_LANCE_TEST_S3_ENDPOINT").unwrap()).unwrap();
+        let region = CString::new(
+            std::env::var("CH_LANCE_TEST_S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+        )
+        .unwrap();
+        let access_key =
+            CString::new(std::env::var("CH_LANCE_TEST_S3_ACCESS_KEY_ID").unwrap()).unwrap();
+        let secret_key =
+            CString::new(std::env::var("CH_LANCE_TEST_S3_SECRET_ACCESS_KEY").unwrap()).unwrap();
+        let options = ch_lance_dataset_options {
+            uri: uri.as_ptr(),
+            use_s3: true,
+            s3_region: region.as_ptr(),
+            s3_endpoint: endpoint.as_ptr(),
+            s3_access_key_id: access_key.as_ptr(),
+            s3_secret_access_key: secret_key.as_ptr(),
+            s3_session_token: ptr::null(),
+            s3_role_arn: ptr::null(),
+            s3_role_session_name: ptr::null(),
+            s3_use_environment_credentials: false,
+            s3_no_sign_request: false,
+            s3_allow_http: true,
+            s3_virtual_hosted_style_request: false,
+        };
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+        let projection = [
+            CString::new("id").unwrap(),
+            CString::new("name").unwrap(),
+            CString::new("score").unwrap(),
+        ];
+        let projection_ptrs = projection
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
+        let scan_options = ch_lance_scan_options {
+            snapshot_id: snapshot.snapshot_id,
+            projection: ch_lance_string_list {
+                values: projection_ptrs.as_ptr(),
+                size: projection_ptrs.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 8192,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
+        assert!(!scan.is_null());
+        let mut ffi_rows = 0;
+        loop {
+            let mut array = FFI_ArrowArray::empty();
+            let mut schema = FFI_ArrowSchema::empty();
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(schema),
+                    addr_of_mut!(has_batch),
+                    addr_of_mut!(error),
+                )
+            });
+            if !has_batch {
+                break;
+            }
+            let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
+            ffi_rows += StructArray::from(make_array(struct_data).to_data()).len();
+        }
+        assert_eq!(ffi_rows, 3);
+        unsafe {
+            ch_lance_free_scan(scan);
+            ch_lance_free_dataset(dataset);
+        }
     }
 }

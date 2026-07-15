@@ -108,6 +108,18 @@ Dataset Dataset::open(const DatasetOptions & options)
     ch_lance_dataset_options native_options
     {
         .uri = options.uri.c_str(),
+        .use_s3 = options.use_s3,
+        .s3_region = options.s3_region.c_str(),
+        .s3_endpoint = options.s3_endpoint.c_str(),
+        .s3_access_key_id = options.s3_access_key_id.c_str(),
+        .s3_secret_access_key = options.s3_secret_access_key.c_str(),
+        .s3_session_token = options.s3_session_token.c_str(),
+        .s3_role_arn = options.s3_role_arn.c_str(),
+        .s3_role_session_name = options.s3_role_session_name.c_str(),
+        .s3_use_environment_credentials = options.s3_use_environment_credentials,
+        .s3_no_sign_request = options.s3_no_sign_request,
+        .s3_allow_http = options.s3_allow_http,
+        .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
     };
 
     ch_lance_error error{};

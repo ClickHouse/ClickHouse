@@ -29,6 +29,18 @@ namespace DB::Lance
 struct DatasetOptions
 {
     String uri{};
+    bool use_s3 = false;
+    String s3_region{};
+    String s3_endpoint{};
+    String s3_access_key_id{};
+    String s3_secret_access_key{};
+    String s3_session_token{};
+    String s3_role_arn{};
+    String s3_role_session_name{};
+    bool s3_use_environment_credentials = false;
+    bool s3_no_sign_request = false;
+    bool s3_allow_http = false;
+    bool s3_virtual_hosted_style_request = false;
 };
 
 struct SnapshotInfo

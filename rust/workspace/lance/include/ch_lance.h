@@ -22,6 +22,18 @@ typedef struct ch_lance_scan ch_lance_scan;
 typedef struct ch_lance_dataset_options
 {
     const char * uri;
+    bool use_s3;
+    const char * s3_region;
+    const char * s3_endpoint;
+    const char * s3_access_key_id;
+    const char * s3_secret_access_key;
+    const char * s3_session_token;
+    const char * s3_role_arn;
+    const char * s3_role_session_name;
+    bool s3_use_environment_credentials;
+    bool s3_no_sign_request;
+    bool s3_allow_http;
+    bool s3_virtual_hosted_style_request;
 } ch_lance_dataset_options;
 
 typedef struct ch_lance_snapshot_info
