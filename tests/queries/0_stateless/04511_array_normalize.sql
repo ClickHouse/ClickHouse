@@ -56,3 +56,11 @@ SELECT LpNormalize([1, 2], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNormalize([1, 2], inf); -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- The `LpNorm` array sibling shares the same validation, so it rejects non-finite `p` too.
 SELECT LpNorm([1, 2], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- The tuple carriers dispatched by the same `TupleOrArrayFunction` surface share the validation.
+SELECT LpNormalize((1, 2), nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNormalize((1, 2), inf); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm((1, 2), nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- `LpDistance` goes through the same `p` validation for tuples and arrays alike.
+SELECT LpDistance((1, 2), (3, 4), nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpDistance([1, 2], [3, 4], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }

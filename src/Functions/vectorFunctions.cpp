@@ -10,6 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
+#include <Functions/checkLpNormPArgument.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -17,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -1164,10 +1164,7 @@ public:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
-        if (p < 1 || p >= HUGE_VAL)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Second argument for function {} must be not less than one and not be an infinity",
-                            getName());
+        checkLpNormPArgument(p, getName());
 
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
@@ -2862,7 +2859,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
         FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(vector, p)";
         FunctionDocumentation::Arguments arguments_lp_normalize = {
             {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}},
-            {"p", "The power. Possible values are any number in the range range from `[1; inf)`.", {"UInt*", "Float*"}}
+            {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {

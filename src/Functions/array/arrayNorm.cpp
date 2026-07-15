@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkLpNormPArgument.h>
 #include <Common/TargetSpecific.h>
 
 namespace DB
@@ -15,7 +16,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 struct L1Norm
@@ -305,19 +305,6 @@ private:
 
     typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
-
-/// Validate the `p` argument shared by the `LpNorm` and `LpNormalize` array paths.
-/// A naive `p < 1 || p >= HUGE_VAL` check lets `NaN` through, because both comparisons are
-/// false for `NaN`, so we reject non-finite `p` explicitly to keep it within the documented
-/// `[1, inf)` range.
-inline void checkLpNormPArgument(Float64 p, const String & function_name)
-{
-    if (!std::isfinite(p) || p < 1)
-        throw Exception(
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-            "Second argument for function {} must be a finite number not less than one",
-            function_name);
-}
 
 template <>
 size_t FunctionArrayNorm<LpNorm>::getNumberOfArguments() const { return 2; }
