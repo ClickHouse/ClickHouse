@@ -38,6 +38,11 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// The result differs between servers (the headers are only known on the initiator), and the
+    /// built function captures the scope-local `is_distributed` flag below, so it must also be
+    /// excluded from the analyzer function cache, which is shared across scopes.
+    bool isServerConstant() const override { return true; }
+
     /// The headers are not propagated to secondary queries: in a distributed query the function
     /// returns a non-empty result only on the initiator (as documented). Folding the call on the
     /// initiator would ship the (potentially sensitive) header value as a literal to every shard.

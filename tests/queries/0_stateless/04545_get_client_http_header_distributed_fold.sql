@@ -31,3 +31,36 @@ WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     );
+
+-- The function-cache shape: the outer local call resolves first and seeds the analyzer
+-- function cache with a base built for a non-distributed scope (foldable). The inner
+-- clusterAllReplicas scope must not reuse it (`isServerConstant` excludes the function from
+-- the cache), otherwise the distributed branch folds on the initiator again.
+SELECT q
+FROM
+(
+    SELECT getClientHTTPHeader('Content-Type') AS q
+    UNION ALL
+    SELECT getClientHTTPHeader('Content-Type') AS q
+    FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+)
+FORMAT Null
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0, allow_get_client_http_header = 1, log_comment = '04545_get_client_http_header_union_cache';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count() = 2, countIf(query LIKE 'SELECT getClientHTTPHeader(%') = 2
+FROM system.query_log
+WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
+    AND initial_query_id =
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND event_date >= yesterday()
+            AND log_comment = '04545_get_client_http_header_union_cache'
+            AND is_initial_query
+            AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    );
