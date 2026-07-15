@@ -183,7 +183,6 @@ template <typename A, typename B>
 struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
-    static const constexpr bool can_throw = false;
 
     template<typename Result = ResultType>
     static Result apply(A a, B b)
@@ -329,7 +328,6 @@ template <typename A, typename B>
 struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
-    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
