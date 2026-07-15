@@ -172,7 +172,8 @@ TEST(PackedStringRef, EqualityAcrossSmallBoundary)
 TEST(PackedStringRef, EqualityMedium)
 {
     const std::string content(25, 'y');
-    const std::string copy = content;
+    /// Deliberately a distinct buffer with the same content, not a reference to `content`.
+    const std::string copy(content.data(), content.size());
     const std::string other = std::string(24, 'y') + 'z';
 
     PackedStringRef ref = PackedStringRef::build(content.data(), content.size(), FixedHash{42});
