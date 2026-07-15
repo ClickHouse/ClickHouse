@@ -139,58 +139,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
-/// types as the storage that was created from the first reference.
-///
-/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
-/// scope of that reference. Normally all clones must produce identical projection types
-/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
-/// clones is possible when the body resolves identifiers from outer scope that take
-/// different values per call site (for example, aliases from the calling subquery's
-/// projection are inlined as different constants).
-///
-/// Without this check the planner would create the storage with one set of column types
-/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
-/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
-/// silent corruption into a clear analysis-time error.
-void verifyMaterializedCTESubqueryMatchesStorage(
-    const QueryTreeNodePtr & subquery,
-    const StoragePtr & storage,
-    const ContextPtr & context,
-    const std::string & cte_name,
-    const QueryTreeNodePtr & scope_node)
-{
-    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
-        ? subquery->as<QueryNode>()->getProjectionColumns()
-        : subquery->as<UnionNode>()->computeProjectionColumns();
-
-    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
-    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
-
-    if (projection_columns.size() != storage_columns.size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
-            "but this reference resolved to {}. In scope {}",
-            cte_name, storage_columns.size(), projection_columns.size(),
-            scope_node->formatASTForErrorMessage());
-
-    auto storage_it = storage_columns.begin();
-    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
-    {
-        if (!projection_columns[i].type->equals(*storage_it->type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
-                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
-                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
-                "Materialized CTEs cannot have such dependencies. In scope {}",
-                cte_name,
-                storage_it->name,
-                storage_it->type->getName(),
-                projection_columns[i].type->getName(),
-                scope_node->formatASTForErrorMessage());
-    }
-}
-
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -286,12 +234,16 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                 scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
+            /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+            /// before resolution, so that later references to them can be resolved. This must be done for
+            /// a single expression node too, not only for a list: otherwise an alias defined and later
+            /// referenced within a standalone expression (such as a column DEFAULT expression checked
+            /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            visitor.visit(node);
+
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -314,7 +266,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 
     validateCorrelatedSubqueries(node);
-    inlineMaterializedCTEIfNeeded(node, reused_materialized_cte, context);
+    inlineMaterializedCTEIfNeeded(node, context);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -345,6 +297,14 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
         scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
+
+    /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+    /// before resolution, so that later references to them can be resolved. This mirrors `resolve`
+    /// above and is needed for a single expression node too, not only for a list: otherwise an alias
+    /// defined and later referenced within a standalone constant expression (such as a user predicate
+    /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -714,9 +674,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         /// initiator.
         if (scope.context->isPositionalArgumentsAlreadyResolved())
             return;
-        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
-        /// paths not covered by setPositionalArgumentsAlreadyResolved.
-        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             return;
     }
 
@@ -1340,13 +1302,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
         table_node->setAlias(full_name);
 
         cte_node = table_node;
-    }
-    else if (auto * table_node = cte_node->as<TableNode>())
-    {
-        if (table_node->isMaterializedCTE())
-        {
-            reused_materialized_cte.insert(table_node->getMaterializedCTE());
-        }
     }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
@@ -3288,7 +3243,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 materialized_cte_ptr->storage,
                                 scope.context,
                                 materialized_cte_ptr->cte_name,
-                                scope.scope_node);
+                                scope.scope_node,
+                                /*throw_on_mismatch=*/ true);
                         }
                     }
                 }
@@ -5860,7 +5816,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         materialized_cte_ptr->storage,
                         scope.context,
                         materialized_cte_ptr->cte_name,
-                        scope.scope_node);
+                        scope.scope_node,
+                        /*throw_on_mismatch=*/ true);
                 }
             }
 

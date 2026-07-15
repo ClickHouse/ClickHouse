@@ -345,6 +345,21 @@ FillingTransform::FillingTransform(
                     (header_->begin() + sort_prefix_pos)->name);
         }
     }
+
+    /// A column that is both a fill column and an interpolate target gets two inserts per gap-fill
+    /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
+    if (!interpolate_column_positions.empty())
+    {
+        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
+        for (auto interpolate_pos : interpolate_column_positions)
+        {
+            if (fill_positions.contains(interpolate_pos))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "The same column in WITH FILL and INTERPOLATE is not allowed. Column: {}",
+                    (header_->begin() + interpolate_pos)->name);
+        }
+    }
 }
 
 /// prepare() is overrididen to call transform() after all chunks are processed

@@ -563,14 +563,26 @@ profiles:
         # False). Every step MUST stay non-strict: a strict=True step would
         # raise before we can record the reason and signal failure. Record the
         # concrete failing sub-step so it reaches CIDB test_context_raw.
+        # storage_policy = 'default' pins these diagnostic tables to local disk.
+        # On s3 storage runs the default merge_tree policy is S3
+        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
+        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
+        # thereby generates more audit events (a feedback loop that inflates the
+        # table), and (2) the post-run `select * ... into outfile` dump reads all
+        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
+        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
+        # failing the "Scraping system tables" check. These are diagnostics ABOUT
+        # S3 activity; there is no reason to store them ON S3. 'default' is a
+        # local policy on every stateless config (no config remaps it), so this
+        # is a no-op on non-s3 runs.
         setup_steps = [
             (
                 "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "set clickminio logger_webhook config",
