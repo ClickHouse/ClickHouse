@@ -21,7 +21,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04512_struct.arrow', 'Arrow')
 SELECT nullIf(t, t) AS s FROM (SELECT CAST(tuple(toDate32('2299-12-31') + 100), 'Tuple(d Date32)') AS t);
 
 -- A visible out-of-range value: the last four queries check that validation still rejects real
--- data in both readers and that date_time_overflow_behavior = 'saturate' still clamps it.
+-- data in both readers and that date_time_overflow_behavior = 'saturate' still clamps it. The
+-- saturated value is printed as the raw day number: the boundary day sits at the edge of the
+-- DateLUT, whose rendering differs across builds.
 INSERT INTO FUNCTION file(currentDatabase() || '_04512_visible.arrow', 'Arrow')
 SELECT toDate32('2299-12-31') + 100 AS d;
 
@@ -37,5 +39,5 @@ SELECT * FROM file(currentDatabase() || '_04512_struct.arrow', 'Arrow') SETTINGS
 
 SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1, date_time_overflow_behavior = 'saturate';
-SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 0, date_time_overflow_behavior = 'saturate';
+SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS input_format_arrow_use_native_reader = 1, date_time_overflow_behavior = 'saturate';
+SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS input_format_arrow_use_native_reader = 0, date_time_overflow_behavior = 'saturate';
