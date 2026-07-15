@@ -9,8 +9,8 @@ namespace DB
 
 bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
 {
-    IdentifierPartQuote database_quote;
-    IdentifierPartQuote table_quote;
+    IdentifierPartQuote database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote table_quote = IdentifierPartQuote::Unquoted;
     return parseDatabaseAndTableName(pos, expected, database_str, table_str, database_quote, table_quote);
 }
 

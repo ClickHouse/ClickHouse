@@ -7909,10 +7909,10 @@ Controls how database and table names in queries are matched against existing ob
 Possible values:
 - `sensitive` — Names must match exactly (default).
 - `standard` — SQL-standard-like matching. A name component that is not double-quoted is matched
-  through an ASCII-case-folded namespace: `SELECT * FROM MyDb.MyTable` finds a database and table
+  through an ASCII-case-folded namespace: `SELECT * FROM MyBase.MyTable` finds a database and table
   whose names fold to `mydb` / `mytable`, and the exact spelling gets no priority over other case
   variants. If several existing objects fold to the same name, the reference is ambiguous and the
-  query fails with the full sorted candidate list. Double-quoted components (`"MyDb"`) are always
+  query fails with the full sorted candidate list. Double-quoted components (`"MyBase"`) are always
   matched exactly. Backtick-quoted components fold like unquoted ones.
 
 The mode applies to references to existing objects. Names of newly created objects are stored as
@@ -7921,7 +7921,7 @@ existing one is rejected, while a double-quoted new name is allowed and later ma
 )", 0) \
     DECLARE(NameMatchMode, column_and_query_name_matching, NameMatchMode::Sensitive, R"(
 Controls how column names and other query-scope names — subcolumns, aliases, CTE names, lambda
-arguments and similar — are matched during SELECT query analysis. Requires the new analyzer
+arguments and similar — are matched during SELECT query analysis. Requires the analyzer
 (`allow_experimental_analyzer = 1`); with the old analyzer, queries fail when the mode is not
 `sensitive`.
 
