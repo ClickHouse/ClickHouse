@@ -22,7 +22,7 @@ bool ParserDropClusterCatalogQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!s_drop.ignore(pos, expected))
         return false;
 
-    ASTDropClusterCatalogQuery::Kind kind;
+    ASTDropClusterCatalogQuery::Kind kind = {};
     if (s_cluster.ignore(pos, expected))
         kind = ASTDropClusterCatalogQuery::Kind::Cluster;
     else if (s_shard.ignore(pos, expected))

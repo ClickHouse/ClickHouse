@@ -37,7 +37,7 @@ struct ClusterMetadataMutation
         String to;
     };
 
-    Type type;
+    Type type = {};
     String name;
     String definition_data;
 

@@ -53,7 +53,7 @@ bool ParserCreateClusterCatalogQuery::parseImpl(Pos & pos, ASTPtr & node, Expect
     if (!s_create.ignore(pos, expected))
         return false;
 
-    ASTCreateClusterCatalogQuery::Kind kind;
+    ASTCreateClusterCatalogQuery::Kind kind = {};
     if (s_cluster.ignore(pos, expected))
         kind = ASTCreateClusterCatalogQuery::Kind::Cluster;
     else if (s_shard.ignore(pos, expected))
