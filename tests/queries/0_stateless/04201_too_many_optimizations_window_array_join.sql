@@ -28,12 +28,15 @@ SELECT
     100000 + number * 3                                        AS ts
 FROM
 (
+    -- Deterministic pseudo-random values. The original repro used
+    -- `generateRandom(...) LIMIT 20` with `rowNumberInAllBlocks`, but `generateRandom` fills the
+    -- columns of each block sequentially from one RNG stream, so the generated values silently
+    -- depended on how the LIMIT was chunked into blocks by the plan.
     SELECT
-        rowNumberInAllBlocks() AS number,
-        qty1,
-        qty2
-    FROM generateRandom('qty1 Int64, qty2 Int64', 42)
-    LIMIT 20
+        number,
+        toInt64(intHash64(number)) % 1000 AS qty1,
+        toInt64(intHash64(number + 100)) % 1000 AS qty2
+    FROM numbers(20)
 ) AS t
 CROSS JOIN (SELECT number AS c FROM numbers(3)) AS syms
 ORDER BY sym, ts;
