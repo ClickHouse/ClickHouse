@@ -79,6 +79,54 @@ constexpr const char * RSA_PKCS8_PRIVATE_KEY =
     "3tRLAwO3JmBvy9R82mxOeaGHdg==\n"
     "-----END PRIVATE KEY-----\n";
 
+/// An encrypted PKCS#8 Ed25519 private key ("-----BEGIN ENCRYPTED PRIVATE KEY-----"), as produced by
+/// `openssl genpkey -algorithm ED25519 -aes-256-cbc`. The algorithm OID is hidden inside the
+/// encrypted body, so it can only be recognized by decrypting with the passphrase.
+constexpr const char * ED25519_ENCRYPTED_PKCS8_PRIVATE_KEY =
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+    "MIGbMFcGCSqGSIb3DQEFDTBKMCkGCSqGSIb3DQEFDDAcBAhaEFdiVEc+IAICCAAw\n"
+    "DAYIKoZIhvcNAgkFADAdBglghkgBZQMEASoEEOS9AOCXfVxh4YfLamINk1AEQH61\n"
+    "QhIqD0zyZCgYHDIkKcTgFdccObswBFlGVw3KcNzUY92Mtj9lyFedGPKxUv1XASLQ\n"
+    "qDXMJXFarM5MQtpXb8Q=\n"
+    "-----END ENCRYPTED PRIVATE KEY-----\n";
+
+/// An encrypted PKCS#8 RSA private key ("-----BEGIN ENCRYPTED PRIVATE KEY-----"), same passphrase.
+/// Must stay usable in FIPS mode: decrypting reveals a non-Ed25519 OID.
+constexpr const char * RSA_ENCRYPTED_PKCS8_PRIVATE_KEY =
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+    "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\n"
+    "-----END ENCRYPTED PRIVATE KEY-----\n";
+
+/// The passphrase used to encrypt the two keys above.
+constexpr const char * ENCRYPTED_PKCS8_PASSPHRASE = "testpass123";
+
 /// An X.509 SubjectPublicKeyInfo RSA public key: usable in FIPS mode.
 constexpr const char * RSA_SPKI_PUBLIC_KEY =
     "-----BEGIN PUBLIC KEY-----\n"
@@ -166,6 +214,34 @@ TEST(SSHKeyFIPSDetection, PublicKeyFileRSASPKIIsUsable)
 {
     auto path = writeTempFile("rsa_spki_pub", RSA_SPKI_PUBLIC_KEY);
     EXPECT_TRUE(SSHKeyFactory::isPublicKeyFileUsableInFIPSBuilds(path));
+    (void)std::remove(path.c_str());
+}
+
+/// An ENCRYPTED PKCS#8 Ed25519 private key hides its OID inside the encrypted body. With the
+/// passphrase it must still be recognized as Ed25519 (decrypt-to-read-OID), so it is never handed to
+/// libssh under FIPS via clickhouse-client --ssh-key-file / --ssh-key-passphrase.
+TEST(SSHKeyFIPSDetection, PrivateKeyFileEd25519EncryptedPKCS8IsNotUsable)
+{
+    auto path = writeTempFile("ed_enc_pkcs8_priv", ED25519_ENCRYPTED_PKCS8_PRIVATE_KEY);
+    EXPECT_FALSE(SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(path, ENCRYPTED_PKCS8_PASSPHRASE));
+    (void)std::remove(path.c_str());
+}
+
+/// An ENCRYPTED PKCS#8 RSA private key decrypts to a non-Ed25519 OID and must stay usable in FIPS.
+TEST(SSHKeyFIPSDetection, PrivateKeyFileRSAEncryptedPKCS8IsUsable)
+{
+    auto path = writeTempFile("rsa_enc_pkcs8_priv", RSA_ENCRYPTED_PKCS8_PRIVATE_KEY);
+    EXPECT_TRUE(SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(path, ENCRYPTED_PKCS8_PASSPHRASE));
+    (void)std::remove(path.c_str());
+}
+
+/// Without the passphrase the encrypted body cannot be decrypted, so the type cannot be determined:
+/// it is reported as UNKNOWN (usable). This matches the fallback contract - libssh would also fail
+/// to decrypt it, so the crash path is not reached even for an undetectable Ed25519 key.
+TEST(SSHKeyFIPSDetection, PrivateKeyFileEncryptedPKCS8WrongPassphraseIsUnknown)
+{
+    auto path = writeTempFile("ed_enc_pkcs8_wrongpass", ED25519_ENCRYPTED_PKCS8_PRIVATE_KEY);
+    EXPECT_TRUE(SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(path, "wrong-passphrase"));
     (void)std::remove(path.c_str());
 }
 

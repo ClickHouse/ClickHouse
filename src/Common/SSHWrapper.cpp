@@ -8,9 +8,16 @@
 #    include <Common/Base64.h>
 #    include <IO/ReadBufferFromFile.h>
 #    include <IO/ReadHelpers.h>
+#    include <base/scope_guard.h>
 
 #    include <array>
 #    include <string_view>
+
+#    include <openssl/bio.h>
+#    include <openssl/objects.h>
+#    include <openssl/pem.h>
+#    include <openssl/pkcs12.h>
+#    include <openssl/x509.h>
 
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
@@ -123,15 +130,49 @@ bool derContainsEd25519OID(std::string_view der)
     return std::string_view(der).find(std::string_view(ed25519_oid.data(), ed25519_oid.size())) != std::string_view::npos;
 }
 
+/// An encrypted PKCS#8 file ("-----BEGIN ENCRYPTED PRIVATE KEY-----") hides its AlgorithmIdentifier
+/// OID inside the encrypted body, so a plain byte scan cannot see it. When the passphrase is known,
+/// decrypt just the PKCS#8 envelope (PBKDF2 + AES, both FIPS-approved) to obtain the PrivateKeyInfo
+/// and read its OID. This never constructs the asymmetric key, so no Ed25519 key material reaches a
+/// crypto provider. Returns true only when the decrypted key is the Ed25519 family. A wrong/absent
+/// passphrase (or any other failure) returns false; the key then falls through to UNKNOWN, and if it
+/// is genuinely Ed25519 the subsequent libssh import fails to decrypt it too, so it never crashes.
+bool encryptedPKCS8IsEd25519(const String & contents, const String & passphrase)
+{
+    std::unique_ptr<BIO, decltype(&BIO_free)> bio(
+        BIO_new_mem_buf(contents.data(), static_cast<int>(contents.size())), BIO_free);
+    if (!bio)
+        return false;
+
+    X509_SIG * p8_encrypted = PEM_read_bio_PKCS8(bio.get(), nullptr, nullptr, nullptr);
+    if (!p8_encrypted)
+        return false;
+    SCOPE_EXIT({ X509_SIG_free(p8_encrypted); });
+
+    PKCS8_PRIV_KEY_INFO * p8_info = PKCS8_decrypt(p8_encrypted, passphrase.c_str(), static_cast<int>(passphrase.size()));
+    if (!p8_info)
+        return false;
+    SCOPE_EXIT({ PKCS8_PRIV_KEY_INFO_free(p8_info); });
+
+    const ASN1_OBJECT * algorithm = nullptr;
+    if (!PKCS8_pkey_get0(&algorithm, nullptr, nullptr, nullptr, p8_info) || !algorithm)
+        return false;
+
+    return OBJ_obj2nid(algorithm) == NID_ED25519;
+}
+
 /// Determine the key type of a private key file WITHOUT importing it into libssh (importing an
-/// Ed25519 key under FIPS mode crashes). Two carriers can hold an Ed25519 key:
+/// Ed25519 key under FIPS mode crashes). Three carriers can hold an Ed25519 key:
 ///   - the OpenSSH container ("openssh-key-v1"): its unencrypted header always exposes the public
 ///     key type, so this works even for passphrase-protected keys;
-///   - a PKCS#8 file ("-----BEGIN PRIVATE KEY-----", e.g. `openssl genpkey -algorithm ED25519`):
-///     detected via the id-Ed25519 OID in its AlgorithmIdentifier.
-/// Anything else (legacy PEM RSA/EC/DSA) is reported as UNKNOWN, which callers treat as
-/// "not Ed25519, safe to import".
-enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
+///   - an unencrypted PKCS#8 file ("-----BEGIN PRIVATE KEY-----", e.g. `openssl genpkey -algorithm
+///     ED25519`): detected via the id-Ed25519 OID in its AlgorithmIdentifier;
+///   - an encrypted PKCS#8 file ("-----BEGIN ENCRYPTED PRIVATE KEY-----", e.g. `openssl genpkey
+///     -algorithm ED25519 -aes-256-cbc`): its OID is inside the encrypted body, so when the
+///     passphrase is known it is decrypted (PBKDF2 + AES, FIPS-approved) just to read the OID.
+/// Anything else (legacy PEM RSA/EC/DSA, or an encrypted PKCS#8 with an unknown passphrase) is
+/// reported as UNKNOWN, which callers treat as "not Ed25519, safe to import".
+enum ssh_keytypes_e detectPrivateKeyType(const String & filename, const String & passphrase)
 {
     String contents;
     try
@@ -145,10 +186,15 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
         return SSH_KEYTYPE_UNKNOWN;
     }
 
-    /// PKCS#8 carrier: "-----BEGIN PRIVATE KEY-----" (also "-----BEGIN ENCRYPTED PRIVATE KEY-----",
-    /// whose encrypted body hides the OID, so it falls through to UNKNOWN as before).
+    /// Unencrypted PKCS#8 carrier: "-----BEGIN PRIVATE KEY-----" (the OID is visible in the body).
     String pkcs8_der;
     if (decodePEMBody(contents, "PRIVATE KEY", pkcs8_der) && derContainsEd25519OID(pkcs8_der))
+        return SSH_KEYTYPE_ED25519;
+
+    /// Encrypted PKCS#8 carrier: "-----BEGIN ENCRYPTED PRIVATE KEY-----". The OID is hidden inside
+    /// the encrypted body, so decrypt with the passphrase to read it (does not construct the key).
+    if (contents.find("-----BEGIN ENCRYPTED PRIVATE KEY-----") != String::npos
+        && encryptedPKCS8IsEd25519(contents, passphrase))
         return SSH_KEYTYPE_ED25519;
 
     /// OpenSSH container.
@@ -218,7 +264,8 @@ SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
 {
     /// Reject unsupported key types BEFORE ssh_pki_import_privkey_file: handing an Ed25519 key to
     /// libssh under FIPS mode crashes (this path is reachable via clickhouse-client --ssh-key-file).
-    if (OpenSSLInitializer::instance().isFIPSEnabled() && !isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename)))
+    /// The passphrase lets detection decrypt an encrypted PKCS#8 carrier to read its algorithm OID.
+    if (OpenSSLInitializer::instance().isFIPSEnabled() && !isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename, passphrase)))
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key); rc != SSH_OK)
@@ -255,9 +302,9 @@ bool SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(const String & type_name)
     return isKeyTypeUsableInFIPSBuilds(ssh_key_type_from_name(type_name.c_str()));
 }
 
-bool SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(const String & filename)
+bool SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(const String & filename, const String & passphrase)
 {
-    return isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename));
+    return isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename, passphrase));
 }
 
 bool SSHKeyFactory::isPublicKeyFileUsableInFIPSBuilds(const String & filename)

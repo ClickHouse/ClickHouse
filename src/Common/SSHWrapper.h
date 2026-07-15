@@ -62,8 +62,9 @@ public:
     static bool isPublicKeyUsableInFIPSBuilds(const String & type_name);
 
     /// Detect the key type of a key file WITHOUT importing it into libssh (importing an Ed25519 key
-    /// under FIPS mode crashes) and report whether it is usable in FIPS builds.
-    static bool isPrivateKeyFileUsableInFIPSBuilds(const String & filename);
+    /// under FIPS mode crashes) and report whether it is usable in FIPS builds. The passphrase lets
+    /// detection decrypt an encrypted PKCS#8 carrier to read its algorithm OID.
+    static bool isPrivateKeyFileUsableInFIPSBuilds(const String & filename, const String & passphrase = "");
     static bool isPublicKeyFileUsableInFIPSBuilds(const String & filename);
 };
 
