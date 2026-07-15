@@ -243,6 +243,41 @@ namespace
         return s;
     }
 
+    String normalizePlainAzureStorageAccountURL(const String & url)
+    {
+        try
+        {
+            Poco::URI uri(url);
+            const String scheme = toLower(uri.getScheme());
+            const bool is_valid = (scheme == "http" || scheme == "https")
+                && !uri.getHost().empty()
+                && url.find_first_of("?#") == String::npos
+                && stripURLUserInfo(url) == url;
+
+            if (!is_valid)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "AzureBlobStorage with explicit account credentials requires a plain storage account URL without userinfo, query, or fragment");
+
+#if USE_AZURE_BLOB_STORAGE
+            return Azure::Core::Url(url).GetAbsoluteUrl();
+#else
+            uri.setScheme(scheme);
+            return uri.toString();
+#endif
+        }
+        catch (const Poco::Exception &)
+        {
+        }
+        catch (const std::logic_error &)
+        {
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "AzureBlobStorage with explicit account credentials requires a plain storage account URL without userinfo, query, or fragment");
+    }
+
     String getStringArgForNormalizedIdentity(const Field & arg, const String & backup_engine_name, size_t index)
     {
         if (arg.getType() != Field::Types::Which::String)
@@ -528,6 +563,8 @@ namespace
             }
 
             validateStringArgsForNormalizedIdentity(info);
+            if (!has_named_collection && info.args.size() == 5)
+                UNUSED(normalizePlainAzureStorageAccountURL(getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0)));
             return;
         }
 
@@ -592,6 +629,8 @@ namespace
                 continue;
 
             String arg = getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
+            if (info.backup_engine_name == "AzureBlobStorage" && !has_named_collection && info.args.size() == 5 && i == 0)
+                arg = normalizePlainAzureStorageAccountURL(arg);
             if (info.backup_engine_name == "S3" && has_named_collection && i == 0)
             {
                 if (arg.empty())
@@ -834,7 +873,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
 #if USE_AZURE_BLOB_STORAGE
         if (info.backup_engine_name == "AzureBlobStorage" && (info.args.size() == 3 || info.args.size() == 5))
         {
-            const String connection_url = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
+            String connection_url = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
             const String container_name = getStringArgForNormalizedIdentity(info.args[1], info.backup_engine_name, 1);
             const String blob_path = getStringArgForNormalizedIdentity(info.args[2], info.backup_engine_name, 2);
             std::optional<String> account_name;
@@ -843,6 +882,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
             {
                 account_name = getStringArgForNormalizedIdentity(info.args[3], info.backup_engine_name, 3);
                 account_key = getStringArgForNormalizedIdentity(info.args[4], info.backup_engine_name, 4);
+                connection_url = normalizePlainAzureStorageAccountURL(connection_url);
             }
 
             auto connection_params = getAzureConnectionParams(
@@ -894,6 +934,28 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
         String connection_url = collection->getAnyOrDefault<String>({"connection_string", "storage_account_url"}, "");
         String container_name = collection->get<String>("container");
         String blob_path = collection->getOrDefault<String>("blob_path", "");
+        const bool has_account_name = collection->has("account_name");
+        const bool has_account_key = collection->has("account_key");
+        const bool has_client_id = collection->has("client_id");
+        const bool has_tenant_id = collection->has("tenant_id");
+
+        if (has_account_name != has_account_key)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Both 'account_name' and 'account_key' need to be provided, but '{}' is missing",
+                has_account_name ? "account_key" : "account_name");
+        if (has_client_id != has_tenant_id)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Both 'client_id' and 'tenant_id' need to be provided, but '{}' is missing",
+                has_client_id ? "tenant_id" : "client_id");
+        if (has_account_name && has_client_id)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Both 'extra_credentials' with 'client_id' and 'tenant_id' and account credentials provided. Choose only one");
+        if (has_account_name || has_client_id)
+            connection_url = normalizePlainAzureStorageAccountURL(connection_url);
+
         if (!args.empty())
             blob_path = getStringArgForNormalizedIdentity(args[0], backup_engine_name, 0);
 

@@ -763,8 +763,36 @@ TEST(BackupInfo, NormalizedStringIgnoresAzureCredentials)
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup/', 'account', 'key1')");
     auto second = BackupInfo::fromString(
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup', 'account', 'key2')");
+    auto uppercase_scheme = BackupInfo::fromString(
+        "AzureBlobStorage('HTTPS://account.blob.core.windows.net', 'container', 'backup', 'account', 'key3')");
+    auto connection_string = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=key', 'container', 'backup', 'account', 'key')");
+    auto sas_url = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net?sig=secret', 'container', 'backup', 'account', 'key')");
+    auto invalid_scheme = BackupInfo::fromString(
+        "AzureBlobStorage('httpx://account.blob.core.windows.net', 'container', 'backup', 'account', 'key')");
+    auto missing_host = BackupInfo::fromString(
+        "AzureBlobStorage('https:///', 'container', 'backup', 'account', 'key')");
+    auto leak_prone_value = BackupInfo::fromString(
+        "AzureBlobStorage('httpAccountKey=SECRET', 'container', 'backup', 'account', 'key')");
+    auto trailing_query_marker = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net?', 'container', 'backup', 'account', 'key')");
+    auto trailing_fragment_marker = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net#', 'container', 'backup', 'account', 'key')");
+    auto empty_userinfo = BackupInfo::fromString(
+        "AzureBlobStorage('https://@account.blob.core.windows.net', 'container', 'backup', 'account', 'key')");
 
     EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString(), uppercase_scheme.toNormalizedString());
+    EXPECT_THROW((void)connection_string.toNormalizedString(), Exception);
+    EXPECT_THROW((void)connection_string.toNormalizedString(getContext().context), Exception);
+    EXPECT_THROW((void)sas_url.toNormalizedString(), Exception);
+    EXPECT_THROW((void)invalid_scheme.toNormalizedString(), Exception);
+    EXPECT_THROW((void)missing_host.toNormalizedString(), Exception);
+    EXPECT_THROW((void)leak_prone_value.toNormalizedString(), Exception);
+    EXPECT_THROW((void)trailing_query_marker.toNormalizedString(), Exception);
+    EXPECT_THROW((void)trailing_fragment_marker.toNormalizedString(), Exception);
+    EXPECT_THROW((void)empty_userinfo.toNormalizedString(), Exception);
 }
 
 TEST(BackupInfo, NormalizedStringRedactsAzureConnectionStringCredentials)
@@ -860,6 +888,22 @@ TEST(BackupInfo, NormalizedStringUsesFrozenAzureNamedCollection)
 
     EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
     EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
+}
+
+TEST(BackupInfo, NormalizedStringValidatesFrozenAzureExplicitCredentialsURL)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("AzureBlobStorage(collection)");
+    info.frozen_named_collection = makeNamedCollection(
+        {
+            {"connection_string", "DefaultEndpointsProtocol=https;AccountName=account;AccountKey=key"},
+            {"container", "container"},
+            {"blob_path", "backup"},
+            {"account_name", "account"},
+            {"account_key", "key"},
+        });
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
 }
 
 TEST(BackupInfo, FreezeNamedCollectionPreservesResolvedSnapshot)
