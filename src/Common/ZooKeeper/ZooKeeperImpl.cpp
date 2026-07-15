@@ -875,9 +875,6 @@ void ZooKeeper::sendThread()
 
     auto prev_heartbeat_time = clock::now();
 
-    /// tmp buffer to assert actual request sizes; reused across requests, never shrinks
-    std::string serialized;
-
     try
     {
         while (!requests_queue.isFinished())
@@ -951,30 +948,16 @@ void ZooKeeper::sendThread()
                     if (info.request->add_root_path)
                         info.request->addRootPath(args.chroot);
 
-                    /// Exact wire-size check before registering: rejection fails only this request, session intact.
+                    /// Final size check: rejection fails only this request, session intact. Tracing context is not accounted, but considered as a small overhead
                     try
                     {
-                        const size_t request_size = info.request->requestSize(use_xid_64);
-                        serialized.resize(sizeof(int32_t) + request_size + (pass_opentelemetry_tracing_context ? 256 : 0));
-                        DB::WriteBufferFromString buf(serialized);
-                        info.request->write(buf, use_xid_64, pass_opentelemetry_tracing_context);
-                        buf.finalize();
-                        assertRequestSizeIsValid(serialized.size(), getMaxRequestSize(), *info.request);
+                        assertRequestSizeIsValid(
+                            sizeof(int32_t) + info.request->requestSize(use_xid_64), getMaxRequestSize(), *info.request);
                     }
                     catch (const Exception & e)
                     {
                         reject_error = e.code;
-                        serialized.clear();
                         /// The SCOPE_EXIT guard above completes the callback with reject_error.
-                        continue;
-                    }
-                    catch (...)
-                    {
-                        /// E.g. bad_alloc / MEMORY_LIMIT_EXCEEDED while buffering the request:
-                        /// attributable to this request alone, must not tear down the session.
-                        tryLogCurrentException(log);
-                        reject_error = Error::ZBADARGUMENTS;
-                        serialized.clear();
                         continue;
                     }
 
@@ -1005,8 +988,7 @@ void ZooKeeper::sendThread()
                     }
 
                     info.request->probably_sent = true;
-                    getWriteBuffer().write(serialized.data(), serialized.size());
-                    serialized.clear();
+                    info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
