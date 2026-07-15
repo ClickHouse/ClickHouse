@@ -1705,15 +1705,16 @@ class QueryProgressElement extends HTMLElement
         this._checkMark.style.display = 'inline-block';
     }
 
-    /// The query was cancelled (Stop): stop the spinner without showing the success check mark.
+    /// The query was cancelled (Stop): stop the spinner without showing the success check mark,
+    /// and discard the in-flight stats text and progress bar - they belong to the cancelled run
+    /// and would otherwise stay frozen in the toolbar indefinitely.
     /// Only act when the spinner is actually running: if the query was cancelled before it
     /// started rendering (e.g. during the async lexer load, while the toolbar already shows
-    /// "Stop"), the widget still holds the previous result's check mark - leave it untouched.
+    /// "Stop"), the widget still holds the previous result's state - leave it untouched.
     stop()
     {
         if (this._hourglass.style.display !== 'inline-block') { return; }
-        this._hourglass.style.display = 'none';
-        this._checkMark.style.display = 'none';
+        this.clear();
     }
 
     updateProgress(progress)
