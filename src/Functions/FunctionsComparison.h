@@ -1275,9 +1275,7 @@ private:
     }
 
     /// Lexicographically compares two arrays element-by-element using the accurate scalar
-    /// comparison. Unlike executeGeneric, this does not require the element types to have a
-    /// least common supertype, so it works for e.g. `Array(Int64)` vs `Array(UInt64)` and
-    /// `Array(Int256)` vs `Array(UInt256)`. The result is always a non-Nullable `UInt8`.
+    /// comparison. The result is always a non-Nullable `UInt8`.
     ColumnPtr executeArrayLexicographicImpl(
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
@@ -1292,6 +1290,7 @@ private:
         const FunctionOverloadResolverPtr & order_resolver) const
     {
          /// First, unwrap the two array columns
+        chassert(column_type_name0.column && column_type_name1.column);
         ColumnPtr full_column0 = column_type_name0.column->convertToFullColumnIfConst();
         ColumnPtr full_column1 = column_type_name1.column->convertToFullColumnIfConst();
 
@@ -1359,6 +1358,7 @@ private:
             return impl->execute(element_args, impl->getResultType(), num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
         };
 
+        /// we always run equality comparison to check for equal arrays
         ColumnPtr equals_col = run(equals_resolver);
         const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
 
@@ -1418,8 +1418,7 @@ private:
         return result;
     }
 
-    /// Lexicographically compares two arrays element-by-element using the accurate scalar
-    /// comparison.
+    /// Implemented as a template specialization for multiple Functions (=, !=, >, >=, <, <=)
     ColumnPtr executeArray(
         const DataTypePtr & /*result_type*/,
         const ColumnWithTypeAndName & column_type_name0,
@@ -1885,19 +1884,5 @@ public:
     }
 #endif
 };
-
-/// Helper Function for Array Comparison
-ColumnPtr executeArrayLexicographicImpl(
-    const ColumnWithTypeAndName & column_type_name0,
-    const ColumnWithTypeAndName & column_type_name1,
-    size_t input_rows_count,
-    bool is_equals,
-    bool is_not_equals,
-    bool is_less,
-    bool is_less_or_equals,
-    bool is_greater,
-    bool is_greater_or_equals,
-    const FunctionOverloadResolverPtr & equals_resolver,
-    const FunctionOverloadResolverPtr & order_resolver);
 
 }

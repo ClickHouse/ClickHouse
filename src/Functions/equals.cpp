@@ -17,18 +17,14 @@ REGISTER_FUNCTION(Equals)
         -- a = b
         -- a == b
     )";
-    FunctionDocumentation::Arguments arguments = {
-        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
-        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
-    };
+    FunctionDocumentation::Arguments arguments
+        = {{"a", "First value.<sup>[*](#comparison-rules)</sup>"}, {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is equal to `b`, otherwise `0`", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT 1 = 1, 1 = 2;", R"(
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT 1 = 1, 1 = 2;", R"(
 ┌─equals(1, 1)─┬─equals(1, 2)─┐
 │            1 │            0 │
 └──────────────┴──────────────┘
-)"}
-    };
+)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -42,13 +38,9 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
-    FunctionOverloadResolverPtr func_builder_and
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
-    return executeTupleEqualityImpl(
-        func_builder_equals,
-        func_builder_and,
-        x, y, tuple_size, input_rows_count);
+    return executeTupleEqualityImpl(func_builder_equals, func_builder_and, x, y, tuple_size, input_rows_count);
 }
 
 template <>
@@ -62,10 +54,17 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeArray(
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     return executeArrayLexicographicImpl(
-        column_type_name0, column_type_name1, input_rows_count,
-        /*is_equals=*/true, /*is_not_equals=*/false, /*is_less=*/false,
-        /*is_less_or_equals=*/false, /*is_greater=*/false, /*is_greater_or_equals=*/false,
-        equals_resolver, nullptr);
+        column_type_name0,
+        column_type_name1,
+        input_rows_count,
+        /*is_equals=*/true,
+        /*is_not_equals=*/false,
+        /*is_less=*/false,
+        /*is_less_or_equals=*/false,
+        /*is_greater=*/false,
+        /*is_greater_or_equals=*/false,
+        equals_resolver,
+        nullptr);
 }
 
 }
