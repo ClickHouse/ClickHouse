@@ -7,22 +7,26 @@
 # (a set), the sharding-key `ExpressionActions` is built standalone from the
 # sharding-key AST, so that set is never populated during planning. The
 # shard-pruning code executes this expression on constant values to prune
-# shards, which hits `FunctionIn` with an unbuilt set and aborts
-# (exit 134 in debug/sanitizer builds).
+# shards, which hits `FunctionIn` with an unbuilt set and throws
+# "Not-ready Set" (a LOGICAL_ERROR: server abort in debug/sanitizer builds,
+# a thrown exception in release builds).
 #
-# The fix skips the optimization when the sharding key contains such an
-# UNREADY set and queries all shards instead (the same safe fallback used
-# for non-deterministic sharding keys). It does NOT bail for already
-# materialized tuple/storage sets, so shard pruning still applies to safe
-# constant-set keys. Both the analyzer rewrite path and the old-analyzer
+# The fix skips the optimization only when the sharding key contains such an
+# UNREADY subquery-backed set and queries all shards instead (the same safe
+# fallback used for non-deterministic sharding keys). It does NOT bail for
+# already materialized tuple/storage sets, so shard pruning still applies to
+# safe constant-set keys. Both the analyzer rewrite path and the old-analyzer
 # `StorageDistributed::skipUnusedShards` path are guarded.
 #
-# Modelled on 04243_shardkey_rewrite_in_empty_tuple.sh: run inside a
-# `clickhouse-local` subprocess with a two-shard cluster so the abort stays
-# contained. The analyzer path is tripped during planning by `EXPLAIN`; the
-# old-analyzer path only runs shard skipping for a real `SELECT`, so those
-# subtests execute the query (the fake shards are unreachable, so a healthy
-# run ends in a network error, exit != 134 = OK, exit 134 = crash = BUG).
+# The success case is made OBSERVABLE rather than accepting any non-abort exit:
+#   * Unready-set cases: the query must get PAST planning, so its stderr must
+#     NOT contain "Not-ready Set" (an unfixed release build that throws the
+#     exception, or a debug build that aborts after logging it, is caught).
+#   * Ready-tuple cases: shard pruning must be PRESERVED, so the query is
+#     directed at values that map to a single shard (shard 1, 127.0.0.2). With
+#     pruning it contacts only 127.0.0.2; a regression to always-fallback would
+#     try shard 0 (127.0.0.1) first. The fake shards are unreachable, so the
+#     shard actually contacted shows up as the connection-error host.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,38 +56,58 @@ EOF
 
 COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, optimize_skip_unused_shards_rewrite_in = 1, allow_nondeterministic_optimize_skip_unused_shards = 1"
 
-# $1 = analyzer flag, $2 = sharding key expression, $3 = "explain" | "select".
-# Prints OK unless the planner aborts (exit 134).
-run_case()
+# Unready subquery-backed set: the fix must fall back and let planning finish.
+# The bug leaks in two shapes we must both catch:
+#   * release build: "Not-ready Set" is thrown and printed to stderr;
+#   * debug/sanitizer build: it aborts (exit 134) with the log line suppressed
+#     by --send_logs_level=fatal, so the text is absent but the exit code is 134.
+# A fixed build gets past planning to the unreachable shards (network error,
+# exit != 134, no "Not-ready Set"). $1 = analyzer flag.
+run_unready()
 {
-    local analyzer="$1" key="$2" mode="$3" query
-    if [ "$mode" = "explain" ]; then
-        query="EXPLAIN SELECT count() FROM dist_04545 WHERE dummy IN (0, 1)"
-    else
-        query="SELECT count() FROM dist_04545 WHERE dummy IN (0, 1)"
-    fi
-
-    ${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
+    local analyzer="$1" err rc
+    err=$(${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
         CREATE TABLE dist_04545 AS system.one
-            ENGINE = Distributed(test_04545_two_shards, system, one, ${key});
+            ENGINE = Distributed(test_04545_two_shards, system, one, bitAnd(dummy + (0 IN (SELECT 1)), 1));
         SET allow_experimental_analyzer = ${analyzer}, ${COMMON_SETTINGS};
-        ${query};
-    " > /dev/null 2>&1
+        SELECT count() FROM dist_04545 WHERE dummy IN (0, 1);
+    " 2>&1 >/dev/null)
+    rc=$?
 
-    # 134 = SIGABRT (the "Not-ready Set" logical error). Any other exit (0, or a
-    # network error from the unreachable fake shards) means planning succeeded.
-    if [ "$?" = "134" ]; then
-        echo "BUG"
+    if [ "${rc}" = "134" ] || echo "${err}" | grep -q "Not-ready Set"; then
+        echo "NOT-READY-SET-LEAK"
     else
-        echo "OK"
+        echo "PAST-PLANNING"
+    fi
+}
+
+# Ready tuple set: `0 IN (1, 2)` is a materialized constant set, so the sharding
+# key reduces to `bitAnd(dummy, 1)` = dummy % 2. Shard pruning must survive.
+# `dummy IN (1, 3)` both map to shard 1 (127.0.0.2); with pruning only that
+# shard is contacted, without pruning shard 0 (127.0.0.1) is tried first.
+# $1 = analyzer flag.
+run_ready_pruned()
+{
+    local analyzer="$1" err
+    err=$(${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
+        CREATE TABLE dist_04545 AS system.one
+            ENGINE = Distributed(test_04545_two_shards, system, one, bitAnd(dummy + (0 IN (1, 2)), 1));
+        SET allow_experimental_analyzer = ${analyzer}, ${COMMON_SETTINGS};
+        SELECT count() FROM dist_04545 WHERE dummy IN (1, 3);
+    " 2>&1 >/dev/null)
+
+    if echo "${err}" | grep -q "127.0.0.2" && ! echo "${err}" | grep -q "127.0.0.1"; then
+        echo "PRUNED-TO-SHARD1"
+    else
+        echo "NOT-PRUNED"
     fi
 }
 
 # Unready subquery-backed set: must fall back, not abort. Analyzer + old analyzer.
-run_case 1 'bitAnd(dummy + (0 IN (SELECT 1)), 1)' explain
-run_case 0 'bitAnd(dummy + (0 IN (SELECT 1)), 1)' select
-# Ready tuple set: safe, pruning still applies, must not abort. Analyzer + old analyzer.
-run_case 1 'bitAnd(dummy + (0 IN (1, 2)), 1)' explain
-run_case 0 'bitAnd(dummy + (0 IN (1, 2)), 1)' select
+run_unready 1
+run_unready 0
+# Ready tuple set: safe, shard pruning must be preserved. Analyzer + old analyzer.
+run_ready_pruned 1
+run_ready_pruned 0
 
 rm -f "${CLUSTER_CONFIG}"
