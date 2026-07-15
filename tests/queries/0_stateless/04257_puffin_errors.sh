@@ -61,6 +61,14 @@ do
     $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oE 'missing required (field|property)'
 done
 
+for PUFFIN_FILE in \
+    "$DATA/invalid_properties_array.puffin" \
+    "$DATA/invalid_properties_string.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "field 'properties' must be an object"
+done
+
 echo "--- puffin_wrong_type ---"
 $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')" 2>&1 | grep -oF 'Unexpected type'
 

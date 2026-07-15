@@ -36,6 +36,10 @@ missing required field
 missing required property
 --- missing_cardinality.puffin ---
 missing required property
+--- invalid_properties_array.puffin ---
+field 'properties' must be an object
+--- invalid_properties_string.puffin ---
+field 'properties' must be an object
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---

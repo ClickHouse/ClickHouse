@@ -237,11 +237,21 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
 
         if (blob.type == "deletion-vector-v1")
+        {
             requireBlobMetadataField(blob_obj, "properties", i);
 
-        if (auto props_obj = blob_obj->getObject("properties"))
+            auto props_obj = blob_obj->getObject("properties");
+            if (!props_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", i);
+
             for (const auto & [key, val] : *props_obj)
                 blob.properties.emplace(key, val.extract<String>());
+        }
+        else if (auto props_obj = blob_obj->getObject("properties"))
+        {
+            for (const auto & [key, val] : *props_obj)
+                blob.properties.emplace(key, val.extract<String>());
+        }
 
         if (blob.type == "deletion-vector-v1")
             requireDeletionVectorV1Properties(blob, i);

@@ -196,6 +196,8 @@ def generate_missing_required_fields() -> None:
         "missing_properties.puffin": None,
         "missing_referenced_data_file.puffin": {"cardinality": "0"},
         "missing_cardinality.puffin": {"referenced-data-file": DEFAULT_REFERENCED_DATA_FILE},
+        "invalid_properties_array.puffin": [],
+        "invalid_properties_string.puffin": "not-an-object",
     }
     for name, properties in dv_property_cases.items():
         case_payload = json.loads(footer_json.decode("utf-8"))
