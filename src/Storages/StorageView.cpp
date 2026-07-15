@@ -1,4 +1,4 @@
-#include <Access/ViewDefinerDependencies.h>
+#include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -177,7 +177,7 @@ StorageView::StorageView(
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -393,7 +393,7 @@ void StorageView::drop()
 
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
+        DefinerDependencies::instance().removeDependencies(table_id);
 }
 
 void StorageView::alter(
@@ -411,12 +411,12 @@ void StorageView::alter(
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = ViewDefinerDependencies::instance();
+    auto & instance = DefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeViewDependencies(table_id);
+        instance.removeDependencies(table_id);
 
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addViewDependency(*new_metadata.definer, table_id);
+        instance.addDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 }

@@ -24,8 +24,7 @@ We recommend users first run a sizing exercise to estimate the storage and memor
 ## Steps {#steps}
 
 <Steps>
-<Step>
-### Create table {#create-table}
+<Step title="Create table" id="create-table">
 
 Create the `hackernews` table to store the postings & their embeddings and associated attributes:
 
@@ -56,8 +55,7 @@ ORDER BY id;
 The `id` is just an incrementing integer. The additional attributes can be used in predicates to understand
 vector similarity search combined with post-filtering/pre-filtering as explained in the [documentation](/reference/engines/table-engines/mergetree-family/annindexes)
 </Step>
-<Step>
-### Load data {#load-table}
+<Step title="Load data" id="load-table">
 
 To load the dataset from the `Parquet` file, run the following SQL statement:
 
@@ -67,8 +65,7 @@ INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaw
 
 Inserting 28.74 million rows into the table will take a few minutes.
 </Step>
-<Step>
-### Build a vector similarity index {#build-vector-similarity-index}
+<Step title="Build a vector similarity index" id="build-vector-similarity-index">
 
 Run the following SQL to define and build a vector similarity index on the `vector` column of the `hackernews` table:
 
@@ -85,8 +82,7 @@ corresponding to selected values.
 
 Building and saving the index could even take a few minutes/hour for the full 28.74 million dataset, depending on the number of CPU cores available and the storage bandwidth. 
 </Step>
-<Step>
-### Perform ANN search {#perform-ann-search}
+<Step title="Perform ANN search" id="perform-ann-search">
 
 Once the vector similarity index has been built, vector search queries will automatically use the index:
 
@@ -100,8 +96,7 @@ LIMIT 10
 
 The first time load of the vector index into memory could take a few seconds/minutes.
 </Step>
-<Step>
-### Generate embeddings for search query {#generating-embeddings-for-search-query}
+<Step title="Generate embeddings for search query" id="generating-embeddings-for-search-query">
 
 [Sentence Transformers](https://www.sbert.net/) provide local, easy to use embedding
 models for capturing the semantic meaning of sentences and paragraphs.

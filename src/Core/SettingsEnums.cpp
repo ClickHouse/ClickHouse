@@ -298,6 +298,10 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENT
      {"partition", ObjectStorageQueueBucketingMode::PARTITION},
      {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
+IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
+     {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -360,7 +364,8 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,

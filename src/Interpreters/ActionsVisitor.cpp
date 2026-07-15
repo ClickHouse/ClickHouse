@@ -1096,6 +1096,33 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             function_builder->getLambdaArgumentTypes(argument_types);
 
+            /// Validate every lambda argument BEFORE visiting any lambda body. getLambdaArgumentTypes
+            /// only fills in the placeholder argument types for positions that actually expect a lambda;
+            /// where it does not (e.g. arrayFold's accumulator: arrayFold(lambda, arr, another_lambda)),
+            /// the placeholder DataTypeFunction keeps null argument/return types. Those nulls must be
+            /// rejected up front: a later lambda that stays unresolved can be copied into an earlier
+            /// lambda's argument type, so visiting the earlier lambda's body first would take the
+            /// non-lambda path and dereference the null return type (FunctionArrayMapped::getReturnTypeImpl).
+            for (size_t i = 0; i < node.arguments->children.size(); ++i)
+            {
+                const auto * lambda = node.arguments->children[i]->as<ASTFunction>();
+                if (!lambda || lambda->name != "lambda")
+                    continue;
+
+                const auto * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
+                bool lambda_types_resolved = lambda_type != nullptr;
+                if (lambda_type)
+                    for (const auto & arg_type : lambda_type->getArgumentTypes())
+                        if (!arg_type)
+                        {
+                            lambda_types_resolved = false;
+                            break;
+                        }
+                if (!lambda_types_resolved)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function '{}' does not expect a lambda expression as argument {}", node.name, i + 1);
+            }
+
             /// Call recursively for lambda expressions.
             for (size_t i = 0; i < node.arguments->children.size(); ++i)
             {

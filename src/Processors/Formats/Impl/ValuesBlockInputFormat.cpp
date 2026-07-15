@@ -587,7 +587,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
+    /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
+    /// to the nearest representable floating-point value like CAST, consistent with the streaming
+    /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
+    /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))

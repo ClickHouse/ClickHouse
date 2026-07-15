@@ -1186,6 +1186,93 @@ def test_postgres_query_passing(started_cluster):
     cursor.execute(f"DROP TABLE {dim_name}")
 
 
+def test_postgres_query_passing_edge_cases(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_query_passing_edge"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text)")
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION postgresql('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}') "
+        "SELECT number, concat('name_', toString(number)) FROM numbers(10)"
+    )
+    started_cluster.postgres_conn.commit()
+
+    # Empty result set: schema inference runs the query with LIMIT 0, so the structure is still resolved
+    # even though no rows come back. The types are inferred normally and count() is 0.
+    q_empty = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name} WHERE a > 1000'), 'postgres', '{pg_pass}')"
+    described = [
+        line.split("\t")[:2]
+        for line in node1.query(
+            f"DESCRIBE TABLE {q_empty} SETTINGS external_table_functions_use_nulls = 0"
+        )
+        .rstrip()
+        .split("\n")
+    ]
+    assert described == [["a", "Int32"], ["b", "String"]]
+    assert node1.query(f"SELECT count() FROM {q_empty}").rstrip() == "0"
+
+    # Missing permissions: the passed query is executed on the PostgreSQL side under the supplied role, so a
+    # role without SELECT on the referenced table fails with PostgreSQL's permission-denied error surfaced by
+    # ClickHouse (raised during schema inference, before any rows are read).
+    cursor.execute("DROP ROLE IF EXISTS query_passing_norole")
+    cursor.execute(
+        "CREATE ROLE query_passing_norole WITH LOGIN PASSWORD 'norole_pass'"
+    )
+    started_cluster.postgres_conn.commit()
+    q_noperm = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'query_passing_norole', 'norole_pass')"
+    assert "permission denied" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_noperm}"
+    )
+    cursor.execute("DROP ROLE query_passing_norole")
+    started_cluster.postgres_conn.commit()
+
+    # Type mismatch on the engine path: the user declares an explicit structure that disagrees with the
+    # actual query result types. The declared structure wins for the engine, and reading a text value into
+    # the declared Int32 fails with a query error (BAD_ARGUMENTS) instead of aborting the server.
+    # The same reader is used for every declared type, so a mismatch against any of them must surface as a
+    # query error, never as a foreign exception (pqxx or std::runtime_error from the text parsers) that
+    # would abort the server. Column b holds text like 'name_0', so reading it into each declared type below
+    # fails to parse.
+    for declared in ["Int32", "UUID", "Date", "DateTime", "DateTime64(6)", "Decimal(10, 2)"]:
+        node1.query("DROP TABLE IF EXISTS pg_engine_type_mismatch")
+        node1.query(
+            f"CREATE TABLE pg_engine_type_mismatch (a Int32, b {declared}) "
+            f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"
+        )
+        assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+            "SELECT * FROM pg_engine_type_mismatch"
+        )
+        node1.query("DROP TABLE pg_engine_type_mismatch")
+
+    # Numeric overflow: a PostgreSQL numeric value parses as a number but does not fit the declared
+    # ClickHouse Decimal. The Decimal text reader rejects it with a parse error, which the shared value
+    # layer normalizes to BAD_ARGUMENTS, so it surfaces as a query error (and reaches the
+    # MaterializedPostgreSQL catch) instead of aborting the server.
+    # Seed the wide value on the PostgreSQL side so it stays an exact numeric. Inserting the same literal
+    # through ClickHouse would type it as Float64 and fail the INSERT with DECIMAL_OVERFLOW before reaching
+    # the read path this case is about.
+    num_table = "test_query_passing_numeric"
+    cursor.execute(f"DROP TABLE IF EXISTS {num_table}")
+    cursor.execute(f"CREATE TABLE {num_table} (a integer, v numeric)")
+    cursor.execute(
+        f"INSERT INTO {num_table} VALUES (1, 99999999999999999999999999999999999999)"
+    )
+    started_cluster.postgres_conn.commit()
+    node1.query("DROP TABLE IF EXISTS pg_engine_decimal_overflow")
+    node1.query(
+        f"CREATE TABLE pg_engine_decimal_overflow (a Int32, v Decimal(10, 2)) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, v FROM {num_table}'), 'postgres', '{pg_pass}')"
+    )
+    assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+        "SELECT * FROM pg_engine_decimal_overflow"
+    )
+    node1.query("DROP TABLE pg_engine_decimal_overflow")
+    cursor.execute(f"DROP TABLE {num_table}")
+
+    cursor.execute(f"DROP TABLE {table_name}")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
