@@ -172,6 +172,8 @@ def generate_missing_required_fields() -> None:
     footer_field_cases = {
         "missing_blobs.puffin": {},
         "null_blobs.puffin": {"blobs": None},
+        "null_blob_entry.puffin": {"blobs": [None]},
+        "invalid_blob_entry.puffin": {"blobs": ["not-an-object"]},
     }
     for name, footer_payload in footer_field_cases.items():
         write_fixture(

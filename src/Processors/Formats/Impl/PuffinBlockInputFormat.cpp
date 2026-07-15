@@ -200,6 +200,9 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
     for (size_t i = 0; i < blobs_arr->size(); ++i)
     {
         auto blob_obj = blobs_arr->getObject(static_cast<unsigned>(i));
+        if (!blob_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: must be an object", i);
+
         PuffinBlob blob;
 
         requireBlobMetadataField(blob_obj, "type", i);

@@ -26,6 +26,10 @@ missing required field
 missing required field 'blobs'
 --- null_blobs.puffin ---
 missing required field 'blobs'
+--- null_blob_entry.puffin ---
+must be an object
+--- invalid_blob_entry.puffin ---
+must be an object
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---
