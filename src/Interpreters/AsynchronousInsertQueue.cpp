@@ -158,24 +158,25 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field);
     }
 
-    /// The protocol version changes only how raw insert bytes are reparsed on flush, and that
-    /// reparse happens only for Parsed entries in a revision-sensitive format (Native/Buffers).
+    /// The protocol version only enters the batching key when it changes how the buffered bytes
+    /// are reparsed on flush: Parsed entries in a revision-sensitive format (Native/Buffers).
     /// Preprocessed entries are already-materialized Blocks (for example the native TCP path), and
     /// other parsers (CSV, JSONEachRow, ...) ignore the version, so keying on it there would split
     /// otherwise-identical batches for no reason (e.g. two TCP clients on revisions 54486 and 54487).
-    /// Drop it from the key in those cases. The flush restores this same value, but 0 is harmless
-    /// where the payload is not reparsed or the parser ignores the version.
+    /// The stored client_protocol_version is left untouched: it is restored verbatim on the flush
+    /// context so server-side outputs match the synchronous path; only the key value is normalized.
+    key_client_protocol_version = client_protocol_version;
     if (data_kind != AsynchronousInsertQueueDataKind::Parsed)
     {
-        client_protocol_version = 0;
+        key_client_protocol_version = 0;
     }
     else if (const auto * insert_ast = query->as<ASTInsertQuery>())
     {
         if (!boost::iequals(insert_ast->format, "Native") && !boost::iequals(insert_ast->format, "Buffers"))
-            client_protocol_version = 0;
+            key_client_protocol_version = 0;
     }
 
-    siphash.update(client_protocol_version);
+    siphash.update(key_client_protocol_version);
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -205,6 +206,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     client_protocol_version = other.client_protocol_version;
+    key_client_protocol_version = other.key_client_protocol_version;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -224,6 +226,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         client_protocol_version = other.client_protocol_version;
+        key_client_protocol_version = other.key_client_protocol_version;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;

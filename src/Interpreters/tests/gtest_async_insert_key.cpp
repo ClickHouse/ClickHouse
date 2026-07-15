@@ -141,4 +141,10 @@ TEST(AsyncInsertKey, ClientProtocolVersion)
         EXPECT_EQ(old_rev.hash, new_rev.hash);
         EXPECT_EQ(old_rev, new_rev);
     }
+
+    /// The real protocol version is still stored on the key even when it is normalized away for
+    /// batching: processData restores it on the flush context, so server-side outputs (e.g.
+    /// INSERT INTO FUNCTION file(..., 'Native')) match the synchronous path.
+    EXPECT_EQ(make_key(values, 54488, Kind::Parsed).client_protocol_version, 54488u);
+    EXPECT_EQ(make_key(native, 54488, Kind::Preprocessed).client_protocol_version, 54488u);
 }
