@@ -139,7 +139,11 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_hash_table_sizes = sum_of_sizes, .median_hash_table_size = *median_size}, params);
+
+    /// The result-dependent fields are not known before the merge; the aggregating transform patches
+    /// them into the entry when the merge completes.
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
+        {.sum_of_hash_table_sizes = sum_of_sizes, .median_hash_table_size = *median_size, .merged_hash_tables = data_variants.size()}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)

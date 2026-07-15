@@ -108,7 +108,8 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
             else if ((tables_cnt > 1 && hint->sum_of_hash_table_sizes > 100'000) || hint->sum_of_hash_table_sizes > 500'000)
             {
-                return AggregationEntry{hint->sum_of_hash_table_sizes, std::max(lower_limit, hint->median_hash_table_size)};
+                return AggregationEntry{
+                    hint->sum_of_hash_table_sizes, std::max(lower_limit, hint->median_hash_table_size), hint->merged_result_rows, hint->merged_hash_tables, hint->distinct_key_value_pairs};
             }
         }
     }
