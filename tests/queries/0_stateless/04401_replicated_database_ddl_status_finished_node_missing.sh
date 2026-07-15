@@ -56,9 +56,12 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT replicated_database_status_finis
 $CLICKHOUSE_CLIENT -q "SELECT 'alive', count() FROM $RDB.t"
 
 # The atomic finished_node_data path (list-with-data) is only taken when the connected
-# Keeper advertises LIST_WITH_STAT_AND_DATA (a plain ZooKeeper does not), so only assert
-# it there; against a Keeper without the flag the fallback is the correct path.
-HAS_ATOMIC=$($CLICKHOUSE_CLIENT -q "SELECT countIf(has(enabled_feature_flags, 'LIST_WITH_STAT_AND_DATA')) > 0 FROM system.zookeeper_connection WHERE name = 'default'")
+# Keeper advertises all three flags that generate()'s with_data gate requires:
+# LIST_WITH_STAT_AND_DATA and FILTERED_LIST (ZooKeeperImpl::list rejects with_data without
+# both) and MULTI_READ (keeps tryGetChildren on the atomic direct-multi path). A plain
+# ZooKeeper, or a Keeper missing any of the three, correctly takes the fallback, so only
+# assert the atomic path when all three are present; otherwise the fallback is correct.
+HAS_ATOMIC=$($CLICKHOUSE_CLIENT -q "SELECT has(enabled_feature_flags, 'LIST_WITH_STAT_AND_DATA') AND has(enabled_feature_flags, 'FILTERED_LIST') AND has(enabled_feature_flags, 'MULTI_READ') FROM system.zookeeper_connection WHERE name = 'default'")
 
 # Make the per-host getExecutionStatus fallback throw. A normal (async, finished/) DDL
 # must then still succeed via the atomic snapshot; if the atomic path is not taken it hits
