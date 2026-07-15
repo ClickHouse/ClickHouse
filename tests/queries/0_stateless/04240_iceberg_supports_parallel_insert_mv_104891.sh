@@ -51,10 +51,11 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS iceberg_metadata_compression_method = 'deflate'
 "
 
-# Step 2: corrupt the on-disk metadata via an INSERT with an unsupported
-# compression level. The INSERT itself must fail.
+# Step 2: corrupt the on-disk metadata via an INSERT with an out-of-range
+# compression level (13 exceeds the deflate max of 9 for zlib and 12 for
+# libdeflate). The INSERT itself must fail.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
-                     --output_format_compression_level=11 \
+                     --output_format_compression_level=13 \
     --query "INSERT INTO ${TARGET} VALUES (2)" 2>&1 \
     | grep -F 'INCORRECT_DATA' > /dev/null \
     && echo "[mv_to_datalake] target INSERT failed as expected"

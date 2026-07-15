@@ -12,6 +12,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
+#include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
@@ -138,8 +139,15 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Cannot decompress Snappy: ClickHouse was compiled without Snappy support");
 #endif
         case parq::CompressionCodec::GZIP:
+#if USE_LIBDEFLATE
+            /// One-shot libdeflate: the whole page is in memory and the uncompressed size is known,
+            /// which is faster than the streaming zlib path.
+            Libdeflate::decompress(CompressionMethod::Gzip, data, compressed_size, out, uncompressed_size);
+            return;
+#else
             method = CompressionMethod::Gzip;
             break;
+#endif
         case parq::CompressionCodec::LZO:
             /// Arrow also doesn't support it.
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LZO decompression is not supported");
