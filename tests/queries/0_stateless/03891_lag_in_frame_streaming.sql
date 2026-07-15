@@ -212,3 +212,61 @@ SELECT
     without_opt = with_opt AS correct;
 
 DROP TABLE lag_streaming_float_t;
+
+-- Runtime-typed partition keys: a `Dynamic` (or `JSON`/`Object`, or `Variant` holding one of those)
+-- doesn't reveal its actual per-row type via `forEachChild` (which only walks statically-declared
+-- child types), so the float-only check above cannot see through it.  But the same disagreement
+-- between the raw-byte hash (`updateHashWithValue`) and `compareAt` still applies once a `Dynamic`
+-- value happens to hold a float: `ColumnDynamic::compareAt` compares the nested `Float64`, while
+-- `updateHashWithValue` hashes the variant discriminator plus the raw float bits.  The optimization
+-- must therefore also reject partition keys with a dynamic internal structure
+-- (`IDataType::hasDynamicStructure`).
+SET allow_suspicious_types_in_group_by = 1;
+
+CREATE TABLE lag_streaming_dynamic_t (
+    MetricName LowCardinality(String),
+    TimeUnix UInt64,
+    Count UInt64,
+    DynAttr Dynamic
+) ENGINE = MergeTree()
+ORDER BY (MetricName, TimeUnix)
+SETTINGS index_granularity = 8192;
+
+-- DynAttr alternates +0.0 / -0.0 (stored as Float64 inside Dynamic) within a single prefix group.
+INSERT INTO lag_streaming_dynamic_t
+SELECT
+    'm' AS MetricName,
+    number AS TimeUnix,
+    number AS Count,
+    if(number % 2 = 0, toFloat64(0.0), toFloat64(-0.0)) AS DynAttr
+FROM numbers(0, 1000);
+
+-- Dynamic suffix partition key: streaming must NOT activate.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_dynamic_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- With the setting enabled the Dynamic key falls back to `WindowTransform`, so the result matches
+-- the unoptimized path (and is not corrupted by signed-zero partition splitting).
+SELECT
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
+            FROM lag_streaming_dynamic_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
+        )
+    ) AS without_opt,
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
+            FROM lag_streaming_dynamic_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+        )
+    ) AS with_opt,
+    without_opt = with_opt AS correct;
+
+DROP TABLE lag_streaming_dynamic_t;

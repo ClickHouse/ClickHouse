@@ -2011,9 +2011,15 @@ void optimizeStreamingWindowFunctions(
     /// `+0.0` as equal and treats all `NaN` values as equal, while the raw-byte hash does not.
     /// A float-bearing partition key would therefore be split into several `state_map_` entries
     /// and yield `lagInFrame` results different from the non-optimised `WindowTransform` path.
+    /// The same disagreement can happen through a runtime-typed column (`Dynamic`, `JSON`/`Object`,
+    /// or a `Variant` holding one of those) even though its declared type gives no static hint of
+    /// a nested float: `forEachChild` only walks statically-declared child types, so it cannot see
+    /// the actual type stored in a `Dynamic`/`Object` value.  Reject those via `hasDynamicStructure`,
+    /// which recurses through wrapping containers (`Array`, `Map`, `Tuple`, `Nullable`,
+    /// `LowCardinality`) as well.
     /// Skip the optimisation whenever any partition-key column (prefix or suffix) is or contains
-    /// a floating-point type; the canonicalisation needed to lift this restriction is tracked in
-    /// https://github.com/ClickHouse/ClickHouse/issues/105941.
+    /// a floating-point type, or has a dynamic internal structure; the canonicalisation needed to
+    /// lift this restriction is tracked in https://github.com/ClickHouse/ClickHouse/issues/105941.
     {
         auto contains_float = [](const IDataType & type)
         {
@@ -2028,16 +2034,21 @@ void optimizeStreamingWindowFunctions(
             return found;
         };
 
+        auto is_unsafe_partition_key_type = [&](const IDataType & type)
+        {
+            return contains_float(type) || type.hasDynamicStructure();
+        };
+
         for (const auto & desc : prefix_description)
         {
             const auto * entry = window_input.findByName(desc.column_name);
-            if (!entry || contains_float(*entry->type))
+            if (!entry || is_unsafe_partition_key_type(*entry->type))
                 return;
         }
         for (const auto & name : suffix_col_names)
         {
             const auto * entry = window_input.findByName(name);
-            if (!entry || contains_float(*entry->type))
+            if (!entry || is_unsafe_partition_key_type(*entry->type))
                 return;
         }
     }
