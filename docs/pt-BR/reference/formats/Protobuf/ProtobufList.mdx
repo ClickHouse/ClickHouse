@@ -1,0 +1,59 @@
+---
+alias: []
+description: 'Documentação do formato ProtobufList'
+input_format: true
+keywords: ['ProtobufList']
+output_format: true
+slug: /interfaces/formats/ProtobufList
+title: 'ProtobufList'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `ProtobufList` é semelhante ao formato [`Protobuf`](/pt-BR/reference/formats/Protobuf/Protobuf), mas as linhas são representadas como uma sequência de submensagens contidas em uma mensagem com nome fixo &quot;Envelope&quot;.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Por exemplo:
+
+```sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Em que o arquivo `schemafile.proto` fica assim:
+
+```capnp title="schemafile.proto"
+syntax = "proto3";
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
+
+O tipo de mensagem especificado em `format_schema` é resolvido primeiro procurando por ele como um tipo aninhado dentro de uma mensagem `Envelope` de nível superior. Se nenhuma correspondência for encontrada ali — seja porque o schema não tem uma mensagem `Envelope`, seja porque o `Envelope` não contém uma mensagem com o nome solicitado — a mensagem de nível superior com esse nome é usada diretamente.
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

@@ -1,0 +1,41 @@
+---
+description: 'Документация по управлению индексами пропуска данных'
+sidebarTitle: 'INDEX'
+slug: /sql-reference/statements/alter/skipping-index
+title: 'Управление индексами пропуска данных'
+toc_hidden_folder: true
+doc_type: 'reference'
+---
+
+Доступны следующие операции:
+
+<div id="add-index">
+  ## ADD INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` — добавляет описание индекса в метаданные таблицы.
+
+<div id="drop-index">
+  ## DROP INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` — удаляет описание индекса из метаданных таблицы и удаляет файлы индекса с диска. Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+<div id="materialize-index">
+  ## MATERIALIZE INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` — перестраивает вторичный индекс `name` для указанной партиции `partition_name`. Реализовано как [мутация](/ru/reference/statements/alter/index#mutations). Если часть `IN PARTITION` опущена, индекс перестраивается для данных всей таблицы.
+
+<div id="clear-index">
+  ## CLEAR INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` — удаляет с диска файлы вторичного индекса, не удаляя его описание. Реализовано в виде [мутации](/ru/reference/statements/alter/index#mutations).
+
+Команды `ADD`, `DROP` и `CLEAR` считаются лёгковесными, поскольку они лишь изменяют метаданные или удаляют файлы.
+Кроме того, они реплицируются, а метаданные индексов синхронизируются через ClickHouse Keeper или ZooKeeper.
+
+<Note>
+  Управление индексами поддерживается только для таблиц семейства [`*MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) варианты).
+</Note>

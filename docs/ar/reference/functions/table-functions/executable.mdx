@@ -1,0 +1,112 @@
+---
+description: 'تنشئ دالة الجدول `executable` جدولًا استنادًا إلى مخرجات دالة معرّفة من قبل المستخدم (UDF) تُعرّفها في برنامج نصي يُخرج صفوفًا إلى **stdout**.'
+keywords: ['udf', 'user defined function', 'clickhouse', 'executable', 'table', 'function']
+sidebarTitle: 'executable'
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
+---
+
+تنشئ دالة الجدول `executable` جدولًا استنادًا إلى مخرجات دالة معرّفة من قبل المستخدم (UDF) تُعرّفها في برنامج نصي يُخرج صفوفًا إلى **stdout**. يُخزَّن البرنامج النصي القابل للتنفيذ في الدليل `users_scripts`، ويمكنه قراءة البيانات من أي مصدر. تأكد من أن خادم ClickHouse لديك يحتوي على جميع الحزم المطلوبة لتشغيل البرنامج النصي القابل للتنفيذ. على سبيل المثال، إذا كان برنامجًا نصيًا بلغة بايثون، فتأكد من أن الخادم يحتوي على حزم بايثون اللازمة المثبّتة.
+
+يمكنك اختياريًا تضمين استعلام إدخال واحد أو أكثر، بحيث تُمرَّر نتائجها إلى **stdin** ليقرأها البرنامج النصي.
+
+<Note>
+  من المزايا الرئيسية التي تميّز دوال UDF العادية عن دالة الجدول `executable` ومحرك الجدول `Executable` أن دوال UDF العادية لا يمكنها تغيير عدد الصفوف. على سبيل المثال، إذا كان الإدخال 100 صف، فيجب أن تُرجع النتيجة 100 صف. عند استخدام دالة الجدول `executable` أو محرك الجدول `Executable`، يمكن لبرنامجك النصي إجراء أي تحويلات للبيانات تريدها، بما في ذلك عمليات التجميع المعقدة.
+</Note>
+
+<div id="syntax">
+  ## Syntax
+</div>
+
+تتطلب دالة الجدول `executable` ثلاث معلمات، وتقبل قائمة اختيارية من استعلامات الإدخال:
+
+```sql
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
+```
+
+* `script_name`: اسم ملف البرنامج النصي. يُحفَظ في مجلد `user_scripts` (المجلد الافتراضي للإعداد `user_scripts_path`)
+* `format`: تنسيق الجدول الناتج
+* `structure`: مخطّط الجدول الناتج
+* `input_query`: استعلام اختياري (أو مجموعة أو عدة استعلامات) تُمرَّر نتائجه إلى البرنامج النصي عبر **stdin**
+
+<Note>
+  إذا كنت ستستدعي البرنامج النصي نفسه مرارًا باستخدام استعلامات الإدخال نفسها، ففكّر في استخدام [محرك الجدول `Executable`](/ar/reference/engines/table-engines/special/executable).
+</Note>
+
+يحمل برنامج بايثون النصي التالي اسم `generate_random.py` ويُحفَظ في مجلد `user_scripts`. يقرأ العدد `i` ويطبع `i` سلاسل عشوائية، تسبق كلَّ سلسلةٍ منها قيمةٌ عددية يفصل بينها وبين السلسلة محرف جدولة:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import string
+import random
+
+def main():
+
+    # Read input value
+    for number in sys.stdin:
+        i = int(number)
+
+        # Generate some random rows
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # Flush results to stdout
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+لنشغّل البرنامج النصي وندعه يُنشئ 10 سلاسل نصية عشوائية:
+
+```sql
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+```
+
+تكون الاستجابة على النحو التالي:
+
+```response
+┌─id─┬─random─────┐
+│  0 │ xheXXCiSkH │
+│  1 │ AqxvHAoTrl │
+│  2 │ JYvPCEbIkY │
+│  3 │ sWgnqJwGRm │
+│  4 │ fTZGrjcLon │
+│  5 │ ZQINGktPnd │
+│  6 │ YFSvGGoezb │
+│  7 │ QyMJJZOOia │
+│  8 │ NfiyDDhmcI │
+│  9 │ REJRdJpWrg │
+└────┴────────────┘
+```
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+* `send_chunk_header` - يتحكم في ما إذا كان سيتم إرسال عدد الصفوف قبل إرسال جزء من البيانات إلى المعالجة. القيمة الافتراضية هي `false`.
+* `pool_size` — حجم المجمّع. إذا تم تحديد 0 كقيمة لـ `pool_size`، فلن تكون هناك أي قيود على حجم المجمّع. القيمة الافتراضية هي `16`.
+* `max_command_execution_time` — الحد الأقصى لوقت تنفيذ أمر البرنامج النصي القابل للتنفيذ لمعالجة كتلة من البيانات. يُحدد بالثواني. القيمة الافتراضية هي 10.
+* `command_termination_timeout` — يجب أن يحتوي البرنامج النصي القابل للتنفيذ على حلقة القراءة والكتابة الرئيسية. بعد إنهاء دالة الجدول، يُغلق الأنبوب، ويُمنح الملف التنفيذي `command_termination_timeout` ثانيةً للتوقف قبل أن يرسل ClickHouse إشارة SIGTERM إلى العملية الفرعية. يُحدد بالثواني. القيمة الافتراضية هي 10.
+* `command_read_timeout` - مهلة قراءة البيانات من stdout الخاص بالأمر، بالمللي ثانية. القيمة الافتراضية هي 10000.
+* `command_write_timeout` - مهلة كتابة البيانات إلى stdin الخاص بالأمر، بالمللي ثانية. القيمة الافتراضية هي 10000.
+
+<div id="passing-query-results-to-a-script">
+  ## تمرير نتائج الاستعلام إلى برنامج نصي
+</div>
+
+احرص على مراجعة المثال في محرك الجدول `Executable` حول [كيفية تمرير نتائج الاستعلام إلى برنامج نصي](/ar/reference/engines/table-engines/special/executable#passing-query-results-to-a-script). وفيما يلي كيفية تنفيذ البرنامج النصي نفسه الوارد في ذلك المثال باستخدام دالة الجدول `executable`:
+
+```sql
+SELECT * FROM executable(
+    'sentiment.py',
+    TabSeparated,
+    'id UInt64, sentiment Float32',
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```

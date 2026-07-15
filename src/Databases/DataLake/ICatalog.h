@@ -122,6 +122,25 @@ private:
 };
 
 
+/// Catalog-layer view of the `name` predicate (translated from `DB::TablesFilter`
+/// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
+struct TableNameFilter
+{
+    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
+    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    enum class Kind
+    {
+        All,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::All;
+    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    std::string value;
+};
+
+
 struct CatalogSettings
 {
     String storage_endpoint;
@@ -130,6 +149,7 @@ struct CatalogSettings
     String region;
     String aws_role_arn;
     String aws_role_session_name;
+    String aws_external_id;
 
     DB::SettingsChanges allChanged() const;
 };
@@ -153,6 +173,14 @@ public:
     /// Fetch tables' names list.
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
+
+    /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
+    /// return every nested level; flat catalogs their single-level names).
+    virtual Namespaces getNamespaces() const = 0;
+
+    /// Fetch fully-qualified table names, restricted by the `name` predicate (see
+    /// `TableNameFilter`). Default impl prunes namespaces via `getNamespaces()`.
+    virtual DB::Names getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -183,6 +211,20 @@ public:
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
+    /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
+    /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by
+    /// non-transactional catalogs (e.g. Glue) that only store a pointer to the metadata file.
+    /// `new_schema` is the full new schema object and `previous_schema_id` is the schema id that the
+    /// catalog is expected to currently have - used to build the optimistic-concurrency requirement
+    /// (`assert-current-schema-id`) on transactional catalogs (e.g. Iceberg REST).
+    /// Returns `false` on a recoverable conflict so the caller can retry, throws otherwise.
+    virtual bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const;
+
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name) const;
 
@@ -198,6 +240,10 @@ public:
     }
 
 protected:
+    /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
+    /// `namespace.table` names.
+    virtual DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;

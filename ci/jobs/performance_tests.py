@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -23,6 +24,23 @@ perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
+
+# Settings for the report-building clickhouse-local (post-processing, not the
+# measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
+# in compare.sh.
+REPORT_LOCAL_QUERY_SETTINGS = [
+    # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
+    # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
+    "--max_bytes_before_external_group_by=0",
+    "--max_bytes_ratio_before_external_group_by=0",
+    "--max_bytes_before_external_sort=0",
+    "--max_bytes_ratio_before_external_sort=0",
+]
+REPORT_LOCAL_SERVER_SETTINGS = [
+    # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
+    "--",
+    "--memory_worker_use_cgroup=0",
+]
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
@@ -91,7 +109,9 @@ FROM input(
      stat_threshold Float64,
      test String,
      query_index Int32,
-     query_display_name String'
+     query_display_name String,
+     changed_threshold Float64,
+     unstable_threshold Float64'
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
@@ -159,8 +179,8 @@ def _make_insert_query(table, table_columns, input_schema, select_exprs, where=N
     return (
         f"INSERT INTO {table}\n"
         f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
-        f"SELECT\n" + select_all + "\n"
-        f"FROM input('" + input_schema + "')\n"
+        "SELECT\n" + select_all + "\n"
+        "FROM input('" + input_schema + "')\n"
         + where_clause + "\n"
         "FORMAT TSV"
     )
@@ -514,7 +534,7 @@ def get_insert_metadata(info, compare_against_release):
 def build_raw_query_metrics_tsv():
     Path(raw_query_metrics_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY],
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -554,7 +574,7 @@ def build_flamegraph_upload_tsv():
     Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
     Path(flamegraph_upload_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -679,17 +699,56 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     return insert_ok
 
 
+def match_reference_debug_info():
+    # addressToLine resolves a frame to "file:line" only where DWARF covers
+    # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+    # table remains (addressToSymbol works) but there is no line info, so the
+    # patched binary symbolizes differently from the reference (master) build and
+    # flamegraph tooling cannot match the frames. A ".debug_info" section is not a
+    # reliable signal (Rust crates emit one even under -g0), so probe how many
+    # system.stack_trace frames resolve to a line on each binary and strip the
+    # reference only when the patched binary resolves far fewer. Merge-to-master
+    # resolves comparably on both and is left untouched. Must match
+    # compare.sh::match_reference_debug_info.
+    left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
+    right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
+    probe = (
+        "select countIf(addressToLine(arrayJoin(trace)) like '%:%') "
+        "from system.stack_trace"
+    )
+
+    def resolved_lines(binary):
+        # Running clickhouse also decompresses the self-extracting binary in place.
+        out = Shell.get_output(
+            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
+        )
+        return int(out) if out and out.strip().isdigit() else 0
+
+    if resolved_lines(right) * 4 < resolved_lines(left):
+        Shell.check(f"strip --strip-debug {left}", verbose=True)
+    else:
+        print("Patched binary has comparable line info, leaving reference as-is")
+
+
 class CHServer:
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
     LEFT_SERVER_KEEPER_RAFT_PORT = 9234
     LEFT_SERVER_INTERSERVER_PORT = 9009
+    LEFT_SERVER_HTTP_PORT = 8123
     # patched version
     RIGHT_SERVER_PORT = 19001
     RIGHT_SERVER_KEEPER_PORT = 19181
     RIGHT_SERVER_KEEPER_RAFT_PORT = 19234
     RIGHT_SERVER_INTERSERVER_PORT = 19009
+    RIGHT_SERVER_HTTP_PORT = 18123
+
+    # lg2 of the average byte interval between jemalloc allocation samples.
+    # Denser than the 512 KiB (19) default: we profile single queries in
+    # isolation, so the profile needs to be dense to yield useful
+    # JemallocSample flamegraphs. Must match compare.sh.
+    JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
     def __init__(self, is_left=False):
         if is_left:
@@ -697,6 +756,7 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
+            http_port = self.LEFT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
@@ -704,6 +764,7 @@ class CHServer:
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
+            http_port = self.RIGHT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
@@ -714,12 +775,18 @@ class CHServer:
         self.server_path = serever_path
         self.name = "Reference" if is_left else "Patched"
 
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override, see Server.cpp) with a
+        # distinct port per server, so that shell-script tests can talk to the
+        # server over HTTP.
         self.start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
+            --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
-            --interserver_http_port {inter_server_port}"
+            --interserver_http_port {inter_server_port} \
+            --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
 
     def start_preconfig(self):
         print("Starting ClickHouse server")
@@ -739,12 +806,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
 
         Shell.check(
             f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
@@ -770,12 +837,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -784,13 +851,13 @@ class CHServer:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print("Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -813,6 +880,8 @@ class CHServer:
         res, out, err = Shell.get_res_stdout_stderr(
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
+                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
+                --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 --runs {runs} --max-queries {max_queries} \
                 --profile-seconds 10 \
                 {test_file}",
@@ -881,6 +950,28 @@ def find_base_release_build(info, build_type):
     return None
 
 
+# The number of distinct "slower" queries that fails the whole performance
+# check. This is the gate that actually decides the Praktika `Check Results`
+# status: `report.py` embeds a status into `report.html`, but `main` below
+# discards it ("always green mode") and recomputes the final status by
+# reparsing the "N slower" message, so the effective gate lives here. The value
+# must stay synchronized with the slower-queries threshold in
+# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
+# "slower" queries is dominated by CI noise (a single bad shard run, frequency
+# scaling, or code-layout artifacts can push several unrelated micro benchmarks
+# over their per-query thresholds at once), while a genuine regression shows up
+# as a small cluster of related queries with large magnitudes that the
+# per-query thresholds catch on their own.
+SLOWER_QUERIES_FAIL_THRESHOLD = 10
+
+
+def too_many_slow(message):
+    match = re.search(r"(|.* )(\d+) slower.*", message)
+    return (
+        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
+    )
+
+
 def main():
 
     args = parse_args()
@@ -929,7 +1020,7 @@ def main():
         else:
             assert False
     else:
-        Utils.raise_with_error(f"Unknown processor architecture")
+        Utils.raise_with_error("Unknown processor architecture")
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -993,6 +1084,16 @@ def main():
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
+            # The reference build (left) is downloaded as a bare `clickhouse`
+            # binary, but the patched build (right) was only symlinked under its
+            # subcommand names below. Shell-script perf queries
+            # (<query type="shell">) invoke the multi-call binary directly via
+            # $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL / $CLICKHOUSE_CLIENT, which
+            # compare.sh builds from `right/clickhouse`; without this symlink
+            # `right/clickhouse local` fails with "No such file or directory" and
+            # the query is dropped from the comparison. Mirror the reference
+            # layout so `right/clickhouse` exists too.
+            f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-client",
@@ -1083,16 +1184,16 @@ def main():
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
-            cmds = []
-            for dataset_path in dataset_paths.values():
-                cmds.append(
-                    f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
-                )
-            res = Shell.check_parallel(cmds, verbose=True)
+            stop_watch = Utils.Stopwatch()
+            errors = download_and_extract_datasets(dataset_paths.values(), db_path)
+            res = not errors
             results.append(
                 Result(
                     name="Download datasets",
                     status=Result.Status.OK if res else Result.Status.ERROR,
+                    start_time=stop_watch.start_time,
+                    duration=stop_watch.duration,
+                    info="\n".join(errors),
                 )
             )
             if res:
@@ -1148,6 +1249,8 @@ def main():
 
     if res and JobStages.RESTART in stages:
         print("Start Servers")
+
+        match_reference_debug_info()
 
         def restart_ch1():
             res_ = leftCH.start()
@@ -1276,7 +1379,13 @@ def main():
 
         def insert_raw_query_metrics_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Metrics insertion is a reporting side-effect, not the perf
+            # verdict. A transient LogCluster (play.clickhouse.com) timeout
+            # must not fail the whole job - skip and warn, like
+            # insert_report_aggregates() and prepare_historical_data() do.
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping raw query metrics insert")
+                return True
 
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
@@ -1338,7 +1447,12 @@ def main():
 
         def insert_historical_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Reporting side-effect, not the perf verdict - a transient
+            # LogCluster timeout must not fail the job (see
+            # insert_raw_query_metrics_data / insert_report_aggregates).
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping historical data insert")
+                return True
 
             now = datetime.now()
             date = now.date().isoformat()
@@ -1434,11 +1548,6 @@ def main():
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
 
-        def too_many_slow(msg):
-            match = re.search(r"(|.* )(\d+) slower.*", msg)
-            threshold = 5
-            return int(match.group(2).strip()) > threshold if match else False
-
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
@@ -1519,7 +1628,7 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" ! -name "*-trace-log.tsv" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():

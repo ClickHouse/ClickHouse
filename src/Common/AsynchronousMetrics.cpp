@@ -17,7 +17,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -1151,8 +1150,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     // Collect the statistics themselves.
-    saveJemallocMetric<size_t>(new_values, "allocated");
-    saveJemallocMetric<size_t>(new_values, "active");
+    auto jemalloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
+    auto jemalloc_active = saveJemallocMetric<size_t>(new_values, "active");
+    if (jemalloc_allocated && jemalloc_active)
+    {
+        size_t jemalloc_fragmentation = *jemalloc_allocated < *jemalloc_active ? *jemalloc_active - *jemalloc_allocated : 0;
+        new_values["jemalloc.fragmentation"] = {jemalloc_fragmentation,
+            "The difference between `jemalloc.active` and `jemalloc.allocated` — "
+            "represents internal fragmentation in the memory allocator (active pages that are not fully utilized by allocations)."};
+    }
+
     saveJemallocMetric<size_t>(new_values, "metadata");
     saveJemallocMetric<size_t>(new_values, "metadata_thp");
     saveJemallocMetric<size_t>(new_values, "resident");
@@ -1337,7 +1344,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
-    new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -2559,12 +2565,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
 
-        // These methods look at Asynchronous metrics and add,update or remove warnings
-        // which later get inserted into the system.warnings table:
-        processWarningForMutationStats(new_values);
+        // These methods look at Asynchronous metrics and add, update or remove warnings
+        // which later get inserted into the system.warnings table.
+        // Note: after the swap above, `values` holds the freshly computed metrics and
+        // `new_values` holds the previous cycle's data, so we must read from `values` here.
+        // Passing `new_values` would feed the warning logic the stale snapshot, lagging
+        // system.warnings by one async-metrics cycle (and emitting nothing on the first cycle).
+        processWarningForMutationStats(values);
         // server resource overload warnings
-        processWarningForMemoryOverload(new_values);
-        processWarningForCPUOverload(new_values);
+        processWarningForMemoryOverload(values);
+        processWarningForCPUOverload(values);
     }
 }
 

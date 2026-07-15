@@ -17,11 +17,6 @@
 
 namespace Poco { class Logger; }
 
-namespace CurrentMetrics
-{
-extern const Metric CacheFileSegments;
-}
-
 namespace DB
 {
 
@@ -54,7 +49,7 @@ public:
     using Priority = IFileCachePriority;
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
-    using QueueEntryType = FileCacheQueueEntryType;
+    using QueueEntryType = IFileCachePriority::QueueEntryType;
     using KeyType = FileSegmentKeyType;
 
     FileSegment(
@@ -136,8 +131,6 @@ public:
 
     size_t getHitsCount() const { return hits_count; }
 
-    size_t getRefCount() const { return ref_count; }
-
     size_t getCurrentWriteOffset() const;
 
     size_t getDownloadedSize() const;
@@ -210,11 +203,16 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
+    ///
+    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
+    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
+    /// ahead past what the read will consume.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr);
+        FileCacheReserveStat * reserve_stat = nullptr,
+        size_t reserve_hint = 0);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -243,7 +241,14 @@ public:
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 
 private:
+    struct DownloadState;
+
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
+    DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
+    void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
+
+    /// In release builds returns a single shared logger; in debug builds a per-segment one.
+    const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
@@ -279,33 +284,44 @@ private:
     const bool background_download_enabled;
 
     std::atomic<State> download_state;
-    DownloaderId downloader_id; /// The one who prepares the download
     time_t download_finished_time = 0;
-
-    RemoteFileReaderPtr remote_file_reader;
-    LocalCacheWriterPtr cache_writer;
 
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex write_mutex;
+
+    /// State needed only while a segment is being downloaded. Created lazily when a downloader
+    /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),
+    /// so an already-cached file segment (the common case) does not pay for it.
+    /// Created/reset under `segment_guard`.
+    struct DownloadState
+    {
+        DownloaderId downloader_id; /// The one who prepares the download.
+        RemoteFileReaderPtr remote_file_reader;
+        LocalCacheWriterPtr cache_writer;
+        /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
+        mutable std::mutex write_mutex;
+    };
+    std::unique_ptr<DownloadState> download_data;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
-    std::mutex increase_priority_mutex;
+    /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
+    std::atomic_flag increasing_priority;
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Per-segment logger with a unique name; only in debug/sanitizer builds.
+    /// In release all segments share one logger (see getLog()), so it is not stored per segment.
     LoggerPtr log;
+#endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
-    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 

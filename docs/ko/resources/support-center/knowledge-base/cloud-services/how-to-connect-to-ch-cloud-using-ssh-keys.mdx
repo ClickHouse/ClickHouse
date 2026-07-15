@@ -1,0 +1,95 @@
+---
+title: SSH 키를 사용하여 ClickHouse에 연결하는 방법
+description: "SSH 키를 사용하여 ClickHouse 및 ClickHouse Cloud에 연결하는 방법"
+date: 2024-07-25
+tags: ['Cloud 관리', '보안 및 인증']
+keywords: ['Cloud', 'SSH']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 질문
+</div>
+
+SSH 키 인증으로 ClickHouse에 연결하려면 어떻게 해야 합니까?
+
+<Note>
+  여기서는 ClickHouse Cloud를 예시로 사용하지만, 이 예시는 오픈소스 ClickHouse에서도 작동합니다.
+</Note>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Rhe-kUyrFUE?si=JgcAusW1TcEyRqPr" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="answer">
+  ## 답변
+</div>
+
+1. ssh-keygen을 사용해 키 쌍을 생성합니다. 예시:
+
+```
+➜  new ssh-keygen \
+-t ed25519 \
+> -f /Users/testuser/.ssh/ch_key
+Generating public/private ed25519 key pair.
+Enter passphrase (empty for no passphrase):
+Enter same passphrase again:
+Your identification has been saved in /Users/testuser/.ssh/ch_key
+Your public key has been saved in /Users/testuser/.ssh/ch_key.pub
+.....
+```
+
+2. 위 예시의 공개 키(ch&#95;key.pub)를 사용하여 USER를 생성합니다.
+
+```sql
+clickhouse-cloud :) CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY 'AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m' TYPE 'ssh-ed25519';
+
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m TYPE `ssh-ed25519`
+
+Query id: 34c6aad6-5f88-4c80-af7a-7d37c91ba7d5
+
+Ok.
+```
+
+3. `SHOW users`를 실행해 사용자가 생성되었는지 확인합니다.
+
+4. 사용자에게 default&#95;role을 부여합니다(선택 사항).
+
+```sql
+clickhouse-cloud :) grant default_role to abcuser;
+
+GRANT default_role TO abcuser
+
+Query id: 4a054003-220a-4dea-8e8d-eb1f08ee7b10
+
+Ok.
+
+0 rows in set. Elapsed: 0.137 sec.
+```
+
+5. 이제 private key를 사용하여 서비스에 인증하십시오.
+
+```sql
+➜  new ./clickhouse client --host myhost.us-central1.gcp.clickhouse.cloud --secure --user abcuser --ssh-key-file '/Users/testuser/.ssh/ch_key'
+ClickHouse client version 23.12.1.863 (official build).
+Enter your private key passphrase (leave empty for no passphrase):
+Connecting to myhost.us-central1.gcp.clickhouse.cloud:9440 as user abcuser.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :) select currentUser();
+
+SELECT currentUser()
+
+Query id: d4b6bb60-ef45-47d3-8740-db9f2941dcd2
+
+┌─currentUser()─┐
+│ abcuser       │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+
+clickhouse-cloud :)
+```

@@ -10,6 +10,7 @@
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
@@ -78,6 +79,70 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
 }
+
+String ilikePatternToRegexp(const String & pattern)
+{
+    return "(?i)" + likePatternToRegexp(pattern);
+}
+
+bool parseColumnsMatcherFromLikePattern(IParser::Pos & pos, Expected & expected, bool qualified, ASTPtr & node)
+{
+    bool case_insensitive = false;
+    if (ParserKeyword(Keyword::ILIKE).ignore(pos, expected))
+        case_insensitive = true;
+    else if (!ParserKeyword(Keyword::LIKE).ignore(pos, expected))
+        return false;
+
+    ParserStringLiteral string_literal;
+    ASTPtr like_pattern;
+    if (!string_literal.parse(pos, like_pattern, expected))
+        return true;
+
+    const auto & like_pattern_str = like_pattern->as<ASTLiteral &>().value.safeGet<String>();
+    const auto pattern = case_insensitive ? ilikePatternToRegexp(like_pattern_str) : likePatternToRegexp(like_pattern_str);
+    if (qualified)
+    {
+        auto columns_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
+        columns_matcher->setPattern(pattern);
+        node = std::move(columns_matcher);
+        return true;
+    }
+
+    auto columns_matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+    columns_matcher->setPattern(pattern);
+    node = std::move(columns_matcher);
+    return true;
+}
+
+void attachColumnTransformers(ASTPtr & matcher, ASTPtr transformers)
+{
+    if (!transformers || transformers->children.empty())
+        return;
+
+    ASTPtr * matcher_transformers = nullptr;
+
+    if (auto * asterisk = matcher->as<ASTAsterisk>())
+    {
+        matcher_transformers = &asterisk->transformers;
+    }
+    else if (auto * qualified_asterisk = matcher->as<ASTQualifiedAsterisk>())
+    {
+        matcher_transformers = &qualified_asterisk->transformers;
+    }
+    else if (auto * columns_matcher = matcher->as<ASTColumnsRegexpMatcher>())
+    {
+        matcher_transformers = &columns_matcher->transformers;
+    }
+    else
+    {
+        auto & qualified_columns_matcher = matcher->as<ASTQualifiedColumnsRegexpMatcher &>();
+        matcher_transformers = &qualified_columns_matcher.transformers;
+    }
+
+    *matcher_transformers = std::move(transformers);
+    matcher->children.push_back(*matcher_transformers);
+}
+
 }
 
 /*
@@ -1432,7 +1497,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)
@@ -1944,7 +2013,13 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::Asterisk)
     {
         ++pos;
-        auto asterisk = make_intrusive<ASTAsterisk>();
+
+        ASTPtr res;
+        if (parseColumnsMatcherFromLikePattern(pos, expected, false /*qualified*/, res) && !res)
+            return false;
+        if (!res)
+            res = make_intrusive<ASTAsterisk>();
+
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
@@ -1953,13 +2028,9 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             transformers->children.push_back(transformer);
         }
 
-        if (!transformers->children.empty())
-        {
-            asterisk->transformers = std::move(transformers);
-            asterisk->children.push_back(asterisk->transformers);
-        }
+        attachColumnTransformers(res, std::move(transformers));
 
-        node = std::move(asterisk);
+        node = std::move(res);
         return true;
     }
     return false;
@@ -1979,7 +2050,12 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     ++pos;
 
-    auto res = make_intrusive<ASTQualifiedAsterisk>();
+    ASTPtr res;
+    if (parseColumnsMatcherFromLikePattern(pos, expected, true /*qualified*/, res) && !res)
+        return false;
+    if (!res)
+        res = make_intrusive<ASTQualifiedAsterisk>();
+
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
@@ -1988,14 +2064,21 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         transformers->children.push_back(transformer);
     }
 
-    res->qualifier = std::move(node);
-    res->children.push_back(res->qualifier);
-
-    if (!transformers->children.empty())
+    ASTPtr * matcher_qualifier = nullptr;
+    if (auto * qualified_asterisk = res->as<ASTQualifiedAsterisk>())
     {
-        res->transformers = std::move(transformers);
-        res->children.push_back(res->transformers);
+        matcher_qualifier = &qualified_asterisk->qualifier;
     }
+    else
+    {
+        auto & columns_matcher = res->as<ASTQualifiedColumnsRegexpMatcher &>();
+        matcher_qualifier = &columns_matcher.qualifier;
+    }
+
+    *matcher_qualifier = std::move(node);
+    res->children.push_back(*matcher_qualifier);
+
+    attachColumnTransformers(res, std::move(transformers));
 
     node = std::move(res);
     return true;

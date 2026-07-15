@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "Cumplimiento de FIPS 140-2 para ClickHouse Private"
+sidebarTitle: "Cumplimiento de FIPS"
+description: "Este documento explica qué significa el cumplimiento de FIPS 140-2 en el contexto de ClickHouse Private y qué cambia al desplegar con una configuración compatible con FIPS."
+---
+
+Este documento explica qué significa el cumplimiento de FIPS 140-2 en el contexto de ClickHouse Private y qué cambia al desplegar con una configuración compatible con FIPS.
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## Qué significa FIPS 140-2 para ClickHouse Private
+</div>
+
+FIPS 140-2 (Federal Information Processing Standard) es una norma del gobierno de EE. UU. para módulos criptográficos. Las organizaciones que operan en entornos gubernamentales (como AWS GovCloud) o que manejan datos gubernamentales sensibles suelen tener la obligación de garantizar que todas las operaciones criptográficas utilicen algoritmos e implementaciones validados por FIPS.
+
+Cuando ClickHouse Private se despliega en modo FIPS, todas las operaciones criptográficas -- incluidas las conexiones TLS entre componentes, las conexiones con servicios de AWS y la generación de certificados -- deben utilizar algoritmos y bibliotecas compatibles con FIPS.
+
+<div id="what-changes-in-a-fips-deployment">
+  ## Qué cambia en un despliegue con FIPS
+</div>
+
+Un despliegue con FIPS se diferencia de un despliegue estándar de ClickHouse Private en varios aspectos clave:
+
+<div id="fips-server-images">
+  ### Imágenes de servidor FIPS
+</div>
+
+Las imágenes de ClickHouse server y Keeper deben usar las variantes específicas de FIPS. Estas se identifican por el sufijo `-fips` en la etiqueta de la imagen (por ejemplo, `25.12.1.1497-fips` para el servidor y `26.2.1.258-fips` para Keeper). Las imágenes FIPS se compilan con bibliotecas criptográficas validadas según FIPS. La imagen del operator no tiene una variante FIPS independiente.
+
+<div id="fips-ecr-endpoints">
+  ### Endpoints de ECR compatibles con FIPS
+</div>
+
+Al descargar imágenes de contenedor desde Amazon ECR, se deben usar endpoints de ECR compatibles con FIPS. Estos endpoints tienen la forma `0000000000.dkr-ecr-fips.<region>.on.aws` en lugar del hostname estándar de ECR.
+
+<div id="fips-s3-endpoints">
+  ### Endpoints de S3 compatibles con FIPS
+</div>
+
+ClickHouse almacena datos en S3 y, en modo FIPS, se deben configurar los endpoints de S3 compatibles con FIPS. AWS publica la lista de endpoints FIPS para cada servicio y región en [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
+
+<div id="s3-bucket-naming-restriction">
+  ### Restricción de nomenclatura de buckets de S3
+</div>
+
+En el modo FIPS, el **nombre del bucket de S3 no debe contener puntos** (`.`). Esta restricción existe porque los endpoints de S3 con FIPS requieren direccionamiento de tipo host virtual (por ejemplo, `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`). Cuando el nombre de un bucket contiene puntos, la validación del certificado TLS falla para las URL de tipo host virtual, porque los puntos crean niveles adicionales de subdominio que no coinciden con el certificado comodín.
+
+Este es un aspecto importante que debe tener en cuenta al configurar su infraestructura de S3. Si ya tiene buckets con puntos en sus nombres, no pueden usarse con endpoints de S3 con FIPS.
+
+<div id="certificate-requirements">
+  ## Requisitos de certificados
+</div>
+
+Un despliegue con FIPS requiere certificados TLS para la comunicación cifrada entre todos los componentes de ClickHouse. Deben generarse tres conjuntos de certificados:
+
+| Conjunto de certificados | Propósito                                                                                         | Archivos                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------- | -------------------------- |
+| **Servidor**             | Protege las conexiones entrantes a clickhouse-server                                              | `server.crt`, `server.key` |
+| **Keeper**               | Protege las conexiones a clickhouse-keeper                                                        | `keeper.crt`, `keeper.key` |
+| **Cliente**              | Lo utiliza clickhouse-server para las conexiones salientes (p. ej., a keeper, diccionarios HTTPS) | `client.crt`, `client.key` |
+
+Los tres conjuntos están firmados por una autoridad de certificación común (`ca.crt`).
+
+<div id="fips-compliant-algorithm-requirements">
+  ### Requisitos de algoritmos compatibles con FIPS
+</div>
+
+Cuando se requiere cumplimiento de FIPS, todos los certificados deben:
+
+* **Generarse con algoritmos compatibles con FIPS** -- Por ejemplo, RSA con un tamaño de clave de al menos 3072 bits.
+* **Crearse en un entorno con FIPS habilitado** -- Las operaciones criptográficas durante la generación y firma de claves deben usar un módulo validado conforme a FIPS. Una opción es usar un contenedor UBI de Red Hat con el modo FIPS habilitado.
+* **Estar firmados por una autoridad de certificación** cuya propia clave se haya generado de forma compatible con FIPS.
+
+<div id="subject-alternative-names-sans">
+  ### Nombres alternativos del sujeto (SAN)
+</div>
+
+Cada certificado debe incluir las entradas SAN correctas para que la validación de TLS se complete correctamente en la comunicación entre componentes dentro del clúster de Kubernetes. El formato de SAN sigue este patrón:
+
+* Server: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` y `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+Se debe crear un conjunto único de certificados (excepto el certificado de la CA) para cada clúster de ClickHouse que se aprovisione.
+
+<div id="certificate-expiration">
+  ### Vencimiento de los certificados
+</div>
+
+Los certificados tienen un período de validez definido. Debe establecer un proceso para supervisar su vencimiento y renovarlos antes de que caduquen. Un valor predeterminado habitual es de 365 días, pero debe ajustarse según los requisitos de seguridad de su organización.
+
+<div id="further-reading">
+  ## Más información
+</div>
+
+* Para obtener instrucciones paso a paso sobre cómo generar certificados compatibles con FIPS, consulta la guía práctica [Configurar certificados FIPS](/es/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+* Para entender cómo funcionan la PKI y mTLS en ClickHouse Private —la finalidad de los certificados, los modos de verificación y el comportamiento de la rotación—, consulta [PKI y mTLS en ClickHouse Private](/es/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).

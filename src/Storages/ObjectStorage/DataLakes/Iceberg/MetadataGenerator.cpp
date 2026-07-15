@@ -18,6 +18,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -124,6 +125,26 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     std::optional<Int64> user_defined_timestamp)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
+
+    /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
+    /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use.
+    for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
+        if (!metadata_object->has(field))
+            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+    /// `snapshots` may only be seeded when the table has no current snapshot: with a live
+    /// parent snapshot the commit relies on finding its manifest list in `snapshots`, and an
+    /// empty list would silently unlink all previously committed data instead of failing.
+    if (!metadata_object->has(Iceberg::f_snapshots))
+    {
+        if (parent_snapshot_id >= 0)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Metadata has a current snapshot with id {} but no `snapshots` list",
+                parent_snapshot_id);
+        metadata_object->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    }
+
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
     if (format_version > 1)
     {
@@ -145,22 +166,16 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    if (num_deleted_rows == 0)
+    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
+    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+    summary->set(Iceberg::f_added_records, std::to_string(added_records));
+    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    if (num_deleted_rows != 0)
     {
-        summary->set(Iceberg::f_operation, Iceberg::f_append);
-        summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-        summary->set(Iceberg::f_added_records, std::to_string(added_records));
-        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
-    }
-    else
-    {
-        summary->set(Iceberg::f_operation, Iceberg::f_overwrite);
         summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
         summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
         summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
-        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
     }
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
@@ -294,6 +309,14 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
     current_schema = deepCopy(current_schema);
+
+    auto existing_fields = current_schema->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < existing_fields->size(); ++i)
+    {
+        if (existing_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", column_name);
+    }
+
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
 
@@ -333,6 +356,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
+    bool found = false;
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
     {
         auto current_field = schema_fields->getObject(i);
@@ -347,9 +371,14 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);
+            found = true;
             break;
         }
     }
+
+    if (!found)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found column {}", column_name);
+
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }

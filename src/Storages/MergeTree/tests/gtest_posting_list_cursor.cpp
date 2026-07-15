@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -66,10 +67,15 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
     return info;
 }
 
-/// Helper: create a PostingListCursor for an embedded posting list.
+/// Helper: create a PostingListCursor for an embedded posting list by flattening the embedded
+/// Roaring bitmap into a shared sorted array — mirroring how callers feed already-decoded postings
+/// to the shared-array cursor.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
-    return std::make_shared<PostingListCursor>(info);
+    auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
+    if (info.embedded_postings)
+        info.embedded_postings->toUint32Array(flat->data());
+    return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -188,6 +194,8 @@ struct MultiBlockTestData
     mutable std::shared_ptr<SingleDiskVolume> volume;
     mutable std::shared_ptr<DataPartStorageOnDiskFull> storage_holder;
     mutable std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> stream;
+    /// Fresh per-test segment cache (compressed cursors require one).
+    mutable std::shared_ptr<TextIndexPostingsCache> cache;
 };
 
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
@@ -273,7 +281,10 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info);
+    if (!data.cache)
+        data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
+
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
 }
 
 } // anonymous namespace
@@ -327,7 +338,7 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
 
 TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
 {
-    constexpr uint32_t count = 500; // > MAX_EMBEDDED_POSTING_LIST_ROWS and > BLOCK_SIZE
+    constexpr uint32_t count = 500; // > BLOCK_SIZE, so the posting list spans multiple packed blocks
     auto docs = generateRange(1, count, 3);
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
@@ -385,7 +396,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
 {
     auto info = makeEmbeddedInfo({10, 20, 30, 40});
 
-    auto cursor1 = std::make_shared<PostingListCursor>(info);
+    auto cursor1 = makeEmbeddedCursor(info);
     cursor1->advance(30);
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 30U);
@@ -393,7 +404,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 40U);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(info);
+    auto cursor2 = makeEmbeddedCursor(info);
     cursor2->advance(10);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 10U);
@@ -466,7 +477,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);
@@ -3611,7 +3622,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, out);
+    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec), /*has_positions=*/ false, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3619,8 +3630,8 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 42u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
@@ -3643,8 +3654,8 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial));
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "beta");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 7u);
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

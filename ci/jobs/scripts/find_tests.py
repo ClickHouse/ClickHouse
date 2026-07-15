@@ -13,11 +13,6 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
 
-# Coverage data lives in the public ClickHouse CIDB, accessible from any CI environment.
-# Use this URL for all coverage queries so that private-repo CI (which may not have
-# access to an internal CIDB) can still query test coverage data.
-_PUBLIC_CIDB_URL = "https://play.clickhouse.com"
-
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -55,12 +50,27 @@ class Targeting:
 
     def __init__(self, info: Info):
         self.info = info
+        self._cidb = None
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
         else:
             self.job_type = None
+
+    def _ci_db(self):
+        # Queries run as the privileged CI user. The public `play` user is
+        # rate/row/time-limited and must be used only for links handed to humans
+        # (see CIDB.get_link_to_test_case_statistics).
+        if self._cidb is None:
+            url, user, passwd = (
+                self.info.get_secret(Settings.SECRET_CI_DB_URL)
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_USER))
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
+                .get_value()
+            )
+            self._cidb = CIDB(url=url, user=user, passwd=passwd)
+        return self._cidb
 
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
@@ -95,6 +105,147 @@ class Targeting:
                     return candidate
         return None
 
+    @classmethod
+    def _tests_owning_data_file(cls, fpath: str):
+        """Map an auxiliary stateless file back to the base names of the tests
+        that own it.
+
+        A data fixture may sit next to its test (`02995_settings_26_4_1.tsv`) or
+        in a subdirectory (`data_parquet/02716_data.parquet`); either way it has
+        no test of its own, so `_derive_test_name` skips it. But such a fixture
+        change still alters the surface of the test that consumes it, and a drift
+        guard that skips it would false-green the very drift it exists to catch.
+
+        Fixtures carry their owning test's five-digit prefix by convention, so
+        the prefix narrows the candidates to the `NNNNN_*` tests at the suite
+        root (a handful of files, never the whole suite). Among those, prefer the
+        ones whose body actually references the fixture by name; fall back to all
+        prefix siblings when the reference is constructed dynamically and cannot
+        be found textually. Return an empty list when the file has no numeric
+        prefix or no test with that prefix exists — there is then genuinely
+        nothing to rerun, and emitting a pattern that matches no test would make
+        `clickhouse-test` exit 1 (the failure mode `PR #104097` fixed).
+        """
+        match = re.match(r"(\d{5})", os.path.basename(fpath))
+        if match is None:
+            return []
+        prefix = match.group(1)
+        test_dir = Path("tests/queries/0_stateless")
+        candidates = {}
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            for test_file in test_dir.glob(f"{prefix}_*{ext}"):
+                candidates[test_file.name[: -len(ext)]] = test_file
+        if not candidates:
+            return []
+        fname = os.path.basename(fpath)
+        referencing = []
+        for base_name, test_file in candidates.items():
+            try:
+                with test_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    if fname in f.read():
+                        referencing.append(base_name)
+            except OSError:
+                continue
+        return sorted(referencing) if referencing else sorted(candidates)
+
+    @staticmethod
+    def is_functional_test_file(fpath: str) -> bool:
+        """A changed path that is itself a stateless functional test source file."""
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
+
+    @staticmethod
+    def is_integration_test_file(fpath: str) -> bool:
+        """A changed path that is itself an integration test module."""
+        fpath = fpath.removeprefix("./")
+        return (
+            fpath.startswith("tests/integration/test_")
+            and not fpath.startswith("tests/integration/test_e2e_")
+            and Path(fpath).name.startswith("test")
+            and fpath.endswith(".py")
+            and Path(fpath).is_file()
+        )
+
+    @staticmethod
+    def is_ci_job_script(fpath: str) -> bool:
+        """A changed path under the CI job scripts themselves.
+
+        Tolerated alongside test-file changes by the batch-skip check in
+        `functional_tests.py` / `integration_test_job.py`: such a change is
+        exercised identically by every batch, so a batch that does not
+        contain the changed test file is still a valid check of the
+        (possibly changed) job script.
+        """
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
+
+    @classmethod
+    def functional_test_hash_batch_file(cls, fpath: str):
+        """Return the on-disk stateless test filename (with extension) that
+        `clickhouse-test --run-by-hash-*` uses to bucket the given changed path,
+        or `None` if it cannot be resolved to a concrete test source file.
+
+        `clickhouse-test`'s `is_test_from_dir`/`get_selected_tests` only look
+        at files directly inside the suite root (`os.listdir`, not
+        recursive), so a file nested in a subdirectory - e.g.
+        `tests/queries/0_stateless/helpers/httpclient.py` or
+        `tests/queries/0_stateless/data_avro/generate_avro.sh` - is never a
+        test case there, no matter its extension. Hashing such a nested
+        file's basename would fabricate a bucket assignment that does not
+        correspond to how `--run-by-hash-*` actually splits the suite, so
+        return `None` (the caller then conservatively runs the batch) unless
+        the file's parent directory is exactly the suite root.
+        """
+        test_dir = Path("tests/queries/0_stateless")
+        path = Path(fpath.removeprefix("./"))
+        if path.parent != test_dir:
+            return None
+        fname = path.name
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname
+        base_name = cls._derive_test_name(fpath)
+        if base_name is None:
+            return None
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if (test_dir / f"{base_name}{ext}").is_file():
+                return f"{base_name}{ext}"
+        return None
+
+    @staticmethod
+    def is_sequential_functional_test(test_source_file: str) -> bool:
+        """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
+        returned by `functional_test_hash_batch_file`) is tagged `no-parallel`
+        or `sequential`.
+
+        Mirrors `clickhouse-test`'s own `is_sequential_test`/tag-parsing logic,
+        so the batch-skip check in `functional_tests.py` can tell whether a
+        changed test would even be selected by a job invoked with the
+        `parallel`/`sequential` runner option (`--no-sequential`/`--no-parallel`),
+        which splits the suite into two independently hash-batched job flavors.
+        """
+        if test_source_file.endswith(".sql") or test_source_file.endswith(".sql.j2"):
+            comment_sign = "--"
+        elif test_source_file.endswith((".sh", ".py", ".expect")):
+            comment_sign = "#"
+        else:
+            return False
+        path = Path("tests/queries/0_stateless") / test_source_file
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line.startswith(comment_sign):
+                        continue
+                    rest = line[len(comment_sign):].lstrip()
+                    if not rest.startswith("Tags:"):
+                        continue
+                    tags = {t.strip() for t in rest[len("Tags:"):].split(",")}
+                    return "no-parallel" in tags or "sequential" in tags
+        except OSError:
+            return False
+        return False
+
     def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
@@ -115,44 +266,61 @@ class Targeting:
             return result
 
         for fpath in changed_files:
-            if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
-                if not Path(fpath).exists():
-                    print(f"File '{fpath}' was removed — skipping")
-                    continue
-
-                test_base_name = self._derive_test_name(fpath)
-                if test_base_name is None:
-                    # Avoid emitting a regex like `02995_settings_26_4_1.` that
-                    # matches no test — clickhouse-test exits with code 1 when
-                    # "no tests were run", failing the flaky check.
+            if not fpath.startswith("tests/queries/0_stateless/"):
+                if fpath.startswith("tests/queries/"):
+                    # Log any other changed file under tests/queries for future debugging
                     print(
-                        f"File '{fpath}' is not a test source and has no sibling test — skipping"
+                        f"File '{fpath}' changed, but doesn't match expected test pattern"
                     )
+                continue
+
+            if not Path(fpath).exists():
+                print(f"File '{fpath}' was removed — skipping")
+                continue
+
+            # A file directly at the suite root may itself be a test source, or a
+            # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
+            # test shares its base name.
+            if Path(fpath).parent == Path("tests/queries/0_stateless"):
+                test_base_name = self._derive_test_name(fpath)
+                if test_base_name is not None:
+                    print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{test_base_name}.")
                     continue
 
-                print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                # Add '.' suffix to precisely match this test only
-                result.add(f"{test_base_name}.")
-
-            elif fpath.startswith("tests/queries/"):
-                # Log any other changed file under tests/queries for future debugging
+            # Either a data fixture nested in a subdirectory
+            # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
+            # (`02995_settings_26_4_1.tsv`) with no sibling test. Map it back to the
+            # test(s) that own it so a fixture-only change still reruns the tests
+            # that consume it; otherwise the flaky check — and the merge-queue drift
+            # guard built on it — would silently skip the very test surface the
+            # change affects. Emit only real tests: `_tests_owning_data_file` returns
+            # an empty list when nothing maps, so we never fabricate a no-match
+            # pattern (which would make clickhouse-test exit 1).
+            owning_tests = self._tests_owning_data_file(fpath)
+            if owning_tests:
+                for base_name in owning_tests:
+                    print(
+                        f"Detected changed data file '{fpath}' owned by test '{base_name}'"
+                    )
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{base_name}.")
+            else:
                 print(
-                    f"File '{fpath}' changed, but doesn't match expected test pattern"
+                    f"File '{fpath}' is not a test source and has no owning test — skipping"
                 )
 
         return sorted(result)
 
     def get_previously_failed_tests(self):
-        from ci.praktika.cidb import CIDB
-        from ci.praktika.settings import Settings
-
         assert self.job_type, "Unsupported job type"
         assert (
             self.info.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
-        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        cidb = self._ci_db()
         if self.job_type == self.INTEGRATION_JOB_TYPE:
             test_name_pattern = "^test_"
         elif self.job_type == self.STATELESS_JOB_TYPE:
@@ -410,7 +578,7 @@ class Targeting:
         HAVING region_test_count <= {BROAD_REGION_HARD_CAP}
         """
 
-        cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+        cidb = self._ci_db()
         t_query = time.monotonic()
         raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
@@ -1023,9 +1191,7 @@ class Targeting:
         # broader callee coverage and higher overlap with domain-related tests.
         FILE_SEED_RC = 30   # narrower than MAX_TESTS_PER_LINE; avoids pulling in broad seeds
         if sparse_files:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            _cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            _cidb = self._ci_db()
             # sparse_files are already stored-paths (./src/...)
             sparse_conds = " OR ".join(
                 f"file = '{self._escape_sql_string(f)}'"
@@ -1168,9 +1334,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
@@ -1363,9 +1527,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             print(
@@ -1408,7 +1570,6 @@ class Targeting:
         using KEYWORD_FALLBACK_WIDTH so they always rank below any direct or
         sibling hit.
         """
-        import glob as _glob
 
         if not changed_src_files:
             return []
@@ -2069,7 +2230,6 @@ if __name__ == "__main__":
     # get_changed_lines_from_diff and get_most_relevant_tests read from the file
     # rather than fetching the diff.
     if args.diff_file:
-        import types
         diff_text = Path(args.diff_file).read_text()
         targeting._diff_text = diff_text
 

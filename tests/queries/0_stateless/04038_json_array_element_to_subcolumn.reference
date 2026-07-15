@@ -72,7 +72,7 @@ QUERY id: 0
                   COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
             CONSTANT id: 9, constant_value: \'b\', constant_value_type: String
-      COLUMN id: 10, column_name: json.a, result_type: Dynamic, source_id: 7
+      COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_json_arr
   SETTINGS optimize_functions_to_subcolumns=1

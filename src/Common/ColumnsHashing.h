@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/demangle.h>
+#include <base/getL2CacheSize.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -510,11 +511,7 @@ struct HashMethodSerialized
         return true;
 #endif
 
-        size_t l2_size = 256 * 1024;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
+        size_t l2_size = getL2CacheSize();
         // Calculate the average row size.
         size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
         // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.

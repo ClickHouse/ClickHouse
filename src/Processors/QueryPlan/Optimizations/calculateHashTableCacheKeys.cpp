@@ -5,13 +5,18 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 using namespace DB;
 
@@ -128,7 +133,6 @@ void calculateHashTableCacheKeys(
             const bool calculate = allowParallelHashJoin(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
-                join_step->getJoinOperator().strictness,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
                 single_disjunct);
 
@@ -202,6 +206,59 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
     calculateHashTableCacheKeys(root, cache_keys);
     return cache_keys;
+}
+
+void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+{
+    if (!optimization_settings.collect_hash_table_stats_during_aggregation)
+        return;
+
+    /// Collect the AggregatingStep nodes first. If there are none, do nothing — and in particular do
+    /// NOT hash the plan: hashing serializes plan steps, and some steps that may appear in arbitrary
+    /// queries are not serializable (e.g. `ORDER BY ... WITH FILL`, or `INSERT ... FROM INFILE`
+    /// plans) and would throw. Only aggregating queries need a key.
+    std::vector<QueryPlan::Node *> aggregating_nodes;
+    {
+        std::vector<QueryPlan::Node *> stack;
+        stack.push_back(&root);
+        while (!stack.empty())
+        {
+            auto * node = stack.back();
+            stack.pop_back();
+            if (typeid_cast<AggregatingStep *>(node->step.get()))
+                aggregating_nodes.push_back(node);
+            for (auto * child : node->children)
+                stack.push_back(child);
+        }
+    }
+
+    /// Compute every key before stamping any of them, so a key never depends on whether another
+    /// (e.g. a nested) aggregation has already been stamped.
+    std::vector<std::pair<AggregatingStep *, UInt64>> keys_to_set;
+    for (auto * aggregating_node : aggregating_nodes)
+    {
+        /// Hash only the aggregation's own input subtree (this node as the root). This excludes the
+        /// steps ABOVE the aggregation (LIMIT, `ORDER BY ... WITH FILL`, ...) — they do not affect
+        /// the number of groups and may not be serializable.
+        try
+        {
+            const auto cache_keys = calculateHashTableCacheKeys(*aggregating_node);
+            if (auto it = cache_keys.find(aggregating_node); it != cache_keys.end())
+                keys_to_set.emplace_back(typeid_cast<AggregatingStep *>(aggregating_node->step.get()), it->second);
+        }
+        catch (...)
+        {
+            /// The key is a best-effort preallocation hint. If a step inside the input subtree is not
+            /// serializable, skip preallocation for this aggregation rather than fail the query.
+            LOG_TRACE(
+                getLogger("QueryPlanOptimizations"),
+                "Skipping aggregation hash-table preallocation key: {}",
+                getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        }
+    }
+
+    for (auto & [aggregating_step, key] : keys_to_set)
+        aggregating_step->setStatsCacheKey(key);
 }
 
 }

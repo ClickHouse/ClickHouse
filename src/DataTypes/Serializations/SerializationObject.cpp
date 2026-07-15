@@ -526,6 +526,12 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
             object_state->dynamic_path_states[path] = nullptr;
 
+        /// When an ancestor parallel level already wrapped the callbacks under its own mutex, reuse them
+        /// directly. Wrapping again here would create a second stack-local mutex, and TSAN reports the two
+        /// nested-level mutexes (whose recycled stack addresses look identical across deserialization trees)
+        /// as a lock-order-inversion. With a single mutex shared down the tree no such ordering exists.
+        const bool wrap_callbacks = !settings.prefix_deserialization_callbacks_are_thread_safe;
+
         /// All threads will use the same callbacks that are not thread safe.
         std::mutex callbacks_mutex;
         auto safe_getter = [&](const SubstreamPath & path)
@@ -583,14 +589,22 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
             {
                 auto settings_copy = settings;
-                settings_copy.getter = safe_getter;
-                settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
-                settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
-                settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
-                settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
-                settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
-                    ? safe_has_uniform_marks_callback
-                    : decltype(settings.has_uniform_marks_callback){};
+                /// Keep the pool so a nested Object level can deserialize its prefixes in parallel too.
+                /// The callbacks below are made thread safe under callbacks_mutex; tell the nested level
+                /// to reuse them under that single mutex instead of wrapping again.
+                settings_copy.prefix_deserialization_callbacks_are_thread_safe = true;
+                if (wrap_callbacks)
+                {
+                    settings_copy.getter = safe_getter;
+                    settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
+                    settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
+                    settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
+                    settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
+                    settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
+                        ? safe_has_uniform_marks_callback
+                        : decltype(settings.has_uniform_marks_callback){};
+                }
+                /// else: settings already carries the ancestor's thread-safe callbacks; reuse them as is.
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
@@ -1003,7 +1017,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        std::vector<ColumnPtr> flattened_paths_columns;
+        Columns flattened_paths_columns;
         flattened_paths_columns.reserve(structure_state->flattened_paths.size());
         for (const auto & path : structure_state->flattened_paths)
         {

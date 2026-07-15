@@ -139,6 +139,7 @@ bool tryGetNumericValueFromJSONElement(
     bool convert_bool_to_number,
     bool allow_type_conversion,
     bool no_int_truncation_from_double,
+    bool precise_float_parsing,
     String & error)
 {
     switch (element.type())
@@ -195,7 +196,8 @@ bool tryGetNumericValueFromJSONElement(
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (is_floating_point<NumberType>)
             {
-                if (!tryReadFloatText(value, rb) || !rb.eof())
+                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(value, rb) : tryReadFloatImpreciseForCompatibility(value, rb);
+                if (!parsed || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -209,7 +211,8 @@ bool tryGetNumericValueFromJSONElement(
                 /// Try to parse float and convert it to integer.
                 Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
-                if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
+                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(tmp_float, rb) : tryReadFloatImpreciseForCompatibility(tmp_float, rb);
+                if (!parsed || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -283,7 +286,7 @@ public:
         }
 
         NumberType value{};
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -340,7 +343,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -721,7 +724,17 @@ public:
                 return false;
             }
 
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            if (element.isInt64())
+            {
+                value = element.getInt64();
+            }
+            else
+            {
+                /// Clamp in the unsigned domain before narrowing to time_t,
+                /// because values above INT64_MAX would wrap to negative on cast.
+                UInt64 raw = element.getUInt64();
+                value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
+            }
         }
         else
         {
@@ -729,7 +742,7 @@ public:
             return false;
         }
 
-        assert_cast<ColumnDateTime &>(column).insert(value);
+        assert_cast<ColumnDateTime &>(column).insert(std::clamp<time_t>(value, 0, static_cast<time_t>(0xFFFFFFFF)));
         return true;
     }
 
@@ -1928,55 +1941,107 @@ private:
         std::vector<std::pair<String, typename JSONParser::Element>> & paths_and_values_for_shared_data,
         size_t current_size,
         String & error,
-        bool is_root) const
+        bool is_root,
+        bool skip_typed_path_check = false) const
     {
         if (shouldSkipPath(current_path, insert_settings))
             return true;
 
-        if (element.isObject() && (!typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
+        if (element.isObject() && (skip_typed_path_check || !typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
         {
+            /// First pass: collect the set of distinct element types (LITERAL/OBJECT) per key.
+            /// This lets us detect all duplicates upfront so we can:
+            ///  - throw errors immediately for invalid duplicates (before any data is inserted),
+            ///  - handle both orderings of literal+object duplicates in the main loop
+            ///    (e.g. {"a":42,"a":{"b":42}} and {"a":{"b":42},"a":42} are both valid).
+            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> key_element_types;
+            for (auto [key, value] : element.getObject())
+            {
+                auto value_element_type = getJSONElementType(value);
+                auto & types = key_element_types[key];
+
+                if (types.empty())
+                {
+                    /// First occurrence of this key — just record its type.
+                    types.insert(value_element_type);
+                    continue;
+                }
+
+                /// Duplicate key detected. Decide whether to allow or reject.
+                if (types.contains(value_element_type))
+                {
+                    /// Same-type duplicate (e.g. two literals or two objects for the same key).
+                    /// This is never allowed by type_json_allow_duplicated_key_with_literal_and_nested_object
+                    /// (which only allows literal+object pairs), so skip or throw.
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting "
+                        "type_json_skip_duplicated_paths to skip duplicated paths during insert",
+                        buildChildPath(current_path, key, insert_settings, is_root));
+                    return false;
+                }
+
+                /// Different-type duplicate (one literal, one object for the same key).
+                if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
+                {
+                    /// Setting enabled — record the second type so the main loop processes both.
+                    types.insert(value_element_type);
+                }
+                else
+                {
+                    /// Setting disabled — this is an error unless we can skip.
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+
+                    error = fmt::format(
+                        "Duplicate path found during parsing JSON object: {}. You can enable setting "
+                        "type_json_skip_duplicated_paths to skip duplicated paths during insert or setting "
+                        "type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated "
+                        "path with literal and nested object",
+                        buildChildPath(current_path, key, insert_settings, is_root));
+                    return false;
+                }
+            }
+
+            /// Second pass: process each key-value pair in original order.
+            /// All invalid duplicates have already been rejected in the first pass,
+            /// so here we only need to skip already-processed (key, type) combinations.
             std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
-                String path = current_path;
-                if (!is_root)
-                    path.append(".");
-                if (insert_settings.escape_dots_in_json_keys)
-                    path += escapeDotInJSONKey(String(key));
-                else
-                    path += key;
-
-                auto it = visited_keys.find(key);
+                String path = buildChildPath(current_path, key, insert_settings, is_root);
                 auto value_element_type = getJSONElementType(value);
+                auto it = visited_keys.find(key);
                 if (it != visited_keys.end())
                 {
-                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
-                    {
-                        /// We can't have duplicated key with the same type (literal/object).
-                        if (it->second.contains(value_element_type))
-                        {
-                            if (format_settings.json.type_json_skip_duplicated_paths)
-                                continue;
-                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                            return false;
-                        }
-
-                        it->second.insert(value_element_type);
-                    }
-                    else
-                    {
-                        if (format_settings.json.type_json_skip_duplicated_paths)
-                            continue;
-                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
-                        return false;
-                    }
+                    /// We have seen this key before. Skip if:
+                    ///  - we already processed a value with this element type for this key
+                    ///    (same-type duplicate allowed by type_json_skip_duplicated_paths), or
+                    ///  - the first pass rejected this type for this key (different-type duplicate
+                    ///    that was skipped because type_json_allow_duplicated_key_with_literal_and_nested_object
+                    ///    is disabled but type_json_skip_duplicated_paths is enabled).
+                    if (it->second.contains(value_element_type) || !key_element_types[key].contains(value_element_type))
+                        continue;
+                    it->second.insert(value_element_type);
                 }
                 else
                 {
                     visited_keys[key].insert(value_element_type);
                 }
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                /// When a key has both literal and object values (key_element_types has 2 types),
+                /// and the key corresponds to a typed path with a non-nested type (e.g. Int32, String —
+                /// not JSON/Map/Tuple that naturally parse objects), the object value should NOT be
+                /// inserted into the typed path. Instead, pass skip_typed_path_check=true so the
+                /// recursive call enters object traversal and sends the object's children to
+                /// dynamic/shared data. The literal value will fill the typed path via normal recursion.
+                bool skip_typed = key_element_types[key].size() > 1
+                    && value_element_type == JSONElementType::OBJECT
+                    && typed_path_nodes.contains(path)
+                    && !canParseObjectValue(typed_paths_types.at(path));
+
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, skip_typed))
                     return false;
             }
 
@@ -2051,6 +2116,19 @@ private:
         }
 
         return true;
+    }
+
+    /// Build the full path for a child key within the current object.
+    String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
+    {
+        String path = current_path;
+        if (!is_root)
+            path.append(".");
+        if (insert_settings.escape_dots_in_json_keys)
+            path += escapeDotInJSONKey(String(key));
+        else
+            path += key;
+        return path;
     }
 
     bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
@@ -2264,6 +2342,7 @@ private:
                     }
                 }
 
+                if (format_settings.try_infer_datetimes)
                 {
                     DateTime64 value;
                     if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
@@ -2361,6 +2440,16 @@ private:
             default:
                 return JSONElementType::LITERAL;
         }
+    }
+
+    /// Check if the type of a typed path can naturally parse a JSON object value.
+    /// Types like JSON, Map, Tuple represent structured data and should receive
+    /// the object value when there is a literal+object duplicate key.
+    /// Scalar types (Int, String, etc.) should receive the literal value instead.
+    bool canParseObjectValue(const DataTypePtr & type) const
+    {
+        auto id = removeNullable(removeLowCardinality(type))->getTypeId();
+        return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;
     }
 };
 
@@ -2555,13 +2644,13 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 #endif
 
 }

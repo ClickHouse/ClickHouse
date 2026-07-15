@@ -8,8 +8,11 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/SipHash.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -69,6 +72,13 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 }
 
+namespace HiveSetting
+{
+    extern const HiveSettingsBool enable_orc_file_minmax_index;
+    extern const HiveSettingsBool enable_orc_stripe_minmax_index;
+    extern const HiveSettingsBool enable_parquet_rowgroup_minmax_index;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -97,7 +107,7 @@ public:
         HiveMetastoreClientPtr hive_metastore_client;
         std::string database_name;
         std::string table_name;
-        HiveFiles hive_files;
+        HiveFilesWithSkipSplits hive_files;
         NamesAndTypesList partition_name_types;
 
         std::atomic<size_t> next_uri_to_read = 0;
@@ -187,15 +197,15 @@ public:
         }
     }
 
-    FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)
+    FormatSettings updateFormatSettings(const std::unordered_set<int> & skip_splits)
     {
         auto updated = format_settings;
         if (format == "HiveText")
             updated.hive_text.input_field_names = text_input_field_names;
         else if (format == "ORC")
-            updated.orc.skip_stripes = hive_file->getSkipSplits();
+            updated.orc.skip_stripes = skip_splits;
         else if (format == "Parquet")
-            updated.parquet.skip_row_groups = hive_file->getSkipSplits();
+            updated.parquet.skip_row_groups = skip_splits;
         return updated;
     }
 
@@ -213,7 +223,7 @@ public:
                 if (current_idx >= source_info->hive_files.size())
                     return {};
 
-                current_file = source_info->hive_files[current_idx];
+                current_file = source_info->hive_files[current_idx].file;
                 current_path = current_file->getPath();
 
                 /// This is the case that all columns to read are partition keys. We can construct const columns
@@ -277,7 +287,7 @@ public:
                     to_read_block,
                     context,
                     max_block_size,
-                    updateFormatSettings(current_file),
+                    updateFormatSettings(source_info->hive_files[current_idx].skip_splits),
                     FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
@@ -570,7 +580,7 @@ static HiveFilePtr createHiveFile(
     return hive_file;
 }
 
-HiveFiles StorageHive::collectHiveFilesFromPartition(
+HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
     const ActionsDAG * filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
@@ -630,34 +640,35 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     for (size_t i = 0; i < partition_names.size(); ++i)
         block.getByPosition(i).column->get(0, fields[i]);
 
-    if (prune_level >= PruneLevel::Partition)
+    /// Without a filter there is nothing to prune by, so collect all files of the partition.
+    if (filter_actions_dag && prune_level >= PruneLevel::Partition)
     {
-        std::vector<Range> ranges;
+        Ranges ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
 
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition partition_key_condition(inverted_dag, context, partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
     }
 
-    HiveFiles hive_files;
+    HiveFilesWithSkipSplits hive_files;
     auto file_infos = listDirectory(partition.sd.location, hive_table_metadata, fs);
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
         auto hive_file = getHiveFileIfNeeded(file_info, fields, filter_actions_dag, hive_table_metadata, context_, prune_level);
-        if (hive_file)
+        if (hive_file.file)
         {
             LOG_TRACE(
                 log,
                 "Append hive file {} from partition {}, prune_level:{}",
-                hive_file->getPath(),
+                hive_file.file->getPath(),
                 boost::join(partition.values, ","),
                 pruneLevelToString(prune_level));
-            hive_files.push_back(hive_file);
+            hive_files.push_back(std::move(hive_file));
         }
     }
     return hive_files;
@@ -669,7 +680,35 @@ StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hiv
     return hive_table_metadata->getFilesByLocation(fs, path);
 }
 
-HiveFilePtr StorageHive::getHiveFileIfNeeded(
+/// The `hive_files_cache` lives on the per-remote-table `HiveTableMetadata`, so it is shared by every
+/// `StorageHive` table over the same remote Hive table. A cached `IHiveFile` bakes in table-specific
+/// state: the partition values, the minmax-index column layout (`index_names_and_types`), the file
+/// format, and the minmax-index settings. `Hive` explicitly allows different ClickHouse schemas/settings
+/// over one remote table, so two such tables must not share a cached file - otherwise the second table
+/// would prune (and materialize partition columns) against the first table's cached layout, silently
+/// keeping or skipping the wrong data. Key the cache by the remote path plus a signature of that
+/// table-specific state so mismatched tables get independent entries while an identical table still
+/// reuses the cache. Any new `HiveSettings` value that changes how a cached file is built or pruned must
+/// be added to this signature.
+static String getHiveFileCacheKey(
+    const String & path,
+    const String & format_name,
+    const FieldVector & partition_values,
+    const NamesAndTypesList & index_names_and_types,
+    const HiveSettings & storage_settings)
+{
+    SipHash hash;
+    hash.update(format_name);
+    hash.update(index_names_and_types.toString());
+    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_orc_file_minmax_index] ? 1 : 0));
+    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_orc_stripe_minmax_index] ? 1 : 0));
+    hash.update(static_cast<UInt8>(storage_settings[HiveSetting::enable_parquet_rowgroup_minmax_index] ? 1 : 0));
+    for (const auto & value : partition_values)
+        hash.update(applyVisitor(FieldVisitorToString(), value));
+    return path + "#" + getSipHash128AsHexString(hash);
+}
+
+HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     const FileInfo & file_info,
     const FieldVector & fields,
     const ActionsDAG * filter_actions_dag,
@@ -683,7 +722,8 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
         return {};
 
     auto cache = hive_table_metadata->getHiveFilesCache();
-    auto hive_file = cache->get(file_info.path);
+    const String cache_key = getHiveFileCacheKey(file_info.path, format_name, fields, hivefile_name_types, *storage_settings);
+    auto hive_file = cache->get(cache_key);
     if (!hive_file || hive_file->getLastModTs() < file_info.last_modify_time)
     {
         LOG_TRACE(log, "Create hive file {}, prune_level {}", file_info.path, pruneLevelToString(prune_level));
@@ -697,16 +737,22 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
             hivefile_name_types,
             storage_settings,
             context_->getGlobalContext());
-        cache->set(file_info.path, hive_file);
+        cache->set(cache_key, hive_file);
     }
     else
     {
         LOG_TRACE(log, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
-    if (prune_level >= PruneLevel::File)
+    /// Splits (Parquet row groups / ORC stripes) to skip while reading this file for the current query.
+    /// This set depends on the query filter, so it is kept query-local rather than stored on the shared
+    /// cached file: an unfiltered read leaves it empty (read all splits), and concurrent queries with
+    /// different filters do not interfere with each other's pruning.
+    std::unordered_set<int> skip_splits;
+
+    if (filter_actions_dag && prune_level >= PruneLevel::File)
     {
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
@@ -729,7 +775,6 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
             if (hive_file->useSplitMinMaxIndex())
             {
                 /// Load sub-file level minmax index and apply
-                std::unordered_set<int> skip_splits;
                 hive_file->loadSplitMinMaxIndexes();
                 const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
                 for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
@@ -747,11 +792,10 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
                         skip_splits.insert(static_cast<int>(i));
                     }
                 }
-                hive_file->setSkipSplits(skip_splits);
             }
         }
     }
-    return hive_file;
+    return {hive_file, std::move(skip_splits)};
 }
 
 bool StorageHive::supportsSubsetOfColumns() const
@@ -808,7 +852,7 @@ private:
     size_t max_block_size;
     size_t num_streams;
 
-    std::optional<HiveFiles> hive_files;
+    std::optional<HiveFilesWithSkipSplits> hive_files;
 
     void createFiles();
 };
@@ -940,7 +984,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     pipeline.init(std::move(pipe));
 }
 
-HiveFiles StorageHive::collectHiveFiles(
+HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
     size_t max_threads,
     const ActionsDAG * filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
@@ -954,7 +998,7 @@ HiveFiles StorageHive::collectHiveFiles(
         return {};
 
     /// Hive files to collect
-    HiveFiles hive_files;
+    HiveFilesWithSkipSplits hive_files;
     Int64 hit_parttions_num = 0;
     Int64 hive_max_query_partitions = context_->getSettingsRef()[Setting::max_partitions_to_read];
     /// Mutext to protect hive_files, which maybe appended in multiple threads
@@ -995,14 +1039,19 @@ HiveFiles StorageHive::collectHiveFiles(
         auto file_infos = listDirectory(hive_table_metadata->getTable()->sd.location, hive_table_metadata, fs);
         for (const auto & file_info : file_infos)
         {
+            /// Capture `file_info` by value: `file_infos` is scoped to this `else` block and is destroyed
+            /// at the closing brace below, before the `pool.wait()` that joins the tasks - a task still
+            /// running (or queued) at that point would otherwise read a dangling reference into the freed
+            /// vector. `partitions` in the branch above is a function-scope local and outlives `pool.wait`,
+            /// so its `[&]` capture of `partition` is safe and left unchanged.
             pool.scheduleOrThrowOnError(
-                [&]()
+                [&, file_info]()
                 {
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, filter_actions_dag, hive_table_metadata, context_, prune_level);
-                    if (hive_file)
+                    if (hive_file.file)
                     {
                         std::lock_guard lock(hive_files_mutex);
-                        hive_files.push_back(hive_file);
+                        hive_files.push_back(std::move(hive_file));
                     }
                 });
         }
@@ -1043,15 +1092,15 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFiles hive_files = collectHiveFiles(settings[Setting::max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
+    HiveFilesWithSkipSplits hive_files = collectHiveFiles(settings[Setting::max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)
     {
-        auto file_rows = hive_file->getRows();
+        auto file_rows = hive_file.file->getRows();
         if (!file_rows)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Rows of hive file:{} with format:{} not initialized", hive_file->getPath(), format_name);
+                ErrorCodes::LOGICAL_ERROR, "Rows of hive file:{} with format:{} not initialized", hive_file.file->getPath(), format_name);
         total_rows += *file_rows;
     }
     return total_rows;
@@ -1102,6 +1151,423 @@ void registerStorageHive(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# Hive table engine
+
+<CloudNotSupportedBadge/>
+
+The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently, it supports input formats as below:
+
+- Text: only supports simple scalar column types except `binary`
+
+- ORC: support simple scalar columns types except `char`; only support complex types like `array`
+
+- Parquet: support all simple scalar columns types; only support complex types like `array`
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
+    ...
+) ENGINE = Hive('thrift://host:port', 'database', 'table')
+PARTITION BY expr
+```
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+
+The table structure can differ from the original Hive table structure:
+- Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
+- Column types should be the same from those in the original Hive table.
+- Partition by expression should be consistent with the original Hive table, and columns in partition by expression should be in the table structure.
+
+**Engine Parameters**
+
+- `thrift://host:port` — Hive Metastore address
+
+- `database` — Remote database name.
+
+- `table` — Remote table name.
+
+## Usage example {#usage-example}
+
+### How to use local cache for HDFS filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
+
+We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
+
+Before using cache, add it to `config.xml`
+```xml
+<local_cache_for_remote_fs>
+    <enable>true</enable>
+    <root_dir>local_cache</root_dir>
+    <limit_size>559096952</limit_size>
+    <bytes_read_before_flush>1048576</bytes_read_before_flush>
+</local_cache_for_remote_fs>
+```
+
+- enable: ClickHouse will maintain local cache for remote filesystem(HDFS) after startup if true.
+- root_dir: Required. The root directory to store local cache files for remote filesystem.
+- limit_size: Required. The maximum size(in bytes) of local cache files.
+- bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
+
+### Query Hive table with ORC input format  {#query-hive-table-with-orc-input-format}
+
+#### Create Table in Hive {#create-table-in-hive}
+
+```text
+hive > CREATE TABLE `test`.`test_orc`(
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+`day` string)
+ROW FORMAT SERDE
+'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+STORED AS INPUTFORMAT
+'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT
+'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_orc'
+
+OK
+Time taken: 0.51 seconds
+
+hive > insert into test.test_orc partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_orc;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-11-05 12:38:16.314    2021-11-05    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.295 seconds, Fetched: 1 row(s)
+```
+
+#### Create Table in ClickHouse  {#create-table-in-clickhouse}
+
+Table in ClickHouse, retrieving data from the Hive table created above:
+```sql
+CREATE TABLE test.test_orc
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_bool` Bool,
+    `f_binary` String,
+    `f_array_int` Array(Int32),
+    `f_array_string` Array(String),
+    `f_array_float` Array(Float32),
+    `f_array_array_int` Array(Array(Int32)),
+    `f_array_array_string` Array(Array(String)),
+    `f_array_array_float` Array(Array(Float32)),
+    `day` String
+)
+ENGINE = Hive('thrift://202.168.117.26:9083', 'test', 'test_orc')
+PARTITION BY day
+
+```
+
+```sql
+SELECT * FROM test.test_orc settings input_format_orc_allow_missing_columns = 1\G
+```
+
+```text
+SELECT *
+FROM test.test_orc
+SETTINGS input_format_orc_allow_missing_columns = 1
+
+Query id: c3eaffdc-78ab-43cd-96a4-4acc5b480658
+
+Row 1:
+──────
+f_tinyint:            1
+f_smallint:           2
+f_int:                3
+f_integer:            4
+f_bigint:             5
+f_float:              6.11
+f_double:             7.22
+f_decimal:            8
+f_timestamp:          2021-12-04 04:00:44
+f_date:               2021-12-03
+f_string:             hello world
+f_varchar:            hello world
+f_bool:               true
+f_binary:             hello world
+f_array_int:          [1,2,3]
+f_array_string:       ['hello world','hello world']
+f_array_float:        [1.1,1.2]
+f_array_array_int:    [[1,2],[3,4]]
+f_array_array_string: [['a','b'],['c','d']]
+f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
+day:                  2021-09-18
+
+
+1 rows in set. Elapsed: 0.078 sec.
+```
+
+### Query Hive table with Parquet input format {#query-hive-table-with-parquet-input-format}
+
+#### Create Table in Hive {#create-table-in-hive-1}
+
+```text
+hive >
+CREATE TABLE `test`.`test_parquet`(
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_char` char(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+`day` string)
+ROW FORMAT SERDE
+'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
+STORED AS INPUTFORMAT
+'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat'
+OUTPUTFORMAT
+'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_parquet'
+OK
+Time taken: 0.51 seconds
+
+hive >  insert into test.test_parquet partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_parquet;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-12-14 17:54:56.743    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.766 seconds, Fetched: 1 row(s)
+```
+
+#### Create Table in ClickHouse {#create-table-in-clickhouse-1}
+
+Table in ClickHouse, retrieving data from the Hive table created above:
+```sql
+CREATE TABLE test.test_parquet
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_char` String,
+    `f_bool` Bool,
+    `f_binary` String,
+    `f_array_int` Array(Int32),
+    `f_array_string` Array(String),
+    `f_array_float` Array(Float32),
+    `f_array_array_int` Array(Array(Int32)),
+    `f_array_array_string` Array(Array(String)),
+    `f_array_array_float` Array(Array(Float32)),
+    `day` String
+)
+ENGINE = Hive('thrift://localhost:9083', 'test', 'test_parquet')
+PARTITION BY day
+```
+
+```sql
+SELECT * FROM test.test_parquet settings input_format_parquet_allow_missing_columns = 1\G
+```
+
+```text
+SELECT *
+FROM test_parquet
+SETTINGS input_format_parquet_allow_missing_columns = 1
+
+Query id: 4e35cf02-c7b2-430d-9b81-16f438e5fca9
+
+Row 1:
+──────
+f_tinyint:            1
+f_smallint:           2
+f_int:                3
+f_integer:            4
+f_bigint:             5
+f_float:              6.11
+f_double:             7.22
+f_decimal:            8
+f_timestamp:          2021-12-14 17:54:56
+f_date:               2021-12-14
+f_string:             hello world
+f_varchar:            hello world
+f_char:               hello world
+f_bool:               true
+f_binary:             hello world
+f_array_int:          [1,2,3]
+f_array_string:       ['hello world','hello world']
+f_array_float:        [1.1,1.2]
+f_array_array_int:    [[1,2],[3,4]]
+f_array_array_string: [['a','b'],['c','d']]
+f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
+day:                  2021-09-18
+
+1 rows in set. Elapsed: 0.357 sec.
+```
+
+### Query Hive table with Text input format {#query-hive-table-with-text-input-format}
+
+#### Create Table in Hive {#create-table-in-hive-2}
+
+```text
+hive >
+CREATE TABLE `test`.`test_text`(
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_char` char(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
+PARTITIONED BY (
+`day` string)
+ROW FORMAT SERDE
+'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+STORED AS INPUTFORMAT
+'org.apache.hadoop.mapred.TextInputFormat'
+OUTPUTFORMAT
+'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION
+  'hdfs://testcluster/data/hive/test.db/test_text'
+Time taken: 0.1 seconds, Fetched: 34 row(s)
+
+
+hive >  insert into test.test_text partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
+OK
+Time taken: 36.025 seconds
+
+hive > select * from test.test_text;
+OK
+1    2    3    4    5    6.11    7.22    8    2021-12-14 18:11:17.239    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+Time taken: 0.624 seconds, Fetched: 1 row(s)
+```
+
+#### Create Table in ClickHouse {#create-table-in-clickhouse-2}
+
+Table in ClickHouse, retrieving data from the Hive table created above:
+```sql
+CREATE TABLE test.test_text
+(
+    `f_tinyint` Int8,
+    `f_smallint` Int16,
+    `f_int` Int32,
+    `f_integer` Int32,
+    `f_bigint` Int64,
+    `f_float` Float32,
+    `f_double` Float64,
+    `f_decimal` Float64,
+    `f_timestamp` DateTime,
+    `f_date` Date,
+    `f_string` String,
+    `f_varchar` String,
+    `f_char` String,
+    `f_bool` Bool,
+    `day` String
+)
+ENGINE = Hive('thrift://localhost:9083', 'test', 'test_text')
+PARTITION BY day
+```
+
+```sql
+SELECT * FROM test.test_text settings input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'\G
+```
+
+```text
+SELECT *
+FROM test.test_text
+SETTINGS input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'
+
+Query id: 55b79d35-56de-45b9-8be6-57282fbf1f44
+
+Row 1:
+──────
+f_tinyint:   1
+f_smallint:  2
+f_int:       3
+f_integer:   4
+f_bigint:    5
+f_float:     6.11
+f_double:    7.22
+f_decimal:   8
+f_timestamp: 2021-12-14 18:11:17
+f_date:      2021-12-14
+f_string:    hello world
+f_varchar:   hello world
+f_char:      hello world
+f_bool:      true
+day:         2021-09-18
+```
+)DOCS_MD",
+            .syntax = "ENGINE = Hive('thrift://host:port', 'database', 'table') PARTITION BY expr",
         });
 }
 

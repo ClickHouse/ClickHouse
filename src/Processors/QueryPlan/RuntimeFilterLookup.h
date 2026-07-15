@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -54,6 +55,10 @@ public:
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
     void setFullyDisabled() { is_fully_disabled = true; }
+
+    Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
+    UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
+    const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
 protected:
 
@@ -105,9 +110,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
-            WhichDataType(filter_column_target_type).isDynamic() ||
-            WhichDataType(filter_column_target_type).isVariant())
+        , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
@@ -145,7 +148,7 @@ public:
         if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
-            single_element_in_set = (*exact_values->getSetElements().front())[0];
+            single_element_column = exact_values->getSetElements().front();
             return;
         }
 
@@ -186,7 +189,7 @@ private:
 
     bool is_full = false;
 
-    std::optional<Field> single_element_in_set;
+    ColumnPtr single_element_column;
 };
 
 class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
@@ -243,7 +246,8 @@ public:
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_);
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        std::optional<UInt64> distinct_keys_hint_);
 
     void insert(ColumnPtr values) override;
 
@@ -265,8 +269,38 @@ private:
 
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
+    const std::optional<UInt64> distinct_keys_hint;
 
     BloomFilterPtr bloom_filter;
+};
+
+/// Runtime filter that delegates probe to a function captured at publication time.
+/// Used to share an already-built data structure (e.g. HashJoin's FixedHashMap)
+/// as a runtime filter without copying the data. The probe_fn closure is expected
+/// to hold a shared_ptr to the underlying structure, so the data stays alive as
+/// long as this filter is alive.
+class SharedFixedHashTableRuntimeFilter final : public IRuntimeFilter
+{
+public:
+    using ProbeFn = std::function<ColumnPtr(const ColumnWithTypeAndName &)>;
+
+    SharedFixedHashTableRuntimeFilter(
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        ProbeFn probe_fn_);
+
+    /// All "build" entry points are no-ops: the data was built inside HashJoin already.
+    void insert(ColumnPtr) override {}
+    void merge(const IRuntimeFilter *) override {}
+
+protected:
+    void finishInsertImpl() override {}
+    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+
+private:
+    ProbeFn probe_fn;
 };
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
@@ -275,8 +309,14 @@ struct IRuntimeFilterLookup : boost::noncopyable
 {
     virtual ~IRuntimeFilterLookup() = default;
 
-    /// Add runtime filter with the specified name
-    virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+    /// Add a runtime filter under the given rendezvous key. `display_name` is the readable structural
+    /// id kept only for logging; the lookup is keyed by `key`.
+    virtual void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+
+    /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
+    /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the
+    /// Set/BloomFilter built by BuildRuntimeFilterStep.
+    virtual void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Get filter by name
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;
