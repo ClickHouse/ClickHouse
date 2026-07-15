@@ -24,9 +24,16 @@ class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context->isDistributed()); }
+    explicit FunctionGetMaxTableNameLengthForDatabase(bool is_distributed_) : is_distributed(is_distributed_) {}
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+    /// The value depends on the local database path length: each shard may differ, so the
+    /// initiator of a distributed query must not fold the call into a literal computed from
+    /// its own filesystem state (same as `getServerSetting`).
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -64,6 +71,8 @@ public:
     }
 
 private:
+    bool is_distributed;
+
     const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column) const
     {
         if (const auto * col = checkAndGetColumnConst<ColumnString>(column))

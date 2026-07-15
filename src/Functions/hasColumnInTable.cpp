@@ -33,10 +33,11 @@ public:
     static constexpr auto name = "hasColumnInTable";
     static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext(), context_->isDistributed());
     }
 
-    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
+    explicit FunctionHasColumnInTable(ContextPtr global_context_, bool is_distributed_)
+        : WithContext(global_context_), is_distributed(is_distributed_)
     {
     }
 
@@ -58,9 +59,19 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool isServerConstant() const override { return true; }
+
+    /// The local form inspects the shard's own catalog: each shard may have different tables,
+    /// so the initiator of a distributed query must not fold the call into a literal computed
+    /// from its own catalog state (same as `getServerSetting`).
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+
+private:
+    bool is_distributed;
 };
 
 
