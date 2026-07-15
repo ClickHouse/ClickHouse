@@ -150,12 +150,12 @@ def generate_inflated_lz4_content_size(source: Path) -> None:
 def generate_missing_required_fields() -> None:
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     payload = json.loads(footer_json.decode("utf-8"))
-    cases = {
+    blob_field_cases = {
         "missing_snapshot_id.puffin": "snapshot-id",
         "missing_sequence_number.puffin": "sequence-number",
         "missing_fields.puffin": "fields",
     }
-    for name, field in cases.items():
+    for name, field in blob_field_cases.items():
         case_payload = json.loads(json.dumps(payload))
         del case_payload["blobs"][0][field]
         write_fixture(
@@ -163,6 +163,19 @@ def generate_missing_required_fields() -> None:
             build_puffin_file(
                 BLOB_PLACEHOLDER,
                 json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+    footer_field_cases = {
+        "missing_blobs.puffin": {},
+        "null_blobs.puffin": {"blobs": None},
+    }
+    for name, footer_payload in footer_field_cases.items():
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(footer_payload, separators=(", ", ": ")).encode("utf-8"),
             ),
         )
 
