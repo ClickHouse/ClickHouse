@@ -39,6 +39,15 @@ SELECT 'EXCEPT DISTINCT', count() FROM
 (EXPLAIN indexes = 1 SELECT a FROM (SELECT a FROM t_intex_l EXCEPT DISTINCT SELECT a FROM t_intex_r) WHERE a = 5)
 WHERE explain ILIKE '%Condition:%a in [5, 5]%';
 
+-- The filter must also be REMOVED from above the set operator (not merely duplicated into the
+-- branches), exactly as for UNION ALL. A top-level plan step renders with no tree prefix, so a
+-- residual Filter above IntersectOrExcept matches 'Filter%'; branch filters render '|--Filter'/'|  Filter'
+-- and do not. With pushdown on there must be 0 top-level Filter steps; with it off there is 1.
+SELECT 'no top filter EXCEPT ALL', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 1);
+SELECT 'top filter EXCEPT ALL off', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 0);
+
 -- Correctness: multiplicity/semantics preserved with the filter pushed down.
 DROP TABLE t_intex_l;
 DROP TABLE t_intex_r;
