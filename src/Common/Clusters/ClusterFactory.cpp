@@ -274,7 +274,7 @@ std::shared_ptr<const ClusterFactory::ClustersSnapshot> ClusterFactory::ensureRe
 
     const size_t version = snap ? snap->clusters_version : 0;
     ConfigurationPtr pinned = snap ? snap->clusters_config : nullptr;
-    publishClustersSnapshotLocked(std::move(builder), std::move(pinned), version);
+    publishClustersSnapshotLocked(std::move(builder), pinned, version);
     return clusters_state.get();
 }
 

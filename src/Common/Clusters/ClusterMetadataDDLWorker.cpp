@@ -115,7 +115,7 @@ ClusterMetadataDDLWorker::ClusterMetadataDDLWorker(
 
 ClusterMetadataDDLWorker::~ClusterMetadataDDLWorker()
 {
-    shutdown();
+    ClusterMetadataDDLWorker::shutdown();
 }
 
 void ClusterMetadataDDLWorker::shutdown()
