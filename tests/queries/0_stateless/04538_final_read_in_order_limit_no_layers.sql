@@ -14,6 +14,9 @@ INSERT INTO t_final_layers SELECT number, 2 FROM numbers(100000);
 INSERT INTO t_final_layers SELECT number, 3 FROM numbers(100000);
 
 SET max_threads = 4, max_final_threads = 4;
+-- The test relies on settings that are randomized by the test runner: pin them.
+SET optimize_read_in_order = 1;
+SET split_intersecting_parts_ranges_into_layers_final = 1;
 
 -- Read-in-order with a small limit: intersecting ranges must not be split into layers,
 -- the result is expected to be produced by a single lazy merging stream.
