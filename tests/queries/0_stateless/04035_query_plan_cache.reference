@@ -47,3 +47,8 @@ Test 15: View exclusion
 Test 16: max_rows_to_sort sensitivity
 0	1
 0	1
+Test 17: IN table exclusion
+0	0
+0	0
+0	0
+0	0

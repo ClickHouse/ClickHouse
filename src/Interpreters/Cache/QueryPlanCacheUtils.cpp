@@ -9,6 +9,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Analyzer/Utils.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -70,6 +73,36 @@ public:
 
 using RemoveQueryPlanCacheIgnoredSettingsVisitor = InDepthNodeVisitor<RemoveQueryPlanCacheIgnoredSettingsMatcher, true>;
 
+class HasInTableExpressionsMatcher
+{
+public:
+    struct Data
+    {
+        bool has_in_table_expression = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (data.has_in_table_expression)
+            return;
+
+        const auto * function = ast->as<ASTFunction>();
+        if (!function || !isNameOfInFunction(function->name) || !function->arguments)
+            return;
+
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() > 1 && (arguments[1]->as<ASTIdentifier>() || arguments[1]->as<ASTTableIdentifier>()))
+            data.has_in_table_expression = true;
+    }
+};
+
+using HasInTableExpressionsVisitor = InDepthNodeVisitor<HasInTableExpressionsMatcher, true>;
+
 ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
 {
     ASTPtr normalized_ast = ast->clone();
@@ -127,6 +160,13 @@ UInt64 getRowPolicyNamesHashForQueryPlanCache(const ContextPtr & context, const 
     return hash.get64();
 }
 
+}
+
+bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast)
+{
+    HasInTableExpressionsMatcher::Data finder_data;
+    HasInTableExpressionsVisitor(finder_data).visit(ast);
+    return finder_data.has_in_table_expression;
 }
 
 std::optional<QueryPlanCacheLookupContext> tryBuildPreAnalysisQueryPlanCacheLookup(

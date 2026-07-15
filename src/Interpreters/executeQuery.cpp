@@ -1870,7 +1870,8 @@ static BlockIO executeQueryImpl(
                 std::optional<QueryPlanCacheLookupContext> query_plan_cache_lookup_context;
                 if (can_use_query_plan_cache
                     && !astContainsNonDeterministicFunctions(out_ast, context)
-                    && !astContainsSubqueries(out_ast))
+                    && !astContainsSubqueries(out_ast)
+                    && !astContainsInTableExpressionForQueryPlanCache(out_ast))
                     query_plan_cache_lookup_context = tryBuildPreAnalysisQueryPlanCacheLookup(
                         out_ast, context, *plan_cache_semantic_settings_hash);
 

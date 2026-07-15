@@ -18,6 +18,8 @@ std::optional<QueryPlanCacheLookupContext> tryBuildPreAnalysisQueryPlanCacheLook
     const ContextPtr & context,
     UInt64 semantic_settings_hash);
 
+bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
+
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
 QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(

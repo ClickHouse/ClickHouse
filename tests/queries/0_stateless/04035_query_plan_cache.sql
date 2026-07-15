@@ -275,4 +275,27 @@ WHERE event_date >= yesterday()
   AND log_comment IN ('plan_cache_test_sort1', 'plan_cache_test_sort2')
 ORDER BY event_time_microseconds;
 
+-- Test 17: `IN table` and `GLOBAL IN table` build prepared sets from another table.
+-- The query plan cache dependency fingerprint tracks only the main `FROM` table,
+-- so these queries must bypass the cache before lookup.
+SYSTEM DROP QUERY PLAN CACHE;
+DROP TABLE IF EXISTS t_plan_cache_ids;
+CREATE TABLE t_plan_cache_ids (a UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_plan_cache_ids VALUES (1);
+SELECT a FROM t_plan_cache WHERE a IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_in_table' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_in_table' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a GLOBAL IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_global_in_table' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a GLOBAL IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_global_in_table' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 17: IN table exclusion';
+SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= (SELECT ts FROM test_start)
+  AND type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment IN ('plan_cache_test_in_table', 'plan_cache_test_global_in_table')
+ORDER BY log_comment, event_time_microseconds;
+DROP TABLE t_plan_cache_ids;
+
 DROP TABLE t_plan_cache;
