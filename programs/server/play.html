@@ -1870,6 +1870,7 @@ class QueryProgressElement extends HTMLElement
             cpu: 0,          /// Smoothed CPU usage, in cores.
             cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
             cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
+            cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
             /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
             /// The display shows the total across hosts and, for a distributed query (many hosts),
             /// the maximum over hosts as "max/host" - like `clickhouse-client`.
@@ -1932,10 +1933,14 @@ class QueryProgressElement extends HTMLElement
         const dt = elapsed_ns - r.cpu_at_ns;
         if (dt > 0)
         {
-            const instant = cpu_delta_ns / dt; /// Cores used during this interval.
+            /// Use the cumulative CPU time consumed since the previous sample, not only this
+            /// packet's increment: a packet can arrive before a newer elapsed timestamp (dt == 0,
+            /// no sample is taken), and its increment must still count towards the next sample.
+            const instant = (r.cpu_ns - r.cpu_sampled_ns) / dt; /// Cores used during this interval.
             /// Light smoothing to reduce jitter, similar to the client's event-rate meter.
             r.cpu = r.cpu ? (r.cpu * 0.5 + instant * 0.5) : instant;
             r.cpu_at_ns = elapsed_ns;
+            r.cpu_sampled_ns = r.cpu_ns;
         }
 
         r.has = true;
@@ -2755,10 +2760,13 @@ class QueryResultElement extends HTMLElement
         this._log_count = 0;
         /// Incoming log lines are buffered and appended to the DOM in batches (see `appendLog`),
         /// at most `MAX_PER_FRAME` per animation frame, so a burst of many lines does not block.
-        /// Every line stays in the DOM (for native find-in-page); `content-visibility` keeps the
-        /// off-screen ones cheap. `_log_flush_raf` is the pending frame request (0 when none).
+        /// The most recent `MAX_DOM_LINES` lines stay in the DOM (for native find-in-page);
+        /// `content-visibility` keeps the off-screen ones cheap; the oldest beyond the limit are
+        /// dropped (see `_flushLogs`). `_log_flush_raf` is the pending frame request (0 when none).
         this._log_buffer = [];
         this._log_flush_raf = 0;
+        this._log_dropped = 0;
+        this._log_dropped_marker = null;
         this._view = 'result';
         this._btnResult.addEventListener('click', () => this.showView('result'));
         this._btnLogs.addEventListener('click', () => this.showView('logs'));
@@ -2881,6 +2889,8 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._logsContent);
         this._logsContent.style.display = 'block';
         this._log_count = 0;
+        this._log_dropped = 0;
+        this._log_dropped_marker = null;
 
         /// Reset the extended metrics view (streamed via the framing format).
         this._metrics = new Map();
@@ -3844,8 +3854,11 @@ class QueryResultElement extends HTMLElement
 
     /// Append buffered log lines to the DOM. To keep the UI responsive when a very large burst
     /// arrives at once, at most `MAX_PER_FRAME` lines are built per frame; if more remain, another
-    /// frame is scheduled. All lines stay in the DOM (so native find-in-page can search them);
-    /// `content-visibility` keeps the off-screen ones cheap to hold.
+    /// frame is scheduled. The lines stay in the DOM (so native find-in-page can search them);
+    /// `content-visibility` keeps the off-screen ones cheap to render - but not free to hold, so
+    /// retention is bounded: only the most recent `MAX_DOM_LINES` lines are kept, and the oldest
+    /// are dropped, replaced by a single marker line carrying their count (`logCount` still
+    /// reports the total number of lines received).
     _flushLogs()
     {
         this._log_flush_raf = 0;
@@ -3861,6 +3874,23 @@ class QueryResultElement extends HTMLElement
         for (const entry of chunk)
             fragment.appendChild(this._buildLogLine(entry));
         this._logsContent.appendChild(fragment);
+
+        const MAX_DOM_LINES = 100000;
+        let excess = this._logsContent.childElementCount - (this._log_dropped_marker ? 1 : 0) - MAX_DOM_LINES;
+        if (excess > 0)
+        {
+            if (!this._log_dropped_marker)
+            {
+                this._log_dropped_marker = document.createElement('div');
+                this._log_dropped_marker.className = 'log-line';
+                this._log_dropped_marker.style.fontStyle = 'italic';
+                this._logsContent.prepend(this._log_dropped_marker);
+            }
+            this._log_dropped += excess;
+            while (excess-- > 0)
+                this._log_dropped_marker.nextElementSibling.remove();
+            this._log_dropped_marker.textContent = `... ${this._log_dropped} earlier lines were dropped ...`;
+        }
 
         /// Now that there is at least one log line, reveal the Logs toggle in the progress line.
         progressEl.showLogsToggle();
@@ -5658,8 +5688,10 @@ function logColor(text)
 /// entries go to the logs view, `profile_events` feed the CPU/memory/disk meters, and `exception`
 /// is rendered as an error.
 ///
-/// Returns `{ reply }` with the raw response text, or `{ cancelled: true }` if a newer request
-/// superseded this one.
+/// Returns `{ reply, is_image, exception }`: the raw response text (collected only up to the
+/// snapshot-size limit), whether an image was rendered, and whether an `exception` packet arrived
+/// (the query failed even when the HTTP status was already 200); or `{ cancelled: true }` if a
+/// newer request superseded this one.
 /// Decode a base64 string (an `EventStream` payload for a binary output format) into a byte array.
 function base64ToBytes(b64)
 {
@@ -5716,7 +5748,9 @@ function renderBinaryPayload(targetResultEl, chunks, imageMime)
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
 /// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
-/// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes.
+/// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes;
+/// `options.onException` is called when an `exception` packet arrives (the query failed even if the
+/// HTTP status was already sent as 200).
 function makeEventStreamHandler(targetResultEl, options = {})
 {
     /// State for reassembling the compact framed default format (see `framed_default_format`): the
@@ -5820,6 +5854,7 @@ function makeEventStreamHandler(targetResultEl, options = {})
         {
             /// The payload is `{"exception": "..."}`, handled by `update` as an error.
             if (dataLines[0]) targetResultEl.update(JSON.parse(dataLines[0]));
+            if (options.onException) options.onException();
         }
     };
 }
@@ -5872,6 +5907,7 @@ async function readEventStream(response, targetResultEl, abortController, posted
     let buffer = '';
     let reply = '';
     let stop = false;
+    let saw_exception = false;
     /// In base64 mode (binary output format) the decoded payload bytes are collected and rendered
     /// (as an image or raw text) once the whole stream has been read.
     const binary_chunks = base64 ? [] : null;
@@ -5881,6 +5917,7 @@ async function readEventStream(response, targetResultEl, abortController, posted
         resourceMeter: (events) => progressEl.feedProfileEvents(events),
         rawText,
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
+        onException: () => { saw_exception = true; },
     });
 
     while (true)
@@ -5892,7 +5929,13 @@ async function readEventStream(response, targetResultEl, abortController, posted
         {
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
-            reply += chunk;
+            /// The full response text is kept only for the tab/history snapshot, which is never
+            /// stored above 100 KB (see `saveHistory` and its callers). Stop collecting once past
+            /// that limit, so a long stream (e.g. a query producing tens of millions of log lines)
+            /// is not also retained as one huge string. The result stays over the limit, so the
+            /// truncated text can never be saved (and later replayed) as a complete snapshot.
+            if (reply.length <= 100000)
+                reply += chunk;
         }
 
         /// Events are separated by a blank line; process every complete event in the buffer.
@@ -5908,7 +5951,7 @@ async function readEventStream(response, targetResultEl, abortController, posted
             {
                 abortController.abort();
                 targetResultEl.finalizeMetrics();
-                return { reply };
+                return { reply, exception: saw_exception };
             }
         }
 
@@ -5921,7 +5964,7 @@ async function readEventStream(response, targetResultEl, abortController, posted
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
 
-    return { reply, is_image };
+    return { reply, is_image, exception: saw_exception };
 }
 
 /// Execute a single query, rendering results into the given targetResultEl.
@@ -5962,13 +6005,23 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// server rejects it (a format that cannot be framed, or a server without framing support), we
     /// retry without framing (see below). `JSONCompactColumns` is excluded because charts are
     /// rendered from the full response, not streamed. See `docs/en/interfaces/framing-formats.md`.
-    let use_framing = !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
+    ///
+    /// A query-level `SETTINGS framing_output_format = ...` overrides the URL parameter after the
+    /// query is parsed, so the response could be a framing this page does not parse (the NDJSON
+    /// `JSONEachPacket*` formats). Do not add the page's own framing to such a query (the same
+    /// imprecise text match as for `FORMAT` above): the query's framing applies alone, and the
+    /// response is dispatched by its `Content-Type` - an event stream is handled as usual (the
+    /// query chose `EventStream` itself), anything else is shown as raw text, so the packets the
+    /// user asked to see are displayed verbatim rather than misparsed.
+    const user_framing = /\bframing_output_format\b/i.test(query);
+    let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
     /// packets instead), so the framed request uses `framed_default_format` and the table renderer
-    /// reassembles its compact rows (see `makeEventStreamHandler`).
+    /// reassembles its compact rows (see `makeEventStreamHandler`). A query carrying its own
+    /// framing setting gets the framing-compatible default too, for the same reason.
     const framing_url = url + '&default_format=' + framed_default_format + '&framing_output_format=EventStream&send_logs_level=trace';
-    url += '&default_format=' + default_format;
+    url += '&default_format=' + (user_framing ? framed_default_format : default_format);
 
     targetResultEl.queryText = query;
 
@@ -5992,18 +6045,37 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
         let content_type = response.headers.get('Content-Type') ?? '';
 
-        /// If framing was requested but the response is not a framing stream on an error, the output
-        /// format is not compatible with framing (binary or raw output), or the server does not
-        /// support framing. Retry once without framing so the query still runs - without the streamed
-        /// logs and metrics. (When framing is applied, even an exception comes back as an event
-        /// stream, so a non-event-stream error unambiguously means framing was not applied.)
+        /// If framing was requested but the response is not a framing stream on an error, the
+        /// server does not support framing. Retry once without framing so the query still runs -
+        /// without the streamed logs and metrics. (When framing is applied, even an exception comes
+        /// back as an event stream, so a non-event-stream error unambiguously means framing was not
+        /// applied.)
         /// Only read-only queries are retried: framing is not created for a non-pulling pipeline
-        /// (`INSERT`, DDL), so such a statement may already have run on the server before returning a
-        /// plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
+        /// (`INSERT`, DDL) on such a server, so the statement may already have run before returning
+        /// a plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
         if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
             content_type = response.headers.get('Content-Type') ?? '';
+        }
+
+        /// A framed error stream is read in full before dispatching on it: when the exception is
+        /// the framing rejecting the query's own output format (an explicit `FORMAT
+        /// JSONEachRowWithProgress` or `FORMAT Template` - formats the framing does not accept),
+        /// the same query succeeds without framing, so retry it plain (read-only queries only, as
+        /// above). The rejection is recognized by its message; the substring is pinned by
+        /// `04512_framing_formats.sh`. Any other framed error stream is replayed below, rendering
+        /// the partial data, the logs, and the exception.
+        let framed_error_stream = null;
+        if (!response.ok && content_type.startsWith('text/event-stream')) {
+            framed_error_stream = await response.text();
+            if (posted_request_num != request_num) { return { cancelled: true }; }
+            if (use_framing && queryIsReadOnly(query) && framed_error_stream.includes('is not compatible with framing formats')) {
+                framed_error_stream = null;
+                use_framing = false;
+                response = await fetch(url, fetch_options);
+                content_type = response.headers.get('Content-Type') ?? '';
+            }
         }
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
@@ -6022,14 +6094,14 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 
         if (!response.ok && content_type.startsWith('text/event-stream')) {
             /// A framing `EventStream` response carries the exception as the last packet even on an
-            /// HTTP error status, along with any data and logs produced before it. Parse the whole
-            /// stream: `readEventStream` renders the partial result, the logs, and the exception.
+            /// HTTP error status, along with any data and logs produced before it. Replay the whole
+            /// stream (already read above, when checking for a format-compatibility rejection):
+            /// it renders the partial result, the logs, and the exception.
             is_error = true;
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, !base64 && !isDefaultFormat(format), base64, image_mime);
-            if (res.cancelled) { return { cancelled: true }; }
-            reply = res.reply;
+            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, image_mime);
+            reply = framed_error_stream;
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
         } else if (!response.ok) {
             is_error = true;
@@ -6081,6 +6153,15 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
             else if (raw_text) is_raw = true; else is_table = true;
             reply = res.reply;
+            /// An `exception` packet can arrive after the HTTP status was already sent as 200 OK
+            /// (the headers go out once streaming begins). Report the failure to the caller, so the
+            /// single-query path shows the error state and `Run all` does not execute the following
+            /// statements after this one failed. The stream was rendered above: the partial result,
+            /// the logs, and the exception are all shown.
+            if (res.exception) {
+                is_error = true;
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+            }
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();

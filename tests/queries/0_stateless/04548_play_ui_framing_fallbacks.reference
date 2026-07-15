@@ -1,0 +1,18 @@
+default format extracted: OK
+framed default format extracted: OK
+rejection pattern extracted: OK
+--- an incompatible explicit format is rejected as a framed exception the page can match
+1
+text/event-stream
+event: exception
+is not compatible with framing formats
+--- the same query succeeds on the plain request shape (the retry target)
+"row"
+--- a query-level framing setting reports its own content type and accepts the framed default format
+application/x-ndjson
+no exception: OK
+"packet":"data"
+--- an exception after streamed data arrives inside a 200 OK event stream
+1
+event: data
+event: exception
