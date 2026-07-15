@@ -349,7 +349,7 @@ bool parameterizedViewFunctionHasLimitShuffle(const ASTFunction & function, cons
     const auto metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto & view_select = metadata->getSelectQuery();
 
-    auto queryHasLimitShuffle = [&](const ASTPtr & query)
+    auto query_has_limit_shuffle = [&](const ASTPtr & query)
     {
         if (!query)
             return false;
@@ -359,7 +359,7 @@ bool parameterizedViewFunctionHasLimitShuffle(const ASTFunction & function, cons
         return astOrViewDependenciesHaveLimitShuffle(substituted_query, context, visited_views);
     };
 
-    return queryHasLimitShuffle(view_select.inner_query) || queryHasLimitShuffle(view_select.select_query);
+    return query_has_limit_shuffle(view_select.inner_query) || query_has_limit_shuffle(view_select.select_query);
 }
 
 bool selectedMergeTableViewsHaveLimitShuffle(
@@ -675,7 +675,6 @@ struct HasSystemTablesMatcher
                 data.has_system_tables = true;
                 return;
             }
-
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;

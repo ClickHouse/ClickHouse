@@ -13,10 +13,15 @@ SelectWithUnionQuery (children 1)
 SELECT number
 FROM numbers(10)
 LIMIT 3 SHUFFLE
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        ReadFromSystemNumbers
+Output: number
+
+Limit (preliminary LIMIT)
+│  Limit 3
+│  Offset 0
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: rand() ASC
+   │  Limit 3
+   └──ReadFromSystemNumbers
+         Output: number
 7
 0
