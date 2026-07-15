@@ -241,69 +241,48 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
-    PaddedPODArray<UInt32> hashes;
 
-    /// Hashing strategy:
-    /// - Empty string (len == 0):
-    ///   Use hash = 0. Empty keys are handled as a special case and do not participate
-    ///   in the unified encoding path to keep the main comparison logic simple.
-    ///
-    /// - String length <= UInt32 max:
-    ///   Use StringViewHash() to compute a 32-bit hash from string content.
-    ///   This hash is later combined with the string length (32-bit) to form a compact
-    ///   64-bit inline key metadata (hash | len), allowing:
-    ///     * Fast hash comparison
-    ///     * Length comparison without extra memory access
-    ///     * Reduced Cell size in the hash table
-    ///
-    /// - String length > UInt32 max:
-    ///   Such keys are extremely rare in practice. For these oversized strings,
-    ///   we fall back to using the low 32 bits of the string length as hash value.
-    ///   This intentionally sacrifices hash quality in exchange for:
-    ///     * Avoiding extra hashing cost
-    ///     * Preserving a uniform Cell layout
-    ///   Collisions are acceptable here due to the very low occurrence rate, and
-    ///   full string comparison is still used as the final equality check.
-    ///
-    /// Notes:
-    /// - 32-bit hash is sufficient for in-memory aggregation hash tables.
-    /// - A separate 64-bit hash is used only in external aggregation scenarios
-    ///   and is generated via a dedicated conversion path.
-    /// - This length-aware hashing scheme is a key building block for compact
-    ///   Cell design and cache-friendly probing in the optimized String Hash Table.
     HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : Base(key_columns[0])
     {
-        const IColumn * column = key_columns[0];
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
-        auto & data = hashes;
-        size_t rows = column_string.size();
-        data.resize_exact(rows);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            auto str = column_string.getDataAt(i);
-            size_t size = str.size();
-            if (size == 0)
-                data[i] = 0;
-#if defined(CRC_INT)
-            else if (size < 8)
-                /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
-                /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
-                /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
-                /// which otherwise dominates low-cardinality short-string aggregation
-                /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
-                /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
-                /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-                data[i] = hashTinyKey(str.data(), size); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-#endif
-            else if (size <= std::numeric_limits<UInt32>::max())
-                data[i] = static_cast<UInt32>(StringViewHash()(str));
-            else
-                data[i] = static_cast<UInt32>(size);
-        }
     }
+
+    /// Content hash stored inside the packed key. `PackedStringRef::build` invokes it
+    /// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
+    /// zero by construction and oversized strings use the length as a hash surrogate,
+    /// trading hash quality for a uniform cell layout (full string comparison remains
+    /// the final equality check).
+    ///
+    /// Computing the hash inside `build` keeps a single pass over the string data:
+    /// a separate per-block hashing pass would read every key twice and allocate a
+    /// hash array per block. The flip side is that when the `Aggregator` prefetch
+    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
+    /// call rebuilds the key and hashes it a second time - the same behaviour as the
+    /// `StringHashTable` prefetch path this method replaces.
+    ///
+    /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
+    /// aggregation derives a 64-bit hash via a dedicated conversion path.
+    struct Hash
+    {
+        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
+        {
+#if defined(CRC_INT)
+            /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
+            /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
+            /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
+            /// which otherwise dominates low-cardinality short-string aggregation
+            /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
+            /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
+            /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
+            if (size < 8)
+                return hashTinyKey(data, size);
+#endif
+            return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
+        }
+    };
 
 #if defined(CRC_INT)
     /// Hash a 1..7 byte key with a single CRC instruction.
@@ -333,17 +312,15 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
+        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
+        const size_t size = offsets[row] - offsets[row - 1];
         if constexpr (place_string_to_arena)
         {
-            return ArenaPackedStringHolder{
-                PackedStringRef::build(
-                    reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]),
-                pool};
+            return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
         }
         else
         {
-            return PackedStringRef::build(
-                reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]);
+            return PackedStringRef::build(data, size, Hash{});
         }
     }
 
