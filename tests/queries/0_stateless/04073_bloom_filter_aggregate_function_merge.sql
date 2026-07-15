@@ -1,7 +1,7 @@
 -- Merge compatibility for `groupBloomFilter` aggregate states.
 
 -- Different filter sizes are incompatible.
--- The new analyzer produces a `Variant` for `UNION ALL`; the old analyzer fails during type unification.
+-- The analyzer produces a `Variant` for `UNION ALL`; the legacy analyzer fails during type unification.
 SELECT groupBloomFilterMerge(state) FROM
 (
     SELECT groupBloomFilterState(100)(number) AS state FROM numbers(10)
