@@ -126,7 +126,7 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
     }
 
     static constexpr std::string_view magic = "openssh-key-v1";
-    if (blob.size() < magic.size() + 1 || std::string_view(blob).substr(0, magic.size()) != magic)
+    if (blob.size() < magic.size() + 1 || !std::string_view(blob).starts_with(magic))
         return SSH_KEYTYPE_UNKNOWN;
 
     /// Layout: magic '\0', string ciphername, string kdfname, string kdfoptions, uint32 nkeys,

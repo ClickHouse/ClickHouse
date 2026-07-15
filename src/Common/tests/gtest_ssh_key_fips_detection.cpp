@@ -51,21 +51,21 @@ TEST(SSHKeyFIPSDetection, PrivateKeyFileEd25519IsNotUsable)
 {
     auto path = writeTempFile("ed_priv", ED25519_PRIVATE_KEY);
     EXPECT_FALSE(SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(path));
-    std::remove(path.c_str());
+    (void)std::remove(path.c_str());
 }
 
 TEST(SSHKeyFIPSDetection, PublicKeyFileEd25519IsNotUsable)
 {
     auto path = writeTempFile("ed_pub", ED25519_PUBLIC_KEY);
     EXPECT_FALSE(SSHKeyFactory::isPublicKeyFileUsableInFIPSBuilds(path));
-    std::remove(path.c_str());
+    (void)std::remove(path.c_str());
 }
 
 TEST(SSHKeyFIPSDetection, PublicKeyFileRSAIsUsable)
 {
     auto path = writeTempFile("rsa_pub", RSA_PUBLIC_KEY);
     EXPECT_TRUE(SSHKeyFactory::isPublicKeyFileUsableInFIPSBuilds(path));
-    std::remove(path.c_str());
+    (void)std::remove(path.c_str());
 }
 
 /// A non-OpenSSH / unparsable file is reported as UNKNOWN, which is treated as usable
@@ -74,7 +74,7 @@ TEST(SSHKeyFIPSDetection, NonOpenSSHFileIsUsable)
 {
     auto path = writeTempFile("garbage", "not a key at all\n");
     EXPECT_TRUE(SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(path));
-    std::remove(path.c_str());
+    (void)std::remove(path.c_str());
 }
 
 #endif
