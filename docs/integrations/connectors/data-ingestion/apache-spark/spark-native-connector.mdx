@@ -5,6 +5,7 @@ description: 'Introduction to Apache Spark with ClickHouse'
 keywords: ['clickhouse', 'Apache Spark', 'migrating', 'data']
 title: 'Spark connector'
 doc_type: 'guide'
+toc_max_heading_level: 2
 ---
 
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
@@ -249,7 +250,7 @@ df.show()
 </Tab>
 <Tab title="Scala">
 
-```scala
+```java
 val df = spark.read
   .format("clickhouse")
   .option("host", "your-clickhouse-host")
@@ -311,7 +312,7 @@ df.write \
 </Tab>
 <Tab title="Scala">
 
-```scala
+```java
 df.write
   .format("clickhouse")
   .option("host", "your-clickhouse-host")
@@ -389,7 +390,7 @@ df.write \
 </Tab>
 <Tab title="Scala">
 
-```scala
+```java
 // Table will be created automatically with explicit ORDER BY (required)
 df.write
   .format("clickhouse")
@@ -516,7 +517,7 @@ df.write \
 </Tab>
 <Tab title="Scala">
 
-```scala
+```java
 // Overwrite mode (truncates table first)
 df.write
   .format("clickhouse")
@@ -573,7 +574,7 @@ df.write \
 </Tab>
 <Tab title="Scala">
 
-```scala
+```java
 df.write
   .format("clickhouse")
   .option("host", "your-host")
@@ -940,7 +941,7 @@ When reading from ClickHouse, `JSON` and `Variant` columns are automatically map
 <Tabs>
 <Tab title="Scala">
 
-```scala
+```java
 // Read JSON column as VariantType
 val df = spark.sql("SELECT id, data FROM clickhouse.default.json_table")
 
@@ -1001,7 +1002,7 @@ You can write VariantType data to ClickHouse using either JSON or Variant column
 <Tabs>
 <Tab title="Scala">
 
-```scala
+```java
 import org.apache.spark.sql.functions._
 
 // Create DataFrame with JSON data
@@ -1207,7 +1208,7 @@ By default, JSON and Variant columns are read as `VariantType`. You can override
 <Tabs>
 <Tab title="Scala">
 
-```scala
+```java
 // Read JSON/Variant as strings instead of VariantType
 spark.conf.set("spark.clickhouse.read.jsonAs", "string")
 
@@ -1251,7 +1252,7 @@ VariantType write support varies by format:
 
 Configure the write format:
 
-```scala
+```java
 spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Variant types
 ```
 
@@ -1273,7 +1274,7 @@ If you need to write to a ClickHouse `Variant` type, use JSON format. Arrow form
 <Tabs>
 <Tab title="Scala">
 
-```scala
+```java
 import org.apache.spark.sql.functions._
 
 // Enable experimental JSON type in ClickHouse
@@ -1564,7 +1565,7 @@ The connector communicates with ClickHouse exclusively over HTTP. There is no mi
 | `VariantType` / `JSON` type support | 25.3+ |
 
 For production deployments, we recommend running the latest stable ClickHouse release — see the
-[releases page](https://github.com/ClickHouse/spark-clickhouse-connector/releases)
+[`build-and-test` workflow](https://github.com/ClickHouse/spark-clickhouse-connector/blob/main/.github/workflows/build-and-test.yml)
 for tested versions.
 
 ## Push-down operations {#push-down-operations}
@@ -1582,9 +1583,29 @@ The connector implements the Spark DataSource V2 push-down interfaces, meaning t
 
 To enable runtime filtering:
 
+<Tabs groupId="language">
+<TabItem value="python" label="Python" default>
+
 ```python
 spark.conf.set("spark.clickhouse.read.runtimeFilter.enabled", "true")
 ```
+
+</TabItem>
+<TabItem value="scala" label="Scala">
+
+```java
+spark.conf.set("spark.clickhouse.read.runtimeFilter.enabled", "true")
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+spark.conf().set("spark.clickhouse.read.runtimeFilter.enabled", "true");
+```
+
+</TabItem>
+</Tabs>
 
 :::note
 Complex filter expressions that Spark cannot compile to SQL (e.g., user-defined functions, unsupported predicates) are **not** pushed down. They are returned to Spark and evaluated in memory after the data is fetched. Use `EXPLAIN` in Spark to see which filters were actually pushed down.
@@ -1618,11 +1639,34 @@ For **Distributed tables**, when `spark.clickhouse.write.distributed.useClusterN
 
 To control the number of write tasks, set `spark.clickhouse.write.repartitionNum` to the desired partition count:
 
+<Tabs groupId="language">
+<TabItem value="python" label="Python" default>
+
 ```python
 spark.conf.set("spark.clickhouse.write.repartitionNum", "16")
 ```
 
+</TabItem>
+<TabItem value="scala" label="Scala">
+
+```java
+spark.conf.set("spark.clickhouse.write.repartitionNum", "16")
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+spark.conf().set("spark.clickhouse.write.repartitionNum", "16");
+```
+
+</TabItem>
+</Tabs>
+
 Alternatively, repartition the DataFrame explicitly before writing. Note that a bare `df.repartition(16)` performs a round-robin shuffle and is not equivalent to `spark.clickhouse.write.repartitionNum` — it does not group rows by shard or partition key. To co-locate rows for the same shard and partition in the same task, repartition by the sharding column and sort within each partition:
+
+<Tabs groupId="language">
+<TabItem value="python" label="Python" default>
 
 ```python
 from pyspark.sql.functions import col
@@ -1637,6 +1681,43 @@ df.repartition(16, col("SHARD_COLUMN")) \
     .mode("append") \
     .save()
 ```
+
+</TabItem>
+<TabItem value="scala" label="Scala">
+
+```java
+import org.apache.spark.sql.functions.col
+
+df.repartition(16, col("SHARD_COLUMN"))
+  .sortWithinPartitions("SHARD_COLUMN", "PARTITION_COLUMN")
+  .write
+  .format("clickhouse")
+  .option("host", "your-host")
+  .option("database", "default")
+  .option("table", "my_table")
+  .mode("append")
+  .save()
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java
+import static org.apache.spark.sql.functions.col;
+
+df.repartition(16, col("SHARD_COLUMN"))
+    .sortWithinPartitions("SHARD_COLUMN", "PARTITION_COLUMN")
+    .write()
+    .format("clickhouse")
+    .option("host", "your-host")
+    .option("database", "default")
+    .option("table", "my_table")
+    .mode("append")
+    .save();
+```
+
+</TabItem>
+</Tabs>
 
 ## Working with Distributed tables {#working-with-distributed-tables}
 
@@ -1688,7 +1769,7 @@ spark.sql.catalog.clickhouse.option.clickhouse_setting_max_execution_time      3
 To add custom HTTP headers to every request, use `option.http_header_<name>`. Headers recognised by ClickHouse itself (e.g. `X-ClickHouse-Quota`) will be honoured by the server; any other header is only useful if a proxy or gateway in front of ClickHouse is configured to read it.
 
 ```text
-spark.sql.catalog.clickhouse.option.http_header_x_clickhouse_quota   spark_etl_quota
+spark.sql.catalog.clickhouse.option.http_header_X-ClickHouse-Quota   spark_etl_quota
 ```
 
 To enable TLS, set `option.ssl=true` and point `http_port` at the HTTPS endpoint:
@@ -1727,7 +1808,7 @@ spark.conf.unset("spark.clickhouse.read.settings")
 </TabItem>
 <TabItem value="scala" label="Scala">
 
-```scala
+```java
 spark.conf.set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000")
 
 // Force the action before unsetting — Spark reads are lazy
@@ -1783,7 +1864,7 @@ df.write \
 </TabItem>
 <TabItem value="scala" label="Scala">
 
-```scala
+```java
 df.write
   .format("clickhouse")
   .option("host", "your-host")
@@ -1884,7 +1965,7 @@ These are ClickHouse query settings sent with each request. They instruct the Cl
 
 | Tuning | Configuration | Notes |
 |---|---|---|
-| **Increase batch size** | `spark.clickhouse.write.batchSize=50000` | Default is 10,000. Larger batches reduce round-trips. |
+| **Increase batch size** | `spark.clickhouse.write.batchSize=50000` | Default is 10,000. Larger batches reduce round-trips and could minimize `Too Many Parts` errors. |
 | **Arrow write format** | `spark.clickhouse.write.format=arrow` (default) | Arrow is faster than JSON for most data types. On Spark 4.0 the Arrow writer handles `VariantType` columns via an internal JSON-string conversion; on Spark 3.x, fall back to `json` if your table has Variant or JSON columns. |
 | **Compression** | `spark.clickhouse.write.compression.codec=lz4` (default) | Reduces network transfer during writes. |
 | **Repartition by partition** | `spark.clickhouse.write.repartitionByPartition=true` (default) | Groups rows by partition before writing, reducing the number of parts created. |
@@ -1932,20 +2013,16 @@ If you also have `spark.clickhouse.write.distributed.convertLocal=true`, ignorin
 
 ### Variant integers come back as quoted strings {#troubleshooting-variant-integer-roundtrip}
 
-**Symptom**: Integer values inside a `VariantType` column written with `spark.clickhouse.write.format=arrow` come back as **string-typed** Variant entries — Spark reads the value as a string, not a number. Writing `parse_json('{"v": 1}')` returns a Variant whose `v` path is the string `"1"` (JSON form: `{"v":"1"}`) instead of the number `1`. Floats, strings, and booleans are unaffected.
+**Symptom**: 64-bit integer values inside a `VariantType` or `JSON` column come back as **string-typed** entries — Spark reads the value as a string, not a number. Reading a Variant whose `v` path holds `1` returns the string `"1"` (JSON form: `{"v":"1"}`) instead of the number `1`. This happens regardless of the write format — both `arrow` and `json` writes are affected. Floats, strings, and booleans are unaffected.
 
-**Cause**: The Arrow write path currently ships Variants as JSON strings and lets ClickHouse cast `String → JSON` on insert. The cast widens every JSON integer to `Int64`, and `output_format_json_quote_64bit_integers=1` then quotes those values on read. The rebuilt Variant stores them as strings.
+**Cause**: This is read-side behavior, not a write-path bug. The connector reads `Variant` and `JSON` columns using a JSON format, and integers stored inside are held as 64-bit integers. ClickHouse's `output_format_json_quote_64bit_integers` setting controls whether 64-bit integers are wrapped in quotes in JSON output; when it is `1`, they are emitted as quoted strings and the connector rebuilds them as string-typed entries.
 
 **Fix**: Pick one:
-- Use JSON write format — sidesteps the `String → JSON` cast entirely. Note that JSON writes can be slower than Arrow for large volumes, so benchmark if write throughput matters:
-  ```text
-  spark.clickhouse.write.format=json
-  ```
-- Disable integer quoting on reads (keeps Arrow writes):
+- Disable integer quoting on reads:
   ```text
   spark.clickhouse.read.settings=output_format_json_quote_64bit_integers=0
   ```
-- Declare typed JSON paths in ClickHouse out-of-band, e.g. `data JSON(v Int8)`. Typed paths bypass the quoting setting entirely.
+- Declare typed JSON paths in ClickHouse, e.g. `data JSON(v Int8)`. A non-64-bit typed path is not subject to the quoting setting.
 
 ## Contributing and support {#contributing-and-support}
 
