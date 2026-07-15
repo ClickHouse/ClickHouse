@@ -137,7 +137,11 @@ Hive text representation are not supported for output and raise a
 `Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
 `Enum`, `Time`, `Time64` and `Interval` — Hive has no matching type for the
 latter, so they are rejected rather than written as their raw underlying
-numbers. Likewise, `Map` keys must be of a primitive type: Hive declares maps
+numbers. The wide numeric types `Int128`, `UInt128`, `Int256` and `UInt256`
+are rejected for the same reason: the widest Hive integer is `BIGINT` (64-bit),
+and even Hive `DECIMAL` with its maximum precision of 38 cannot hold their
+value range. Likewise, `Decimal` values with a precision above 38 (that is,
+`Decimal256`) exceed the maximum precision of Hive `DECIMAL` and are rejected. Likewise, `Map` keys must be of a primitive type: Hive declares maps
 as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
 `Map` or `Tuple` (which ClickHouse permits) is rejected with a
 `NOT_IMPLEMENTED` exception, because no Hive schema could read such values
