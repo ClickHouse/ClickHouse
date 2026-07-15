@@ -1,0 +1,9 @@
+Table discovery fails closed:
+Cannot access sqlite database
+Table lookup fails closed:
+Cannot access sqlite database
+SQLite database file was not created by ATTACH
+Tables after the file appeared:
+t1
+42
+SQLite database file was created by CREATE DATABASE

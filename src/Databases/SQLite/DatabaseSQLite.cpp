@@ -45,7 +45,11 @@ DatabaseSQLite::DatabaseSQLite(
     , database_path(database_path_)
     , log(getLogger("DatabaseSQLite"))
 {
-    sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
+    /// Only a genuine `CREATE DATABASE ... ENGINE = SQLite(...)` may create a missing database file. On
+    /// `ATTACH` (including replaying the stored definition on server startup) a missing file must stay
+    /// missing, so that table lookups surface `Cannot access sqlite database` instead of silently operating
+    /// on a fabricated empty database.
+    sqlite_db = openSQLiteDB(database_path_, context_, /* throw_on_error */ !is_attach_, /* allow_create */ !is_attach_);
 }
 
 
@@ -71,8 +75,11 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 
 NameSet DatabaseSQLite::fetchTablesList() const
 {
+    /// A lazy reopen only happens when the database file was unavailable on `ATTACH`; it must not create
+    /// the file either - a still-missing file surfaces an error here instead of reading a fabricated
+    /// empty database. The same applies to the reopens in `checkSQLiteTable` and `fetchTable`.
     if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     std::unordered_set<String> tables;
     /// Escape the `_` in the `sqlite_` prefix so that `LIKE` treats it as a literal underscore
@@ -107,7 +114,7 @@ NameSet DatabaseSQLite::fetchTablesList() const
 bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 {
     if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     const String query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = " + quoteStringSQLite(table_name) + ";";
 
@@ -150,7 +157,7 @@ StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr loc
 StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr local_context, bool table_checked) const
 {
     if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     if (!table_checked && !checkSQLiteTable(table_name))
         return StoragePtr{};
