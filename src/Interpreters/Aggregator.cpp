@@ -114,11 +114,11 @@ void initDataVariantsWithSizeHint(
     {
         if (worthConvertToTwoLevel(
                 params.group_by_two_level_threshold,
-                hint->sum_of_sizes,
+                hint->sum_of_hash_table_sizes,
                 /*group_by_two_level_threshold_bytes*/ 0,
                 /*result_size_bytes*/ 0))
             method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-        result.init(method_chosen, hint->median_size);
+        result.init(method_chosen, hint->median_hash_table_size);
     }
     else
     {
@@ -139,7 +139,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_hash_table_sizes = sum_of_sizes, .median_hash_table_size = *median_size}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)

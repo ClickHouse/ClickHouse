@@ -90,9 +90,9 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
     {
         if (auto hint = DB::getHashTablesStatistics<AggregationEntry>().getSizeHint(stats_collecting_params))
         {
-            const auto lower_limit = hint->sum_of_sizes / tables_cnt;
+            const auto lower_limit = hint->sum_of_hash_table_sizes / tables_cnt;
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate / tables_cnt;
-            if (hint->median_size > upper_limit)
+            if (hint->median_hash_table_size > upper_limit)
             {
                 /// Since we cannot afford to preallocate as much as needed, we would likely have to do at least one resize anyway.
                 /// Though it still sounds better than N resizes, but in actuality we saw that one big resize (remember, HT-s grow exponentially)
@@ -103,12 +103,12 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
                     "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, "
                     "should be at least {}",
                     stats_collecting_params.max_size_to_preallocate,
-                    hint->median_size * tables_cnt);
+                    hint->median_hash_table_size * tables_cnt);
             }
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
-            else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            else if ((tables_cnt > 1 && hint->sum_of_hash_table_sizes > 100'000) || hint->sum_of_hash_table_sizes > 500'000)
             {
-                return AggregationEntry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
+                return AggregationEntry{hint->sum_of_hash_table_sizes, std::max(lower_limit, hint->median_hash_table_size)};
             }
         }
     }

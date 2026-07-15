@@ -41,14 +41,14 @@ struct AggregationEntry
 {
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
-        return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size;
+        return new_entry.sum_of_hash_table_sizes < sum_of_hash_table_sizes / 2 || sum_of_hash_table_sizes < new_entry.sum_of_hash_table_sizes || new_entry.median_hash_table_size < median_hash_table_size / 2
+            || median_hash_table_size < new_entry.median_hash_table_size;
     }
 
-    std::string dump() const { return fmt::format("sum_of_sizes={}, median_size={}", sum_of_sizes, median_size); }
+    std::string dump() const { return fmt::format("sum_of_hash_table_sizes={}, median_hash_table_size={}", sum_of_hash_table_sizes, median_hash_table_size); }
 
-    size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
-    size_t median_size; // roughly the size we're going to preallocate on each thread
+    size_t sum_of_hash_table_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
+    size_t median_hash_table_size; // roughly the size we're going to preallocate on each thread
 };
 
 struct HashJoinEntry
