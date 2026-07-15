@@ -76,6 +76,10 @@ def build_structured_response(json_schema, user_message):
         if "enum" in prop:
             # For classification: return the first enum value
             result[key] = prop["enum"][0]
+        elif prop.get("type") == "boolean":
+            # For aiFilter: true unless the user message signals an obvious negative.
+            lowered = user_message.lower()
+            result[key] = not any(token in lowered for token in ("false", "no match", "does not match"))
         else:
             result[key] = user_message
 

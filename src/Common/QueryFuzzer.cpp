@@ -4317,8 +4317,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"stem", "lemmatize", "synonyms"},
         /// AI functions: text + optional params map
         {"aiEmbed", "aiGenerate"},
-        /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate"},
+        /// AI functions: text + a per-function arg (categories / instruction / target_language / condition) + optional params map
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Consistent hash functions (value, num_buckets → Int32)

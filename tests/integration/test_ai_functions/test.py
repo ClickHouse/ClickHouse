@@ -2,7 +2,7 @@
 Integration tests for AI function execution paths.
 
 Tests the row-processing loop against a mock OpenAI-compatible HTTP server
-for aiGenerate, aiClassify, aiExtract, and aiTranslate.
+for aiGenerate, aiClassify, aiFilter, aiExtract, and aiTranslate.
 """
 
 import json
@@ -412,6 +412,93 @@ def test_classify_null_input(started_cluster):
     assert len(lines) == 2
     assert "\\N" in lines
     assert "a" in lines
+
+
+# ---------------------------------------------------------------------------
+# aiFilter
+# ---------------------------------------------------------------------------
+
+
+def test_filter_basic(started_cluster):
+    """aiFilter sends a response_format with a boolean `match` field.
+    The mock returns true for ordinary messages."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'the customer is complaining about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "1"
+
+
+def test_filter_negative(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('does not match anything')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'angry about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "0"
+
+
+def test_filter_where(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    result = instance.query(
+        "SELECT x FROM test_input WHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) ORDER BY x",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert lines == ["also good", "great product"]
+
+
+def test_filter_response_format(started_cluster):
+    """Assert the request carries a JSON schema constraining `match` to boolean."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('hello')")
+    instance.query(
+        "SELECT aiFilter(x, 'is a greeting', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    last = json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+    body = json.loads(last["body"])
+    rf = body["response_format"]
+    assert rf["type"] == "json_schema"
+    schema = rf["json_schema"]["schema"]
+    assert schema["properties"]["match"]["type"] == "boolean"
+
+
+def test_filter_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'mentions a bug', map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "1" in lines
+
+
+def test_filter_profile_events(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    qid = unique_query_id("filter_events")
+    instance.query(
+        "SELECT aiFilter(x, 'is alphabetic', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
 
 
 # ---------------------------------------------------------------------------
