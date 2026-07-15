@@ -66,7 +66,6 @@ public:
         VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink_);
 
     ByteRange range() const override { return hit_range; }
-    size_t readable() const override;
     ChainedBuffers read(ByteRange sub) override;
 
 private:

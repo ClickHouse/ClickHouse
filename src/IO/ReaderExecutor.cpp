@@ -303,6 +303,32 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
+size_t ReaderExecutor::readSource(const StoredObject & object, size_t object_offset, size_t want, char * dst)
+{
+    size_t got = 0;
+    if (long_conn && long_conn->servesObject(object.remote_path)
+        && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
+    {
+        /// Reuse the held connection for this contiguous (or small-gap) window.
+        stats.add(Stats::LongConnectionHits);
+        got = serveFromLongConnection(object_offset, want, dst);
+    }
+    else
+    {
+        /// A held connection that cannot continue (wrong object / backward / far / past bound) is
+        /// dropped; open a fresh one when the read is predicted to continue, else a one-shot read.
+        if (long_conn)
+            dropLongConnection();
+        if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
+            got = serveFromLongConnection(object_offset, want, dst);
+        else
+            got = readOneShot(object, object_offset, want, dst);
+    }
+    /// Any bridged (skipped) bytes were already counted in BytesFromSource inside serveFromLongConnection.
+    stats.add(Stats::BytesFromSource, got);
+    return got;
+}
+
 size_t ReaderExecutor::serveThroughCaches(
     const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst)
 {
@@ -312,17 +338,66 @@ size_t ReaderExecutor::serveThroughCaches(
     /// cache addresses the concatenation directly.
     const ByteRange window{object_file_offset + object_offset, want};
 
-    /// Tiers that did not fully serve the window, kept (with their aligned miss cells) so they can
-    /// be populated after the data is in hand. Object-local coordinates (`object_file_offset` 0).
-    VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> populate_views;
-
-    /// Push `data` (covering `filled`) into every kept tier's miss cells: `openWriteBuffers` opens a
-    /// writer per surviving miss, `claim` takes the downloader role over the write range, `write`
-    /// commits it. Used for promotion (serve from a slower tier, write up into the faster ones that
-    /// missed) and after a source read.
-    auto populate = [&](ByteRange filled, const ChainedBuffers & data)
+    /// One residency probe per tier, all kept alive for the whole window: the hit readers pin their
+    /// resident segments and `openWriteBuffers` reuses each view's miss cells for the populate. The
+    /// views' destructors run the deferred LRU bump when this function returns.
+    VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> views;
+    for (auto & cache : cache_chain)
     {
-        for (auto & [cache, view] : populate_views)
+        stats.add(Stats::CacheGetRequests);
+        views.emplace_back(cache.get(), cache->planResidencyView(object, object_file_offset, window));
+    }
+
+    /// Serve the contiguous cached prefix: at each frontier take the fastest tier holding it and
+    /// serve up to that hit's end, then advance. Stop at the first byte no tier holds -- the rest is
+    /// one miss run, matching the sequential frontier: [cached prefix][miss remainder].
+    size_t served = 0;
+    while (served < want)
+    {
+        const size_t frontier = window.offset + served;
+        CacheReader * reader = nullptr;
+        size_t hit_end = frontier;
+        for (const auto & [cache, view] : views)
+        {
+            for (const auto & hit : view->hits())
+            {
+                /// A hit is readable in full (the probe split any partial segment at its write offset).
+                if (hit.reader && hit.range.offset <= frontier && frontier < hit.range.end())
+                {
+                    reader = hit.reader.get();
+                    hit_end = std::min(hit.range.end(), window.end());
+                    break;
+                }
+            }
+            if (reader)
+                break;
+        }
+        if (!reader)
+            break;
+        const ByteRange sub{frontier, hit_end - frontier};
+        reader->read(sub).copyTo(dst + served, sub);
+        served += sub.size;
+    }
+
+    /// Read the miss remainder from the source through the long connection, so a cold sequential
+    /// scan streams from one held connection instead of a GET per window. Object-local.
+    size_t total = served;
+    if (served < want)
+        total += readSource(object, object_offset + served, want - served, dst + served);
+
+    /// Populate every tier's miss cells with the assembled window: this fills the miss run and
+    /// promotes the cached prefix into faster tiers that missed it. Append-only cells take only a
+    /// write starting at their frontier; whole-cell (page) cells take only a full-cell cover -- the
+    /// writers enforce that, so a misaligned partial simply lands nothing.
+    if (total > 0)
+    {
+        auto block = std::make_shared<OwnedChainedBuffer>(total);
+        std::memcpy(block->data(), dst, total);
+        ChainedBuffers assembled;
+        assembled.append(ChainedBufferNode{std::move(block), 0, total, window.offset});
+        const ByteRange filled{window.offset, total};
+
+        for (auto & [cache, view] : views)
         {
             cache->openWriteBuffers(object, object_file_offset, *view);
             for (const auto & m : view->misses())
@@ -334,82 +409,16 @@ size_t ReaderExecutor::serveThroughCaches(
                 if (lo >= hi)
                     continue;
                 const ByteRange write_range{lo, hi - lo};
-                if (!data.covers(write_range))
+                if (!assembled.covers(write_range))
                     continue;
                 auto claim = m.writer->claim(write_range);
                 stats.add(Stats::CachePopulateRequests);
-                m.writer->write(data.slice(write_range));
+                m.writer->write(assembled.slice(write_range));
             }
         }
-    };
-
-    /// Probe each tier top-down. A tier that fully covers the window serves it right here and the
-    /// faster tiers that missed above are promoted; a tier that does not fully cover is kept for
-    /// populate. Views/writers live only for this window -- no plan is held across windows.
-    for (auto & cache : cache_chain)
-    {
-        stats.add(Stats::CacheGetRequests);
-        auto view = cache->planResidencyView(object, object_file_offset, window);
-
-        if (view->allHit())
-        {
-            ChainedBuffers chain;
-            for (const auto & hit : view->hits())
-            {
-                if (!hit.reader)
-                    continue;
-                const size_t lo = std::max(hit.range.offset, window.offset);
-                const size_t hi = std::min({hit.range.end(), window.end(), hit.reader->readable()});
-                if (lo >= hi)
-                    continue;
-                chain.append(hit.reader->read(ByteRange{lo, hi - lo}));
-            }
-            if (chain.covers(window))
-            {
-                chain.copyTo(dst, window);
-                populate(window, chain);
-                return want;
-            }
-        }
-
-        if (cache->populatesOnMiss() && !view->misses().empty())
-            populate_views.emplace_back(cache.get(), std::move(view));
     }
 
-    /// Missed every tier: one source read of the window, expanded to the kept tiers' aligned miss
-    /// cells so each append-only cell is filled from its start (a cell can never fill a hole below
-    /// its write frontier). The alignment slack is over-read, counted in BytesFromSource.
-    size_t fetch_lo = window.offset;
-    size_t fetch_hi = window.end();
-    for (const auto & [cache, view] : populate_views)
-        for (const auto & m : view->misses())
-        {
-            fetch_lo = std::min(fetch_lo, m.range.offset);
-            fetch_hi = std::max(fetch_hi, m.range.end());
-        }
-    /// Clamp the fetch to THIS object: cells that a file-level tier (page cache) aligns across an
-    /// object boundary are filled only for the current object's part here; the neighbouring
-    /// object's window fills the rest. The source read is object-local.
-    fetch_lo = std::max(fetch_lo, object_file_offset);
-    if (!offset_map.hasUnknownSize())
-        fetch_hi = std::min<size_t>(fetch_hi, object_file_offset + object.bytes_size);
-    const size_t fetch_len = fetch_hi - fetch_lo;
-
-    auto block = std::make_shared<OwnedChainedBuffer>(fetch_len);
-    const size_t got = readOneShot(object, fetch_lo - object_file_offset, fetch_len, block->data());
-    stats.add(Stats::BytesFromSource, got);
-
-    ChainedBuffers fetched;
-    fetched.append(ChainedBufferNode{block, 0, got, fetch_lo});
-    populate(ByteRange{fetch_lo, got}, fetched);
-
-    /// Deliver the requested window out of the fetched (aligned) buffer.
-    const size_t slice_start = window.offset - fetch_lo;
-    if (slice_start >= got)
-        return 0;
-    const size_t slice_len = std::min(want, got - slice_start);
-    std::memcpy(dst, block->data() + slice_start, slice_len);
-    return slice_len;
+    return total;
 }
 
 void ReaderExecutor::dropLongConnection()
@@ -591,35 +600,12 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     size_t got = 0;
     if (!cache_chain.empty())
-    {
-        /// Read-through cache path: probe the chain, serve a hit or read+populate on a miss.
-        /// It records its own SourceRequests / BytesFromSource / Cache{Get,Populate}Requests;
-        /// long connections are not used on this path.
+        /// Read-through cache path: serve the cached prefix, read the miss remainder from the source
+        /// (long connection) and populate. Records its own Cache{Get,Populate}Requests / BytesFromSource.
         got = serveThroughCaches(*object, object_physical_start_offset, object_offset, want, block->data());
-    }
-    else if (long_conn && long_conn->servesObject(object->remote_path)
-        && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
-    {
-        /// Reuse the held connection for this contiguous (or small-gap) window.
-        stats.add(Stats::LongConnectionHits);
-        got = serveFromLongConnection(object_offset, want, block->data());
-        /// Requested bytes equal source bytes on the direct path; any bridged (skipped) bytes
-        /// were already counted in BytesFromSource inside serveFromLongConnection.
-        stats.add(Stats::BytesFromSource, got);
-    }
     else
-    {
-        /// A held connection that cannot continue (wrong object / backward / far / past
-        /// bound) is dropped; then open a fresh long connection when the read is predicted
-        /// to continue, else fall back to a one-shot read.
-        if (long_conn)
-            dropLongConnection();
-        if (shouldOpenLongConnection() && tryOpenLongConnection(*object, object_offset))
-            got = serveFromLongConnection(object_offset, want, block->data());
-        else
-            got = readOneShot(*object, object_offset, want, block->data());
-        stats.add(Stats::BytesFromSource, got);
-    }
+        /// Direct path: long connection or one-shot (records BytesFromSource).
+        got = readSource(*object, object_offset, want, block->data());
 
     stats.add(Stats::RequestedBytes, got);
 

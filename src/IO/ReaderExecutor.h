@@ -210,12 +210,18 @@ private:
     size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Serve `want` bytes at object-local `object_offset` through the cache chain, per window: for
-    /// each tier top-down `planResidencyView` the window, serve it if a tier fully covers it (and
-    /// promote up), else keep the tier's aligned miss cells; on a full miss read once from the
-    /// source and populate the kept tiers via `openWriteBuffers`/`claim`/`write`. `object_file_offset`
-    /// is this object's start in the logical file (cache coordinates are file-level). No long
-    /// connection and no cross-window plan are used. Precondition: `!cache_chain.empty()`.
+    /// Read `want` bytes at object-local `object_offset` from the source: reuse the held long
+    /// connection when it can continue, else drop it and open a fresh one (or fall back to a
+    /// one-shot read). Records `BytesFromSource`. The single source-read entry point for both the
+    /// direct path and the cache miss path.
+    size_t readSource(const StoredObject & object, size_t object_offset, size_t want, char * dst);
+    /// Serve `want` bytes at object-local `object_offset` through the cache chain, per window:
+    /// probe each tier (`planResidencyView`), serve the contiguous cached prefix from the fastest
+    /// tier holding each byte, read the miss remainder from the source via `readSource` (long
+    /// connection), then populate every tier's miss cells with the assembled window (filling misses
+    /// and promoting the prefix up). `object_file_offset` is this object's start in the logical file
+    /// (cache coordinates are file-level). Views live only for this window. Precondition:
+    /// `!cache_chain.empty()`.
     size_t serveThroughCaches(
         const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
