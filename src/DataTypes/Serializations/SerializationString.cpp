@@ -720,6 +720,16 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     if (!stream)
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
+    /// Empty slice: nothing to write. SerializationArray calls the nested serializer with limit == 0
+    /// for an all-empty Array(String) (offset == 0 too) so the substream getters still run for
+    /// Compact parts; both getters were visited above. Return before the offset arithmetic, which is
+    /// unsigned and would otherwise wrap `offset + limit - 1` to a huge out-of-bounds index.
+    if (limit == 0)
+    {
+        settings.path.pop_back();
+        return;
+    }
+
     /// Serialize string data
     const auto & offsets = column_string.getOffsets();
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];

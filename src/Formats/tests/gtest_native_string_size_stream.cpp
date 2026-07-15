@@ -216,3 +216,19 @@ TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
     NativeReader reader(in, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
     assertBlocksEqual(block, reader.read());
 }
+
+TEST(NativeStringSizeStream, AllEmptyNestedString)
+{
+    /// Array(String) with every row [] drives SerializationArray to serialize the nested String
+    /// column with an empty slice (offset == 0, limit == 0). The size-stream writer must emit an
+    /// empty payload there instead of underflowing `offset + limit - 1` to an out-of-bounds index.
+    Block block;
+    addColumn(block, "arr", "Array(String)", {Array{}, Array{}, Array{}});
+    assertBlocksEqual(block, roundTrip(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+
+    /// The same all-empty shape one level deeper, and inside a Map, to cover nested String subcolumns.
+    Block nested;
+    addColumn(nested, "aa", "Array(Array(String))", {Array{}, Array{}});
+    addColumn(nested, "m", "Map(String, String)", {Map{}, Map{}});
+    assertBlocksEqual(nested, roundTrip(nested, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+}
