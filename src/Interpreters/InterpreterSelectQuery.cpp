@@ -3406,6 +3406,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
@@ -3415,7 +3417,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
@@ -3425,6 +3430,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             query_plan.addStep(std::move(offsets_step));
 
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             query_plan.addStep(std::move(limit));
         }
         else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
@@ -3434,6 +3441,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
