@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -696,9 +697,9 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -1920,7 +1921,7 @@ not during inserts.
 )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, minmax, uniq, uniq_v2.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2607,6 +2608,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
+    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

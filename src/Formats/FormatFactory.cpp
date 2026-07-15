@@ -396,6 +396,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
     format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
     format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
+    format_settings.binary.max_binary_type_complexity = settings[Setting::input_format_binary_max_type_complexity];
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
