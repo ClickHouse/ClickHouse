@@ -260,7 +260,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !(arguments[0].is_const && arguments[1].is_const);
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
 
