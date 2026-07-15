@@ -1177,51 +1177,55 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    /// CREATE-only feature gates: skip on ATTACH, or an existing table becomes unattachable
-    /// once the relevant setting is disabled (issue #102445). Mirrors the `!attach` guard above.
     for (const auto & projection : new_metadata.projections)
     {
-        if (attach)
-            break;
-
-        if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+        /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
+        /// pure CREATE-time feature gates: nothing at merge / MATERIALIZE PROJECTION time reads
+        /// them. Skip them on ATTACH, otherwise an existing table becomes unattachable once the
+        /// setting is disabled (issue #102445). Mirrors the `!attach` guard above.
+        ///
+        /// `enable_block_number_column` / `enable_block_offset_column` are NOT CREATE-only: a
+        /// commit-order projection can be rebuilt from the base part during a horizontal merge
+        /// (MergeTask pushes it to projections_to_rebuild), and that rebuild only produces the
+        /// `_block_number` / `_block_offset` columns when these settings are enabled
+        /// (MergeTask::enabledBlockNumberColumn / enabledBlockOffsetColumn). So keep validating
+        /// them even on ATTACH: attaching with them disabled would let a later merge run without
+        /// the columns the projection requires.
+        if (!attach)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
-                "This projection cannot be used in this table",
-                projection.name);
-        }
+            if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
+                    "This projection cannot be used in this table",
+                    projection.name);
+            }
 
-        if (projection.with_block_number)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
+            if (projection.with_block_number && !(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
                     projection.name);
 
-            if (!(*getSettings())[MergeTreeSetting::enable_block_number_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
-                    projection.name);
-        }
-
-        if (projection.with_block_offset)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
+            if (projection.with_block_offset && !(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
                     projection.name);
-
-            if (!(*getSettings())[MergeTreeSetting::enable_block_offset_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
-                    projection.name);
         }
+
+        if (projection.with_block_number && !(*getSettings())[MergeTreeSetting::enable_block_number_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
+                projection.name);
+
+        if (projection.with_block_offset && !(*getSettings())[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
     }
 
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)
