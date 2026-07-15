@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -17,7 +18,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -36,7 +36,7 @@ def parse_args():
     )
     parser.add_argument(
         "--options",
-        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DatabaseReplicated|azure|AsyncInsert|BugfixValidation|coverage",
+        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DBReplicated|azure|AsyncInsert|BugfixValidation|coverage",
         default="",
     )
     parser.add_argument(
@@ -139,7 +139,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
-    "DatabaseReplicated": "--db-replicated",
+    "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
@@ -154,7 +154,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database",
+    "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
@@ -312,12 +312,84 @@ def main():
             is_s3_storage = True
         if "azure" in to:
             is_azure_storage = True
-        if "DatabaseReplicated" in to:
+        if "DBReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+
+    # If this PR only touches test files (no production/config code changed),
+    # this job only needs to run if one of the changed tests would even be
+    # selected here - and, when the job is also hash-batched (N/M), only the
+    # batch(es) containing a changed test need to run. Other jobs/batches
+    # would produce results identical to master and can be skipped. Note:
+    # "parallel"/"sequential" job flavors need no batch number of their own
+    # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
+    # not be gated on batching being active.
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_per_test_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_functional_files = [
+                f for f in changed_files if Targeting.is_functional_test_file(f)
+            ]
+            if not changed_functional_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-functional test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            # "parallel"/"sequential" is a second, independent sharding dimension:
+            # each is hash-batched separately (--no-sequential/--no-parallel), and
+            # a test tagged no-parallel/sequential never runs under the "parallel"
+            # flavor (and vice versa) regardless of batch. Restrict to the changed
+            # tests that this job flavor would even select before checking batches.
+            is_parallel_flavor = "parallel" in test_options
+            is_sequential_flavor = "sequential" in test_options
+            hash_batch_files = []
+            for f in changed_functional_files:
+                hash_batch_file = Targeting.functional_test_hash_batch_file(f)
+                if hash_batch_file is None:
+                    # Could not resolve to a concrete test source file (e.g. an
+                    # orphan data file) - be conservative and run the batch normally.
+                    hash_batch_files = None
+                    break
+                is_sequential_test = Targeting.is_sequential_functional_test(
+                    hash_batch_file
+                )
+                if is_parallel_flavor and is_sequential_test:
+                    continue
+                if is_sequential_flavor and not is_sequential_test:
+                    continue
+                hash_batch_files.append(hash_batch_file)
+            if hash_batch_files is not None and not hash_batch_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
+                ).complete_job()
+            if (
+                hash_batch_files is not None
+                and batch_num
+                and total_batches > 1
+                and not any(
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+                    for f in hash_batch_files
+                )
+            ):
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
+                ).complete_job()
 
     if is_llvm_coverage:
         # Pin random-by-default fault injection seeds server-side (in the default
@@ -396,6 +468,15 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
+    elif is_flaky_check and info.is_merge_queue_event:
+        # The merge-queue flaky check is a drift guard, not a full flakiness
+        # hunt: the PR CI already ran the full flaky check, and this rerun only
+        # needs to catch new tests broken by the current `master` state (e.g. a
+        # setting randomization added to `tests/clickhouse-test` after the PR's
+        # last CI run). A randomized setting drawn with probability 0.4 per run
+        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
+        # count keeps merge-queue latency bounded without losing the signal.
+        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
@@ -698,6 +779,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    build_type=build_types[0] if is_bugfix_validation else None,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -736,9 +818,18 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            # The merge-queue run gets a tighter budget: it delays merges
+            # directly, and its reduced rerun_count needs less time anyway.
+            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            # Floor the budget at a small positive value: `run_tests` interprets
+            # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
+            # cap at all. If setup already consumed the whole budget (more likely
+            # under the tighter merge-queue limit) a `0` here would turn the run
+            # unbounded, defeating the very latency bound it is meant to enforce.
+            # A minimal explicit limit keeps the run bounded while still doing one
+            # quick pass. Mirrors the targeted-check floor below.
             global_time_limit = max(
-                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
                 f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
@@ -901,6 +992,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            build_type=bugfix_bt,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
@@ -1145,7 +1237,7 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if "parallel" in test_options and test_result:
+    if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
             print(

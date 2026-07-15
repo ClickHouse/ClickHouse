@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'ClickHouse Operator 的概述页面——这是一个 Kubernetes Operator，可在 Kubernetes 上自动完成 ClickHouse 集群和 ClickHouse Keeper 集群的部署、配置与管理。'
+doc_type: 'guide'
+sidebarTitle: '概述'
+---
+
+ClickHouse Operator 是一个 Kubernetes Operator，可在 Kubernetes 上自动完成 ClickHouse 集群和 ClickHouse Keeper 集群的部署、配置与管理。
+它通过自定义资源提供声明式集群管理，使用户能够轻松创建高可用的 ClickHouse 部署。
+
+该 Operator 可管理 ClickHouse 集群的完整生命周期，包括扩缩容、升级和配置管理。
+
+<div id="features">
+  ## 功能
+</div>
+
+* **ClickHouse 集群管理**：创建和管理 ClickHouse 集群
+* **ClickHouse Keeper 集成**：内置对 ClickHouse Keeper 集群的支持，用于分布式协调
+* **存储配置**：支持自定义持久卷声明，并可选择存储类
+* **高可用性**：为 ClickHouse 和 Keeper 集群提供容错部署
+* **安全**：内置安全功能，支持 TLS/SSL，确保集群通信安全
+* **监控**：集成 Prometheus 指标，增强可观测性
+
+<div id="installation">
+  ## 安装
+</div>
+
+选择首选的安装方式：
+
+* [清单安装](/zh/products/kubernetes-operator/install/kubectl) - 使用 kubectl/kustomize 安装
+* [Helm 安装](/zh/products/kubernetes-operator/install/helm) - 使用 Helm 图表安装
+* [Operator Lifecycle Manager (OLM) 安装](/zh/products/kubernetes-operator/install/olm) - 使用 OLM 安装
+
+<div id="guides">
+  ## 指南
+</div>
+
+* **[简介](/zh/products/kubernetes-operator/guides/introduction)** - ClickHouse Operator 概念概览
+* **[配置指南](/zh/products/kubernetes-operator/guides/configuration)** - 配置 ClickHouse 和 Keeper 集群
+* **[监控](/zh/products/kubernetes-operator/guides/monitoring)** - operator 的 Prometheus 指标和健康探针
+* **[扩缩容](/zh/products/kubernetes-operator/guides/scaling)** - 扩缩容副本、分片和 Keeper 仲裁数
+* **[使用 TLS 保护](/zh/products/kubernetes-operator/guides/tls)** - 使用 cert-manager 对集群进行端到端加密
+* **[网络策略](/zh/products/kubernetes-operator/guides/network-policies)** - 限制对 operator 的指标和 webhook 端点的入站访问
+
+<div id="reference">
+  ## 参考
+</div>
+
+* **[API 参考文档](/zh/products/kubernetes-operator/reference/api-reference)** - 自定义资源的完整 API 参考文档

@@ -1,0 +1,116 @@
+---
+sidebarTitle: '创建你的首个 Kafka ClickPipe'
+description: '创建你的首个 Kafka ClickPipe 的分步指南。'
+slug: /integrations/clickpipes/kafka/create-your-first-kafka-clickpipe
+title: '创建你的首个 Kafka ClickPipe'
+doc_type: '指南'
+keywords: ['创建 Kafka ClickPipe', 'Kafka', 'ClickPipes', '数据源', '设置指南']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 本指南将介绍如何创建你的首个 Kafka ClickPipe。
+
+Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式进行部署和管理。
+
+<Steps>
+  <Step>
+    ## 前往数据源
+
+    在左侧菜单中选择 `Data Sources` 按钮，然后点击 &quot;Set up a ClickPipe&quot;。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入项" size="md" />
+  </Step>
+
+  <Step>
+    ## 选择数据源
+
+    从列表中选择你的 Kafka 数据源。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="选择数据源类型" size="md" />
+  </Step>
+
+  <Step>
+    ## 配置数据源
+
+    填写表单，为 ClickPipe 填写名称、描述 (可选) 、凭证以及其他连接信息。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="填写连接信息" size="md" />
+  </Step>
+
+  <Step>
+    ## 配置 Schema Registry (可选)
+
+    对于 Avro 和 Protobuf topic，需要提供有效的 schema。有关如何配置 Schema Registry 的更多信息，请参阅 [Schema registries](/zh/integrations/clickpipes/kafka/schema-registries)。
+  </Step>
+
+  <Step>
+    ## 配置反向专用终结点 (可选)
+
+    配置反向专用终结点，使 ClickPipes 能够通过 AWS PrivateLink 连接到您的 Kafka 集群。
+    如需了解更多信息，请参阅我们的 [AWS PrivateLink 文档](/zh/integrations/clickpipes/aws-privatelink)。
+  </Step>
+
+  <Step>
+    ## 配置 SSH 隧道 (可选)
+
+    如果你的 Kafka broker 无法通过公网访问，可以使用 SSH 隧道。ClickPipes 不会直接连接到 Kafka broker，而是先与堡垒机 (你网络中可通过公网访问的服务器) 建立 SSH 连接，再通过该堡垒机将流量转发到私有网络中的 Kafka broker。
+
+    1. 打开“SSH Tunnel”开关。
+    2. 填写 SSH 连接信息：
+       * **SSH Host**：堡垒机的主机名或 IP 地址，即可通过公网访问、作为私有网络入口网关的服务器。
+       * **SSH Port**：堡垒机上的 SSH 端口 (默认 `22`) 。
+       * **SSH User**：用于在堡垒机上进行身份验证的用户名。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="SSH 隧道配置" size="md" />
+
+    3. 若要使用基于密钥的身份验证，请点击“Revoke and regenerate key pair”生成新的密钥对，并将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys` 中。
+    4. 点击“Verify Connection”验证连接。
+
+    <Note>
+      请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
+    </Note>
+  </Step>
+
+  <Step>
+    ## 选择你的 topic
+
+    选择 topic 后，UI 将显示该 topic 中的一个示例文档。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="设置 topic" size="md" />
+  </Step>
+
+  <Step>
+    ## 配置目标端表
+
+    在下一步中，您可以选择将数据摄取到新的 ClickHouse 表中，或使用现有表。按照界面上的说明修改表名、schema 和设置。您可以在顶部的样本表中实时预览这些更改。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="设置表、schema 和设置" size="md" />
+
+    您还可以使用提供的控件自定义高级设置
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="设置高级设置控件" size="md" />
+  </Step>
+
+  <Step>
+    ## 配置权限
+
+    ClickPipes 会创建一个专用用户，用于将数据写入目标表。你可以为该内部用户选择一个角色，可使用自定义角色或某个预定义角色：
+
+    * `Full access`：对集群拥有完全访问权限。如果你在目标表上使用 materialized view 或字典，这可能会很有帮助。
+    * `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" size="md" />
+  </Step>
+
+  <Step>
+    ## 完成设置
+
+    点击 &quot;Create ClickPipe&quot; 后，系统将创建并运行您的 ClickPipe。随后，它会显示在“数据源”部分。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="查看概览" size="md" />
+  </Step>
+</Steps>

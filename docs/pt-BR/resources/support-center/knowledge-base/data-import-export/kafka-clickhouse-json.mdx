@@ -1,0 +1,151 @@
+---
+title: Como posso usar o novo tipo de dados JSON com Kafka?
+description: "Saiba como carregar mensagens JSON do Apache Kafka diretamente em uma única coluna JSON no ClickHouse usando o engine de tabela Kafka e o tipo de dados JSON."
+date: 2024-11-06
+tags: ['Formatos de Dados', 'Ingestão de Dados']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="kafka-and-the-json-data-type">
+  ## Kafka e o tipo de dados JSON
+</div>
+
+Com a introdução do novo tipo de dados [`JSON`](/pt-BR/reference/data-types/newjson), o ClickHouse passou a ser uma boa opção de [banco de dados para análise de JSON](https://clickhouse.com/engineering-resources/json-database).
+Neste guia, vamos aprender a carregar mensagens JSON do Apache Kafka diretamente em uma única coluna `JSON` no ClickHouse.
+
+<div id="setup-kafka">
+  ## Configurar o Kafka
+</div>
+
+Vamos começar executando um broker do Kafka na nossa máquina. Também vamos mapear a porta 9092 para a porta 9092 no sistema operacional host, para facilitar a interação com o Kafka:
+
+```bash
+docker run --name broker -p 9092:9092 apache/kafka:3.8.1
+```
+
+<div id="ingest-data-into-kafka">
+  ## Ingestão de dados no Kafka
+</div>
+
+Quando tudo estiver em execução, precisamos fazer a ingestão de alguns dados.
+O feed de alterações recentes da Wikimedia é uma boa fonte de dados em streaming, então vamos fazer a ingestão deles no tópico `wiki_events`:
+
+```bash
+curl -N https://stream.wikimedia.org/v2/stream/recentchange 2>/dev/null |
+awk '/^data: /{gsub(/^data: /, ""); print}' |
+jq -cr --arg sep ø '[.meta.id, tostring] | join($sep)' |
+kcat -P -b localhost:9092 -t wiki_events -Kø
+```
+
+Podemos verificar se os dados estão sendo ingeridos executando o seguinte comando:
+
+```bash
+kcat -C -b localhost:9092  -t wiki_events
+```
+
+```text
+{"$schema":"/mediawiki/recentchange/1.0.0","meta":{"uri":"https://www.wikidata.org/wiki/Q130972321","request_id":"5c687ded-4721-4bfc-ae6c-58ca25f4a6ce","id":"0fbb0982-c43b-4e8b-989b-db7e78dbdc76","dt":"2024-11-06T11:59:57Z","domain":"www.wikidata.org","stream":"mediawiki.recentchange","topic":"codfw.mediawiki.recentchange","partition":0,"offset":1228777205},"id":2338656448,"type":"edit","namespace":0,"title":"Q130972321","title_url":"https://www.wikidata.org/wiki/Q130972321","comment":"/* wbsetclaim-create:2||1 */ [[Property:P18]]: Mahdi Rrezaei Journalist.jpg","timestamp":1730894397,"user":"Wikimellatir","bot":false,"notify_url":"https://www.wikidata.org/w/index.php?diff=2270885254&oldid=2270870214&rcid=2338656448","minor":false,"patrolled":false,"length":{"old":4269,"new":4636},"revision":{"old":2270870214,"new":2270885254},"server_url":"https://www.wikidata.org","server_name":"www.wikidata.org","server_script_path":"/w","wiki":"wikidatawiki","parsedcomment":"<span dir=\"auto\"><span class=\"autocomment\">Created claim: </span></span> <a href=\"/wiki/Property:P18\" title=\"image | image of relevant illustration of the subject; if available, also use more specific properties (sample: coat of arms image, locator map, flag image, signature image, logo image, collage image)\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">image</span> <span class=\"wb-itemlink-id\">(P18)</span></span></a>: Mahdi Rrezaei Journalist.jpg"}
+{"$schema":"/mediawiki/recentchange/1.0.0","meta":{"uri":"https://www.wikidata.org/wiki/Q75756596","request_id":"eb116219-7372-4725-986f-790211708d36","id":"9e0d5299-5bd1-4c58-b796-9852afd8a84e","dt":"2024-11-06T11:59:54Z","domain":"www.wikidata.org","stream":"mediawiki.recentchange","topic":"codfw.mediawiki.recentchange","partition":0,"offset":1228777206},"id":2338656449,"type":"edit","namespace":0,"title":"Q75756596","title_url":"https://www.wikidata.org/wiki/Q75756596","comment":"/* wbeditentity-update-languages-and-other:0||55 */ mv labels and aliases matching [[Property:P528]] or [[Property:P3083]] to mul","timestamp":1730894394,"user":"Twofivesixbot","bot":true,"notify_url":"https://www.wikidata.org/w/index.php?diff=2270885237&oldid=2147709089&rcid=2338656449","minor":false,"patrolled":true,"length":{"old":30879,"new":27161},"revision":{"old":2147709089,"new":2270885237},"server_url":"https://www.wikidata.org","server_name":"www.wikidata.org","server_script_path":"/w","wiki":"wikidatawiki","parsedcomment":"<span dir=\"auto\"><span class=\"autocomment\">Changed label, description and/or aliases in 55 languages, and other parts: </span></span> mv labels and aliases matching <a href=\"/wiki/Property:P528\" title=\"catalog code | catalog name of an object, use with qualifier P972\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">catalog code</span> <span class=\"wb-itemlink-id\">(P528)</span></span></a> or <a href=\"/wiki/Property:P3083\" title=\"SIMBAD ID | identifier for an astronomical object, in the University of Strasbourg&#039;s SIMBAD database\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">SIMBAD ID</span> <span class=\"wb-itemlink-id\">(P3083)</span></span></a> to mul"}
+```
+
+Até aqui, tudo certo.
+
+<div id="ingest-data-into-clickhouse">
+  ## Faça a ingestão de dados no ClickHouse
+</div>
+
+Em seguida, vamos fazer a ingestão dos dados no ClickHouse.
+Primeiro, vamos habilitar o tipo JSON (que atualmente é experimental), definindo a seguinte propriedade:
+
+```sql
+SET allow_experimental_json_type = 1;
+```
+
+Agora, vamos criar a tabela `wiki_queue`, que usa o [engine de tabela `Kafka`](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
+
+```sql
+CREATE TABLE wiki_queue
+(
+    json JSON
+)
+ENGINE = Kafka(
+  'localhost:9092', 
+  'wiki_events', 
+  'clickhouse-consumer-group',
+  'JSONAsObject'
+);
+```
+
+Observe que estamos usando o formato [`JSONAsObject`](/pt-BR/reference/formats/JSON/JSONAsObject), que garante que as mensagens recebidas fiquem disponíveis como um objeto JSON.
+Esse formato só pode ser interpretado em uma tabela que tenha uma única coluna do tipo `JSON`.
+
+Em seguida, criaremos a tabela subjacente para armazenar os dados da Wiki:
+
+```sql
+CREATE TABLE wiki
+(
+    json JSON,
+    id String MATERIALIZED getSubcolumn(json, 'meta.id')
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Por fim, vamos criar uma visão materializada para popular a tabela `wiki`:
+
+```sql
+CREATE MATERIALIZED VIEW wiki_mv TO wiki AS 
+SELECT json
+FROM wiki_queue;
+```
+
+<div id="querying-json-data-in-clickhouse">
+  ## Consultando dados JSON no ClickHouse
+</div>
+
+Em seguida, podemos fazer consultas na tabela `wiki`.
+Por exemplo, poderíamos contar o número de bots que fizeram alterações:
+
+```sql
+SELECT json.bot, count()
+FROM wiki
+GROUP BY ALL
+```
+
+```text
+   ┌─json.bot─┬─count()─┐
+1. │ true     │    2526 │
+2. │ false    │    4691 │
+   └──────────┴─────────┘
+```
+
+Ou podemos descobrir quais usuários fazem mais alterações na `en.wikipedia.org`:
+
+```sql
+SELECT
+    json.user,
+    count()
+FROM wiki
+WHERE json.server_name = 'en.wikipedia.org'
+GROUP BY ALL
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```text
+    ┌─json.user──────────────────────────────┬─count()─┐
+ 1. │ Monkbot                                │     267 │
+ 2. │ Onel5969                               │     107 │
+ 3. │ Bangwiki                               │      37 │
+ 4. │ HHH Pedrigree                          │      28 │
+ 5. │ REDACTED403                            │      23 │
+ 6. │ KylieTastic                            │      22 │
+ 7. │ Tinniesbison                           │      21 │
+ 8. │ XTheBedrockX                           │      20 │
+ 9. │ 2001:4455:1DB:4000:51F3:6A16:408E:69FC │      19 │
+10. │ Wcquidditch                            │      15 │
+    └────────────────────────────────────────┴─────────┘
+```

@@ -1,0 +1,40 @@
+---
+description: 'Azure Blob Storage エンドポイントへのバックアップと、そこからの復元の詳細'
+sidebarTitle: 'AzureBlobStorage'
+slug: /operations/backup/azure
+title: 'Azure Blob Storage への/からの バックアップ/復元'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/ja/_syntax.mdx';
+
+<div id="syntax">
+  ## 構文
+</div>
+
+<Syntax />
+
+<div id="configuring-backuprestore-to-use-an-azureblobstorage-endpoint">
+  ## AzureBlobStorage エンドポイントを使用する バックアップ / 復元 の設定
+</div>
+
+バックアップを AzureBlobStorage コンテナーに保存するには、次の情報が必要です。
+
+* AzureBlobStorage エンドポイントの接続文字列 / URL
+* コンテナー
+* パス
+* アカウント名 (URL を指定する場合) 
+* アカウントキー (URL を指定する場合) 
+
+バックアップの宛先は次のように指定します。
+
+```sql
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+```

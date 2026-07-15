@@ -1,0 +1,1314 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'java', 'jdbc', '驱动', '集成']
+description: 'ClickHouse JDBC 驱动'
+slug: /integrations/language-clients/java/jdbc
+title: 'JDBC 驱动'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTableWrapper.jsx";
+
+<View title="v0.8+">
+  <Note>
+    `clickhouse-jdbc` 基于最新的 Java 客户端实现了标准 JDBC 接口。
+    如果对性能或直接访问有较高要求，我们建议直接使用最新的 Java 客户端。
+  </Note>
+
+  ## 环境要求
+
+  * [OpenJDK](https://openjdk.java.net) 版本 &gt;= 8
+
+  ### 设置
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
+
+  如果您在应用程序中使用 JDBC 驱动，且该应用程序需要将 jar 添加到 classpath，则需要从以下地址下载 jar：
+
+  * [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)，并将其添加到类路径中
+    * 从 `0.9.4` 版本开始，已提供制品 https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc-all
+    * 使用限定符 `all` 可获取包含所有已打包依赖项的 jar。
+  * 或从官方仓库[这里](https://github.com/ClickHouse/clickhouse-java/releases)获取
+
+  ## 配置
+
+  **驱动类**: `com.clickhouse.jdbc.ClickHouseDriver`
+
+  <Note>
+    `com.clickhouse.jdbc.ClickHouseDriver` 是新旧 JDBC 实现的门面类，默认使用新的 JDBC 实现。
+    你可以通过将 `clickhouse.jdbc.v1` **system** 属性设置为 `true` 来使用旧版 JDBC 实现。该属性应在调用
+    Driver 类之前设置。
+
+    另一种在不同版本之间切换的方法是直接使用各版本对应的 Driver 类：
+
+    * `com.clickhouse.jdbc.Driver` 是新的 JDBC 实现 (V2) 。
+    * `com.clickhouse.jdbc.DriverV1` 是旧的 JDBC 实现 (V1) 。
+  </Note>
+
+  **URL 语法**：`jdbc:(ch|clickhouse)[:<protocol>]://endpoint[:port][/<database>][?param1=value1&param2=value2][#tag1,tag2,...]`，例如：
+
+  * `jdbc:clickhouse:http://localhost:8123`
+  * `jdbc:clickhouse:https://localhost:8443?ssl=true`
+
+  关于 URL 语法，有几点需要注意：
+
+  * URL 中**仅**允许有一个端点
+  * 当 protocol 不是默认协议 &#39;HTTP&#39; 时，应显式指定
+  * 端口不是默认值 &#39;8123&#39; 时，应显式指定端口
+  * 驱动程序不会根据端口来猜测协议，你需要明确指定协议
+  * 指定了 protocol 时，不需要 `ssl` 参数。
+
+  ### 连接属性
+
+  主要配置参数在 [Java client](/zh/integrations/language-clients/java/client#client-configuration) 中定义，应原样传递给 driver。Driver 还有一些自有属性，不属于客户端配置的范畴，详见下文。
+
+  **驱动属性**：
+
+  | 属性                                  | 默认值      | 描述                                                                             |
+  | ----------------------------------- | -------- | ------------------------------------------------------------------------------ |
+  | `disable_frameworks_detection`      | `true`   | 禁用对 User-Agent 的框架识别                                                           |
+  | `jdbc_ignore_unsupported_values`    | `false`  | 在不影响驱动程序运行的情况下抑制 `SQLFeatureNotSupportedException`                             |
+  | `clickhouse.jdbc.v1`                | `false`  | 使用旧版 JDBC 实现，而不是新版 JDBC                                                        |
+  | `default_query_settings`            | `null`   | 允许在执行查询操作时传递默认查询设置                                                             |
+  | `jdbc_resultset_auto_close`         | `true`   | `Statement` 关闭时会自动关闭 `ResultSet`                                               |
+  | `beta.row_binary_for_simple_insert` | `false`  | 使用基于 `RowBinary` 写入器的 `PreparedStatement` 实现。仅适用于 `INSERT INTO ... VALUES` 语句。 |
+  | `jdbc_resultset_auto_close`         | `true`   | 关闭 `Statement` 时自动关闭 `ResultSet`                                               |
+  | `jdbc_use_max_result_rows`          | `false`  | 启用后，可使用服务器属性 `max_result_rows` 来限制查询返回的行数。启用时，会覆盖用户设置的溢出模式。详见 JavaDoc。         |
+  | `jdbc_sql_parser`                   | `JAVACC` | 配置要使用的 SQL 解析器。可选值：`ANTLR4`、`ANTLR4_PARAMS_PARSER`、`JAVACC`。                   |
+  | `remember_last_set_roles`           | `true`   | 记住该连接上次设置的角色。                                                                  |
+
+  <Info>
+    **服务器设置**
+
+    所有服务器设置都应加上 `clickhouse_setting_` 前缀 (与客户端[配置](/zh/integrations/language-clients/java/client#server-settings)中的要求相同)。
+
+    ```java
+    Properties config = new Properties();
+    config.setProperty("user", "default");
+    config.setProperty("password", getPassword());
+
+    // set server setting
+    config.put(ClientConfigProperties.serverSetting("allow_experimental_time_time64_type"), "1");
+
+    Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", config);
+    ```
+  </Info>
+
+  **示例配置**：
+
+  ```java
+  Properties properties = new Properties();
+  properties.setProperty("user", "default");
+  properties.setProperty("password", getPassword());
+  properties.setProperty("client_name", "my-app-01"); // when http protocol is used it will be `http_user_agent` in the query log but not `client_name`.
+
+  Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", properties);
+  ```
+
+  这等同于以下 JDBC URL：
+
+  ```sql
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  // credentials shoud be passed in `Properties`. Here it is just for example.
+  ```
+
+  注意：无需对 JDBC URL 或属性进行 URL 编码，系统会自动完成编码。
+
+  **只读 profile**
+
+  我们有意避免在连接属性中添加默认设置，以防止与只读 profile 产生冲突。
+  但某些用户需要传递格式设置 (例如将 JSON 读取为 String) ，对此我们建议使用 `readonly=2` profile。
+  有关只读 profile 的更多信息，请参阅[此处](/zh/concepts/features/configuration/settings/constraints-on-settings#read-only)。
+
+  ### 客户端标识
+
+  有两种方式可以标识发起请求的应用程序：通过连接属性设置 `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME`，或使用 `java.sql.Connection#setClientInfo(String name, String value)` 方法。
+
+  ```java showLineNumbers
+  Properties properties = new Properties();
+  properties.setProperty(ClientConfigProperties.CLIENT_NAME.getKey(), "my-app-01");
+  Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", properties);
+  ```
+
+  ```java showLineNumbers
+  conn.setClientInfo(com.clickhouse.jdbc.ClientInfoProperties.APPLICATION_NAME.getKey(), "my-app-01");
+  ```
+
+  两种方式都会在查询日志中生成以下 `http_user_agent` 值：
+
+  ```
+  my-app-01/1.0 jdbc-v2/0.9.7 clickhouse-java-v2/0.9.6 (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
+  ```
+
+  **注意：** 建议将 `client_name` 属性设置为 `app_name/version` 格式，以便在查询日志中识别应用程序。
+
+  ### 操作标识
+
+  JDBC 驱动为每个操作生成 `query_id` (目前该信息包含在服务器异常中) 。
+
+  要为某个操作设置 `log_comment`，请使用 `com.clickhouse.jdbc.StatementImpl#getLocalSettings` 方法。这需要先将 `Statement` 或 `PreparedStatement` 转型为 `com.clickhouse.jdbc.StatementImpl`。
+
+  ```java showLineNumbers
+  StatementImpl stmt = (StatementImpl) conn.createStatement();
+  stmt.getLocalSettings().logComment("some-comment");
+  ```
+
+  **注意：** 此方法仅适用于单线程执行语句的场景，因为 `localSettings` 在多个线程之间是共享的。
+
+  ## 支持的数据类型
+
+  JDBC 驱动支持与底层 [java client](/zh/integrations/language-clients/java/index#supported-data-types) 相同的数据格式。
+
+  ### JDBC 类型映射
+
+  以下映射适用于：
+
+  * `ResultSet#getObject(columnIndex)` - 此方法会返回对应 Java 类的对象。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
+  * `ResultSetMetaData#getColumnType(columnIndex)` - 该方法会返回对应的 JDBC 类型。 (`Int8` -&gt; `java.lang.Byte`，`Int16` -&gt; `java.lang.Short`，等等。)
+
+  有几种方法可以更改映射关系：
+
+  * `ResultSet#getObject(columnIndex, class)` - 该方法会尝试将该值转换为 `class` 类型。此类转换存在一些限制。详见各节。
+
+  **数值类型**
+
+  | ClickHouse 类型 | JDBC 类型  | Java 类               |
+  | ------------- | -------- | -------------------- |
+  | Int8          | TINYINT  | java.lang.Byte       |
+  | Int16         | SMALLINT | java.lang.Short      |
+  | Int32         | INTEGER  | java.lang.Integer    |
+  | Int64         | BIGINT   | java.lang.Long       |
+  | Int128        | NUMERIC  | java.math.BigInteger |
+  | Int256        | NUMERIC  | java.math.BigInteger |
+  | UInt8         | SMALLINT | java.lang.Short      |
+  | UInt16        | INTEGER  | java.lang.Integer    |
+  | UInt32        | BIGINT   | java.lang.Long       |
+  | UInt64        | NUMERIC  | java.math.BigInteger |
+  | UInt128       | NUMERIC  | java.math.BigInteger |
+  | UInt256       | NUMERIC  | java.math.BigInteger |
+  | Float32       | FLOAT    | java.lang.Float      |
+  | Float64       | DOUBLE   | java.lang.Double     |
+  | Decimal32     | DECIMAL  | java.math.BigDecimal |
+  | Decimal64     | DECIMAL  | java.math.BigDecimal |
+  | Decimal128    | DECIMAL  | java.math.BigDecimal |
+  | Decimal256    | DECIMAL  | java.math.BigDecimal |
+  | Bool          | BOOLEAN  | java.lang.Boolean    |
+
+  * 数值类型之间可以相互转换。因此，`Int8` 可以获取为 `Float64`，反之亦然。:
+    * `rs.getObject(1, Float64.class)` 将返回 `Int8` 列的 `Float64` 值。
+    * `rs.getLong(1)` 将返回 `Int8` 列的 `Long` 值。
+    * 如果 `Int16` 列的值可以放入 `Byte`，`rs.getByte(1)` 就可以返回 `Byte` 值。
+  * 不建议将较宽类型转换为较窄类型，因为存在数据损坏的风险。
+  * `Bool` 类型也可视为数值。
+  * 所有数值类型都可以作为 `java.lang.String` 读取。
+  * 将 Java `Float.MAX_VALUE` 存储为 `Float` 时会出现问题 (https://github.com/ClickHouse/clickhouse-java/issues/809) 。将同一数值存储为 `Double` 即可解决该问题。
+
+  **String 类型**
+
+  | ClickHouse 类型 | JDBC 类型 | Java 类           |
+  | ------------- | ------- | ---------------- |
+  | String        | VARCHAR | java.lang.String |
+  | FixedString   | VARCHAR | java.lang.String |
+
+  * `String` 只能作为 `java.lang.String` 或 `byte[]` 读取。
+  * `FixedString` 会按原样读取，并以零填充至该列的长度。 (例如，`FixedString(10)` 中的 `'John'` 会被读取为 `'John\0\0\0\0\0\0\0\0\0'`。)
+
+  **枚举类型**
+
+  | ClickHouse 类型 | JDBC 类型 | Java 类           |
+  | ------------- | ------- | ---------------- |
+  | Enum8         | VARCHAR | java.lang.String |
+  | Enum16        | VARCHAR | java.lang.String |
+
+  * `Enum8` 和 `Enum16` 默认会映射为 `java.lang.String`。
+  * 枚举值可以通过指定的 getter 方法或 `getObject(columnIndex, Integer.class)` 方法按数值读取。
+  * `Enum16` 在内部映射为 short，`Enum8` 在内部映射为 byte。由于存在数据损坏风险，应避免将 `Enum16` 读取为 byte。
+  * 枚举值可在 `PreparedStatement` 中设置为字符串或数值。
+
+  **日期/时间类型**
+
+  | ClickHouse 类型 | JDBC 类型   | Java 类             |
+  | ------------- | --------- | ------------------ |
+  | Date          | DATE      | java.sql.Date      |
+  | Date32        | DATE      | java.sql.Date      |
+  | DateTime      | TIMESTAMP | java.sql.Timestamp |
+  | DateTime64    | TIMESTAMP | java.sql.Timestamp |
+  | Time          | TIME      | java.sql.Time      |
+  | Time64        | TIME      | java.sql.Time      |
+
+  * Date / Time 类型会映射为 `java.sql` 类型，以更好地兼容 JDBC。不过，也可以将相应的类作为第二个参数传给 `ResultSet#getObject(columnIndex, Class<T>)`，从而获取 `java.time.LocalDate`、`java.time.LocalDateTime` 和 `java.time.LocalTime`。
+    * `rs.getObject(1, java.time.LocalDate.class)` 会返回 `Date` 列对应的 `java.time.LocalDate` 值。
+    * `rs.getObject(1, java.time.LocalDateTime.class)` 会返回 `DateTime` 列对应的 `java.time.LocalDateTime` 值。
+    * `rs.getObject(1, java.time.LocalTime.class)` 会返回 `Time` 列对应的 `java.time.LocalTime` 值。
+  * `Date`、`Date32`、`Time`、`Time64` 不受服务器时区的影响。
+  * `DateTime`、`DateTime64` 会受服务器时区或会话时区影响。
+  * 通过 `getObject(colIndex, ZonedDateTime.class)`，可将 `DateTime` 和 `DateTime64` 以 `ZonedDateTime` 的形式获取。
+
+  **嵌套类型**
+
+  | ClickHouse 类型 | JDBC 类型 | Java 类                    |
+  | ------------- | ------- | ------------------------- |
+  | Array         | ARRAY   | java.sql.Array            |
+  | Tuple         | OTHER   | com.clickhouse.data.Tuple |
+  | Map           | OTHER   | java.util.Map             |
+  | Nested        | ARRAY   | java.sql.Array            |
+
+  * 默认情况下，为了兼容 JDBC，`Array` 会映射为 `java.sql.Array`。这样做还能提供有关返回数组值的更多信息，有助于类型推断。
+  * `Array` 实现了 `getResultSet()` 方法，返回一个与原始数组内容相同的 `java.sql.ResultSet`。
+  * 集合类型不应读取为 `java.lang.String`，因为这不是表示该数据的有效方式 (例如，数组中的字符串值没有引号) 。
+  * `Map` 会映射为 `OTHER`，因为该值只能通过 `getObject(columnIndex, Class<T>)` 方法读取。
+    * `Map` 不是 `java.sql.Struct`，因为它不包含具名列。
+  * `Tuple` 会映射为 `Object[]`，因为它可以包含不同类型的值，而使用 `List` 并不成立。
+  * 可以通过 `getObject(columnIndex, Array.class)` 方法将 `Tuple` 作为 `Array` 读取。在这种情况下，`Array#baseTypeName` 将返回 `Tuple` 的列定义。
+
+  **数组元素类型元数据**
+
+  `Array.getBaseTypeName()` 返回 ClickHouse 元素类型名称；`Array.getBaseType()` 返回 JDBC 类型代码。
+  JDBC V2 保留了完整的类型签名 (包装类型、类型参数) ，而 V1 会将其去除。
+
+  数组的通用映射规则如下：
+
+  | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`       |
+  | ------------------------------------------ | ----------------------------------- | --------------------- |
+  | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`         |
+  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型的 JDBC 类型>`     |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 的 JDBC 类型>` |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>` |
+  | `Array(Array(...(<类型>)))`                  | `<Type>` (最内层的元素)                   | `<最内层元素的 JDBC 类型>`    |
+  | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`               |
+  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`             |
+
+  以上规则的注意事项：
+
+  * 包装类型 (`Nullable`, `LowCardinality`) 会在 `getBaseTypeName()` 中保留，但 `getBaseType()` 解析得到的是内部类型的 JDBC 代码。
+  * 元数据中的嵌套数组会被展平：`getBaseTypeName()` 返回最内层的非数组元素类型，而不是直接子类型。
+  * 参数化类型 (`FixedString(N)`、完整的 `Enum`/`Tuple` 定义) 会在 `getBaseTypeName()` 中保留其参数。
+
+  **示例：**
+
+  | ClickHouse 类型 (示例)                                                         | `getBaseTypeName()`                                                 | `getBaseType()` |
+  | -------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
+  | Array(Int8)                                                                | Int8                                                                | TINYINT         |
+  | Array(Int16)                                                               | Int16                                                               | SMALLINT        |
+  | Array(Int32)                                                               | Int32                                                               | INTEGER         |
+  | Array(Int64)                                                               | Int64                                                               | BIGINT          |
+  | Array(UInt8)                                                               | UInt8                                                               | SMALLINT        |
+  | Array(UInt16)                                                              | UInt16                                                              | INTEGER         |
+  | Array(UInt32)                                                              | UInt32                                                              | BIGINT          |
+  | Array(UInt64)                                                              | UInt64                                                              | NUMERIC         |
+  | Array(Float32)                                                             | Float32                                                             | FLOAT           |
+  | Array(Float64)                                                             | Float64                                                             | DOUBLE          |
+  | Array(String)                                                              | String                                                              | VARCHAR         |
+  | Array(FixedString(8))                                                      | FixedString(8)                                                      | VARCHAR         |
+  | Array(Bool)                                                                | Bool                                                                | BOOLEAN         |
+  | Array(Date)                                                                | Date                                                                | DATE            |
+  | Array(DateTime)                                                            | 日期时间                                                                | TIMESTAMP       |
+  | Array(UUID)                                                                | UUID                                                                | OTHER           |
+  | Array(Nullable(Int32))                                                     | Nullable(Int32)                                                     | INTEGER         |
+  | Array(Nullable(String))                                                    | Nullable(String)                                                    | VARCHAR         |
+  | Array(LowCardinality(String))                                              | LowCardinality(String)                                              | VARCHAR         |
+  | Array(LowCardinality(Nullable(String)))                                    | LowCardinality(Nullable(String))                                    | VARCHAR         |
+  | Array(Array(Int32))                                                        | Int32                                                               | INTEGER         |
+  | Array(Array(Array(String)))                                                | String                                                              | VARCHAR         |
+  | Array(Tuple(name String, val Int32))                                       | Tuple(name String, val Int32)                                       | OTHER           |
+  | Array(Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3)) | Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3) | VARCHAR         |
+
+  * 在 V2 中，`getBaseTypeName()` 会保留完整的类型签名，包括包装类型 (`Nullable`、`LowCardinality`) 和类型参数 (`FixedString(8)`、完整的 `Enum` 和 `Tuple` 定义)。V1 则会去掉这些内容，只返回基本类型名称。
+  * `Tuple` 数组在 V2 中使用 `OTHER (1111)`，而不是 `STRUCT (2002)`，因为 ClickHouse 元组具有具名字段，而 `java.sql.Struct` 不支持这一点。
+  * `UUID` 数组在 V2 中使用 `OTHER (1111)`，与标量 `UUID` 的映射一致。
+  * `Enum` 值会映射为 `VARCHAR` —— 枚举成员始终通过字符串名称标识，与其底层数值编码无关。
+
+  **写入 Array**
+
+  使用 `java.sql.Connection#createArrayOf` 实例化 `java.sql.Array` 对象。该对象旨在统一不同数据库间的数组处理方式。
+  创建 Array 时需要通过连接将配置传递给其工厂方法。
+
+  该方法接受两个参数：
+
+  * `typeName` - 数组元素的类型名称。例如，`Array(Int32)` -&gt; `"Int32"`。
+  * `elements` - 数组中的实际元素。例如，`[[1, 2, 3], [4, 5, 6]]` -&gt; `new Integer[][] {{1, 2, 3}, {4, 5, 6}}`。
+
+  Tuple 可以表示为 `Object[]` 或 `java.sql.Struct` (有关如何写入 Tuple，请参阅下文) 。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      Array array = conn.createArrayOf("Int32", new Integer[][] {{1, 2, 3}, {4, 5, 6}});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (arr) VALUES (?)")) {
+          ps.setArray(1, array);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **读取 Arrays**
+
+  使用 `ResultSet#getArray(columnIndex)` 读取 `Array` 对象。该对象可用于访问任意嵌套深度的数组。
+  `Array#getResultSet()` 方法可以以更统一的方式将数组元素作为 `java.sql.ResultSet` 进行读取，适用于数组元素的确切类型未知的场景。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Array(Int32)")) {
+          ps.setArray(1, array);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Array array = rs.getArray(1);
+
+                  Object[] arr = (Object[]) array;
+                  Arrays.stream(arr).forEach(this::handleArrayElement);
+
+                  // or by using `ResultSet`
+                  ResultSet resultSet = array.getResultSet();
+                  while (resultSet.next()) {
+                      // ...
+                  }
+              }
+          }
+      } 
+  }
+  ```
+
+  **写入 Tuples**
+
+  Tuples 会映射到 `com.clickhouse.data.Tuple` 对象，应通过调用 `setObject(columnIndex, tuple)` 方法将其写入该对象。
+  也可以使用 `java.sql.Struct` 对象来写入 Tuples，以提高可移植性。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      Tuple tuple = new Tuple(1, "test", LocalDate.parse("2026-03-02"));
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (tuple) VALUES (?)")) {
+          ps.setObject(1, tuple);
+          ps.executeUpdate();
+      }
+  }
+
+  try (Connection conn = ...) {
+      Struct struct = conn.createStruct("Tuple(Int32, String, Date)", new Object[] {1, "test", LocalDate.parse("2026-03-02")});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (tuple) VALUES (?)")) {
+          ps.setStruct(1, struct);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **读取 Tuples**
+
+  方法 `getObject(columnIndex)` 将返回 `Object[]`。Tuples 可通过 `getObject(columnIndex, Array.class)` 方法以 `java.sql.Array` 的形式读取。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement stmt = conn.prepareStatement("SELECT ?::Tuple(String, Int32, Date)")) {
+          Array tuple = conn.createArrayOf("Tuple(String, Int32, Date)",  new Object[]{"test", 123, LocalDate.parse("2026-03-02")});
+          stmt.setObject(1, tuple);
+          try (ResultSet rs = stmt.executeQuery()) {
+              rs.next();
+              Array dbTuple = rs.getArray(1);
+              Assert.assertEquals(dbTuple, tuple);
+              Object arr = rs.getObject(1);
+              Assert.assertEquals(arr, tuple.getArray());
+          }
+      }
+  }
+
+  ```
+
+  **写入 Map**
+
+  Map 只能以 `java.collections.Map` 对象的形式写入，因为该类型需要键值对 (`java.sql.Struct` 不支持键值对) 。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      Map<String, Integer> map = new HashMap<>();
+      map.put("key1", 1);
+      map.put("key2", 2);
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (map) VALUES (?)")) {
+          ps.setObject(1, map);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **读取 Map**
+
+  可以使用 `getObject(columnIndex, Map.class)` 方法将 Map 作为 `java.collections.Map` 对象读取。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Map(String, Int32)")) {
+          ps.setStruct(1, struct);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Map<String, Integer> map = rs.getObject(1, Map.class);
+                  // ...
+              }
+          }
+      }
+  }
+  ```
+
+  **写入嵌套数据**
+
+  使用 `java.sql.Connection#createStruct` 实例化 `java.sql.Struct` 对象。该对象旨在统一不同数据库中的嵌套处理方式。
+  向 Struct 工厂方法传递配置时，需要提供 Connection 对象。
+
+  该方法接受两个参数：
+
+  * `typeName` - 嵌套元素的类型名。例如，`Nested(Tuple(Int32, String))` -&gt; `"Nested(Tuple(Int32, String))"`。
+  * `elements` - 实际的嵌套元素。例如，`[1, 'test']` -&gt; `new Object[] {1, 'test'}`。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      Struct struct = conn.createStruct("Nested(Tuple(Int32, String))", new Object[] {1, 'test'});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (nested) VALUES (?)")) {
+          ps.setStruct(1, struct);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **读取嵌套数据**
+
+  使用 `ResultSet#getStruct(columnIndex, StructDescriptor)` 读取 `Nested` 对象。该对象可用于访问任意嵌套深度的嵌套内容。
+  `Struct#getResultSet()` 方法可用于以更统一的方式将嵌套元素作为 `java.sql.ResultSet` 读取。当嵌套元素的确切类型未知时，此方法非常有用。
+
+  **示例**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Nested(Tuple(Int32, String))")) {
+          ps.setStruct(1, struct);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Struct struct = rs.getStruct(1);
+                  Object[] tuple = (Object[]) struct;
+                  Arrays.stream(tuple).forEach(this::handleTupleElement);
+
+                  // or by using `ResultSet`
+                  ResultSet resultSet = struct.getResultSet();
+                  while (resultSet.next()) {
+                      // ...
+                  }
+              }
+          }
+      }
+  }
+  ```
+
+  **地理空间类型**
+
+  | ClickHouse 类型 | JDBC 类型 | Java 类                                         |
+  | ------------- | ------- | ---------------------------------------------- |
+  | Point         | OTHER   | double[]                               |
+  | Ring          | OTHER   | double[][]                     |
+  | Polygon       | OTHER   | double[][][]           |
+  | MultiPolygon  | OTHER   | double[][][][] |
+
+  **Nullable 与 LowCardinality 类型**
+
+  * `Nullable` 和 `LowCardinality` 是对其他类型进行封装的特殊类型。
+  * `Nullable` 会影响 `ResultSetMetaData` 中类型名称的返回方式
+
+  **特殊类型**
+
+  | ClickHouse 类型           | JDBC 类型  | Java 类                |
+  | ----------------------- | -------- | --------------------- |
+  | UUID                    | OTHER    | java.util.UUID        |
+  | IPv4                    | OTHER    | java.net.Inet4Address |
+  | IPv6                    | OTHER    | java.net.Inet6Address |
+  | JSON                    | OTHER    | java.lang.String      |
+  | AggregateFunction       | OTHER    | (二进制表示)               |
+  | SimpleAggregateFunction | (所包装的类型) | (所包装的类)               |
+
+  * `UUID` 并不是 JDBC 标准类型，但它属于 JDK。默认情况下，`getObject()` 方法返回的是 `java.util.UUID`。
+  * 通过 `getObject(columnIndex, String.class)` 方法，可将 `UUID` 作为 `String` 类型读取或写入。
+  * `IPv4` 和 `IPv6` 不是 JDBC 标准类型，但它们属于 JDK。默认情况下，`getObject()` 方法会返回 `java.net.Inet4Address` 和 `java.net.Inet6Address`。
+  * 通过 `getObject(columnIndex, String.class)` 方法，可以将 `IPv4` 和 `IPv6` 作为 `String` 类型进行读写。
+
+  **JSON 类型**
+
+  JSON 类型默认映射为 `Map<String, Object>`，其中键为 JSON 对象的键，值为 JSON 对象的值。
+  例如：
+
+  ```json
+  {
+      "key1": "value1",
+      "key2": ["value2", "value3"]
+      "key3": {
+          "key4": "value4",
+          "key5": "value5"
+      }
+  }
+  ```
+
+  将映射为：
+
+  ```java
+  Map<String, Object> map = new HashMap<>();
+  map.put("key1", "value1");
+  map.put("key2", Arrays.asList("value2", "value3"));
+  map.put("key3", new HashMap<String, Object>() {{
+      put("key4", "value4");
+      put("key5", "value5");
+  }});
+  ```
+
+  还有一种更便捷的方式，可通过将服务器设置 `jdbc_read_json_as_string=true` 传入连接属性，以 String 形式读取 JSON。
+  这样驱动程序会将 JSON 值作为 String 返回，可使用任意 JSON 库进行解析。
+
+  ```java
+  Properties properties = new Properties();
+  properties.setProperty(
+                  ClientConfigProperties.serverSetting(ServerSettings.OUTPUT_FORMAT_BINARY_WRITE_JSON_AS_STRING),
+                  "1");
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+       try (ResultSet rs = stmt.executeQuery("SELECT * FROM test_json ORDER BY order")) {
+          while (rs.next()) {
+              String json = rs.getString("json");
+              // ...
+          }
+      }
+  }
+  ```
+
+  从 ClickHouse 25.8 版本起，数值默认不再加引号。对于旧版本，您可以通过将服务器设置传递给连接属性来禁用引号：
+
+  ```java
+  Properties properties = new Properties();
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_64bit_integers"), "0");
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_64bit_floats"), "0");
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
+  ```
+
+  ### 处理日期、时间与时区
+
+  请阅读 [Date/Time Guide](/zh/integrations/language-clients/java/date-time-guide)，其中说明了驱动程序在处理 Date/Time 和时间戳时的常见陷阱及处理逻辑。
+
+  ## 创建连接
+
+  ```java
+  String url = "jdbc:ch://my-server:8123/system";
+
+  Properties properties = new Properties();
+  DataSource dataSource = new DataSource(url, properties);//DataSource or DriverManager are the main entry points
+  try (Connection conn = dataSource.getConnection()) {
+  ... // do something with the connection
+  ```
+
+  ## 提供凭据与配置项
+
+  ```java showLineNumbers
+  String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
+
+  Properties info = new Properties();
+  info.put("user", "default");
+  info.put("password", "password");
+  info.put("database", "some_db");
+
+  //Creating a connection with DataSource
+  DataSource dataSource = new DataSource(url, info);
+  try (Connection conn = dataSource.getConnection()) {
+  ... // do something with the connection
+  }
+
+  //Alternate approach using the DriverManager
+  try (Connection conn = DriverManager.getConnection(url, info)) {
+  ... // do something with the connection
+  }
+  ```
+
+  ## 简单语句
+
+  ```java showLineNumbers
+
+  try (Connection conn = dataSource.getConnection(...);
+      Statement stmt = conn.createStatement()) {
+      ResultSet rs = stmt.executeQuery("select * from numbers(50000)");
+      while(rs.next()) {
+          // ...
+      }
+  }
+  ```
+
+  ## 插入
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.addBatch();
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  ## `HikariCP`
+
+  ```java showLineNumbers
+  // connection pooling won't help much in terms of performance,
+  // because the underlying implementation has its own pool.
+  // for example: HttpURLConnection has a pool for sockets
+  HikariConfig poolConfig = new HikariConfig();
+  poolConfig.setConnectionTimeout(5000L);
+  poolConfig.setMaximumPoolSize(20);
+  poolConfig.setMaxLifetime(300_000L);
+  poolConfig.setDataSource(new ClickHouseDataSource(url, properties));
+
+  try (HikariDataSource ds = new HikariDataSource(poolConfig);
+       Connection conn = ds.getConnection();
+       Statement s = conn.createStatement();
+       ResultSet rs = s.executeQuery("SELECT * FROM system.numbers LIMIT 3")) {
+      while (rs.next()) {
+          // handle row
+          log.info("Integer: {}, String: {}", rs.getInt(1), rs.getString(1));//Same column but different types
+      }
+  }
+  ```
+
+  ## 更多信息
+
+  如需了解更多信息，请参阅我们的 [GitHub 代码仓库](https://github.com/ClickHouse/clickhouse-java) 和 [Java Client 文档](/zh/integrations/language-clients/java/client)。
+
+  ## 故障排查
+
+  ### 日志
+
+  驱动程序使用 [slf4j](https://www.slf4j.org/) 进行日志记录，并会使用 `classpath` 中第一个可用的实现。
+
+  ### 解决大批量插入时的 JDBC 超时问题
+
+  在 ClickHouse 中执行耗时较长的大批量插入操作时，您可能会遇到如下 JDBC 超时错误：
+
+  ```plaintext
+  Caused by: java.sql.SQLException: Read timed out, server myHostname [uri=https://hostname.aws.clickhouse.cloud:8443]
+  ```
+
+  这些错误可能会中断数据插入过程并影响系统稳定性。要解决此问题，您可能需要调整客户端操作系统中的若干超时设置。
+
+  #### Mac OS
+
+  在 Mac OS 上，可以通过调整以下设置来解决该问题：
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+
+  #### Linux
+
+  在 Linux 上，仅靠等效设置可能无法解决该问题。由于 Linux 处理套接字保活设置的方式有所不同，还需执行额外步骤。请按以下步骤操作：
+
+  1. 在 `/etc/sysctl.conf` 或相关配置文件中，调整以下 Linux 内核参数：
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+  * `net.ipv4.tcp_keepalive_intvl`: 75
+  * `net.ipv4.tcp_keepalive_probes`: 9
+  * `net.ipv4.tcp_keepalive_time`: 60 (可考虑将该值从默认的 300 秒调低)
+
+  2. 修改内核参数后，运行以下命令使更改生效：
+
+  ```shell
+  sudo sysctl -p
+  ```
+
+  完成上述设置后，您需要确保客户端在套接字上启用 Keep-Alive 选项：
+
+  ```java
+  properties.setProperty("socket_keepalive", "true");
+  ```
+
+  ## 迁移指南
+
+  ### 主要变更
+
+  | 功能                            | V1 (旧版) | V2 (新版)           |
+  | ----------------------------- | ------- | ----------------- |
+  | 事务支持                          | 部分支持    | 不支持               |
+  | 响应列重命名                        | 部分支持    | 不支持               |
+  | 多条 SQL 语句                     | 不支持     | 不允许               |
+  | 命名参数                          | 支持      | 不支持 (JDBC 规范中未定义) |
+  | 通过 `PreparedStatement` 流式传输数据 | 支持      | 不支持               |
+
+  * JDBC V2 采用了更轻量的实现，因此移除了一些功能。
+    * JDBC V2 不支持流式数据，因为流式数据不属于 JDBC 规范，也不是 Java 的一部分。
+  * JDBC V2 需要显式配置。不默认启用故障转移。
+    * 应在 URL 中指定协议。不支持根据端口号隐式检测协议。
+
+  ### 配置变更
+
+  只有两个枚举：
+
+  * `com.clickhouse.jdbc.DriverProperties` - 驱动自身的配置属性。
+  * `com.clickhouse.client.api.ClientConfigProperties` - 客户端配置属性。有关客户端配置的更改，请参见 [Java Client 文档](/zh/integrations/language-clients/java/client#migration_from_v1_config)。
+
+  连接属性的解析方式如下：
+
+  * 首先会解析 URL 中的属性，这些属性会覆盖所有其他属性。
+  * 驱动属性不会传递给客户端。
+  * 端点 (主机、端口、协议) 会从 URL 中解析出来。
+
+  示例：
+
+  ```java
+  String url = "jdbc:ch://my-server:8443/default?" +
+              "jdbc_ignore_unsupported_values=true&" +
+              "socket_rcvbuf=800000";
+
+  Properties properties = new Properties();
+  properties.setProperty("socket_rcvbuf", "900000");
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+      // Connection will use socket_rcvbuf=800000 and jdbc_ignore_unsupported_values=true
+      // Endpoints: my-server:8443 protocol: http (not secure)
+      // Database: default
+  }
+  ```
+
+  ### 数据类型变更
+
+  **数值类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)          | JDBC 类型 (V1) | Java 类 (V1)                               |
+  | ------------- | ----- | ------------ | -------------------- | ------------ | ----------------------------------------- |
+  | Int8          | ✅     | TINYINT      | java.lang.Byte       | TINYINT      | java.lang.Byte                            |
+  | Int16         | ✅     | SMALLINT     | java.lang.Short      | SMALLINT     | java.lang.Short                           |
+  | Int32         | ✅     | INTEGER      | java.lang.Integer    | INTEGER      | java.lang.Integer                         |
+  | Int64         | ✅     | BIGINT       | java.lang.Long       | BIGINT       | java.lang.Long                            |
+  | Int128        | ✅     | NUMERIC      | java.math.BigInteger | NUMERIC      | java.math.BigInteger                      |
+  | Int256        | ✅     | NUMERIC      | java.math.BigInteger | NUMERIC      | java.math.BigInteger                      |
+  | UInt8         | ❌     | SMALLINT     | java.lang.Short      | SMALLINT     | com.clickhouse.data.value.UnsignedByte    |
+  | UInt16        | ❌     | INTEGER      | java.lang.Integer    | INTEGER      | com.clickhouse.data.value.UnsignedShort   |
+  | UInt32        | ❌     | BIGINT       | java.lang.Long       | BIGINT       | com.clickhouse.data.value.UnsignedInteger |
+  | UInt64        | ❌     | NUMERIC      | java.math.BigInteger | NUMERIC      | com.clickhouse.data.value.UnsignedLong    |
+  | UInt128       | ✅     | NUMERIC      | java.math.BigInteger | NUMERIC      | java.math.BigInteger                      |
+  | UInt256       | ✅     | NUMERIC      | java.math.BigInteger | NUMERIC      | java.math.BigInteger                      |
+  | Float32       | ✅     | FLOAT        | java.lang.Float      | FLOAT        | java.lang.Float                           |
+  | Float64       | ✅     | DOUBLE       | java.lang.Double     | DOUBLE       | java.lang.Double                          |
+  | Decimal32     | ✅     | DECIMAL      | java.math.BigDecimal | DECIMAL      | java.math.BigDecimal                      |
+  | Decimal64     | ✅     | DECIMAL      | java.math.BigDecimal | DECIMAL      | java.math.BigDecimal                      |
+  | Decimal128    | ✅     | DECIMAL      | java.math.BigDecimal | DECIMAL      | java.math.BigDecimal                      |
+  | Decimal256    | ✅     | DECIMAL      | java.math.BigDecimal | DECIMAL      | java.math.BigDecimal                      |
+  | Bool          | ✅     | BOOLEAN      | java.lang.Boolean    | BOOLEAN      | java.lang.Boolean                         |
+
+  * 最大的区别在于，出于更好的可移植性考虑，无符号类型会映射到 Java 类型。
+
+  **String 类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)      | JDBC 类型 (V1) | Java 类 (V1)      |
+  | ------------- | ----- | ------------ | ---------------- | ------------ | ---------------- |
+  | String        | ✅     | VARCHAR      | java.lang.String | VARCHAR      | java.lang.String |
+  | FixedString   | ✅     | VARCHAR      | java.lang.String | VARCHAR      | java.lang.String |
+
+  * `FixedString` 在两个版本中都会按原样读取。例如，`'John'` 的 `FixedString(10)` 会读取为 `'John\0\0\0\0\0\0\0\0\0'`。
+  * 使用 `PreparedStatement#setBytes` 时，会先将其转换为 `unhex('<hex_string>')`，然后按 `String` 类型读取。
+  * String 类型以 UTF-8 编码存储。
+
+  **日期/时间类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)        | JDBC 类型 (V1)                    | Java 类 (V1)              |
+  | ------------- | ----- | ------------ | ------------------ | ------------------------------- | ------------------------ |
+  | Date          | ❌     | DATE         | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | Date32        | ❌     | DATE         | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | 日期时间          | ❌     | TIMESTAMP    | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | DateTime64    | ❌     | TIMESTAMP    | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | Time          | ✅     | TIME         | java.sql.Time      | 新类型/不受支持                        | 新类型/不受支持                 |
+  | Time64        | ✅     | TIME         | java.sql.Time      | 新类型/不受支持                        | 新类型/不受支持                 |
+
+  * `Time` 和 `Time64` 仅在 V2 中作为新增类型受支持。
+  * `DateTime` 和 `DateTime64` 会映射到 `java.sql.Timestamp`，以更好地兼容 JDBC。
+
+  **枚举类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)      | JDBC 类型 (V1) | Java 类 (V1)      |
+  | ------------- | ----- | ------------ | ---------------- | ------------ | ---------------- |
+  | 枚举            | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
+  | Enum8         | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
+  | Enum16        | ✅     | VARCHAR      | java.lang.String | OTHER        | java.lang.String |
+
+  **嵌套类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2)    | Java 类 (V2)      | JDBC 类型 (V1) | Java 类 (V1)               |
+  | ------------- | ----- | --------------- | ---------------- | ------------ | ------------------------- |
+  | Array         | ❌     | ARRAY           | java.sql.Array   | ARRAY        | Object[] 或基本类型的数组 |
+  | Tuple         | ❌     | OTHER           | Object[] | STRUCT       | java.sql.Struct           |
+  | Map           | ❌     | JAVA&#95;OBJECT | java.util.Map    | STRUCT       | java.util.Map             |
+  | Nested        | ❌     | ARRAY           | java.sql.Array   | STRUCT       | java.sql.Struct           |
+
+  * 在 V2 中，`Array` 默认映射为 `java.sql.Array`，以兼容 JDBC。这样做也能提供有关返回数组值的更多信息，有助于类型推断。
+  * 在 V2 中，`Array` 实现了 `getResultSet()` 方法，用于返回一个内容与原始数组相同的 `java.sql.ResultSet`。
+  * V1 将 `Map` 视为 `STRUCT`，但始终返回 `java.util.Map` 对象。V2 通过将 `Map` 映射为 `JAVA_OBJECT` 解决了这一问题。
+  * V1 对 `Tuple` 使用 `STRUCT`，但始终返回 `List<Object>`。V2 将 `Tuple` 映射为 `OTHER`，默认返回 `Object[]`。
+  * V2 引入了 `com.clickhouse.data.Tuple#Tuple`，用于写入元组。它简化了判断某个值是元组还是数组的过程。
+  * `PreparedStatement#setBytes` 和 `ResultSet#getBytes` 不能用于 collection 类型。这些方法是为处理 binary string 而设计的。
+  * 通常使用 `java.sql.Array` 来读写 Array 类型。JDBC 驱动对此提供了全面支持。
+  * V2 `Nested` 被映射为 `Array`，并以元组数组的形式呈现。
+  * V2 对 `java.sql.Struct` 提供了部分支持，因为它与 Array 类型非常相似，且不支持键值对。`Struct` 可用于写入 `Tuple` 值。
+
+  **地理空间类型**
+
+  | ClickHouse 类型 | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)                                    | JDBC 类型 (V1) | Java 类 (V1)                                    |
+  | ------------- | ----- | ------------ | ---------------------------------------------- | ------------ | ---------------------------------------------- |
+  | Point         | ✅     | OTHER        | double[]                               | OTHER        | double[]                               |
+  | Ring          | ✅     | OTHER        | double[][]                     | OTHER        | double[][]                     |
+  | Polygon       | ✅     | OTHER        | double[][][]           | OTHER        | double[][][]           |
+  | MultiPolygon  | ✅     | OTHER        | double[][][][] | OTHER        | double[][][][] |
+
+  **Nullable 与 LowCardinality 类型**
+
+  * `Nullable` 和 `LowCardinality` 是用于封装其他类型的特殊类型。
+  * 这些类型在 V2 中没有变化。
+
+  **特殊类型**
+
+  | ClickHouse 类型           | 兼容 V1 | JDBC 类型 (V2) | Java 类 (V2)           | JDBC 类型 (V1) | Java 类 (V1)           |
+  | ----------------------- | ----- | ------------ | --------------------- | ------------ | --------------------- |
+  | JSON                    | ❌     | OTHER        | java.lang.String      | 不支持          | 不支持                   |
+  | AggregateFunction       | ✅     | OTHER        | (二进制表示)               | OTHER        | (二进制表示)               |
+  | SimpleAggregateFunction | ✅     | (所包装的类型)     | (所包装的类)               | (所包装的类型)     | (所包装的类)               |
+  | UUID                    | ✅     | OTHER        | java.util.UUID        | VARCHAR      | java.util.UUID        |
+  | IPv4                    | ✅     | OTHER        | java.net.Inet4Address | VARCHAR      | java.net.Inet4Address |
+  | IPv6                    | ✅     | OTHER        | java.net.Inet6Address | VARCHAR      | java.net.Inet6Address |
+  | Dynamic                 | ❌     | OTHER        | java.Object           | 不支持          | 不支持                   |
+  | Variant                 | ❌     | OTHER        | java.Object           | 不支持          | 不支持                   |
+
+  * V1 将 `UUID` 视为 `VARCHAR`，但始终返回 `java.util.UUID` 对象。V2 通过将 `UUID` 映射为 `OTHER` 解决了这一问题，并返回 `java.util.UUID` 对象。
+  * V1 对 `IPv4` 和 `IPv6` 使用 `VARCHAR`，但始终返回 `java.net.Inet4Address` 和 `java.net.Inet6Address` 对象。V2 通过将 `IPv4` 和 `IPv6` 映射到 `OTHER` 解决了这一问题，并返回 `java.net.Inet4Address` 和 `java.net.Inet6Address` 对象。
+  * `Dynamic` 和 `Variant` 是 V2 中新增的类型，V1 不支持。
+  * `JSON` 基于 `Dynamic` 类型，因此仅在 V2 中受支持。
+  * IPv4 和 IPv6 的值可以通过 `getBytes(columnIndex)` 方法读取为 `byte[]`。不过，建议针对这些类型使用专门的类。
+  * V2 不支持将 IP 地址作为数值读取，因为这类转换更适合在 InetAddress 类中实现。
+
+  ### 数据库元数据变更
+
+  * V2 仅使用 `Schema` 这一术语来表示数据库。`Catalog` 一词保留供将来使用。
+  * V2 对 `DatabaseMetaData.supportsTransactions()` 和 `DatabaseMetaData.supportsSavepoints()` 返回 `false`。后续开发中将对此进行调整。
+  * 在 `DatabaseMetaData.getTypeInfo()` 中，对于不应具有前缀和后缀的数据类型 (例如数值类型) ，`LITERAL_PREFIX` 和 `LITERAL_SUFFIX` 列现在会返回 `null`。
+    在 V1 中，这些列对这类类型会返回非 `null` 值。在生成 SQL 查询时，应使用这些列根据数据类型正确地为字面量值添加引号。
+</View>
+
+<View title="v0.7.x">
+  `clickhouse-jdbc` 实现了标准 JDBC 接口。它基于 [clickhouse-client](/zh/integrations/connectors/sql-clients/sql-console) 构建，提供自定义类型映射、事务支持以及标准同步 `UPDATE` 和 `DELETE` 语句等附加功能，便于与旧版应用程序和工具集成使用。
+
+  <Note>
+    最新版 JDBC (0.7.2) 使用 Client-V1
+  </Note>
+
+  `clickhouse-jdbc` API 是同步的，通常会带来更多开销 (例如 SQL 解析、类型映射/转换等) 。如果对性能有较高要求，或希望以更直接的方式访问 ClickHouse，请考虑使用 [clickhouse-client](/zh/integrations/connectors/sql-clients/sql-console)。
+
+  ## 环境要求
+
+  * [OpenJDK](https://openjdk.java.net) 版本 &gt;= 8
+
+  ### Setup
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.7.2</version>
+          {/* 使用包含全部依赖项的 uber jar；如需更小的 jar，请将 classifier 改为 http */}
+          <classifier>shaded-all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      // 使用包含全部依赖项的 uber jar；如需更小的 jar，请将 classifier 改为 http
+      implementation("com.clickhouse:clickhouse-jdbc:0.7.2:shaded-all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      // 使用包含全部依赖项的 uber jar；如需更小的 jar，请将 classifier 改为 http
+      implementation 'com.clickhouse:clickhouse-jdbc:0.7.2:shaded-all'
+      ```
+    </Tab>
+  </Tabs>
+
+  自版本 `0.5.0` 起，我们使用了内置于 Client 中的 Apache HTTP Client。由于该包没有共享版本，您需要将日志记录器作为依赖项添加。
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/org.slf4j/slf4j-api */}
+      <dependency>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+          <version>2.0.16</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+      implementation("org.slf4j:slf4j-api:2.0.16")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+      implementation 'org.slf4j:slf4j-api:2.0.16'
+      ```
+    </Tab>
+  </Tabs>
+
+  ## 配置
+
+  **驱动类**: `com.clickhouse.jdbc.ClickHouseDriver`
+
+  **URL 语法**: `jdbc:(ch|clickhouse)[:<protocol>]://endpoint1[,endpoint2,...][/<database>][?param1=value1&param2=value2][#tag1,tag2,...]`，例如：
+
+  * `jdbc:ch://localhost` 与 `jdbc:clickhouse:http://localhost:8123` 等效
+  * `jdbc:ch:https://localhost` 与 `jdbc:clickhouse:http://localhost:8443?ssl=true&sslmode=STRICT` 是相同的
+  * `jdbc:ch:grpc://localhost` 与 `jdbc:clickhouse:grpc://localhost:9100` 相同。
+
+  **连接属性**：
+
+  | 属性                         | 默认值     | 描述                                                                                                                                                                                                                                                                                                                                                               |
+  | -------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `continueBatchOnError`     | `false` | 发生错误时，是否继续处理批次                                                                                                                                                                                                                                                                                                                                                   |
+  | `createDatabaseIfNotExist` | `false` | 数据库不存在时，是否创建数据库                                                                                                                                                                                                                                                                                                                                                  |
+  | `custom_http_headers`      |         | 以逗号分隔的自定义 HTTP 请求头，例如：`User-Agent=client1,X-Gateway-Id=123`                                                                                                                                                                                                                                                                                                      |
+  | `custom_http_params`       |         | 以逗号分隔的自定义 HTTP 查询参数，例如：`extremes=0,max_result_rows=100`                                                                                                                                                                                                                                                                                                          |
+  | `nullAsDefault`            | `0`     | `0` - 按原样处理 null 值，并在将 null 插入非 Nullable 列时抛出异常；`1` - 按原样处理 null 值，并禁用插入时的 null 检查；`2` - 对查询和插入，均将 null 替换为相应数据类型的默认值                                                                                                                                                                                                                                            |
+  | `jdbcCompliance`           | `true`  | 是否支持标准的同步 UPDATE/DELETE 和伪事务                                                                                                                                                                                                                                                                                                                                     |
+  | `typeMappings`             |         | 自定义 ClickHouse 数据类型与 Java 类之间的映射，这会同时影响 [`getColumnType()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSetMetaData.html#getColumnType-int-) 和 [`getObject(Class<>?>`)](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-java.lang.String-java.lang.Class-) 的返回结果。例如：`UInt128=java.lang.String,UInt256=java.lang.String` |
+  | `wrapperObject`            | `false` | [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) 是否应为 Array / Tuple 返回 java.sql.Array / java.sql.Struct。                                                                                                                                                                                                        |
+
+  注意：如需了解更多信息，请参阅 [JDBC 专项配置](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java)。
+
+  ## 支持的数据类型
+
+  JDBC 驱动支持与客户端库相同的数据格式。
+
+  <Note>
+    * AggregatedFunction - :warning: 不支持 `SELECT * FROM table ...`
+    * Decimal - 为保持一致性，在 21.9+ 版本中设置 `SET output_format_decimal_trailing_zeros=1`
+    * 枚举 - 可同时视为字符串和整数
+    * UInt64 - 映射为 `long` (在 client-v1 中)
+  </Note>
+
+  ## 创建连接
+
+  ```java
+  String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
+
+  Properties properties = new Properties();
+
+  ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
+  try (Connection conn = dataSource.getConnection("default", "password");
+      Statement stmt = conn.createStatement()) {
+  }
+  ```
+
+  ## 简单语句
+
+  ```java showLineNumbers
+
+  try (Connection conn = dataSource.getConnection(...);
+      Statement stmt = conn.createStatement()) {
+      ResultSet rs = stmt.executeQuery("select * from numbers(50000)");
+      while(rs.next()) {
+          // ...
+      }
+  }
+  ```
+
+  ## 插入
+
+  <Note>
+    * 使用 `PreparedStatement` 代替 `Statement`
+  </Note>
+
+  与 input 函数相比 (见下文) ，此方式使用更简便，但性能较低：
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("insert into mytable(* except (description))")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.addBatch(); // parameters will be write into buffered stream immediately in binary format
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  ### 使用 input 表函数
+
+  一个性能表现出色的选项：
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement(
+      "insert into mytable select col1, col2 from input('col1 String, col2 DateTime64(3), col3 Int32')")) {
+      // The column definition will be parsed so the driver knows there are 3 parameters: col1, col2 and col3
+      ps.setString(1, "test"); // col1
+      ps.setObject(2, LocalDateTime.now()); // col2, setTimestamp is slow and not recommended
+      ps.setInt(3, 123); // col3
+      ps.addBatch(); // parameters will be write into buffered stream immediately in binary format
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  * 尽量使用[input 函数文档](/zh/reference/functions/table-functions/input)
+
+  ### 使用占位符插入
+
+  此选项仅建议用于小批量插入，因为它需要一个较长的 SQL 表达式 (该表达式将在客户端解析，并会消耗 CPU 和内存) ：
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("insert into mytable values(trim(?),?,?)")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.setString(3, null); // description
+      ps.addBatch(); // append parameters to the query
+      ...
+      ps.executeBatch(); // issue the composed query: insert into mytable values(...)(...)...(...)
+  }
+  ```
+
+  ## 处理 DateTime 与时区
+
+  请使用 `java.time.LocalDateTime` 或 `java.time.OffsetDateTime` 代替 `java.sql.Timestamp`，以及使用 `java.time.LocalDate` 代替 `java.sql.Date`。
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("select date_time from mytable where date_time > ?")) {
+      ps.setObject(2, LocalDateTime.now());
+      ResultSet rs = ps.executeQuery();
+      while(rs.next()) {
+          LocalDateTime dateTime = (LocalDateTime) rs.getObject(1);
+      }
+      ...
+  }
+  ```
+
+  ## 处理 `AggregateFunction`
+
+  <Note>
+    仅支持直接读取 `AggregateFunction` 的二进制状态的情况是 `groupBitmap`。对于其他聚合函数 (`min`、`max`、`avg` 等) ，请在查询中使用 `-Merge` 组合器 (例如 `SELECT minMerge(min_state) FROM ...`) ，以便在服务端解析聚合状态并返回普通值。
+  </Note>
+
+  ```java showLineNumbers
+  // batch insert using input function
+  try (ClickHouseConnection conn = newConnection(props);
+          Statement s = conn.createStatement();
+          PreparedStatement stmt = conn.prepareStatement(
+                  "insert into test_batch_input select id, name, value from input('id Int32, name Nullable(String), desc Nullable(String), value AggregateFunction(groupBitmap, UInt32)')")) {
+      s.execute("drop table if exists test_batch_input;"
+              + "create table test_batch_input(id Int32, name Nullable(String), value AggregateFunction(groupBitmap, UInt32))engine=Memory");
+      Object[][] objs = new Object[][] {
+              new Object[] { 1, "a", "aaaaa", ClickHouseBitmap.wrap(1, 2, 3, 4, 5) },
+              new Object[] { 2, "b", null, ClickHouseBitmap.wrap(6, 7, 8, 9, 10) },
+              new Object[] { 3, null, "33333", ClickHouseBitmap.wrap(11, 12, 13) }
+      };
+      for (Object[] v : objs) {
+          stmt.setInt(1, (int) v[0]);
+          stmt.setString(2, (String) v[1]);
+          stmt.setString(3, (String) v[2]);
+          stmt.setObject(4, v[3]);
+          stmt.addBatch();
+      }
+      int[] results = stmt.executeBatch();
+      ...
+  }
+
+  // use bitmap as query parameter
+  try (PreparedStatement stmt = conn.prepareStatement(
+      "SELECT bitmapContains(my_bitmap, toUInt32(1)) as v1, bitmapContains(my_bitmap, toUInt32(2)) as v2 from {tt 'ext_table'}")) {
+      stmt.setObject(1, ClickHouseExternalTable.builder().name("ext_table")
+              .columns("my_bitmap AggregateFunction(groupBitmap,UInt32)").format(ClickHouseFormat.RowBinary)
+              .content(new ByteArrayInputStream(ClickHouseBitmap.wrap(1, 3, 5).toBytes()))
+              .asTempTable()
+              .build());
+      ResultSet rs = stmt.executeQuery();
+      Assert.assertTrue(rs.next());
+      Assert.assertEquals(rs.getInt(1), 1);
+      Assert.assertEquals(rs.getInt(2), 0);
+      Assert.assertFalse(rs.next());
+  }
+  ```
+
+  <br />
+
+  ## 配置 HTTP 库
+
+  ClickHouse JDBC connector 支持三种 HTTP 库：[`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)、[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html) 和 [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/)。
+
+  <Note>
+    `HttpClient` 仅支持 JDK 11 及以上版本。
+  </Note>
+
+  JDBC 驱动默认使用 `HttpClient`。您可以通过设置以下属性来更改 ClickHouse JDBC connector 所使用的 HTTP 库：
+
+  ```java
+  properties.setProperty("http_connection_provider", "APACHE_HTTP_CLIENT");
+  ```
+
+  以下是对应配置值的完整列表：
+
+  | 属性值                         | HTTP 库              |
+  | --------------------------- | ------------------- |
+  | HTTP&#95;CLIENT             | `HttpClient`        |
+  | HTTP&#95;URL&#95;CONNECTION | `HttpURLConnection` |
+  | APACHE&#95;HTTP&#95;CLIENT  | Apache `HttpClient` |
+
+  <br />
+
+  ## 通过 SSL 连接到 ClickHouse
+
+  要通过 SSL 建立与 ClickHouse 的安全 JDBC 连接，需要在 JDBC 属性中配置相应的 SSL 参数。通常需要在 JDBC URL 或 Properties 对象中指定 SSL 属性，例如 `sslmode` 和 `sslrootcert`。
+
+  ## SSL 属性
+
+  | 名称                   | 默认值    | 可选值          | 说明                                      |
+  | -------------------- | ------ | ------------ | --------------------------------------- |
+  | `ssl`                | false  | true, false  | 是否为该连接启用 SSL/TLS                        |
+  | `sslmode`            | strict | strict, none | 是否验证 SSL/TLS 证书                         |
+  | `sslrootcert`        |        |              | SSL/TLS 根证书路径                           |
+  | `sslcert`            |        |              | SSL/TLS 证书路径                            |
+  | `sslkey`             |        |              | PKCS#8 格式的 RSA 密钥                       |
+  | `key_store_type`     |        | JKS, PKCS12  | 指定 `KeyStore`/`TrustStore` 文件的类型或格式     |
+  | `trust_store`        |        |              | `TrustStore` 文件路径                       |
+  | `key_store_password` |        |              | 访问 `KeyStore` 配置中指定的 `KeyStore` 文件所需的密码 |
+
+  这些属性可确保您的 Java 应用程序通过加密连接与 ClickHouse 服务器通信，从而提升数据传输过程中的安全性。
+
+  ```java showLineNumbers
+    String url = "jdbc:ch://your-server:8443/system";
+
+    Properties properties = new Properties();
+    properties.setProperty("ssl", "true");
+    properties.setProperty("sslmode", "strict"); // NONE to trust all servers; STRICT for trusted only
+    properties.setProperty("sslrootcert", "/mine.crt");
+    try (Connection con = DriverManager
+            .getConnection(url, properties)) {
+
+        try (PreparedStatement stmt = con.prepareStatement(
+
+            // place your code here
+
+        }
+    }
+  ```
+
+  ## 解决大批量插入时的 JDBC 超时问题
+
+  在 ClickHouse 中执行耗时较长的大批量插入操作时，您可能会遇到如下 JDBC 超时错误：
+
+  ```plaintext
+  Caused by: java.sql.SQLException: Read timed out, server myHostname [uri=https://hostname.aws.clickhouse.cloud:8443]
+  ```
+
+  这些错误可能会中断数据插入过程并影响系统稳定性。要解决此问题，需要在客户端操作系统中调整若干超时设置。
+
+  ### Mac OS
+
+  在 Mac OS 上，可以通过调整以下设置来解决该问题：
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+
+  ### Linux
+
+  在 Linux 上，仅靠等效设置可能无法解决该问题。由于 Linux 处理套接字保活设置的方式有所不同，还需执行额外步骤。请按以下步骤操作：
+
+  1. 在 `/etc/sysctl.conf` 或相关的配置文件中调整以下 Linux 内核参数：
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+  * `net.ipv4.tcp_keepalive_intvl`: 75
+  * `net.ipv4.tcp_keepalive_probes`: 9
+  * `net.ipv4.tcp_keepalive_time`: 60 (可考虑将该值从默认的 300 秒下调)
+
+  2. 修改内核参数后，运行以下命令使更改生效：
+
+  ```shell
+  sudo sysctl -p
+  ```
+
+  完成上述配置后，您需要确保客户端在套接字上启用 Keep-Alive 选项：
+
+  ```java
+  properties.setProperty("socket_keepalive", "true");
+  ```
+
+  <Note>
+    目前，在设置套接字 keep-alive 时，你必须使用 Apache HTTP Client 库，因为 `clickhouse-java` 支持的另外两个 HTTP 客户端库不支持设置套接字选项。详细说明请参阅[配置 HTTP 库](#v07-configuring-http-library)。
+  </Note>
+
+  或者，您也可以将等效参数添加到 JDBC URL 中。
+
+  JDBC 驱动的默认套接字和连接超时时间为 30 秒。可以适当增大超时时间以支持大批量数据的插入操作。在 `ClickHouseClient` 上调用 `options` 方法，并配合 `ClickHouseClientOption` 中定义的 `SOCKET_TIMEOUT` 和 `CONNECTION_TIMEOUT` 选项：
+
+  ```java showLineNumbers
+  final int MS_12H = 12 * 60 * 60 * 1000; // 12 h in ms
+  final String sql = "insert into table_a (c1, c2, c3) select c1, c2, c3 from table_b;";
+
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP)) {
+      client.read(servers).write()
+          .option(ClickHouseClientOption.SOCKET_TIMEOUT, MS_12H)
+          .option(ClickHouseClientOption.CONNECTION_TIMEOUT, MS_12H)
+          .query(sql)
+          .executeAndWait();
+  }
+  ```
+</View>

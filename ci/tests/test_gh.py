@@ -7,6 +7,7 @@ These tests verify that every status is mapped and the mapping is correct.
 
 import os
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -204,6 +205,64 @@ def test_to_markdown_no_failures(monkeypatch):
     assert "failures out of" not in md
     # The bullet is still present.
     assert "- Performance Comparison:" in md
+
+
+def _install_fake_get_changed_files_env(monkeypatch, info, shell_out="a.sql\n"):
+    """Stub `Info` and `Shell` in the `GH` module so `get_changed_files` can run
+    without a configured praktika env. Returns the list of shell commands run."""
+    gh_mod = sys.modules[GH.__module__]
+    monkeypatch.setattr(gh_mod, "Info", lambda: info)
+
+    commands = []
+
+    def fake_shell(command):
+        commands.append(command)
+        return 0, shell_out, ""
+
+    monkeypatch.setattr(gh_mod.Shell, "get_res_stdout_stderr", staticmethod(fake_shell))
+    return commands
+
+
+def _merge_queue_info(linked_pr_number):
+    return SimpleNamespace(
+        is_local_run=False,
+        repo_name="ClickHouse/ClickHouse",
+        sha="deadbeef",
+        pr_number=0,
+        is_merge_queue_event=True,
+        linked_pr_number=linked_pr_number,
+    )
+
+
+def test_get_changed_files_merge_queue_missing_linked_pr_fails_closed(monkeypatch):
+    """In a merge-queue run with no parseable linked PR number, a strict call
+    must fail closed rather than silently fall back to the 300-entry-capped
+    commits API (which would drop changed test files and turn the merge-queue
+    flaky check into a false green)."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(0))
+    try:
+        GH.get_changed_files(strict=True)
+        assert False, "Should have raised for a merge-queue run with no linked PR"
+    except RuntimeError as e:
+        assert "linked PR number" in str(e)
+    assert commands == [], "must not query the commits API when failing closed"
+
+
+def test_get_changed_files_merge_queue_missing_linked_pr_non_strict_tolerated(monkeypatch):
+    """A non-strict call keeps the tolerant fallback so master/release-style
+    callers are unaffected."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(0))
+    GH.get_changed_files(strict=False)
+    assert len(commands) == 1 and "commits/deadbeef" in commands[0]
+
+
+def test_get_changed_files_merge_queue_uses_linked_pr_files(monkeypatch):
+    """With a parseable linked PR number the merge-queue run uses that PR's
+    paginated files list, not the commits API."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(12345))
+    GH.get_changed_files(strict=True)
+    assert len(commands) == 1
+    assert "pulls/12345/files" in commands[0] and "--paginate" in commands[0]
 
 
 def test_post_commit_status_converts_transparently(monkeypatch):

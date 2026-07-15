@@ -1,0 +1,134 @@
+---
+title: Comment insérer toutes les lignes d’une table vers une autre ?
+description: "Article de la base de connaissances expliquant comment insérer toutes les lignes d’une table vers une autre."
+date: 2024-12-17
+tags: ['Ingestion de données']
+keywords: ['Insertion à partir d’une table']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Il est parfois nécessaire de réingérer toutes les données d&#39;une table vers une autre.
+
+Par exemple, vous pouvez vouloir réingérer des données d&#39;une table intermédiaire vers une table de production. Cet article explique comment procéder à l&#39;aide de l&#39;instruction `INSERT INTO`.
+
+<div id="example">
+  ## Exemple
+</div>
+
+Voici un exemple simple de son fonctionnement et de la façon de le tester :
+
+* Créez une base de données de test
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Créer une table d&#39;exemple
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* Insérez des données dans la table source
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* Vérifiez le nombre de lignes de la table source
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* Créez une nouvelle table avec la même structure que la table source.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* Insérez toutes les lignes de la table source dans la table cible.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* Vérifiez le nombre de lignes de la table cible
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+Si vous souhaitez modifier la structure de la nouvelle table, vous pouvez d’abord consulter la structure de la table source.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+Créez ensuite la nouvelle table avec la structure modifiée. Dans notre cas, nous voulons ajouter une nouvelle colonne `population` à la table cible.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* Insérez toutes les lignes de la table source dans la table cible, y compris la nouvelle colonne. Le champ population est défini à 0 pour toutes les lignes.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* Vérifiez les données de la table cible
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

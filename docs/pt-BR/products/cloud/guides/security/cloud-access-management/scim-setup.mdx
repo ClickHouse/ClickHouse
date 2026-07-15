@@ -1,0 +1,338 @@
+---
+sidebarTitle: 'Provisionamento SCIM com Okta'
+slug: /cloud/security/scim-setup
+title: 'Provisionamento SCIM com Okta'
+description: 'Como configurar o provisionamento SCIM entre Okta e ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SCIM', 'provisionamento', 'Okta', 'SSO', 'SAML', 'provedor de identidade', 'IdP', 'gerenciamento de usuários']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import PrivatePreviewBadge from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  O provisionamento SCIM está em prévia privada.
+</Note>
+
+<EnterprisePlanFeatureBadge feature="SCIM" />
+
+O ClickHouse Cloud oferece suporte a SCIM 2.0 (System for Cross-domain Identity Management) para automatizar o gerenciamento do ciclo de vida de usuários e grupos. Depois de se conectar ao seu provedor de identidade, cada usuário que você atribuir ao aplicativo ClickHouse Cloud é criado automaticamente na sua organização com a função correta, as atualizações de perfil são propagadas automaticamente e, ao remover um usuário do seu IdP, o acesso dele é revogado — sem convites manuais, sem contas órfãs.
+
+Este guia mostra como configurar o provisionamento SCIM de ponta a ponta com o **Okta**. O endpoint SCIM do ClickHouse Cloud segue o SCIM 2.0 (RFC 7644), mas a autenticação só tem suporte via Basic Auth, e o Okta é o único provedor de identidade com o qual testamos. Outros IdPs SCIM 2.0 podem funcionar se conseguirem se autenticar usando Basic Auth, mas no momento não têm suporte oficial.
+
+<div id="before-you-begin">
+  ## Antes de começar
+</div>
+
+Você precisará de:
+
+* A função **Admin** na sua organização do ClickHouse Cloud.
+* [SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup) já configurado entre seu IdP e o ClickHouse Cloud. O SCIM cria as contas de usuário; essas contas fazem login por SAML, então o SSO precisa estar funcionando antes.
+* Acesso de superadministrador ao seu tenant do Okta, com permissão para instalar aplicativos e configurar o provisionamento.
+* Uma lista das funções que você quer atribuir por meio do SCIM (por exemplo: Admins, Developers, Read-only). Defina isso com antecedência — você criará grupos correspondentes no Okta.
+
+<div id="how-scim-works">
+  ## Como o SCIM funciona com o ClickHouse Cloud
+</div>
+
+1. Um administrador no Okta atribui um usuário — diretamente ou por meio de um grupo — ao aplicativo ClickHouse Cloud.
+2. O Okta faz uma chamada ao endpoint SCIM do ClickHouse Cloud via HTTPS, autenticada com um token gerado por você.
+3. O ClickHouse Cloud cria o usuário na sua organização e atribui roles com base na associação a grupos no Okta.
+4. O usuário acessa o ClickHouse Cloud por meio do seu fluxo SAML SSO existente.
+5. Alterações de profile, mudanças de grupo e desativação no Okta são propagadas automaticamente para o ClickHouse Cloud.
+
+<div id="configure-clickhouse-cloud">
+  ## Configure o SCIM na sua organização do ClickHouse Cloud
+</div>
+
+<Steps>
+  <Step>
+    ### Ative o SCIM
+
+    Faça login no **ClickHouse Cloud Console** como administrador da organização e abra **Organization settings → SAML and SCIM settings → SCIM Configuration**.
+
+    ![Acesse a guia de configuração do SCIM em Organization settings](/images/cloud/security/scim-okta/scim-okta-01.webp)
+
+    Clique em `Enable SCIM`. O SCIM é liberado assim que o SAML SSO é conectado — se a opção estiver desabilitada, conclua primeiro a configuração do SAML.
+
+    ![Ative Enable SCIM](/images/cloud/security/scim-okta/scim-okta-02.webp)
+
+    Uma **URL do endpoint do SCIM** é gerada, no formato:
+
+    ```plaintext
+    https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
+    ```
+
+    Copie-a — você vai colá-la no Okta depois.
+  </Step>
+
+  <Step>
+    ### Gere um token de acesso do SCIM
+
+    Localize a seção `Create an API key` e escolha uma data de expiração.
+
+    <Tip>
+      **Planeje a rotação**
+
+      Recomendamos definir uma expiração de 12 meses e adicionar um lembrete no calendário. O ClickHouse Cloud oferece suporte a até dois tokens SCIM ativos ao mesmo tempo, para que você possa fazer a rotação sem interrupção: gere o novo token, atualize o Okta para usá-lo, confirme que o provisionamento continua funcionando e então revogue o token antigo.
+    </Tip>
+
+    Clique em `Generate key`. O token é exibido **uma única vez**, como uma chave (com prefixo `scim_`) e um segredo. Copie ambos imediatamente e armazene-os em um gerenciador de segredos seguro — eles não poderão ser recuperados depois. Se você os perder, revogue o token e gere um novo.
+
+    ![Gere uma nova chave de API do SCIM](/images/cloud/security/scim-okta/scim-okta-07.webp)
+  </Step>
+
+  <Step>
+    ### Defina o mapeamento de função
+
+    No painel SCIM Configuration, clique em **Map roles in &quot;Users and roles&quot;** (ou navegue diretamente por **Users and roles → Roles**).
+
+    Os grupos do SCIM são associados às funções do ClickHouse Cloud pelo nome, com algumas regras importantes:
+
+    * **Você não pode mapear um grupo SCIM para uma função predefinida do sistema.** Os mapeamentos do SCIM se aplicam apenas a funções personalizadas. Se você precisar expor uma capacidade em nível de sistema por meio do SCIM, crie uma função personalizada que reúna as permissões desejadas.
+    * **Nomes correspondentes são vinculados automaticamente.** Se uma função personalizada tiver o mesmo nome do grupo SCIM recebido, o ClickHouse Cloud fará a vinculação automaticamente — não é necessário mapeamento manual.
+    * **Para usar um nome de função diferente do nome do grupo**, crie a função personalizada com o nome desejado e, em seguida, defina o campo **SCIM group** com o nome do grupo SCIM ao qual ela deve se associar.
+    * **Grupos não mapeados criam novas funções.** Se o Okta enviar um grupo que não corresponda ao nome de uma função existente e não seja referenciado pelo campo `SCIM group` de nenhuma função, o ClickHouse Cloud criará uma nova função personalizada com o nome desse grupo. Depois, você poderá conceder a ela as permissões desejadas.
+  </Step>
+</Steps>
+
+<div id="configure-okta">
+  ## Configure o aplicativo ClickHouse Cloud no Okta
+</div>
+
+<Steps>
+  <Step>
+    ### Abra o aplicativo do ClickHouse Cloud no Okta
+
+    No **Okta Admin Console**, vá para **Applications → Applications** e procure o aplicativo que você criou ao configurar o SAML SSO para o ClickHouse Cloud. Abra-o.
+
+    Se você ainda não criou o aplicativo SAML, siga primeiro o [guia de configuração do SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup) — o provisionamento SCIM é configurado no mesmo aplicativo.
+
+    Na guia **General**, localize a seção **App Settings** e clique em `Edit`. Em **Provisioning**, selecione `SCIM` e clique em `Save`.
+
+    ![Defina o modo de provisionamento como SCIM nas configurações do aplicativo no Okta](/images/cloud/security/scim-okta/scim-okta-03.webp)
+
+    O aplicativo agora exibe uma guia **Provisioning**.
+
+    ![A guia Provisioning agora aparece no aplicativo](/images/cloud/security/scim-okta/scim-okta-05.webp)
+  </Step>
+
+  <Step>
+    ### Conecte o Okta ao endpoint SCIM
+
+    Abra a aba **Provisioning** do aplicativo e clique em `Edit`. Preencha o formulário:
+
+    * **URL base do conector SCIM** — a URL do endpoint SCIM mencionada anteriormente.
+    * **Campo de identificador exclusivo para usuários** — `userName`.
+    * **Ações de provisionamento compatíveis** — selecione todas as opções a seguir:
+      * Importar novos usuários e atualizações de perfil
+      * Enviar novos usuários
+      * Enviar atualizações de perfil
+      * Enviar grupos
+      * Importar grupos
+    * **Modo de autenticação** — `Basic Auth`.
+      * **Nome de usuário** — a **chave** do token SCIM (ela começa com `scim_`).
+      * **Senha** — o **segredo** do token SCIM.
+
+    ![Insira a URL do conector SCIM e defina o identificador exclusivo como userName](/images/cloud/security/scim-okta/scim-okta-06.webp)
+
+    ![Insira as credenciais da API para autenticação SCIM](/images/cloud/security/scim-okta/scim-okta-08.webp)
+
+    Clique em `Test Connector Configuration`. Você deverá ver uma confirmação em verde. Se falhar, vá para [Solução de problemas](#troubleshooting).
+
+    ![Teste a conexão SCIM](/images/cloud/security/scim-okta/scim-okta-09.webp)
+
+    Clique em `Save`.
+  </Step>
+
+  <Step>
+    ### Configurar o comportamento do Provisioning
+
+    Ainda na aba **Provisioning**, clique em `To App` na barra lateral esquerda. Clique em `Edit` e ative:
+
+    | Configuração                   | Ação      | O que faz                                                                                          |
+    | ------------------------------ | --------- | -------------------------------------------------------------------------------------------------- |
+    | Criar usuários                 | Ativar    | Cria novos usuários no ClickHouse Cloud quando eles são atribuídos no Okta                         |
+    | Atualizar atributos do usuário | Ativar    | Envia automaticamente alterações de perfil (nome, e-mail etc.)                                     |
+    | Desativar usuários             | Ativar    | Remove um usuário do ClickHouse Cloud quando sua atribuição é removida ou ele é desativado no Okta |
+    | Sincronizar senha              | Desativar | Não é usado — o login é feito via SAML, não por senha                                              |
+
+    ![Ative as ações de Provisioning do SCIM para usuários](/images/cloud/security/scim-okta/scim-okta-10.webp)
+
+    Clique em `Save` e, em seguida, volte para as abas **Sign On** / **Provisioning** do aplicativo para confirmar que as configurações foram aplicadas.
+
+    ![Salve as configurações de Provisioning e volte para a aba Sign On](/images/cloud/security/scim-okta/scim-okta-10b.webp)
+  </Step>
+
+  <Step>
+    ### Mapear atributos do usuário
+
+    O Okta e o ClickHouse Cloud precisam estar alinhados sobre como os campos do usuário são mapeados. Na aba **Provisioning**, clique em `To App` e revise os **Attribute Mappings** da sua aplicação. Os padrões da aplicação SAML do Okta geralmente são suficientes — confira a tabela abaixo:
+
+    | atributo do Okta  | atributo do ClickHouse Cloud (SCIM) | Obrigatório                                                 |
+    | ----------------- | ----------------------------------- | ----------------------------------------------------------- |
+    | `userName`        | `userName`                          | **Sim** — usado como identificador único e e-mail principal |
+    | `email` (primary) | `emails[primary].value`             | **Sim** — deve corresponder a `userName`                    |
+    | `firstName`       | `name.givenName`                    | Recomendado                                                 |
+    | `lastName`        | `name.familyName`                   | Recomendado                                                 |
+    | `displayName`     | `displayName`                       | Recomendado — exibido na UI do ClickHouse Cloud             |
+    | `externalId`      | `externalId`                        | Recomendado — melhora a precisão durante a reconciliação    |
+
+    Você pode adicionar atributos opcionais, como departamento, gerente e localidade — o ClickHouse Cloud os armazena no perfil do usuário, mas atualmente não os usa para permissões. Tudo o que estiver fora do conjunto padrão do SCIM é ignorado pelo ClickHouse Cloud.
+
+    <Warning>
+      **Maiúsculas e minúsculas no e-mail importam**
+
+      Certifique-se de que `userName` e `email` no Okta usem a mesma capitalização. O ClickHouse Cloud normaliza os e-mails para minúsculas; divergências entre os dois campos podem causar falhas nos testes.
+    </Warning>
+  </Step>
+
+  <Step>
+    ### Enviar grupos e atribuir usuários
+
+    É aqui que as funções são aplicadas automaticamente.
+
+    **Crie grupos no Okta.** Para cada mapeamento de função que você configurou anteriormente, crie ou identifique um grupo no Okta com o **mesmo nome de exibição exato**. Por exemplo, se o seu mapeamento diz `ClickHouse-Admins → Admin`, crie um grupo chamado `ClickHouse-Admins` no Okta.
+
+    ![Crie um novo grupo no Okta](/images/cloud/security/scim-okta/scim-okta-13.webp)
+
+    Abra o grupo que você acabou de criar e clique em `Assign people` para adicionar um membro.
+
+    ![Clique em Assign people no grupo](/images/cloud/security/scim-okta/scim-okta-14.webp)
+
+    ![Atribua o usuário ao grupo](/images/cloud/security/scim-okta/scim-okta-15.webp)
+
+    Em seguida, associe o aplicativo SCIM ao mesmo grupo para que a associação à função e o acesso ao aplicativo permaneçam sincronizados.
+
+    ![Atribua o aplicativo ao grupo](/images/cloud/security/scim-okta/scim-okta-16.webp)
+
+    **Envie os grupos.** Na guia **Provisioning** do aplicativo, clique em `Push Groups → Find groups by name`, procure seu grupo e clique em `Save`. Repita o processo para cada grupo de função. Cada um deverá exibir **Push Status** como **Active (Pushed)** depois de provisionado.
+
+    ![Configure o Group Push por nome na guia Push Groups do aplicativo](/images/cloud/security/scim-okta/scim-okta-17.webp)
+
+    **Atribua usuários.** Você tem duas opções:
+
+    * **Via grupos (recomendado).** Adicione usuários aos grupos do Okta que você acabou de enviar. Eles serão provisionados no ClickHouse Cloud e receberão automaticamente a função correspondente.
+    * **Diretamente.** Na guia **Assignments** do aplicativo, clique em `Assign → Assign to People` e selecione usuários individuais. Eles serão provisionados com a **função padrão**, a menos que também estejam em um grupo enviado.
+
+    A atribuição baseada em grupos é mais adequada para o gerenciamento contínuo — quando a função de alguém muda, basta atualizar a associação ao grupo.
+  </Step>
+</Steps>
+
+<div id="test-the-integration">
+  ## Teste a integração
+</div>
+
+Depois que o Provisioning estiver configurado, volte para **Configurações → Users and roles** no Console do ClickHouse Cloud para confirmar que os usuários sincronizados apareceram com as funções esperadas.
+
+![Verifique a sincronização de usuários em Users and roles](/images/cloud/security/scim-okta/scim-okta-18.webp)
+
+Siga este breve plano de teste com um ou dois usuários de teste **antes** de atribuir o acesso à equipe inteira. Cada etapa deve ser concluída em poucos segundos; se isso não acontecer, verifique a fila de tarefas do Okta e a seção de [Solução de problemas](#troubleshooting).
+
+| # | Ação no Okta                                                         | Resultado esperado no ClickHouse Cloud                                  |
+| - | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1 | Adicione um usuário de teste ao grupo do Okta `ClickHouse-Admins`    | O usuário aparece em **Configurações → Membros** com a função **Admin** |
+| 2 | O usuário de teste faz login no ClickHouse Cloud via SSO             | Ele acessa o dashboard com acesso de administrador                      |
+| 3 | Atualize o primeiro nome do usuário no Okta                          | O nome atualizado aparece em **Membros** em segundos                    |
+| 4 | Mova o usuário de `ClickHouse-Admins` para `ClickHouse-Read-only`    | A função dele muda para **Somente leitura**                             |
+| 5 | Remova a atribuição do usuário ao aplicativo (ou desative-o no Okta) | O usuário é removido da organização; novas tentativas de login falham   |
+
+Se alguma etapa falhar, corrija o problema subjacente antes de continuar — os sintomas normalmente se acumulam.
+
+<Tip>
+  **Onde procurar erros de SCIM no Okta**
+
+  Os erros de SCIM aparecem em **Relatórios → Log do sistema**, filtrados pelo seu aplicativo, e na tela **Provisioning → View Logs** do aplicativo. A mensagem de erro retornada pelo ClickHouse Cloud é exibida exatamente como foi retornada — comece por ela.
+</Tip>
+
+<div id="best-practices">
+  ## Boas práticas para produção
+</div>
+
+**Faça a rotação dos tokens regularmente.** Defina um lembrete no calendário para a rotação do token SCIM. Cadência recomendada: a cada 12 meses ou imediatamente sempre que um administrador que conhecia o token sair da empresa. O ClickHouse Cloud permite dois tokens ativos por organização justamente para que você possa fazer a rotação sem interromper o provisionamento.
+
+**Use grupos, não atribuições diretas.** A atribuição direta de usuários ao aplicativo funciona, mas rapidamente fica difícil de auditar. Fazer a atribuição por meio de grupos do Okta significa que as revisões de acesso e as mudanças de função acontecem em um só lugar.
+
+**Revise o log de auditoria.** Toda ação do SCIM — usuário criado, usuário desativado, perfil atualizado — é registrada no log de auditoria do ClickHouse Cloud. Consulte [Audit logging](/pt-BR/products/cloud/reference/security/audit-logging). Verifique o log periodicamente, especialmente após grandes ondas de provisionamento.
+
+**Defina uma função padrão adequada.** Se um usuário do Okta for atribuído ao aplicativo, mas não estiver em nenhum grupo sincronizado, ele será criado com a **Função padrão**. Escolha a função mais restritiva que ainda permita que o usuário faça *alguma coisa*, para que erros de configuração falhem de forma segura.
+
+**Evite usar SCIM e convites manuais ao mesmo tempo.** Depois que o SCIM estiver ativado, gerencie a associação pelo Okta — não envie também convites manuais para os mesmos usuários. Misturar os dois caminhos gera confusão sobre qual é a fonte oficial e pode produzir duplicatas.
+
+**Monitore tarefas de provisionamento com falha.** O Okta tenta novamente chamadas de provisionamento com falha, mas acaba movendo-as para a fila **Tasks**. Adicione essa fila aos dashboards que sua equipe de TI já monitora ou use o webhook do Okta ou alertas por e-mail para sinalizar falhas persistentes.
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="test-credentials-fails">
+  ### &quot;Test connector configuration&quot; falha no Okta
+</div>
+
+* Confirme se o SCIM está **habilitado** no Console do ClickHouse Cloud.
+* Confirme se a **URL base** no Okta corresponde exatamente ao URL do endpoint SCIM exibido no Console do ClickHouse Cloud — o ID da organização deve estar correto.
+* Confirme se a **chave e o segredo do token** foram colados sem espaços em branco no início ou no fim.
+* Se você rotacionou os tokens, certifique-se de que está usando a **nova** chave e o novo segredo, não o par anterior.
+
+<div id="users-no-permissions">
+  ### Os usuários são criados, mas não têm permissões
+</div>
+
+* Verifique se você adicionou uma linha em **Map roles in &quot;Users and roles&quot;** para a role esperada.
+* Verifique se o nome do grupo no Okta corresponde **exatamente** ao nome do grupo SCIM no mapeamento, incluindo maiúsculas/minúsculas e hífens.
+* Se a sua configuração provisiona intencionalmente alguns usuários sem grupo, confirme se a **Default role** está definida.
+
+<div id="duplicate-user">
+  ### Usuário duplicado na lista de membros
+</div>
+
+Geralmente isso é causado por inconsistência no uso de maiúsculas e minúsculas no e-mail entre o Okta e um convite manual anterior. Remova o usuário duplicado da lista de Membros e, em seguida, cancele a atribuição e atribua novamente o usuário no Okta para provisioná-lo do zero.
+
+<div id="group-display-name">
+  ### O envio do grupo falha com &quot;displayName not recognised&quot;
+</div>
+
+O nome do grupo no Okta não corresponde a um mapeamento configurado no ClickHouse Cloud. Renomeie o grupo no Okta ou adicione um mapeamento em **Mapear funções em &quot;Users and roles&quot;** no painel de Configuração SCIM (ou em **Users and roles → Roles**).
+
+<div id="deactivated-users-remaining">
+  ### Usuários desativados ainda aparecem como membros
+</div>
+
+O Okta pode levar até um minuto para processar a desativação. Se o usuário ainda aparecer como membro após vários minutos, verifique em **Provisioning → View Logs** no Okta se há algum erro na tarefa de desativação.
+
+<div id="token-rotation-issue">
+  ### Fiz a rotação do token SCIM e agora o Okta está falhando
+</div>
+
+Verifique se você atualizou as credenciais no **mesmo aplicativo SCIM** no Okta. Após a atualização, clique em `Test Connector Configuration` para confirmar. Quando o Provisioning voltar a ficar verde, revogue o token antigo no ClickHouse Cloud Console.
+
+<div id="lost-token">
+  ### Perdi o token do SCIM
+</div>
+
+Não é possível recuperar tokens. No ClickHouse Cloud Console, em **Configurações da organização → Configurações de SAML e SCIM → Configuração do SCIM**, revogue o token perdido e gere um novo. Em seguida, atualize as credenciais no Okta.
+
+<div id="faq">
+  ## Perguntas frequentes
+</div>
+
+**Preciso de SAML SSO para poder usar o SCIM?**
+Sim. O SCIM cria as contas de usuário, mas o ClickHouse Cloud faz a autenticação delas por meio do SAML. Configure primeiro o [SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+**O SCIM funciona com Microsoft Entra ID, OneLogin ou outros IdPs SCIM 2.0?**
+Oficialmente, não — o Okta é o único IdP que testamos e ao qual damos suporte hoje. O endpoint segue o SCIM 2.0 (RFC 7644), mas a autenticação é restrita a Basic Auth, então qualquer IdP que não consiga se autenticar via Basic Auth não funcionará. Outros IdPs SCIM 2.0 compatíveis com Basic Auth podem funcionar na prática, mas não oferecemos nenhuma garantia.
+
+**Em quanto tempo as alterações no Okta aparecem no ClickHouse Cloud?**
+A maioria das operações é propagada em poucos segundos. Alterações em massa (envio de grupos grandes) podem levar mais tempo, dependendo do tamanho, mas o Okta tenta novamente automaticamente em caso de erros transitórios.
+
+**Posso provisionar várias organizações do ClickHouse Cloud a partir de um único tenant do Okta?**
+Sim — instale o aplicativo uma vez por organização, cada uma com seu próprio endpoint URL do SCIM e token. Envie os mesmos grupos do Okta para cada aplicativo, conforme necessário.
+
+**Onde obtenho ajuda se não conseguir avançar?**
+Abra um ticket de suporte no ClickHouse Cloud Console (**Help → Contact support**) e inclua:
+
+* o ID da sua organização,
+* o ID do seu aplicativo no Okta, e
+* uma captura de tela da task ou do teste que falhou nos logs do Okta.
