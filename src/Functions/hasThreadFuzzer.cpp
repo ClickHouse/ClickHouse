@@ -32,6 +32,10 @@ public:
         return 0;
     }
 
+    /// The value is process-local state that can differ per server and can be toggled at
+    /// runtime with `SYSTEM START/STOP THREAD FUZZER`.
+    bool isDeterministic() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
@@ -39,9 +43,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    /// The result must not be a constant column, otherwise the analyzer folds it on the
+    /// initiator of a distributed query and every shard receives the initiator's fuzzer
+    /// flag instead of observing its own process state (same as `queryID`).
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
+        return DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective())->convertToFullColumnIfConst();
     }
 };
 
