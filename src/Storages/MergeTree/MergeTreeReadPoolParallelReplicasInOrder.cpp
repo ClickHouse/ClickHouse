@@ -81,7 +81,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
     while (true)
     {
-        auto mark_ranges = cutRangesToRead(task_idx, previous_task);
+        size_t marks_in_range_before_cut = 0;
+        auto mark_ranges = cutRangesToRead(task_idx, previous_task, marks_in_range_before_cut);
         if (!mark_ranges)
             return nullptr;
 
@@ -89,13 +90,22 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         /// for the part), so it happens outside of the mutex.
         auto refined = refineReadRanges(*per_part_infos[task_idx], std::move(*mark_ranges));
         if (refined.empty())
+        {
+            /// The dropped cut did not read anything, so it must not inflate the warmup
+            /// growth of the task size: otherwise a pruned prefix would make the first
+            /// surviving task much larger than the small-limit warmup intends, and with
+            /// scattered matches such a task reads granules the LIMIT never needed.
+            std::lock_guard lock(mutex);
+            per_part_marks_in_range[task_idx] = marks_in_range_before_cut;
             continue;
+        }
 
         return createTask(per_part_infos[task_idx], std::move(refined), previous_task);
     }
 }
 
-std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToRead(size_t task_idx, MergeTreeReadTask * previous_task)
+std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToRead(
+    size_t task_idx, MergeTreeReadTask * previous_task, size_t & marks_in_range_before_cut)
 {
     std::lock_guard lock(mutex);
 
@@ -110,6 +120,8 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
 
     auto & marks_in_range = per_part_marks_in_range[task_idx];
+    marks_in_range_before_cut = marks_in_range;
+
     auto get_from_buffer = [&]() -> std::optional<MarkRanges>
     {
         /// Cap the warmup growth at `min_marks_per_task` so that steady-state task size
