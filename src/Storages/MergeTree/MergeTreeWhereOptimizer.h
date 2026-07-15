@@ -81,6 +81,13 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
+        /// Read cost per eliminated row: `columns_size / eliminated_fraction`. The lower the better.
+        /// Ranks conditions so a cheap, selective filter is preferred over a condition that must read a
+        /// large column (e.g. a whole Map to evaluate a map-key predicate) even when the latter looks more
+        /// selective. Without statistics it equals `columns_size`; for equal cost it matches selectivity-first
+        /// ordering. See getColumnsSize / computeConditionCostScore and #110462.
+        Float64 cost_score = 0;
+
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -97,12 +104,13 @@ private:
                 names += n.getColumnName();
             }
             return fmt::format(
-                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, table_columns.size: {})",
+                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, cost_score: {}, "
+                "estimated_row_count: {}, columns_size: {}, table_columns.size: {})",
                 names,
                 viable,
                 good,
                 min_position_in_primary_key,
+                cost_score,
                 estimated_row_count,
                 columns_size,
                 table_columns.size());
@@ -110,7 +118,7 @@ private:
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, cost_score, estimated_row_count, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -152,6 +160,11 @@ private:
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getColumnsSize(const NameSet & columns) const;
+
+    /// Greedy cost/benefit score used to order PREWHERE candidates: read cost (bytes) divided by the
+    /// fraction of rows the condition eliminates. The lower the better. Without a reliable row estimate
+    /// the benefit is 1 and the score is just `columns_size`. See #110462.
+    static Float64 computeConditionCostScore(UInt64 columns_size, UInt64 estimated_row_count, UInt64 total_rows);
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 

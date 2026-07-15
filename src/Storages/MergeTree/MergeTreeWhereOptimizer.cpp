@@ -475,6 +475,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             Condition cond(std::move(group_nodes));
             cond.table_columns = group_columns;
             cond.columns_size = getColumnsSize(group_columns);
+            cond.cost_score = static_cast<Float64>(cond.columns_size);
             cond.viable = true;
             cond.good = group_good;
 
@@ -482,6 +483,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             {
                 cond.good = true;
                 cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, cond.nodes).rows;
+                /// Charge the read cost against how many rows the condition eliminates, so an
+                /// expensive whole-column read (e.g. a Map behind a map-key predicate) is not hoisted
+                /// ahead of a cheap, selective prefilter purely because it looks selective. See #110462.
+                const UInt64 total_rows = estimator->estimateRelationProfile().rows;
+                cond.cost_score = computeConditionCostScore(cond.columns_size, cond.estimated_row_count, total_rows);
                 LOG_DEBUG(log, "Condition group ({}) has estimated row count {}", cond.toString(), cond.estimated_row_count);
             }
 
@@ -669,13 +675,47 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
 
 UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
 {
+    /// `column_sizes` is keyed by base storage columns. A subcolumn (e.g. the map-key subcolumn
+    /// `h.key_k`) is not a key, so a naive lookup returns 0 and makes the condition look free -
+    /// even though evaluating it reads the whole base column (the entire `Map`). Resolve each
+    /// column to its base storage name and charge the base column's size, deduplicating so that
+    /// several subcolumns of the same base column (e.g. `h.key_a`, `h.key_b`) are charged once.
+    /// See #110462.
     UInt64 size = 0;
+    NameSet counted_storage_columns;
+    const auto & storage_columns_description = storage_metadata->getColumns();
 
     for (const auto & column : columns)
-        if (column_sizes.contains(column))
-            size += column_sizes.at(column);
+    {
+        String storage_column = column;
+        if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column))
+            storage_column = resolved->getNameInStorage();
+
+        if (!counted_storage_columns.insert(storage_column).second)
+            continue;
+
+        if (auto it = column_sizes.find(storage_column); it != column_sizes.end())
+            size += it->second;
+    }
 
     return size;
+}
+
+Float64 MergeTreeWhereOptimizer::computeConditionCostScore(UInt64 columns_size, UInt64 estimated_row_count, UInt64 total_rows)
+{
+    /// Score = read cost / benefit, where benefit is the fraction of rows the condition eliminates.
+    /// A condition that reads a large column (e.g. the whole Map behind a map-key predicate) is only
+    /// worth hoisting to the front of PREWHERE if it eliminates proportionally many rows; a cheap,
+    /// selective filter on a small column wins. Lower is better.
+    ///
+    /// Without a usable estimate (no statistics, or estimate >= total) the benefit is 1, so the score
+    /// degrades to `columns_size` and matches the previous size-based ordering. Two conditions that
+    /// read the same columns keep selectivity-first ordering (equal cost, benefit decides).
+    if (total_rows == 0 || estimated_row_count >= total_rows)
+        return static_cast<Float64>(columns_size);
+
+    const Float64 eliminated_fraction = 1.0 - static_cast<Float64>(estimated_row_count) / static_cast<Float64>(total_rows);
+    return static_cast<Float64>(columns_size) / eliminated_fraction;
 }
 
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
