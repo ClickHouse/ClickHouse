@@ -1,0 +1,19 @@
+--- saturate: huge UInt64 (above Int64::max) -> Date/Date32/DateTime ---
+2106-02-07
+2299-12-31
+2106-02-07 06:28:15
+2106-02-07
+2299-12-31
+2106-02-07 06:28:15
+--- ignore: huge UInt64 (above Int64::max) -> Date/Date32/DateTime ---
+2106-02-07
+2299-12-31
+2106-02-07 06:28:15
+--- throw: huge UInt64 (above Int64::max) -> Date/Date32/DateTime ---
+--- saturate: non-constant path via table ---
+2106-02-07
+2106-02-07
+2299-12-31
+2299-12-31
+2106-02-07 06:28:15
+2106-02-07 06:28:15
