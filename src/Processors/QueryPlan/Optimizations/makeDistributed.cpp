@@ -850,6 +850,24 @@ String dumpQueryPlanShort(const QueryPlan & query_plan)
     return query_plan_buffer.str();
 }
 
+#if CLICKHOUSE_CLOUD
+/// True if the plan (or any sub-plan rooted at `root`) contains at least one `LogicalExchangeStep`.
+static bool planContainsExchange(const QueryPlan::Node * root)
+{
+    std::vector<const QueryPlan::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+#endif
+
 
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange steps are split into ExchangeSink and ExchangeSource.
@@ -1062,9 +1080,11 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
 #if CLICKHOUSE_CLOUD
                 ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+                const bool convert_reads_to_worker = planContainsExchange(root) && !optimization_settings.distributed_plan_single_stage;
+
                 /// A read using a feature the worker step cannot reproduce from shipped parts (see
                 /// `canCreateFrom`) goes to a full replica below, which re-plans the read locally.
-                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers
+                if (read_merge_tree && convert_reads_to_worker && !optimization_settings.distributed_plan_prefer_replicas_over_workers
                     && ReadFromMergeTreeAtWorker::canCreateFrom(*read_merge_tree))
                 {
                     /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
