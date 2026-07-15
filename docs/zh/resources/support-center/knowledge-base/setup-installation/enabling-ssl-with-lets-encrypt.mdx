@@ -1,0 +1,180 @@
+---
+title: 如何在单台 ClickHouse 服务器上使用 Let's Encrypt 启用 SSL
+description: 了解如何借助 Let's Encrypt 为单台 ClickHouse 服务器配置 SSL，包括证书签发、配置和验证。
+date: 2024-12-11
+tags: ['安全与身份验证']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="steps-to-follow">
+  ## 操作步骤
+</div>
+
+以下步骤可用于借助免费、自动化且开放的证书颁发机构 (CA) [Let&#39;s Encrypt](https://letsencrypt.org/) ，为单个 ClickHouse 服务器启用 SSL。Let&#39;s Encrypt 旨在让任何人都能轻松使用 HTTPS 保护自己的网站。通过自动化证书签发和续期流程，Let&#39;s Encrypt 可确保网站持续保持安全，无需人工干预。
+
+<Note>
+  在以下指南中，我们假设 ClickHouse 已安装在标准的软件包路径中。所有示例均使用域名 `product-test-server.clickhouse-dev.com`。请根据实际情况替换为您的域名。
+</Note>
+
+1. 确认您已有一条指向您的 server 的 DNS `A` 或 `AAAA` 记录。这可以使用 Linux 工具 `dig.` 来完成。例如，若使用 Cloudflare DNS server `1.1.1.1`，则 `product-test-server.clickhouse-dev.com` 的响应如下：
+
+<br />
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+请注意下方确认存在 A 记录的部分。
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. 在服务器上开放 80 端口。该端口将用于通过 certbot 和 ACME 协议自动续订证书。对于 AWS，可通过[修改实例关联的安全组 (Security Group) ](https://repost.aws/knowledge-center/connect-http-https-ec2)来实现。
+
+<br />
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="显示已开放 80 端口的 AWS 安全组（Security Group）配置" border />
+
+3. 安装 [`certbot`](https://certbot.eff.org/instructions)，例如使用 `apt`
+
+<br />
+
+```bash
+sudo apt install certbot
+```
+
+4. 获取 SSL 证书
+
+<br />
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+  我们的服务器上没有运行 Web 服务器，因此请选择 (1)，允许 Certbot 使用独立的临时 Web 服务器。
+</Note>
+
+系统提示时，输入服务器的完整域名，例如 `product-test-server.clickhouse-dev.com`。
+
+<Note>
+  Let&#39;s Encrypt 的政策是不为某些类型的域名签发证书，例如公共云提供商生成的域名 (如 AWS 的 *.compute.amazonaws.com 域名) 。这些域名被视为共享基础设施，出于安全和防滥用考虑会被禁止。
+</Note>
+
+5. 将证书复制到 ClickHouse 目录中。
+
+<br />
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+此命令会设置一个 cron 作业，用于自动管理 ClickHouse 服务器的 Let&#39;s Encrypt SSL 证书。它会以 root 用户身份每分钟运行一次，仅在文件发生更新时，才将 Let&#39;s Encrypt 目录中的 .pem 文件复制到 ClickHouse 服务器的配置目录。复制完成后，脚本会将这些文件的所有者更改为 clickhouse 用户和组，以确保服务器具备所需的访问权限。它还会对复制后的文件设置安全的只读权限 (`chmod 400`) ，以确保严格的文件安全性。这样，ClickHouse 服务器始终都能访问最新的 SSL 证书，无需手动干预，从而在保障安全性的同时尽可能降低运维开销。
+
+6. 在 clickhouse-server 中配置这些证书的使用。
+
+<br />
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. 重启 ClickHouse 服务器
+
+<br />
+
+```bash
+sudo clickhouse restart
+```
+
+8. 验证 ClickHouse 能否通过 SSL 进行通信
+
+<br />
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+要使最后一步正常工作，你可能需要确保 8443 端口可访问，例如在 AWS 的安全组 (Security Group) 中放行该端口。或者，如果你只想从服务器访问 ClickHouse，请修改 hosts 文件，即：
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+  如果你要从通配符地址开放连接，请确保至少采取了以下一项措施：
+
+  * 服务器受防火墙保护，且无法从不受信任的网络访问；
+  * 所有用户都被限制为只能使用部分网络地址 (参见 users.xml) ；
+  * 所有用户都设置了强密码，且仅开放安全的 (TLS) 接口，或者连接仅通过 TLS 接口建立。
+  * 无密码用户仅具有只读访问权限。
+
+  另请参见：https://www.shodan.io/search?query=clickhouse
+
+  博客 [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http) 可作为保护公网实例安全的参考。
+</Warning>
+
+如果你是从运行 ClickHouse 的本机发起连接，以下配置也应适用。要通过 `product-test-server.clickhouse-dev.com` 连接，请在你的环境中开放 9440 端口：
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

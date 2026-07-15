@@ -1,0 +1,163 @@
+---
+title: 'BYOC Network Security'
+slug: /cloud/reference/byoc/reference/network_security
+sidebarTitle: 'Network security'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'network security']
+description: 'Deploy ClickHouse on your own cloud infrastructure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+## Connections between ClickHouse Control Plane and Your BYOC VPC {#connection-between-clickhouse-and-byoc}
+
+The ClickHouse Cloud control plane maintains several types of connections to operate and support your BYOC deployment:
+
+| Purpose                                      | Connection type                                 | Notes                                                                                                                                                                                           |
+| -------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Daily operations — Kubernetes API server** | Public with IP filtering (default), or private via Tailscale or AWS VPC Lattice | Management services talk to the EKS API server over the public network, restricted by IP allow lists. After initial deployment, you can optionally switch this to private access via Tailscale or, on AWS, VPC Lattice. |
+| **Daily operations — AWS APIs**              | ClickHouse VPC → AWS                            | Management services call AWS APIs (e.g., EKS, EC2) from ClickHouse Cloud’s own VPC to AWS. This doesn't involve your VPC or Tailscale.                                                          |
+| **Troubleshooting — ClickHouse service**     | Tailscale                                       | ClickHouse engineers access the ClickHouse service (e.g., system tables) for diagnostics via Tailscale.                                                                                         |
+| **Troubleshooting — Kubernetes API server**  | Tailscale                                       | ClickHouse engineers access the EKS API server for cluster diagnostics via Tailscale.                                                                                                           |
+
+The following section describes how the **Tailscale** private network is used for troubleshooting and optional management access.
+
+## Tailscale Private Network {#tailscale-private-network}
+
+Tailscale provides a zero-trust, private network connection between ClickHouse Cloud's management services and your BYOC deployment. This secure channel enables ClickHouse engineers to perform troubleshooting and management operations without requiring public internet access or complex VPN configurations.
+
+### Overview {#tailscale-overview}
+
+Tailscale creates an encrypted, private network tunnel between the ClickHouse control plane (in ClickHouse's VPC) and your BYOC data plane (in your VPC). This connection is used exclusively for:
+
+- **Management operations**: ClickHouse management services coordinating with your BYOC infrastructure
+- **Troubleshooting access**: ClickHouse engineers accessing Kubernetes API servers and ClickHouse system tables for diagnostics
+- **Metrics access**: ClickHouse’s centralized monitoring dashboards access metrics from the Prometheus stack deployed within your BYOC VPC, providing ClickHouse engineers observability into the environment.
+
+<Warning>
+Tailscale is used **only for management and troubleshooting operations**. It is **never used for query traffic** or customer data access. All customer data remains within your VPC and is never transmitted through Tailscale connections.
+</Warning>
+
+### How Tailscale Works in BYOC {#how-tailscale-works}
+
+<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+
+For each service or endpoint that needs to be accessed via Tailscale, ClickHouse BYOC deploys:
+
+1. **Tailnet Address Registration**: Each endpoint registers a unique tailnet address (e.g., `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` for the Kubernetes API server)
+
+2. **Tailscale Agent Container**: A Tailscale agent container runs in your EKS cluster, responsible for:
+   - Connecting to the Tailscale coordination server
+   - Registering services to make them discoverable
+   - Coordinating network setup with Nginx pods
+
+3. **Nginx Pod**: An Nginx pod that:
+   - Terminates TLS traffic from Tailscale
+   - Routes traffic to the appropriate IPs within your EKS cluster
+
+### Network Connection Process {#tailscale-connection-process}
+
+The Tailscale connection establishment follows these steps:
+
+1. **Initial Connection**:
+   - Tailscale agents on both ends (ClickHouse engineer's environment and your BYOC EKS cluster) connect to the Tailscale coordination server
+   - The EKS cluster agent registers the Kubernetes service to make it discoverable
+   - ClickHouse engineers must escalate internally to gain visibility to the service
+
+2. **Connection Mode**:
+   - **Direct Mode**: Agents attempt to establish a direct connection via NAT traversal tunnel
+   - **Relay Mode**: If direct mode fails, communication falls back to relay mode through a Tailscale DERP (Distributed Encrypted Relay Protocol) server
+
+3. **Encryption**:
+   - All communication is encrypted end-to-end
+   - Each Tailscale agent generates its own public-private key pair (similar to PKI)
+   - Traffic remains encrypted regardless of whether it uses direct or relay mode
+
+### Security features {#tailscale-security}
+
+**Outbound-only connections**:
+
+- Tailscale agents in your EKS cluster initiate outbound connections to the Tailscale coordination/relay servers
+- **No inbound connections are required** — no security group rules need to allow inbound traffic to Tailscale agents
+- This reduces the attack surface and simplifies network security configuration
+
+**Access control**:
+
+- Engineers must request access through an internal approval workflow before Tailscale can route them to a customer endpoint
+- Access is time-bound and automatically expires
+- All access is audited and logged
+
+For the full data access policy — what engineers can see, certificate-based authentication, and customer-side auditing — see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
+
+### Management Services Access {#management-services-access}
+
+By default, ClickHouse management services access your BYOC Kubernetes cluster via the EKS API server's public IP address, which is restricted to ClickHouse's NAT gateway IP addresses only.
+
+**Optional Private Endpoint Configuration**:
+
+- You can configure the EKS API server to use only a private endpoint
+- In this case, management services access the API server via Tailscale (similar to human troubleshooting access) or, on AWS, via VPC Lattice (see [Kubernetes API Private Connection](/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
+- Public access is kept as a backup mechanism for emergency investigation and support needs
+
+### Network Traffic Flow {#tailscale-traffic-flow}
+
+**Tailscale Connection Flow**:
+
+1. Tailscale agent in EKS cluster → Tailscale coordination server (outbound)
+2. Tailscale agent on engineer's machine → Tailscale coordination server (outbound)
+3. Direct or relayed connection established between agents
+4. Encrypted traffic flows through the established tunnel
+5. Nginx pod in EKS terminates TLS and routes to internal services
+
+**No Customer Data Transmission**:
+
+- Tailscale connections are used only for management and troubleshooting
+- Query traffic and customer data never flow through Tailscale
+- All customer data remains within your VPC
+
+For more technical details about how Tailscale is implemented in BYOC, see the [Building ClickHouse BYOC on AWS blog post](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection). For what ClickHouse engineers can read once connected and how ClickHouse audits that access, see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
+
+## Network boundaries {#network-boundaries}
+
+This section covers different network traffic to and from the customer BYOC VPC:
+
+- **Inbound**: Traffic entering the customer BYOC VPC.
+- **Outbound**: Traffic originating from the customer BYOC VPC and sent to an external destination.
+- **Public**: A network endpoint accessible from the public internet.
+- **Private**: A network endpoint accessible only through private connections, such as VPC peering, VPC Private Link, or Tailscale.
+
+**Istio ingress is deployed behind an AWS NLB to accept ClickHouse client traffic.**
+
+_Inbound, Public or Private_
+
+The Istio ingress gateway terminates TLS. The certificate, provisioned by CertManager with Let's Encrypt, is stored as a secret within the EKS cluster. Traffic between Istio and ClickHouse is [encrypted by AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types) since they reside in the same VPC.
+
+By default, ingress is publicly accessible with IP allow list filtering. Customers can configure VPC peering to make it private and disable public connections. We highly recommend setting up an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters) to restrict access.
+
+### Troubleshooting access {#troubleshooting-access}
+
+_Inbound, Private_
+
+ClickHouse Cloud engineers require troubleshooting access via Tailscale. They're provisioned with just-in-time certificate-based authentication for BYOC deployments. See [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access) for the full access policy.
+
+### Billing scraper {#billing-scraper}
+
+_Outbound, Private_
+
+The Billing scraper collects billing data from ClickHouse and sends it to an S3 bucket owned by ClickHouse Cloud.
+
+It runs as a sidecar alongside the ClickHouse server container, periodically scraping CPU and memory metrics. Requests within the same region are routed through VPC gateway service endpoints.
+
+### Alerts {#alerts}
+
+_Outbound, Public_
+
+AlertManager is configured to send alerts to ClickHouse Cloud when the customer's ClickHouse cluster is unhealthy.
+
+Metrics and logs are stored within the customer's BYOC VPC. Logs are currently stored locally in EBS. In a future update, they will be stored in LogHouse, a ClickHouse service within the BYOC VPC. Metrics use a Prometheus and Thanos stack, stored locally in the BYOC VPC.
+
+### Service state {#service-state}
+
+_Outbound, Public_
+
+State Exporter sends ClickHouse service state information to an SQS owned by ClickHouse Cloud.

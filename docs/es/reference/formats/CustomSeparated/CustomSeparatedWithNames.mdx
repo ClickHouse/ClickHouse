@@ -1,0 +1,89 @@
+---
+alias: []
+description: 'Documentación sobre el formato CustomSeparatedWithNames'
+input_format: true
+keywords: ['CustomSeparatedWithNames']
+output_format: true
+slug: /interfaces/formats/CustomSeparatedWithNames
+title: 'CustomSeparatedWithNames'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+También imprime la fila de encabezado con los nombres de las columnas, igual que [TabSeparatedWithNames](/es/reference/formats/TabSeparated/TabSeparatedWithNames).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Inserción de datos
+</div>
+
+Con el siguiente archivo txt, llamado `football.txt`:
+
+```text
+row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals'),row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+Configure los ajustes del delimitador personalizado:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+Inserte los datos:
+
+```sql
+INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedWithNames;
+```
+
+<div id="reading-data">
+  ### Lectura de datos
+</div>
+
+Configure los ajustes del delimitador personalizado:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+Lea los datos con el formato `CustomSeparatedWithNames`:
+
+```sql
+SELECT *
+FROM football
+FORMAT CustomSeparatedWithNames
+```
+
+La salida se mostrará en el formato personalizado configurado:
+
+```text
+row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals'),row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+<Note>
+  Si la configuración [`input_format_with_names_use_header`](/es/reference/settings/formats#input_format_with_names_use_header) está establecida en `1`,
+  las columnas de los datos de entrada se asignarán a las columnas de la tabla según sus nombres,
+  las columnas con nombres desconocidos se omitirán si la configuración [`input_format_skip_unknown_fields`](/es/reference/settings/formats#input_format_skip_unknown_fields) está establecida en `1`.
+  De lo contrario, se omitirá la primera fila.
+</Note>

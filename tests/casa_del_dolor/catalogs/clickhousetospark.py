@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Dict, List, Tuple, Optional
+import logging
 import random
 import re
 import pyspark.sql.types as sp
@@ -43,6 +44,7 @@ class ClickHouseTypeMapper:
     """Maps between ClickHouse and Spark and Iceberg data types with string representations."""
 
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
         # Basic type mappings from ClickHouse to Spark SQL strings
         self.field_id = 1
         self.clickhouse_to_spark_map: Dict[
@@ -94,15 +96,15 @@ class ClickHouseTypeMapper:
             # Date and Time types
             "Date": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
             "Date32": ("DATE", sp.DateType(), it.DateType()),
-            "Time": ("STRING", sp.StringType(), it.TimeType()),
-            "Time64": ("STRING", sp.StringType(), it.TimeType()),
+            "Time": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
+            "Time64": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
             "DateTime": ("STRING", sp.StringType(), it.StringType()),  # it doesn't fit
             "DateTime64": ("TIMESTAMP", sp.TimestampType(), it.TimestampType()),
             # Boolean
             "Bool": ("BOOLEAN", sp.BooleanType(), it.BooleanType()),
             "Boolean": ("BOOLEAN", sp.BooleanType(), it.BooleanType()),
-            # UUID
-            "UUID": ("STRING", sp.StringType(), it.UUIDType()),
+            # UUID (Iceberg has a `uuid` type, but Spark cannot write Iceberg `uuid` columns)
+            "UUID": ("STRING", sp.StringType(), it.StringType()),
             # IP addresses
             "IPv4": ("STRING", sp.StringType(), it.StringType()),
             "IPv6": ("STRING", sp.StringType(), it.StringType()),
@@ -168,24 +170,30 @@ class ClickHouseTypeMapper:
             current_id = self.field_id
 
             if fields:
+                # The list element consumes `current_id`; every struct field needs its own ID
+                self.increment()
                 parsed_fields = {}
                 for name, ch_field_type in fields.items():
+                    fid = self.field_id
                     self.increment()
-                    parsed_fields[name] = self.clickhouse_to_spark(
-                        ch_field_type, False, mapping
+                    parsed_fields[name] = (
+                        fid,
+                        self.clickhouse_to_spark(ch_field_type, False, mapping),
                     )
                 str_fields = ", ".join(
-                    [f"{cname}: {val[0]}" for cname, val in parsed_fields.items()]
+                    [f"{cname}: {val[1][0]}" for cname, val in parsed_fields.items()]
                 )
                 struct_fields = [
                     (
-                        sp.StructField(name=cname, dataType=val[2], nullable=val[1])
+                        sp.StructField(
+                            name=cname, dataType=val[1][2], nullable=val[1][1]
+                        )
                         if mapping == ClickHouseMapping.Spark
                         else it.NestedField(
-                            field_id=current_id,
+                            field_id=val[0],
                             name=cname,
-                            field_type=val[2],
-                            required=not val[1],
+                            field_type=val[1][2],
+                            required=not val[1][1],
                         )
                     )
                     for cname, val in parsed_fields.items()
@@ -217,7 +225,6 @@ class ClickHouseTypeMapper:
             elements = self._parse_tuple_elements(content)
             spark_elements = []
             struct_fields = []
-            current_id = self.field_id
 
             for i, elem in enumerate(elements):
                 # Check if it's a named tuple element
@@ -225,6 +232,7 @@ class ClickHouseTypeMapper:
                 # We need to find the last space that's not inside parentheses
                 cname, elem_type = self._split_named_element(elem)
 
+                fid = self.field_id
                 self.increment()
                 if cname:
                     # Sanitize non-identifier names (e.g. "1" from "`1`") so that
@@ -248,7 +256,7 @@ class ClickHouseTypeMapper:
                     sp.StructField(name=cname, dataType=next_spark, nullable=next_null)
                     if mapping == ClickHouseMapping.Spark
                     else it.NestedField(
-                        field_id=current_id,
+                        field_id=fid,
                         name=cname,
                         field_type=next_spark,
                         required=not next_null,
@@ -273,13 +281,14 @@ class ClickHouseTypeMapper:
             # Parse map key and value types
             key_value = self._parse_map_types(content)
             if key_value:
-                current_id = self.field_id
                 key_type, value_type = key_value
 
+                key_id = self.field_id
                 self.increment()
                 spark_key_str, _, spark_key = self.clickhouse_to_spark(
                     key_type, False, mapping
                 )
+                value_id = self.field_id
                 self.increment()
                 spark_value_str, value_nullable, spark_val = self.clickhouse_to_spark(
                     value_type, False, mapping
@@ -293,24 +302,43 @@ class ClickHouseTypeMapper:
                         )
                         if mapping == ClickHouseMapping.Spark
                         else it.MapType(
-                            key_id=current_id,
+                            key_id=key_id,
                             key_type=spark_key,
-                            value_id=current_id,
+                            value_id=value_id,
                             value_type=spark_val,
-                            value_required=True,
+                            value_required=not value_nullable,
                         )
                     ),
                 )
             return ("STRING", False, module.StringType())
 
-        # Handle Decimal types
-        decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
-        if decimal_match:
-            nprecision = min(38, int(decimal_match.group(1)))
-            nscale = min(
-                nprecision,
-                int(decimal_match.group(2) if decimal_match.group(2) else "0"),
+        # Bare `Decimal` (no arguments) is a valid ClickHouse type that resolves to Decimal(10, 0);
+        # BuzzHouse emits it when a DecimalType has neither a sized notation nor an explicit
+        # precision. Map it to the same default so it is not silently downgraded to STRING.
+        if ch_type == "Decimal":
+            return (
+                "DECIMAL(10, 0)",
+                inside_nullable,
+                module.DecimalType(precision=10, scale=0),
             )
+
+        # Handle Decimal types
+        decimal_match = re.match(r"Decimal(\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
+        if decimal_match:
+            if decimal_match.group(1) and decimal_match.group(3) is None:
+                # Sized variant `Decimal32/64/128/256(S)`: the single argument is the
+                # scale, the precision is implied by the size
+                nprecision = min(
+                    38,
+                    {"32": 9, "64": 18, "128": 38, "256": 76}[decimal_match.group(1)],
+                )
+                nscale = min(nprecision, int(decimal_match.group(2)))
+            else:
+                nprecision = min(38, int(decimal_match.group(2)))
+                nscale = min(
+                    nprecision,
+                    int(decimal_match.group(3) if decimal_match.group(3) else "0"),
+                )
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
@@ -337,17 +365,25 @@ class ClickHouseTypeMapper:
                 )
             )
 
-        # Handle DateTime and Time
-        for val in ["DateTime", "Time"]:
-            if ch_type.startswith(val):
-                if (
-                    HAS_TIMESTAMP_NTZ
-                    and val == "DateTime"
-                    and mapping == ClickHouseMapping.Spark
-                    and random.randint(1, 2) == 1
-                ):
-                    return ("TIMESTAMP_NTZ", inside_nullable, TimestampNTZType())
-                return ("TIMESTAMP", inside_nullable, module.TimestampType())
+        # Handle Time: ClickHouse's Time range (-999:59:59..999:59:59) doesn't fit any
+        # Spark type nor Iceberg `time` (0-24h only), so use STRING for exact roundtrips.
+        # TIMESTAMP would silently reinterpret the value (write as epoch seconds, read
+        # back as time-of-day), changing results across DETACH/ATTACH
+        if ch_type.startswith("Time"):
+            return ("STRING", inside_nullable, module.StringType())
+
+        # Handle DateTime
+        if ch_type.startswith("DateTime"):
+            if (
+                HAS_TIMESTAMP_NTZ
+                and mapping == ClickHouseMapping.Spark
+                and random.randint(1, 2) == 1
+            ):
+                return ("TIMESTAMP_NTZ", inside_nullable, TimestampNTZType())
+            if mapping == ClickHouseMapping.Iceberg and random.randint(1, 2) == 1:
+                # Spark's TIMESTAMP is timezone-aware and maps to Iceberg `timestamptz`
+                return ("TIMESTAMP", inside_nullable, it.TimestamptzType())
+            return ("TIMESTAMP", inside_nullable, module.TimestampType())
 
         # Handle LowCardinality wrapper
         if ch_type.startswith("LowCardinality("):
@@ -362,12 +398,12 @@ class ClickHouseTypeMapper:
             # Iceberg has no Variant type; expand into a Struct with nullable fields
             content = self._extract_nested_content(ch_type, "Variant")
             elements = self._parse_tuple_elements(content)
-            current_id = self.field_id
 
             if elements:
                 spark_elements = []
                 struct_fields = []
                 for i, elem in enumerate(elements):
+                    fid = self.field_id
                     self.increment()
                     elem = elem.strip()
                     inner_str, _, inner_tp = self.clickhouse_to_spark(
@@ -377,7 +413,7 @@ class ClickHouseTypeMapper:
                     spark_elements.append(f"{field_name}: {inner_str}")
                     struct_fields.append(
                         it.NestedField(
-                            field_id=current_id + i,
+                            field_id=fid,
                             name=field_name,
                             field_type=inner_tp,
                             required=False,
@@ -413,7 +449,25 @@ class ClickHouseTypeMapper:
             if ch_type.startswith(val):
                 return ("BINARY", inside_nullable, module.BinaryType())
 
+        # Sometimes map wide integers to DECIMAL instead of always clamping to BIGINT,
+        # so the unsigned/128/256-bit boundary is exercised
+        if (
+            ch_type in ("UInt64", "UInt128", "UInt256", "Int128", "Int256")
+            and random.randint(1, 3) == 1
+        ):
+            nprecision = 20 if ch_type == "UInt64" else 38
+            return (
+                f"DECIMAL({nprecision}, 0)",
+                inside_nullable,
+                module.DecimalType(precision=nprecision, scale=0),
+            )
+
         # Basic type lookup
+        if ch_type not in self.clickhouse_to_spark_map:
+            # Surface missing branches (e.g. geo types) instead of silently degrading
+            self.logger.warning(
+                f"No mapping for ClickHouse type {ch_type}, using STRING"
+            )
         str_type, spark_type, iceberg_type = self.clickhouse_to_spark_map.get(
             ch_type, ("STRING", sp.StringType(), it.StringType())
         )
@@ -598,6 +652,8 @@ class ClickHouseTypeMapper:
             "DOUBLE",
             f"DECIMAL({random.randint(1, 38)},{random.randint(0, 10)})",
             "STRING",
+            f"CHAR({random.randint(1, 100)})",
+            f"VARCHAR({random.randint(1, 100)})",
             "BINARY",
             "BOOLEAN",
             "DATE",
@@ -611,7 +667,10 @@ class ClickHouseTypeMapper:
             return random.choice(primitive_types)
 
         # Choose between primitive and complex types
-        type_choice = random.choice(["primitive", "array", "map", "struct", "variant"])
+        type_choices = ["primitive", "array", "map", "struct"]
+        if HAS_VARIANT_TYPE:
+            type_choices.append("variant")
+        type_choice = random.choice(type_choices)
 
         if type_choice == "primitive":
             return random.choice(primitive_types)
@@ -704,10 +763,25 @@ class ClickHouseTypeMapper:
             return sp.StructType(fields)
 
     def generate_random_clickhouse_type(
-        self, allow_complex=True, allow_variant=True, max_depth=3, current_depth=0
+        self,
+        allow_complex=True,
+        allow_variant=True,
+        max_depth=3,
+        current_depth=0,
+        allow_nullable=True,
     ) -> str:
         """Generate a random ClickHouse SQL type string."""
 
+        tz = random.choice(
+            [
+                "UTC",
+                "Asia/Tokyo",
+                "America/New_York",
+                "Europe/Amsterdam",
+                "Pacific/Fiji",
+            ]
+        )
+        enum_vals = ", ".join(f"'v{i}' = {i}" for i in range(1, random.randint(3, 7)))
         primitive_types = [
             "Bool",
             "Boolean",
@@ -727,22 +801,30 @@ class ClickHouseTypeMapper:
             "Float32",
             "Float64",
             f"Decimal({random.randint(1, 38)}, {random.randint(0, 10)})",
+            f"Decimal32({random.randint(0, 9)})",
+            f"Decimal64({random.randint(0, 18)})",
+            f"Decimal128({random.randint(0, 38)})",
+            f"Decimal256({random.randint(0, 76)})",
             "String",
             f"FixedString({random.randint(1, 100)})",
             "Date",
             "Date32",
             "DateTime",
+            f"DateTime('{tz}')",
             "DateTime64",
+            f"DateTime64({random.randint(0, 9)})",
+            f"DateTime64({random.randint(0, 9)}, '{tz}')",
             "Time",
             "Time64",
+            f"Time64({random.randint(0, 9)})",
             "UUID",
             "IPv4",
             "IPv6",
             "JSON",
             "Dynamic",
-            "Enum",
-            "Enum8",
-            "Enum16",
+            f"Enum({enum_vals})",
+            f"Enum8({enum_vals})",
+            f"Enum16({enum_vals})",
         ]
         roll = random.randint(1, 100)
 
@@ -754,10 +836,18 @@ class ClickHouseTypeMapper:
             )
             base = f"Array({inner})"
         elif roll <= 80:
-            # Map keys must be primitive in ClickHouse
+            # Map keys must be primitive in ClickHouse, and cannot be Nullable, JSON or Dynamic
             key = self.generate_random_clickhouse_type(
-                False, allow_variant, max_depth, current_depth + 1
+                False, allow_variant, max_depth, current_depth + 1, allow_nullable=False
             )
+            while key.startswith(("JSON", "Dynamic")):
+                key = self.generate_random_clickhouse_type(
+                    False,
+                    allow_variant,
+                    max_depth,
+                    current_depth + 1,
+                    allow_nullable=False,
+                )
             val = self.generate_random_clickhouse_type(
                 allow_complex, allow_variant, max_depth, current_depth + 1
             )
@@ -790,9 +880,14 @@ class ClickHouseTypeMapper:
             ]
             base = f"Nested({','.join(fields)})"
 
-        # Optionally wrap in Nullable or LowCardinality
-        if random.randint(1, 5) == 1 and not base.startswith(
-            ("Dynamic", "Array", "Map", "Nested", "Variant")
+        # Optionally wrap in Nullable or LowCardinality. ClickHouse also rejects
+        # `Nullable(Tuple(...))` and `Nullable(JSON)`
+        if (
+            allow_nullable
+            and random.randint(1, 5) == 1
+            and not base.startswith(
+                ("Dynamic", "Array", "Map", "Nested", "Tuple", "JSON", "Variant")
+            )
         ):
             base = f"Nullable({base})"
         if random.randint(1, 8) == 1 and not base.startswith(
@@ -867,9 +962,30 @@ class ClickHouseTypeMapper:
             transforms.extend([VoidTransform()])
         return random.choice(transforms)
 
+    def _iceberg_transform_to_spark_clause(self, transform, col: str) -> str:
+        """Spark SQL partition-transform clause equivalent to an Iceberg transform on `col`
+        (e.g. `bucket(16, c0)`), so DROP/REPLACE PARTITION FIELD can reference the exact field.
+        """
+        if isinstance(transform, BucketTransform):
+            return f"bucket({transform.num_buckets}, {col})"
+        if isinstance(transform, TruncateTransform):
+            return f"truncate({transform.width}, {col})"
+        if isinstance(transform, YearTransform):
+            return f"year({col})"
+        if isinstance(transform, MonthTransform):
+            return f"month({col})"
+        if isinstance(transform, DayTransform):
+            return f"day({col})"
+        if isinstance(transform, HourTransform):
+            return f"hour({col})"
+        if isinstance(transform, VoidTransform):
+            return f"void({col})"
+        # IdentityTransform (and any unrecognised transform) partitions by the bare column.
+        return col
+
     def generate_random_iceberg_partition_spec(
         self, schema: Schema, max_partitions: int = 3
-    ) -> PartitionSpec:
+    ) -> tuple[PartitionSpec, list[str]]:
         """
         Generate a random PartitionSpec from a schema.
 
@@ -878,20 +994,22 @@ class ClickHouseTypeMapper:
             max_partitions: Maximum number of partition fields to create
 
         Returns:
-            A random PartitionSpec
+            The PartitionSpec and the equivalent Spark SQL partition-transform clauses (one per
+            field, in spec order) for tracking the active partition fields on the table model.
         """
         # Get all fields from schema
         available_fields = list(schema.fields)
         if not available_fields or random.randint(1, 5) != 5:
-            return PartitionSpec()
+            return PartitionSpec(), []
         # Randomly decide how many partitions to create (0 to max_partitions)
         num_partitions = random.randint(0, min(max_partitions, len(available_fields)))
         if num_partitions == 0:
-            return PartitionSpec()  # Unpartitioned table
+            return PartitionSpec(), []  # Unpartitioned table
 
         # Randomly select fields to partition on
         partition_fields_list = random.sample(available_fields, num_partitions)
         partition_fields = []
+        clauses: list[str] = []
         partition_field_id = 1000  # Start partition field IDs at 1000
         for field in partition_fields_list:
             # Choose appropriate transform based on field type
@@ -904,8 +1022,11 @@ class ClickHouseTypeMapper:
                 name=f"{field.name}_{transform}",
             )
             partition_fields.append(partition_field)
+            clauses.append(
+                self._iceberg_transform_to_spark_clause(transform, field.name)
+            )
             partition_field_id += 1
-        return PartitionSpec(*partition_fields)
+        return PartitionSpec(*partition_fields), clauses
 
     def generate_random_iceberg_sort_order(
         self, schema: Schema, max_sort_fields: int = 3

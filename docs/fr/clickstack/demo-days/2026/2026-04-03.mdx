@@ -1,0 +1,120 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: 'Demo days - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'Demo days ClickStack du 2026-04-03'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="new-dashboard-and-saved-search-listing-pages">
+  ## Nouvelles pages de liste des tableaux de bord et des recherches enregistrées
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les tableaux de bord et les recherches enregistrées ne sont plus dans la barre latérale et disposent désormais de pages de liste dédiées. Si votre équipe a accumulé un nombre important de tableaux de bord, l’ancienne approche dans la barre latérale devenait vite difficile à gérer. Les nouvelles pages affichent tout dans une vue par cartes organisée par tag, avec recherche par nom et filtrage par tag intégrés. Une vue en liste plus compacte est également disponible si vous la préférez.
+
+Les favoris sont désormais aussi de la partie. Ajoutez une étoile à un tableau de bord ou à une recherche enregistrée, et l’élément est épinglé en haut de la page de liste puis réapparaît dans la barre latérale pour un accès rapide, comme auparavant, mais sans encombrer la navigation pour les autres utilisateurs. La page de liste affiche également les icônes d’état des alertes ainsi que les métadonnées « créé par / mis à jour par » sur chaque carte, afin de voir d’un coup d’œil qui est responsable de quoi et si une alerte est active.
+
+Une nouvelle galerie de modèles complète l’ensemble. Quatre tableaux de bord préconfigurés couvrant les métriques d’exécution OTel pour Node.js, Python, Go et Java peuvent être importés en quelques clics. Les tags et la source de métriques cible peuvent être modifiés pendant l’importation, ce qui permet de les intégrer directement à votre structure de tags existante.
+
+**PR associées :** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) Ajouter une page de liste des tableaux de bord, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) Ajouter une page de liste des recherches enregistrées, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) Ajouter les favoris pour les tableaux de bord et les recherches enregistrées, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) Regrouper les tableaux de bord et les recherches par tag, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) Afficher les métadonnées de création/mise à jour, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) Ajouter des icônes d’alerte à la page de liste des tableaux de bord, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) Ajouter une galerie de modèles de tableaux de bord
+
+<div id="filters-for-filters">
+  ## Filtres pour les filtres
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les filtres des variables de tableau de bord prennent désormais en charge leurs propres conditions de filtre. Le cas d’usage est simple : si vous avez une liste déroulante « nom du service » sur un tableau de bord Node.js, vous souhaitez probablement qu’elle n’affiche que les services Node.js, et non tous les services de votre environnement. Vous pouvez maintenant configurer une condition de filtre directement sur la variable de tableau de bord pour limiter ce qui s’affiche.
+
+Le sélecteur de filtre a également été mis à jour pour prendre en charge la sélection multiple. Pour les tableaux de bord regroupés par service, le fait de pouvoir choisir plusieurs valeurs à la fois dans une liste déroulante rend les comparaisons bien plus pratiques.
+
+**PR associées :** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Ajouter des conditions aux filtres de tableau de bord ; prise en charge de la sélection multiple pour les filtres
+
+<div id="rbac-for-predefined-dashboards">
+  ## RBAC pour les tableaux de bord prédéfinis
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Le contrôle d’accès basé sur les rôles s’applique désormais aux tableaux de bord prédéfinis de ClickStack. Auparavant, ces tableaux de bord intégrés ignoraient complètement RBAC, si bien que n’importe quel utilisateur pouvait y accéder, quel que soit le rôle qui lui était attribué. Ce problème est désormais résolu.
+
+Les permissions de lecture fines fonctionnent comme prévu. Un rôle configuré avec un accès en lecture seule à des services spécifiques limite les utilisateurs aux seuls tableaux de bord prédéfinis correspondant à ces services. Les utilisateurs associés à ce rôle peuvent consulter les tableaux de bord et leurs filtres, mais les contrôles de filtre sont verrouillés pour empêcher toute modification. La démo montre un rôle personnalisé avec une permission de lecture « services » restreinte à un service donné, ainsi qu’un utilisateur connecté avec ce rôle, qui voit exactement les tableaux de bord et l’état des filtres auxquels il est censé avoir accès.
+
+<div id="optimizations-for-searching">
+  ## Optimisations pour la recherche
+</div>
+
+*Démo par [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+L’optimisation « Read in Order » de ClickHouse accélère les requêtes de recherche en lisant les données de manière séquentielle lorsque l’ORDER BY correspond à la clé primaire de la table, et en s’arrêtant dès que la LIMIT est atteinte. Des tests de performance ont toutefois révélé que, malgré cela, les recherches lisaient encore trop de données sur les ensembles de données plus volumineux. Le problème tient au nombre de parts parcourues : même avec l’optimisation active, une table suffisamment grande contient assez de parts pour que ClickHouse lise encore plus de données que nécessaire.
+
+Le correctif consiste à ajouter en tête du tableau de requêtes par fenêtre une fenêtre temporelle d’une minute pour les recherches. En pratique, la plupart des recherches trouvent les données dont elles ont besoin dans la dernière minute ; interroger d’abord cette fenêtre renvoie donc des résultats presque instantanément. Si rien n’y est trouvé, la requête revient ensuite, comme d’habitude, à des fenêtres progressivement plus larges. Par ailleurs, l’optimisation ORDER BY n’était pas appliquée correctement au schéma `otel_traces`, car la colonne timestamp utilisait une expression `toDateTime(Timestamp)` qui n’était pas reconnue. Cela a également été corrigé.
+
+**PR associées :** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) Utiliser une fenêtre d’1 minute pour les recherches, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) Corriger les limites de l’optimisation ORDER BY pour otel&#95;traces
+
+<div id="copy-row-and-configurable-filter-sizes">
+  ## Copie de lignes et tailles de filtres configurables
+</div>
+
+*Démo par [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un bouton de copie au format JSON est désormais disponible dans le visualiseur de lignes, ce qui permet de récupérer une ligne de log complète en un clic. Le bouton apparaît aussi dans la vue complète de la barre latérale. C&#39;est pratique pour coller une ligne dans un prompt de LLM afin de demander où ce log apparaît dans le code, ou simplement pour capturer un événement complet pour un rapport d&#39;incident sans avoir à sélectionner manuellement tout le texte.
+
+Le nombre de clés de filtre récupérées dans la barre latérale est désormais un paramètre d&#39;équipe configurable dans Query Settings. La limite fixe précédente signifiait que, sur les jeux de données plus volumineux, seule une partie des attributs de filtre disponibles était visible. Les équipes peuvent désormais augmenter cette limite pour afficher davantage d&#39;attributs de ressource et de log. Ce changement inclut également des améliorations de virtualisation pour garantir un rendu rapide du panneau de filtres, même lorsqu&#39;un grand nombre de groupes de filtres sont affichés.
+
+**PR associées :** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) Ajouter un bouton pour copier la ligne au format JSON, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) Nouveau paramètre d&#39;équipe pour le nombre de filtres à récupérer, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) Virtualiser les groupes de filtres imbriqués
+
+<div id="tabs-and-groups-in-dashboards">
+  ## Onglets et groupes dans les tableaux de bord
+</div>
+
+*Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les tuiles de tableau de bord peuvent désormais être organisées en Groups. Cela remplace le modèle précédent, qui comportait deux types de conteneurs distincts (« sections » et « groups »), obligeant les utilisateurs à choisir dès le départ le type de conteneur qu’ils voulaient. Le nouveau concept de Group unique simplifie les choses : un Group est repliable par défaut, peut afficher une bordure en option et peut contenir des onglets. Chaque onglet possède son propre ensemble de tuiles, et les tuiles peuvent être déplacées d’un groupe à l’autre à l’aide de poignées de glisser-déposer.
+
+La démo montre un groupe avec quelques options de personnalisation activées ou désactivées : groupe repliable ou non, bordure visible ou masquée, onglets activés ou non. Au moment de la démo, la PR était encore en cours de revue et des retours sur le design étaient toujours en cours de collecte. Une fois fusionnée, elle devrait offrir aux auteurs de tableaux de bord un ensemble d’éléments de base plus flexible et moins déroutant que l’ancien modèle à deux types de conteneurs.
+
+**PR associées :** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) Groupes de tableau de bord avec onglets et options repliables/avec bordure, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) Unifier section/group en un seul Group
+
+<div id="clickstack-cli">
+  ## ClickStack CLI
+</div>
+
+*Démo par [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Le CLI ClickStack (`hdx`) est une nouvelle interface TUI en terminal pour rechercher, suivre en temps réel et inspecter les logs et les traces sans quitter votre terminal. Il se connecte à votre instance HyperDX en utilisant le même mécanisme de session web que le navigateur, il n’y a donc pas de clé API distincte à gérer. Après un `hdx auth login` unique avec l’URL de votre instance et votre e-mail, il reste authentifié.
+
+La TUI offre la même interface de recherche que l’application web : même syntaxe de requête, même sélection de source, même possibilité d’examiner le détail de chaque entrée de log. L’un des points forts est la vue en cascade des traces : lorsqu’on clique sur une entrée de log, la trace distribuée complète s’affiche directement dans le terminal. La démo présente aussi une première expérimentation d’usage agentique : en donnant à un AI Agent accès à la sortie d’introspection du schéma du CLI, ainsi qu’à la possibilité d’exécuter des requêtes via le proxy ClickHouse, l’agent peut analyser des incidents de façon autonome. La démo va encore plus loin et montre l’agent utiliser des sessions web pour naviguer dans l’UI HyperDX via Playwright, en extrayant des métriques de graphiques rendus afin de les recouper avec ce qu’il a trouvé dans les logs.
+
+**PR associée :** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Ajout du paquet @hyperdx/cli — TUI en terminal pour rechercher et suivre les événements

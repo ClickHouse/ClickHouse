@@ -1,0 +1,129 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'Azure データに安全にアクセスする'
+title: 'ClickHouse Cloud を Azure Blob Storage に安全に接続する'
+description: 'この記事では、ClickHouse Cloud のお客様が Azure 上のデータに安全にアクセスする方法を紹介します'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+このガイドでは、データのインジェスト、外部テーブル、そのほかのインテグレーションの用途で、ClickHouse Cloud を Azure Blob Storage に安全に接続する方法を説明します。
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse Cloud は、いくつかの認証方式を使って Azure Blob Storage に接続できます。
+このガイドでは、適切な方法の選び方と、接続を安全に設定する方法を説明します。
+
+サポートされているユースケース:
+
+* [azureBlobStorage table function](/ja/reference/functions/table-functions/azureBlobStorage) を使用して Azure Blob Storage からデータを読み取る
+* [AzureBlobStorage table engine](/ja/reference/engines/table-engines/integrations/azureBlobStorage) を使用して外部テーブルを作成する
+* ClickPipes 経由でデータを取り込む
+* [Azure Blob Storage にバックアップを保存する](/ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **重要なネットワーク上の制限**
+
+  ClickHouse Cloud サービスと Azure Blob Storage コンテナーが同じ Azure リージョンにデプロイされている場合、IP ホワイトリスティングは機能しません。
+
+  これは、Azure が同一リージョン内のトラフィックをパブリックインターネットや NAT ゲートウェイを経由させず、内部ネットワーク (VNet + Service Endpoints) 経由でルーティングするためです。
+  その結果、パブリック IP アドレスに基づく Azure ストレージ アカウントのファイアウォール ルールは適用されません。
+
+  IP ホワイトリスティングが機能するのは、次の場合です:
+
+  * ClickHouse Cloud サービスがストレージ アカウントとは異なる Azure リージョンにある
+  * ClickHouse Cloud サービスが AWS/GCP 上にあり、Azure ストレージに接続している
+
+  IP ホワイトリスティングが機能しないのは、次の場合です:
+
+  * ClickHouse Cloud サービスとストレージが同じ Azure リージョンにある。この場合、IP ホワイトリスティングの代わりに、接続文字列を使って [Shared Access Signatures (SAS)](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication) を使用するか、ABS と ClickHouse を別のリージョンにデプロイしてください。
+</Warning>
+
+<div id="network-config">
+  ## ネットワーク構成 (クロスリージョンのみ)
+</div>
+
+<Warning>
+  **クロスリージョンのみ**
+
+  このセクションは、ClickHouse Cloud サービスと Azure Blob Storage コンテナーが異なる Azure リージョンにある場合、または ClickHouse Cloud が AWS/GCP 上にある場合にのみ適用されます。
+  同一リージョンにデプロイする場合は、代わりに SAS token を使用してください。
+</Warning>
+
+<Steps>
+  <Step>
+    ### ClickHouse Cloud の egress IPs を確認する
+
+    IP ベースのファイアウォールルールを設定するには、ClickHouse Cloud のリージョンに対応する egress IP アドレスを許可リストに追加する必要があります。
+
+    次のコマンドを実行して、リージョンごとの egress IPs と ingress IPs の一覧を取得します。
+    他のリージョンを除外するには、以下の `eastus` を使用中のリージョンに置き換えてください。
+
+    ```bash
+    # Azure リージョン向け
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    以下のような結果が表示されます。
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      サポートされている Cloud リージョンの一覧については [Azure regions](/ja/products/cloud/reference/supported-regions#azure-regions) を、
+      使用する名前については [Azure regions list](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1) の「Programmatic name」カラムを参照してください。
+    </Tip>
+
+    詳細は [&quot;Cloud IP addresses&quot;](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) を参照してください。
+  </Step>
+
+  <Step>
+    ### Azure Storage のファイアウォールを設定する
+
+    Azure Portal で対象の Storage Account に移動します
+
+    1. **Networking** → **Firewalls and virtual networks** に移動します
+    2. **Enabled from selected virtual networks and IP addresses** を選択します
+    3. 前のステップで取得した各 ClickHouse Cloud egress IP アドレスを Address range フィールドに追加します
+
+    <Warning>
+      ClickHouse Cloud のプライベート IP (10.x.x.x アドレス) は追加しないでください
+    </Warning>
+
+    4. Save をクリックします
+
+    詳細は [Configure Azure Storage firewalls docs](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) を参照してください。
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## ClickPipes の設定
+</div>
+
+Azure Blob Storage で [ClickPipes](/ja/integrations/clickpipes/home) を使用する場合は、ClickPipes UI で認証を設定する必要があります。
+詳細については、[「最初の Azure ClickPipe を作成する」](/ja/integrations/clickpipes/object-storage/azure-blob-storage/get-started) を参照してください。
+
+<Note>
+  ClickPipes は、アウトバウンド接続用に個別の固定 IP アドレスを使用します。
+  IP ベースのファイアウォールルールを使用している場合、これらの IP を許可リストに追加する必要があります。
+
+  詳細は、[「固定 IP の一覧」](/ja/integrations/clickpipes/home#list-of-static-ips) を参照してください。
+</Note>
+
+<Tip>
+  このドキュメントの冒頭で説明した同一リージョンでの IP ホワイトリスティングの制限は、ClickPipes にも適用されます。
+  ClickPipes のサービスと Azure Blob Storage が同じリージョンにある場合は、IP ホワイトリスティングではなく SAS トークン認証を使用してください。
+</Tip>

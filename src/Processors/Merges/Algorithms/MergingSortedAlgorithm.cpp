@@ -135,15 +135,10 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     }
 
 #ifndef NDEBUG
-    /// Boundary is only meaningful when this merge applies the per-source virtual-row conversion;
-    /// otherwise `setVirtualRow` may fall back to default column values that the next chunk trips.
-    if (apply_virtual_row_conversions)
+    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
-        for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
-        {
-            if (current_inputs[source_num].skip_last_row && !has_collation)
-                rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-        }
+        if (current_inputs[source_num].skip_last_row && !has_collation)
+            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
     }
 #endif
 
@@ -181,13 +176,10 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
 #ifndef NDEBUG
     /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
-    if (apply_virtual_row_conversions)
-    {
-        if (is_virtual_row && !has_collation)
-            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-        else
-            checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
-    }
+    if (is_virtual_row && !has_collation)
+        rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+    else
+        checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
 #else
     UNUSED(rememberVirtualRowBoundary);
     UNUSED(checkVirtualRowBoundary);
