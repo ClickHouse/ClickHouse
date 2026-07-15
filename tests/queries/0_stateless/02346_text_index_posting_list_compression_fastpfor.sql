@@ -1,8 +1,8 @@
 -- Tags: no-fasttest
--- no-fasttest: the FastPFOR library is not built in the fast test (ENABLE_LIBRARIES=0), so the
--- 'fastpfor' posting list codec is unavailable there.
+-- no-fasttest: the `FastPFOR` library is not built in the fast test (`ENABLE_LIBRARIES=0`), so the
+-- `fastpfor` posting list codec is unavailable there.
 
--- This test validates the FastPFOR posting-list codec (posting_list_codec = 'fastpfor') by comparing a
+-- This test validates the `FastPFOR` posting-list codec (`posting_list_codec = 'fastpfor'`) by comparing a
 -- table that uses it against an otherwise identical uncompressed table. The inserted data covers a range
 -- of posting-list shapes:
 -- - very large lists (aa/bb/cc),
@@ -10,14 +10,15 @@
 -- - a medium non-aligned size (1003 hits),
 -- - a single-hit list, and
 -- - very sparse lists (2 and 5 hits).
--- After OPTIMIZE FINAL each hasToken() query checks that the FastPFOR-compressed table returns the same
--- counts as the uncompressed baseline (and the expected exact counts for key tokens), exercising full
--- blocks, tail blocks, and small-N cases through both the eager decoder and the lazy posting cursor.
+-- After `OPTIMIZE FINAL` each `hasToken` query checks that the `FastPFOR`-compressed table returns the same
+-- counts as the uncompressed baseline (and the expected exact counts for key tokens). The checks run in
+-- both materialize and lazy apply modes, exercising eager decode and the lazy posting cursor.
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab_fastpfor;
+DROP TABLE IF EXISTS tab_fastpfor_setting;
 DROP TABLE IF EXISTS tab_uncompressed;
 
 CREATE TABLE tab_fastpfor
@@ -42,6 +43,18 @@ CREATE TABLE tab_uncompressed
 )
 ENGINE = MergeTree
 ORDER BY ts;
+
+CREATE TABLE tab_fastpfor_setting
+(
+    ts DateTime,
+    str String,
+    INDEX inv_idx str TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY ts
+SETTINGS text_index_posting_list_codec = 'fastpfor';
+
+DROP TABLE tab_fastpfor_setting;
 
 INSERT INTO tab_fastpfor
 SELECT
@@ -106,14 +119,16 @@ FROM numbers(2000);
 OPTIMIZE TABLE tab_fastpfor FINAL;
 OPTIMIZE TABLE tab_uncompressed FINAL;
 
--- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the FastPFOR table matches the uncompressed baseline.
+SET text_index_posting_list_apply_mode = 'materialize';
+
+-- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the `FastPFOR` table matches the uncompressed baseline.
 
 SELECT
     (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'aa')) AS count_uncompressed,
     (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'aa')) AS count_fastpfor,
     (count_fastpfor = count_uncompressed) AS ok_aa;
 
--- Tests the block-boundary case (expected 129 hits, i.e. one full 128-value block plus a 1-value tail) and verifies FastPFOR vs uncompressed counts are identical.
+-- Tests the block-boundary case (expected 129 hits, i.e. one full 128-value block plus a 1-value tail) and verifies `FastPFOR` vs uncompressed counts are identical.
 
 SELECT
     (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'tail129')) AS count_fastpfor,
@@ -129,7 +144,7 @@ SELECT
     (count_fastpfor = 1003) AS ok_mid1003,
     (count_fastpfor = count_uncompressed) AS ok_mid1003_eq;
 
--- Tests the single-element posting list case (expected 1 hit) and ensures FastPFOR and uncompressed results match.
+-- Tests the single-element posting list case (expected 1 hit) and ensures `FastPFOR` and uncompressed results match.
 
 SELECT
     (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'single')) AS count_fastpfor,
@@ -137,7 +152,7 @@ SELECT
     (count_fastpfor = 1) AS ok_single,
     (count_fastpfor = count_uncompressed) AS ok_single_eq;
 
--- Tests a very small/sparse posting list (expected 2 hits) and checks FastPFOR equals uncompressed.
+-- Tests a very small/sparse posting list (expected 2 hits) and checks `FastPFOR` equals uncompressed.
 
 SELECT
     (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'rare2')) AS count_fastpfor,
@@ -145,7 +160,44 @@ SELECT
     (count_fastpfor = 2) AS ok_rare2,
     (count_fastpfor = count_uncompressed) AS ok_rare2_eq;
 
--- Tests another small-N posting list (expected 5 hits) to cover additional short-list behavior; also checks FastPFOR equals uncompressed.
+-- Tests another small-N posting list (expected 5 hits) to cover additional short-list behavior; also checks `FastPFOR` equals uncompressed.
+
+SELECT
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'rare5')) AS count_fastpfor,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'rare5')) AS count_uncompressed,
+    (count_fastpfor = 5) AS ok_rare5,
+    (count_fastpfor = count_uncompressed) AS ok_rare5_eq;
+
+SET text_index_posting_list_apply_mode = 'lazy';
+
+SELECT
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'aa')) AS count_uncompressed,
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'aa')) AS count_fastpfor,
+    (count_fastpfor = count_uncompressed) AS ok_aa;
+
+SELECT
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'tail129')) AS count_fastpfor,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'tail129')) AS count_uncompressed,
+    (count_fastpfor = 129) AS ok_tail129,
+    (count_fastpfor = count_uncompressed) AS ok_tail129_eq;
+
+SELECT
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'mid1003')) AS count_fastpfor,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'mid1003')) AS count_uncompressed,
+    (count_fastpfor = 1003) AS ok_mid1003,
+    (count_fastpfor = count_uncompressed) AS ok_mid1003_eq;
+
+SELECT
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'single')) AS count_fastpfor,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'single')) AS count_uncompressed,
+    (count_fastpfor = 1) AS ok_single,
+    (count_fastpfor = count_uncompressed) AS ok_single_eq;
+
+SELECT
+    (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'rare2')) AS count_fastpfor,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'rare2')) AS count_uncompressed,
+    (count_fastpfor = 2) AS ok_rare2,
+    (count_fastpfor = count_uncompressed) AS ok_rare2_eq;
 
 SELECT
     (SELECT count() FROM tab_fastpfor WHERE hasToken(str, 'rare5')) AS count_fastpfor,

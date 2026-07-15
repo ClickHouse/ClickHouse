@@ -264,6 +264,14 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count);
     }
 
+    if (num_blocks != max_blocks_count)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: block count {} does not match expected block count {} "
+            "for segment with {} documents",
+            num_blocks, max_blocks_count, segment.doc_count);
+    }
+
     segment.block_last_row_ids.resize(num_blocks);
     segment.block_offsets.resize(num_blocks);
 
@@ -287,6 +295,13 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         UInt64 v = 0;
         readVarUInt(v, *data_buffer);
         segment.block_offsets[i] = v;
+
+        if (i == 0 && segment.block_offsets[i] != 0)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in lazy posting list cursor: first block offset is {}, expected 0",
+                segment.block_offsets[i]);
+        }
 
         if (segment.block_offsets[i] >= payload_bytes)
         {
