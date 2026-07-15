@@ -165,8 +165,8 @@ public:
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view parseTableStatsHint() const { return dummy_stats; }
-    void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
+    std::string_view getTableStatsHint() const { return table_stats_hint; }
+    void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
@@ -212,8 +212,8 @@ protected:
     String left_table_label;
     String right_table_label;
 
-    /// Dummy stats retrieved from hints, used for debugging
-    String dummy_stats;
+    /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
+    String table_stats_hint;
 
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;

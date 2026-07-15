@@ -177,7 +177,7 @@ static void scheduleApplicableRules(
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (const auto & move : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, move.second, move.first));
+        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, move.second));
 
     for (const auto & input : expression->inputs)
     {
@@ -230,8 +230,7 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
             if (optimizer_context.tryUpdateBestPlanDirectly(new_expression))
                 continue;
 
-            /// Finite branch-and-bound budgets are disabled for now (see OptimizeInputsTask);
-            /// pass the incoming limit through unchanged.
+            /// Start optimizing the inputs from index 0.
             optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0));
         }
     }
@@ -265,8 +264,8 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         /// Ensure statistics are derived before cost estimation
         optimizer_context.deriveStatistics(expression->group_id);
 
-        /// Compute the cost and check if this expression beats the current best
-        /// before storing it (branch-and-bound pruning).
+        /// Cost the expression and drop it if the group already holds a cheaper best for the
+        /// same properties (same-group best-cost pruning, not a cost-bounded search).
         optimizer_context.costAndUpdateBest(expression, /*prune_against_best=*/true);
         return;
     }

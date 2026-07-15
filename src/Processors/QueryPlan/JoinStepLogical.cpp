@@ -1806,7 +1806,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->optimized = optimized;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
-    result_step->dummy_stats = dummy_stats;
+    result_step->table_stats_hint = table_stats_hint;
     return result_step;
 }
 

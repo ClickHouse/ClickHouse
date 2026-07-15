@@ -578,7 +578,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     {
         const auto & query_params = query_context->getQueryParameters();
         if (auto it = query_params.find("_internal_join_table_stat_hints"); it != query_params.end())
-            join_step->setDummyStats(it->second);
+            join_step->setTableStatsHint(it->second);
     }
 
     if (shouldForbidReordering(build_context))

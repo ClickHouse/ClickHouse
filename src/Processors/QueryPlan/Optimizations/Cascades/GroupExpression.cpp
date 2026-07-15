@@ -87,16 +87,16 @@ bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
 
 size_t GroupExpression::fingerprint() const
 {
-    size_t h = std::hash<String>()(getDescription());
+    size_t hash_value = std::hash<String>()(getDescription());
     if (strategy)
-        boost::hash_combine(h, std::hash<String>()(strategy->getName()));
-    boost::hash_combine(h, ExpressionPropertiesHash()(properties));
+        boost::hash_combine(hash_value, std::hash<String>()(strategy->getName()));
+    boost::hash_combine(hash_value, ExpressionPropertiesHash()(properties));
     for (const auto & input : inputs)
     {
-        boost::hash_combine(h, input.group_id);
-        boost::hash_combine(h, ExpressionPropertiesHash()(input.required_properties));
+        boost::hash_combine(hash_value, input.group_id);
+        boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
     }
-    return h;
+    return hash_value;
 }
 
 }

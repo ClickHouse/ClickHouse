@@ -48,7 +48,8 @@ void CascadesOptimizer::optimize()
 {
     Stopwatch optimizer_timer;
     OptimizerStatisticsPtr statistics;
-    /// FIXME: statistics stub for testing
+    /// Statistics come from a query-parameter hint when present, otherwise they are empty.
+    /// Deriving them from real table statistics is not wired up yet.
     auto query_context = CurrentThread::get().tryGetQueryContext();
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");

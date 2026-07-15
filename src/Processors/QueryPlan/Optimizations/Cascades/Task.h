@@ -102,11 +102,10 @@ private:
 class ApplyRuleTask final : public IOptimizationTask
 {
 public:
-    ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_, Promise promise_)
+    ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_)
         : expression(expression_)
         , required_properties(required_properties_)
         , rule(rule_)
-        , promise(promise_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
@@ -118,7 +117,6 @@ private:
     GroupExpressionPtr expression;
     ExpressionProperties required_properties;
     OptimizationRulePtr rule;
-    Promise promise;
 };
 
 

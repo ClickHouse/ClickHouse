@@ -1525,7 +1525,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->parseTableStatsHint();
+    query_graph_builder.context->dummy_stats = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

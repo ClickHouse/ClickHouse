@@ -40,7 +40,7 @@ protected:
 };
 
 /// Logical transformation that splits a single-phase Agg into a two-phase plan:
-///   PartialAgg(input) → ShuffleExchange → FinalMergeAgg
+///   PartialAgg(input) -> ShuffleExchange -> FinalMergeAgg
 ///
 /// PartialAgg computes partial aggregate states locally on each node without finalization.
 /// FinalMergeAgg receives pre-aggregated states and merges them into final results.
@@ -88,7 +88,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// When the parent (MergingAggregated) requires `{1 node}`, the DistributionEnforcer
     /// bridges the gap via GatherExchange - crucially on the PARTIAL output (~25 rows) rather
     /// than the raw input (~1M rows). This produces:
-    ///   ParallelRead → Expression → PartialAgg({N nodes}) → GatherExchange → MergeAgg
+    ///   ParallelRead -> Expression -> PartialAgg({N nodes}) -> GatherExchange -> MergeAgg
     /// We intentionally do NOT create a `{1 node}` variant for multi-node clusters: if one
     /// existed, it would become the best for `{1 node}` immediately, preventing the enforcer
     /// from ever running and producing the cheaper GatherExchange-on-partial-output plan.
