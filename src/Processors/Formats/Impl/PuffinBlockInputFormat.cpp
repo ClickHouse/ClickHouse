@@ -197,6 +197,23 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
     }
 }
 
+void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & blob, size_t blob_index, bool required)
+{
+    if (!blob_obj->has("properties") || blob_obj->isNull("properties"))
+    {
+        if (required)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field 'properties'", blob_index);
+        return;
+    }
+
+    auto props_obj = blob_obj->getObject("properties");
+    if (!props_obj)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", blob_index);
+
+    for (const auto & [key, val] : *props_obj)
+        blob.properties.emplace(key, val.extract<String>());
+}
+
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
 {
     Poco::JSON::Parser parser;
@@ -243,20 +260,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
                     "Puffin blob {}: deletion-vector-v1 must omit 'compression-codec'",
                     i);
 
-            requireBlobMetadataField(blob_obj, "properties", i);
-
-            auto props_obj = blob_obj->getObject("properties");
-            if (!props_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", i);
-
-            for (const auto & [key, val] : *props_obj)
-                blob.properties.emplace(key, val.extract<String>());
+            parseBlobProperties(blob_obj, blob, i, /*required=*/true);
         }
-        else if (auto props_obj = blob_obj->getObject("properties"))
-        {
-            for (const auto & [key, val] : *props_obj)
-                blob.properties.emplace(key, val.extract<String>());
-        }
+        else
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
 
         if (blob.type == "deletion-vector-v1")
             requireDeletionVectorV1Properties(blob, i);

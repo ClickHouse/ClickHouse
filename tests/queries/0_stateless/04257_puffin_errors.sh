@@ -69,6 +69,14 @@ do
     $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "field 'properties' must be an object"
 done
 
+for PUFFIN_FILE in \
+    "$DATA/invalid_non_dv_properties_array.puffin" \
+    "$DATA/invalid_non_dv_properties_string.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "field 'properties' must be an object"
+done
+
 echo "--- dv_with_compression_codec.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/dv_with_compression_codec.puffin', PuffinMetadata)" 2>&1 | grep -oF "must omit 'compression-codec'"
 
