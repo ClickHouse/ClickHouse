@@ -1,6 +1,8 @@
 #include <unistd.h>
 #include <cerrno>
+#include <fcntl.h>
 #include <poll.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <algorithm>
 
@@ -47,23 +49,48 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
 {
     cancellation_hook = std::move(cancellation_hook_);
 
-    /// Decide whether the responsive bounded-chunk write path is needed. Only a pipe/FIFO, a socket
-    /// or a terminal can block in write() when the sink is slow or stuck, so while the hook is
-    /// installed we wait for writability and write in small chunks for these to stay responsive. A
-    /// regular file never blocks on write, and a non-tty character device such as /dev/null does not
-    /// block either, so such descriptors keep using a single large write for throughput - otherwise
-    /// a common pattern like `clickhouse-client --query ... > /dev/null` would regress to one poll
-    /// and one small write per chunk. If fstat fails, assume the descriptor can block and use the
-    /// safe (responsive) path.
+    /// Decide whether the responsive write path is needed. Only a pipe/FIFO, a socket or a
+    /// terminal can block in write() when the sink is slow or stuck, so while the hook is
+    /// installed we wait for writability and write in a way that cannot sleep indefinitely for
+    /// these to stay responsive. A regular file never blocks on write, and a non-tty character
+    /// device such as /dev/null does not block either, so such descriptors keep using a single
+    /// large write for throughput - otherwise a common pattern like
+    /// `clickhouse-client --query ... > /dev/null` would regress to one poll and one small write
+    /// per chunk. If fstat fails, assume the descriptor can block and use the safe (responsive)
+    /// path.
     cancellation_fd_can_block = false;
+    cancellation_fd_is_socket = false;
     if (cancellation_hook)
     {
         struct stat stat_buf{};
         if (0 != ::fstat(fd, &stat_buf))
             cancellation_fd_can_block = true;
         else
-            cancellation_fd_can_block
-                = S_ISFIFO(stat_buf.st_mode) || S_ISSOCK(stat_buf.st_mode) || (0 != ::isatty(fd));
+        {
+            const bool is_tty = (0 != ::isatty(fd));
+            cancellation_fd_is_socket = S_ISSOCK(stat_buf.st_mode);
+            cancellation_fd_can_block = S_ISFIFO(stat_buf.st_mode) || cancellation_fd_is_socket || is_tty;
+
+            /// For a terminal, poll() + a blocking write capped at PIPE_BUF is not enough to stay
+            /// responsive: POLLOUT only promises *some* room, and a blocking tty write() sleeps
+            /// until the whole chunk is accepted, so it can hang on a terminal that stops draining
+            /// (the headline case of #22426). A non-blocking write is needed, but O_NONBLOCK must
+            /// not be set on `fd` itself: the flag lives on the open file description, which a
+            /// terminal fd shares with fd 2 and the parent shell, so it would leak to unrelated
+            /// writers (see 3f8b12c2736). Instead, re-open the terminal via /proc/self/fd to get a
+            /// private open file description with O_NONBLOCK. This is Linux-only: the BSD/macOS
+            /// /dev/fd equivalent behaves like dup() and shares the open file description, which
+            /// would reintroduce the leak. If the re-open fails, the responsive path falls back to
+            /// the bounded blocking write below. The descriptor is kept for the lifetime of this
+            /// buffer, so repeated hook installations (one per query in the client) reuse it.
+#if defined(OS_LINUX)
+            if (is_tty && nonblocking_write_fd < 0)
+            {
+                const std::string proc_fd_path = "/proc/self/fd/" + toString(fd);
+                nonblocking_write_fd = ::open(proc_fd_path.c_str(), O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+            }
+#endif
+        }
     }
 }
 
@@ -80,25 +107,29 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
     Stopwatch watch;
 
+    /// When a cancellation hook is installed (e.g. the client output during a query) and the
+    /// descriptor can block (a pipe, socket or terminal), keep the write responsive to
+    /// cancellation. Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck
+    /// in the write(), because the interrupting signal can be delivered to another thread and thus
+    /// not interrupt this write() at all. Wait for the descriptor to become writable in small
+    /// steps, checking for cancellation in between, issue writes that cannot sleep indefinitely,
+    /// and discard the rest of the buffer once cancellation is requested. A terminal is written
+    /// through a private non-blocking descriptor of the same sink (see setCancellationHook), so
+    /// the write fails with EAGAIN instead of sleeping when the terminal stops draining.
+    const bool responsive_writes = cancellation_hook && cancellation_fd_can_block;
+    const int write_fd = (responsive_writes && nonblocking_write_fd >= 0) ? nonblocking_write_fd : fd;
+
     size_t bytes_written = 0;
     while (bytes_written != offset())
     {
         size_t bytes_to_write = offset() - bytes_written;
 
-        /// When a cancellation hook is installed (e.g. the client output during a query), avoid
-        /// blocking for a long time in write() on a slow or stuck sink such as a slow terminal.
-        /// Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck in the
-        /// write(), because the interrupting signal can be delivered to another thread and thus
-        /// not interrupt this write() at all. Wait for the descriptor to become writable in small
-        /// steps, checking for cancellation in between, write only a bounded chunk at a time so a
-        /// single write() cannot block for long, and discard the rest of the buffer once
-        /// cancellation is requested.
-        if (cancellation_hook && cancellation_fd_can_block)
+        if (responsive_writes)
         {
             if (cancellation_hook())
                 return;
 
-            pollfd poll_fd{.fd = fd, .events = POLLOUT, .revents = 0};
+            pollfd poll_fd{.fd = write_fd, .events = POLLOUT, .revents = 0};
             int poll_res = ::poll(&poll_fd, 1, 100);
 
             if (poll_res < 0 && errno != EINTR)
@@ -113,12 +144,17 @@ void WriteBufferFromFileDescriptor::nextImpl()
                 continue;
 
             /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
-            /// guaranteed not to block on a pipe (and such a small write does not block on a socket
-            /// or terminal either). Bounding the chunk this way ensures a single write() cannot
-            /// sleep for long even if the sink stops draining right after becoming writable, so the
-            /// cancellation hook is consulted promptly. (A larger chunk could still block: poll()
-            /// only promises that some space is available, not space for the whole chunk.)
-            bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
+            /// guaranteed not to block on a pipe, so a blocking write bounded this way stays
+            /// responsive for pipes/FIFOs. No chunk size gives that guarantee for a terminal or a
+            /// socket (poll() only promises that *some* space is available, and their blocking
+            /// write sleeps until the whole chunk is accepted), which is why those do not rely on
+            /// it: a terminal goes through the private non-blocking descriptor and a socket is
+            /// written with MSG_DONTWAIT - both fail with EAGAIN instead of sleeping when the sink
+            /// has no room, handled below like a poll() timeout. The cap is kept as a fallback for
+            /// a terminal without a private non-blocking descriptor: not a full guarantee there,
+            /// but it bounds how much a single write() can wait for.
+            if (write_fd == fd && !cancellation_fd_is_socket)
+                bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
@@ -126,8 +162,18 @@ void WriteBufferFromFileDescriptor::nextImpl()
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
-            res = ::write(fd, working_buffer.begin() + bytes_written, bytes_to_write);
+            if (responsive_writes && cancellation_fd_is_socket)
+                res = ::send(fd, working_buffer.begin() + bytes_written, bytes_to_write, MSG_DONTWAIT);
+            else
+                res = ::write(write_fd, working_buffer.begin() + bytes_written, bytes_to_write);
         }
+
+        /// In the responsive path the write cannot sleep (a private non-blocking descriptor for a
+        /// terminal, MSG_DONTWAIT for a socket), so a sink without room fails with EAGAIN instead.
+        /// Treat it like a poll() timeout: wait for writability again, checking the cancellation
+        /// hook in between.
+        if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
+            continue;
 
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
@@ -187,6 +233,27 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
     , adaptive_max_buffer_size(buf_size)
 {
+}
+
+WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
+{
+    if (nonblocking_write_fd >= 0)
+    {
+        [[maybe_unused]] int err = ::close(nonblocking_write_fd);
+        chassert(!(err && errno == EBADF));
+    }
+}
+
+void WriteBufferFromFileDescriptor::setFD(int fd_)
+{
+    /// The private non-blocking descriptor belongs to the previous sink - drop it.
+    if (nonblocking_write_fd >= 0)
+    {
+        [[maybe_unused]] int err = ::close(nonblocking_write_fd);
+        chassert(!(err && errno == EBADF));
+        nonblocking_write_fd = -1;
+    }
+    fd = fd_;
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()

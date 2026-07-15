@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <string_view>
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/IThrottler.h>
@@ -24,13 +25,12 @@ public:
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
+    ~WriteBufferFromFileDescriptor() override;
+
     /** Could be used before initialization if needed 'fd' was not passed to constructor.
       * It's not possible to change 'fd' during work.
       */
-    void setFD(int fd_)
-    {
-        fd = fd_;
-    }
+    void setFD(int fd_);
 
     int getFD() const
     {
@@ -53,9 +53,9 @@ public:
     /// buffered data is discarded instead of being written. To keep it responsive even when the
     /// sink blocks, writes to a descriptor that can block (a pipe, socket or terminal) are then
     /// done by waiting for writability with a timeout (checking the callback in between) and in
-    /// bounded chunks, so that a single write() cannot block for long. This is used by the client
-    /// to abort the output of a result set promptly on Ctrl+C even while a write to a slow sink
-    /// (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
+    /// a way that cannot sleep indefinitely in a single write() (see nextImpl). This is used by
+    /// the client to abort the output of a result set promptly on Ctrl+C even while a write to a
+    /// slow sink (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
     void setCancellationHook(std::function<bool()> cancellation_hook_);
 
 protected:
@@ -78,8 +78,22 @@ protected:
 
     /// Whether a write to this descriptor can block (true for pipes, sockets and terminals; false
     /// for regular files, which never block on write). Computed when the cancellation hook is
-    /// installed; only then the responsive bounded-chunk write path is used.
+    /// installed; only then the responsive write path is used.
     bool cancellation_fd_can_block = false;
+
+    /// Whether the descriptor is a socket. The responsive path then uses send(..., MSG_DONTWAIT),
+    /// which is non-blocking per call without touching the open file description flags.
+    bool cancellation_fd_is_socket = false;
+
+    /// A private non-blocking descriptor for the same terminal, used by the responsive write path
+    /// when the sink is a tty. O_NONBLOCK cannot simply be set on `fd`: the flag is a property of
+    /// the open file description, which a terminal fd shares with fd 2 and the parent shell, so
+    /// toggling it there leaks to unrelated writers (that broke the progress rendering once - see
+    /// 3f8b12c2736). Re-opening the terminal via /proc/self/fd (Linux) yields an independent open
+    /// file description, so O_NONBLOCK on it affects nobody else. -1 when unavailable (not a
+    /// terminal, non-Linux, or the re-open failed) - the responsive path then falls back to
+    /// poll() + a blocking write capped at PIPE_BUF.
+    int nonblocking_write_fd = -1;
 
     void finalizeImpl() override;
 };
