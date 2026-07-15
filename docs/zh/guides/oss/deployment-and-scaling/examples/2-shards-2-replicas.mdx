@@ -37,9 +37,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 * 你的机器上已安装 Docker
 
 <Steps>
-  <Step>
-    ## 设置目录结构和测试环境
-
+  <Step title="设置目录结构和测试环境" id="set-up">
     <ExampleFiles />
 
     在本教程中，您将使用 [Docker compose](https://docs.docker.com/compose/) 搭建 ClickHouse 集群。该配置同样可以修改后用于独立的本地机器、虚拟机或云实例。
@@ -50,12 +48,12 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # 创建 clickhouse-keeper 目录
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # 创建 clickhouse-server 目录
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -169,9 +167,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse 节点
-
+  <Step title="配置 ClickHouse 节点" id="configure-clickhouse-servers">
     ### 服务器配置
 
     现在修改位于 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` 的每个空配置文件 `config.xml`。下方高亮显示的行需要根据各节点分别进行修改：
@@ -285,11 +281,11 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-       <!-- 集群名称（不应包含点） -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- 可选。是否仅将数据写入其中一个副本。默认值：false（将数据写入所有副本）。 -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -410,9 +406,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse Keeper
-
+  <Step title="配置 ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     接下来，您将配置用于协调的 ClickHouse Keeper。
 
     ### Keeper 配置
@@ -430,9 +424,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 测试设置
-
+  <Step title="测试设置" id="test-the-setup">
     请确保你的机器上已运行 Docker。
     在 `cluster_2S_2R` 目录根目录下，使用 `docker-compose up` 命令启动集群：
 
@@ -459,7 +451,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     以下查询。下面以连接到第一个节点的命令为例：
 
     ```bash
-    # 连接到任意节点
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -515,9 +507,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     下一步，你将在该集群中创建一个表。
   </Step>
 
-  <Step>
-    ## 创建数据库
-
+  <Step title="创建数据库" id="creating-a-database">
     现在你已经确认 cluster 已正确配置并正常运行，接下来你将重新创建与 [英国房产价格](/zh/get-started/sample-datasets/uk-price-paid)
     示例数据集教程中使用的同一张表。该表包含自 1995 年以来英格兰和威尔士房地产成交价格的约 3000 万行
     数据。
@@ -573,9 +563,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 在集群上创建表
-
+  <Step title="在集群上创建表" id="creating-a-table">
     现在数据库已经创建完成，接下来需要创建一个启用复制的表。
 
     在任意主机客户端上运行以下查询：
@@ -645,9 +633,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 将数据插入分布式表
-
+  <Step title="将数据插入分布式表" id="inserting-data-using-distributed">
     要向该表插入数据，不能使用 `ON CLUSTER`，因为它不适用于 `INSERT`、`UPDATE` 和 `DELETE` 这类 DML (数据操作语言) 查询。要插入数据，必须使用
     [`Distributed`](/zh/reference/engines/table-engines/special/distributed) 表引擎。
     正如你在搭建包含 2 个分片和 1 个副本的集群[指南](/zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)中所了解的，分布式表是可访问位于不同
@@ -723,11 +709,11 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 约 3021 万
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 约 1511 万
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -737,12 +723,12 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
   ## 结论
 </div>
 
-这种由 2 个分片和 2 个副本组成的集群拓扑，优势在于同时具备可扩展性和容错能力。
-数据分布在不同主机上，降低了每个节点的存储和 I/O 压力；同时，查询会在两个分片上并行执行，从而提升性能和内存使用效率。
-更重要的是，该集群即使损失一个节点，也能不中断地继续提供查询服务，因为每个分片在另一个节点上都有可用的备份副本。
+这种包含 2 个分片和 2 个副本的集群拓扑的优势在于，它同时具备可扩展性和容错性。
+数据分布在不同的主机上，降低了每个节点的存储和 I/O 需求；同时，查询会在两个分片上并行处理，从而提升性能并提高内存使用效率。
+更重要的是，该集群即使丢失一个节点，也能继续不中断地响应查询，因为每个分片在另一节点上都有一个备用副本。
 
-这种集群拓扑的主要缺点是存储开销更高——由于每个分片都有一份副本，与没有副本的部署相比，它需要两倍的存储容量。
-此外，虽然该集群能够承受单个节点故障，但如果同时失去两个节点，集群可能无法继续运行，具体取决于故障节点的位置以及分片的分布方式。
-这种拓扑在可用性和成本之间取得了平衡，因此适合用于生产环境：既需要一定程度的容错能力，又不希望承担更高复制因子带来的成本。
+这种集群拓扑的主要缺点是存储开销更高——由于每个分片都要复制一份数据，因此与没有副本的配置相比，它需要两倍的存储容量。
+此外，虽然集群能够承受单个节点故障，但如果同时丢失两个节点，集群可能无法正常工作，具体取决于故障的是哪些节点，以及分片是如何分布的。
+这种拓扑在可用性和成本之间取得了平衡，因此适用于需要一定容错性、但又不想承担更高复制因子成本的生产环境。
 
-如需了解 ClickHouse Cloud 如何处理查询，以及如何同时实现可扩展性和容错能力，请参阅[&quot;并行副本&quot;](/zh/products/cloud/features/infrastructure/parallel-replicas)章节。
+要了解 ClickHouse Cloud 如何处理查询，并同时提供可扩展性和容错性，请参阅[&quot;并行副本&quot;](/zh/products/cloud/features/infrastructure/parallel-replicas)一节。

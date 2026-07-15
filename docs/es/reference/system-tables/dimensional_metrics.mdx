@@ -69,6 +69,30 @@ Indica los fallos de los scripts de inicio por tipo de error. Se establece en 1 
 
 Número de partes de datos de MergeTree, etiquetadas por el estado de la parte, el tipo de parte y si se trata de una parte de proyección.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+Número de segmentos de archivo desalojados de una caché del sistema de archivos, etiquetado con el nombre de la caché. Desactivado de forma predeterminada; actívelo con `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+Bytes totales de segmentos de archivo desalojados de la caché del sistema de archivos, etiquetados por nombre de caché. Desactivada de forma predeterminada; actívela con `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+Número de segmentos de archivo desalojados de una caché del sistema de archivos, etiquetados por nombre de la caché e ID de usuario. Desactivado de forma predeterminada; actívelo con `expose_prometheus_eviction_metrics` y `expose_prometheus_eviction_metrics_per_user`.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+Bytes totales de segmentos de archivo desalojados de la caché del sistema de archivos, etiquetados con el nombre de la caché y el ID de usuario. Desactivado de forma predeterminada; actívelo con `expose_prometheus_eviction_metrics` y `expose_prometheus_eviction_metrics_per_user`.
+
 <div id="see-also">
   ## Véase también
 </div>

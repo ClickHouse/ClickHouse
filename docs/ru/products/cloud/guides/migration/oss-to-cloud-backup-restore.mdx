@@ -272,29 +272,21 @@ FROM s3(
 Чтобы создать новый сервис ClickHouse Cloud, выполните следующие шаги.
 
 <Steps>
-  <Step>
-    #### Откройте Cloud Console
-
+  <Step title="Откройте Cloud Console" id="open-cloud-console">
     Перейдите на [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step>
-    #### Создайте новый сервис
-
+  <Step title="Создайте новый сервис" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="создать новый сервис" />
   </Step>
 
-  <Step>
-    #### Настройте и создайте сервис
-
+  <Step title="Настройте и создайте сервис" id="configure-and-create">
     Выберите нужный регион и конфигурацию, затем нажмите `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="настройка параметров сервиса" />
   </Step>
 
-  <Step>
-    #### Создайте роль доступа
-
+  <Step title="Создайте роль доступа" id="create-an-access-role">
     Откройте SQL Console
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="настройка параметров сервиса" />
@@ -303,7 +295,7 @@ FROM s3(
 
     Чтобы восстановить резервную копию из S3, вам нужно настроить безопасный доступ между ClickHouse Cloud и вашим S3 бакетом.
 
-    1. Выполните шаги из [&quot;Безопасный доступ к данным в S3&quot;](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), чтобы создать роль доступа и получить ARN роли.
+    1. Выполните шаги из [&quot;Безопасный доступ к данным S3&quot;](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), чтобы создать роль доступа и получить ARN роли.
 
     2. Обновите политику S3 бакета, созданную на шаге [&quot;Как создать S3 бакет и роль IAM&quot;](/ru/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket), добавив ARN роли из предыдущего шага.
 
@@ -443,8 +435,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- Возвращает управление сразу, вместе с идентификатором резервной копии
--- Пример результата:
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘

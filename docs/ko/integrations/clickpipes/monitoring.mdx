@@ -26,7 +26,7 @@ ClickPipes 메트릭은 [표준 서비스 수준 레이블](/ko/products/cloud/f
   ### 응답 예시
 </div>
 
-다음은 Prometheus 스크레이프 응답에서 ClickPipes 메트릭이 어떻게 나타나는지 보여줍니다:
+다음은 Kafka ClickPipe에 대한 Prometheus 스크레이프 응답에서 ClickPipes 메트릭이 어떻게 나타나는지 보여줍니다. 노출되는 메트릭 집합은 파이프 유형에 따라 다르므로, 어떤 메트릭이 어떤 파이프 유형에 적용되는지는 [사용 가능한 메트릭](#available-metrics)을 참조하십시오:
 
 ```response
 # HELP ClickPipes_Info 항상 1입니다. 레이블 "clickpipe_state"에는 파이프의 현재 상태가 포함됩니다: Stopped/Provisioning/Running/Paused/Failed
@@ -62,66 +62,83 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ## 사용 가능한 메트릭
 </div>
 
+파이프 유형마다 제공되는 메트릭이 모두 같지는 않습니다. 특히 CDC ClickPipes는 스트리밍 및 객체 스토리지 ClickPipes와 다른 메트릭 부분 집합을 제공합니다.
+
+* **스트리밍, 객체 스토리지** — Kafka, Kinesis, Pub/Sub, S3 및 GCS
+* **CDC** — Postgres, MySQL, MongoDB 및 BigQuery
+* **전체** — 모든 파이프 유형
+
 <div id="metrics-data-transfer">
   ### 데이터 전송
 </div>
 
-| 메트릭                                        | 유형      | 설명                                                                                  |
-| ------------------------------------------ | ------- | ----------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedBytes_Total`            | Counter | 소스에서 가져온 전체 비압축 바이트 수입니다.                                                           |
-| `ClickPipes_FetchedBytesCompressed_Total`  | Counter | 소스에서 가져온 전체 압축 바이트 수입니다. 소스 데이터가 압축되지 않은 경우 `ClickPipes_FetchedBytes_Total`과 동일합니다. |
-| `ClickPipes_FetchedBytesInitialLoad_Total` | Counter | **CDC ClickPipes** 초기 적재 단계에서 가져온 전체 비압축 바이트 수입니다.                                  |
-| `ClickPipes_FetchedBytesResync_Total`      | Counter | **CDC ClickPipes** resync 작업 중 가져온 전체 비압축 바이트 수입니다.                                 |
-| `ClickPipes_SentBytes_Total`               | Counter | ClickHouse로 전송한 전체 비압축 바이트 수입니다.                                                    |
-| `ClickPipes_SentBytesCompressed_Total`     | Counter | ClickHouse로 전송한 전체 압축 바이트 수입니다.                                                     |
+| 메트릭                                        | 유형  | 사용 가능 대상           | 설명                                                                                                                                                                                                      |
+| ------------------------------------------ | --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedBytes_Total`            | 카운터 | 스트리밍, 객체 스토리지 | 소스에서 가져온 비압축 바이트의 총량입니다.                                                                                                                                                                                |
+| `ClickPipes_FetchedBytesCompressed_Total`  | 카운터 | 전체                 | 소스에서 가져온 총 바이트 수로, wire를 통해 읽은 기준입니다. 소스 데이터가 비압축 상태이면 `ClickPipes_FetchedBytes_Total`과 동일합니다. CDC ClickPipes의 경우 초기 적재 중 가져온 바이트는 여기에 포함되지 않으며, 별도로 `ClickPipes_FetchedBytesInitialLoad_Total`에 기록됩니다. |
+| `ClickPipes_FetchedBytesInitialLoad_Total` | 카운터 | CDC                | resync를 포함해 초기 적재 단계에서 가져온 바이트의 총량입니다.                                                                                                                                                                  |
+| `ClickPipes_SentBytes_Total`               | 카운터 | 스트리밍, 객체 스토리지 | ClickHouse로 전송한 비압축 바이트의 총량입니다.                                                                                                                                                                         |
+| `ClickPipes_SentBytesCompressed_Total`     | 카운터 | 스트리밍, 객체 스토리지 | ClickHouse로 전송한 압축 바이트의 총량입니다.                                                                                                                                                                          |
 
 <div id="metrics-events">
   ### 이벤트 및 레코드
 </div>
 
-| 메트릭                                 | 유형      | 설명                                                                                                   |
-| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedEvents_Total`    | Counter | 소스에서 가져온 레코드의 총 개수입니다.                                                                               |
-| `ClickPipes_SentEvents_Total`       | Counter | ClickHouse로 전송한 레코드의 총 개수입니다.                                                                        |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge   | **CDC ClickPipes** 대상 테이블 및 이벤트 유형별로 가져온 레코드 수입니다. 추가 `destination_table` 및 `event_type` 레이블을 사용합니다. |
+| 메트릭                                 | 유형      | 사용 가능 대상      | 설명                                                                                |
+| ----------------------------------- | ------- | ------------- | --------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedEvents_Total`    | 카운터 | 스트리밍, 객체 스토리지 | 소스에서 가져온 레코드의 총 개수입니다.                                                            |
+| `ClickPipes_SentEvents_Total`       | 카운터 | 스트리밍, 객체 스토리지 | ClickHouse로 전송한 레코드의 총 개수입니다.                                                     |
+| `ClickPipes_FetchedEvents_PerTable` | Gauge   | CDC           | 대상 테이블 및 이벤트 유형별로 가져온 레코드 수입니다. 추가 `destination_table` 및 `event_type` 레이블을 사용합니다. |
 
 <div id="metrics-errors">
   ### 오류
 </div>
 
-| 메트릭                       | 유형      | 설명                                                                   |
-| ------------------------- | ------- | -------------------------------------------------------------------- |
-| `ClickPipes_Errors_Total` | Counter | 수집 중 발생한 [오류](/ko/integrations/clickpipes/home#error-reporting)의 총수입니다. |
+| 메트릭                       | 유형      | 사용 가능 대상 | 설명                                                                   |
+| ------------------------- | ------- | -------- | -------------------------------------------------------------------- |
+| `ClickPipes_Errors_Total` | Counter | 전체       | 수집 중 발생한 [오류](/ko/integrations/clickpipes/home#error-reporting)의 총수입니다. |
 
 <div id="metrics-latency">
   ### 지연 시간
 </div>
 
-| 메트릭                                       | 유형            | 설명                                                                                                |
-| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | 레코드가 소스에서 생성된 시점부터 ClickHouse에 기록되는 시점까지의 시간(밀리초)입니다.                                             |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | **CDC ClickPipes**의 소스 측 복제 지연을 MiB 단위로 나타냅니다. Postgres ClickPipes에서는 replication slot 지연을 반영합니다. |
+| 메트릭                                       | 유형            | 사용 가능 대상           | 설명                                                                     |
+| ----------------------------------------- | ------------- | ------------------ | ---------------------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | 스트리밍, 객체 스토리지 | 레코드가 소스에서 생성된 시점부터 ClickHouse에 기록되는 시점까지의 시간(밀리초)입니다.                  |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres 전용)  | 소스 측 replication slot 지연을 MiB 단위로 나타냅니다. Postgres ClickPipes에서만 제공됩니다. |
 
 <div id="metrics-resources">
-  ### 리소스 사용량
+  ### 리소스 사용률
 </div>
 
-| 메트릭                              | 유형             | 설명                                  |
-| -------------------------------- | -------------- | ----------------------------------- |
-| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | 수집 레플리카의 평균 CPU 사용량이며, 단위는 밀리코어입니다. |
-| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | 수집 레플리카에 설정된 CPU 제한이며, 단위는 밀리코어입니다. |
-| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | 수집 레플리카의 평균 메모리 사용량이며, 단위는 바이트입니다.  |
-| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | 수집 레플리카에 설정된 메모리 제한이며, 단위는 바이트입니다.  |
+`ClickPipes_Replica_*` 메트릭은 스트리밍 및 객체 스토리지 ClickPipes의 리소스 사용률을 나타냅니다. 각 ClickPipe는 **전용 컴퓨트**를 사용하므로, 이 값은 개별 ClickPipe의 사용률을 반영합니다.
+
+| 메트릭                              | 유형             | 사용 가능 대상      | 설명                                   |
+| -------------------------------- | -------------- | ------------- | ------------------------------------ |
+| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | 스트리밍, 객체 스토리지 | 수집 레플리카의 평균 CPU 사용량입니다. 단위는 밀리코어입니다. |
+| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | 스트리밍, 객체 스토리지 | 수집 레플리카에 설정된 CPU 한도입니다. 단위는 밀리코어입니다. |
+| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | 스트리밍, 객체 스토리지 | 수집 레플리카의 평균 메모리 사용량입니다. 단위는 바이트입니다.  |
+| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | 스트리밍, 객체 스토리지 | 수집 레플리카에 설정된 메모리 한도입니다. 단위는 바이트입니다.  |
+
+`ClickPipes_CDC_*` 메트릭은 CDC ClickPipes의 리소스 사용률을 나타냅니다. 동일한 service의 모든 CDC ClickPipes는 **컴퓨트를 공유**하므로, 이 값은 service 내 모든 CDC ClickPipe의 합산 사용량을 반영합니다.
+
+| 메트릭                                  | 유형             | 사용 가능 대상 | 설명                                                                                |
+| ------------------------------------ | -------------- | -------- | --------------------------------------------------------------------------------- |
+| `ClickPipes_CDC_CPUUsage`            | Gauge (*avg*)  | CDC      | 평균 CPU 사용량입니다. 단위는 밀리코어입니다. service 내 모든 CDC ClickPipes가 공유합니다.                   |
+| `ClickPipes_CDC_CPULimit`            | Gauge (*last*) | CDC      | 설정된 CPU 한도입니다. 단위는 밀리코어입니다. service 내 모든 CDC ClickPipes가 공유합니다.                   |
+| `ClickPipes_CDC_MemoryUsage`         | Gauge (*avg*)  | CDC      | 평균 메모리 사용량입니다. 단위는 바이트입니다. service 내 모든 CDC ClickPipes가 공유합니다.                    |
+| `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC      | 설정된 메모리 한도입니다. 단위는 바이트입니다. service 내 모든 CDC ClickPipes가 공유합니다.                    |
+| `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC      | 수신 네트워크 대역폭입니다. 단위는 바이트입니다(스크레이프 윈도우당 delta). service 내 모든 CDC ClickPipes가 공유합니다. |
 
 <div id="metrics-state">
   ### 상태 및 진행
 </div>
 
-| 메트릭                             | 유형    | 설명                                                                     |
-| ------------------------------- | ----- | ---------------------------------------------------------------------- |
-| `ClickPipes_Info`               | Gauge | 항상 `1`입니다. 파이프 상태를 기준으로 필터링하거나 알림을 설정하려면 `clickpipe_state` 레이블을 사용합니다. |
-| `ClickPipes_LastFetchedBatchId` | Gauge | 소스에서 마지막으로 가져온 Batch의 ID입니다.                                           |
-| `ClickPipes_LastSentBatchId`    | Gauge | ClickHouse로 마지막으로 전송한 Batch의 ID입니다.                                    |
+| 메트릭                             | 유형    | 사용 가능 대상 | 설명                                                                     |
+| ------------------------------- | ----- | -------- | ---------------------------------------------------------------------- |
+| `ClickPipes_Info`               | Gauge | 전체       | 항상 `1`입니다. 파이프 상태를 기준으로 필터링하거나 알림을 설정하려면 `clickpipe_state` 레이블을 사용합니다. |
+| `ClickPipes_LastFetchedBatchId` | Gauge | CDC      | 소스에서 마지막으로 가져온 Batch의 ID입니다.                                           |
+| `ClickPipes_LastSentBatchId`    | Gauge | CDC      | ClickHouse로 마지막으로 전송한 Batch의 ID입니다.                                    |
 
 <div id="related">
   ## 관련 페이지

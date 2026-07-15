@@ -191,6 +191,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
 Примеры того, как трактуется эта иерархия:
 
 * Привилегия `ALTER` включает все остальные привилегии `ALTER*`.
-* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` и `ALTER MODIFY CONSTRAINT`.
 
 Привилегии применяются на разных уровнях. Понимание уровня подсказывает, какой синтаксис доступен для привилегии.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. Уровень: `GROUP`. Псевдонимы: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. Уровень: `TABLE`. Псевдонимы: `MODIFY CONSTRAINT`
   * `ALTER TTL`. Уровень: `TABLE`. Псевдонимы: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Псевдонимы: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. Уровень: `TABLE`. Псевдонимы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 Примеры того, как работает эта иерархия:
 
 * Привилегия `ALTER` включает все остальные привилегии `ALTER*`.
-* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+* `ALTER CONSTRAINT` включает привилегии `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` и `ALTER MODIFY CONSTRAINT`.
 
 **Примечания**
 

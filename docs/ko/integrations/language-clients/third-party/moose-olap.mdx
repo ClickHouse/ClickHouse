@@ -43,9 +43,7 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
 * **macOS/Linux** - Windows는 WSL2를 통해 사용할 수 있습니다
 
 <Steps>
-  <Step>
-    ### Moose 설치
-
+  <Step title="Moose 설치" id="step-1-install-moose">
     시스템 전역에서 사용할 수 있도록 Moose CLI를 설치합니다:
 
     ```bash
@@ -53,9 +51,7 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
     ```
   </Step>
 
-  <Step>
-    ### 프로젝트 설정
-
+  <Step title="프로젝트 설정" id="step-2-set-up-project">
     #### 옵션 A: 기존 ClickHouse 배포 사용
 
     **중요**: 프로덕션 ClickHouse는 변경되지 않습니다. 이 작업은 ClickHouse 테이블에서 파생된 데이터 모델을 사용해 새 Moose OLAP 프로젝트를 초기화할 뿐입니다.
@@ -87,9 +83,7 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
     ```
   </Step>
 
-  <Step>
-    ### 종속성 설치
-
+  <Step title="종속성 설치" id="step-3-install-dependencies">
     ```bash
     # TypeScript
     cd my-project
@@ -105,17 +99,13 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
     다음 메시지가 표시되어야 합니다: `Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step>
-    ### 생성된 모델 살펴보기
-
+  <Step title="생성된 모델 살펴보기" id="step-4-explore-models">
     Moose CLI는 기존 ClickHouse 테이블을 기반으로 TypeScript 인터페이스 또는 Python Pydantic 모델을 자동으로 생성합니다.
 
     새 데이터 모델은 `app/index.ts` 파일에서 확인하세요.
   </Step>
 
-  <Step>
-    ### 개발 시작
-
+  <Step title="개발 시작" id="step-5-start-development">
     개발 서버를 시작하면 코드 정의를 바탕으로 모든 프로덕션 테이블이 자동으로 재현된 로컬 ClickHouse 인스턴스가 실행됩니다:
 
     ```bash
@@ -125,9 +115,7 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
     **중요**: 프로덕션 ClickHouse는 변경되지 않습니다. 이 작업은 로컬 개발 환경을 생성합니다.
   </Step>
 
-  <Step>
-    ### 로컬 데이터베이스 시드
-
+  <Step title="로컬 데이터베이스 시드" id="step-6-seed-database">
     로컬 ClickHouse 인스턴스에 데이터를 시드합니다:
 
     #### 자체 ClickHouse에서
@@ -143,9 +131,7 @@ Moose OLAP는 ClickHouse에 네이티브로 구축되었으며, 개발자 친화
     ```
   </Step>
 
-  <Step>
-    ### Moose OLAP로 빌드하기
-
+  <Step title="Moose OLAP로 빌드하기" id="step-7-building-with-moose-olap">
     이제 코드에서 테이블을 정의했으므로, 분석 데이터 위에 API와 구체화된 뷰(Materialized View)를 구축할 때 웹 앱의 ORM 데이터 모델과 같은 이점인 타입 안정성과 자동 완성을 활용할 수 있습니다. 다음 단계로는 아래 작업을 시도해 볼 수 있습니다:
 
     * [Moose API](https://docs.fiveonefour.com/moosestack/apis)로 REST API 구축

@@ -91,7 +91,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 </div>
 
 <div id="option-1-clickhouse-cloud-console">
-  ### Option 1 : ClickHouse Cloud console
+  ### Option 1 : console ClickHouse Cloud
 </div>
 
 Dans la console ClickHouse Cloud, ouvrez le service que vous souhaitez connecter via Private Service Connect, puis ouvrez le menu **Settings**. Cliquez sur le bouton **Set up private endpoint**. Notez le **Service name** (`endpointServiceId`) et le **DNS name** (`privateDnsHostname`). Vous les utiliserez aux étapes suivantes.
@@ -139,7 +139,7 @@ Dans cette section, vous allez créer un point de terminaison de service.
 Tout d’abord, vous allez créer une Private Service Connection.
 
 <div id="option-1-using-google-cloud-console">
-  #### Option 1: Utiliser la console Google Cloud
+  #### Option 1 : Utiliser la console Google Cloud
 </div>
 
 Dans la console Google Cloud, accédez à **Network services -&gt; Private Service Connect**.
@@ -149,8 +149,8 @@ Dans la console Google Cloud, accédez à **Network services -&gt; Private Servi
 Ouvrez la boîte de dialogue de création de Private Service Connect en cliquant sur le bouton **Connect Endpoint**.
 
 * **Target** : utilisez **Published service**
-* **Target service** : utilisez `endpointServiceId`<sup>API</sup> ou `Service name`<sup>console</sup> obtenu à l’étape [Obtain GCP service attachment for Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
-* **Endpoint name** : définissez un nom pour le **Endpoint name** PSC.
+* **Target service** : utilisez `endpointServiceId`<sup>API</sup> ou `Service name`<sup>console</sup> à l’étape [Obtain GCP service attachment for Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
+* **Endpoint name** : définissez un nom pour l’**Endpoint name** PSC.
 * **Network/Subnetwork/IP address** : choisissez le réseau à utiliser pour la connexion. Vous devrez créer une adresse IP ou utiliser une adresse existante pour le point de terminaison Private Service Connect. Dans notre exemple, nous avons créé au préalable une adresse nommée **your-ip-address** et lui avons attribué l’adresse IP `10.128.0.2`.
 * Pour rendre le point de terminaison accessible depuis n’importe quelle région, vous pouvez cocher la case **Enable global access**.
 
@@ -303,7 +303,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 Vous devez ajouter un Endpoint ID à la liste d’autorisation de chaque instance devant être accessible via Private Service Connect.
 
-<div id="option-1-clickhouse-cloud-console-1">
+<div id="option-1-clickhouse-cloud-console">
   ### Option 1 : console ClickHouse Cloud
 </div>
 

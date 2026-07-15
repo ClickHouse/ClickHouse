@@ -16,15 +16,19 @@ De forma predeterminada, ClickPipe de GCS asume que los archivos se agregan a un
   ## Cómo funciona
 </div>
 
-En este modo, ClickPipe para GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha las notificaciones de objetos a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. **No es posible** iniciar la ingestión desde un archivo concreto o desde un momento determinado: ClickPipes siempre cargará todos los archivos de la ruta seleccionada.
+En este modo, ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha las notificaciones de objetos a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. **No es posible** iniciar la ingestión desde un archivo concreto o desde un momento determinado: ClickPipes siempre cargará todos los archivos de la ruta seleccionada.
 
 Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lugar a inserciones parciales o a datos duplicados. Object Storage ClickPipes es resistente a los fallos de inserción y proporciona semántica exactly-once mediante tablas de staging temporales. Los datos se insertan primero en una tabla de staging; si algo sale mal, la tabla de staging se trunca y la inserción se reintenta desde un estado limpio. Solo cuando una inserción se completa correctamente se mueven las particiones a la tabla de destino.
 
 <Steps>
-  <Step>
-    ## Crear un tema de Google Cloud Pub/Sub
-
+  <Step title="Crear un tema de Google Cloud Pub/Sub" id="create-pubsub-topic">
     **1.** En Google Cloud Console, ve a **Pub/Sub &gt; Topics &gt; Create topic**. Crea un tema nuevo con una suscripción predeterminada y anota el **Topic Name**.
+
+    <Warning>
+      **Una suscripción por ClickPipe**
+
+      Cada ClickPipe necesita su propia suscripción dedicada de Pub/Sub. Dentro de una sola suscripción, Pub/Sub entrega cada mensaje a un único suscriptor: si dos o más ClickPipes (o cualquier otra aplicación) consumen la misma suscripción, cada notificación la recibe solo uno de ellos, y los archivos se omiten silenciosamente en los pipes que nunca la reciben. Esto se aplica incluso si los ClickPipes usan distintos patrones de ruta: un pipe que recibe una notificación de un archivo que no coincide la descarta, y ningún otro pipe la verá jamás. Para ingestar desde el mismo bucket con varios ClickPipes, crea una suscripción independiente en el tema para cada ClickPipe.
+    </Warning>
 
     **2.** Configura una notificación del bucket de GCS para que publique eventos [`OBJECT_FINALIZE`](https://docs.cloud.google.com/storage/docs/pubsub-notifications) en el tema de Pub/Sub creado anteriormente.
 
@@ -42,9 +46,7 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
     ```
   </Step>
 
-  <Step>
-    ## Configurar una cuenta de servicio
-
+  <Step title="Configurar una cuenta de servicio" id="configure-service-account">
     **1.** Configura una [cuenta de servicio](http://docs.cloud.google.com/iam/docs/keys-create-delete) con los [permisos necesarios](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) para permitir que ClickPipes liste y recupere objetos del bucket especificado, así como consumir y supervisar las notificaciones de la suscripción de Pub/Sub.
 
     **1.1.** Este paso puede realizarse en Google Cloud Console, con el cliente `gcloud` o con la interfaz programática de Google Cloud que prefieras. Por ejemplo, con `gcloud`:
@@ -67,12 +69,10 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
     ```
   </Step>
 
-  <Step>
-    ## Crear un ClickPipe con modo no ordenado
-
+  <Step title="Crear un ClickPipe con modo no ordenado" id="create-clickpipe">
     **1.** En la consola de ClickHouse Cloud, ve a **Data Sources &gt; Create ClickPipe** y selecciona **Google Cloud Storage**. Introduce los datos necesarios para conectarte a tu bucket de GCS. En **Authentication method**, elige **Service Account** y proporciona la clave `.json` de la cuenta de servicio.
 
-    **2.** Activa **Continuous ingestion**, luego selecciona **Any order** como modo de ingestión e introduce el nombre de la **Pub/Sub subscription** correspondiente a la suscripción conectada a tu bucket. El nombre de la suscripción debe seguir el siguiente formato:
+    **2.** Activa **Continuous ingestion**, luego selecciona **Any order** como modo de ingestión e introduce el nombre de la **Pub/Sub subscription** correspondiente a la suscripción conectada a tu bucket. La suscripción debe usarse exclusivamente para este ClickPipe; consulta [Crear un tema de Google Cloud Pub/Sub](#create-pubsub-topic). El nombre de la suscripción debe seguir el siguiente formato:
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}

@@ -47,7 +47,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **المعلمات**
 
-* `level` — اختياري. مستوى الكمي. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
+* `level` — اختياري. مستوى الكمّ. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
@@ -56,11 +56,11 @@ quantileTimingWeighted(level)(expr, weight)
 
 **القيمة المعادة**
 
-الكمي عند المستوى المحدد. [`Float32`](/ar/reference/data-types/float)
+الكمّ عند المستوى المحدد. [`Float32`](/ar/reference/data-types/float)
 
 **أمثلة**
 
-**حساب كمي زمني موزون**
+**حساب كمّ زمني موزون**
 
 ```sql title=Query
 CREATE TABLE t (response_time UInt32, weight UInt32) ENGINE = Memory;

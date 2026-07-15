@@ -71,16 +71,14 @@ Bindplane は、次の機能によってこの課題を解決します。
 </div>
 
 <Steps>
-  <Step>
-    #### ClickStack を宛先として設定する
-
+  <Step title="ClickStack を宛先として設定する" id="configure-destination">
     1. Bindplane アカウントにログインします
     2. **Library** に移動します
     3. **Add Destination** をクリックします
     4. 利用可能な宛先の一覧から **ClickStack** を選択します
     5. 接続を設定します。
        * **Protocol**: HTTP または gRPC を選択します (デフォルト: ポート `4318` の HTTP)
-       * **Hostname**: ClickStack の OTLPエンドポイントのホスト名または IP アドレスを入力します
+       * **Hostname**: ClickStack の OTLPendpoint のホスト名または IP アドレスを入力します
        * **Port**: ポート番号を入力します (HTTP は `4318`、gRPC は `4317`)
        * **API Ingestion Key**: ClickStack の API Ingestion Key を入力します
     6. 宛先に名前を付けます (例: &quot;ClickStack Production&quot;)
@@ -93,18 +91,16 @@ Bindplane は、次の機能によってこの課題を解決します。
     </Tip>
   </Step>
 
-  <Step>
-    #### 構成を作成する
-
+  <Step title="構成を作成する" id="create-configuration">
     ClickStack の宛先を設定したら、テレメトリーを処理してルーティングするための構成を作成します。
 
     1. **Configurations** → **Create Configuration** に移動します
     2. 構成に名前を付けます (例: &quot;ClickStack Pipeline&quot;)
     3. デプロイ対象に応じて **Collector Type** と **Platform** を選択します
-    4. ソースを追加します。
-       * **Add Source** をクリックして、80 種類以上の利用可能なソースから選択します
-       * テスト用途では、トラフィックをシミュレートするテレメトリー生成ソースを追加できます
-       * 本番環境では、実際のテレメトリー (logs、metrics、traces) のソースを追加します
+    4. SOURCES を追加します。
+       * **Add Source** をクリックして、80 種類以上の利用可能な SOURCES から選択します
+       * テスト用途では、トラフィックをシミュレートするテレメトリー生成 SOURCES を追加できます
+       * 本番環境では、実際のテレメトリー (ログ、メトリクス、トレース) の SOURCES を追加します
     5. ClickStack の宛先を追加します。
        * **Add Destination** をクリックします
        * 前の手順で作成した ClickStack の宛先を選択します
@@ -117,13 +113,11 @@ Bindplane は、次の機能によってこの課題を解決します。
     </Tip>
   </Step>
 
-  <Step>
-    #### プロセッサを追加する (任意)
-
+  <Step title="プロセッサを追加する (任意)" id="add-processors">
     Bindplane は、パイプラインインテリジェンスとプロセッサの推奨機能を提供します。次の目的でプロセッサを追加できます。
 
     * **Filter**: 不要なテレメトリーを除外してデータ量を削減する
-    * **Sample**: 大量の traces に sampling 戦略を適用する
+    * **Sample**: 大量の トレース に sampling 戦略を適用する
     * **Enrich**: リソース属性、labels、メタデータを追加する
     * **Transform**: テレメトリーの構造や内容を変更する
     * **Batch**: 効率的に送信できるようバッチサイズを最適化する
@@ -131,9 +125,7 @@ Bindplane は、次の機能によってこの課題を解決します。
     これらのプロセッサは、データが ClickStack に届く前に、collector フリート全体に一貫して適用されます。
   </Step>
 
-  <Step>
-    #### collector をデプロイして rollout を開始する
-
+  <Step title="collector をデプロイして rollout を開始する" id="deploy-collectors">
     1. 構成に collector (BDOT Collector) を追加します。
        * Bindplane の **Agents** に移動します
        * [Bindplane のインストール手順](https://docs.bindplane.com/readme/install-your-first-collector)に従って、対象システムに Bindplane collector をインストールします
@@ -157,9 +149,7 @@ Bindplane は、次の機能によってこの課題を解決します。
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Bindplane 経由で ClickStack に送られるテレメトリーシグナル" size="lg" />
   </Step>
 
-  <Step>
-    #### ClickStack でテレメトリーを確認する
-
+  <Step title="ClickStack でテレメトリーを確認する" id="verify-telemetry">
     構成が rollout されると、管理対象の collector フリートから ClickStack へテレメトリーが流れ始めます。
 
     1. ClickStack インスタンス (HyperDX UI) にログインします

@@ -1499,7 +1499,7 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 
 قُدِّم في: v24.1.0
 
-يعيد التمثيل بصيغة ASCII (خوارزمية ToASCII) لاسم نطاق وفقًا لآلية [أسماء النطاقات الدولية في التطبيقات](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) ‏(IDNA).
+يعيد التمثيل بصيغة ASCII (خوارزمية ToASCII) لاسم نطاق وفقًا لآلية [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) ‏(IDNA).
 يجب أن تكون سلسلة الإدخال بترميز UTF وقابلة للتحويل إلى سلسلة ASCII، وإلا فسيتم طرح استثناء.
 
 <Note>
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2200,11 +2197,11 @@ normalizeUTF8NFKC(str)
 
 **الوسائط**
 
-* `str` — السلسلة النصية المُدخلة والمشفَّرة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
+* `str` — سلسلة الإدخال المرمّزة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد الصيغة المعيارية NFKC لسلسلة UTF-8 النصية. [`String`](/ar/reference/data-types/string)
+تُعيد الصيغة المُطبَّعة NFKC لسلسلة UTF-8 النصية. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -2212,8 +2209,8 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2277,11 +2274,11 @@ normalizeUTF8NFKD(str)
 
 **الوسيطات**
 
-* `str` — سلسلة إدخال مرمّزة بترميز UTF-8. [`سلسلة`](/ar/reference/data-types/string)
+* `str` — سلسلة الإدخال المرمّزة بترميز UTF-8. [`سلسلة`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تُرجع الشكل المُطبَّع وفق NFKD لسلسلة UTF-8. [`سلسلة`](/ar/reference/data-types/string)
+تُرجع الصيغة المُطبَّعة وفق NFKD لسلسلة UTF-8. [`سلسلة`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -2289,8 +2286,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3441,7 +3438,7 @@ www.straßen-in-europa
 يحدِّد الوسيط الاختياري `length` الحد الأقصى لعدد نقاط الترميز التي يمكن أن تحتويه السلسلة الفرعية المُعادة.
 
 <Note>
-  تفترض هذه الدالة أن السلسلة تحتوي على نص بترميز UTF-8 صحيح.
+  تفترض هذه الدالة أن السلسلة تحتوي على نص صالح مُرمَّز بترميز UTF-8.
   وإذا لم يتحقق هذا الافتراض، فلا يُطرَح أي استثناء وتكون النتيجة غير معرّفة.
 </Note>
 

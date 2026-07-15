@@ -20,41 +20,31 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
 自定义角色可以包含组织、服务和数据库权限的任意组合。权限可应用于全部或部分服务和数据库。
 
 <Steps>
-  <Step>
-    ### 访问组织设置并选择 Users and roles
-
+  <Step title="访问组织设置并选择 Users and roles" id="users-and-roles-1">
     在 services 页面中，选择你的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 选择 `Roles` 选项卡
-
+  <Step title={<>选择 <code>Roles</code> 选项卡</>} id="roles-tab">
     在屏幕顶部中间选择 `Roles` 选项卡。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 在右上角选择 `Create new role`
-
+  <Step title={<>在右上角选择 <code>Create new role</code></>} id="create-new-role">
     点击屏幕右上角的 `Create new role` 按钮。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 为角色命名
-
+  <Step title="为角色命名" id="name-the-role">
     输入一个便于识别的角色名称。这将是在为用户和 API 密钥 分配角色时显示的名称。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### 点击 `Allow` 并选择权限范围
-
+  <Step title={<>点击 <code>Allow</code> 并选择权限范围</>} id="scope-permissions">
     点击 `Allow` 按钮，然后从 Organization、Service 和/或 Database 权限中进行选择。有关所有权限的说明，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
 
     <Tip>
@@ -62,7 +52,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
     </Tip>
 
     <Info>
-      **Data Sources 选项卡访问**
+      **Data Sources tab access**
 
       要访问 **Data Sources** 选项卡，该角色目前需要 `Manage and Delete Selected Services` 权限。
     </Info>
@@ -70,9 +60,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### 检查新角色
-
+  <Step title="检查新角色" id="review-role">
     完成之前，请检查分配给新角色的权限。确认无误后，点击 `Create role`。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

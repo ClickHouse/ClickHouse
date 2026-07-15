@@ -2,7 +2,7 @@
 slug: /integrations/dbeaver
 sidebarTitle: 'DBeaver'
 description: 'DBeaver es una herramienta de bases de datos multiplataforma.'
-title: 'Conecta DBeaver a ClickHouse'
+title: 'Conectar DBeaver a ClickHouse'
 doc_type: 'guide'
 integration:
   - support_level: 'partner'
@@ -20,72 +20,66 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 DBeaver está disponible en varias ediciones. En esta guía se utiliza [DBeaver Community](https://dbeaver.io/). Consulte las distintas ediciones y capacidades [aquí](https://dbeaver.com/edition/). DBeaver se conecta a ClickHouse mediante JDBC.
 
 <Note>
-  Utilice DBeaver versión 23.1.0 o posterior para mejorar la compatibilidad con las columnas `Nullable` de ClickHouse.
+  Utilice DBeaver versión 23.1.0 o superior para mejorar la compatibilidad con columnas `Nullable` en ClickHouse.
 </Note>
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. Reúne los datos de tu ClickHouse
-</div>
+<Steps>
+  <Step title="Reúna los datos de su ClickHouse" id="1-gather-your-clickhouse-details">
+    DBeaver usa JDBC sobre HTTP(S) para conectarse a ClickHouse; necesita:
 
-DBeaver usa JDBC sobre HTTP(S) para conectarse a ClickHouse; necesitas:
+    * endpoint
+    * número de puerto
+    * nombre de usuario
+    * contraseña
+  </Step>
 
-* endpoint
-* número de puerto
-* nombre de usuario
-* contraseña
+  <Step title="Descargar DBeaver" id="2-download-dbeaver">
+    DBeaver está disponible en https://dbeaver.io/download/
+  </Step>
 
-<div id="2-download-dbeaver">
-  ## 2. Descargar DBeaver
-</div>
+  <Step title="Añadir una base de datos" id="3-add-a-database">
+    * Use el menú **Database &gt; New Database Connection** o el icono **New Database Connection** en el **Database Navigator** para abrir el cuadro de diálogo **Connect to a database**:
 
-DBeaver está disponible en https://dbeaver.io/download/
+    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="Añadir una nueva base de datos" />
 
-<div id="3-add-a-database">
-  ## 3. Añadir una base de datos
-</div>
+    * Seleccione **Analytical** y luego **ClickHouse**:
 
-* Use el menú **Database &gt; New Database Connection** o el icono **New Database Connection** en el **Database Navigator** para abrir el cuadro de diálogo **Connect to a database**:
+    * Cree la URL de JDBC. En la pestaña **Main**, configure Host, Port, Username, Password y Database:
 
-<Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="Añadir una nueva base de datos" />
+    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="Configure el hostname, el puerto, el usuario, la contraseña y el nombre de la base de datos" />
 
-* Seleccione **Analytical** y luego **ClickHouse**:
+    * De forma predeterminada, la propiedad **SSL &gt; Use SSL** estará desactivada. Si se conecta a ClickHouse Cloud o a un servidor que requiere SSL en el puerto HTTP, active **SSL &gt; Use SSL**:
 
-* Cree la URL de JDBC. En la pestaña **Main**, configure Host, Port, Username, Password y Database:
+    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="Active SSL si es necesario" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="Configure el hostname, el puerto, el usuario, la contraseña y el nombre de la base de datos" />
+    * Pruebe la conexión:
 
-* De forma predeterminada, la propiedad **SSL &gt; Use SSL** estará desactivada. Si se conecta a ClickHouse Cloud o a un servidor que requiere SSL en el puerto HTTP, active **SSL &gt; Use SSL**:
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Probar la conexión" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="Active SSL si es necesario" />
+    Si DBeaver detecta que no tiene instalado el driver de ClickHouse, le ofrecerá descargarlo:
 
-* Pruebe la conexión:
+    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="Descargar el driver de ClickHouse" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Probar la conexión" />
+    * Después de descargar el driver, vuelva a probar la conexión:
 
-Si DBeaver detecta que no tiene instalado el driver de ClickHouse, le ofrecerá descargarlo:
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Probar la conexión" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="Descargar el driver de ClickHouse" />
+  <Step title="Consultar ClickHouse" id="4-query-clickhouse">
+    Abra un editor de consultas y ejecute una consulta.
 
-* Después de descargar el driver, vuelva a probar la conexión:
+    * Haga clic derecho en su conexión y elija **SQL Editor &gt; Open SQL Script** para abrir un editor de consultas:
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Probar la conexión" />
+    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="Abrir el editor SQL" />
 
-<div id="4-query-clickhouse">
-  ## 4. Consultar ClickHouse
-</div>
+    * Una consulta de ejemplo sobre `system.query_log`:
 
-Abra un editor de consultas y ejecute una consulta.
-
-* Haga clic con el botón derecho en su conexión y elija **SQL Editor &gt; Open SQL Script** para abrir un editor de consultas:
-
-<Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="Abrir el editor SQL" />
-
-* Una consulta de ejemplo en `system.query_log`:
-
-<Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="Una consulta de ejemplo" />
+    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="Una consulta de ejemplo" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
-  ## Siguientes pasos
+  ## Próximos pasos
 </div>
 
-Consulta la [wiki de DBeaver](https://github.com/dbeaver/dbeaver/wiki) para conocer todo lo que ofrece DBeaver, y la [documentación de ClickHouse](/es/) para conocer todo lo que ofrece ClickHouse.
+Consulta la [wiki de DBeaver](https://github.com/dbeaver/dbeaver/wiki) para conocer las funcionalidades de DBeaver y la [documentación de ClickHouse](/es/) para conocer las funcionalidades de ClickHouse.

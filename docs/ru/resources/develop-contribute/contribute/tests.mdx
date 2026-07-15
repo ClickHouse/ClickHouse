@@ -65,6 +65,21 @@ PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_
 Вы можете запустить все тесты или только их часть, указав filter по именам тестов: `./clickhouse-test substring`.
 Также есть параметры для запуска тестов параллельно или в случайном порядке.
 
+<div id="running-tests-on-macos">
+  #### Запуск тестов на macOS (Darwin)
+</div>
+
+Во многих функциональных тестах используются GNU-утилиты командной строки (`timeout`, `head`, `sed`, `grep`, `date` и т. д.). В macOS поставляются BSD-версии этих инструментов, и их поведение и набор опций отличаются (например, BSD `head` не поддерживает `head -c 1G`, в BSD `ps` нет длинных опций `--`, а `timeout` вообще отсутствует). Из-за запуска тестов с BSD-утилитами возникают ложные сбои.
+
+В macOS CI-раннерах GNU-инструменты устанавливаются через Homebrew и ставятся в `PATH` раньше BSD-версий. Повторите то же самое локально:
+
+```sh
+brew install coreutils gnu-sed grep
+export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$(brew --prefix)/opt/grep/libexec/gnubin:$PATH"
+```
+
+`coreutils` включает GNU `timeout`, `head`, `date` и другие утилиты; `gnu-sed` и `grep` включают GNU `sed` и `grep`. После этого команда `which timeout head sed grep` должна возвращать пути из `gnubin`.
+
 <div id="running-fast-tests">
   ### Запуск быстрых тестов
 </div>

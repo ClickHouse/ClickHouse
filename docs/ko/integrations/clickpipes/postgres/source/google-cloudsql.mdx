@@ -26,7 +26,7 @@ Postgres 12 이상 버전
   ## 논리적 복제 활성화
 </div>
 
-`cloudsql. logical_decoding` 설정이 켜져 있다면 **아래 단계를 따를 필요는 없습니다**. 다른 데이터 복제 도구에서 마이그레이션하는 경우에는 이 설정이 대체로 미리 구성되어 있습니다.
+`cloudsql. logical_decoding` 설정이 켜져 있다면 **아래 단계를 따를 필요는 없습니다**. 다른 데이터 복제 도구에서 마이그레이션하는 경우, 이 설정은 대체로 미리 구성되어 있습니다.
 
 1. Overview 페이지에서 **Edit** 버튼을 클릭하세요.
 
@@ -82,9 +82,9 @@ Postgres 12 이상 버전
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 의도가 있는 경우가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
-[//]: # "TODO Add SSH Tunneling"
+[//]: # "TODO SSH 터널링 추가"
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes IP를 방화벽에 추가하기

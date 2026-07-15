@@ -1,0 +1,274 @@
+---
+date: 2025-01-29
+title: 손상된 Keeper 스냅샷에서 복구하는 방법
+tags: ['문제 해결']
+keywords: ['Keeper', '손상된 스냅샷']
+description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 방법을 설명합니다. 문제가 어떤 식으로 나타나는지, 스냅샷이 무엇이고 어디에서 찾을 수 있는지, 그리고 가능한 복구 전략을 다룹니다.'
+---
+
+손상되었거나 비정상적인 ClickHouse Keeper 스냅샷은 메타데이터 불일치, 테이블의 읽기 전용 상태, 리소스 고갈, 백업 실패와 같은 심각한 시스템 불안정을 초래할 수 있습니다. 이 문서에서는 다음 내용을 다룹니다.
+
+* [스냅샷이 무엇이고 어디에서 찾을 수 있는지](#overview)
+* [문제가 어떻게 나타나는지](#symptoms)
+* [가능한 복구 전략](#recovery-strategies)과 각 전략의 의미
+
+<div id="overview">
+  ## Keeper 스냅샷 개요
+</div>
+
+<div id="what-is-snapshot">
+  ### 스냅샷이란 무엇입니까?
+</div>
+
+스냅샷은 특정 시점의 Keeper 내부 데이터(예: 클러스터 관련 메타데이터, 테이블 조정 경로, 구성)를 직렬화한 상태입니다. 스냅샷은 클러스터 내 Keeper 노드의 재동기화, 장애 발생 시 메타데이터 복구, 그리고 정상 상태로 확인된 Keeper 상태에 의존하는 시작 또는 재시작 과정에 매우 중요합니다.
+
+<div id="where-to-find-snapshots">
+  ### 스냅샷은 어디에서 찾을 수 있습니까?
+</div>
+
+스냅샷은 Keeper 노드의 로컬 파일 시스템에 파일 형태로 저장됩니다. 기본적으로 `/var/lib/clickhouse/coordination/snapshots/`에 저장되며, `keeper_server.xml` 파일의 `snapshot_storage_path`에 지정한 사용자 지정 경로에 저장될 수도 있습니다. 스냅샷 이름은 증가하는 순서로 지정되며(예: snapshot.23), 최신 스냅샷일수록 숫자가 더 큽니다.
+
+멀티 노드 클러스터에서는 각 Keeper 노드가 자체 스냅샷 디렉터리를 가집니다.
+
+<Note>
+  복구를 위해서는 노드 간 스냅샷의 일관성이 매우 중요합니다.
+</Note>
+
+<div id="symptoms">
+  ## 손상된 Keeper 스냅샷의 주요 증상과 징후
+</div>
+
+아래 표는 손상된 Keeper 스냅샷에서 흔히 나타나는 몇 가지 주요 증상과 징후를 보여줍니다:
+
+| **범주**          | **문제 유형**  | **확인할 사항**                                              |
+| --------------- | ---------- | ------------------------------------------------------- |
+| **운영 문제**       | 읽기 전용 모드   | 테이블이 예기치 않게 읽기 전용 모드로 전환됨                               |
+|                 | 쿼리 실패      | `Coordination::Exception` 오류와 함께 쿼리 실패가 지속적으로 발생함       |
+| **메타데이터 손상**    | 오래된 메타데이터  | 삭제된 테이블이 반영되지 않음. 오래된 메타데이터 때문에 작업이 실패함                 |
+| **리소스 과부하**     | 시스템 리소스 고갈 | Keeper 노드가 CPU, 메모리 또는 디스크 공간을 과도하게 사용함. 다운타임이 발생할 수 있음 |
+|                 | 디스크 공간 부족  | 스냅샷 생성 중 디스크 공간이 부족해짐                                   |
+| **Backup 및 복원** | Backup 실패  | 누락되었거나 일관되지 않은 Keeper 메타데이터로 인해 Backup이 실패함             |
+| **스냅샷 생성/전송**   | Keeper 크래시 | 스냅샷 생성 도중 Keeper 크래시 발생(&quot;SEGFAULT&quot; 오류 확인)     |
+|                 | 스냅샷 전송 손상  | 레플리카 간 스냅샷 전송 중 손상 발생                                   |
+|                 | 경쟁 상태      | 로그 컴팩션 중 경쟁 상태 발생 - 백그라운드 commit 스레드가 삭제된 로그에 접근함       |
+|                 | 네트워크 동기화   | 리더에서 팔로워로 스냅샷이 동기화되지 않게 하는 네트워크 문제                      |
+
+**로그 징후:**
+
+스냅샷 손상을 진단하기 전에 **Keeper 로그**에서 특정 오류 패턴을 확인하십시오:
+
+| **로그 유형**        | **확인할 사항**                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **스냅샷 손상 오류**    | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• 시작 시 스냅샷 serialization/loading 실패 |
+| **기타 Keeper 문제** | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• 동기화 또는 리더 선출 문제<br />• 로그 컴팩션 경쟁 상태                                                                                                                                                                                                                 |
+
+<div id="recovery-strategies">
+  ## 손상된 Keeper 스냅샷에서 복구하기
+</div>
+
+파일을 건드리기 전에 항상 다음 사항을 수행하십시오:
+
+1. 추가 손상을 방지하기 위해 모든 Keeper 노드를 중지합니다
+2. 전체 coordination 디렉터리를 안전한 위치에 복사해 모두 백업합니다
+3. 클러스터 정족수(quorum)를 확인하여 최소 1개의 노드에 정상 데이터가 있는지 검증합니다
+
+***
+
+<div id="restore-from-existing-backup">
+  ### 1. 기존 Backup에서 복원
+</div>
+
+다음에 해당하면 이 절차를 따르십시오:
+
+* Keeper 메타데이터(metadata) 또는 스냅샷 손상으로 인해 현재 데이터를 복구할 수 없습니다.
+* 정상 상태로 확인된 Keeper 상태가 포함된 Backup이 있습니다.
+
+기존 Backup을 복원하려면 아래 단계를 따르십시오:
+
+1. 메타데이터 일관성을 기준으로 가장 최신 Backup을 찾아 검증합니다.
+2. ClickHouse 및 Keeper 서비스를 종료합니다.
+3. Backup 디렉터리의 스냅샷 및 로그로 손상된 항목을 대체합니다.
+4. Keeper 클러스터를 다시 시작하고 메타데이터 동기화가 정상인지 검증합니다.
+
+<Tip>
+  **정기적으로 Backup하십시오**
+
+  Backup이 오래된 경우 최근 메타데이터 변경 사항이 손실될 수 있습니다. 따라서 정기적으로 Backup할 것을 권장합니다.
+</Tip>
+
+***
+
+<div id="rollback-to-older-snapshot">
+  ### 2. 이전 스냅샷으로 롤백
+</div>
+
+다음과 같은 경우 이 절차를 따르십시오.
+
+* 최근 스냅샷이 손상되었지만, 이전 스냅샷은 여전히 사용할 수 있습니다.
+* 일관된 복구에 필요한 증분 로그가 온전하게 유지되어 있습니다.
+
+이전 스냅샷으로 롤백하려면 아래 단계를 따르십시오.
+
+1. Keeper 디렉터리에서 유효한 이전 스냅샷(예: snapshot.19)을 찾아 선택합니다.
+2. 더 최신 스냅샷과 로그를 제거합니다.
+3. Keeper를 다시 시작하여 로그를 재생하고 메타데이터 상태를 복구합니다.
+
+<Warning>
+  **메타데이터 비동기화 위험**
+
+  스냅샷과 로그가 없거나 불완전하면 메타데이터가 비동기화될 위험이 있습니다.
+</Warning>
+
+***
+
+<div id="restore-metadata-with-system-restore-replica">
+  ### 3. `SYSTEM RESTORE REPLICA`를 사용해 메타데이터 복원
+</div>
+
+다음과 같은 경우 이 절차를 따르십시오.
+
+* Keeper 메타데이터가 유실되었거나 손상되었지만 테이블 데이터는 여전히 디스크에 남아 있는 경우
+* ZooKeeper/Keeper 메타데이터가 없어 테이블이 읽기 전용 모드로 전환된 경우
+* 로컬에서 사용 가능한 데이터 파트를 기반으로 Keeper 메타데이터를 다시 만들어야 하는 경우
+
+메타데이터를 복원하려면 아래 단계를 따르십시오.
+
+1. 구성의 `<path>`로 설정된 `clickHouse-server` 데이터 경로에 테이블 데이터가 로컬에 존재하는지 확인하십시오. (기본값: `/var/lib/clickhouse/data/`)
+
+2. 영향을 받는 각 테이블에 대해 다음을 실행하십시오.
+
+```sql
+SYSTEM RESTART REPLICA [db.]table_name;
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+3. 데이터베이스 수준 복구를 수행하는 경우(Replicated 데이터베이스 엔진 사용 시):
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA db_name;
+```
+
+4. 동기화가 완료될 때까지 기다리십시오:
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+5. `system.replicas`에서 `is_readonly = 0`인지 확인하고 `system.detached_parts`를 모니터링하여 복구를 검증합니다
+
+<Info>
+  **작동 방식**
+
+  `SYSTEM RESTORE REPLICA`는 기존의 모든 파트를 분리한 뒤 Keeper에 메타데이터를 다시 생성한 다음(새 빈 테이블인 것처럼), 모든 파트를 다시 연결합니다. 이렇게 하면 네트워크를 통해 데이터를 다시 다운로드하지 않아도 됩니다.
+</Info>
+
+<Warning>
+  **필수 조건**
+
+  이 방법은 로컬 데이터 파트가 온전한 경우에만 작동합니다. 데이터도 손상된 경우에는 대신 전략 #5(클러스터 재구축)를 사용하십시오.
+</Warning>
+
+***
+
+<div id="drop-and-recreate-replica-metadata">
+  ### 4. Keeper에서 레플리카 메타데이터 삭제 및 재생성
+</div>
+
+다음과 같은 경우 이 절차를 따르십시오:
+
+* 오류가 클러스터의 단일 레플리카에서 발생했고, Keeper의 메타데이터가 손상되었거나 일관되지 않은 경우
+* &quot;Part XXXXX intersects previous part YYYYY&quot;와 같은 오류가 발생하는 경우
+* 로컬 데이터는 유지하면서 레플리카의 Keeper 메타데이터를 완전히 재설정해야 하는 경우
+
+메타데이터를 삭제하고 다시 생성하려면 아래 단계를 따르십시오:
+
+1. 영향을 받은 레플리카에서 테이블을 detach합니다:
+
+```sql
+DETACH TABLE [db.]table_name;
+```
+
+2. Keeper에서 레플리카의 메타데이터를 제거합니다(임의의 레플리카에서 실행):
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/clickhouse/tables/{shard}/table_name';
+```
+
+올바른 ZooKeeper 경로를 찾으려면 다음과 같이 하십시오:
+
+```sql
+SELECT zookeeper_path, replica_name FROM system.replicas WHERE table = 'table_name';
+```
+
+3. 테이블을 다시 ATTACH합니다(읽기 전용 모드로 전환됩니다):
+
+```sql
+ATTACH TABLE [db.]table_name;
+```
+
+4. 레플리카 메타데이터를 복원합니다:
+
+```sql
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+5. 다른 레플리카와 동기화:
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+6. 복구 후 모든 레플리카에서 `system.detached_parts`를 확인합니다
+
+<Warning>
+  **영향을 받은 모든 레플리카에서 실행하십시오**
+
+  손상이 여러 레플리카에 영향을 미친 경우, 각 레플리카에서 이 단계를 순차적으로 반복하십시오.
+</Warning>
+
+<Tip>
+  **전체 데이터베이스에 적용하는 경우**
+
+  복제된 데이터베이스를 사용하는 경우에는 대신 `SYSTEM DROP REPLICA ... FROM DATABASE db_name`을 사용할 수 있습니다.
+</Tip>
+
+**대안: force&#95;restore&#95;data 플래그 사용**
+
+서버 시작 시 모든 복제된 테이블을 자동으로 복구하려면 다음을 수행하십시오.
+
+1. ClickHouse 서버를 중지합니다
+2. 복구 플래그를 생성합니다:
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+3. ClickHouse 서버를 시작합니다
+4. 서버가 자동으로 플래그를 삭제하고 모든 복제된 테이블을 복원합니다
+5. 로그를 확인하여 복구 진행 상황을 모니터링합니다
+
+이 방법은 여러 테이블을 동시에 복원해야 할 때 유용합니다.
+
+***
+
+<div id="rebuild-keeper-cluster">
+  ### 5. Keeper 클러스터 재구축
+</div>
+
+다음과 같은 경우 이 절차를 따르십시오.
+
+* 복구에 사용할 수 있는 유효한 스냅샷, 로그 또는 백업이 없습니다.
+* 전체 Keeper 클러스터와 해당 메타데이터를 다시 생성해야 합니다.
+
+아래 단계에 따라 Keeper 클러스터를 재구축하십시오.
+
+1. ClickHouse 클러스터와 Keeper 클러스터를 완전히 중지합니다.
+2. 스냅샷 및 로그 디렉터리를 정리하여 각 Keeper 노드를 초기화합니다.
+3. Keeper 노드 하나를 리더로 초기화한 다음, 다른 노드를 순차적으로 추가합니다.
+4. 외부 기록이 있는 경우 메타데이터를 다시 가져옵니다.
+
+<Warning>
+  **시간이 많이 소요되는 절차**
+
+  이 절차는 시간이 많이 소요되며 장시간 서비스 중단이 발생할 위험이 있습니다. 전체 데이터를 다시 구성해야 합니다.
+</Warning>

@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## TTL 규칙 및 제어
 </div>
 
-TTL은 ***결국*** 적용됩니다. 이 말은 무슨 뜻일까요? `MergeTree` 테이블 설정 [`merge_with_ttl_timeout`](/ko/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout)은 삭제 TTL이 있는 머지를 다시 수행하기 전까지의 최소 지연 시간을 초 단위로 지정합니다. 기본값은 14400초(4시간)입니다. 하지만 이는 최소 지연 시간일 뿐이며, 삭제 TTL용 머지가 트리거되기까지는 더 오래 걸릴 수 있습니다.
+TTL은 ***결국*** 적용됩니다. 이 말은 무슨 뜻일까요? `MergeTree` 테이블 설정 [`merge_with_ttl_timeout`](/ko/reference/settings/merge-tree-settings#merge_with_ttl_timeout)은 삭제 TTL이 있는 머지를 다시 수행하기 전까지의 최소 지연 시간을 초 단위로 지정합니다. 기본값은 14400초(4시간)입니다. 하지만 이는 최소 지연 시간일 뿐이며, 삭제 TTL용 머지가 트리거되기까지는 더 오래 걸릴 수 있습니다.
 
 다음 쿼리를 사용하면 현재 TTL 설정 전체(`merge_with_ttl_timeout` 등)를 확인할 수 있습니다:
 

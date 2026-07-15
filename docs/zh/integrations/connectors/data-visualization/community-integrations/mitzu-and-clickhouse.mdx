@@ -39,156 +39,136 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
 
 本指南仅简要介绍如何使用 Mitzu。更多详细信息，请参阅 [Mitzu 文档](https://docs.mitzu.io/)。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 收集您的连接信息
-</div>
+<Steps>
+  <Step title="准备好连接信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="登录或注册 Mitzu 账号" id="2-sign-in-or-sign-up-to-mitzu">
+    第一步，前往 [https://app.mitzu.io](https://app.mitzu.io) 注册。
 
-<div id="2-sign-in-or-sign-up-to-mitzu">
-  ## 2. 登录或注册 Mitzu
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="包含邮箱和密码字段的 Mitzu 登录页面" border />
+  </Step>
 
-第一步，请访问 [https://app.mitzu.io](https://app.mitzu.io) 进行注册。
+  <Step title="配置工作区" id="3-configure-your-workspace">
+    创建组织后，按照左侧边栏中的 `Set up your workspace` 入门指南进行操作。然后，点击 `Connect Mitzu with your data warehouse` 链接。
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="Mitzu 登录页面，包含电子邮箱和密码输入框" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="显示入门步骤的 Mitzu 工作区设置页面" border />
+  </Step>
 
-<div id="3-configure-your-workspace">
-  ## 3. 配置你的工作区
-</div>
+  <Step title="将 Mitzu 连接到 ClickHouse" id="4-connect-mitzu-to-clickhouse">
+    首先，选择 ClickHouse 作为连接类型，并填写连接详细信息。然后，点击 `Test connection & Save` 按钮以保存设置。
 
-创建组织后，请按照左侧边栏中的 `Set up your workspace` 入门引导完成设置。然后，点击 `Connect Mitzu with your data warehouse` 链接。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Mitzu 的 ClickHouse 连接设置页面，包含配置表单" border />
+  </Step>
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="显示入门步骤的 Mitzu 工作区设置页面" border />
+  <Step title="配置事件表" id="5-configure-event-tables">
+    保存连接后，选择 `Event tables` 选项卡并点击 `Add table` 按钮。在弹窗中，选择你的数据库以及要添加到 Mitzu 的表。
 
-<div id="4-connect-mitzu-to-clickhouse">
-  ## 4. 将 Mitzu 连接到 ClickHouse
-</div>
+    使用复选框至少选择一个表，然后点击 `Configure table` 按钮。这会打开一个弹窗，你可以在其中为每个表设置关键列。
 
-首先，选择 ClickHouse 作为连接类型，并填写连接信息。然后，点击 `Test connection & Save` 按钮保存设置。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="显示数据库表的 Mitzu 表选择界面" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Mitzu 的 ClickHouse 连接设置页面，包含配置表单" border />
+    <br />
 
-<div id="5-configure-event-tables">
-  ## 5. 配置事件表
-</div>
+    > 要在你的 ClickHouse 环境中运行产品分析，你需要 &gt; 在表中指定几个关键列。
+    >
+    > 具体如下：
+    >
+    > * **用户 ID** - 用于标识用户唯一身份的列。
+    > * **事件时间** - 事件的时间戳列。
+    > * 可选&#91;**事件名称**&#93; - 如果该表包含多种事件类型，此列会对事件进行分段。
 
-保存连接后，选择 `Event tables` 选项卡并点击 `Add table` 按钮。在弹窗中，选择你的数据库以及要添加到 Mitzu 的表。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="显示列映射选项的 Mitzu 事件目录配置" border />
 
-使用复选框至少选择一个表，然后点击 `Configure table` 按钮。这会打开一个弹窗，你可以在其中为每个表设置关键列。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="显示数据库表的 Mitzu 表选择界面" border />
+    所有表都配置完成后，点击 `Save & update event catalog` 按钮，Mitzu 将从上述已定义的表中识别所有事件及其属性。根据你的数据集大小，此步骤可能需要几分钟时间。
+  </Step>
 
-<br />
+  <Step title="执行分群查询" id="4-run-segmentation-queries">
+    在 Mitzu 中进行用户分群和在 Amplitude、Mixpanel 或 PostHog 中一样简单。
 
-> 要在你的 ClickHouse 环境中运行产品分析，你需要 &gt; 在表中指定几个关键列。
->
-> 具体如下：
->
-> * **用户 ID** - 用于标识用户唯一身份的列。
-> * **事件时间** - 事件的时间戳列。
-> * 可选[**事件名称**] - 如果该表包含多种事件类型，此列会对事件进行分段。
+    Explore 页面左侧是事件选择区域，顶部区域则用于配置时间范围。
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="显示列映射选项的 Mitzu 事件目录配置" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="包含事件选择和时间配置的 Mitzu 分群查询界面" border />
 
-<br />
+    <br />
 
-所有表都配置完成后，点击 `Save & update event catalog` 按钮，Mitzu 将从上述已定义的表中识别所有事件及其属性。根据你的数据集大小，此步骤可能需要几分钟时间。
+    <Tip>
+      **过滤与细分**
 
-<div id="4-run-segmentation-queries">
-  ## 4. 运行细分查询
-</div>
+      筛选方式很直观：选择一个属性 (ClickHouse 列) ，然后从下拉列表中选择你想用于过滤的值。
+      你可以选择任意事件属性或用户属性进行细分 (有关如何集成用户属性，请参见下文) 。
+    </Tip>
+  </Step>
 
-Mitzu 中的用户细分和在 Amplitude、Mixpanel 或 PostHog 中一样简单。
+  <Step title="执行漏斗查询" id="5-run-funnel-queries">
+    最多可为漏斗选择 9 个步骤。选择一个时间窗口，让用户在该时间范围内完成漏斗。
+    无需编写任何 SQL 代码，即可立即获得转化率洞察。
 
-Explore 页面左侧是事件选择区域，顶部区域则用于配置时间范围。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="显示各步骤之间转化率的 Mitzu 漏斗分析视图" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="Mitzu 细分查询界面，包含事件选择和时间配置" border />
+    <br />
 
-<br />
+    <Tip>
+      **可视化趋势**
 
-<Tip>
-  **过滤器和细分维度**
+      选择 `Funnel trends` 以可视化漏斗随时间变化的趋势。
+    </Tip>
+  </Step>
 
-  过滤方式与预期一致：选择一个属性 (ClickHouse 列) ，然后从下拉列表中选取要过滤的值。
-  你可以选择任何事件属性或用户属性作为细分维度 (有关如何集成用户属性，请参见下文) 。
-</Tip>
+  <Step title="运行留存查询" id="6-run-retention-queries">
+    最多可为留存率计算选择 2 个步骤。为循环窗口选择留存窗口，以便
+    无需编写任何一行 SQL 代码，即可立即获得转化率洞察。
 
-<div id="5-run-funnel-queries">
-  ## 5. 运行漏斗查询
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="显示群组留存率的 Mitzu 留存分析" border />
 
-最多可为一个漏斗选择 9 个步骤。选择用户完成漏斗的时间窗口。
-无需编写任何 SQL 代码，即可立即了解转化率。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="显示各步骤间转化率的 Mitzu 漏斗分析视图" border />
+    <Tip>
+      **群组留存**
 
-<br />
+      选择 `Weekly cohort retention`，即可查看留存率如何随时间变化。
+    </Tip>
+  </Step>
 
-<Tip>
-  **可视化趋势**
+  <Step title="执行旅程查询" id="7-run-journey-queries">
+    最多可为漏斗选择 9 个步骤。选择一个时间窗口，用于限定用户完成这一旅程的时间。Mitzu 旅程图表会以可视化方式展示用户在所选事件之间经过的每一条路径。
 
-  选择 `Funnel trends` 可查看漏斗趋势随时间的变化。
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="展示事件之间用户路径流转的 Mitzu 旅程可视化" border />
 
-<div id="6-run-retention-queries">
-  ## 6. 运行留存查询
-</div>
+    <br />
 
-最多可选择 2 个步骤来计算留存率。为循环窗口选择留存时间窗口
-无需编写任何 SQL 代码，即可立即获得转化率洞察。
+    <Tip>
+      **细分步骤**
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="Mitzu 留存分析显示 Cohort 留存率" border />
+      你可以为 `Break down` 分段选择一个属性，以区分处于同一步骤中的用户。
+    </Tip>
 
-<br />
+    <br />
+  </Step>
 
-<Tip>
-  **Cohort 留存**
+  <Step title="执行营收查询" id="8-run-revenue-queries">
+    如果已配置收入相关设置，Mitzu 可以根据你的支付事件计算总 MRR 和订阅数量。
 
-  选择 `Weekly cohort retention`，即可查看留存率随时间推移的变化。
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="显示 MRR 指标的 Mitzu 收入分析仪表板" border />
+  </Step>
 
-<div id="7-run-journey-queries">
-  ## 7. 运行旅程查询
-</div>
+  <Step title="原生 SQL" id="9-sql-native">
+    Mitzu 采用原生 SQL，这意味着它会根据你在 Explore 页面中选择的配置生成原生 SQL 代码。
 
-最多可为漏斗选择 9 个步骤。选择用户完成该旅程的时间窗口。Mitzu 旅程图表会以可视化方式展示用户在所选事件之间经历的各条路径。
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="显示原生 ClickHouse 查询的 Mitzu SQL 代码生成视图" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="显示用户在事件之间路径流转的 Mitzu 旅程可视化" border />
+    <br />
 
-<br />
+    <Tip>
+      **在 BI 工具中继续工作**
 
-<Tip>
-  **细分步骤**
-
-  你可以为 `Break down` 细分选择一个属性，以区分处于同一步骤中的用户。
-</Tip>
-
-<br />
-
-<div id="8-run-revenue-queries">
-  ## 8. 运行营收查询
-</div>
-
-如果已配置营收设置，Mitzu 可以根据支付事件计算总 MRR 和订阅数量。
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="显示 MRR 指标的 Mitzu 营收分析仪表板" border />
-
-<div id="9-sql-native">
-  ## 9. 原生 SQL
-</div>
-
-Mitzu 采用原生 SQL，这意味着它会根据你在 Explore 页面中选择的配置生成原生 SQL 代码。
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="显示原生 ClickHouse 查询的 Mitzu SQL 代码生成视图" border />
-
-<br />
-
-<Tip>
-  **在 BI 工具中继续操作**
-
-  如果你在 Mitzu UI 中遇到限制，请复制 SQL 代码并转到 BI 工具中继续操作。
-</Tip>
+      如果你遇到 Mitzu UI 的限制，请复制 SQL 代码并在 BI 工具中继续工作。
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="mitzu-support">
   ## Mitzu 支持

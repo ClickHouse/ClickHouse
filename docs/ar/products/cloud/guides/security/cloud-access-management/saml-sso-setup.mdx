@@ -34,23 +34,17 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 </div>
 
 <Steps>
-  <Step>
-    ### الوصول إلى إعدادات المؤسسة
-
+  <Step title="الوصول إلى إعدادات المؤسسة" id="access-organization-settings">
     انقر على اسم مؤسستك في الزاوية السفلية اليسرى، ثم اختر «تفاصيل المؤسسة».
   </Step>
 
-  <Step>
-    ### تمكين تسجيل الدخول الأحادي عبر SAML
-
+  <Step title="تمكين تسجيل الدخول الأحادي عبر SAML" id="enable-saml-sso">
     انقر على زر التبديل بجوار `Enable SAML single sign-on`. اترك هذه الشاشة مفتوحة لأنك ستحتاج إلى الرجوع إليها عدة مرات أثناء عملية الإعداد.
 
     <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="بدء إعداد SAML" force />
   </Step>
 
-  <Step>
-    ### أنشئ تطبيقًا في موفّر الهوية لديك
-
+  <Step title="أنشئ تطبيقًا في موفّر الهوية لديك" id="create-idp-application">
     أنشئ تطبيقًا في موفّر الهوية لديك، ثم انسخ القيم الظاهرة في شاشة `Enable SAML single sign-on` إلى إعدادات موفّر الهوية. لمزيد من المعلومات حول هذه الخطوة، راجع موفّر الهوية المناسب أدناه.
 
     * [إعداد Okta SAML](#configure-okta-saml)
@@ -65,43 +59,33 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="إنشاء تطبيق موفّر الهوية" force />
   </Step>
 
-  <Step>
-    ### أضِف `Metadata URL` إلى إعدادات SAML لديك
-
+  <Step title="أضِف `Metadata URL` إلى إعدادات SAML لديك" id="add-metadata-url">
     احصل على `Metadata URL` من موفّر SAML لديك. ثم عُد إلى ClickHouse Cloud، وانقر على `Next: Provide metadata URL` والصق عنوان URL في مربع النص.
 
     <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="إضافة عنوان URL للبيانات الوصفية" force />
   </Step>
 
-  <Step>
-    ### الحصول على رمز التحقق من النطاق
-
+  <Step title="الحصول على رمز التحقق من النطاق" id="get-domain-verification-code">
     انقر على `Next: Verify your domains`. أدخل نطاقك في مربع النص، ثم انقر على `Check domain`. سينشئ النظام رمز تحقق عشوائيًا لتضيفه إلى سجل TXT لدى مزود DNS الخاص بك.
 
     <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="أضف نطاقًا للتحقق منه" force />
   </Step>
 
-  <Step>
-    ### تحقّق من نطاقك
-
+  <Step title="تحقّق من نطاقك" id="verify-your-domain">
     أنشئ سجل TXT لدى موفّر DNS الخاص بك. انسخ `TXT record name` إلى حقل اسم سجل TXT لدى موفّر DNS الخاص بك. انسخ `Value` إلى حقل المحتوى لدى موفّر DNS الخاص بك. انقر على `Verify and Finish` لإتمام العملية.
 
     <Note>
-      قد يستغرق تحديث سجل DNS والتحقّق منه عدة دقائق. يمكنك مغادرة صفحة الإعداد والعودة لاحقًا لإتمام العملية دون الحاجة إلى البدء من جديد.
+      قد يستغرق تحديث سجل DNS والتحقّق منه عدة دقائق. يمكنك مغادرة صفحة الإعداد والعودة لاحقًا لإتمام العملية دون الحاجة إلى البدء من جديد. تظل قيمة التحقق صالحة لمدة 48 ساعة من وقت إنشائها لأول مرة.
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="تحقّق من نطاقك" force />
   </Step>
 
-  <Step>
-    ### تحديث الدور الافتراضي ومهلة انتهاء الجلسة
-
+  <Step title="تحديث الدور الافتراضي ومهلة انتهاء الجلسة" id="update-defaults">
     بعد اكتمال إعداد SAML، يمكنك تعيين الدور الافتراضي (أو الأدوار الافتراضية) الذي سيُسنَد إلى جميع المستخدمين عند تسجيل الدخول، كما يمكنك ضبط إعدادات مهلة انتهاء الجلسة. للاطلاع على قائمة بأدوار النظام المتاحة التي يمكن إسنادها، يُرجى مراجعة [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles).
   </Step>
 
-  <Step>
-    ### إعداد مستخدم Admin الخاص بك
-
+  <Step title="إعداد مستخدم Admin الخاص بك" id="configure-your-admin-user">
     <Note>
       سيُحتفَظ بالمستخدمين الذين جرى إعدادهم باستخدام طريقة مصادقة مختلفة إلى أن يزيلهم مسؤول في مؤسستك.
     </Note>
@@ -126,9 +110,7 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
     </Tip>
   </Step>
 
-  <Step>
-    ### إزالة طرق المصادقة الأخرى
-
+  <Step title="إزالة طرق المصادقة الأخرى" id="remove-other-auth-methods">
     أزل أي مستخدمين يستخدمون طريقة غير SAML لإكمال التكامل، وقيّد الوصول ليقتصر فقط على المستخدمين القادمين عبر اتصال موفّر الهوية لديك.
   </Step>
 </Steps>
@@ -229,8 +211,8 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
   6. أدخل ACS URL وEntity ID أدناه.
 
-     | Field     | Value                                      |
-     | --------- | ------------------------------------------ |
+     | Field     | Value                                          |
+     | --------- | ---------------------------------------------- |
      | ACS URL   | انسخ Single Sign-On URL من وحدة التحكم         |
      | Entity ID | انسخ Service Provider Entity ID من وحدة التحكم |
 
@@ -265,7 +247,7 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
   1. سجّل الدخول إلى مركز إدارة Microsoft Entra.
 
-  2. انتقل إلى **Applications &gt; Enterprise applications** في الجهة اليسرى.
+  2. انتقل إلى **Applications &gt; Enterprise** applications في الجهة اليسرى.
 
   3. انقر على **New application** في القائمة العلوية.
 
@@ -285,8 +267,8 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
      | الحقل                                           | القيمة                                                          |
      | ----------------------------------------------- | --------------------------------------------------------------- |
-     | المعرّف (معرّف الكيان)                          | انسخ Service Provider Entity ID من وحدة التحكم                      |
-     | عنوان URL للرد (عنوان URL لخدمة مستهلك التأكيد) | انسخ Single Sign-On URL من وحدة التحكم                              |
+     | المعرّف (معرّف الكيان)                          | انسخ Service Provider Entity ID من وحدة التحكم                  |
+     | عنوان URL للرد (عنوان URL لخدمة مستهلك التأكيد) | انسخ Single Sign-On URL من وحدة التحكم                          |
      | عنوان URL لتسجيل الدخول                         | `https://console.clickhouse.cloud/?connection={organizationid}` |
      | Relay State                                     | فارغ                                                            |
      | عنوان URL لتسجيل الخروج                         | فارغ                                                            |

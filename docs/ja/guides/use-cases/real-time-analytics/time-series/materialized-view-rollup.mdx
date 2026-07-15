@@ -20,9 +20,7 @@ doc_type: 'guide'
 * 生のすべての行を毎回再スキャンすることなく、**安定してサブ秒で読み取り**たい。
 
 <Steps>
-  <Step>
-    ## raw eventsテーブルを作成する
-
+  <Step title="raw eventsテーブルを作成する" id="create-raw-events-table">
     ```sql
     CREATE TABLE events_raw
     (
@@ -46,16 +44,14 @@ doc_type: 'guide'
     * `TTL` により、90日後に生データがクリーンアップされます (保持要件に合わせて調整してください) 。
   </Step>
 
-  <Step>
-    ## ロールアップ (集計済み) テーブルを設計する
-
+  <Step title="ロールアップ (集計済み) テーブルを設計する" id="design-rollup">
     **時間単位**の粒度で事前集計します。
     粒度は、最も一般的な分析期間に合わせて選択してください。
 
     ```sql
     CREATE TABLE events_rollup_1h
     (
-        bucket_start  DateTime,            -- 時間の開始
+        bucket_start  DateTime,            -- start of the hour
         country       LowCardinality(String),
         event_type    LowCardinality(String),
         users_uniq    AggregateFunction(uniqExact, UInt64),
@@ -71,9 +67,7 @@ doc_type: 'guide'
     **aggregate states** (例: `AggregateFunction(sum, ...)`) を保存します。これは部分的な集計結果をコンパクトに表現するもので、後からマージしたり最終化したりできます。
   </Step>
 
-  <Step>
-    ## ロールアップを生成する materialized view を作成する
-
+  <Step title="ロールアップを生成する materialized view を作成する" id="create-materialized-view-to-populate-rollup">
     この materialized view は `events_raw` への挿入時に自動的にトリガーされ、**集計状態**をロールアップに書き込みます。
 
     ```sql
@@ -93,9 +87,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## サンプルデータを挿入する
-
+  <Step title="サンプルデータを挿入する" id="insert-some-sample-data">
     サンプルデータを挿入します。
 
     ```sql
@@ -107,9 +99,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ロールアップのクエリ
-
+  <Step title="ロールアップのクエリ" id="querying-the-rollup">
     集約状態は、読み取り時に**マージ**することも、**確定**することもできます。
 
     <Tabs>
@@ -157,9 +147,7 @@ doc_type: 'guide'
     </Tip>
   </Step>
 
-  <Step>
-    ## 最適なパフォーマンスを得るには、主キー内のフィールドでフィルタリングします
-
+  <Step title="最適なパフォーマンスを得るには、主キー内のフィールドでフィルタリングします" id="filtering-performance">
     `EXPLAIN` コマンドを使うと、索引を使ってどのようにデータが絞り込まれるかを確認できます。
 
     ```sql title="Query"
@@ -204,9 +192,7 @@ doc_type: 'guide'
     フィルタリング性能を最大限に引き出すには、クエリで主キーのフィールドを使ってデータを絞り込めるようにしてください。
   </Step>
 
-  <Step>
-    ## よくあるバリエーション
-
+  <Step title="よくあるバリエーション" id="common-variations">
     * **異なる粒度**: 日次のロールアップを追加します:
 
     ```sql
@@ -248,16 +234,12 @@ doc_type: 'guide'
     * **バックフィル**: 履歴データを読み込む際は、`events_raw` に insert して、materialized view でロールアップを自動的に構築させます。既存の行に対しては、適切であれば materialized view 作成時に `POPULATE` を使うか、`INSERT SELECT` を使用します。
   </Step>
 
-  <Step>
-    ## クリーンアップと保持期間
-
+  <Step title="クリーンアップと保持期間" id="clean-up-and-retention">
     * 生データの有効期限 (TTL) は延ばし (例: 30/90 日) 、ロールアップはより長く保持します (例: 1 年) 。
     * 階層化が有効になっている場合は、**TTL to move** を使って古いパーツをより低コストなストレージに移動することもできます。
   </Step>
 
-  <Step>
-    ## トラブルシューティング
-
+  <Step title="トラブルシューティング" id="troubleshooting">
     * materialized view が更新されない場合は、挿入先が **events&#95;raw** (ロールアップテーブルではなく) になっていること、および materialized view のターゲットが正しいこと (`TO events_rollup_1h`) を確認してください。
     * クエリが遅い場合は、ロールアップが使われていること (ロールアップテーブルを直接クエリする) と、時間フィルターがロールアップの粒度に合っていることを確認してください。
     * バックフィルに不整合がある場合は、`SYSTEM FLUSH LOGS` を実行し、`system.query_log` / `system.parts` を確認して、insert と merge が行われていることを確かめてください。

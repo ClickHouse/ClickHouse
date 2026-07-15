@@ -79,13 +79,13 @@ FROM bits
 
 تحسب عدد البِتّات التي تساوي 1 في التمثيل الثنائي لعدد.
 
-**الصيغة**
+**الصياغة**
 
 ```sql
 bitCount(x)
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * `x` — قيمة عدد صحيح أو عدد فاصلة عائمة. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
@@ -464,14 +464,13 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, 
 bitSlice(s, offset[, length])
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * `s` — قيمة `String` أو `Fixed String` المراد اقتطاع جزء منها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `offset` —
   موضع البت الابتدائي (بفهرسة تبدأ من 1).
 * القيم الموجبة: يبدأ العد من بداية السلسلة النصية.
 * القيم السالبة: يبدأ العد من نهاية السلسلة النصية.
-
   [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 * `length` —
   اختياري. عدد البتات المطلوب استخراجها.

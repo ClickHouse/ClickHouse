@@ -1,0 +1,280 @@
+---
+title: 'ランブック: JSON スキーマ'
+description: 'ClickHouse で JSON データに適したスキーマアプローチを選択する — 型付きカラム、ハイブリッド、ネイティブ JSON、または String ストレージ'
+date: 2026-03-20
+tags: ['ランブック', 'データモデリング']
+keywords: ['JSON', 'JSON type', 'schema design', 'type hints', 'max_dynamic_paths', 'semi-structured data', 'dynamic schema', 'JSONAsObject']
+---
+
+<Note>
+  JSONカラム型は ClickHouse 25.3+ から本番環境で利用可能です。これより前のバージョンは本番利用には推奨されません。
+</Note>
+
+データが JSON として届く場合、ClickHouse には、完全に型付けされたカラムから生の String まで、複数の保存方法があります。どの方法が適切かは、スキーマがどの程度予測可能か、またフィールドレベルのクエリが必要かどうかによって決まります。
+
+**Scope:** このページでは、JSON データを保存する際のスキーマ設計上の判断を扱います。[JSON 入出力フォーマット](/ja/reference/formats/JSON/JSON)、[JSON 関数](/ja/reference/functions/regular-functions/json-functions)、クエリ構文は扱いません。JSONカラム型そのものについては、[Use JSON where appropriate](/ja/concepts/best-practices/json-type) を参照してください。
+
+**Assumes:** [ClickHouse table creation](/ja/reference/statements/create/table)、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) の基本、およびカラム型の構文を理解していることを前提としています。
+
+<div id="quick-decision">
+  ## クイック判断
+</div>
+
+* **すべてのフィールド** の型が既知かつ安定しており、スキーマもほとんど変わらない場合
+  **→** [型付きカラム](#typed-columns)
+* **ほとんどのフィールド** は安定しているものの、一部が動的または予測しにくい場合
+  **→** [ハイブリッド (typed + JSON)](#hybrid)
+* **構造全体** が動的で、レコードごとに現れたり消えたりするキーがある場合
+  **→** [ネイティブ JSON カラム](#native-json)
+* **動的フィールド** がキー・バリューのペアで、値の型が一貫している場合 (例: 文字列のタグ、数値メトリクス)
+  **→** JSON ではなく [`Map`](#when-map-fits-better)
+* **JSONブロブ** を保存・取得するだけで、フィールドレベルのクエリ を行わない場合
+  **→** [不透明な String ストレージ](#opaque-storage)
+
+<Note>
+  JSON *フォーマット* と JSON *カラム型* を混同しないでください。`JSON` カラム型をまったく使わなくても、JSON形式のデータ (`JSONEachRow` など) を typed columns に挿入できます。ここでの判断対象は input format ではなく、カラム型です。
+</Note>
+
+<div id="approach-details">
+  ## アプローチの詳細
+</div>
+
+<div id="typed-columns">
+  ### 型付きカラム
+</div>
+
+**使用する場面:** JSON の構造が設計時点で完全にわかっている場合。フィールドや型がレコードごとに変わりません。複雑なネスト構造 (オブジェクトの配列やネストしたマップ) であっても、[`Array`](/ja/reference/data-types/array)、[`Tuple`](/ja/reference/data-types/tuple)、[`Nested`](/ja/reference/data-types/nested-data-structures/index) 型で表現できます。
+
+**トレードオフ:** スキーマの変更には `ALTER TABLE` が必要です。想定外のフィールドは、スキーマを更新しない限り、INSERT 時にエラーなく破棄されます。
+
+<Accordion title="セットアップ、検証、注意点">
+  **セットアップ**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp` DateTime,
+      `service`   LowCardinality(String),
+      `level`     Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`   String,
+      `host`      LowCardinality(String),
+      `duration_ms` UInt32
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **検証**
+
+  ```sql
+  -- カラム型が想定どおりであることを確認
+  DESCRIBE TABLE events FORMAT Vertical
+
+  -- スキーマがデータを正しく扱えることを確認するため、insert とクエリを実行
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42}
+
+  SELECT service, level, duration_ms FROM events WHERE service = 'api'
+  ```
+
+  **注意点**
+
+  * `JSONEachRow` で JSON データを insert する際、その JSON にスキーマに存在しないフィールドが含まれている場合、ClickHouse は既定でそれらをエラーなく破棄します。代わりにエラーにしたい場合は、[`input_format_skip_unknown_fields`](/ja/reference/settings/formats#input_format_skip_unknown_fields) を `0` に設定してください。
+</Accordion>
+
+***
+
+<div id="hybrid">
+  ### ハイブリッド (型付きカラム + JSON)
+</div>
+
+**使用する場面:** 主要なフィールド群 (timestamp、ID、ステータスコードなど) は安定している一方で、ペイロードの一部が動的な場合です。たとえば、ユーザー定義の属性、タグ、メタデータ、またはレコードごとに異なる拡張フィールドなどが該当します。
+
+**トレードオフ:** 型付きカラムでは高いパフォーマンスを得られ、JSONカラムでは柔軟性を確保できます。一方で、JSONカラムの動的な部分には、依然として insert のオーバーヘッドとストレージコストが伴います。
+
+<Accordion title="セットアップ、検証、注意点">
+  **セットアップ**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp`  DateTime,
+      `service`    LowCardinality(String),
+      `level`      Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`    String,
+      `host`       LowCardinality(String),
+      `duration_ms` UInt32,
+      `attributes` JSON(
+          max_dynamic_paths = 256,
+          `http.status_code` UInt16,
+          `http.method` LowCardinality(String),
+          SKIP REGEXP 'debug\..*'
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **検証**
+
+  ```sql
+  -- サンプルデータを挿入し、推論されたパスを確認する
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42,"attributes":{"http.status_code":200,"http.method":"GET","user.region":"eu-west","custom_tag":"abc"}}
+
+  SELECT JSONAllPathsWithTypes(attributes)
+  FROM events
+  FORMAT PrettyJSONEachRow
+  ```
+
+  **注意点**
+
+  * あらかじめ把握している JSONパス には [型ヒント](/ja/reference/data-types/newjson) を使ってください。型ヒントを使うと判別子カラムを介さず、そのパスは通常の型付きカラムと同じように格納され、同等のパフォーマンスが得られ、オーバーヘッドも発生しません。
+  * クエリしないパス (デバッグ用メタデータ、内部 tracing ID など) には `SKIP` または `SKIP REGEXP` を使い、ストレージを節約して subcolumn 数を減らしてください。
+  * `max_dynamic_paths` は、実際にクエリする distinct path の数に応じて設定してください。デフォルト値 (1024) はほとんどのケースで十分です。動的な部分が小さい場合は、より低い値にしてください。
+  * `max_dynamic_paths` を 10,000 より大きく設定しないでください。値を大きくしすぎると resource 消費が増え、効率が低下します。
+
+  <Info>
+    **ドット付きキー**
+
+    ドットを含むキー (例: `http.status_code`) は、デフォルトではネストされたパスとして扱われるため、`{"http.status_code": 200}` は `{"http": {"status_code": 200}}` と同じ形で格納されます。これは OTel の属性で一般的です。型ヒントを使ってドット付きパスの格納方法を制御するか、`json_type_escape_dots_in_keys` (25.8+) を有効にしてください。
+  </Info>
+</Accordion>
+
+***
+
+<div id="native-json">
+  ### ネイティブ JSON カラム
+</div>
+
+**使用する場面:** 構造が本質的に予測不能で、キーがレコードごとに現れたり消えたりする場合。ユーザー生成スキーマ、プラグインシステム、またはアップストリームのスキーマを制御できないデータレイクへのインジェストなどが該当します。
+
+**トレードオフ:** 型付きカラムより挿入が遅くなります。String よりオブジェクト全体の読み取りが遅くなります。サブカラム管理によるストレージのオーバーヘッドがあります。特定のパスに対するフィールドレベルのクエリには適しています。
+
+<Accordion title="セットアップ、検証、注意点">
+  **セットアップ**
+
+  ```sql
+  CREATE TABLE dynamic_events
+  (
+      `id`   UInt64,
+      `ts`   DateTime DEFAULT now(),
+      `data` JSON(
+          max_dynamic_paths = 512,
+          `event_type` LowCardinality(String),
+          `version` UInt8
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (data.event_type, ts)
+  ```
+
+  JSON カラムに JSON ドキュメント全体を挿入する場合は、[`JSONAsObject`](/ja/reference/formats/JSON/JSONAsObject) フォーマットを使用します。各入力行を、カラムにマッピングされる完全な JSON オブジェクトとして扱います。
+
+  **検証**
+
+  ```sql
+  INSERT INTO dynamic_events (id, data) FORMAT JSONEachRow
+  {"id": 1, "data": {"event_type": "click", "version": 2, "page": "/home", "button_id": "cta-1"}}
+  {"id": 2, "data": {"event_type": "purchase", "version": 1, "item_id": "SKU-99", "amount": 49.99, "currency": "USD"}}
+
+  -- ClickHouse が検出したパスとその型を確認する
+  SELECT JSONAllPathsWithTypes(data) FROM dynamic_events FORMAT PrettyJSONEachRow
+
+  -- 特定のパスをクエリする
+  SELECT data.page FROM dynamic_events WHERE data.event_type = 'click'
+  ```
+
+  **注意事項**
+
+  * 型ヒントがない場合、ClickHouse は最初に確認した値をもとにパスごとに型を推論します。あるレコードでは `score` が `"10"` (文字列) として届き、別のレコードでは `10` (整数) として届くと、そのパスには判別子カラムが作成され、クエリが遅くなります。型が分かっているパスにはヒントを追加してください。
+  * パス数が `max_dynamic_paths` を超えると、overflow 値はクエリパフォーマンスが低下する [共有データ構造](/ja/reference/data-types/newjson#shared-data-structure) に移されます。[`JSONDynamicPaths()`](/ja/reference/data-types/newjson#introspection-functions) で監視し、上限は 10,000 未満に保ってください。
+  * 各動的パスは、最大 `max_dynamic_types` (デフォルトは 32) の異なるデータ型をサポートします。1 つのパスがこれを超えると、追加の型は共有 variant ストレージにフォールバックします。これは、同じフィールドで型の不一致が非常に多いデータでない限り、問題になることはほとんどありません。
+</Accordion>
+
+***
+
+<div id="opaque-storage">
+  ### 不透明な String ストレージ
+</div>
+
+**使用する場面:** JSON ドキュメントを丸ごと保存・取得し、そのままアプリケーションに渡したり、アーカイブしたり、下流へ転送したりする場合。ClickHouse 内ではフィールド単位のフィルタリングや集約は行いません。
+
+**トレードオフ:** 挿入が最速で、スキーマも最もシンプルです。実行時にパースする (`JSONExtract` ファミリーを使う) 以外にフィールドレベルのクエリはできず、これを大規模に行うと低速です。
+
+<Accordion title="セットアップ、検証、注意点">
+  **セットアップ**
+
+  ```sql
+  CREATE TABLE raw_events
+  (
+      `id`        UInt64,
+      `received`  DateTime DEFAULT now(),
+      `payload`   String
+  )
+  ENGINE = MergeTree
+  ORDER BY (received)
+  ```
+
+  **検証**
+
+  ```sql
+  INSERT INTO raw_events (id, payload) VALUES
+  (1, '{"type":"click","page":"/home"}'),
+  (2, '{"type":"purchase","item":"SKU-99","amount":49.99}')
+
+  -- データが損なわれずに往復変換できることを確認
+  SELECT payload FROM raw_events WHERE id = 1
+
+  -- 必要なときにその場でフィールドをパースできることを確認
+  SELECT JSONExtractString(payload, 'type') AS event_type FROM raw_events
+  ```
+
+  **注意点**
+
+  * 要件が変わって後からフィールド単位のクエリが必要になった場合は、型付きカラムまたは JSON カラムを持つ新しいテーブルを作成し、データをバックフィルする必要があります。個々のフィールドをクエリする可能性が少しでもあるなら、代わりに[ハイブリッド方式](#hybrid)から始めてください。
+  * `JSONExtract` 関数は、クエリのたびに文字列をパースします。アドホックな調査には許容できますが、本番のダッシュボードや高 QPS のワークロードには向きません。
+  * JSON ペイロードが大きい場合は、String カラムに圧縮 codec (`ZSTD`) を使うことを検討してください。高い圧縮効果が得られます。
+</Accordion>
+
+<div id="comparison">
+  ## 比較
+</div>
+
+| 比較項目              | 型付きカラム             | ハイブリッド                      | Native JSON                  | String           |
+| ----------------- | ------------------ | --------------------------- | ---------------------------- | ---------------- |
+| **挿入スループット**      | 最速                 | 高速                          | 中程度                          | 最速               |
+| **フィールドレベルのクエリ**  | 最速                 | 高速 (型付き) ; 良好 (ヒント付き JSON)  | 良好 (ヒント付き) ; やや低速 (Dynamic)  | 低速 (ランタイムでのパース)  |
+| **オブジェクト全体の読み取り** | 高速                 | 中程度                         | 低速                           | 最速               |
+| **ストレージ効率**       | 最良                 | 良好                          | 中程度                          | 良好 (圧縮効率が高い)     |
+| **スキーマの柔軟性**      | なし (`ALTER TABLE`) | 部分的 (固定的なコア、柔軟なテール)         | 完全                           | 完全               |
+| **複雑さ**           | 低                  | 中                           | 中～高                          | 低                |
+
+<div id="when-map-fits-better">
+  ## Map のほうが適している場合
+</div>
+
+動的フィールドが均質なキー・バリューのペアで構成されており、すべての値が同じ型である場合は、JSON カラムよりも [`Map(String, T)`](/ja/reference/data-types/map) のほうがシンプルで効率的です。一般的な例としては、文字列タグ (`Map(String, String)`) 、数値メトリクス (`Map(String, Float64)`) 、機能フラグ (`Map(String, Bool)`) があります。
+
+```sql
+CREATE TABLE tagged_events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `tags`      Map(String, String)  -- e.g., {"env": "prod", "region": "us-east-1", "team": "platform"}
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+`Map` はキー単位のフィルタリング (`tags['env'] = 'prod'`) をサポートし、JSON より低コストで保存でき、JSON type のサブカラムによるオーバーヘッドも回避できます。なお、デフォルトではキーのルックアップ時に `Map` が線形スキャンされます。小規模なタグセットであれば問題ありませんが、100 個以上のキーを持つ map では [`with_buckets` シリアライゼーション](/ja/reference/data-types/map#bucketed-map-serialization) を検討してください。値の型が混在している場合や構造がネストしている場合は JSON を使用し、フラットなキー・バリューのペアで値の型が uniform な場合は `Map` を使用してください。
+
+<div id="related-resources">
+  ## 関連リソース
+</div>
+
+* [Use JSON where appropriate](/ja/concepts/best-practices/json-type) — JSON カラム型を代替手段と比較して、どのような場合に使うべきか
+* [JSON data type リファレンス](/ja/reference/data-types/newjson) — 型ヒント、SKIP、max&#95;dynamic&#95;paths、イントロスペクション関数の完全な構文
+* [データ型の選び方](/ja/concepts/best-practices/select-data-type) — データ型を選ぶ際の一般的なガイダンス
+* [ClickHouse の新しい強力な JSON データ型](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse) — JSON 型のストレージアーキテクチャを詳しく解説
+* [JSON フォーマットのリファレンス](/ja/reference/formats/JSON/JSON) — JSON データ用の入出力フォーマット (JSONEachRow、JSONAsObject など)

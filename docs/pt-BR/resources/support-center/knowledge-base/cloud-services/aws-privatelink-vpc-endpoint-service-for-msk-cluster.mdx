@@ -1,0 +1,204 @@
+---
+title: Serviço de endpoint de VPC do AWS PrivateLink para cluster MSK
+description: Etapas de configuração para expor um cluster MSK ao ClickPipes por meio de serviços de endpoint de VPC do AWS PrivateLink.
+date: 2026-07-09
+tags: ['Segurança e autenticação', 'Gerenciamento de Cloud']
+keywords: ['AWS PrivateLink', 'serviço de endpoint da VPC', 'MSK', 'Kafka', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Este guia explica como expor um cluster do Amazon MSK para o ClickPipes com [serviços de endpoint de VPC do AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
+
+Use essa abordagem quando a [MSK multi-VPC connectivity](/pt-BR/integrations/clickpipes/aws-privatelink#msk-multi-vpc) não estiver disponível ou não for suficiente, por exemplo:
+
+* Conectividade entre regiões do ClickPipes com o MSK.
+* Clusters MSK Express.
+* Configurações do Kafka que precisam preservar os hostname dos brokers na conectividade privada.
+
+Para clusters padrão do MSK na mesma região, a MSK multi-VPC connectivity geralmente é mais simples e é a opção recomendada.
+
+O mesmo padrão do PrivateLink também pode ser usado para clusters Kafka autogerenciados ou on-premises expostos por meio da AWS, mas os exemplos neste artigo usam o MSK.
+
+<div id="how-the-setup-works">
+  ## Como a configuração funciona
+</div>
+
+Os clientes Kafka primeiro se conectam aos brokers de bootstrap, obtêm os metadados do cluster e, em seguida, se conectam diretamente aos hostnames dos brokers anunciados nesses metadados.
+
+Por esse motivo, um único balanceador de carga na frente de todos os brokers não é suficiente para uma configuração confiável do MSK PrivateLink. Em vez disso, crie um caminho do PrivateLink para cada broker:
+
+```text
+MSK broker hostname
+  -> ClickPipes reverse private endpoint with custom private DNS
+  -> VPC endpoint service
+  -> Network Load Balancer
+  -> MSK broker private IP
+```
+
+Cada broker recebe seu próprio:
+
+* Network Load Balancer (NLB) interno.
+* Grupo de destino por IP que aponta para o IP privado do broker.
+* Serviço de endpoint da VPC suportado por esse NLB.
+* endpoint privado reverso (RPE) do ClickPipes.
+* nome DNS privado personalizado correspondente ao hostname desse broker.
+
+O NLB deve usar passthrough TCP. Isso permite que o cliente Kafka continue usando o hostname original do broker do MSK para SNI TLS e validação de certificado.
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+* Um cluster do MSK em sub-redes privadas.
+* Hostnames dos brokers e endereços IP privados do cluster do MSK.
+* Permissão para criar NLBs, grupos de destino, listeners e serviços de endpoint da VPC na VPC do MSK.
+* O principal da conta AWS do ClickPipes autorizado em cada serviço de endpoint da VPC: `arn:aws:iam::072088201116:root`.
+* O recurso de DNS privado personalizado habilitado para o seu serviço do ClickHouse Cloud. Entre em contato com o suporte do ClickHouse se o campo `Custom private DNS name` não estiver disponível ao criar um reverse private endpoint.
+
+<div id="get-broker-hostnames-and-private-ips">
+  ## Obtenha os hostname dos brokers e os IPs privados
+</div>
+
+Use a CLI da AWS para listar os nós de broker do MSK:
+
+```bash
+aws kafka list-nodes \
+    --cluster-arn <MSK_CLUSTER_ARN> \
+    --query 'NodeInfoList[].BrokerNodeInfo.{BrokerId:BrokerId,Host:Endpoints[0],PrivateIp:ClientVpcIpAddress}' \
+    --output table
+```
+
+Registre o hostname de cada broker, o endereço IP privado e a porta do Kafka. Para autenticação IAM do MSK, a porta geralmente é `9098`.
+
+O ClickPipe usará esses hostnames de broker como brokers do Kafka. Não use a string de bootstrap brokers do MSK para esta configuração pela UI.
+
+<div id="create-one-endpoint-service-per-broker">
+  ## Crie um endpoint service para cada broker
+</div>
+
+Repita estas etapas para cada broker do MSK.
+
+<div id="create-an-internal-nlb">
+  ### Criar um NLB interno
+</div>
+
+Crie um Network Load Balancer interno na VPC do MSK. O NLB deve usar sub-redes privadas e não pode ficar exposto à internet.
+
+Se houver um grupo de segurança associado ao NLB, desative `Enforce Security Group Inbound Rules on Private Link Traffic`. Isso é necessário para permitir que o tráfego do endpoint da VPC do ClickPipes chegue ao NLB.
+
+<div id="create-an-ip-target-group">
+  ### Crie um grupo de destino IP
+</div>
+
+Crie um grupo de destino com:
+
+* Tipo de destino: `IP`.
+* Protocolo: `TCP`.
+* Porta: a porta do broker Kafka, por exemplo, `9098` para MSK IAM.
+* Destino: o endereço IP privado de exatamente um broker.
+
+Use verificações de integridade TCP na porta de tráfego.
+
+<div id="create-a-tcp-listener">
+  ### Crie um listener TCP
+</div>
+
+Crie um listener do NLB na porta do Kafka do broker e encaminhe o tráfego para o grupo de destino específico desse broker.
+
+<div id="create-the-vpc-endpoint-service">
+  ### Crie o serviço de endpoint da VPC
+</div>
+
+Crie um serviço de endpoint da VPC associado ao NLB específico do broker.
+
+Adicione o principal da AWS do ClickPipes à lista de principals permitidos:
+
+```text
+arn:aws:iam::072088201116:root
+```
+
+Se o cluster do MSK e o ClickPipes estiverem em diferentes regiões da AWS, habilite o [acesso entre regiões](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region) adicionando a região do ClickPipes às regiões compatíveis do endpoint service.
+
+Anote o nome do endpoint service. Ele será semelhante a:
+
+```text
+com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
+```
+
+<div id="create-clickpipes-reverse-private-endpoints">
+  ## Criar endpoints privados reversos do ClickPipes
+</div>
+
+No console do ClickHouse Cloud, crie um endpoint privado reverso para cada serviço de endpoint da VPC de broker:
+
+1. Acesse seu serviço do ClickHouse Cloud.
+2. Inicie a criação de um ClickPipe.
+3. Escolha `Reverse private endpoint`.
+4. Escolha `serviço de endpoint da VPC` como tipo de endpoint da VPC.
+5. Insira o nome do serviço de endpoint da VPC específico do broker.
+6. Em `Custom private DNS name`, insira o hostname original do broker do MSK para esse broker.
+7. Crie o endpoint.
+8. Se o endpoint estiver com aceitação pendente, aceite a solicitação de conexão do endpoint no console do serviço de endpoint da VPC da AWS.
+
+Repita o processo até que cada hostname de broker tenha um RPE correspondente.
+
+Para saber mais sobre o comportamento do DNS privado personalizado, as regras de nomenclatura e as opções de API/Terraform, consulte
+[Custom private DNS](/pt-BR/integrations/clickpipes/aws-privatelink#custom-private-dns).
+
+Você também pode criar os endpoints privados reversos com [OpenAPI](/pt-BR/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) ou Terraform.
+
+Para OpenAPI, crie um endpoint privado reverso por broker com `type` definido como `VPC_ENDPOINT_SERVICE`, o nome do serviço de endpoint da VPC específico do broker e um mapeamento de DNS privado personalizado para o hostname do broker:
+
+```json
+{
+  "description": "MSK broker 1",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.eu-central-1.vpce-svc-0123456789abcdef0",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com"
+    }
+  ]
+}
+```
+
+No Terraform, use [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) para criar o endpoint e [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) para configurar o mapeamento do hostname do broker.
+
+<div id="create-the-kafka-clickpipe">
+  ## Crie o ClickPipe do Kafka
+</div>
+
+Siga o [guia do AWS PrivateLink do ClickPipes](/pt-BR/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+para criar o ClickPipe com endpoints privados reversos.
+
+Ao criar o ClickPipe do Kafka:
+
+* Use os hostnames originais dos brokers do MSK como lista de brokers, incluindo a porta usada pelo listener do MSK e o método de autenticação.
+* Não use a string de bootstrap broker do MSK.
+* Selecione ou anexe todos os endpoints privados reversos específicos de cada broker.
+* Configure o método de autenticação exigido pelo seu cluster MSK, como autenticação com IAM role.
+
+A porta depende do listener do MSK. Por exemplo, a autenticação IAM normalmente usa `9098`, SASL/SCRAM normalmente usa `9096` e TLS normalmente usa `9094`. Confirme a porta correta na configuração do seu cluster MSK ou na saída do bootstrap broker.
+
+Exemplo de lista de brokers:
+
+```text
+b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-3.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098
+```
+
+Cada hostname da lista de brokers deve corresponder ao `Custom private DNS name` configurado em um dos RPEs.
+
+<div id="terraform-automation">
+  ## Automação com Terraform
+</div>
+
+O [módulo Terraform aws-msk-vpc-endpoint-service](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/aws-msk-vpc-endpoint-service) mostra como automatizar essa configuração. Ele cria NLBs específicos por broker, grupos de destino, serviços de endpoint da VPC, RPEs do ClickPipes e mapeamentos personalizados de DNS privado.
+
+O módulo Terraform pode gerenciar vários mapeamentos personalizados de DNS privado por RPE, incluindo hostnames de bootstrap e de broker. Este artigo se concentra no fluxo manual pela ClickPipes UI, em que cada RPE usa um hostname de broker como DNS privado personalizado.

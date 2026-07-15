@@ -222,7 +222,7 @@ TAGS INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -264,6 +264,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
+SETTINGS allow_dimensions_outside_sorting_key = 1
 ```
 
 ```sql
@@ -360,7 +361,7 @@ De forma predeterminada, las tablas internas de destino usan los siguientes moto
 * la tabla [samples](#samples-table) usa [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree);
 * la tabla [tags](#tags-table) usa [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree) porque los mismos datos suelen insertarse varias veces en esta tabla, por lo que hace falta una forma
   de eliminar duplicados, y también porque es necesario realizar agregación para las columnas `min_time` y `max_time`;
-* la tabla [metrics](#metrics-table) usa [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree) porque los mismos datos suelen insertarse varias veces en esta tabla, por lo que hace falta una forma
+* la [tabla de métrica](#metrics-table) usa [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree) porque los mismos datos suelen insertarse varias veces en esta tabla, por lo que hace falta una forma
   de eliminar duplicados.
 
 También se pueden usar otros motores de tabla para las tablas internas de destino si así se especifica:
@@ -371,6 +372,13 @@ SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
+
+La tabla [tags](#tags-table) mantiene las columnas de etiquetas (y los Maps `tags`/`all_tags`) fuera de su clave de ordenación,
+algo que `AggregatingMergeTree` rechaza de forma predeterminada (consulte [`allow_dimensions_outside_sorting_key`](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree)).
+Esto es seguro aquí porque esas columnas dependen funcionalmente de `id`, que forma parte de la clave de ordenación, por lo que todas las
+filas que un merge en segundo plano colapsa comparten los mismos valores. Cuando la tabla interna de tags se genera o su
+motor se especifica en línea como arriba, `TimeSeries` establece automáticamente `allow_dimensions_outside_sorting_key = 1` en ella;
+para una tabla de tags de agregación [externa](#external-target-tables) creada manualmente, debe configurarlo usted mismo.
 
 <div id="external-target-tables">
   ## Tablas de destino externas

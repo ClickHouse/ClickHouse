@@ -29,9 +29,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <Steps>
-  <Step>
-    ### أنشئ استعلامًا محفوظًا
-
+  <Step title="أنشئ استعلامًا محفوظًا" id="creating-a-saved-query">
     إذا كان لديك استعلام محفوظ، فيمكنك تخطي هذه الخطوة.
 
     افتح علامة تبويب استعلام جديدة. لأغراض العرض التوضيحي، سنستخدم [youtube dataset](/ar/get-started/sample-datasets/youtube-dislikes)، التي تحتوي على نحو 4.5 مليار سجل.
@@ -65,10 +63,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
 
     لاحظ أن هذا الاستعلام يحتوي على parameter (`year`) مميز في المقتطف أعلاه.
-    يمكنك تحديد query parameters باستخدام `{ }` مع نوع الـ parameter.
+    يمكنك تحديد معلمات الاستعلام باستخدام `{ }` مع نوع الـ parameter.
     يكتشف محرر الاستعلام في SQL Console تلقائيًا تعبيرات query parameter في ClickHouse ويوفّر حقل إدخال لكل parameter.
 
-    لنشغّل هذا الاستعلام سريعًا للتأكد من أنه يعمل، وذلك بتحديد السنة `2010` في مربع إدخال query variables على الجانب الأيمن من محرر SQL:
+    لنشغّل هذا الاستعلام سريعًا للتأكد من أنه يعمل، وذلك بتحديد السنة `2010` في مربع إدخال متغيرات الاستعلام على الجانب الأيمن من محرر SQL:
 
     <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="اختبر استعلام المثال" />
 
@@ -79,20 +77,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يمكن العثور على مزيد من الوثائق حول استعلام محفوظ في قسم [&quot;Saving a query&quot;](/ar/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### تهيئة نقطة نهاية واجهة برمجة تطبيقات الاستعلام ‏
-
+  <Step title="تهيئة نقطة النهاية لواجهة برمجة تطبيقات الاستعلام" id="configuring-the-query-api-endpoint">
     يمكن تهيئة نقاط نهاية واجهة برمجة تطبيقات الاستعلام مباشرةً من عرض الاستعلام بالنقر على الزر **Share** ثم اختيار `API Endpoint`.
-    سيُطلب منك تحديد API keys التي يجب أن تتمكن من الوصول إلى الـ endpoint:
+    سيُطلب منك تحديد مفاتيح API التي يجب أن تتمكن من الوصول إلى نقطة النهاية:
 
     <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="هيئ نقطة نهاية الاستعلام" />
 
-    بعد اختيار API key، سيُطلب منك:
+    بعد اختيار مفتاح API، سيُطلب منك:
 
     * تحديد دور قاعدة البيانات الذي سيُستخدم لتشغيل الاستعلام (`Full access` أو `Read only` أو `Create a custom role`)
     * تحديد النطاقات المسموح بها لمشاركة الموارد عبر المصادر المختلفة (CORS)
 
-    بعد اختيار هذه الخيارات، سيتم provision الـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام تلقائيًا.
+    بعد اختيار هذه الخيارات، سيتم provision نقطة النهاية لواجهة برمجة تطبيقات الاستعلام تلقائيًا.
 
     سيُعرض مثال لأمر `curl` حتى تتمكن من إرسال طلب اختبار:
 
@@ -105,16 +101,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### معاملات Query API
-
-    يمكن تحديد query parameters في الاستعلام باستخدام الصياغة `{parameter_name: type}`. سيجري اكتشاف هذه المعاملات تلقائيًا، وستتضمن حمولة طلب المثال كائن `queryVariables` يمكنك من خلاله تمرير هذه المعاملات.
+  <Step title="معاملات واجهة برمجة تطبيقات الاستعلام" id="query-api-parameters">
+    يمكن تحديد معلمات الاستعلام في الاستعلام باستخدام الصياغة `{parameter_name: type}`. سيجري اكتشاف هذه المعاملات تلقائيًا، وستتضمن حمولة طلب المثال كائن `queryVariables` يمكنك من خلاله تمرير هذه المعاملات.
   </Step>
 
-  <Step>
-    ### الاختبار والمراقبة
-
-    بمجرد إنشاء نقطة نهاية واجهة برمجة تطبيقات الاستعلام، يمكنك اختباره باستخدام `curl` أو أي HTTP client آخر:
+  <Step title="الاختبار والمراقبة" id="testing-and-monitoring">
+    بمجرد إنشاء نقطة النهاية لواجهة برمجة تطبيقات الاستعلام، يمكنك اختباره باستخدام `curl` أو أي HTTP client آخر:
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="اختبار curl لنقطة النهاية" />
 

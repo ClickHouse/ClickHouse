@@ -72,10 +72,10 @@ LIMIT 2
 </div>
 
 لنفترض وجود جدول في تخزين S3 عند `s3://ch-docs-s3-bucket/people_10k/`.
-لإدراج البيانات في الجدول، فعِّل أولًا الميزة التجريبية:
+تُعد عمليات الكتابة في Delta Lake ميزة Beta، وهي معطّلة افتراضيًا. فعِّلها باستخدام ما يلي (يتوفر `allow_delta_lake_writes` بدءًا من الإصدار 26.7؛ وفي الإصدارات الأقدم استخدم `allow_experimental_delta_lake_writes`):
 
 ```sql title="Query"
-SET allow_experimental_delta_lake_writes=1
+SET allow_delta_lake_writes=1
 ```
 
 ثم اكتب:

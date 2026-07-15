@@ -1611,7 +1611,7 @@ initcapUTF8(s)
 
 **Argumentos**
 
-* `s` — Texto de entrada. [`String`](/pt-BR/reference/data-types/string)
+* `s` — string de entrada. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2212,8 +2209,8 @@ Retorna a forma normalizada em NFKC da string UTF-8. [`String`](/pt-BR/reference
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Caracteres de números em círculo
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converte para 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Retorna a forma normalizada em NFKD da string UTF-8. [`String`](/pt-BR/reference
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscrito 2 + O + sobrescrito 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converte para H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response

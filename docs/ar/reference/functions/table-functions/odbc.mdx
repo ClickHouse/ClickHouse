@@ -1,12 +1,12 @@
 ---
-description: 'تعيد الجدول المتصل عبر ODBC.'
+description: 'تعيد جدولًا متصلًا عبر ODBC.'
 sidebarTitle: 'odbc'
 slug: /sql-reference/table-functions/odbc
 title: 'odbc'
 doc_type: 'reference'
 ---
 
-تعيد الجدول المتصل عبر [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+تعيد جدولًا متصلًا عبر [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 <div id="syntax">
   ## الصيغة
@@ -22,20 +22,20 @@ odbc(named_collection)
   ## الوسائط
 </div>
 
-| الوسيط              | الوصف                                                   |
+| الوسيطة             | الوصف                                                   |
 | ------------------- | ------------------------------------------------------- |
 | `datasource`        | اسم القسم الذي يتضمن إعدادات الاتصال في ملف `odbc.ini`. |
 | `external_database` | اسم قاعدة بيانات في نظام إدارة قواعد بيانات خارجي.      |
 | `external_table`    | اسم جدول في `external_database`.                        |
 
-يمكن أيضًا تمرير هذه المعلمات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections).
+يمكن أيضًا تمرير هذه المعلمات باستخدام [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections).
 
-لتنفيذ اتصالات ODBC بأمان، يستخدم ClickHouse برنامجًا منفصلًا هو `clickhouse-odbc-bridge`. وإذا جرى تحميل برنامج تشغيل ODBC مباشرةً من `clickhouse-server`، فقد تؤدي مشكلات برنامج التشغيل إلى تعطل خادم ClickHouse. ويبدأ ClickHouse تلقائيًا تشغيل `clickhouse-odbc-bridge` عند الحاجة إليه. ويُثبَّت برنامج جسر ODBC من الحزمة نفسها التي تتضمن `clickhouse-server`.
+لتنفيذ اتصالات ODBC بأمان، يستخدم ClickHouse برنامجًا منفصلًا هو `clickhouse-odbc-bridge`. وإذا جرى تحميل برنامج تشغيل ODBC مباشرةً من `clickhouse-server`، فقد تتسبب مشكلات برنامج التشغيل في تعطل خادم ClickHouse. ويبدأ ClickHouse تلقائيًا تشغيل `clickhouse-odbc-bridge` عند الحاجة إليه. ويُثبَّت برنامج جسر ODBC من الحزمة نفسها التي يتضمنها `clickhouse-server`.
 
-تُحوَّل الحقول ذات القيم `NULL` من الجدول الخارجي إلى القيم الافتراضية لنوع البيانات الأساسي. على سبيل المثال، إذا كان أحد حقول جدول MySQL بعيد من النوع `INT NULL`، فسيُحوَّل إلى 0 (وهي القيمة الافتراضية لنوع بيانات ClickHouse `Int32`).
+تُحوَّل الحقول ذات القيم `NULL` من الجدول الخارجي إلى القيم الافتراضية لنوع البيانات الأساسي. على سبيل المثال، إذا كان أحد الحقول في جدول MySQL بعيد من النوع `INT NULL`، فسيُحوَّل إلى 0 (وهي القيمة الافتراضية لنوع البيانات `Int32` في ClickHouse).
 
 <div id="usage-example">
-  ## مثال للاستخدام
+  ## مثال على الاستخدام
 </div>
 
 **الحصول على البيانات من تثبيت MySQL المحلي عبر ODBC**
@@ -44,7 +44,7 @@ odbc(named_collection)
 
 تأكد من تثبيت unixODBC وMySQL Connector.
 
-افتراضيًا (إذا كان التثبيت قد تم من الحزم)، يبدأ ClickHouse العمل بالمستخدم `clickhouse`. لذلك تحتاج إلى إنشاء هذا المستخدم وتهيئته على MySQL server.
+افتراضيًا (إذا كان التثبيت من الحزم)، يبدأ ClickHouse العمل بالمستخدم `clickhouse`. لذلك تحتاج إلى إنشاء هذا المستخدم وتهيئته على خادم MySQL.
 
 ```bash
 $ sudo mysql
@@ -55,7 +55,7 @@ mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
-ثم قم بتهيئة الاتصال في `/etc/odbc.ini`.
+ثم اضبط إعدادات الاتصال في `/etc/odbc.ini`.
 
 ```bash
 $ cat /etc/odbc.ini
@@ -68,7 +68,7 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-يمكنك التحقق من الاتصال باستخدام الأداة `isql` المضمّنة في تثبيت unixODBC.
+يمكنك التحقق من الاتصال باستخدام الأداة `isql` من حزمة تثبيت unixODBC.
 
 ```bash
 $ isql -v mysqlconn
@@ -101,7 +101,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-استرداد البيانات من جدول MySQL في ClickHouse:
+استرجاع البيانات من جدول MySQL داخل ClickHouse:
 
 ```sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
@@ -114,8 +114,8 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 ```
 
 <div id="see-also">
-  ## مواضيع ذات صلة
+  ## راجع أيضًا
 </div>
 
 * [قواميس ODBC](/ar/reference/statements/create/dictionary/sources/odbc)
-* [محرك الجدول ODBC](/ar/reference/engines/table-engines/integrations/odbc).
+* [محرك جدول ODBC](/ar/reference/engines/table-engines/integrations/odbc).

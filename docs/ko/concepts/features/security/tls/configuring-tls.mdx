@@ -22,9 +22,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ## ClickHouse 배포 생성
-
+  <Step title="ClickHouse 배포 생성" id="1-create-a-clickhouse-deployment">
     이 가이드는 Ubuntu 20.04 환경에서 DEB 패키지(apt 사용)를 사용해 다음 호스트에 ClickHouse를 설치한 기준으로 작성되었습니다. 도메인은 `marsnet.local`입니다:
 
     | 호스트       | IP 주소         |
@@ -38,9 +36,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## TLS 인증서 생성
-
+  <Step title="TLS 인증서 생성" id="2-create-tls-certificates">
     <Note>
       자체 서명 인증서는 데모 용도로만 사용해야 하며 운영(production) 환경에서는 사용해서는 안 됩니다. 인증서 요청은 조직에서 서명할 수 있도록 생성해야 하며, 설정에서 구성할 CA 체인을 사용해 검증해야 합니다. 다만 아래 단계는 설정을 구성하고 테스트하는 데 사용할 수 있으며, 이후 실제로 사용할 인증서로 대체할 수 있습니다.
     </Note>
@@ -90,9 +86,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 인증서와 키를 저장할 디렉터리를 생성하고 구성합니다.
-
+  <Step title="인증서와 키를 저장할 디렉터리를 생성하고 구성합니다." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       이 작업은 각 노드에서 수행해야 합니다. 각 호스트에는 해당 호스트에 맞는 인증서와 키를 사용하십시오.
     </Note>
@@ -123,9 +117,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper를 사용한 기본 클러스터 환경 구성
-
+  <Step title="ClickHouse Keeper를 사용한 기본 클러스터 환경 구성" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     이 배포 환경에서는 각 노드에 다음 ClickHouse Keeper 설정이 사용됩니다. 각 서버는 고유한 `<server_id>`를 가집니다. (예시: `chnode1` 노드의 경우 `<server_id>1</server_id>`, 나머지 노드도 동일합니다.)
 
     <Note>
@@ -250,9 +242,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## ClickHouse 노드에서 TLS 인터페이스 구성
-
+  <Step title="ClickHouse 노드에서 TLS 인터페이스 구성" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     아래 설정은 ClickHouse 서버의 `config.xml`에서 구성합니다.
 
     1. 배포의 표시 이름을 설정합니다(선택 사항):
@@ -359,9 +349,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 테스트
-
+  <Step title="테스트" id="6-testing">
     1. 모든 노드를 하나씩 시작하십시오:
        ```bash
        service clickhouse-server start

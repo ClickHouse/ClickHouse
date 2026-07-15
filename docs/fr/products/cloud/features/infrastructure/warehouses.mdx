@@ -12,10 +12,10 @@ import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
 <div id="what-is-compute-compute-separation">
-  ## Qu&#39;est-ce que la compute-compute separation ?
+  ## Qu&#39;est-ce que la séparation compute-compute ?
 </div>
 
-Avant d&#39;expliquer ce qu&#39;est la compute-compute separation, il est utile de comprendre ce qu&#39;est un **service** dans ClickHouse Cloud.
+Avant d&#39;expliquer ce qu&#39;est la séparation compute-compute, il est utile de comprendre ce qu&#39;est un **service** dans ClickHouse Cloud.
 
 Chaque service ClickHouse Cloud inclut :
 
@@ -30,12 +30,12 @@ Chaque service ClickHouse Cloud inclut :
 *Fig. 1 - Service unique dans ClickHouse Cloud*
 
 Au lieu d&#39;avoir un seul service, vous pouvez créer plusieurs services ayant accès au même stockage partagé, ce qui vous permet de dédier des ressources à des workloads spécifiques sans avoir à dupliquer les données.
-Ce concept s&#39;appelle la **compute-compute separation**.
+Ce concept s&#39;appelle la **séparation compute-compute**.
 
-La compute-compute separation signifie que chaque service possède son propre ensemble de répliques et un endpoint, tout en utilisant le même dossier de stockage objet et en accédant aux mêmes tables, vues, etc.
+La séparation compute-compute signifie que chaque service possède son propre ensemble de répliques et un endpoint, tout en utilisant le même dossier de stockage objet et en accédant aux mêmes tables, vues, etc.
 Vous pouvez ainsi choisir la capacité de calcul adaptée à votre workload. Certains workloads peuvent se contenter d&#39;une seule réplique de petite taille, tandis que d&#39;autres peuvent nécessiter une haute disponibilité (HA) complète et des centaines de gigaoctets de mémoire sur plusieurs répliques.
 
-La compute-compute separation vous permet également de séparer les opérations de lecture des opérations d&#39;écriture afin qu&#39;elles n&#39;interfèrent pas entre elles :
+La séparation compute-compute vous permet également de séparer les opérations de lecture des opérations d&#39;écriture afin qu&#39;elles n&#39;interfèrent pas entre elles :
 
 <Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Compute separation dans ClickHouse Cloud" />
 
@@ -48,7 +48,7 @@ La compute-compute separation vous permet également de séparer les opérations
 </div>
 
 Dans ClickHouse Cloud, un *warehouse* est un ensemble de **services** qui partagent les mêmes données.
-Chaque warehouse possède un service principal (le service créé en premier) et un ou plusieurs services secondaires.
+Chaque warehouse possède un service principal (le premier service créé) et un ou plusieurs services secondaires.
 Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehouse « DWH Prod » composé de deux services :
 
 * Service principal `DWH Prod`
@@ -63,7 +63,7 @@ Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehous
 Tous les services d’un warehouse partagent les mêmes éléments :
 
 * Région (par exemple, us-east1)
-* Fournisseur Cloud (AWS, GCP ou Azure)
+* Fournisseur de services Cloud (AWS, GCP ou Azure)
 * Version de la base de données ClickHouse
 * ClickHouse Keeper (pour gérer les répliques)
 

@@ -1,0 +1,56 @@
+{
+  "groups": [
+    {
+      "group": "홈",
+      "icon": "house",
+      "pages": [],
+      "root": "ko/integrations/language-clients/index"
+    },
+    {
+      "group": "JavaScript",
+      "icon": "/images/integrations/logos/node_js.svg",
+      "pages": [],
+      "root": "ko/integrations/language-clients/js"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "group": "Rust",
+      "icon": "/images/integrations/logos/rust.webp",
+      "pages": [],
+      "root": "ko/integrations/language-clients/rust"
+    },
+    {
+      "group": "C++",
+      "icon": "/images/integrations/logos/logo_cpp.svg",
+      "pages": [],
+      "root": "ko/integrations/language-clients/cpp"
+    },
+    {
+      "group": "C",
+      "icon": "/images/integrations/logos/logo_c.svg",
+      "pages": [],
+      "root": "ko/integrations/language-clients/c"
+    },
+    {
+      "group": "타사 클라이언트",
+      "icon": "users",
+      "pages": [
+        "ko/integrations/language-clients/third-party/moose-olap",
+        "ko/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "언어 클라이언트"
+}

@@ -42,16 +42,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 جهّز حساب AWS جديدًا، أو مشروع GCP جديدًا، أو اشتراك Azure جديدًا ضمن مؤسستك.
 
 <Steps>
-  <Step>
-    ### اختر موفر خدمة سحابية
-
+  <Step title="اختر موفر خدمة سحابية" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### إعداد الحساب/المشروع/الاشتراك
-
-    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (IAM role/service account/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
+  <Step title="إعداد الحساب/المشروع/الاشتراك" id="account-setup">
+    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (دور IAM/حساب خدمة/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
 
@@ -73,9 +69,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### إعداد البنية التحتية لـ BYOC
-
+  <Step title="إعداد البنية التحتية لـ BYOC" id="setup-byoc-infrastructure">
     سيُطلب منك إعداد البنية التحتية، بما في ذلك حاويات تخزين الكائنات وVPC/VNet وعنقود Kubernetes، من خلال وحدة تحكم ClickHouse Cloud. يجب تحديد بعض الإعدادات في هذه المرحلة، لأنها لا يمكن تغييرها لاحقًا. وتحديدًا:
 
     * **Region**: جميع **المناطق العامة** المدرجة في وثائق [supported regions](/ar/products/cloud/reference/supported-regions) متاحة لعمليات نشر BYOC. أما المناطق الخاصة فغير مدعومة حاليًا.
@@ -99,6 +93,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 أثناء إنشاء الخدمة، ستُهيّئ الخيارات التالية:
 
 * **اسم الخدمة**: أدخل اسمًا واضحًا ووصفيًا لخدمة ClickHouse الخاصة بك.
-* **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة، التي ستعمل فيها خدمتك.
-* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين للنسخ المتماثلة في ClickHouse.
+* **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة التي ستعمل فيها خدمتك.
+* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين لنسخ ClickHouse المتماثلة.
 * **عدد النسخ المتماثلة**: حدّد عدد النسخ المتماثلة لتعزيز التوافر العالي.

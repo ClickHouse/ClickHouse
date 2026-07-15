@@ -48,11 +48,11 @@ ClickHouse Cloud であれば自動かつ容易に行われ、クエリの応答
 特にクエリが分散されている場合に役立ちます。
 
 <div id="joins">
-  ### ジョイン
+  ### JOIN
 </div>
 
-ジョインでは、必要なメモリ使用量を抑えるのに役立つさまざまな `JOIN` アルゴリズムを選択できます。デフォルトではハッシュ結合が使用されます。これは機能面で最も幅広く対応しており、多くの場合で最高のパフォーマンスを発揮します。このアルゴリズムでは、`JOIN` の右側のテーブルをメモリ上のハッシュテーブルに読み込み、それに対して左側のテーブルを評価します。そのため、メモリ使用量を最小限に抑えるには、より小さいテーブルを右側に配置する必要があります。ただし、この方法もメモリ制約が厳しいケースでは限界があります。そのような場合は、[`join_algorithm`](/ja/reference/settings/session-settings#join_algorithm) 設定で `partial_merge` join を有効にできます。これは [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) の派生で、まず右側のテーブルをブロック単位でソートし、それらに対して min-max 索引を作成します。次に、左側のテーブルの一部を結合キーでソートし、右側のテーブルと結合します。min-max 索引は、不要な右側テーブルのブロックをスキップするために使用されます。これはパフォーマンスを犠牲にする代わりに、メモリ消費を抑えられます。さらにこの考え方を推し進めた `full_sorting_merge` アルゴリズムでは、右側が非常に大きくてメモリに収まらず、ルックアップも不可能な場合、たとえば複雑なサブクエリであっても `JOIN` を実行できます。この場合、右側と左側の両方がメモリに収まらなければディスク上でソートされるため、大きなテーブル同士を結合できます。
+JOIN では、必要なメモリ使用量を抑えるのに役立つさまざまな `JOIN` アルゴリズムを選択できます。デフォルトではハッシュ結合が使用されます。これは機能面で最も幅広く対応しており、多くの場合で最高のパフォーマンスを発揮します。このアルゴリズムでは、`JOIN` の右側のテーブルをメモリ上のハッシュテーブルに読み込み、それに対して左側のテーブルを評価します。そのため、メモリ使用量を最小限に抑えるには、より小さいテーブルを右側に配置する必要があります。ただし、この方法もメモリ制約が厳しいケースでは限界があります。そのような場合は、[`join_algorithm`](/ja/reference/settings/session-settings#join_algorithm) 設定で `partial_merge` join を有効にできます。これは [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) の派生で、まず右側のテーブルをブロック単位でソートし、それらに対して min-max 索引を作成します。次に、左側のテーブルの一部を結合キーでソートし、右側のテーブルと結合します。min-max 索引は、不要な右側テーブルのブロックをスキップするために使用されます。これはパフォーマンスを犠牲にする代わりに、メモリ消費を抑えられます。さらにこの考え方を推し進めた `full_sorting_merge` アルゴリズムでは、右側が非常に大きくてメモリに収まらず、ルックアップも不可能な場合、たとえば複雑なサブクエリであっても `JOIN` を実行できます。この場合、右側と左側の両方がメモリに収まらなければディスク上でソートされるため、大きなテーブル同士を結合できます。
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="結合アルゴリズム" />
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="JOIN アルゴリズム" />
 
-ClickHouse は 20.3 以降、`join_algorithm` 設定の auto 値をサポートしています。これにより ClickHouse は適応的なジョイン方式を適用し、メモリ制限に達するまでは hash-join アルゴリズムを優先し、制限を超えた時点で partial&#95;merge アルゴリズムを試行します。最後に、ジョインに関しては、distributed joins の挙動と、そのメモリ消費を最小限に抑える方法を理解しておくことをお勧めします。詳細は [こちら](/ja/reference/statements/in#distributed-subqueries) を参照してください。
+ClickHouse は 20.3 以降、`join_algorithm` 設定の auto 値をサポートしています。これにより ClickHouse は適応的なジョイン方式を適用し、メモリ制限に達するまでは hash-join アルゴリズムを優先し、制限を超えた時点で partial&#95;merge アルゴリズムを試行します。最後に、JOIN に関しては、distributed JOIN の挙動と、そのメモリ消費を最小限に抑える方法を理解しておくことをお勧めします。詳細は [こちら](/ja/reference/statements/in#distributed-subqueries) を参照してください。

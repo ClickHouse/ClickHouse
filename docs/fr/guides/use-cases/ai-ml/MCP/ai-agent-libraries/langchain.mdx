@@ -28,9 +28,7 @@ peut interagir avec le [SQL playground de ClickHouse](https://sql.clickhouse.com
 Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit via un script.
 
 <Steps>
-  <Step>
-    ## Installer les bibliothèques
-
+  <Step title="Installer les bibliothèques" id="install-libraries">
     Installez les bibliothèques requises en exécutant les commandes suivantes :
 
     ```python
@@ -39,9 +37,7 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit vi
     ```
   </Step>
 
-  <Step>
-    ## Configurer les identifiants
-
+  <Step title="Configurer les identifiants" id="setup-credentials">
     Ensuite, vous devrez fournir votre clé API Anthropic :
 
     ```python
@@ -61,9 +57,7 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit vi
     </Info>
   </Step>
 
-  <Step>
-    ## Initialiser le serveur MCP
-
+  <Step title="Initialiser le serveur MCP" id="initialize-mcp-and-agent">
     Configurez maintenant le serveur MCP de ClickHouse pour le faire pointer vers le ClickHouse SQL playground :
 
     ```python
@@ -89,9 +83,7 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit vi
     ```
   </Step>
 
-  <Step>
-    ## Configurer le gestionnaire de flux
-
+  <Step title="Configurer le gestionnaire de flux" id="configure-the-stream-handler">
     Lorsque vous travaillez avec Langchain et ClickHouse MCP server, les résultats de requête sont souvent
     renvoyés sous forme de données en streaming plutôt que dans une réponse unique. Pour les jeux de données volumineux ou
     les requêtes analytiques complexes dont le traitement peut prendre du temps, il est important de configurer
@@ -149,9 +141,7 @@ Vous pouvez exécuter les étapes suivantes soit dans votre REPL Python, soit vi
     ```
   </Step>
 
-  <Step>
-    ## Appelez l’agent
-
+  <Step title="Appelez l’agent" id="call-the-agent">
     Enfin, appelez votre agent et demandez-lui qui a le plus contribué au code de ClickHouse :
 
     ```python

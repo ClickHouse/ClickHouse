@@ -52,7 +52,7 @@ Conecte-se ao seu Crunchy Bridge Postgres usando o usuário `postgres` e execute
     ALTER USER clickpipes_user WITH REPLICATION;
    ```
 
-4. Crie uma [publicação](https://www.postgresql.org/docs/current/logical-replication-publication.html) com as tabelas que você deseja replicar. Recomendamos fortemente incluir na publicação apenas as tabelas necessárias para evitar impacto no desempenho.
+4. Crie uma [publicação](https://www.postgresql.org/docs/current/logical-replication-publication.html) com as tabelas que você deseja replicar. Recomendamos não incluir na publicação mais tabelas do que o necessário, para evitar sobrecarga de desempenho.
 
 <Warning>
   Qualquer tabela incluída na publicação deve ter uma **chave primária** definida *ou* ter sua **replica identity** configurada como `FULL`. Consulte o [FAQ do Postgres](/pt-BR/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para orientações sobre como definir esse escopo.
@@ -70,7 +70,7 @@ Conecte-se ao seu Crunchy Bridge Postgres usando o usuário `postgres` e execute
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-A publicação `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e, mais adiante, será usada para a ingestão do fluxo de replicação.
+A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <div id="safe-list-clickpipes-ips">
   ## Inclua os IPs do ClickPipes na lista de permissões

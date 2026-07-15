@@ -41,9 +41,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * إمكانية الوصول إلى خدمة البيانات الوصفية للمثيل EC2 (مُمكّنة افتراضيًا)
 
 <Steps>
-  <Step>
-    #### تحقّق من إمكانية الوصول إلى بيانات EC2 الوصفية
-
+  <Step title="تحقّق من إمكانية الوصول إلى بيانات EC2 الوصفية" id="verify-metadata">
     من مثيل EC2 لديك، تحقّق من إمكانية الوصول إلى خدمة البيانات الوصفية:
 
     ```bash
@@ -67,9 +65,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### تحقّق من وجود ملفات syslog
-
+  <Step title="تحقّق من وجود ملفات syslog" id="verify-syslog">
     تحقّق من أن مثيل EC2 لديك يُنشئ ملفات syslog:
 
     ```bash
@@ -86,9 +82,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تثبيت OpenTelemetry Collector
-
+  <Step title="تثبيت OpenTelemetry Collector" id="install-collector">
     ثبّت توزيعة OpenTelemetry Collector Contrib على مثيل EC2 الخاص بك:
 
     ```bash
@@ -104,9 +98,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إنشاء تهيئة collector
-
+  <Step title="إنشاء تهيئة collector" id="create-config">
     أنشئ ملف تهيئة لـ OpenTelemetry Collector في المسار `/etc/otelcol-contrib/config.yaml`:
 
     ```bash
@@ -257,9 +249,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    #### عيّن مفتاح API لـ ClickStack
-
+  <Step title="عيّن مفتاح API لـ ClickStack" id="set-api-key">
     صدّر مفتاح API لـ ClickStack كمتغير بيئة:
 
     ```bash
@@ -274,9 +264,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### شغّل الـ collector
-
+  <Step title="شغّل الـ collector" id="run-collector">
     ابدأ تشغيل OpenTelemetry Collector:
 
     ```bash
@@ -290,9 +278,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بمجرد تشغيل المجمّع، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق مع بيانات EC2 الوصفية:
 
     1. انتقل إلى عرض البحث
@@ -319,9 +305,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل سجلات مضيف EC2 قبل تهيئة مثيلات الإنتاج لديهم، نوفّر مجموعة بيانات تجريبية تتضمن بيانات EC2 وصفية مُحاكاة.
 
 <Steps>
-  <Step>
-    #### نزّل مجموعة البيانات النموذجية
-
+  <Step title="نزّل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف السجل النموذجي:
 
     ```bash
@@ -339,9 +323,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * مزيج من العمليات الطبيعية والأحداث البارزة
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة collector للاختبار
-
+  <Step title="أنشئ تهيئة collector للاختبار" id="test-config">
     أنشئ ملفًا باسم `ec2-host-logs-demo.yaml` يتضمن التهيئة التالية:
 
     ```yaml
@@ -413,9 +395,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### شغّل ClickStack بإعدادات العرض التوضيحي
-
+  <Step title="شغّل ClickStack بإعدادات العرض التوضيحي" id="run-demo">
     شغّل ClickStack باستخدام السجلات وإعدادات العرض التوضيحي:
 
     ```bash
@@ -428,9 +408,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من السجلات في HyperDX
-
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
     بمجرد تشغيل الـ collector:
 
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
@@ -465,13 +443,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة سجلات مضيف EC2 باستخدام ClickStack، نوفر تصورات أساسية تتضمن سياق السحابة.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="تنزيل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">تنزيل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة المعلومات الجاهزة
-
+  <Step title="استيراد لوحة المعلومات الجاهزة" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم Dashboards
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
@@ -482,9 +458,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### عرض لوحة المعلومات
-
+  <Step title="عرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات سجلات EC2" />
@@ -624,7 +598,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * أنشئ لوحات معلومات مخصصة لمراقبة الأمان (محاولات SSH، استخدام sudo، عمليات حظر جدار الحماية)
 
 <div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
+  ## الانتقال إلى الإنتاج
 </div>
 
-يثبّت هذا الدليل OpenTelemetry Collector مباشرةً على مثيلات EC2، وهو النمط الموصى به في بيئة الإنتاج للمراقبة على مستوى المضيف. ولإدارة مُجمِّعات OpenTelemetry عبر عدد كبير من المثيلات، فكّر في استخدام أدوات إدارة التهيئة (Ansible وChef وPuppet) أو OpenTelemetry Operator في بيئات Kubernetes. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يثبّت هذا الدليل مجمّع OpenTelemetry مباشرةً على مثيلات EC2، وهذا هو النمط الموصى به في بيئات الإنتاج للمراقبة على مستوى المضيف. ولإدارة مكوّنات المجمّع عبر عدد كبير من المثيلات، فكّر في استخدام أدوات إدارة التهيئة (Ansible وChef وPuppet) أو OpenTelemetry Operator في بيئات Kubernetes. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على تهيئة بيئة الإنتاج.

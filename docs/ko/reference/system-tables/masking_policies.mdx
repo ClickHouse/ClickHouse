@@ -6,15 +6,13 @@ title: 'system.masking_policies'
 doc_type: '참고'
 ---
 
-import CloudOnlyBadge from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
-<CloudOnlyBadge />
-
 <div id="description">
   ## 설명
 </div>
 
 시스템에 정의된 모든 마스킹 정책 정보를 포함합니다.
+
+마스킹 정책은 ClickHouse Cloud에서만 생성하고 적용할 수 있습니다. open-source build에서는 `system.masking_policies` 테이블이 항상 비어 있지만, `SHOW MASKING POLICIES`와 같은 내부 검사 쿼리가 예외를 발생시키는 대신 빈 결과를 반환하도록 이 테이블은 계속 존재합니다.
 
 <div id="columns">
   ## 컬럼

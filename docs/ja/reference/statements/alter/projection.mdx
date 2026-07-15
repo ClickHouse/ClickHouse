@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### `WHERE` 句付きPROJECTIONの例
+</div>
+
+PROJECTIONには `WHERE` 句を含めて、行の一部だけを格納できます。これは、クエリで特定の述語による絞り込みが頻繁に行われる場合に便利です。PROJECTIONは条件に一致する行だけを実体化するため、ストレージ使用量を削減し、クエリパフォーマンスを向上させます。
+
+テーブルを作成し、フィルタ付きのPROJECTIONを追加します。
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+データの挿入:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+クエリの `WHERE` 句 がPROJECTIONの `WHERE` 句 を**含意する**場合 (つまり、PROJECTIONのフィルター内のすべての条件がクエリのフィルターにも含まれている場合) 、オプティマイザは、それが有益だと判断すると、そのPROJECTIONを自動的に使用できます。
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+含意チェックは保守的です。正規化された式形式に対して、完全に一致する論理積の項だけを照合します。そのため、有効な最適化の機会 (たとえば範囲に関する含意) を一部見逃す可能性はありますが、誤った結果を生成することはありません。
+
 <div id="manipulating-projections">
   ## プロジェクションの操作
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-以下のステートメントを使用して、テーブルのメタデータにプロジェクションの説明を追加します。
+テーブルのメタデータにPROJECTIONの説明を追加するには、以下のステートメントを使用します。
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  PROJECTIONで `WHERE` 句を定義すると、述語条件に一致する行のみがマテリアライズされます。オプティマイザは、クエリの `WHERE` が論理的にPROJECTIONの `WHERE` を含意しており、かつそのPROJECTIONがクエリプランに有利である場合、そのようなPROJECTIONを利用できます。これは通常のPROJECTIONと集約PROJECTIONの両方に当てはまります。
+</Note>
 
 <div id="with-settings">
   #### `WITH SETTINGS` 句

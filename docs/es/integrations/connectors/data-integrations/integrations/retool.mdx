@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Retool'
 slug: /integrations/retool
-keywords: ['clickhouse', 'retool', 'conectar', 'integrar', 'ui', 'admin', 'panel', 'dashboard', 'sin código', 'sin-código']
-description: 'Crea rápidamente aplicaciones web y móviles con interfaces de usuario avanzadas, automatiza tareas complejas e integra IA, todo ello impulsado por tus datos.'
+keywords: ['clickhouse', 'retool', 'conectar', 'integrar', 'ui', 'admin', 'panel', 'dashboard', 'sin código', 'no-code']
+description: 'Crea rápidamente aplicaciones web y móviles con interfaces de usuario potentes, automatiza tareas complejas e integra IA, todo ello impulsado por tus datos.'
 title: 'Conectar Retool con ClickHouse'
 doc_type: 'guide'
 integration:
@@ -17,45 +17,43 @@ import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<div id="1-gather-your-connection-details">
-  ## 1. Recopila los datos de conexión
-</div>
+<Steps>
+  <Step title="Reúne los detalles de tu conexión" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Crear un recurso de ClickHouse" id="2-create-a-clickhouse-resource">
+    Inicia sesión en tu cuenta de Retool y ve a la pestaña *Resources*. Selecciona &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-<div id="2-create-a-clickhouse-resource">
-  ## 2. Crear un recurso de ClickHouse
-</div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Crear un recurso nuevo" />
 
-Inicia sesión en tu cuenta de Retool y ve a la pestaña *Resources*. Selecciona &quot;Create New&quot; -&gt; &quot;Resource&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Crear un recurso nuevo" />
+    Selecciona &quot;JDBC&quot; en la lista de conectores disponibles:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Elegir el conector JDBC" />
 
-Selecciona &quot;JDBC&quot; en la lista de conectores disponibles:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Elegir el conector JDBC" />
+    En el asistente de configuración, asegúrate de seleccionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Seleccionar el driver correcto" />
 
-En el asistente de configuración, asegúrate de seleccionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Seleccionar el driver correcto" />
+    Introduce tus credenciales de ClickHouse con el siguiente formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
+    Si tu instancia requiere SSL o si estás usando ClickHouse Cloud, añade `&ssl=true` a la cadena de conexión para que quede así: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificar tus credenciales" />
 
-Introduce tus credenciales de ClickHouse con el siguiente formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
-Si tu instancia requiere SSL o si estás usando ClickHouse Cloud, añade `&ssl=true` a la cadena de conexión para que quede así: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificar tus credenciales" />
+    Después, prueba la conexión:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Probar la conexión" />
 
-Después, prueba la conexión:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Probar la conexión" />
-
-<br />
-
-Ahora ya deberías poder continuar con tu aplicación usando tu recurso de ClickHouse.
+    Ahora ya deberías poder continuar con tu aplicación usando tu recurso de ClickHouse.
+  </Step>
+</Steps>

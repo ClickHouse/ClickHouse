@@ -2730,7 +2730,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 طُرح في: v1.1.0
 
 يحوّل قيمة إدخال من نوع String إلى قيمة من النوع BFloat16.
-إذا لم تكن السلسلة النصية تمثل قيمة ذات فاصلة عائمة، فستُرجع الدالة صفرًا.
+إذا لم تكن السلسلة النصية تمثل قيمة بفاصلة عائمة، فستُرجع الدالة صفرًا.
 
 الوسيطات المدعومة:
 
@@ -3639,7 +3639,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 <Warning>
   تحذف التحويلات الأرقام الزائدة، وقد تعمل بطريقة غير متوقعة عند التعامل مع مدخلات Float32/Float64 لأن العمليات تُنفَّذ باستخدام تعليمات الفاصلة العائمة.
   على سبيل المثال: `toDecimal128(1.15, 2)` يساوي `1.14` لأن 1.15 * 100 في الفاصلة العائمة يساوي 114.99.
-  يمكنك استخدام مُدخل من نوع String بحيث تستخدم العمليات النوع الصحيح الأساسي: `toDecimal128('1.15', 2) = 1.15`
+  يمكنك استخدام قيمة إدخال من نوع String بحيث تستخدم العمليات النوع الصحيح الأساسي: `toDecimal128('1.15', 2) = 1.15`
 </Warning>
 
 **الصياغة**
@@ -4019,7 +4019,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 الوسيطات غير المدعومة (تعيد `0`):
 
 * القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (غير حساسة لحالة الأحرف).
-* التمثيلات النصية للقيم الثنائية والستّ عشرية.
+* التمثيلات النصية للقيم الثنائية والسداسية عشرية.
 
 <Note>
   إذا تجاوزت قيمة الإدخال حدود `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`، فستعيد الدالة `0`.
@@ -4245,7 +4245,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 الوسائط غير المدعومة (تُرجِع `0`):
 
-* القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (دون حساسية لحالة الأحرف).
+* القيم أو التمثيلات النصية لقيم Float* `NaN` و`Inf` (دون مراعاة حالة الأحرف).
 * التمثيلات النصية للقيم الثنائية والسداسية عشرية.
 
 <Note>
@@ -5060,7 +5060,7 @@ toFloat64OrZero('abc'):  0
 الوسيطات غير المدعومة:
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt128('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والقيم السداسية العشرية، مثل `SELECT toInt128('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int128، فقد يحدث تجاوز علوي أو سفلي في النتيجة.
@@ -5385,7 +5385,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 
 قُدِّمت في: v1.1.0
 
-مثل [`toInt16`](#toInt16)، تُحوِّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [Int16](/ar/reference/data-types/int-uint)، لكنها تُعيد `NULL` عند حدوث خطأ.
+مثل [`toInt16`](#toInt16)، تُحوِّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [Int16](/ar/reference/data-types/int-uint)، لكنها تُعيد `NULL` في حال حدوث خطأ.
 
 الوسيطات المدعومة:
 
@@ -5394,7 +5394,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 الوسيطات غير المدعومة (تُعيد `NULL`):
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والستّ عشرية، مثل `SELECT toInt16OrNull('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt16OrNull('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود [Int16](/ar/reference/data-types/int-uint)، يحدث فيض أو نقص في النتيجة.
@@ -5520,7 +5520,7 @@ toInt16OrZero('abc'): 0
 * التمثيلات النصية للقيم الثنائية والسداسية العشرية، مثل `SELECT toInt256('0xc0fe');`.
 
 <Note>
-  إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int256، فقد يحدث فيض أو نقص في النتيجة.
+  إذا تعذّر تمثيل قيمة الإدخال ضمن حدود Int256، فقد يحدث تجاوز أو قصور في النتيجة.
   لا يُعدّ ذلك خطأً.
 </Note>
 
@@ -5738,7 +5738,7 @@ SELECT toInt256OrZero('abc')
 الوسيطات غير المدعومة:
 
 * التمثيلات النصية لقيم Float*، بما في ذلك `NaN` و`Inf`.
-* التمثيلات النصية للقيم الثنائية والستّ عشرية، على سبيل المثال `SELECT toInt32('0xc0fe');`.
+* التمثيلات النصية للقيم الثنائية والقيم السداسية عشرية، على سبيل المثال `SELECT toInt32('0xc0fe');`.
 
 <Note>
   إذا تعذّر تمثيل قيمة الإدخال ضمن حدود [Int32](/ar/reference/data-types/int-uint)، فستتجاوز النتيجة الحدّ الأعلى أو الأدنى للنطاق.
@@ -7061,7 +7061,7 @@ SELECT
 أُضيف في: v1.1.0
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
-يدعم التحويل من String وFixedString وDateTime أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
+يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
 
 **البنية**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
@@ -7079,10 +7079,12 @@ toTime(x)
 
 **أمثلة**
 
-**تحويل String إلى Time**
+**التحويل من DateTime64 إلى Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **التحويل من DateTime إلى Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**تحويل القيم الصحيحة إلى Time**
+**تحويل الأعداد الصحيحة (بالثواني منذ epoch) إلى Time**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,49 +7122,53 @@ SELECT toTime(52225)
 أُضيف في: v25.6.0
 
 يحوّل قيمة الإدخال إلى النوع [Time64](/ar/reference/data-types/time64).
-ويدعم التحويل من String وFixedString وDateTime64 أو من أنواع رقمية تمثل الميكروثواني منذ منتصف الليل.
-ويوفّر دقة بالميكروثانية لقيم الوقت.
+يدعم التحويل من String وFixedString وDateTime64 أو من الأنواع الرقمية التي تمثل الثواني منذ منتصف الليل.
+يوفّر دقة أقل من الثانية لقيم الوقت، حتى `scale` من الخانات الكسرية.
 
-**البنية**
+**الصياغة**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
-**الوسائط**
+**الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المطلوب تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `scale` — الدقة (عدد الخانات الكسرية، من `0` إلى `9`) في قيمة `Time64` الناتجة. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
-**القيمة المُعادة**
+**القيمة المعادة**
 
-تُعيد قيمة الإدخال بعد تحويلها بدقة الميكروثانية. [`Time64(6)`](/ar/reference/data-types/time64)
+تُرجِع القيمة المحوَّلة بالدقة `scale` المطلوبة. [`Time64`](/ar/reference/data-types/time64)
 
 **أمثلة**
 
 **تحويل String إلى Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**التحويل من DateTime64 إلى Time64**
+**تحويل DateTime64 إلى Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**تحويل القيم الصحيحة إلى Time64**
+**تحويل Float (عدد الثواني منذ منتصف الليل) إلى Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -8376,7 +8386,7 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 
 تم تقديمه في: v1.1.0
 
-على غرار [`toUInt64`](#toUInt64)، تحوّل هذه الدالة قيمة إدخال إلى قيمة من النوع [`UInt64`](/ar/reference/data-types/int-uint)، ولكنها تُرجع `NULL` في حال حدوث خطأ.
+على غرار [`toUInt64`](#toUInt64)، تحوّل هذه الدالة قيمة الإدخال إلى قيمة من النوع [`UInt64`](/ar/reference/data-types/int-uint)، ولكنها تُرجع `NULL` في حال حدوث خطأ.
 
 الوسيطات المدعومة:
 
@@ -8496,7 +8506,7 @@ toUInt64OrZero('abc'): 0
 
 تم تقديمه في: v1.1.0
 
-يحوّل قيمة إدخال إلى قيمة من النوع [`UInt8`](/ar/reference/data-types/int-uint).
+يحوّل قيمة الإدخال إلى قيمة من النوع [`UInt8`](/ar/reference/data-types/int-uint).
 يطرح استثناءً في حال حدوث خطأ.
 
 الوسيطات المدعومة:
@@ -8516,7 +8526,7 @@ toUInt64OrZero('abc'): 0
 </Note>
 
 <Note>
-  تستخدم الدالة [التقريب نحو الصفر](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)، ما يعني أنها تحذف الأرقام الكسرية من الأعداد.
+  تستخدم الدالة [التقريب نحو الصفر](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)، ما يعني أنها تحذف الخانات الكسرية من الأعداد.
 </Note>
 
 انظر أيضًا:

@@ -24,9 +24,7 @@ Les Query API endpoints appliquent la liste d’autorisation d’IP définie au 
 Pour limiter les clients autorisés à appeler vos Query API endpoints :
 
 <Steps>
-  <Step>
-    #### Ouvrir les paramètres de la clé API
-
+  <Step title="Ouvrir les paramètres de la clé API" id="open-settings">
     1. Accédez à ClickHouse Cloud Console → **Organization** → **API Keys**
 
     <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="Clés API" />
@@ -36,9 +34,7 @@ Pour limiter les clients autorisés à appeler vos Query API endpoints :
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Modifier" />
   </Step>
 
-  <Step>
-    #### Ajouter des adresses IP autorisées
-
+  <Step title="Ajouter des adresses IP autorisées" id="add-ips">
     1. Dans la section **Allow access to this API Key**, sélectionnez **Specific locations**
     2. Saisissez des adresses IP ou des plages CIDR (par ex. `203.0.113.1` ou `203.0.113.0/24`)
     3. Ajoutez autant d’entrées que nécessaire

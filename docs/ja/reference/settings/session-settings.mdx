@@ -198,15 +198,17 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 メモリ効率モードで中間の集約結果をマージする際に使用するスレッド数。値が大きいほど、消費メモリも増えます。0 は &#39;max&#95;threads&#39; と同じ意味です。
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "新しい設定"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-AI 関数がプロバイダの認証情報や設定 (`provider`、`endpoint`、`model`、省略可能な `api_key` など) に使用する named collection の名前です。空の場合は例外が発生します。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+パラメータマップで `credentials` が渡されない場合に、`aiEmbed` が使用する名前付きコレクションの名前です。空文字列はデフォルトがないことを意味し、そのような呼び出しでは `credentials` を明示的に指定する必要があります。埋め込み用のエンドポイントとモデルはチャット用とは異なるため、`ai_function_text_default_credentials` とは分けて管理されています。
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ AI 関数が実行する個々の HTTP リクエスト (AI Chat completions お�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "新しい設定"}]}]} />
 
 失敗した AI 関数 API リクエストを初回に再試行するまでの初期遅延時間 (ミリ秒) です。以降の試行では、遅延時間は試行のたびに 2 倍になります (指数バックオフ) 。たとえば、既定の設定では 1000ms、2000ms、4000ms です。
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+呼び出しのパラメータマップで `credentials` が渡されない場合に、テキスト AI 関数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) が使用する名前付きコレクションの名前です。空の場合はデフォルトが設定されていないことを意味し、そのような呼び出しでは `credentials` を明示的に渡す必要があります。chat-completions 用の エンドポイント と モデル は embeddings 用のものとは異なるため、これは `ai_function_embedding_default_credentials` とは別に設定します。
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -406,19 +420,6 @@ true に設定すると、ユーザーは DDL クエリを実行できます。
 
 エラーを起こしやすい非推奨のウィンドウ関数 (neighbor、runningAccumulate、runningDifferenceStartingWithFirstValue、runningDifference) の使用を許可します
 
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "非推奨の関数 snowflakeToDateTime[64] と dateTime[64]ToSnowflake を無効化しました。"}]}]} />
-
-関数 `snowflakeToDateTime`、`snowflakeToDateTime64`、`dateTimeToSnowflake`、`dateTime64ToSnowflake` は非推奨で、デフォルトで無効になっています。
-代わりに、`snowflakeIDToDateTime`、`snowflakeIDToDateTime64`、`dateTimeToSnowflakeID`、`dateTime64ToSnowflakeID` を使用してください。
-
-非推奨の関数を再び有効にするには (たとえば移行期間中) 、この設定を `true` にしてください。
-
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
 </div>
@@ -483,7 +484,7 @@ multiIf 関数の列指向実行を許可します
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "アナライザとプランナをデフォルトで有効にします。"}]}]} />
 
-新しいクエリアナライザを有効にします。
+アナライザを有効にします。
 
 <div id="allow_experimental_cleanup_old_data_files_compaction">
   ## allow_experimental_cleanup_old_data_files_compaction
@@ -617,13 +618,15 @@ Cloud でのデフォルト値: `1`.
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**別名**: `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Delta Lake への書き込みはベータに移行しました。"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-delta-kernel による書き込み機能を有効にします。
+delta-kernel の書き込み機能を有効にします。
 
 <div id="allow_experimental_expire_snapshots">
   ## allow_experimental_expire_snapshots
@@ -822,18 +825,6 @@ polyglot SQL トランスパイラを有効にします。30 種類以上の SQL
 
 PRQL (SQL の代替) を有効にします。
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "実験的な遅延ポスティングリスト適用モードを有効にするための新しい設定"}]}]} />
-
-`true` に設定すると、テキスト索引クエリで遅延ポスティングリスト適用モードを使用できるようになります。
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -874,6 +865,18 @@ Prometheus ライクな時系列のリサンプリング、rate、delta 計算�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "MergeTree ファミリーのテーブルで実験的な UNIQUE KEY 句を有効にするための新しい設定"}]}]} />
 
 MergeTree ファミリーのエンジンを使用するテーブルで `UNIQUE KEY` 句を指定して作成できるようにします。
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "HTTP インデックスページを一覧して `url` テーブル関数でワイルドカードを展開できるようにする新しい設定"}]}]} />
+
+HTTP インデックスページからの `url()` および `ENGINE = URL` の実験的なワイルドカード展開を許可します。
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1064,7 +1067,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "toTimeZone()、fromUnixTimestamp*()、snowflakeToDateTime*() などの一部の時刻関連関数で、非定数のタイムゾーン引数を許可します。"}]}]} />
 
-toTimeZone()、fromUnixTimestamp*()、snowflakeToDateTime*() などの一部の時刻関連関数で、非定数のタイムゾーン引数を許可します。
+toTimeZone()、fromUnixTimestamp*()、snowflakeIDToDateTime*() などの一部の時刻関連関数で、非定数のタイムゾーン引数を許可します。
 この設定は、互換性上の理由からのみ存在します。ClickHouse では、タイムゾーンはデータ型、より正確にはカラムのプロパティです。
 この設定を有効にすると、1 つのカラム内の異なる値にそれぞれ異なるタイムゾーンを設定できるかのような誤解を招きます。
 したがって、この設定は有効にしないでください。
@@ -1191,6 +1194,20 @@ SQL 標準では、`RANK` と `DENSE_RANK` は引数を取りません。これ�
 
 条件を WHERE から PREWHERE に移動する際、フィルタリングを最適化できるよう並べ替えを許可します
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい安全性チェック: `ALTER TABLE ... REPLACE PARTITION ... FROM ...` は、ソーステーブルの対象パーティションにパーツが存在しない場合、例外をスローするようになりました（[#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727) の無言のデータ損失を修正）。以前の動作である、宛先パーティションを黙って削除する挙動は、`allow_replace_partition_from_empty_source = 1` を設定することで維持できます。"}]}]} />
+
+ソースのそのパーティションにパーツが存在しない場合でも、`ALTER TABLE ... REPLACE PARTITION ... FROM ...` が宛先パーティションを黙って削除できるようにします。
+
+デフォルトでは、これは許可されていません。対象パーティションにデータを持たないソースからの `REPLACE PARTITION` は例外を発生させます。これは、その場合この操作が実質的に宛先に対する暗黙の `DROP PARTITION` になるためです (宛先のデータは削除されますが、それを置き換えるデータはありません) 。これは、偶発的なデータ損失の一般的な原因です ([#23727](https://github.com/ClickHouse/ClickHouse/issues/23727) を参照) 。
+
+この設定を有効にすると、以前の動作に戻せます。たとえば、意図的に空のソースパーティションを使って宛先のデータを消去したい場合です。無条件に削除したい場合は、代わりに `ALTER TABLE ... DROP PARTITION ...` を使用してください。
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1237,7 +1254,7 @@ AVX2 命令が利用可能な場合に、`JSON*` 関数で simdjson ライブラ
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "一部の出力フォーマットで、Sparse/Replicated のような特殊なカラム表現を直接出力できるようにします"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Sparse/Replicated のような特殊なカラム表現を、フルカラムに変換せずに出力できるようにする設定を追加しました"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "一部の出力フォーマットで、Sparse\/Replicated のような特殊なカラム表現を直接出力できるようにします"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Sparse\/Replicated のような特殊なカラム表現を、フルカラムに変換せずに出力できるようにする設定を追加しました"}]}]} />
 
 Sparse や Replicated のような特殊なシリアライゼーション種別を持つカラムを、フルカラム表現に変換せずに出力できるようにします。
 これにより、フォーマット時の不要なデータコピーを避けられます。
@@ -1351,7 +1368,7 @@ GROUP BY キーで [Variant](/ja/reference/data-types/variant) 型および [Dyn
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "デフォルトでは ORDER BY キーでの Variant/Dynamic 型の使用を許可しない"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "デフォルトでは ORDER BY キーでの Variant\/Dynamic 型の使用を許可しない"}]}]} />
 
 ORDER BY キーでの [Variant](/ja/reference/data-types/variant) 型および [Dynamic](/ja/reference/data-types/dynamic) 型の使用を許可または制限します。
 
@@ -1493,7 +1510,7 @@ JOIN USING 内の識別子を射影から解決するよう強制します (た�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい互換性設定"}]}]} />
 
-`b.id` のような複合識別子が、別名 `b` を持つテーブルのカラム `id` を指す場合と、別のカラムの Tuple サブカラム `b.id` を指す場合の両方があり得るときは、別名プレフィックスとしての解釈 (`b` のカラム `id`) を優先します。デフォルトでは、新しいアナライザはサブカラムを優先します。従来のアナライザの名前解決に合わせるには、これを有効にしてください。
+`b.id` のような複合識別子が、別名 `b` を持つテーブルのカラム `id` を指す場合と、別のカラムの Tuple サブカラム `b.id` を指す場合の両方があり得るときは、別名プレフィックスとしての解釈 (`b` のカラム `id`) を優先します。デフォルトでは、アナライザはサブカラムを優先します。従来のアナライザの名前解決に合わせるには、これを有効にしてください。
 
 <div id="analyzer_inline_views">
   ## analyzer_inline_views
@@ -2635,20 +2652,20 @@ CLUSTER TABLE FUNCTION の実行時に、データをどのようにタスクに
 ハッシュテーブルの統計情報の収集を有効にし、メモリ割り当てを最適化します
 
 <div id="compatibility">
-  ## compatibility
+  ## 互換性設定
 </div>
 
-`compatibility` 設定を使用すると、ClickHouse は指定された以前の ClickHouse バージョンのデフォルト設定を使用します。
+`互換性設定` 設定を使用すると、ClickHouse は指定された以前の ClickHouse バージョンのデフォルト設定を使用します。
 
-設定がデフォルト以外の値に変更されている場合、それらの設定はそのまま維持されます (`compatibility` 設定の影響を受けるのは、変更されていない設定のみです) 。
+設定がデフォルト以外の値に変更されている場合、それらの設定はそのまま維持されます (`互換性設定` 設定の影響を受けるのは、変更されていない設定のみです) 。
 
 この設定には、`22.3`、`22.8` のような ClickHouse のバージョン番号を文字列として指定します。値が空の場合、この設定は無効になります。
 
 デフォルトでは無効です。
 
 <Note>
-  ClickHouse Cloud では、サービスレベルのデフォルトの compatibility 設定は ClickHouse Cloud Support が設定する必要があります。設定を希望する場合は、[サポートケースを作成](https://clickhouse.cloud/support)してください。
-  ただし、compatibility 設定は、セッションでの `SET compatibility = '22.3'` やクエリでの `SETTINGS compatibility = '22.3'` など、標準的な ClickHouse の設定メカニズムを使用して、ユーザー、ロール、プロファイル、クエリ、またはセッションレベルで上書きできます。
+  ClickHouse Cloud では、サービスレベルのデフォルトの 互換性設定 設定は ClickHouse Cloud Support が設定する必要があります。設定を希望する場合は、[サポートケースを作成](https://clickhouse.cloud/support)してください。
+  ただし、互換性設定 設定は、セッションでの `SET compatibility = '22.3'` やクエリでの `SETTINGS compatibility = '22.3'` など、標準的な ClickHouse の設定メカニズムを使用して、ユーザー、ロール、プロファイル、クエリ、またはセッションレベルで上書きできます。
 </Note>
 
 <div id="compatibility_ignore_auto_increment_in_create_table">
@@ -3099,15 +3116,15 @@ Decimal の算術演算および比較演算のオーバーフローをチェッ
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "依存先の materialized view に対する重複排除をデフォルトで有効にします。"}]}]} />
 
-Replicated* tables からデータを受け取る materialized view に対する重複排除チェックを有効または無効にします。
+Replicated* テーブル からデータを受け取る materialized view に対する重複排除チェックを有効または無効にします。
 
 設定可能な値:
 
-0 — 無効。
-1 — 有効。
+* 0 — 無効。
+* 1 — 有効。
 
-有効にすると、ClickHouse は Replicated* tables に依存する materialized view 内のブロックに対して重複排除を実行します。
-この設定は、障害により挿入処理が再試行された場合に、materialized view に重複データが含まれないようにするのに役立ちます。
+有効にすると、ClickHouse は Replicated* テーブル に依存する materialized view 内のブロックの重複排除を実行します。
+この設定は、障害によって挿入処理が再試行される場合に、materialized view に重複データが含まれないようにするのに役立ちます。
 
 **関連項目**
 
@@ -3292,7 +3309,7 @@ ENGINE = Log
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.3 で暗黙的に導入された FINAL のパーティションプルーニング動作（https://github.com/ClickHouse/ClickHouse/pull/98242）を制御するため、26.5 で新たに追加された設定です。実質的なセマンティクス変更は 26.3 のブロックに記録されているため、`compatibility = '26.2'` を設定すると元に戻ります。このエントリは、26.4 からのアップグレード時のチェックで、新たに導入された設定名が受け入れられるようにするためのものです。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "パーティションキーのカラムがソートキーに含まれていない場合に、FINAL planner がパーティションプルーニングを無条件にスキップする動作を制御します。この動作変更自体は https://github.com/ClickHouse/ClickHouse/pull/98242 により 26.3 で暗黙的に導入されました。このエントリは、その変更を事後的に文書化するもので、`compatibility = '26.2'` を設定すると変更前の動作に戻ります（0 = FINAL の前に prune、高速; 1 = pruning を遅らせて正しさを優先）。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.3 で暗黙的に導入された FINAL のパーティションプルーニング動作（https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242）を制御するため、26.5 で新たに追加された設定です。実質的なセマンティクス変更は 26.3 のブロックに記録されているため、`compatibility = '26.2'` を設定すると元に戻ります。このエントリは、26.4 からのアップグレード時のチェックで、新たに導入された設定名が受け入れられるようにするためのものです。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "パーティションキーのカラムがソートキーに含まれていない場合に、FINAL planner がパーティションプルーニングを無条件にスキップする動作を制御します。この動作変更自体は https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242 により 26.3 で暗黙的に導入されました。このエントリは、その変更を事後的に文書化するもので、`compatibility = '26.2'` を設定すると変更前の動作に戻ります（0 = FINAL の前に prune、高速; 1 = pruning を遅らせて正しさを優先）。"}]}]} />
 
 有効な場合 (デフォルト) 、パーティションキーのカラムがソートキーに含まれていない
 テーブルに対する `FINAL` クエリでは、パーティションプルーニングはスキップされます。これは
@@ -3561,7 +3578,7 @@ Dictionaryの主キー型を検証します。デフォルトでは、シンプ�
 * 0 — 無効。
 
 <Note>
-  この設定は、破損したバッチにも影響します (異常な server (マシン) の停止や、[Distributed](/ja/reference/engines/table-engines/special/distributed) table engine で `fsync_after_insert`/`fsync_directories` を使用していないことが原因で発生する場合があります) 。
+  この設定は、破損したバッチにも影響します (異常な server (マシン) の停止や、[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルエンジン で `fsync_after_insert`/`fsync_directories` を使用していないことが原因で発生する場合があります) 。
 </Note>
 
 <Note>
@@ -3829,6 +3846,18 @@ Cloud でのデフォルト値: `20000`.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "新しい設定"}]}]} />
 
 ClickHouse Cloudでのみ有効です。分散キャッシュサーバーからデータを受信する際のタイムアウトをミリ秒単位で指定します。この期間内に1バイトも受信されなかった場合、例外がスローされます。
+
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "`system.distributed_cache_registry` の `certificate` カラムと `signature` カラムを表示するための新しい設定。"}]}]} />
+
+ClickHouse Cloud でのみ有効です。`system.distributed_cache_registry` テーブルで `certificate` カラムと `signature` カラムを表示します。既定では、出力をコンパクトに保つため、これらのカラムは空になっています。内容を確認するには、この設定を有効にしてください。
 
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
@@ -4188,6 +4217,18 @@ Distributed への INSERT クエリで、読み取り専用レプリカをスキ
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "レプリカで実行するために分散クエリプランをシリアライズする新しい設定"}]}]} />
 
 レプリカで実行するため、分散クエリプランをシリアライズします。
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "分散クエリ用にリースする stateless worker の数に関する新しい実験的な設定。0 にするとリースは無効になります。"}]}]} />
+
+このクエリの実行に使用する stateless worker の数です。0 にすると、分散プランでの stateless worker のリースは無効になります。
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -5176,6 +5217,25 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- 設定をデフォ�
 非相関の EXISTS サブクエリを、スカラーサブクエリとして実行します。スカラーサブクエリと同様に cache が使用され、結果には定数畳み込みが適用されます。
 
 Cloud でのデフォルト値: `0`.
+
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "26.7 以降、`EXPLAIN PLAN` のデフォルトは `actions=1, compact=1, pretty=1` です。26.7 より前の出力に戻すには、`legacy` に設定してください。"}]}]} />
+
+`EXPLAIN PLAN` で使用されるデフォルトのフォーマットです。
+
+設定可能な値:
+
+* `pretty` (26.7 以降のデフォルト) — `actions`、`compact`、`pretty` はデフォルトで `true` となり、compact で Pretty な、actions 注釈付きの plan を生成します。
+* `legacy` — 26.7 より前の出力。
+
+`EXPLAIN` ステートメントで `actions`、`compact`、または `pretty` オプションを明示的に指定した場合 (たとえば `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) 、その指定が常にこの設定より優先されます。
+
+`json = 1` または `distributed = 1` を指定した `EXPLAIN PLAN` では、`actions`、`compact`、または `pretty` が明示的に設定されていない限り、この設定に関係なく legacy (26.7 より前) のデフォルトが維持されます。Pretty 出力では JSON の結果や分片ごとの distributed plan を表現できないため、これらのモードは legacy 形式でのみ正しくレンダリングされます。
 
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
@@ -6808,21 +6868,21 @@ UNION、INTERSECT、EXCEPT の連鎖におけるトップレベルの SELECT は
   ## insert_deduplication_token
 </div>
 
-この設定を使用すると、MergeTree/ReplicatedMergeTree で独自の deduplication の動作を指定できます。
+この設定を使用すると、MergeTree/ReplicatedMergeTree で独自の 重複排除 の動作を指定できます。
 たとえば、各 INSERT ステートメントでこの設定に一意の値を指定することで、
-同じデータが deduplication によって排除されるのを防げます。
+同じデータが 重複排除 によって排除されるのを防げます。
 
 設定可能な値:
 
 * 任意の文字列
 
-`insert_deduplication_token` は、空でない場合に*のみ* deduplication に使用されます。
+`insert_deduplication_token` は、空でない場合に*のみ* 重複排除 に使用されます。
 
-レプリケートテーブルでは、デフォルトで各パーティションごとに直近 100 件の insert のみが deduplication の対象になります ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) を参照) 。
+レプリケートテーブルでは、デフォルトで各パーティションごとに直近 100 件の insert のみが 重複排除 の対象になります ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) を参照) 。
 非レプリケートテーブルについては、[non&#95;replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window) を参照してください。
 
 <Note>
-  `insert_deduplication_token` はパーティション単位で機能します (`insert_deduplication` checksum と同じです) 。複数のパーティションで同じ `insert_deduplication_token` を使用できます。
+  `insert_deduplication_token` はパーティションごとに追跡されるため、1 回の insert で書き込まれる複数のパーティションが同じトークンを持つことがあります。トークンがない場合、デフォルトのコンテンツ checksum (`insert_deduplication_version = new_unified_hash`) は挿入された ブロック 全体に対して計算されるため、insert が 重複排除 されるのは、データ全体が以前の insert (再試行) と一致する場合のみであり、単一のパーティションの行がたまたま別の insert と一致した場合は対象になりません。
 </Note>
 
 例:
@@ -6836,11 +6896,11 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
 
--- 次のinsertはinsert_deduplication_tokenが異なるため、重複排除されない
+-- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
 
--- 次のinsertはinsert_deduplication_tokenが
--- 以前のいずれかと同じであるため、重複排除される
+-- the next insert will be deduplicated because insert_deduplication_token
+-- is the same as one of the previous
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
 
 SELECT * FROM test_table
@@ -7211,8 +7271,8 @@ ClickHouse は可能であれば常に `partial_merge` join を使用し、そ�
 
 設定可能な値:
 
-* 0 — 右側テーブルに一致する行が複数ある場合、見つかった最初の 1 行のみが結合に使用されます。
-* 1 — 右側テーブルに一致する行が複数ある場合、見つかった最後の 1 行のみが結合に使用されます。
+* 0 — 右テーブルに一致する行が複数ある場合、見つかった最初の 1 行のみが結合に使用されます。
+* 1 — 右テーブルに一致する行が複数ある場合、見つかった最後の 1 行のみが結合に使用されます。
 
 関連項目:
 
@@ -8093,7 +8153,7 @@ false に設定され、かつ `parallel_view_processing` が有効な場合、I
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-クエリの構文木の最大ネスト深度です。これを超えると、例外が発生します。
+クエリ構文木の最大ネスト深度です。これを超えると、例外が発生します。
 
 <Note>
   現時点では、これはパース中にはチェックされず、クエリのパース後にのみチェックされます。
@@ -8160,7 +8220,7 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 設定可能な値:
 
-* 1 回の [GROUP BY](/ja/reference/statements/select/group-by) 操作で使用できる RAM の最大量 (バイト単位) 。
+* 1 回の [GROUP BY](/ja/reference/statements/select/group-by) 操作で使用できる RAM の最大量 (バイト単位)。
 * `0` — 外部メモリでの `GROUP BY` は無効です。
 
 <Note>
@@ -8584,7 +8644,7 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 [FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子を使用する `SELECT` クエリのデータ読み取りフェーズで使用される、並列スレッドの最大数を設定します。
 
@@ -9017,7 +9077,7 @@ SELECT getSetting('max_memory_usage_for_user');
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "ファイルからの並列パースにおけるスレッド数を制御するための専用の設定を追加"}]}]} />
 
@@ -9059,13 +9119,13 @@ Cloud でのデフォルト値: 1 TB。
 ClickHouse は `throw_on_max_partitions_per_insert_block` の設定に応じて警告をログに記録するか、
 例外をスローします。例外メッセージは次のとおりです。
 
-> &quot;単一の INSERT ブロックに対するパーティション数が多すぎます (`partitions_count` 個のパーティション、上限は &quot; + toString(max&#95;partitions) + &quot;) 。
+> &quot;単一の INSERT ブロック内のパーティション数が多すぎます (`partitions_count` 個のパーティション、上限は &quot; + toString(max&#95;partitions) + &quot;)。
 > 上限は &#39;max&#95;partitions&#95;per&#95;insert&#95;block&#39; 設定によって制御されます。
-> 大量のパーティションを使用するのは、よくある誤解です。これは深刻な
-> パフォーマンス低下を引き起こし、server の起動の遅延、INSERT クエリの低速化、
+> 多数のパーティションを使用するのは、よくある誤解です。これにより深刻な
+> パフォーマンス低下が発生し、server の起動の遅延、INSERT クエリの低速化、
 > および SELECT クエリの低速化につながります。table に推奨されるパーティション総数は
 > 1000..10000 未満です。なお、パーティション化は
-> SELECT クエリを高速化することを目的としたものではありません (範囲クエリを高速化するには ORDER BY key で十分です) 。
+> SELECT クエリを高速化することを目的としたものではありません (範囲クエリを高速化するには ORDER BY key で十分です)。
 > パーティションはデータ操作 (DROP PARTITION など) のためのものです。&quot;
 
 <Note>
@@ -9219,8 +9279,8 @@ filesystem から読み取る際の buffer の最大サイズ。
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-結果サイズをバイト単位 (非圧縮) で制限します。しきい値に達した場合、クエリはデータのブロックを処理し終えた後に停止しますが、
-結果の最後のブロックは切り詰められないため、結果サイズがしきい値を超えることがあります。
+結果サイズをバイト単位 (非圧縮) で制限します。しきい値に達した場合、クエリはデータの block を処理し終えた後に停止しますが、
+結果の最後の block は切り詰められないため、結果サイズがしきい値を超えることがあります。
 
 **注意事項**
 
@@ -9605,7 +9665,7 @@ Cloud でのデフォルト値: 1 TB。
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 リモートサーバーからデータを取得するためのスレッド ([&#39;max&#95;distributed&#95;connections&#39;](/ja/reference/settings/session-settings#max_distributed_connections) パラメータを参照) を除く、クエリ処理スレッドの最大数です。
 
@@ -10040,15 +10100,15 @@ ClickHouse は、テーブルからデータを読み取る際にこの設定を
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
-[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブル向けの設定です。クエリ処理時のレイテンシを低減するため、サイズが `min_compress_block_size` 以上の block は、次の mark の書き込み時に圧縮されます。デフォルト値は 65,536 です。
+[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブル向けの設定です。クエリ処理時のレイテンシを低減するため、サイズが `min_compress_block_size` 以上の ブロック は、次の データマーク の書き込み時に圧縮されます。デフォルト値は 65,536 です。
 
-非圧縮データが `max_compress_block_size` 未満の場合、実際の block サイズはこの値以上であり、かつ 1 つの mark 分のデータ量を下回ることはありません。
+非圧縮データが `max_compress_block_size` 未満の場合、実際の ブロック サイズはこの値以上であり、かつ 1 つの データマーク 分のデータ量を下回ることはありません。
 
 例を見てみましょう。テーブル作成時に `index_granularity` が 8192 に設定されていたとします。
 
-UInt32 型のカラム (値あたり 4 バイト) を書き込むとします。8192 行を書き込むと、合計で 32 KB のデータになります。min&#95;compress&#95;block&#95;size = 65,536 なので、圧縮 block は 2 つの mark ごとに形成されます。
+UInt32 型のカラム (値あたり 4 バイト) を書き込むとします。8192 行を書き込むと、合計で 32 KB のデータになります。min&#95;compress&#95;block&#95;size = 65,536 なので、圧縮 ブロック は 2 つの データマーク ごとに形成されます。
 
-String 型の URL カラム (値あたり平均 60 バイト) を書き込むとします。8192 行を書き込むと、平均で 500 KB 弱のデータになります。これは 65,536 を超えるため、圧縮 block は mark ごとに形成されます。この場合、ディスクから 1 つの mark の範囲のデータを読み取る際に、余分なデータが展開されることはありません。
+String 型の URL カラム (値あたり平均 60 バイト) を書き込むとします。8192 行を書き込むと、平均で 500 KB 弱のデータになります。これは 65,536 を超えるため、圧縮 ブロック は データマーク ごとに形成されます。この場合、ディスクから 1 つの データマーク の範囲のデータを読み取る際に、余分なデータが展開されることはありません。
 
 <Note>
   これは上級者向けの設定です。ClickHouse を使い始めたばかりであれば、変更しないでください。
@@ -10648,6 +10708,16 @@ ClickHouse が実行されるクエリのトレースを開始する確率を設
 
 * [GROUP BY optimization](/ja/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "`ORDER BY` が `GROUP BY` のソート記述のプレフィックスである場合に、十分な数のグループが生成された時点で早期終了できるよう、`LIMIT` を順序付き集約にプッシュする新しい設定。"}]}]} />
+
+有効で、かつ順序付き集約が有効になっている場合、十分な数のグループが生成された時点で早期終了できるよう、`LIMIT` を集約ステップにプッシュします。これにより、`ORDER BY` が `GROUP BY` キーのプレフィックスに一致する場合に、読み取るデータ量を削減できます。`rows_before_limit_at_least` で報告される値が少なくなる可能性があります。正確な件数が必要な場合は、`exact_rows_before_limit` を使用してください。
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10665,6 +10735,16 @@ SELECT 句内の GROUP BY キーに対する min/max/any/anyLast 集約関数を
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
 フィルタリング性能を高めるため、AND チェーン内の定数比較を補完します。`<`、`<=`、`>`、`>=`、`=` の各演算子と、その組み合わせをサポートします。たとえば、`(a < b) AND (b < c) AND (c < 5)` は `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)` に展開されます。
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "`optimize_and_compare_chain` 最適化の処理量に上限を設ける新しい設定です（`hash` 化されるクエリツリーのノード数で測定）。これにより、比較の `AND` 連鎖が非常に多い、または非常に大きいクエリの解析で、この最適化が支配的になってしまうのを防ぎます。以前の値 `0`（無制限）を指定すると、26.7 より前の、最適化に上限がなかった動作が再現されるため、`compatibility` をそれ以前のバージョンに設定すると、予算の制約なしで推移的な述語の導出が継続されます。予算を無効にするには `0` に設定してください。"}]}]} />
+
+クエリ解析中に `optimize_and_compare_chain` 最適化で使用する処理予算です。これは `getTreeHash` によってハッシュ化されるクエリツリーノード数で測定され、この最適化における主要なコストとなります。この最適化の適用中に、クエリでハッシュ化されたノード数がこの値を超えると、そのクエリの残りの部分にはこの最適化を適用しなくなります。これにより、比較の `AND` 連鎖が非常に多い、または非常に大きいクエリで、何も畳み込めないままこの最適化が解析時間の大半を占めてしまう状況でも、解析時間を抑えられます。途中で打ち切っても安全です。最適化を見送るだけで、結果が変わることはありません。予算を無効にするには `0` に設定してください (無制限) 。
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -11855,7 +11935,7 @@ true で、JOIN を並列レプリカアルゴリズムで実行でき、JOIN �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "MySQL DATE_FORMAT/STR_TO_DATE との互換性を向上"}]}]} />
 
-関数 `parseDateTime` のフォーマッタ `%e` は、1 桁の日付は空白で埋められていることを想定しています。たとえば、`' 2'` は受け付けられますが、`'2'` はエラーになります。
+関数 `parseDateTime` のフォーマッタ `%e` は、1 桁の日は空白で埋められていることを想定しています。たとえば、`' 2'` は受け付けられますが、`'2'` はエラーになります。
 
 <div id="parsedatetime_parse_without_leading_zeros">
   ## parsedatetime_parse_without_leading_zeros
@@ -12524,7 +12604,7 @@ JOIN 後のフィルタが、不一致の行または一致した行に対して
 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
@@ -12538,11 +12618,11 @@ JOIN 後のフィルタが、不一致の行または一致した行に対して
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-実行プラン内でフィルタを下位に押し下げる、クエリプランレベルの最適化の有効/無効を切り替えます。
+実行計画内でフィルターを下位にプッシュダウンする、クエリプランレベルの最適化の有効/無効を切り替えます。
 この設定は、[query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
@@ -12571,8 +12651,8 @@ JOIN 後のフィルタが、不一致の行または一致した行に対して
 クエリプランで、JOIN のどちら側を build table (inner とも呼ばれ、ハッシュ結合ではハッシュテーブルに挿入される側) にするかを決定します。この設定は、`JOIN ON` 句を使用する strictness が `ALL` の JOIN でのみサポートされます。設定可能な値は次のとおりです。
 
 * &#39;auto&#39;: planner がどの table を build table として使用するかを決定します。
-  * &#39;false&#39;: table を入れ替えません (右側の table が build table になります) 。
-  * &#39;true&#39;: 常に table を入れ替えます (左側の table が build table になります) 。
+* &#39;false&#39;: table を入れ替えません (右側の table が build table になります) 。
+* &#39;true&#39;: 常に table を入れ替えます (左側の table が build table になります) 。
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12652,7 +12732,7 @@ EXPLAIN PLAN クエリでは、この上限に達すると最適化の適用を�
 通常のクエリ実行では、実際の最適化回数がこの設定値を超えると、例外が発生します。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきものです。今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきものです。今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 <div id="query_plan_max_set_size_for_projection_match">
@@ -12737,10 +12817,11 @@ JOIN で遅延索引最適化を有効にするために必要な、左側のペ
 
 クエリプランの最適化時に試行する JOIN 順序アルゴリズムを指定します。使用できるアルゴリズムは次のとおりです。
 
-* `greedy` - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
-* `dpsize` - 現在は INNER JOIN に対してのみ DPsize アルゴリズムを実装しています。可能なすべての JOIN 順序を考慮して最適なものを見つけますが、多数のテーブルや JOIN 述語を含むクエリでは遅くなる可能性があります
-* `dphyp` - 現在は INNER JOIN に対してのみ DPhyp (Hypergraph Partitioning による動的計画法) アルゴリズムを実装しています。`dpsize` と同じ探索空間を探索しますが、接続された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の生成が少なくなります
-  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストとして指定できます。これらは順番に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結のコンポーネントが原因の場合) は、代替として次のものが使用されます。
+* &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
+* &#39;dpsize&#39; - 現在は INNER JOIN に対してのみ DPsize アルゴリズムを実装しています。可能なすべての JOIN 順序を考慮して最適なものを見つけますが、多数のテーブルや JOIN 述語を含むクエリでは遅くなる可能性があります。
+* &#39;dpsub&#39; - INNER JOIN と非 INNER JOIN の両方をサポートする DPsub アルゴリズムを実装しています。可能なすべての JOIN 順序を考慮して最適なものを見つけますが、多数のテーブルや JOIN 述語を含むクエリでは遅くなる可能性があります。
+* &#39;dphyp&#39; - 現在は INNER JOIN に対してのみ DPhyp (Hypergraph Partitioning による動的計画法) アルゴリズムを実装しています。`dpsize` と同じ探索空間を探索しますが、接続された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の生成が少なくなります
+  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストとして指定できます。これらは順番に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結のコンポーネントが原因の場合) は、フォールバックとして次のものが使用されます。
 
 <div id="query_plan_optimize_join_order_limit">
   ## query_plan_optimize_join_order_limit
@@ -12817,7 +12898,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側のペ
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-実行プラン内で LIMIT を下位に移動する、クエリプランレベルの最適化を切り替えます。
+実行計画内で LIMIT を下位に移動する、クエリプランレベルの最適化を切り替えます。
 この設定は、[query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
@@ -12856,7 +12937,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側のペ
 設定 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は、将来後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は、将来後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
@@ -12886,7 +12967,7 @@ JOIN演算において左側のtableから順序どおりに読み続けます�
 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用してください。将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用してください。将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
@@ -12918,7 +12999,7 @@ JOIN演算において左側のtableから順序どおりに読み続けます�
   ## query_plan_remove_unused_columns
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="10000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定。クエリプラン内の未使用カラム（入力カラムと出力カラムの両方）を削除する最適化を追加しました。"}]}]} />
 
@@ -12926,7 +13007,7 @@ JOIN演算において左側のtableから順序どおりに読み続けます�
 この設定は、[query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。将来的に後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。将来的に後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
@@ -12963,7 +13044,7 @@ JOIN演算において左側のtableから順序どおりに読み続けます�
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 フィルターを式に分割するクエリプランレベルの最適化を切り替えます。
@@ -12990,9 +13071,9 @@ JOIN演算において左側のtableから順序どおりに読み続けます�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "ソートキーが保持側のみを参照している場合に、ORDER BY ... LIMIT n を LEFT/RIGHT join を通じてプッシュダウンするクエリプランレベルの最適化を有効にする新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "ソートキーが保持側のみを参照している場合に、ORDER BY ... LIMIT n を LEFT/RIGHT 結合 を通じてプッシュダウンするクエリプランレベルの最適化を有効にする新しい設定。"}]}]} />
 
-ソートキーが join の保持側 (LEFT/RIGHT) のカラムのみを参照している場合に、`ORDER BY ... LIMIT n` を join の下にプッシュダウンするクエリプランレベルの最適化を切り替えます。これにより、join 前に保持側の入力が生成する必要のある行数が制限されます。
+ソートキーが 結合 の保持側 (LEFT/RIGHT) のカラムのみを参照している場合に、`ORDER BY ... LIMIT n` を 結合 の下にプッシュダウンするクエリプランレベルの最適化を切り替えます。これにより、結合 前に保持側の入力が生成する必要のある行数が制限されます。
 この設定は、[query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 設定可能な値:
@@ -13432,6 +13513,21 @@ HTTPインターフェイスを使用する場合は、`query_id` パラメー�
 * `0` — 待機しません。
 * 負の整数 — 無制限に待機します。
 * 正の整数 — 待機する秒数です。
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "クエリの開始前に、特定のワークロード向けのメモリを予約するための新しい設定。"}]}]} />
+
+Workload scheduling で使用されます。単一サーバー上でクエリを実行するために予約される RAM の最小量です。予約は、`workload` クエリ設定の値を使用して、WORKLOAD 階層を通じて行われます。
+ワークロードで使用可能なメモリが不足している場合、クエリは開始されず、予約を確保できるようになるまで pending 状態で待機します。
+`0` は予約なしを意味します。
+この設定は、MEMORY RESERVATION リソースが作成されている場合にのみ有効です。
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -14470,7 +14566,7 @@ FINAL 最適化時に、パーツの範囲を交差するものと交差しな�
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "デフォルトで Kafka/RabbitMQ/FileLog への直接 SELECT を許可しない"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "デフォルトで Kafka\/RabbitMQ\/FileLog への直接 SELECT を許可しない"}]}]} />
 
 Kafka、RabbitMQ、FileLog、Redis Streams、S3Queue、AzureQueue、NATS エンジンに対する直接 SELECT クエリを許可します。アタッチされた materialized view がある場合は、この設定を有効にしていても SELECT クエリは許可されません。
 アタッチされた materialized view がない場合、この設定を有効にするとデータを読み取れるようになります。通常、読み取ったデータはキューから削除されるため、注意してください。読み取ったデータが削除されないようにするには、関連するエンジン設定を適切に構成する必要があります。
@@ -14615,17 +14711,6 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 * LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) 圧縮が適用されます。
 * NONE — 圧縮は適用されません。
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "遅延ポスティングリストの密度しきい値に関する新しい設定"}]}]} />
-
-lazy posting list モードでアルゴリズムを選択するための密度しきい値です。
-しきい値未満: leapfrog 方式の積集合。しきい値以上: brute-force bitmap。
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14635,6 +14720,19 @@ lazy posting list モードでアルゴリズムを選択するための密度�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "新しい設定"}]}]} />
 
 転置テキスト索引から構築されたヒントを使用するための、フィルターの最大選択率。
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**別名**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "`text_index_density_threshold` からリネームされました（別名として引き続き使用可能）。遅延ポスティングリスト適用モードで、ポスティングリストの積集合アルゴリズムを選択します。"}]}]} />
+
+遅延ポスティングリスト適用モード (`text_index_posting_list_apply_mode = 'lazy'`) で、積集合アルゴリズムを選択するポスティングリスト密度のしきい値です。
+しきい値未満では leapfrog intersection (スパースなポスティングリストに適する) が、しきい値以上では brute-force bitmap intersection (高密度なポスティングリストに適する) が選択されます。
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14671,7 +14769,7 @@ lazy posting list モードでアルゴリズムを選択するための密度�
 
 テキスト索引クエリ時にポスティングリストをどのように適用するかを制御します。
 &#39;materialize&#39; (デフォルト) は、ポスティングリストを Roaring Bitmap に即座にデコードします。
-&#39;lazy&#39; は、カーソルベースのオンデマンドデコードを使用します (V2 索引フォーマットおよび allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply が必要です) 。
+&#39;lazy&#39; は、カーソルベースのオンデマンドデコードを使用します (シリアライズされた codec を持つ索引フォーマットが必要です) 。
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14963,6 +15061,16 @@ true の場合、update の実行前にパーツセットが最新バージョ�
 * `/test/data.csv` は `https://example.com/test/data.csv` に解決されます
 * `//other.com/test/data.csv` は `https://other.com/test/data.csv` に解決されます
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "新しい設定。`url` テーブル関数でワイルドカードを展開する際に読み取るディレクトリ数を制限します。"}]}]} />
+
+インデックスページから URL ワイルドカードを展開する際にたどることができるディレクトリの最大数。
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -14999,7 +15107,7 @@ materialized view のクエリ実行に非同期方式を使用し、必要に�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "デフォルトで、分散テーブルへの非同期 INSERT に compact フォーマットを使用する"}]}]} />
 
-`Distributed` エンジンのテーブルへのバックグラウンド (`distributed_foreground_insert`) INSERT で、ブロックの保存に compact フォーマットを使用します。
+`Distributed` エンジンのテーブルへのバックグラウンド (`distributed_foreground_insert`) INSERT では、ブロックの保存に compact フォーマットを使用します。
 
 設定可能な値:
 
@@ -15118,9 +15226,9 @@ JOIN 条件の OR で結合された部分を、対応する入力側にプッ�
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "新しい設定。toTime の従来の関数ロジックを使用できるようにします。これは toTimeWithFixedDate と同様に動作します。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "従来の `toTime`（`toTimeWithFixedDate` として引き続き利用可能）の代わりに、新しい `toTime` 関数（値を `Time` データ型に変換する）をデフォルトで使用します。"}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "新しい設定。toTime の従来の関数ロジックを使用できるようにします。これは toTimeWithFixedDate と同様に動作します。"}]}]} />
 
 有効にすると、従来の toTime 関数を使用できます。この関数は、時刻を保持したまま、日時を特定の固定日付に変換します。
 無効な場合は、新しい toTime 関数が使用され、さまざまな型のデータを Time 型に変換します。
@@ -15380,7 +15488,7 @@ FINAL 修飾子付きでクエリを実行するときに、正しい結果を�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "テキスト索引が GA になりました"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "デフォルトで有効"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "テキスト索引が GA になりました"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "デフォルトで有効"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 データ読み取り時にデータスキッピングインデックスを使用するかどうかを制御します。
 
@@ -15468,11 +15576,11 @@ FINAL 修飾子付きでクエリを実行するときに、正しい結果を�
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "テキスト索引ヘッダーキャッシュをグローバルに有効化しました。"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-デシリアライズされたテキスト索引ヘッダーのcacheを使用するかどうかを指定します。
+デシリアライズされたテキスト索引ヘッダーをメモリにcacheするかどうかを指定します。
 テキスト索引ヘッダーキャッシュを使用すると、多数のテキスト索引クエリを処理する際のレイテンシを大幅に低減し、スループットを向上させることができます。
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
@@ -15493,18 +15601,18 @@ FINAL 修飾子付きでクエリを実行するときに、正しい結果を�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-デシリアライズ済みのテキスト索引 posting list の cache を使用するかどうか。
+デシリアライズ済みのテキスト索引 posting list をメモリ内で cache するかどうか。
 テキスト索引 posting list の cache を使用すると、多数のテキスト索引クエリを実行する際のレイテンシを大幅に低減し、スループットを向上させることができます。
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "テキスト索引トークンキャッシュをグローバルに有効化しました。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-デシリアライズされたテキスト索引トークン情報のキャッシュを使用するかどうか。
+デシリアライズされたテキスト索引トークン情報をメモリにキャッシュするかどうか。
 テキスト索引トークンキャッシュを使用すると、大量のテキスト索引クエリを処理する際のレイテンシを大幅に低減し、スループットを向上させることができます。
 
 <div id="use_top_k_dynamic_filtering">

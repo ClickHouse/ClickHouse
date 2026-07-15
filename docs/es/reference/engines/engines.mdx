@@ -1,11 +1,17 @@
 ---
-description: 'Página de tabla de contenidos de Motores'
+description: 'Página de tabla de contenido para Motores'
 slug: /engines
 title: 'Motores'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Page                                                                   | Description                                                                                                                                                                                                                        |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Motores de bases de datos](/es/reference/engines/database-engines/index) | Los motores de bases de datos de ClickHouse le permiten trabajar con tablas y determinan cómo se almacenan y gestionan los datos. Obtenga más información sobre los distintos motores de bases de datos disponibles en ClickHouse. |
-| [Motores de tabla](/es/reference/engines/table-engines/index)             | Los motores de tabla de ClickHouse son un concepto fundamental que determina cómo se almacenan, escriben y leen los datos. Obtenga más información sobre los distintos motores de tabla disponibles en ClickHouse.                 |
+<CardGroup cols={2}>
+  <Card title="Motores de bases de datos" icon="database" href="/es/reference/engines/database-engines/index">
+    Los motores de bases de datos de ClickHouse le permiten trabajar con tablas y determinan cómo se almacenan y administran los datos.
+  </Card>
+
+  <Card title="Motores de tabla" icon="table" href="/es/reference/engines/table-engines/index">
+    Los motores de tabla en ClickHouse son un concepto fundamental que determina cómo se almacenan, escriben y leen los datos.
+  </Card>
+</CardGroup>

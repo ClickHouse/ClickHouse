@@ -7,7 +7,7 @@ title: 'Analyzer'
 doc_type: 'reference'
 ---
 
-在 ClickHouse `24.3` 版本中，新的查询分析器默认处于启用状态。
+在 ClickHouse `24.3` 版本中，analyzer 默认处于启用状态。
 你可以在[此处](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)了解有关其工作原理的更多详情。
 
 <div id="known-incompatibilities">
@@ -146,7 +146,7 @@ FULL JOIN t2 USING (payload);
   #### `USING` clause 中列的类型修饰符处理
 </div>
 
-在 analyzer 的新版本中，用于确定 `USING` clause 中指定列共同超类型的规则已统一，从而带来更可预测的结果，
+在 analyzer 中，用于确定 `USING` clause 中指定列共同超类型的规则已统一，从而带来更可预测的结果，
 尤其是在处理 `LowCardinality` 和 `Nullable` 等类型修饰符时。
 
 * `LowCardinality(T)` 和 `T`：当类型为 `LowCardinality(T)` 的列与类型为 `T` 的列进行 join 时，最终得到的共同超类型将是 `T`，也就是说 `LowCardinality` 修饰符会被丢弃。
@@ -232,7 +232,7 @@ analyzer 显著改变了集群中服务器之间的通信协议。因此，无�
   ## Cloud 迁移
 </div>
 
-我们正在所有当前禁用了新查询分析器的实例上启用该功能，以支持新的功能和性能优化。此变更会实施更严格的 SQL 作用域规则，因此客户需要手动更新不符合要求的查询。
+我们正在所有当前禁用了 analyzer 的实例上启用该功能，以支持新的功能和性能优化。此变更会实施更严格的 SQL 作用域规则，因此客户需要手动更新不符合要求的查询。
 
 <div id="migration-workflow">
   ### 迁移流程

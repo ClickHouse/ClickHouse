@@ -48,10 +48,8 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
 </div>
 
 <Steps>
-  <Step>
-    ### Включите SCIM
-
-    Войдите в **консоль ClickHouse Cloud** с правами администратора организации и откройте **Organization settings → SAML and SCIM settings → SCIM Configuration**.
+  <Step title="Включите SCIM" id="enable-scim-provisioning">
+    Войдите в **консоль ClickHouse Cloud** с правами администратора организации и откройте **настройки организации → настройки SAML и SCIM → SCIM Configuration**.
 
     ![Перейдите на вкладку конфигурации SCIM в настройках организации](/images/cloud/security/scim-okta/scim-okta-01.webp)
 
@@ -68,9 +66,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     Скопируйте его — позже вы вставите этот URL в Okta.
   </Step>
 
-  <Step>
-    ### Сгенерируйте токен доступа SCIM
-
+  <Step title="Сгенерируйте токен доступа SCIM" id="generate-scim-token">
     Найдите раздел `Create an API key` и выберите дату истечения срока действия.
 
     <Tip>
@@ -84,10 +80,8 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     ![Генерация нового SCIM API key](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### Настройте сопоставление ролей
-
-    В панели SCIM Configuration нажмите **Map roles in &quot;Users and roles&quot;** (или перейдите напрямую через **Users and roles → Roles**).
+  <Step title="Настройте сопоставление ролей" id="define-role-mapping">
+    В панели SCIM Configuration нажмите **сопоставить роли в &quot;Users and roles&quot;** (или перейдите напрямую через **Users and roles → Roles**).
 
     Группы SCIM связываются с ролями ClickHouse Cloud по имени, при этом важно учитывать несколько правил:
 
@@ -103,9 +97,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
 </div>
 
 <Steps>
-  <Step>
-    ### Откройте приложение ClickHouse Cloud в Okta
-
+  <Step title="Откройте приложение ClickHouse Cloud в Okta" id="open-clickhouse-cloud-app">
     В **консоли администратора Okta** перейдите в **Applications → Applications** и найдите приложение, которое вы создали при настройке SAML SSO для ClickHouse Cloud. Откройте его.
 
     Если вы еще не создали SAML-приложение, сначала воспользуйтесь [руководством по настройке SAML SSO](/ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup) — SCIM-провизионинг настраивается в том же приложении.
@@ -119,9 +111,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     ![На странице приложения теперь отображается вкладка Provisioning](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### Подключите Okta к конечной точке SCIM
-
+  <Step title="Подключите Okta к конечной точке SCIM" id="connect-okta-scim">
     Откройте вкладку **Provisioning** приложения и нажмите `Edit`. Заполните форму:
 
     * **SCIM connector base URL** — URL конечной точки SCIM, который вы получили ранее.
@@ -147,9 +137,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     Нажмите `Save`.
   </Step>
 
-  <Step>
-    ### Настройте поведение Provisioning
-
+  <Step title="Настройте поведение Provisioning" id="configure-provisioning-behavior">
     Находясь на вкладке **Provisioning**, нажмите `To App` на левой боковой панели. Нажмите `Edit` и включите:
 
     | Параметр                          | Действие  | Что делает                                                                            |
@@ -166,9 +154,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     ![Сохранение настроек Provisioning и возврат на вкладку Sign On](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### Настройте сопоставление атрибутов пользователей
-
+  <Step title="Настройте сопоставление атрибутов пользователей" id="map-user-attributes">
     Okta и ClickHouse Cloud должны одинаково сопоставлять пользовательские поля. На вкладке **Provisioning** нажмите `To App` и проверьте **Attribute Mappings** для вашего приложения. Значения по умолчанию в приложении Okta SAML обычно подходят — сверьтесь с таблицей ниже:
 
     | Атрибут Okta      | Атрибут ClickHouse Cloud (SCIM) | Обязательно                                                                           |
@@ -189,9 +175,7 @@ ClickHouse Cloud поддерживает SCIM 2.0 (System for Cross-domain Iden
     </Warning>
   </Step>
 
-  <Step>
-    ### Отправка групп и назначение пользователей
-
+  <Step title="Отправка групп и назначение пользователей" id="push-groups-and-assign-users">
     Здесь роли назначаются автоматически.
 
     **Создайте группы в Okta.** Для каждого сопоставления ролей, которое вы настроили ранее, создайте или найдите в Okta группу с **точно таким же отображаемым именем**. Например, если в сопоставлении указано `ClickHouse-Admins → Admin`, создайте в Okta группу с именем `ClickHouse-Admins`.

@@ -1,0 +1,154 @@
+---
+description: '가설 인덱스(what-if)에 대한 문서'
+sidebarTitle: '가설 인덱스'
+slug: /sql-reference/statements/hypothetical-index
+title: '가설 인덱스'
+doc_type: 'reference'
+---
+
+가설 인덱스는 실제로 생성하거나 저장하지 않고도 `MergeTree` 계열 테이블에 ATTACH할 수 있는 가상 스킵 인덱스입니다. 이 인덱스는 현재 세션 내에서만 존재하며, 실제 스킵 인덱스가 쿼리에 어떤 영향을 미칠지 추정하기 위해 [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)에서 사용됩니다. 일반적으로 스킵 비율(건너뛸 수 있는 마크의 비율)과 마크 및 바이트 기준의 대략적인 비용을 추정합니다.
+
+가설 인덱스를 사용하면 디스크에 실제로 구체화하는 비용을 들이기 전에 후보 인덱스를 평가할 수 있습니다.
+
+<div id="create-hypothetical-index">
+  ## CREATE HYPOTHETICAL INDEX
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+구문은 `ALTER TABLE ... ADD INDEX`를 따르지만, 인덱스가 생성되거나 기록되지는 않으며 현재 세션에는 인덱스 설명만 저장됩니다.
+
+* `name` — 인덱스 이름입니다. 이 세션에서 `(database, table)` 내에서 고유해야 합니다.
+* `expression` — 인덱싱할 컬럼 또는 표현식입니다.
+* `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`입니다. `text`와 `vector_similarity`는 지원되지 않으며 `CREATE` 시점에 거부됩니다. 실제 `ALTER TABLE ... ADD INDEX` 검증은 세션 전용 저장소에서 재현할 수 없는 테이블 수준 설정에 의존하기 때문입니다.
+* `GRANULARITY value` — 인덱스 그래뉼당 데이터 그래뉼 수입니다. 기본값은 1입니다.
+
+대상 테이블은 `Atomic` 데이터베이스에 있는 `MergeTree` 계열 테이블이어야 합니다(UUID가 있어야 함). UUID가 없는 테이블(예: 레거시 `Ordinary` 데이터베이스의 테이블 또는 구문이 오래된 `MergeTree`)은 거부됩니다. 세션 저장소는 가상의 인덱스를 테이블 UUID를 기준으로 식별하기 때문입니다.
+
+**예시**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## EXPLAIN WHATIF로 가설 인덱스 평가하기
+</div>
+
+가설 인덱스는 정의만 해서는 아무 효과가 없습니다. 쿼리에 어떤 영향을 미치는지 확인하려면, 대표적인 `SELECT`에 대해 [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)를 실행하십시오. 추정기는 각 후보 인덱스의 적용 가능성, 읽게 될 마크, 그에 따른 스킵 비율, 그리고 추정값이 어떤 방식으로 산출되었는지(`empirical`, `statistical`, 또는 `applicability_only`)를 보고합니다.
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+결과:
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes`는 테이블의 평균 행 크기를 바탕으로 한 추정값이므로, 정확한 수치는 스토리지와 압축에 따라 달라집니다.
+
+메모리상의 경험적 스캔을 건너뛰고 대신 [컬럼 통계(column statistics)](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)를 기준으로 추정하려면, 먼저 관련 컬럼에 이를 정의하고(기본적으로 비활성화됨) 구체화 mutation이 완료될 때까지 기다린 다음, 경험적 경로를 비활성화하십시오:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+전체 출력 스키마와 설정은 [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif) 참고를 참조하십시오.
+
+<div id="drop-hypothetical-index">
+  ## 가설 인덱스 삭제
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+현재 세션에서 가설 인덱스를 제거합니다.
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+현재 세션에서 정의된 모든 가설 인덱스를 테이블에 관계없이 제거합니다.
+
+<div id="scope-and-lifetime">
+  ## 범위와 수명
+</div>
+
+* 가설 인덱스는 **현재 세션**에서만 유지되며, 다른 세션에서는 보이지 않고 세션이 종료되면 폐기됩니다.
+* 가설 인덱스를 정의하거나 삭제해도 실제 인덱스가 생성되지는 않으며, 해당 테이블에 대한 일반 쿼리에는 전혀 영향을 주지 않습니다. 실제 `EXPLAIN WHATIF` 실행 시에는 후보 인덱스를 메모리에 구축하기 위해 테이블 데이터를 읽으며, 이 스캔은 세션의 읽기 제한 및 쿼터에 포함됩니다.
+* 현재 세션의 가설 인덱스는 [`system.hypothetical_indexes`](/ko/reference/system-tables/hypothetical_indexes)를 통해 확인하십시오.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+`text` 및 `vector_similarity` 후보는 `CREATE HYPOTHETICAL INDEX` 시점에 거부됩니다. 실제 검증은 세션 전용 저장소가 복제할 수 없는 테이블 수준 설정에 따라 달라지기 때문입니다.
+
+`EXPLAIN WHATIF`는 `FINAL`이 포함된 쿼리에 대해 `status: not_applicable`를 표시합니다(스킵 인덱스 프루닝이 `PrimaryKeyExpand`와 상호작용함). 또한 쿼리가 프로젝션에서 처리되는 경우 `NOT_IMPLEMENTED` 오류를 반환합니다(부모 테이블 인덱스는 프로젝션 파트에 구체화되지 않습니다).
+
+경험적 `skip_ratio`는 **상한**입니다. 남아 있는 각 그래뉼을 개별적으로 집계하며, seek-gap 병합(`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`)이나 논리합(`OR`) 프레디케이트에서 후보와 기존 스킵 인덱스의 조합은 모델링하지 않습니다. 따라서 실제 구체화된 인덱스는 약간 더 많이 읽을 수도 있고, 추정치로는 프루닝되지 않는 경우를 실제로는 프루닝할 수도 있습니다.
+
+<div id="required-privileges">
+  ## 필요한 권한
+</div>
+
+`CREATE HYPOTHETICAL INDEX`에는 인덱스 표현식에서 참조하는 컬럼에 대한 `SELECT` 권한이 필요합니다. 경험적 `EXPLAIN WHATIF`가 해당 컬럼을 읽기 때문에 컬럼 수준 `SELECT`(예: `GRANT SELECT(b)`)만으로도 충분합니다.
+
+`DROP HYPOTHETICAL INDEX` 및 `DROP ALL HYPOTHETICAL INDEXES`에는 추가 권한이 필요하지 않습니다. 세션 로컬 저장소의 항목만 제거합니다.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/ko/reference/system-tables/hypothetical_indexes)
+* [데이터 스키핑 인덱스](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)

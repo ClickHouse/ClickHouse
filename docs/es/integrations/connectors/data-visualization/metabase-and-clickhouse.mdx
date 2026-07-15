@@ -37,75 +37,67 @@ En esta guía consultarás tus datos de ClickHouse con Metabase y visualizarás 
   Si no tienes un conjunto de datos con el que trabajar, puedes añadir uno de los ejemplos. Esta guía utiliza el conjunto de datos [UK Price Paid](/es/get-started/sample-datasets/uk-price-paid), así que puedes elegir ese. Hay varios más en la misma categoría de la documentación.
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúne los datos de conexión
-</div>
+<Steps>
+  <Step title="Reúne tus datos de conexión" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Descarga el plugin de ClickHouse para Metabase" id="2--download-the-clickhouse-plugin-for-metabase">
+    1. Si no tienes una carpeta `plugins`, crea una como subcarpeta en la ubicación donde tengas guardado `metabase.jar`.
 
-<div id="2--download-the-clickhouse-plugin-for-metabase">
-  ## 2.  Descargar el plugin de ClickHouse para Metabase
-</div>
+    2. El plugin es un archivo JAR llamado `clickhouse.metabase-driver.jar`. Descarga la versión más reciente del archivo JAR en <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
 
-1. Si no tienes una carpeta `plugins`, crea una como subcarpeta en la misma ubicación en la que tengas guardado `metabase.jar`.
+    3. Guarda `clickhouse.metabase-driver.jar` en tu carpeta `plugins`.
 
-2. El plugin es un archivo JAR llamado `clickhouse.metabase-driver.jar`. Descarga la versión más reciente del archivo JAR desde <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>
+    4. Inicia (o reinicia) Metabase para que el driver se cargue correctamente.
 
-3. Guarda `clickhouse.metabase-driver.jar` en tu carpeta `plugins`.
+    5. Accede a Metabase en <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. La primera vez que se inicie, verás una pantalla de bienvenida y tendrás que responder una serie de preguntas. Si se te pide seleccionar una base de datos, selecciona &quot;**Agregaré mis datos más tarde**&quot;:
+  </Step>
 
-4. Inicia (o reinicia) Metabase para que el driver se cargue correctamente.
+  <Step title="Conecta Metabase a ClickHouse" id="3--connect-metabase-to-clickhouse">
+    1. Haz clic en el icono del engranaje de la esquina superior derecha y selecciona **Admin Settings** para ir a tu <a href="http://localhost:3000/admin/settings/setup" target="_blank">página de administración de Metabase</a>.
 
-5. Accede a Metabase en <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>. Al iniciarlo por primera vez, verás una pantalla de bienvenida y tendrás que responder una serie de preguntas. Si se te pide seleccionar una base de datos, selecciona &quot;**Añadiré mis datos más tarde**&quot;:
+    2. Haz clic en **Add a database**. También puedes hacer clic en la pestaña **Databases** y seleccionar el botón **Add database**.
 
-<div id="3--connect-metabase-to-clickhouse">
-  ## 3.  Conecta Metabase a ClickHouse
-</div>
+    3. Si la instalación del driver funcionó, verás **ClickHouse** en el menú desplegable de **Database type**:
 
-1. Haz clic en el icono del engranaje de la esquina superior derecha y selecciona **Admin Settings** para ir a tu <a href="http://localhost:3000/admin/settings/setup" target="_blank">página de administración de Metabase</a>.
+       <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Selección de base de datos en Metabase que muestra ClickHouse como una opción" border />
 
-2. Haz clic en **Add a database**. También puedes hacer clic en la pestaña **Databases** y seleccionar el botón **Add database**.
+    4. Asigna a tu base de datos un **Display name**, que es una configuración de Metabase, así que puedes usar el nombre que prefieras.
 
-3. Si la instalación del driver funcionó, verás **ClickHouse** en el menú desplegable de **Database type**:
+    5. Introduce los datos de conexión de tu base de datos de ClickHouse. Habilita una conexión segura si tu servidor de ClickHouse está configurado para usar SSL. Por ejemplo:
 
-   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Selección de base de datos en Metabase que muestra ClickHouse como una opción" border />
+       <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Formulario de datos de conexión de Metabase para una base de datos de ClickHouse" border />
 
-4. Asigna a tu base de datos un **Display name**, que es una configuración de Metabase, así que puedes usar el nombre que prefieras.
+    6. Haz clic en el botón **Save** y Metabase analizará tu base de datos en busca de tablas.
+  </Step>
 
-5. Introduce los datos de conexión de tu base de datos de ClickHouse. Habilita una conexión segura si tu servidor de ClickHouse está configurado para usar SSL. Por ejemplo:
+  <Step title="Ejecuta una consulta SQL" id="4-run-a-sql-query">
+    1. Sal de **Admin settings** haciendo clic en el botón **Exit admin** de la esquina superior derecha.
 
-   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Formulario de datos de conexión de Metabase para una base de datos de ClickHouse" border />
+    2. En la esquina superior derecha, haz clic en el menú **+ New** y verás que puedes hacer preguntas, ejecutar consultas SQL y crear un panel:
 
-6. Haz clic en el botón **Save** y Metabase analizará tu base de datos en busca de tablas.
+       <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Menú New de Metabase que muestra opciones para crear preguntas, consultas SQL y paneles" border />
 
-<div id="4-run-a-sql-query">
-  ## 4. Ejecutar una consulta SQL
-</div>
+    3. Por ejemplo, aquí tienes una consulta SQL ejecutada sobre una tabla llamada `uk_price_paid` que devuelve el precio promedio pagado por año desde 1995 hasta 2022:
 
-1. Sal de **Admin settings** haciendo clic en el botón **Exit admin** de la esquina superior derecha.
+       <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="SQL Editor de Metabase que muestra una consulta sobre datos de precio pagado del Reino Unido" border />
+  </Step>
 
-2. En la esquina superior derecha, haz clic en el menú **+ New** y verás que puedes hacer preguntas, ejecutar consultas SQL y crear un panel:
+  <Step title="Haz una pregunta" id="5-ask-a-question">
+    1. Haz clic en **+ New** y selecciona **Question**. Ten en cuenta que puedes crear una pregunta empezando por una base de datos y una tabla. Por ejemplo, la siguiente pregunta se hace sobre una tabla llamada `uk_price_paid` en la base de datos `default`. Aquí tienes una pregunta sencilla que calcula el precio promedio por localidad dentro del condado de Greater Manchester:
 
-   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Menú New de Metabase que muestra opciones para crear preguntas, consultas SQL y paneles" border />
+       <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Interfaz del constructor de preguntas de Metabase con datos de precios del Reino Unido" border />
 
-3. Por ejemplo, aquí tienes una consulta SQL ejecutada en una tabla llamada `uk_price_paid` que devuelve el precio medio pagado por año entre 1995 y 2022:
+    2. Haz clic en el botón **Visualize** para ver los resultados en una vista tabular.
 
-   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Editor SQL de Metabase que muestra una consulta sobre datos de precios pagados en el Reino Unido" border />
+       <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Visualización de Metabase que muestra resultados tabulares de precios promedio por localidad" border />
 
-<div id="5-ask-a-question">
-  ## 5. Haz una pregunta
-</div>
+    3. Debajo de los resultados, haz clic en el botón **Visualization** para cambiar la visualización a un gráfico de barras (o cualquiera de las otras opciones disponibles):
 
-1. Haz clic en **+ New** y selecciona **Question**. Ten en cuenta que puedes crear una pregunta a partir de una base de datos y una tabla. Por ejemplo, la siguiente pregunta se plantea sobre una tabla llamada `uk_price_paid` en la base de datos `default`. Aquí tienes una pregunta sencilla que calcula el precio medio por localidad dentro del condado de Greater Manchester:
-
-   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Interfaz de creación de preguntas de Metabase con datos de precios del Reino Unido" border />
-
-2. Haz clic en el botón **Visualize** para ver los resultados en una vista de tabla.
-
-   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Visualización de Metabase que muestra resultados en tabla de los precios medios por localidad" border />
-
-3. Debajo de los resultados, haz clic en el botón **Visualization** para cambiar la visualización a un gráfico de barras (o cualquiera de las otras opciones disponibles):
-
-   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualización de gráfico circular de Metabase de los precios medios por localidad en Greater Manchester" border />
+       <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualización de gráfico circular en Metabase de precios promedio por localidad en Greater Manchester" border />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Más información

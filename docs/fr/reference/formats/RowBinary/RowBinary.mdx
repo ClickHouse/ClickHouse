@@ -1291,15 +1291,15 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit` est un type de vecteur permettant une recherche efficace avec différents niveaux de précision. En interne, il est stocké dans un format transposé. Sur le wire, QBit est simplement un `Array` du type d’élément sous-jacent (`Float32`, `Float64` ou `BFloat16`). L’optimisation de transposition des bits pour le stockage s’effectue côté serveur, et non dans le protocole RowBinary.
+`QBit` est un type de vecteur permettant une recherche efficace avec différents niveaux de précision. En interne, il est stocké dans un format transposé. Dans le format binaire, QBit est simplement un `Array` du type d’élément sous-jacent (`Int8`, `Float32`, `Float64` ou `BFloat16`). L’optimisation de transposition des bits pour le stockage s’effectue côté serveur, et non dans le protocole RowBinary.
 
 Syntaxe :
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Où `element_type` est `Float32`, `Float64` ou `BFloat16`, et `dimension` est la dimension fixe du vecteur.
+Où `element_type` est `Int8`, `Float32`, `Float64` ou `BFloat16`, et `dimension` est la dimension fixe du vecteur. Le paramètre `stride`, facultatif, contrôle uniquement la façon dont les plans de bits sont regroupés dans les flux de stockage côté serveur ; il n’affecte pas le format binaire RowBinary, qui correspond toujours au tableau complet de `dimension` éléments.
 
 Format binaire : identique à `Array(element_type)` :
 

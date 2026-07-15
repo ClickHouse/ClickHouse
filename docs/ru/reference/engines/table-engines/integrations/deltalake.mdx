@@ -122,7 +122,7 @@ doc_type: 'reference'
 После создания таблицы на движке таблицы DeltaLake вы можете вставлять в неё данные с помощью:
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
@@ -131,6 +131,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 <Note>
   Запись с использованием этого движка таблицы поддерживается только через Delta Kernel.
   Запись в Azure пока не поддерживается, но для S3 и GCS она работает.
+
+  Запись в Delta Lake — это бета-возможность, и её необходимо включить с помощью `SET allow_delta_lake_writes = 1` (доступно начиная с версии 26.7; в более ранних версиях используйте `SET allow_experimental_delta_lake_writes = 1`).
 </Note>
 
 <div id="data-cache">

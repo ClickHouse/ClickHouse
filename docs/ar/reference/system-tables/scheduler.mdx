@@ -28,14 +28,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `type` ([String](/ar/reference/data-types/index)) — نوع عقدة الجدولة.
 * `weight` ([Float64](/ar/reference/data-types/index)) — وزن العقدة، وتستخدمه العقدة الأصلية من النوع `fair`.
 * `priority` ([Int64](/ar/reference/data-types/index)) — أولوية العقدة، وتستخدمها العقدة الأصلية من النوع &#39;priority&#39; (القيمة الأقل تعني أولوية أعلى).
-* `is_active` ([UInt8](/ar/reference/data-types/index)) — ما إذا كانت هذه العقدة نشطة حاليًا — أي لديها طلبات موارد بانتظار إخراجها من الطابور، مع استيفاء القيود.
-* `active_children` ([UInt64](/ar/reference/data-types/index)) — عدد العُقد الفرعية في الحالة النشطة.
-* `dequeued_requests` ([UInt64](/ar/reference/data-types/index)) — العدد الإجمالي لطلبات الموارد التي أُخرجت من الطابور من هذه العقدة.
-* `canceled_requests` ([UInt64](/ar/reference/data-types/index)) — العدد الإجمالي لطلبات الموارد التي أُلغيت من هذه العقدة.
-* `dequeued_cost` ([Int64](/ar/reference/data-types/index)) — مجموع التكاليف (مثل الحجم بالبايت) لجميع الطلبات التي أُخرجت من الطابور من هذه العقدة.
-* `throughput` ([Float64](/ar/reference/data-types/index)) — متوسط معدل النقل الحالي (التكلفة المُخرَجة من الطابور في الثانية).
-* `canceled_cost` ([Int64](/ar/reference/data-types/index)) — مجموع التكاليف (مثل الحجم بالبايت) لجميع الطلبات التي أُلغيت من هذه العقدة.
-* `busy_periods` ([UInt64](/ar/reference/data-types/index)) — العدد الإجمالي لمرات إلغاء تنشيط هذه العقدة.
+* `precedence` ([Int64](/ar/reference/data-types/index)) — أسبقية العقدة، وتستخدمها العُقد الأصلية المشتركة مكانيًا (الذاكرة) لترتيب القبول والإخلاء (القيمة الأقل تعني أسبقية أعلى).
+* `is_active` ([Nullable(UInt8)](/ar/reference/data-types/index)) — ما إذا كانت هذه العقدة نشطة حاليًا — أي لديها طلبات موارد بانتظار إخراجها من الطابور، مع استيفاء القيود.
+* `active_children` ([Nullable(UInt64)](/ar/reference/data-types/index)) — عدد العُقد الفرعية في الحالة النشطة.
+* `dequeued_requests` ([Nullable(UInt64)](/ar/reference/data-types/index)) — العدد الإجمالي لطلبات الموارد التي أُخرجت من الطابور من هذه العقدة.
+* `canceled_requests` ([Nullable(UInt64)](/ar/reference/data-types/index)) — العدد الإجمالي لطلبات الموارد التي أُلغيت من هذه العقدة.
+* `rejected_requests` ([Nullable(UInt64)](/ar/reference/data-types/index)) — العدد الإجمالي لطلبات الموارد التي رُفضت من هذه العقدة.
+* `dequeued_cost` ([Nullable(Int64)](/ar/reference/data-types/index)) — مجموع التكاليف (مثل الحجم بالبايت) لجميع الطلبات التي أُخرجت من الطابور من هذه العقدة.
+* `canceled_cost` ([Nullable(Int64)](/ar/reference/data-types/index)) — مجموع التكاليف (مثل الحجم بالبايت) لجميع الطلبات التي أُلغيت من هذه العقدة.
+* `rejected_cost` ([Nullable(Int64)](/ar/reference/data-types/index)) — مجموع التكاليف (مثل الحجم بالبايت) لجميع الطلبات التي رُفضت من هذه العقدة.
+* `busy_periods` ([Nullable(UInt64)](/ar/reference/data-types/index)) — العدد الإجمالي لمرات إلغاء تنشيط هذه العقدة.
+* `throughput` ([Nullable(Float64)](/ar/reference/data-types/index)) — متوسط معدل النقل الحالي (التكلفة المُخرَجة من الطابور في الثانية).
 * `vruntime` ([Nullable(Float64)](/ar/reference/data-types/index)) — للعُقد الفرعية التابعة لعقد `fair` فقط. زمن التشغيل الافتراضي للعقدة، وتستخدمه خوارزمية SFQ لاختيار العقدة الفرعية التالية للمعالجة بطريقة عادلة من نوع max-min.
 * `system_vruntime` ([Nullable(Float64)](/ar/reference/data-types/index)) — لعقد `fair` فقط. زمن التشغيل الافتراضي الذي يعرض قيمة `vruntime` لآخر طلب مورد تمت معالجته. ويُستخدم عند تنشيط عقدة فرعية بوصفه القيمة الجديدة لـ `vruntime`.
 * `queue_length` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد `fifo` فقط. العدد الحالي لطلبات الموارد الموجودة في الطابور.
@@ -50,6 +53,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `max_burst` ([Nullable(Float64)](/ar/reference/data-types/index)) — لعقد `bandwidth_limit` فقط. الحد الأعلى لعدد tokens المتاحة في مخنّق token-bucket.
 * `throttling_us` ([Nullable(Int64)](/ar/reference/data-types/index)) — لعقد `bandwidth_limit` فقط. العدد الإجمالي للميكروثواني التي كانت فيها هذه العقدة في حالة throttling.
 * `tokens` ([Nullable(Float64)](/ar/reference/data-types/index)) — لعقد `bandwidth_limit` فقط. عدد tokens المتاحة حاليًا في مخنّق token-bucket.
+* `allocated` ([Nullable(Int64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. المقدار المخصَّص حاليًا من المورد ضمن هذه العقدة.
+* `allocations` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الحالي لتخصيصات الموارد النشطة ضمن هذه العقدة.
+* `updates` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي للتحديثات التي مرّت عبر هذه العقدة.
+* `increases` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي لطلبات الزيادة التي وافقت عليها هذه العقدة.
+* `decreases` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي لطلبات الخفض التي وافقت عليها هذه العقدة.
+* `admits` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي للتخصيصات التي قبلتها هذه العقدة.
+* `removes` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي للتخصيصات التي أُزيلت من هذه العقدة.
+* `killers` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي لعمليات الإخلاء التي بدأتها هذه العقدة بسبب طلبات الزيادة.
+* `victims` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد المشاركة في المساحة فقط. العدد الإجمالي للتخصيصات التي أُخليت من هذه العقدة.
+* `rejects` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد `allocation_queue` فقط. العدد الإجمالي لتخصيصات الموارد التي رُفضت في هذه العقدة.
+* `pending` ([Nullable(UInt64)](/ar/reference/data-types/index)) — لعقد `allocation_queue` فقط. العدد الحالي لتخصيصات الموارد المعلّقة في هذه العقدة.
 
 {/*AUTOGENERATED_END*/}
 

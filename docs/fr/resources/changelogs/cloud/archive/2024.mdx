@@ -316,7 +316,7 @@ Si vous souhaitez la prise en charge d&#39;une région spécifique, veuillez [no
   ### Aperçus du journal des requêtes
 </div>
 
-Notre nouvelle UI Query Insights dans la Cloud Console rend le journal des requêtes intégré de ClickHouse bien plus facile à utiliser. La table `system.query_log` de ClickHouse est une source d’informations essentielle pour l’optimisation des requêtes, le débogage, ainsi que la surveillance de l’état général et des performances du cluster. Il y a toutefois un bémol : avec plus de 70 champs et plusieurs enregistrements par requête, l’interprétation du query log s’accompagne d’une courbe d’apprentissage abrupte. Cette première version de Query Insights pose les bases des futurs travaux visant à simplifier le débogage des requêtes et les schémas d’optimisation. Nous serions ravis de connaître votre avis à mesure que nous continuons à faire évoluer cette fonctionnalité, alors n’hésitez pas à nous contacter : votre retour nous sera très précieux.
+Notre nouvelle UI Query Insights dans la console Cloud rend le journal des requêtes intégré de ClickHouse bien plus facile à utiliser. La table `system.query_log` de ClickHouse est une source d’informations essentielle pour l’optimisation des requêtes, le débogage, ainsi que la surveillance de l’état général et des performances du cluster. Il y a toutefois un bémol : avec plus de 70 champs et plusieurs enregistrements par requête, l’interprétation du query log s’accompagne d’une courbe d’apprentissage abrupte. Cette première version de Query Insights pose les bases des futurs travaux visant à simplifier le débogage des requêtes et les schémas d’optimisation. Nous serions ravis de connaître votre avis à mesure que nous continuons à faire évoluer cette fonctionnalité, alors n’hésitez pas à nous contacter : votre retour nous sera très précieux.
 
 <Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="UI Query Insights de ClickHouse Cloud affichant des métriques de performance des requêtes et une analyse" border />
 
@@ -428,7 +428,7 @@ Les sauvegardes sont essentielles pour toute base de données, aussi fiable soit
   ### Créez des API à partir de vos requêtes SQL (Beta)
 </div>
 
-Lorsque vous rédigez une requête SQL pour ClickHouse, vous devez toujours vous connecter à ClickHouse via un driver pour exposer votre requête à votre application. Désormais, grâce à notre fonctionnalité **Query Endpoints**, vous pouvez exécuter des requêtes SQL directement depuis une API, sans aucune configuration. Vous pouvez configurer les Query Endpoints pour qu’ils renvoient du JSON, du CSV ou du TSV. Cliquez sur le bouton &quot;Share&quot; dans la console Cloud pour essayer cette nouvelle fonctionnalité avec vos requêtes. Pour en savoir plus sur Query Endpoints, cliquez [ici](https://clickhouse.com/blog/automatic-query-endpoints).
+Lorsque vous rédigez une requête SQL pour ClickHouse, vous devez toujours vous connecter à ClickHouse via un pilote pour exposer votre requête à votre application. Désormais, grâce à notre fonctionnalité **Query Endpoints**, vous pouvez exécuter des requêtes SQL directement depuis une API, sans aucune configuration. Vous pouvez configurer les Query Endpoints pour qu’ils renvoient du JSON, du CSV ou du TSV. Cliquez sur le bouton &quot;Share&quot; dans la console Cloud pour essayer cette nouvelle fonctionnalité avec vos requêtes. Pour en savoir plus sur Query Endpoints, cliquez [ici](https://clickhouse.com/blog/automatic-query-endpoints).
 
 <Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="Interface ClickHouse Cloud affichant la configuration de Query Endpoints avec des options de format de sortie" border />
 
@@ -448,7 +448,7 @@ La formation ClickHouse Develop comprend 12 modules gratuits. Jusqu’à cette s
 
 Vous avez peut-être remarqué dans notre console Cloud récemment lancé qu’une nouvelle section intitulée « Data sources » a fait son apparition. La page « Data sources » s’appuie sur ClickPipes, une fonctionnalité native de ClickHouse Cloud qui vous permet d’insérer facilement des données issues de diverses sources dans ClickHouse Cloud.
 
-Notre dernière mise à jour de ClickPipes permet d’importer directement des données depuis Amazon S3 et Google Cloud Storage. Bien que vous puissiez toujours utiliser nos Table functions intégrées, ClickPipes est un service entièrement géré via notre UI qui vous permet d’ingérer des données depuis S3 et GCS en seulement quelques clics. Cette fonctionnalité est encore en Private Preview, mais vous pouvez l’essayer dès aujourd’hui via la console Cloud.
+Notre dernière mise à jour de ClickPipes permet d’importer directement des données depuis Amazon S3 et Google Cloud Storage. Bien que vous puissiez toujours utiliser nos Table functions intégrées, ClickPipes est un service entièrement géré via notre UI qui vous permet d’ingérer des données depuis S3 et GCS en seulement quelques clics. Cette fonctionnalité est encore en aperçu privé, mais vous pouvez l’essayer dès aujourd’hui via la console Cloud.
 
 <Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="Interface ClickPipes montrant les options de configuration pour charger des données depuis des buckets S3 et GCS" border />
 
@@ -510,10 +510,10 @@ Autres modifications :
 </div>
 
 <div id="introducing-the-new-clickhouse-cloud-console">
-  ### Présentation de la nouvelle console Cloud de ClickHouse
+  ### Présentation de la nouvelle console ClickHouse Cloud
 </div>
 
-Cette version inaugure un aperçu privé de la nouvelle console Cloud de ClickHouse.
+Cette version inaugure un aperçu privé de la nouvelle console ClickHouse Cloud.
 
 Chez ClickHouse, nous cherchons en permanence à améliorer l&#39;expérience des développeurs. Nous savons qu&#39;il ne suffit pas de proposer l&#39;entrepôt de données en temps réel le plus rapide ; il doit aussi être simple à utiliser et à administrer.
 
@@ -521,7 +521,7 @@ Chaque mois, des milliers d&#39;utilisateurs de ClickHouse Cloud exécutent des 
 
 Certains clients sélectionnés auront accès en aperçu privé à cette nouvelle expérience de console Cloud : une manière unifiée et immersive d&#39;explorer et de gérer vos données dans ClickHouse. N&#39;hésitez pas à nous contacter à support@clickhouse.com si vous souhaitez bénéficier d&#39;un accès prioritaire.
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="Animation montrant la nouvelle interface de la console Cloud de ClickHouse avec éditeur SQL intégré et fonctionnalités de gestion" border />
+<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="Animation montrant la nouvelle interface de la console ClickHouse Cloud avec éditeur SQL intégré et fonctionnalités de gestion" border />
 
 <div id="march-28-2024">
   ## 28 mars 2024
@@ -739,4 +739,4 @@ Cette version ajoute une nouvelle région AWS (Londres / eu-west-2), la prise en
   ### Changements liés à la fiabilité
 </div>
 
-* Changement non rétrocompatible pour les utilisateurs : auparavant, deux fonctionnalités ([is&#95;deleted](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) et `OPTIMIZE CLEANUP`) pouvaient, dans certaines conditions, entraîner une corruption des données dans ClickHouse. Afin de protéger l’intégrité des données de nos utilisateurs tout en préservant le cœur de cette fonctionnalité, nous en avons ajusté le fonctionnement. Plus précisément, le paramètre MergeTree `clean_deleted_rows` est désormais déprécié et n’a plus aucun effet. Le mot-clé `CLEANUP` n’est pas autorisé par défaut (pour l’utiliser, vous devrez activer `allow_experimental_replacing_merge_with_cleanup`). Si vous décidez d’utiliser `CLEANUP`, vous devez vous assurer qu’il est toujours utilisé avec `FINAL`, et vous devez garantir qu’aucune ligne avec une version antérieure ne soit insérée après l’exécution de `OPTIMIZE FINAL CLEANUP`.
+* Changement non rétrocompatible visible pour les utilisateurs : auparavant, deux fonctionnalités ([is&#95;deleted](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) et `OPTIMIZE CLEANUP`) pouvaient, dans certaines conditions, entraîner une corruption des données dans ClickHouse. Afin de protéger l’intégrité des données de nos utilisateurs, tout en conservant le principe de cette fonctionnalité, nous en avons ajusté le fonctionnement. Plus précisément, le paramètre MergeTree `clean_deleted_rows` est désormais obsolète et n’a plus aucun effet. Le mot-clé `CLEANUP` n’est pas autorisé par défaut (pour l’utiliser, vous devrez activer `allow_experimental_replacing_merge_with_cleanup`). Si vous décidez d’utiliser `CLEANUP`, vous devez vous assurer qu’il est toujours utilisé avec `FINAL`, et vous devez garantir qu’aucune ligne avec une version plus ancienne ne sera insérée après l’exécution de `OPTIMIZE FINAL CLEANUP`.

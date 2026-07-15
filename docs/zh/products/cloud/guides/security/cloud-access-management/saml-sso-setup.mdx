@@ -34,23 +34,17 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
 </div>
 
 <Steps>
-  <Step>
-    ### 访问组织设置
-
+  <Step title="访问组织设置" id="access-organization-settings">
     点击左下角的组织名称，然后选择“组织详情”。
   </Step>
 
-  <Step>
-    ### 启用 SAML 单点登录
-
+  <Step title="启用 SAML 单点登录" id="enable-saml-sso">
     点击 `Enable SAML single sign-on` 旁边的开关。请保持此页面处于打开状态，因为在设置过程中你需要多次返回查看这里的信息。
 
     <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="开始设置 SAML" force />
   </Step>
 
-  <Step>
-    ### 在身份提供商中创建应用程序
-
+  <Step title="在身份提供商中创建应用程序" id="create-idp-application">
     在您的身份提供商中创建一个应用程序，然后将 `Enable SAML single sign-on` 页面上的值复制到身份提供商配置中。有关此步骤的更多信息，请参阅下方对应的身份提供商说明。
 
     * [配置 Okta SAML](#configure-okta-saml)
@@ -65,43 +59,33 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="创建身份提供商应用程序" force />
   </Step>
 
-  <Step>
-    ### 将元数据 URL 添加到您的 SAML 配置
-
+  <Step title="将元数据 URL 添加到您的 SAML 配置" id="add-metadata-url">
     从您的 SAML 提供商处获取 `Metadata URL`。返回 ClickHouse Cloud，点击 `Next: Provide metadata URL`，然后将该 URL 粘贴到文本框中。
 
     <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="添加元数据 URL" force />
   </Step>
 
-  <Step>
-    ### 获取域验证代码
-
+  <Step title="获取域验证代码" id="get-domain-verification-code">
     点击 `Next: Verify your domains`。在文本框中输入你的域名，然后点击 `Check domain`。系统会生成一个随机验证码，你需要将其添加为 DNS 提供商中的一条 TXT 记录。
 
     <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="添加要验证的域名" force />
   </Step>
 
-  <Step>
-    ### 验证您的域名
-
+  <Step title="验证您的域名" id="verify-your-domain">
     在您的 DNS 提供商处创建一条 TXT 记录。将 `TXT record name` 复制到 DNS 提供商的 TXT 记录 Name 字段中。将 `Value` 复制到 DNS 提供商的 Content 字段中。点击 `Verify and Finish` 完成该过程。
 
     <Note>
-      DNS 记录更新并完成验证可能需要几分钟。您可以先离开设置页面，稍后再回来继续完成该过程，无需重新开始。
+      DNS 记录更新并完成验证可能需要几分钟。您可以先离开设置页面，稍后再回来继续完成该过程，无需重新开始。该验证值自首次生成起 48 小时内有效。
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="验证您的域名" force />
   </Step>
 
-  <Step>
-    ### 更新默认角色和会话超时
-
+  <Step title="更新默认角色和会话超时" id="update-defaults">
     完成 SAML 设置后，您可以设置用户登录时默认分配的角色，并调整会话超时设置。有关可分配系统角色的列表，请参阅 [控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
   </Step>
 
-  <Step>
-    ### 配置您的管理员用户
-
+  <Step title="配置您的管理员用户" id="configure-your-admin-user">
     <Note>
       使用其他身份验证方法配置的用户会被保留，直到由您组织中的管理员将其移除。
     </Note>
@@ -126,9 +110,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     </Tip>
   </Step>
 
-  <Step>
-    ### 移除其他身份验证方法
-
+  <Step title="移除其他身份验证方法" id="remove-other-auth-methods">
     移除所有使用非 SAML 身份验证方法的用户，以完成集成，并将访问权限仅限于来自你的身份提供商连接的用户。
   </Step>
 </Steps>
@@ -285,7 +267,7 @@ Azure (Microsoft) SAML 也称为 Azure Active Directory (AD) 或 Microsoft Entra
 
      | Field                                      | Value                                                           |
      | ------------------------------------------ | --------------------------------------------------------------- |
-     | Identifier (Entity ID)                     | 从控制台复制 Service Provider Entity ID                                           |
+     | Identifier (Entity ID)                     | 从控制台复制 Service Provider Entity ID                               |
      | Reply URL (Assertion Consumer Service URL) | 从控制台复制 Single Sign-On URL                                       |
      | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
      | Relay State                                | 留空                                                              |

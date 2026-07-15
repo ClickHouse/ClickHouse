@@ -34,7 +34,7 @@ Voici un aperçu du tableau de bord créé dans ce guide :
   ## Obtenir le jeu de données
 </div>
 
-Ce jeu de données provient d’[OpenCelliD](https://www.opencellid.org/), la plus grande base de données ouverte d’antennes-relais au monde.
+Ce jeu de données provient d’[OpenCelliD](https://www.opencellid.org/) - la plus grande base de données ouverte d’antennes-relais au monde.
 
 En 2021, il contenait plus de 40 millions d’enregistrements sur des antennes-relais (GSM, LTE, UMTS, etc.) dans le monde entier, avec leurs coordonnées géographiques et leurs métadonnées (code pays, réseau, etc.).
 
@@ -44,7 +44,7 @@ Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-Sh
   <Tab title="ClickHouse Cloud">
     ### Charger les données d’exemple
 
-    ClickHouse Cloud propose une option simple pour charger ce jeu de données depuis S3. Connectez-vous à votre organisation ClickHouse Cloud, ou créez un essai gratuit sur [ClickHouse.cloud](https://clickhouse.cloud).
+    ClickHouse Cloud propose une option simple pour charger ce jeu de données depuis S3.  Connectez-vous à votre organisation ClickHouse Cloud, ou créez un essai gratuit sur [ClickHouse.cloud](https://clickhouse.cloud).
 
     <ActionsMenu menu="Charger des données" />
 
@@ -52,7 +52,7 @@ Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-Sh
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Charger le jeu de données des antennes-relais" />
 
-    ### Examiner le schéma de la table cell_towers
+    ### Examiner le schéma de la table cell&#95;towers
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -60,7 +60,7 @@ Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-Sh
 
     <SQLConsoleDetail />
 
-    Voici le résultat de `DESCRIBE`. Plus loin dans ce guide, les choix de types de champs seront expliqués.
+    Voici le résultat de `DESCRIBE`.  Plus loin dans ce guide, les choix de types de champs seront expliqués.
 
     ```response
     ┌─name──────────┬─type──────────────────────────────────────────────────────────────────┬
@@ -82,7 +82,7 @@ Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-Sh
     ```
   </Tab>
 
-  <Tab title="Autogéré">
+  <Tab title="auto-géré">
     1. Créez une table :
 
     ```sql
@@ -306,16 +306,16 @@ Pour créer un tableau de bord Superset à l’aide du jeu de données OpenCelli
 
 <ConnectionDetails />
 
-Dans Superset, vous pouvez ajouter une base de données en choisissant son type, puis en renseignant les détails de connexion. Ouvrez Superset et repérez le **+** : son menu contient les options **Data**, puis **Connect database**.
+Dans Superset, vous pouvez ajouter une base de données en choisissant son type, puis en renseignant les détails de connexion. Ouvrez Superset et repérez le **+** : son menu contient les options **Data**, puis **Connect database**.
 
 <Image img="/images/getting-started/example-datasets/superset-add.webp" size="md" alt="Ajouter une base de données" />
 
-Choisissez **ClickHouse Connect** dans la liste :
+Choisissez **ClickHouse Connect** dans la liste :
 
 <Image img="/images/getting-started/example-datasets/superset-choose-a-database.webp" size="md" alt="Choisir ClickHouse Connect comme type de base de données" />
 
 <Note>
-  Si **ClickHouse Connect** ne figure pas parmi les options proposées, vous devrez l&#39;installer. La commande est `pip install clickhouse-connect`, et plus d&#39;informations sont [disponibles ici](https://pypi.org/project/clickhouse-connect/).
+  Si **ClickHouse Connect** ne figure pas parmi les options proposées, vous devrez l’installer. La commande est `pip install clickhouse-connect`, et plus d’informations sont [disponibles ici](https://pypi.org/project/clickhouse-connect/).
 </Note>
 
 <div id="add-your-connection-details">
@@ -348,7 +348,7 @@ Lorsque vous ajoutez un graphique dans Superset, vous devez préciser le jeu de 
   #### Spécifiez la requête utilisée pour la carte
 </div>
 
-Un Scatterplot deck.gl nécessite une longitude et une latitude, et il est également possible d’appliquer un ou plusieurs filtres à la requête. Dans cet exemple, deux filtres sont appliqués : l’un pour les antennes-relais utilisant la technologie UMTS, et l’autre pour le Mobile country code attribué aux Pays-Bas.
+Un Scatterplot deck.gl nécessite une longitude et une latitude, et il est également possible d’appliquer un ou plusieurs filtres à la requête. Dans cet exemple, deux filtres sont appliqués : l’un pour les antennes-relais utilisant la technologie UMTS, et l’autre pour le code pays mobile attribué aux Pays-Bas.
 
 Les champs `lon` et `lat` correspondent à la longitude et à la latitude :
 

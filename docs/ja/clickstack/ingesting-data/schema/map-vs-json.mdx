@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 [デフォルトのMapベースのスキーマ](/ja/clickstack/ingesting-data/schemas) から移行するには、次の手順に従ってください。
 
 <Steps>
-  <Step>
-    ### OTel collector を停止する
-  </Step>
+  <Step title="OTel collector を停止する" id="stop-the-collector" />
 
-  <Step>
-    ### 既存のテーブル名を変更し、データソースを更新する
-
+  <Step title="既存のテーブル名を変更し、データソースを更新する" id="rename-existing-tables-sources">
     既存のテーブル名を変更し、HyperDX のデータソースを更新します。
 
     たとえば、次のようにします。
@@ -130,23 +126,17 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step>
-    ### OTel collector をデプロイする
-
+  <Step title="OTel collector をデプロイする" id="deploy-the-collector">
     `OTEL_AGENT_FEATURE_GATE_ARG` を設定して OTel collector をデプロイします。
   </Step>
 
-  <Step>
-    ### JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する
-
+  <Step title="JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### 新しいデータソースを作成する
-
+  <Step title="新しいデータソースを作成する" id="create-new-data-sources">
     JSONテーブルを参照する新しいデータソースを HyperDX で作成します。
   </Step>
 </Steps>

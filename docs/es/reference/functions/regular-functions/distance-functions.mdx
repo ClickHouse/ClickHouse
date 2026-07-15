@@ -180,16 +180,17 @@ Calcula la distancia aproximada entre dos puntos (los valores de los vectores co
 **Sintaxis**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **Alias**: `distanceL2Transposed`
 
 **Argumentos**
 
-* `vectors` — Vectores. [`QBit(T, UInt64)`](/es/reference/data-types/qbit)
+* `vectors` — Vectores. [`QBit(T, UInt64[, UInt64])`](/es/reference/data-types/qbit)
 * `reference` — Vector de referencia. [`Array(T)`](/es/reference/data-types/array)
-* `p` — Número de bits de cada elemento del vector que se usarán en el cálculo de la distancia (de 1 hasta el ancho de bits del elemento). El nivel de cuantización controla el equilibrio entre precisión y velocidad. Usar menos bits da lugar a operaciones de E/S y cálculos más rápidos, pero con menor precisión, mientras que usar más bits aumenta la precisión a costa del rendimiento. [`UInt`](/es/reference/data-types/int-uint)
+* `p` — Número de bits de cada elemento del vector que se usarán en el cálculo de la distancia (de 1 hasta el ancho de bits del elemento). El nivel de cuantización controla el equilibrio entre exactitud y velocidad. Usar menos bits da lugar a operaciones de E/S y cálculos más rápidos, pero con menor exactitud, mientras que usar más bits aumenta la exactitud a costa del rendimiento. [`UInt`](/es/reference/data-types/int-uint)
+* `used_dims` — Opcional. Número de dimensiones iniciales que se leerán para una búsqueda de dimensión reducida (Matryoshka) en un `QBit` con stride. Debe ser un múltiplo del stride de QBit que no exceda su dimensión, y el vector de referencia debe tener exactamente esa cantidad de elementos. Solo se leen los grupos de stride que cubren estas dimensiones. [`UInt`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
@@ -653,20 +654,21 @@ Calcula la [distancia de coseno](https://en.wikipedia.org/wiki/Cosine_similarity
 **Sintaxis**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **Alias**: `distanceCosineTransposed`
 
 **Argumentos**
 
-* `vectors` — Vectores. [`QBit(T, UInt64)`](/es/reference/data-types/qbit)
+* `vectors` — Vectores. [`QBit(T, UInt64[, UInt64])`](/es/reference/data-types/qbit)
 * `reference` — Vector de referencia. [`Array(T)`](/es/reference/data-types/array)
 * `p` — Número de bits de cada elemento del vector que se usarán en el cálculo de la distancia (de 1 al ancho de bits del elemento). El nivel de cuantización controla el equilibrio entre precisión y velocidad. Usar menos bits da lugar a E/S y cálculos más rápidos, pero con menor exactitud, mientras que usar más bits aumenta la exactitud a costa del rendimiento. [`UInt`](/es/reference/data-types/int-uint)
+* `used_dims` — Opcional. Número de dimensiones iniciales que se leerán para una búsqueda de dimensión reducida (Matryoshka) en un `QBit` con stride. Debe ser un múltiplo del stride de QBit que no supere su dimensión, y el vector de referencia debe tener exactamente esa cantidad de elementos. Solo se leen los grupos de stride que cubren estas dimensiones. [`UInt`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
-Devuelve la distancia de coseno aproximada (uno menos la similitud del coseno). Siempre devuelve Float64. [`Float64`](/es/reference/data-types/float)
+Devuelve la distancia de coseno aproximada (uno menos la similitud coseno). Siempre devuelve Float64. [`Float64`](/es/reference/data-types/float)
 
 **Ejemplos**
 
@@ -682,6 +684,49 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
 │                          0.10557281085638826 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+Introducido en: v26.7.0
+
+Calcula el [producto escalar](https://en.wikipedia.org/wiki/Dot_product) aproximado (producto interno) de dos vectores (los valores de los vectores son las coordenadas). A diferencia de las funciones de distancia, esta es una medida de similitud: cuanto mayor sea el valor devuelto, más similares serán los vectores.
+
+**Sintaxis**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**Alias**: `scalarProductTransposed`
+
+**Argumentos**
+
+* `vectors` — Vectores. [`QBit(T, UInt64[, UInt64])`](/es/reference/data-types/qbit)
+* `reference` — Vector de referencia. [`Array(T)`](/es/reference/data-types/array)
+* `p` — Número de bits de cada elemento del vector que se usarán en el cálculo (de 1 al ancho de bits del elemento). El nivel de cuantización controla el equilibrio entre precisión y velocidad. Usar menos bits da lugar a E/S y cálculos más rápidos, pero con menor exactitud, mientras que usar más bits aumenta la exactitud a costa del rendimiento. [`UInt`](/es/reference/data-types/int-uint)
+* `used_dims` — Opcional. Número de dimensiones iniciales que se leerán, para una búsqueda de dimensión reducida (Matryoshka) en un `QBit` con stride. Debe ser un múltiplo del stride de QBit que no exceda su dimensión, y el vector de referencia debe tener exactamente esa cantidad de elementos. Solo se leen los grupos de stride que cubren estas dimensiones. [`UInt`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Devuelve el producto escalar aproximado de los dos vectores. Siempre devuelve Float64. [`Float64`](/es/reference/data-types/float)
+
+**Ejemplos**
+
+**Uso básico**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                        2 │
+└──────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

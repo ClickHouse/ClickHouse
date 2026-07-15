@@ -24,33 +24,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 يمكن للمسؤولين دعوة عدة مستخدمين في الوقت نفسه وتعيين دور واحد أو أكثر عند إرسال الدعوة.
 
 <Steps>
-  <Step>
-    ### الوصول إلى إعدادات المؤسسة واختيار `Users and roles`
-
+  <Step title="الوصول إلى إعدادات المؤسسة واختيار `Users and roles`" id="users-and-roles-1">
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### اختيار `Invite members` في الزاوية العلوية اليسرى
-
+  <Step title="اختيار `Invite members` في الزاوية العلوية اليسرى" id="invite-members">
     انقر على الزر `Invite members` في الزاوية العلوية اليسرى.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### إدخال عناوين البريد الإلكتروني للأعضاء الجدد وتعيين الأدوار
-
+  <Step title="إدخال عناوين البريد الإلكتروني للأعضاء الجدد وتعيين الأدوار" id="add-email-and-roles">
     أدخل عناوين البريد الإلكتروني في أعلى شاشة الدعوة. ثم اختر دورًا واحدًا أو أكثر لتعيينها للمستخدمين.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### انقر على `Send invites`
-
+  <Step title={<>انقر على <code>Send invites</code></>} id="send-invites">
     انقر على `Send invites` في أسفل الشاشة. سيتلقى المستخدمون رسالة بريد إلكتروني يمكنهم من خلالها الانضمام إلى المؤسسة. لمزيد من المعلومات حول قبول الدعوات، راجع [إدارة حسابي](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -82,33 +74,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 يمكن للمستخدمين المُسنَد إليهم دور Admin تحديث أذونات المستخدمين الآخرين في أي وقت.
 
 <Steps>
-  <Step>
-    ### الوصول إلى إعدادات المؤسسة واختيار Users and roles
-
+  <Step title="الوصول إلى إعدادات المؤسسة واختيار Users and roles" id="users-and-roles-2">
     من صفحة الخدمات، حدِّد اسم مؤسستك. اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### تحديد المستخدم المطلوب تحديثه واختيار Edit
-
+  <Step title="تحديد المستخدم المطلوب تحديثه واختيار Edit" id="select-user-to-update">
     اختر عنصر القائمة الموجود في نهاية الصف الخاص بالمستخدم الذي تريد تعديل مستوى وصوله. اختر `edit` من القائمة المنبثقة.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### تحديث الأذونات
-
+  <Step title="تحديث الأذونات" id="update-permissions">
     انقر داخل مربع `Roles` لتوسيع القائمة. حدِّد مربعات الاختيار لإضافة أدوار للمستخدم أو إزالتها منه. راجع [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles) للحصول على قائمة بالأدوار والأذونات المرتبطة بها.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### حفظ تغييراتك
-
+  <Step title="حفظ تغييراتك" id="save-changes">
     احفظ تغييراتك باستخدام الزر `Save changes` أسفل علامة التبويب.
   </Step>
 </Steps>

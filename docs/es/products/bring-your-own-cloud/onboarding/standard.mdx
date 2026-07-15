@@ -42,15 +42,11 @@ Para iniciar el proceso de onboarding, [contáctenos](https://clickhouse.com/clo
 Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure en tu organización.
 
 <Steps>
-  <Step>
-    ### Elige un proveedor de Cloud
-
+  <Step title="Elige un proveedor de Cloud" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### Configuración de la cuenta, el proyecto o la suscripción
-
+  <Step title="Configuración de la cuenta, el proyecto o la suscripción" id="account-setup">
     La configuración inicial de BYOC puede realizarse con una [plantilla de CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), un [módulo de Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) o un [módulo de Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Esto crea una identidad con privilegios elevados (rol de IAM/cuenta de servicio/entidad de servicio), lo que permite a los controladores de BYOC de ClickHouse Cloud administrar tu infraestructura.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
@@ -73,9 +69,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
     ```
   </Step>
 
-  <Step>
-    ### Configura la infraestructura de BYOC
-
+  <Step title="Configura la infraestructura de BYOC" id="setup-byoc-infrastructure">
     Se te pedirá que configures la infraestructura, incluidos los buckets de almacenamiento de objetos, la VPC/VNet y el clúster de Kubernetes, desde la consola de ClickHouse Cloud. Hay ciertas configuraciones que deben definirse en esta etapa, ya que no podrán cambiarse más adelante. En concreto:
 
     * **Región**: Todas las **regiones públicas** incluidas en nuestra documentación de [regiones compatibles](/es/products/cloud/reference/supported-regions) están disponibles para implementaciones de BYOC. Actualmente, las regiones privadas no son compatibles.

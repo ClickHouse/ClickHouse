@@ -28,14 +28,17 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `type` ([String](/ru/reference/data-types/index)) — Тип узла планировщика.
 * `weight` ([Float64](/ru/reference/data-types/index)) — Вес узла, используемый родительским узлом типа `fair`.
 * `priority` ([Int64](/ru/reference/data-types/index)) — Приоритет узла, используемый родительским узлом типа &#39;priority&#39; (меньшее значение означает более высокий приоритет).
-* `is_active` ([UInt8](/ru/reference/data-types/index)) — Указывает, активен ли этот узел в данный момент — есть ли у него запросы ресурсов, ожидающие извлечения из очереди, и удовлетворены ли ограничения.
-* `active_children` ([UInt64](/ru/reference/data-types/index)) — Количество дочерних узлов в активном состоянии.
-* `dequeued_requests` ([UInt64](/ru/reference/data-types/index)) — Общее количество запросов ресурсов, извлечённых из очереди этого узла.
-* `canceled_requests` ([UInt64](/ru/reference/data-types/index)) — Общее количество запросов ресурсов, отменённых для этого узла.
-* `dequeued_cost` ([Int64](/ru/reference/data-types/index)) — Сумма стоимостей (например, размера в байтах) всех запросов, извлечённых из очереди этого узла.
-* `throughput` ([Float64](/ru/reference/data-types/index)) — Текущая средняя пропускная способность (стоимость запросов, извлечённых из очереди, в секунду).
-* `canceled_cost` ([Int64](/ru/reference/data-types/index)) — Сумма стоимостей (например, размера в байтах) всех запросов, отменённых для этого узла.
-* `busy_periods` ([UInt64](/ru/reference/data-types/index)) — Общее количество деактиваций этого узла.
+* `precedence` ([Int64](/ru/reference/data-types/index)) — Приоритет узла, используемый родительскими узлами с разделением пространства (memory) для упорядочивания допуска и вытеснения (меньшее значение означает более высокий приоритет).
+* `is_active` ([Nullable(UInt8)](/ru/reference/data-types/index)) — Указывает, активен ли этот узел в данный момент — есть ли у него запросы ресурсов, ожидающие извлечения из очереди, и удовлетворены ли ограничения.
+* `active_children` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Количество дочерних узлов в активном состоянии.
+* `dequeued_requests` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Общее количество запросов ресурсов, извлечённых из очереди этого узла.
+* `canceled_requests` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Общее количество запросов ресурсов, отменённых для этого узла.
+* `rejected_requests` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Общее количество запросов ресурсов, отклонённых для этого узла.
+* `dequeued_cost` ([Nullable(Int64)](/ru/reference/data-types/index)) — Сумма стоимостей (например, размера в байтах) всех запросов, извлечённых из очереди этого узла.
+* `canceled_cost` ([Nullable(Int64)](/ru/reference/data-types/index)) — Сумма стоимостей (например, размера в байтах) всех запросов, отменённых для этого узла.
+* `rejected_cost` ([Nullable(Int64)](/ru/reference/data-types/index)) — Сумма стоимостей (например, размера в байтах) всех запросов, отклонённых для этого узла.
+* `busy_periods` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Общее количество деактиваций этого узла.
+* `throughput` ([Nullable(Float64)](/ru/reference/data-types/index)) — Текущая средняя пропускная способность (стоимость запросов, извлечённых из очереди, в секунду).
 * `vruntime` ([Nullable(Float64)](/ru/reference/data-types/index)) — Только для дочерних узлов `fair`. Виртуальное время выполнения узла, используемое алгоритмом SFQ для выбора следующего дочернего узла для обработки по принципу max-min fairness.
 * `system_vruntime` ([Nullable(Float64)](/ru/reference/data-types/index)) — Только для узлов `fair`. Виртуальное время выполнения, показывающее `vruntime` последнего обработанного запроса ресурсов. Используется при активации дочернего узла как новое значение `vruntime`.
 * `queue_length` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов `fifo`. Текущее количество запросов ресурсов в очереди.
@@ -50,6 +53,17 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `max_burst` ([Nullable(Float64)](/ru/reference/data-types/index)) — Только для узлов `bandwidth_limit`. Верхний предел количества токенов, доступных в throttler token-bucket.
 * `throttling_us` ([Nullable(Int64)](/ru/reference/data-types/index)) — Только для узлов `bandwidth_limit`. Общее количество микросекунд, в течение которых этот узел находился в состоянии throttling.
 * `tokens` ([Nullable(Float64)](/ru/reference/data-types/index)) — Только для узлов `bandwidth_limit`. Количество токенов, доступных в данный момент в throttler token-bucket.
+* `allocated` ([Nullable(Int64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Текущий объём ресурса, выделенный в рамках этого узла.
+* `allocations` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Текущее количество активных выделений ресурсов в рамках этого узла.
+* `updates` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество обновлений, прошедших через этот узел.
+* `increases` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество запросов на увеличение, одобренных этим узлом.
+* `decreases` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество запросов на уменьшение, одобренных этим узлом.
+* `admits` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество выделений ресурсов, допущенных этим узлом.
+* `removes` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество выделений, удалённых из этого узла.
+* `killers` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество вытеснений, инициированных этим узлом из-за запросов на увеличение.
+* `victims` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов с разделяемым пространством. Общее количество выделений, вытесненных из этого узла.
+* `rejects` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов `allocation_queue`. Общее количество выделений ресурсов, отклонённых этим узлом.
+* `pending` ([Nullable(UInt64)](/ru/reference/data-types/index)) — Только для узлов `allocation_queue`. Текущее количество ожидающих выделений ресурсов в этом узле.
 
 {/*AUTOGENERATED_END*/}
 

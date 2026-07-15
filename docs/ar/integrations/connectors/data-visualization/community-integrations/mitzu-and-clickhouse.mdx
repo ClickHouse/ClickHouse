@@ -39,156 +39,136 @@ Mitzu هو تطبيق تحليلات المنتجات دون برمجة ومعت
 
 هذا الدليل ليس سوى نظرة عامة مختصرة حول كيفية استخدام Mitzu. ويمكنك العثور على معلومات أكثر تفصيلًا في [وثائق Mitzu](https://docs.mitzu.io/).
 
-<div id="1-gather-your-connection-details">
-  ## 1. جهّز تفاصيل الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="جهّز تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="سجّل الدخول أو أنشئ حسابًا في Mitzu" id="2-sign-in-or-sign-up-to-mitzu">
+    كخطوة أولى، توجَّه إلى [https://app.mitzu.io](https://app.mitzu.io) لإنشاء حساب.
 
-<div id="2-sign-in-or-sign-up-to-mitzu">
-  ## 2. سجّل الدخول أو أنشئ حسابًا في Mitzu
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="صفحة تسجيل الدخول إلى Mitzu مع حقلي البريد الإلكتروني وكلمة المرور" border />
+  </Step>
 
-كخطوة أولى، توجّه إلى [https://app.mitzu.io](https://app.mitzu.io) لإنشاء حساب.
+  <Step title="هيِّئ مساحة العمل الخاصة بك" id="3-configure-your-workspace">
+    بعد إنشاء المؤسسة، اتبع دليل onboarding `Set up your workspace` في الشريط الجانبي الأيسر. ثم انقر على الرابط `Connect Mitzu with your data warehouse`.
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="صفحة تسجيل الدخول إلى Mitzu مع حقلي البريد الإلكتروني وكلمة المرور" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="صفحة إعداد مساحة عمل Mitzu التي تعرض خطوات الإعداد" border />
+  </Step>
 
-<div id="3-configure-your-workspace">
-  ## 3. هيّئ مساحة العمل الخاصة بك
-</div>
+  <Step title="توصيل Mitzu بـ ClickHouse" id="4-connect-mitzu-to-clickhouse">
+    أولًا، حدِّد ClickHouse كنوع الاتصال وأدخِل تفاصيل الاتصال. ثم انقر على زر `Test connection & Save` لحفظ الإعدادات.
 
-بعد إنشاء مؤسسة، اتبع دليل التهيئة `Set up your workspace` في الشريط الجانبي الأيسر. ثم انقر على الرابط `Connect Mitzu with your data warehouse`.
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="صفحة إعداد اتصال Mitzu لـ ClickHouse مع نموذج التكوين" border />
+  </Step>
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="صفحة إعداد مساحة عمل Mitzu التي تعرض خطوات التهيئة" border />
+  <Step title="إعداد جداول الأحداث" id="5-configure-event-tables">
+    بمجرد حفظ الاتصال، حدِّد علامة التبويب `Event tables` وانقر على زر `Add table`. في النافذة المنبثقة، حدِّد قاعدة البيانات والجداول التي تريد إضافتها إلى Mitzu.
 
-<div id="4-connect-mitzu-to-clickhouse">
-  ## 4. توصيل Mitzu بـ ClickHouse
-</div>
+    استخدم مربعات الاختيار لتحديد جدول واحد على الأقل، ثم انقر على زر `Configure table`. سيؤدي ذلك إلى فتح نافذة منبثقة يمكنك فيها تعيين الأعمدة الأساسية لكل جدول.
 
-أولاً، حدِّد ClickHouse كنوع الاتصال وأدخِل تفاصيل الاتصال. ثم انقر على زر `Test connection & Save` لحفظ الإعدادات.
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="واجهة اختيار جداول Mitzu التي تعرض جداول قاعدة البيانات" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="صفحة إعداد اتصال Mitzu مع ClickHouse وبها نموذج إعداد" border />
+    <br />
 
-<div id="5-configure-event-tables">
-  ## 5. إعداد جداول الأحداث
-</div>
+    > لتشغيل تحليلات المنتجات على إعداد ClickHouse لديك، تحتاج إلى &gt; تحديد بعض الأعمدة الأساسية من جدولك.
+    >
+    > وهي كالتالي:
+    >
+    > * **معرّف المستخدم** - العمود الذي يحتوي على المعرّف الفريد للمستخدمين.
+    > * **وقت الحدث** - عمود الطابع الزمني لأحداثك.
+    > * اختياري&#91;**اسم الحدث**&#93; - يُقسِّم هذا العمود الأحداث إذا كان الجدول يحتوي على أنواع متعددة من الأحداث.
 
-بمجرد حفظ الاتصال، حدِّد علامة التبويب `Event tables` وانقر على زر `Add table`. في النافذة المنبثقة، حدِّد قاعدة البيانات والجداول التي تريد إضافتها إلى Mitzu.
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="إعداد فهرس أحداث Mitzu الذي يعرض خيارات تعيين الأعمدة" border />
 
-استخدم مربعات الاختيار لتحديد جدول واحد على الأقل، ثم انقر على زر `Configure table`. سيؤدي ذلك إلى فتح نافذة منبثقة يمكنك فيها تعيين الأعمدة الأساسية لكل جدول.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="واجهة اختيار جداول Mitzu التي تعرض جداول قاعدة البيانات" border />
+    بعد إعداد جميع الجداول، انقر على زر `Save & update event catalog`، وسيعثر Mitzu على جميع الأحداث وخصائصها من الجدول المحدد أعلاه. قد تستغرق هذه الخطوة بضع دقائق، بحسب حجم مجموعة البيانات لديك.
+  </Step>
 
-<br />
+  <Step title="تنفيذ استعلامات التجزئة" id="4-run-segmentation-queries">
+    تقسيم المستخدمين إلى شرائح في Mitzu سهل تمامًا كما هو الحال في Amplitude أو Mixpanel أو PostHog.
 
-> لتشغيل تحليلات المنتجات على إعداد ClickHouse لديك، تحتاج إلى تحديد بعض الأعمدة الأساسية من جدولك.
->
-> وهي كالتالي:
->
-> * **معرّف المستخدم** - العمود الذي يحتوي على المعرّف الفريد للمستخدمين.
-> * **وقت الحدث** - عمود الطابع الزمني لأحداثك.
-> * اختياري [**اسم الحدث**] - يُقسِّم هذا العمود الأحداث إذا كان الجدول يحتوي على أنواع متعددة من الأحداث.
+    تحتوي صفحة Explore على منطقة لتحديد الأحداث على الجانب الأيسر، بينما يتيح لك القسم العلوي ضبط النطاق الزمني.
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="إعداد فهرس أحداث Mitzu الذي يعرض خيارات تعيين الأعمدة" border />
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="واجهة استعلام تقسيم الشرائح في Mitzu مع تحديد الأحداث وضبط الوقت" border />
 
-<br />
+    <br />
 
-بعد إعداد جميع الجداول، انقر على زر `Save & update event catalog`، وسيعثر Mitzu على جميع الأحداث وخصائصها من الجدول المحدد أعلاه. قد تستغرق هذه الخطوة بضع دقائق، بحسب حجم مجموعة البيانات لديك.
+    <Tip>
+      **التصفية والتقسيم**
 
-<div id="4-run-segmentation-queries">
-  ## 4. تشغيل استعلامات التقسيم
-</div>
+      تتم التصفية كما هو متوقع: اختر خاصية (عمود ClickHouse) وحدد القيم من القائمة المنسدلة التي تريد استخدامها في التصفية.
+      يمكنك اختيار أي خاصية للحدث أو للمستخدم لإجراء التقسيم (انظر أدناه لمعرفة كيفية دمج خصائص المستخدم).
+    </Tip>
+  </Step>
 
-تقسيم المستخدمين في Mitzu سهل تمامًا كما هو في Amplitude أو Mixpanel أو PostHog.
+  <Step title="تنفيذ استعلامات مسار التحويل" id="5-run-funnel-queries">
+    حدِّد ما يصل إلى 9 خطوات لمسار التحويل. اختر الإطار الزمني الذي يمكن للمستخدمين خلاله إكمال مسار التحويل.
+    احصل على رؤى فورية حول معدل التحويل من دون كتابة أي سطر من شيفرة SQL.
 
-تتضمن صفحة Explore منطقة تحديد للأحداث على الجانب الأيسر، بينما يتيح لك القسم العلوي ضبط النطاق الزمني.
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="عرض تحليل مسار التحويل في Mitzu الذي يُظهر معدلات التحويل بين الخطوات" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="واجهة استعلامات التقسيم في Mitzu مع تحديد الأحداث وضبط النطاق الزمني" border />
+    <br />
 
-<br />
+    <Tip>
+      **اعرض الاتجاهات**
 
-<Tip>
-  **عوامل التصفية والتقسيم**
+      اختر `Funnel trends` لتصوُّر اتجاهات مسار التحويل بمرور الوقت.
+    </Tip>
+  </Step>
 
-  تتم التصفية بالطريقة المعتادة: اختر خاصية (عمود في ClickHouse) وحدد القيم التي تريد التصفية بها من القائمة المنسدلة.
-  يمكنك اختيار أي خاصية للحدث أو للمستخدم لإجراء التقسيم (راجع أدناه لمعرفة كيفية دمج خصائص المستخدم).
-</Tip>
+  <Step title="تشغيل استعلامات الاستبقاء" id="6-run-retention-queries">
+    حدِّد ما يصل إلى خطوتين لحساب معدل الاحتفاظ. اختر نافذة الاحتفاظ الخاصة بالنافذة المتكررة لـ
+    احصل على رؤى فورية حول معدل التحويل دون كتابة سطر واحد من شيفرة SQL.
 
-<div id="5-run-funnel-queries">
-  ## 5. تشغيل استعلامات مسار التحويل
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="تحليل الاحتفاظ في Mitzu الذي يعرض معدلات احتفاظ المجموعات" border />
 
-اختر ما يصل إلى 9 خطوات لمسار التحويل. وحدِّد الإطار الزمني الذي يمكن للمستخدمين خلاله إكمال هذا المسار.
-احصل على رؤى فورية حول معدلات التحويل دون كتابة أي تعليمة SQL.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="عرض تحليل مسار التحويل في Mitzu يوضّح معدلات التحويل بين الخطوات" border />
+    <Tip>
+      **الاحتفاظ حسب المجموعة**
 
-<br />
+      اختر `Weekly cohort retention` لمعرفة كيف تتغيّر معدلات الاحتفاظ بمرور الوقت.
+    </Tip>
+  </Step>
 
-<Tip>
-  **اعرض الاتجاهات بصريًا**
+  <Step title="تنفيذ استعلامات الرحلات" id="7-run-journey-queries">
+    حدِّد ما يصل إلى 9 خطوات لمسار التحويل. اختر الإطار الزمني الذي يمكن للمستخدمين خلاله إكمال الرحلة. يوفّر مخطط رحلة Mitzu خريطة بصرية لكل مسار يسلكه المستخدمون عبر الأحداث المحددة.
 
-  اختر `Funnel trends` لعرض اتجاهات مسار التحويل بمرور الوقت.
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="تصور رحلة Mitzu الذي يوضح تدفق مسار المستخدم بين الأحداث" border />
 
-<div id="6-run-retention-queries">
-  ## 6. شغّل استعلامات الاحتفاظ
-</div>
+    <br />
 
-حدّد ما يصل إلى خطوتين لحساب معدل الاحتفاظ. اختر نافذة الاحتفاظ للنافذة المتكررة للحصول على
-رؤى فورية حول معدل التحويل دون كتابة سطر واحد من تعليمات SQL البرمجية.
+    <Tip>
+      **قسِّم الخطوات**
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="تحليل الاحتفاظ في Mitzu الذي يعرض معدلات احتفاظ المجموعات" border />
+      يمكنك تحديد خاصية للمقطع `Break down` لتمييز المستخدمين ضمن الخطوة نفسها.
+    </Tip>
 
-<br />
+    <br />
+  </Step>
 
-<Tip>
-  **الاحتفاظ بالمجموعة**
+  <Step title="تنفيذ استعلامات الإيرادات" id="8-run-revenue-queries">
+    إذا تم تكوين إعدادات الإيرادات، يمكن لـ Mitzu حساب إجمالي MRR وعدد الاشتراكات استنادًا إلى أحداث الدفع لديك.
 
-  اختر `Weekly cohort retention` لتصوّر كيف تتغيّر معدلات الاحتفاظ بمرور الوقت.
-</Tip>
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="لوحة معلومات تحليل الإيرادات في Mitzu تعرض مقاييس MRR" border />
+  </Step>
 
-<div id="7-run-journey-queries">
-  ## 7. نفِّذ استعلامات الرحلة
-</div>
+  <Step title="SQL الأصلية" id="9-sql-native">
+    Mitzu يعتمد على SQL الأصلي، ما يعني أنه يُنشئ شيفرة SQL أصلية من الإعداد الذي تختاره في صفحة Explore.
 
-حدِّد ما يصل إلى 9 خطوات لمسار التحويل. واختر النافذة الزمنية التي يمكن للمستخدمين خلالها إكمال الرحلة. يوفّر مخطط الرحلة في Mitzu عرضًا مرئيًا لكل مسار يسلكه المستخدمون عبر الأحداث المحددة.
+    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="عرض إنشاء شيفرة SQL في Mitzu يُظهر استعلام ClickHouse أصليًا" border />
 
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="تصوّر رحلة Mitzu يوضّح تدفق مسار المستخدم بين الأحداث" border />
+    <br />
 
-<br />
+    <Tip>
+      **تابع عملك في أداة BI**
 
-<Tip>
-  **قسِّم الخطوات**
-
-  يمكنك تحديد خاصية ضمن الشريحة `Break down` لتمييز المستخدمين داخل الخطوة نفسها.
-</Tip>
-
-<br />
-
-<div id="8-run-revenue-queries">
-  ## 8. شغّل استعلامات الإيرادات
-</div>
-
-إذا كانت إعدادات الإيرادات مُعدّة، يمكن لـ Mitzu حساب إجمالي MRR وعدد الاشتراكات استنادًا إلى أحداث الدفع لديك.
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="لوحة معلومات تحليل الإيرادات في Mitzu تعرض مقاييس MRR" border />
-
-<div id="9-sql-native">
-  ## 9. SQL الأصلي
-</div>
-
-يعتمد Mitzu على SQL الأصلي، ما يعني أنه ينشئ شيفرة SQL أصلية انطلاقًا من configuration التي تختارها في صفحة Explore.
-
-<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="عرض إنشاء شيفرة SQL في Mitzu يُظهر استعلام ClickHouse أصليًا" border />
-
-<br />
-
-<Tip>
-  **تابع عملك في أداة BI**
-
-  إذا واجهت أحد قيود واجهة Mitzu، فانسخ شيفرة SQL وتابع عملك في أداة BI.
-</Tip>
+      إذا واجهت قيدًا في واجهة مستخدم Mitzu، فانسخ شيفرة SQL وتابع عملك في أداة BI.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="mitzu-support">
   ## دعم Mitzu

@@ -1595,12 +1595,12 @@ SELECT initcap('John''s cat won''t eat.');
 도입 버전: v23.7.0
 
 [`initcap`](#initcap)와 마찬가지로 `initcapUTF8`은 각 단어의 첫 글자를 대문자로, 나머지 글자를 소문자로 변환합니다.
-문자열이 유효한 UTF-8로 인코딩된 텍스트를 포함한다고 가정합니다.
+문자열에 유효한 UTF-8로 인코딩된 텍스트가 포함되어 있다고 가정합니다.
 이 가정이 충족되지 않아도 예외는 발생하지 않으며 결과는 정의되지 않습니다.
 
 <Note>
   이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어에서는 결과가 완전히 정확하지 않을 수 있습니다(i/İ 대 i/I).
-  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스 길이가 서로 다르면 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
+  코드 포인트의 대문자와 소문자에 대한 UTF-8 바이트 시퀀스 길이가 서로 다르면 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
 </Note>
 
 **구문**
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2204,7 +2201,7 @@ normalizeUTF8NFKC(str)
 
 **반환 값**
 
-UTF-8 문자열을 NFKC로 정규화한 값을 반환합니다. [`String`](/ko/reference/data-types/string)
+UTF-8 문자열의 NFKC 정규화된 형태를 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -2212,8 +2209,8 @@ UTF-8 문자열을 NFKC로 정규화한 값을 반환합니다. [`String`](/ko/r
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 원형 숫자 문자
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 1 2 3으로 변환
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2281,7 +2278,7 @@ normalizeUTF8NFKD(str)
 
 **반환 값**
 
-UTF-8 문자열의 NFKD 정규화된 형식을 반환합니다. [`String`](/ko/reference/data-types/string)
+UTF-8 문자열의 NFKD 정규화된 형태를 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -2289,8 +2286,8 @@ UTF-8 문자열의 NFKD 정규화된 형식을 반환합니다. [`String`](/ko/r
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 아래 첨자 2 + O + 위 첨자 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- H 2 O 2로 변환
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3893,12 +3890,12 @@ SELECT upper('clickhouse')
 
 도입 버전: v1.1.0
 
-문자열이 유효한 UTF-8로 인코딩된 텍스트를 포함한다고 가정하고 문자열을 대문자로 변환합니다.
-이 가정이 성립하지 않아도 예외는 발생하지 않으며, 결과는 정의되지 않습니다.
+문자열에 유효한 UTF-8로 인코딩된 텍스트가 포함되어 있다고 가정하고, 문자열을 대문자로 변환합니다.
+이 가정이 충족되지 않더라도 예외는 발생하지 않으며, 결과는 정의되지 않습니다.
 
 <Note>
-  이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어에서는 결과가 정확히 올바르지 않을 수 있습니다(i/İ 대 i/I).
-  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스의 길이가 다른 경우(`ẞ` 및 `ß` 등), 해당 코드 포인트에 대한 결과가 올바르지 않을 수 있습니다.
+  이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어의 경우 결과가 완전히 정확하지 않을 수 있습니다(i/İ 대 i/I).
+  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스 길이가 다른 경우(`ẞ` 및 `ß` 등), 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
 </Note>
 
 **구문**

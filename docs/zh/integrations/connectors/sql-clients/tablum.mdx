@@ -17,64 +17,58 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 <CommunityMaintainedBadge />
 
 <div id="open-the-tablumio-startup-page">
-  ## 打开 TABLUM.IO 启动页
+  ## 打开 TABLUM.IO 起始页面
 </div>
 
 <Note>
-  你可以在 Linux 服务器上使用 Docker 安装 TABLUM.IO 的自托管版本。
+  你可以在 Linux 服务器上的 docker 中安装 TABLUM.IO 的 self-hosted 版本。
 </Note>
 
-<div id="1-sign-up-or-sign-in-to-the-service">
-  ## 1. 注册或登录该服务
-</div>
+<Steps>
+  <Step title="注册或登录服务" id="1-sign-up-or-sign-in-to-the-service">
+    首先，使用你的电子邮件注册 TABLUM.IO，或通过 Google 或 Facebook 账号快速登录。
 
-首先，使用您的电子邮箱注册 TABLUM.IO，或通过 Google 或 Facebook 账号快速登录。
+    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="TABLUM.IO 登录页面" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="TABLUM.IO 登录页面" />
+  <Step title="添加 ClickHouse 连接器" id="2-add-a-clickhouse-connector">
+    准备好你的 ClickHouse 连接信息，进入 **Connector** 选项卡，并填写主机 URL、端口、用户名、密码、数据库名称以及连接器名称。填写完这些字段后，点击 **Test connection** 按钮验证连接信息，然后点击 **Save connector for me** 将其保存为持久配置。
 
-<div id="2-add-a-clickhouse-connector">
-  ## 2. 添加 ClickHouse 连接器
-</div>
+    <Tip>
+      请确保根据你的连接信息指定正确的 **HTTP** 端口，并相应切换 **SSL** 模式。
+    </Tip>
 
-准备好你的 ClickHouse 连接信息，进入 **Connector** 选项卡，并填写主机 URL、端口、用户名、密码、数据库名称以及连接器名称。填写完这些字段后，点击 **Test connection** 按钮验证连接信息，然后点击 **Save connector for me** 将其保存为持久配置。
+    <Tip>
+      通常，使用 TLS 时端口为 8443；不使用 TLS 时端口为 8123。
+    </Tip>
 
-<Tip>
-  请确保根据你的连接信息指定正确的 **HTTP** 端口，并相应切换 **SSL** 模式。
-</Tip>
+    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="在 TABLUM.IO 中添加 ClickHouse 连接器" />
+  </Step>
 
-<Tip>
-  通常，使用 TLS 时端口为 8443；不使用 TLS 时端口为 8123。
-</Tip>
+  <Step title="选择连接器" id="3-select-the-connector">
+    进入 **Dataset** 选项卡。在下拉列表中选择最近创建的 ClickHouse 连接器。在右侧面板中，你将看到可用表和 schema 列表。
 
-<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="在 TABLUM.IO 中添加 ClickHouse 连接器" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="在 TABLUM.IO 中选择 ClickHouse 连接器" />
+  </Step>
 
-<div id="3-select-the-connector">
-  ## 3. 选择连接器
-</div>
+  <Step title="输入 SQL 查询并运行" id="4-input-a-sql-query-and-run-it">
+    在 SQL 控制台中输入查询，然后点击 **Run Query**。结果将以电子表格形式显示。
 
-转到 **Dataset** 选项卡。在下拉菜单中选择最近创建的 ClickHouse 连接器。右侧面板会显示可用的表和 schema 列表。
+    <Tip>
+      右键点击列名以打开下拉菜单，其中包含排序、过滤器和其他操作。
+    </Tip>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="在 TABLUM.IO 中选择 ClickHouse 连接器" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="在 TABLUM.IO 中运行 SQL 查询" />
 
-<div id="4-input-a-sql-query-and-run-it">
-  ## 4. 输入 SQL 查询并运行
-</div>
+    <Note>
+      使用 TABLUM.IO，你可以
 
-在 SQL 控制台中输入查询，然后点击 **运行查询**。结果会以电子表格形式显示。
-
-<Tip>
-  右键单击列名，即可打开包含排序、过滤器和其他操作的下拉菜单。
-</Tip>
-
-<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="在 TABLUM.IO 中运行 SQL 查询" />
-
-<Note>
-  在 TABLUM.IO 中，您可以
-
-  * 在您的 TABLUM.IO 账户中创建并使用多个 ClickHouse 连接器，
-  * 无论数据源如何，都可以对任何已加载的数据运行查询，
-  * 将结果共享为一个新的 ClickHouse 数据库。
-</Note>
+      * 在你的 TABLUM.IO 账户中创建并使用多个 ClickHouse 连接器，
+      * 对任何已加载的数据运行查询，而不受数据源限制，
+      * 将结果共享为新的 ClickHouse 数据库。
+    </Note>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 了解更多

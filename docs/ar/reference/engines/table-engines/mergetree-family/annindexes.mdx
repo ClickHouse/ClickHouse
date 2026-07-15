@@ -661,13 +661,14 @@ LIMIT 3;
 للتصريح عن عمود من النوع `QBit`، استخدم البنية التالية:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 حيث:
 
-* `element_type` – نوع كل عنصر في المتجه. والأنواع المدعومة هي `BFloat16` و`Float32` و`Float64`
+* `element_type` – نوع كل عنصر في المتجه. والأنواع المدعومة هي `Int8` و`BFloat16` و`Float32` و`Float64`
 * `dimension` – عدد العناصر في كل متجه
+* `stride` – اختياري. وهو قاسم لـ`dimension` يُقسِّم الأبعاد إلى `dimension / stride` مجموعات متجاورة تُخزَّن في تدفقات منفصلة، بحيث تؤدي عملية البحث التي تقتصر على الأبعاد الأولى فقط إلى قراءة عدد أقل من التدفقات (وهو ما يفيد مع تضمينات Matryoshka). والقيمة الافتراضية هي `dimension`، وفي هذه الحالة يكون النوع مطابقًا على مستوى البايت لنوع `QBit` غير المستخدِم لـ`stride`. راجع [صفحة نوع البيانات `QBit`](/ar/reference/data-types/qbit) للتفاصيل.
 
 <div id="qbit-create">
   #### إنشاء جدول `QBit` وإدراج البيانات فيه

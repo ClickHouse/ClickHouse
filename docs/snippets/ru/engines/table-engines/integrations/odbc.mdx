@@ -1,14 +1,16 @@
 ---
-description: 'Позволяет ClickHouse подключаться к внешним базам данных через ODBC.'
+description: 'Позволяет ClickHouse подключаться к внешним СУБД через ODBC.'
 sidebarTitle: 'ODBC'
 slug: /engines/table-engines/integrations/odbc
 title: 'Движок таблицы ODBC'
 doc_type: 'reference'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 <CloudNotSupportedBadge />
 
-Позволяет ClickHouse подключаться к внешним базам данных через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+Позволяет ClickHouse подключаться к внешним СУБД через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 Для безопасной работы с ODBC-подключениями ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC загружается напрямую из `clickhouse-server`, проблемы с драйвером могут привести к аварийному завершению работы сервера ClickHouse. При необходимости ClickHouse автоматически запускает `clickhouse-odbc-bridge`. Программа моста ODBC устанавливается из того же пакета, что и `clickhouse-server`.
 

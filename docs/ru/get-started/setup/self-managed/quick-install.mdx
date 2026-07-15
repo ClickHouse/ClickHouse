@@ -11,9 +11,7 @@ doc_type: 'guide'
 Если вам не нужно устанавливать ClickHouse для продакшна, можно запустить установочный скрипт через curl. Скрипт определит подходящий бинарный файл для вашей ОС.
 
 <Steps>
-  <Step>
-    ## Установка ClickHouse с помощью curl
-
+  <Step title="Установка ClickHouse с помощью curl" id="install-clickhouse-using-curl">
     Выполните следующую команду, чтобы загрузить единый бинарный файл для вашей операционной системы.
 
     ```bash
@@ -36,9 +34,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## Запуск clickhouse-local
-
+  <Step title="Запуск clickhouse-local" id="start-clickhouse-local">
     `clickhouse-local` позволяет обрабатывать локальные и удаленные файлы с помощью
     мощного SQL-синтаксиса ClickHouse без какой-либо конфигурации. Данные таблиц хранятся
     во временном расположении, а это значит, что после перезапуска `clickhouse-local`
@@ -51,9 +47,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Запуск clickhouse-server
-
+  <Step title="Запуск clickhouse-server" id="start-clickhouse-server">
     Если вы хотите сохранять данные, запустите `clickhouse-server`. Для запуска
     сервера ClickHouse выполните следующую команду:
 
@@ -62,9 +56,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## Запуск clickhouse-client
-
+  <Step title="Запуск clickhouse-client" id="start-clickhouse-client">
     Когда сервер будет запущен, откройте новое окно терминала и выполните следующую команду,
     чтобы запустить `clickhouse-client`:
 

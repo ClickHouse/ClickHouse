@@ -88,7 +88,7 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
           .config("spark.sql.catalog.clickhouse.user", "default")
           .config("spark.sql.catalog.clickhouse.password", "<your-password>")
           .config("spark.sql.catalog.clickhouse.database", "default")
-          // ClickHouse Cloud용
+          // for ClickHouse cloud
           .config("spark.sql.catalog.clickhouse.option.ssl", "true")
           .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
           .getOrCreate
@@ -121,10 +121,10 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
           .schema(schema)
           .csv(url)
 
-        // ClickHouse에 쓰기
+        // Write to ClickHouse
         df.writeTo("clickhouse.default.cell_towers").append()
 
-        // ClickHouse에서 읽기
+        // Read from ClickHouse
         val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
         Job.commit()
       }
@@ -161,18 +161,18 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
     spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
     spark.conf.set("spark.clickhouse.write.format", "json")
     spark.conf.set("spark.clickhouse.read.format", "arrow")
-    # ClickHouse Cloud용
+    # for ClickHouse cloud
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
 
-    # DataFrame 생성
+    # Create DataFrame
     data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
     df = spark.createDataFrame(data)
 
-    # ClickHouse에 DataFrame 쓰기
+    # Write DataFrame to ClickHouse
     df.writeTo("clickhouse.default.example_table").append()
 
-    # ClickHouse에서 DataFrame 읽기
+    # Read DataFrame from ClickHouse
     df_read = spark.sql("select * from clickhouse.default.example_table")
     logger.info(str(df.take(10)))
 
@@ -181,4 +181,3 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
   </Tab>
 </Tabs>
 
-자세한 내용은 [Spark 문서](/ko/integrations/connectors/data-ingestion/apache-spark/index)를 확인하십시오.

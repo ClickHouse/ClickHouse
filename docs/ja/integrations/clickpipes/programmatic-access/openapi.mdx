@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-すべての ClickPipes タイプは、[ClickHouse Cloud OpenAPI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を使用してプログラムから作成、更新、削除できます。このページでは、認証と利用可能な ClickPipes エンドポイントについて説明し、各 ClickPipe タイプごとに `curl` リクエストの例を示します。
+すべての ClickPipes タイプは、[ClickHouse Cloud OpenAPI](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を使用してプログラムから作成、更新、削除できます。このページでは、認証と利用可能な ClickPipes エンドポイントについて説明し、各 ClickPipe タイプごとに `curl` リクエストの例を示します。
 
 <div id="authentication">
   ## 認証
@@ -38,26 +38,26 @@ https://api.clickhouse.cloud/v1
 
 すべての ClickPipes エンドポイントは、ClickHouse Cloud サービスのスコープに属します。
 
-| Method   | Path                                                                                     | Description               |
-| -------- | ---------------------------------------------------------------------------------------- | ------------------------- |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示     |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成             |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得             |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新             |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除             |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得          |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新          |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新      |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止)  |
+| Method   | Path                                                                                     | Description              |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------ |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示    |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得            |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新            |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得         |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新         |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新     |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止) |
 
 CDC (変更データキャプチャ)  ClickPipes (Postgres、MySQL、MongoDB) では、共有 CDC (変更データキャプチャ)  インフラストラクチャのスケーリング用に、組織レベルの追加エンドポイントが用意されています。
 
-| Method  | Path                                                    | Description               |
-| ------- | ------------------------------------------------------- | ------------------------- |
+| Method  | Path                                                    | Description                             |
+| ------- | ------------------------------------------------------- | --------------------------------------- |
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC (変更データキャプチャ)  ClickPipes のスケーリングを取得 |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | CDC (変更データキャプチャ)  ClickPipes のスケーリングを更新 |
 
-各エンドポイントの完全なリクエスト/レスポンス スキーマについては、[Swagger UI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を参照してください。
+各エンドポイントの完全なリクエスト/レスポンス スキーマについては、[API リファレンス](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を参照してください。
 
 <div id="examples">
   ## 例
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## ClickPipes の作成
 </div>
 
-`POST /clickpipes` のリクエストボディは、ソースタイプによって異なります。以下の例では、サポートされている各 ClickPipe タイプの構造を示します。正式な JSON スキーマについては、[Swagger UI](/ja/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) を参照してください。
+`POST /clickpipes` のリクエストボディは、ソースタイプによって異なります。以下の例では、サポートされている各 ClickPipe タイプの構造を示します。正式な JSON スキーマについては、[API リファレンス](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を参照してください。
 
 <div id="create-kafka">
   ### Kafka

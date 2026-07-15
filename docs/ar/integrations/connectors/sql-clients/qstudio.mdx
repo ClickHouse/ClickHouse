@@ -21,60 +21,54 @@ QStudio هي واجهة رسومية مجانية لـ SQL، تتيح تشغيل
 
 يتصل QStudio بـ ClickHouse باستخدام JDBC.
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. اجمع معلومات ClickHouse الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل ClickHouse الخاصة بك" id="1-gather-your-clickhouse-details">
+    يستخدم QStudio ‏JDBC عبر HTTP(S) للاتصال بـ ClickHouse؛ وستحتاج إلى:
 
-يستخدم QStudio بروتوكول JDBC عبر HTTP(S) للاتصال بـ ClickHouse؛ وتحتاج إلى ما يلي:
+    * endpoint
+    * رقم المنفذ
+    * اسم المستخدم
+    * كلمة المرور
 
-* نقطة النهاية
-* رقم المنفذ
-* اسم المستخدم
-* كلمة المرور
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="نزّل QStudio" id="2-download-qstudio">
+    QStudio متاح على https://www.timestored.com/qstudio/download/
+  </Step>
 
-<div id="2-download-qstudio">
-  ## 2. تنزيل QStudio
-</div>
+  <Step title="أضف قاعدة بيانات" id="3-add-a-database">
+    * عند فتح QStudio لأول مرة، انقر على خيارات القائمة **Server-&gt;Add Server** أو على زر إضافة الخادم في شريط الأدوات.
+    * ثم أدخل التفاصيل التالية:
 
-يتوفر QStudio على الرابط https://www.timestored.com/qstudio/download/
+    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="شاشة إعداد اتصال قاعدة البيانات في QStudio تعرض إعدادات الاتصال بـ ClickHouse" />
 
-<div id="3-add-a-database">
-  ## 3. إضافة قاعدة بيانات
-</div>
+    1. Server Type: Clickhouse.com
+    2. ملاحظة: في حقل Host، يجب أن يتضمن العنوان https://
+       Host: https://abc.def.clickhouse.cloud
+       Port: 8443
+    3. Username: default
+       Password: `XXXXXXXXXXX`
+    4. انقر على Add
 
-* عند فتح QStudio لأول مرة، انقر على خيارات القائمة **Server-&gt;Add Server** أو على زر إضافة خادم في شريط الأدوات.
-* ثم أدخِل التفاصيل التالية:
+    إذا اكتشف QStudio أنك لم تثبّت ClickHouse JDBC driver، فسيعرض عليك تنزيله:
+  </Step>
 
-<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="شاشة إعداد اتصال قاعدة بيانات QStudio تعرض إعدادات اتصال ClickHouse" />
+  <Step title="استعلم من ClickHouse" id="4-query-clickhouse">
+    * افتح محرر استعلامات وشغّل استعلامًا. يمكنك تشغيل الاستعلامات باستخدام:
 
-1. نوع الخادم: Clickhouse.com
-2. ملاحظة: في حقل Host، يجب أن تُدرج https://
-   Host: https://abc.def.clickhouse.cloud
-   Port: 8443
-3. اسم المستخدم: default
-   كلمة المرور: `XXXXXXXXXXX`
-4. انقر على Add
+    * Ctrl + e - يشغّل النص المحدد
 
-إذا اكتشف QStudio أن برنامج تشغيل ClickHouse JDBC غير مثبّت لديك، فسيعرض تنزيله لك:
+    * Ctrl + Enter - يشغّل السطر الحالي
 
-<div id="4-query-clickhouse">
-  ## 4. تنفيذ استعلامات على ClickHouse
-</div>
+    * مثال على استعلام:
 
-* افتح محرر الاستعلامات ونفّذ استعلامًا. يمكنك تنفيذ الاستعلامات باستخدام:
-
-* Ctrl + e - ينفّذ النص المحدد
-
-* Ctrl + Enter - ينفّذ السطر الحالي
-
-* مثال على استعلام:
-
-<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="واجهة QStudio تعرض تنفيذ استعلام SQL نموذجي على قاعدة بيانات ClickHouse" />
+    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="واجهة QStudio تعرض تنفيذ استعلام SQL نموذجي على قاعدة بيانات ClickHouse" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
   ## الخطوات التالية
 </div>
 
-اطّلع على [QStudio](https://www.timestored.com/qstudio) للتعرّف على إمكانات QStudio، وعلى [وثائق ClickHouse](/ar/) للتعرّف على إمكانات ClickHouse.
+اطّلع على [QStudio](https://www.timestored.com/qstudio) للتعرّف إلى إمكانات QStudio، وعلى [وثائق ClickHouse](/ar/) للتعرّف إلى إمكانات ClickHouse.

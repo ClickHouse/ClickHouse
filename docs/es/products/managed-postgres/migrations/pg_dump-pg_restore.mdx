@@ -51,10 +51,10 @@ pg_dump \
 
 Aquí:
 
-* Sustituye `<user>`, `<password>`, `<host>`, `<port>` y `<database>` por las credenciales de tu base de datos de origen. La mayoría de los proveedores de Postgres te proporcionan una connection string que puedes usar directamente.
+* Sustituye `<user>`, `<password>`, `<host>`, `<port>` y `<database>` por las credenciales de tu base de datos de origen. La mayoría de los proveedores de Postgres te proporcionan una cadena de conexión que puedes usar directamente.
 * `--format directory` especifica que queremos el dump en formato de directorio, que es compatible con `pg_restore`.
 * `-f rds-dump` especifica el directorio de salida de los archivos del dump. Ten en cuenta que este directorio se creará automáticamente y no debe existir previamente.
-* También puedes paralelizar el proceso de dump añadiendo la marca `--jobs`, seguida del número de jobs en paralelo que quieras ejecutar. Para más detalles, consulta la [documentación de pg&#95;dump](https://www.postgresql.org/docs/current/app-pgdump.html).
+* También puedes paralelizar el proceso de dump añadiendo el indicador `--jobs`, seguida del número de jobs en paralelo que quieras ejecutar. Para más detalles, consulta la [documentación de pg&#95;dump](https://www.postgresql.org/docs/current/app-pgdump.html).
 
 <Tip>
   Puedes probar este proceso una vez para hacerte una idea de cuánto tarda y del tamaño del dump.
@@ -93,10 +93,10 @@ pg_restore \
 
 Puedes obtener la cadena de conexión de tu instancia de Managed Postgres desde la consola de ClickHouse Cloud, explicado de forma muy sencilla [aquí](/es/products/managed-postgres/connection).
 
-Aquí también hay un par de opciones que conviene tener en cuenta:
+Aquí también hay un par de indicadores que conviene tener en cuenta:
 
 * `--verbose` proporciona una salida detallada durante el proceso de restauración.
-* También puedes usar la opción `--jobs` para paralelizar el proceso de restauración. Para obtener más detalles, consulta la [documentación de pg&#95;restore](https://www.postgresql.org/docs/current/app-pgrestore.html).
+* También puedes usar el indicador `--jobs` para paralelizar el proceso de restauración. Para obtener más detalles, consulta la [documentación de pg&#95;restore](https://www.postgresql.org/docs/current/app-pgrestore.html).
 
 En nuestro caso, se ve así:
 
@@ -128,6 +128,6 @@ Vemos que todas nuestras tablas, índices, vistas y secuencias están intactas, 
   ## Siguientes pasos
 </div>
 
-¡Enhorabuena! Has migrado correctamente tu base de datos de PostgreSQL a ClickHouse Managed Postgres con pg&#95;dump y pg&#95;restore. Ya puedes explorar las funcionalidades de Managed Postgres y su integración con ClickHouse. Aquí tienes una guía de inicio rápido de 10 minutos para empezar:
+¡Enhorabuena! Has migrado correctamente tu base de datos PostgreSQL a ClickHouse Managed Postgres con pg&#95;dump y pg&#95;restore. Ya está todo listo para explorar las funciones de Managed Postgres y su integración con ClickHouse. Aquí tienes una guía de inicio rápido de 10 minutos para empezar:
 
 * [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)

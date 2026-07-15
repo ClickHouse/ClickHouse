@@ -1,10 +1,10 @@
 ---
 sidebarTitle: 'Luzmo'
 slug: /integrations/luzmo
-keywords: ['clickhouse', 'Luzmo', 'اتصال', 'تكامل', 'واجهة المستخدم', 'مضمّن']
-description: 'Luzmo هي منصة تحليلات مضمّنة تتضمن تكاملًا أصليًا مع ClickHouse، ومصممة خصيصًا لتطبيقات البرمجيات والبرمجيات كخدمة (SaaS).'
-title: 'دمج Luzmo مع ClickHouse'
-sidebar: 'التكاملات'
+keywords: ['clickhouse', 'Luzmo', 'الاتصال', 'التكامل', 'واجهة المستخدم', 'مضمّن']
+description: 'Luzmo هي منصة تحليلات مضمنة توفر تكاملًا أصليًا مع ClickHouse، وقد صُممت خصيصًا لتطبيقات البرمجيات وتطبيقات SaaS.'
+title: 'تكامل Luzmo مع ClickHouse'
+sidebar: 'integrations'
 doc_type: 'guide'
 integration:
   - support_level: 'community'
@@ -17,36 +17,34 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-<div id="1-setup-a-clickhouse-connection">
-  ## 1. إعداد اتصال ClickHouse
-</div>
+<Steps>
+  <Step title="إعداد اتصال ClickHouse" id="1-setup-a-clickhouse-connection">
+    لإنشاء اتصال بـ ClickHouse، انتقل إلى **صفحة Connections**، وحدد **New Connection**، ثم اختر ClickHouse من نافذة **New Connection** المنبثقة.
 
-لإنشاء اتصال بـ ClickHouse، انتقل إلى **صفحة Connections**، وحدد **New Connection**، ثم اختر ClickHouse من النافذة المنبثقة New Connection.
+    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="واجهة Luzmo تعرض مربع الحوار Create a New Connection مع تحديد ClickHouse" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="واجهة Luzmo تعرض مربع الحوار Create a New Connection مع تحديد ClickHouse" border />
+    سيُطلب منك إدخال **المضيف** و**اسم المستخدم** و**كلمة المرور**:
 
-سيُطلب منك إدخال **المضيف** و**اسم المستخدم** و**كلمة المرور**:
+    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="نموذج تكوين اتصال Luzmo يعرض حقول مضيف ClickHouse واسم المستخدم وكلمة المرور" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="نموذج تكوين اتصال Luzmo يعرض حقول مضيف ClickHouse واسم المستخدم وكلمة المرور" border />
+    * **Host**: هذا هو المضيف الذي تكون قاعدة بيانات ClickHouse الخاصة بك مكشوفة عليه. لاحظ أنه لا يُسمح هنا إلا باستخدام `https` لنقل البيانات بأمان عبر الشبكة. ويتوقع URL الخاص بالمضيف البنية التالية: `https://url-to-clickhouse-db:port/database`
+      افتراضيًا، ستتصل الإضافة بقاعدة البيانات &#39;default&#39; وعلى المنفذ 443. ومن خلال تحديد قاعدة بيانات بعد &#39;/&#39;، يمكنك تعيين قاعدة البيانات المطلوب الاتصال بها.
+    * **Username**: اسم المستخدم الذي سيُستخدم للاتصال بعنقود ClickHouse الخاص بك.
+    * **Password**: كلمة المرور المستخدمة للاتصال بعنقود ClickHouse الخاص بك
 
-* **Host**: هذا هو المضيف الذي تُتاح عليه قاعدة بيانات ClickHouse الخاصة بك. لاحظ أنه لا يُسمح هنا إلا باستخدام `https` لنقل البيانات بأمان عبر الشبكة. ويتوقع عنوان URL الخاص بالمضيف البنية التالية: `https://url-to-clickhouse-db:port/database`
-  افتراضيًا، ستتصل الإضافة بقاعدة البيانات &#39;default&#39; وعلى المنفذ 443. ومن خلال تحديد قاعدة بيانات بعد &#39;/&#39;، يمكنك تعيين قاعدة البيانات المطلوب الاتصال بها.
-* **Username**: اسم المستخدم الذي سيُستخدم للاتصال بـ عنقود ClickHouse الخاص بك.
-* **Password**: كلمة المرور المستخدمة للاتصال بـ عنقود ClickHouse الخاص بك
+    يُرجى الرجوع إلى الأمثلة في وثائق المطورين الخاصة بنا لمعرفة كيفية [إنشاء اتصال بـ ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) عبر واجهة برمجة تطبيقات الخاصة بنا.
+  </Step>
 
-يُرجى الرجوع إلى الأمثلة في وثائق المطورين الخاصة بنا لمعرفة كيفية [إنشاء اتصال بـ ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) عبر API الخاص بنا.
+  <Step title="إضافة مجموعات البيانات" id="2-add-datasets">
+    بمجرد توصيل ClickHouse، يمكنك إضافة مجموعات البيانات كما هو موضح [هنا](https://academy.luzmo.com/article/ldx3iltg). يمكنك تحديد مجموعة بيانات واحدة أو عدة مجموعات بيانات متاحة في ClickHouse لديك و[ربطها](https://academy.luzmo.com/article/gkrx48x5) في Luzmo لضمان إمكانية استخدامها معًا في لوحة معلومات. وتأكد أيضًا من الاطلاع على هذه المقالة حول [تهيئة بياناتك لأغراض التحليلات](https://academy.luzmo.com/article/u492qov0).
 
-<div id="2-add-datasets">
-  ## 2. أضف مجموعات البيانات
-</div>
+    لمعرفة كيفية إضافة مجموعات البيانات باستخدام واجهة برمجة تطبيقات الخاصة بنا، يُرجى الرجوع إلى [هذا المثال في وثائق المطورين الخاصة بنا](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
 
-بعد توصيل ClickHouse، يمكنك إضافة مجموعات البيانات كما هو موضح [هنا](https://academy.luzmo.com/article/ldx3iltg). يمكنك اختيار مجموعة بيانات واحدة أو عدة مجموعات بيانات متاحة في ClickHouse، ثم [ربطها](https://academy.luzmo.com/article/gkrx48x5) في Luzmo لضمان إمكانية استخدامها معًا في لوحة معلومات. واحرص أيضًا على الاطلاع على هذه المقالة حول [إعداد بياناتك لأغراض تحليل](https://academy.luzmo.com/article/u492qov0).
+    يمكنك الآن استخدام مجموعات البيانات الخاصة بك لإنشاء لوحات معلومات جميلة (مضمّنة)، أو حتى لتشغيل محلل بيانات بالذكاء الاصطناعي ([Luzmo IQ](https://luzmo.com/iq)) يمكنه الإجابة عن أسئلة عملائك.
 
-لمعرفة كيفية إضافة مجموعات البيانات باستخدام واجهة API الخاصة بنا، يُرجى الرجوع إلى [هذا المثال في وثائق المطورين](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
-
-يمكنك الآن استخدام مجموعات البيانات لإنشاء لوحات معلومات (مضمّنة) جميلة، أو حتى لتشغيل محلل بيانات مدعوم بالذكاء الاصطناعي ([Luzmo IQ](https://luzmo.com/iq)) يمكنه الإجابة عن أسئلة عملائك.
-
-<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="مثال على لوحة معلومات في Luzmo تعرض عدة مرئيات للبيانات من ClickHouse" border />
+    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="مثال على لوحة معلومات في Luzmo تعرض عدة تصورات للبيانات من ClickHouse" border />
+  </Step>
+</Steps>
 
 <div id="usage-notes">
   ## ملاحظات الاستخدام

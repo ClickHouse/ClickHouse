@@ -497,7 +497,13 @@ Ces codecs sont conçus pour rendre la compression plus efficace en exploitant d
 
 <ExperimentalBadge />
 
-`ALP()` — Compression adaptative sans perte pour les données à virgule flottante, basée sur la mise à l’échelle décimale. ALP tente de représenter chaque valeur sous la forme d’un entier mis à l’échelle exact à l’aide de puissances de 10, puis compresse les entiers obtenus avec Frame-of-Reference et le compactage de bits. Les valeurs qui ne peuvent pas être représentées exactement sont stockées comme exceptions brutes. Fonctionne particulièrement bien pour les nombres provenant de valeurs décimales (par ex., mesures, devises). Prend en charge `Float32` et `Float64`. Pour plus de détails, voir [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Compression adaptative sans perte pour les données en virgule flottante. Prend en charge `Float32` et `Float64`. Pour plus de détails, voir [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+Le codec accepte un argument de variante facultatif :
+
+* `ALP()` ou `ALP(AUTO)` (par défaut) — Utilise STD et bascule sur RD en fonction de la taille compressée estimée.
+* `ALP(STD)` — Variante ALP standard. Représente chaque valeur sous forme d’entier exact mis à l’échelle à l’aide de puissances décimales, puis compresse les entiers obtenus avec Frame-of-Reference et le bit-packing. Les valeurs non représentables sont stockées comme exceptions brutes. Fonctionne particulièrement bien pour les nombres issus de valeurs décimales (par ex., mesures, prix).
+* `ALP(RD)` — Variante Real Doubles. Réinterprète le motif binaire de chaque valeur et le divise en une partie haute (signe + exposant + bits de poids fort de la mantisse) et une partie basse. Les parties hautes sont encodées via un dictionnaire (jusqu’à 8 entrées), les parties basses sont bit-packées. Fonctionne particulièrement bien lorsque de nombreuses valeurs partagent les mêmes bits de poids fort.
 
 <Note>
   Ce codec est expérimental et nécessite `SET allow_experimental_codecs = 1` pour être utilisé.

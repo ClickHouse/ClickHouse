@@ -2,7 +2,7 @@
 sidebarTitle: 'Embeddable'
 slug: /integrations/embeddable
 keywords: ['clickhouse', 'Embeddable', '接続', '統合', 'UI']
-description: 'Embeddable は、高速でインタラクティブ、かつ完全にカスタマイズ可能な分析体験をアプリに直接組み込むための、開発者向けツールキットです。'
+description: 'Embeddable は、高速でインタラクティブかつ完全にカスタマイズ可能なアナリティクス体験をアプリに直接組み込むための開発者向けツールキットです。'
 title: 'Embeddable を ClickHouse に接続する'
 doc_type: 'guide'
 integration:
@@ -15,65 +15,63 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-[Embeddable](https://embeddable.com/) では、[Data Models](https://docs.embeddable.com/data-modeling/introduction) と [Components](https://docs.embeddable.com/development/introduction) をコードで定義し (お客様自身のコードリポジトリに保存) 、Embeddable の強力な **ノーコードビルダー** でチームが利用できるよう、**SDK** を使って公開します。
+[Embeddable](https://embeddable.com/) では、[Data Models](https://docs.embeddable.com/data-modeling/introduction) と [Components](https://docs.embeddable.com/development/introduction) をコードで定義し (自社のコードリポジトリに保存)、強力な Embeddable **ノーコード builder** でチームが利用できるように **SDK** を使用します。
 
-その結果、顧客向けの高速でインタラクティブな分析機能を、自社プロダクトに直接組み込めるようになります。設計はプロダクトチーム、実装はエンジニアリングチーム、運用は顧客対応チームとデータチームが担当します。まさに、あるべき形です。
+その結果、高速でインタラクティブな顧客向け analytics を自社製品に直接組み込んで提供できるようになります。設計はプロダクトチーム、構築はエンジニアリングチーム、運用は顧客対応チームとデータチームが担います。まさに、あるべき形です。
 
-組み込みの行レベルセキュリティにより、各ユーザーに許可されたデータだけが表示されます。さらに、2 層の完全に設定可能なキャッシュにより、大規模環境でも高速なリアルタイム分析を提供できます。
+組み込みの行レベルセキュリティにより、各ユーザーは自分に閲覧を許可されたデータだけを正確に見ることができます。さらに、完全に設定可能な 2 層の Caching により、大規模環境でも高速なリアルタイム analytics を提供できます。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続の詳細情報を収集する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse接続タイプを作成する" id="2-create-a-clickhouse-connection-type">
+    Embeddable API を使用してデータベース接続を追加します。この接続は、ClickHouse サービスへの接続に使用されます。接続は、次の API 呼び出しで追加できます。
 
-<div id="2-create-a-clickhouse-connection-type">
-  ## 2. ClickHouse接続タイプを作成する
-</div>
+    ```javascript title="Query"
+    // セキュリティ上の理由から、クライアントサイドからは絶対に呼び出さないでください
+    fetch('https://api.embeddable.com/api/v1/connections', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}` /* APIキーを安全に保管してください */,
+      },
+      body: JSON.stringify({
+        name: 'my-clickhouse-db',
+        type: 'clickhouse',
+        credentials: {
+          host: 'my.clickhouse.host',
+          user: 'clickhouse_user',
+          port: 8443,
+          password: '*****',
+        },
+      }),
+    });
+    ```
 
-Embeddable API を使用してデータベース接続を追加します。この接続は、ClickHouse サービスへの接続に使用されます。接続は、次の API 呼び出しで追加できます。
+    ```text title="Response"
+    Status 201 { errorMessage: null }
+    ```
 
-```javascript title="Query"
-// セキュリティ上の理由から、クライアントサイドからは絶対に呼び出さないでください
-fetch('https://api.embeddable.com/api/v1/connections', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    Authorization: `Bearer ${apiKey}` /* APIキーを安全に保管してください */,
-  },
-  body: JSON.stringify({
-    name: 'my-clickhouse-db',
-    type: 'clickhouse',
-    credentials: {
-      host: 'my.clickhouse.host',
-      user: 'clickhouse_user',
-      port: 8443,
-      password: '*****',
-    },
-  }),
-});
-```
+    上記は `CREATE` アクションを表していますが、`CRUD` のすべての操作を利用できます。
 
-```text title="Response"
-Status 201 { errorMessage: null }
-```
+    `apiKey` は、Embeddable のいずれかのダッシュボードで &quot;**Publish**&quot; をクリックすると確認できます。
 
-上記は `CREATE` アクションを表していますが、`CRUD` のすべての操作を利用できます。
+    `name` は、この接続を識別するための一意の名前です。
 
-`apiKey` は、Embeddable のいずれかのダッシュボードで &quot;**Publish**&quot; をクリックすると確認できます。
+    * デフォルトでは、Data Models は &quot;default&quot; という名前の接続を参照しますが、モデルに別の `data_source` 名を指定することで、異なる Data Models を異なる接続先に接続できます (モデル内で data&#95;source 名を指定するだけです) 。
 
-`name` は、この接続を識別するための一意の名前です。
+    `type` は、どのドライバーを使うかを Embeddable に伝えます
 
-* デフォルトでは、Data Models は &quot;default&quot; という名前の接続を参照しますが、モデルに別の `data_source` 名を指定することで、異なる Data Models を異なる接続先に接続できます (モデル内で data&#95;source 名を指定するだけです) 。
+    * ここでは `clickhouse` を使用しますが、1 つの Embeddable ワークスペースに複数の異なるデータソースを接続できるため、`postgres`、`bigquery`、`mongodb` などを使用することもできます。
 
-`type` は、どのドライバーを使うかを Embeddable に伝えます
+    `credentials` は、ドライバーが必要とする認証情報を含む JavaScript オブジェクトです
 
-* ここでは `clickhouse` を使用しますが、1 つの Embeddable ワークスペースに複数の異なるデータソースを接続できるため、`postgres`、`bigquery`、`mongodb` などを使用することもできます。
+    * これらは安全に暗号化され、Data Models で定義したデータを取得するためにのみ使用されます。
+      Embeddable では、接続ごとに読み取り専用のデータベースユーザーを作成することを強く推奨しています (Embeddable がデータベースに対して行うのは読み取りのみで、書き込みは行いません) 。
 
-`credentials` は、ドライバーが必要とする認証情報を含む JavaScript オブジェクトです
-
-* これらは安全に暗号化され、Data Models で定義したデータを取得するためにのみ使用されます。
-  Embeddable では、接続ごとに読み取り専用のデータベースユーザーを作成することを強く推奨しています (Embeddable がデータベースに対して行うのは読み取りのみで、書き込みは行いません) 。
-
-prod、qa、test などで異なるデータベースへの接続に対応するため (または顧客ごとに異なるデータベースに対応するため) 、各接続を環境に割り当てることができます ([Environments API](https://docs.embeddable.com/data/environments) を参照) 。
+    prod、qa、test などで異なるデータベースへの接続に対応するため (または顧客ごとに異なるデータベースに対応するため) 、各接続を環境に割り当てることができます ([Environments API](https://docs.embeddable.com/data/environments) を参照) 。
+  </Step>
+</Steps>

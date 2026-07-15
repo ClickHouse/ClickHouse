@@ -16,14 +16,17 @@ Consulte a documentação do Mintlify sobre [scripts personalizados](https://www
 </div>
 
 * `ask-ai-button.js` — ajusta o estilo e o comportamento do botão Ask-AI.
-* `cookie-banner.js` — injeta e gerencia o banner de consentimento de cookies.
 * `custom-footer.js` — renderiza o rodapé personalizado do site (`#ch-custom-footer`).
+* `galaxy.js` — inicializa o analytics do ClickHouse Galaxy, rastreia eventos do ciclo de vida de páginas da documentação e da base de conhecimento na navegação SPA do Mintlify, envia o tráfego canônico de `https://clickhouse.com/docs` para a API Galaxy de produção e o tráfego de preview em `.mintlify.app` para a API Galaxy de desenvolvimento (desabilitado em `localhost` e origens desconhecidas), e adiciona atribuição e o ID de visitante do Galaxy aos links do ClickHouse Cloud somente na documentação canônica de produção.
 * `inkeep-init.js` — substitui a busca nativa do Mintlify (⌘K / barra de busca da navbar) pelo modal de busca do Inkeep. Apenas busca; o chat com IA continua no Kapa.
 * `kapa-init.js` — inicializa o widget RAG do Kapa.ai.
 * `navbar-cta.js` — adiciona o CTA &quot;Primeiros passos&quot; à navbar.
+* `nav-icon-preload.js` — pré-carrega os pequenos SVGs dos menus suspensos da navbar no desktop com baixa prioridade assim que o documento fica pronto, para que os ícones estejam disponíveis antes de os menus serem abertos pela primeira vez.
+* `raise-issue-link.js` — redireciona o link de feedback padrão &quot;Raise issue&quot; do Mintlify para o formulário de issue de documentação do repositório (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`), preenchendo previamente o path da página atual.
+* `scroll-reset.js` — restaura a rolagem para o topo na navegação client-side para frente, que o Next.js ignora quando um banner de announcement está configurado. Deixa voltar/avançar (popstate) intactos para que o navegador/roteador possa restaurar a posição anterior, e rola até a âncora em links hash entre páginas.
+* `tab-nav.js` — conecta as tabs da navegação superior no desktop (Home / Database / Solutions / Integrations) aos URLs de destino, mantendo a navegação dentro do locale ativo e do path base.
 * `clickhouse-sql-lexer-wasm.js` — expõe o lexer SQL do ClickHouse (`src/Parsers/Lexer.cpp` compilado para WebAssembly) como uma variável global em base64. Snapshot do ClickHouse `programs/server/play.html`; extraia novamente se o lexer/lista de palavras-chave do upstream mudar.
 * `clickhouse-sql-highlight.js` — reaplica o destaque em blocos de código `language="sql"` usando o lexer WASM (cores nativas do ClickHouse, correspondendo a play.html / clickhouse-client) no lugar do Shiki. Deve ser carregado após `clickhouse-sql-lexer-wasm.js`. Os demais idiomas permanecem como o Shiki os renderizou.
-* `quickstart-back-link.js` — em páginas de guia de início rápido, move o selo autogerado &quot;Todos os guias de início rápido&quot; do topo do conteúdo para o cabeçalho acima do título (posição de breadcrumb).
 
 Para integrar um novo script, adicione uma entrada
 `{ "src": "/_site/customizations/<name>.js" }`

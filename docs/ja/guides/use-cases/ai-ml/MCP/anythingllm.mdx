@@ -2,7 +2,7 @@
 slug: /use-cases/AI/MCP/anythingllm
 sidebarTitle: 'AnythingLLMを統合する'
 title: 'AnythingLLMでClickHouse MCPサーバーを使う'
-description: 'このガイドでは、Docker を使って AnythingLLM を ClickHouse MCPサーバーと連携する設定方法を説明します。'
+description: 'このガイドでは、Dockerを使用してAnythingLLMをClickHouse MCPサーバーと連携するよう設定する方法を説明します。'
 keywords: ['AI', 'AnythingLLM', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,14 +10,12 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-> このガイドでは、Docker を使用して [AnythingLLM](https://anythingllm.com/) を ClickHouse MCPサーバーとともにセットアップし、
+> このガイドでは、Docker を使用して [AnythingLLM](https://anythingllm.com/) を ClickHouse MCPサーバーと連携するようにセットアップし、
 > ClickHouse のサンプルデータセットに接続する方法を説明します。
 
 <Steps>
-  <Step>
-    ## Dockerをインストールする
-
-    LibreChat と MCPサーバーを実行するには Docker が必要です。Docker を入手するには、次の手順を実行します。
+  <Step title="Docker をインストールする" id="install-docker">
+    LibreChat と MCPサーバーを実行するには Docker が必要です。Docker を入手するには、次の手順に従ってください。
 
     1. [docker.com](https://www.docker.com/products/docker-desktop) にアクセスします
     2. お使いのオペレーティングシステム向けの Docker Desktop をダウンロードします
@@ -26,22 +24,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     <br />
 
-    詳しくは、[Docker documentation](https://docs.docker.com/get-docker/) を参照してください。
+    詳しくは、[Docker のドキュメント](https://docs.docker.com/get-docker/)を参照してください。
   </Step>
 
-  <Step>
-    ## AnythingLLMのDockerイメージをプルする
-
-    次のコマンドを実行して、AnythingLLM のDockerイメージをローカル環境にプルします。
+  <Step title="AnythingLLM Docker イメージを Pull する" id="pull-anythingllm-docker-image">
+    次のコマンドを実行して、AnythingLLM の Docker イメージをローカル環境に Pull します。
 
     ```bash
     docker pull anythingllm/anythingllm
     ```
   </Step>
 
-  <Step>
-    ## ストレージの場所を設定する
-
+  <Step title="ストレージの保存先を設定する" id="setup-storage-location">
     ストレージ用のディレクトリを作成し、環境ファイルを初期化します。
 
     ```bash
@@ -51,16 +45,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## MCPサーバーの設定ファイルを構成する
-
+  <Step title="MCPサーバーの設定ファイルを構成する" id="configure-mcp-server-config-file">
     `plugins` ディレクトリを作成します。
 
     ```bash
     mkdir -p "$STORAGE_LOCATION/plugins"
     ```
 
-    `plugins` ディレクトリに `anythingllm_mcp_servers.json` という名前のファイルを作成し、次の内容を追加します。
+    `plugins` ディレクトリ内に `anythingllm_mcp_servers.json` という名前のファイルを作成し、次の内容を追加します。
 
     ```json
     {
@@ -85,15 +77,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     }
     ```
 
-    自分のデータを調べたい場合は、
-    自分の ClickHouse Cloud サービスの[ホスト、ユーザー名、パスワード](/ja/get-started/setup/cloud#connect-with-your-app)
+    独自のデータを確認したい場合は、
+    ご自身の ClickHouse Cloud service の
+    [host、username、password](/ja/get-started/setup/cloud#connect-with-your-app)
     を使用できます。
   </Step>
 
-  <Step>
-    ## AnythingLLMのDockerコンテナーを起動する
-
-    次のコマンドを実行して、AnythingLLM のDockerコンテナーを起動します。
+  <Step title="AnythingLLM Docker コンテナーを起動する" id="start-anythingllm-docker-container">
+    次のコマンドを実行して、AnythingLLM の Docker コンテナーを起動します。
 
     ```bash
     docker run -p 3001:3001 \
@@ -104,13 +95,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     mintplexlabs/anythingllm
     ```
 
-    起動したら、ブラウザで `http://localhost:3001` にアクセスします。
-    使用するモデルを選択し、API key を入力します。
+    起動したら、ブラウザーで `http://localhost:3001` にアクセスします。
+    使用する model を選択し、API key を入力します。
   </Step>
 
-  <Step>
-    ## MCPサーバーの起動を待つ
-
+  <Step title="MCPサーバーの起動を待つ" id="wait-for-mcp-servers-to-start-up">
     UI の左下にあるツールアイコンをクリックします。
 
     <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="ツールアイコン" size="md" />
@@ -121,12 +110,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCPサーバーの準備完了" size="md" />
   </Step>
 
-  <Step>
-    ## AnythingLLMでClickHouse MCPサーバーとチャットする
+  <Step title="AnythingLLM で ClickHouse MCPサーバーとチャットする" id="chat-with-clickhouse-mcp-server-with-anythingllm">
+    これでチャットを開始する準備ができました。
+    MCPサーバーをチャットで使えるようにするには、conversation の最初のメッセージの先頭に `@agent` を付ける必要があります。
 
-    これでチャットを始める準備ができました。
-    MCPサーバーをチャットで使えるようにするには、会話の最初のメッセージの先頭に `@agent` を付ける必要があります。
-
-    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="会話" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversation" size="md" />
   </Step>
 </Steps>

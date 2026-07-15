@@ -21,15 +21,15 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
   ## 参数
 </div>
 
-| 参数            | 描述                                     |
-| ------------- | -------------------------------------- |
-| `host:port`   | PostgreSQL 服务器地址。                      |
-| `database`    | 远程数据库名称。                               |
-| `table`       | 远程表名称。                                 |
-| `user`        | PostgreSQL 用户。                         |
-| `password`    | 用户密码。                                  |
-| `schema`      | 非默认的表 schema。可选。                       |
-| `on_conflict` | 冲突解决策略。示例：`ON CONFLICT DO NOTHING`。可选。 |
+| 参数            | 描述                                                              |
+| ------------- | --------------------------------------------------------------- |
+| `host:port`   | PostgreSQL 服务器地址。                                               |
+| `database`    | 远程数据库名称。                                                        |
+| `table`       | 远程表名称，或原样传递给 PostgreSQL 的查询 (参见[传递查询而不是表名](#passing-a-query)) 。 |
+| `user`        | PostgreSQL 用户。                                                  |
+| `password`    | 用户密码。                                                           |
+| `schema`      | 非默认的表 schema。可选。                                                |
+| `on_conflict` | 冲突解决策略。示例：`ON CONFLICT DO NOTHING`。可选。                          |
 
 参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，需要分别指定 `host` 和 `port`。建议在生产环境中使用这种方式。
 
@@ -52,6 +52,25 @@ PostgreSQL 端的 `SELECT` 查询会在只读 PostgreSQL 事务中以 `COPY (SEL
 简单的 `WHERE` 子句 (如 `=`, `!=`, `>`, `>=`, `<`, `<=` 和 `IN`) 会在 PostgreSQL 服务器上执行。
 
 所有 join、聚合、排序、`IN [ array ]` 条件以及 `LIMIT` 采样约束，都只会在对 PostgreSQL 的查询完成后由 ClickHouse 执行。
+
+<div id="passing-a-query">
+  ## 传递查询而非表名
+</div>
+
+第三个参数可以不是表名，而是一个原样传递给 PostgreSQL 的 `SELECT` 查询。结果表的结构会从查询结果中推断出来。该查询既可以写成子查询，也可以包装在 `query` 函数中：
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+这对于将 join、聚合或任何其他处理下推到 PostgreSQL 很有用。这样的表是只读的：不允许向其中执行 `INSERT`。[`PostgreSQL`](/zh/reference/engines/table-engines/integrations/postgresql) 表引擎也支持相同的语法。
+
+<Note>
+  子查询形式 `(SELECT ...)` 会先由 ClickHouse 解析，并在发送到服务器之前按 PostgreSQL 方言 (PostgreSQL 标识符引用和字符串字面量转义) 重新序列化。因此，它必须是有效的 ClickHouse SQL。要传递 ClickHouse 无法解析的 PostgreSQL 特有语法，请使用 `query('...')` 形式，其文本会被原样发送到 PostgreSQL。
+
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等都**不会**下推到传入的查询中——而是在完整查询结果被拉取后由 ClickHouse 执行。要限制从 PostgreSQL 读取的数据，请将过滤条件放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤条件会抛出异常，而不是在本地执行。
+</Note>
 
 PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每个 `INSERT` 语句后自动提交。
 

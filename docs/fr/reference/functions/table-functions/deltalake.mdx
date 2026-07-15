@@ -71,10 +71,10 @@ LIMIT 2
 </div>
 
 Considérez une table dans un stockage S3 à l’emplacement `s3://ch-docs-s3-bucket/people_10k/`.
-Pour insérer des données dans la table, activez d’abord la fonctionnalité expérimentale :
+Les écritures Delta Lake sont une fonctionnalité bêta désactivée par défaut. Activez-les comme suit (`allow_delta_lake_writes` est disponible à partir de la version 26.7 ; sur les versions antérieures, utilisez `allow_experimental_delta_lake_writes`) :
 
 ```sql title="Query"
-SET allow_experimental_delta_lake_writes=1
+SET allow_delta_lake_writes=1
 ```
 
 Ensuite, écrivez :

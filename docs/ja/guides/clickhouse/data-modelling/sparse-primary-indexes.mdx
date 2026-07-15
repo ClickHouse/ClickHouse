@@ -310,7 +310,7 @@ ClickHouse client の出力から、次のことがわかります。
   ClickHouse では、主キーカラムの値が同一の複数の行を挿入できます。この場合 (下図の行 1 と行 2 を参照) 、最終的な順序は指定されたソートキー、つまり `EventTime` カラムの値によって決まります。
 </Note>
 
-ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
+ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">カラム指向データベース管理システム</a>です。以下の図に示すとおり、
 
 * ディスク上の表現では、テーブルの各カラムごとに 1 つのデータファイル (*.bin) があり、そのカラムのすべての値が<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>フォーマットで保存されます。
 * 887 万行は、主キーカラム (および追加のソートキーカラム) に従って、辞書式順序の昇順でディスク上に保存されます。つまり、この場合は
@@ -329,7 +329,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### データは並列処理のためにグラニュールに編成されます
+  ### データは並列データ処理のためにグラニュールに編成されます
 </div>
 
 データ処理の観点では、テーブルのカラム値は論理的にグラニュールへ分割されます。
@@ -430,7 +430,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
       結果は次のとおりです。
 
       `240923, http://showtopics.html%3...<br/>
-                  4073710, http://mk.ru&pos=3_0`
+                        4073710, http://mk.ru&pos=3_0`
 
       <li>最後のインデックスマークを取得する</li>
       `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
@@ -610,7 +610,7 @@ ClickHouse が、クエリに一致する行を含む可能性がある グラ�
 
 特定のカラムに対応する各 マークファイル エントリには、offset の形で 2 つの位置が格納されています。
 
-* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内の <a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
+* 1 つ目の offset (上図の &#39;block&#95;offset&#39;) は、選択された グラニュール の圧縮版を含む、<a href="/ja/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> の位置を、<a href="/ja/get-started/about/distinctive-features#data-compression" target="_blank">圧縮</a>されたカラムデータファイル内で示します。この圧縮 block には、複数の圧縮された グラニュール が含まれている可能性があります。特定された圧縮ファイル block は、読み取り時にメインメモリ上で展開されます。
 
 * 2 つ目の offset (上図の &#39;granule&#95;offset&#39;) は マークファイル から取得され、非圧縮の block data 内における グラニュール の位置を示します。
 

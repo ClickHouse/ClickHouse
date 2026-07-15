@@ -54,13 +54,12 @@ mongodb(uri, collection, structure[, oid_columns])
 | `collection`  | Имя удалённой коллекции.                                                                                                 |
 | `structure`   | Схема таблицы ClickHouse, которую возвращает эта функция.                                                                |
 | `oid_columns` | Список столбцов, разделённых запятыми, которые следует обрабатывать как `oid` в предложении WHERE. По умолчанию — `_id`. |
-| :::           |                                                                                                                          |
 
 Вы можете передать аргументы с помощью именованной коллекции:
 
 ```sql
 mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
--- или
+-- or
 mongodb(_named_collection_[, uri][, structure][, oid_columns])
 ```
 

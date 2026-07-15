@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI/MCP/open-webui
-sidebarTitle: 'Integrar Open WebUI'
-title: 'Uso de ClickHouse MCP server con Open WebUI'
-description: 'Esta guía explica cómo configurar Open WebUI con un ClickHouse MCP server mediante Docker.'
+sidebarTitle: 'Integración con Open WebUI'
+title: 'Uso del servidor MCP de ClickHouse con Open WebUI'
+description: 'Esta guía explica cómo configurar Open WebUI con un servidor MCP de ClickHouse mediante Docker.'
 keywords: ['AI', 'Open WebUI', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -11,31 +11,25 @@ doc_type: 'guide'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 > Esta guía explica cómo configurar [Open WebUI](https://github.com/open-webui/open-webui) con un ClickHouse MCP server
-> y conectarlo a los datasets de ejemplo de ClickHouse.
+> y conectarlo a los conjuntos de datos de ejemplo de ClickHouse.
 
 <Steps>
-  <Step>
-    ## Instalar uv
-
-    Necesitarás instalar [uv](https://docs.astral.sh/uv/) para seguir las instrucciones de esta guía.
+  <Step title="Instalar uv" id="install-uv">
+    Tendrás que instalar [uv](https://docs.astral.sh/uv/) para seguir las instrucciones de esta guía.
     Si no quieres usar uv, tendrás que actualizar la configuración del MCP server para usar otro gestor de paquetes.
   </Step>
 
-  <Step>
-    ## Iniciar Open WebUI
-
+  <Step title="Iniciar Open WebUI" id="launch-open-webui">
     Para iniciar Open WebUI, puedes ejecutar el siguiente comando:
 
     ```bash
     uv run --with open-webui open-webui serve
     ```
 
-    Ve a http://localhost:8080/ para ver la UI.
+    Ve a [http://localhost:8080/](http://localhost:8080/) para ver la UI.
   </Step>
 
-  <Step>
-    ## Configurar ClickHouse MCP server
-
+  <Step title="Configurar ClickHouse MCP server" id="configure-clickhouse-mcp-server">
     Para configurar el ClickHouse MCP server, tendremos que convertir el MCP server en endpoints de Open API.
     Primero, definamos variables de entorno que nos permitirán conectarnos al Playground de SQL de ClickHouse:
 
@@ -51,52 +45,48 @@ import { Image } from "/snippets/es/components/Image.jsx";
     uvx mcpo --port 8000 -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
     ```
 
-    Puedes ver una lista de los endpoints creados en http://localhost:8000/docs
+    Puedes ver una lista de los endpoints creados en [http://localhost:8000/docs](http://localhost:8000/docs)
 
-    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="endpoints de Open API" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="Endpoints de Open API" size="md" />
 
     Para usar estos endpoints con Open WebUI, tenemos que ir a la configuración:
 
-    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="configuración de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="Configuración de Open WebUI" size="md" />
 
     Haz clic en `Tools`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="herramientas de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="Herramientas de Open WebUI" size="md" />
 
-    Añade http://localhost:8000 como URL de la herramienta:
+    Añade [http://localhost:8000](http://localhost:8000) como URL de la herramienta:
 
-    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="herramienta de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="Herramienta de Open WebUI" size="md" />
 
     Una vez hecho esto, deberíamos ver un `1` junto al icono de la herramienta en la barra de chat:
 
-    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="herramientas disponibles de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="Herramientas disponibles en Open WebUI" size="md" />
 
     Si hacemos clic en el icono de la herramienta, podremos ver la lista de herramientas disponibles:
 
-    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="lista de herramientas de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="Lista de herramientas de Open WebUI" size="md" />
   </Step>
 
-  <Step>
-    ## Configurar OpenAI
-
+  <Step title="Configurar OpenAI" id="configure-openai">
     De forma predeterminada, Open WebUI funciona con modelos de Ollama, pero también podemos añadir endpoints compatibles con OpenAI.
-    Esto se configura desde el menú de configuración, pero esta vez tenemos que hacer clic en la pestaña `Connections`:
+    Estos se configuran desde el menú de configuración, pero esta vez tenemos que hacer clic en la pestaña `Connections`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="conexiones de Open WebUI" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="Conexiones de Open WebUI" size="md" />
 
     Añadamos el endpoint y nuestra clave de OpenAI:
 
     <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - Añadir OpenAI como conexión" size="md" />
 
-    Los modelos de OpenAI estarán entonces disponibles en el menú superior:
+    Los modelos de OpenAI estarán disponibles en el menú superior:
 
     <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI - Modelos" size="md" />
   </Step>
 
-  <Step>
-    ## Chatear con ClickHouse MCP server desde Open WebUI
-
-    Después, podremos tener una conversación y Open WebUI llamará al MCP server si es necesario:
+  <Step title="Chatear con ClickHouse MCP server desde Open WebUI" id="chat-to-clickhouse-mcp-server">
+    A continuación, podremos iniciar una conversación y Open WebUI llamará al MCP server si es necesario:
 
     <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - Chatear con ClickHouse MCP server" size="md" />
   </Step>

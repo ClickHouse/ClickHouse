@@ -39,6 +39,7 @@ timeSeriesGroupArray(timestamp, value)
 **個別の値を使った基本的な使い方**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **タイムスタンプと値の複数のサンプルを、同じ長さの配列として渡す**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

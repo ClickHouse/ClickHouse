@@ -497,10 +497,16 @@ ClickHouse 支持通用编解码器和专用编解码器。
 
 <ExperimentalBadge />
 
-`ALP()` — 一种基于十进制标度的浮点数据自适应无损压缩方法。ALP 会尝试将每个值用十进制幂表示为精确的缩放整数，然后使用 Frame-of-Reference 和位打包压缩得到的整数。无法被精确表示的值会作为原始例外值存储。它最适用于源自十进制的数值 (例如测量值、货币金额) 。支持 `Float32` 和 `Float64`。详情参见 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
+`ALP(variant)` — 用于浮点数据的自适应无损压缩。支持 `Float32` 和 `Float64`。详情参见 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)。
+
+该编解码器接受一个可选的变体参数：
+
+* `ALP()` 或 `ALP(AUTO)` (默认) — 使用 STD，并根据估算的压缩后大小决定是否回退到 RD。
+* `ALP(STD)` — 标准 ALP 变体。使用十进制幂将每个值表示为精确的带标度整数，然后使用 Frame-of-Reference 和位打包压缩生成的整数。无法表示的值会原样作为异常值存储。最适合源自 Decimal 的数值 (例如测量值、价格) 。
+* `ALP(RD)` — Real Doubles 变体。重新解释每个值的位模式，并将其拆分为高位部分 (符号位 + 指数 + 高位尾数位) 和低位部分。高位部分使用字典编码 (最多 8 个条目) ，低位部分使用位打包。当许多值具有相同的高位时，效果最佳。
 
 <Note>
-  此编解码器处于 Experimental 阶段，使用前需要设置 `SET allow_experimental_codecs = 1`。
+  此编解码器为 Experimental 功能，使用时需要设置 `SET allow_experimental_codecs = 1`。
 </Note>
 
 <div id="fpc">

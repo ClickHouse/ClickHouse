@@ -8,29 +8,82 @@ doc_type: 'guide'
 ---
 
 import CommunityMonitoring from '/snippets/ru/_community_monitoring.mdx';
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <div id="direct-datadog">
-  ## Прямая интеграция Datadog
+  ## Интеграция с Datadog
 </div>
 
-Datadog предлагает для своего агента плагин ClickHouse Monitoring, который напрямую опрашивает системные таблицы. Эта интеграция обеспечивает комплексный мониторинг базы данных с учетом кластера благодаря функции `clusterAllReplicas`.
+Для мониторинга развертывания ClickHouse в Datadog ClickHouse предлагает несколько интеграций для разных вариантов развертывания. У каждой из них есть свои особенности и компромиссы: одни разрабатываются ClickHouse, другие — Datadog. Интеграции перечислены в рекомендуемом порядке.
 
-<Warning>
-  **Не рекомендуется для ClickHouse Cloud**
+| Интеграция                                                                                                 | Документация                                                                                   | Развертывание | Сигналы                          |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------- | -------------------------------- |
+| [Интеграция Datadog API для ClickHouse Cloud](#clickhouse-cloud-datadog-api-integration) *(рекомендуется)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud         | Метрики                          |
+| [Интеграция Prometheus для ClickHouse Cloud](#clickhouse-cloud-prometheus-integration)                     | [clickhouse.com/docs](/ru/integrations/prometheus)                                                | Cloud         | Метрики                          |
+| [Интеграция Datadog Agent для ClickHouse](#clickhouse-datadog-agent-integration)                           | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud   | Журналы, Метрики                 |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                                          | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud   | Журналы, Метрики, Query Insights |
 
-  Прямая интеграция с агентом Datadog, которая опрашивает системные таблицы, не рекомендуется для развертываний ClickHouse Cloud из-за несовместимости с режимом простоя, используемым для оптимизации затрат, а также из-за эксплуатационных ограничений слоя облачного прокси.
-</Warning>
+<div id="clickhouse-cloud-datadog-api-integration">
+  ### Интеграция ClickHouse Cloud с API Datadog
+</div>
 
-Вместо этого используйте Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) и [интеграцию OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) для сбора метрик с конечной точки Prometheus ClickHouse Cloud. Такой подход учитывает режим простоя сервиса и сохраняет операционное разделение между мониторингом и боевыми рабочими нагрузками. Рекомендации по настройке см. в [документации Datadog по интеграции Prometheus и OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+<PrivatePreviewBadge />
 
-Подробнее о настройке конечной точки Prometheus см. на [странице интеграции Prometheus](/ru/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+Рекомендуемый способ передачи метрик уровня сервиса из ClickHouse Cloud в Datadog.
+
+Вы подключаете свой аккаунт Datadog к ClickHouse Cloud с помощью OAuth-рукопожатия (**Connect Accounts** в плитке интеграции Datadog). Затем ClickHouse Cloud отправляет метрики уровня сервиса в Datadog вместо того, чтобы Datadog напрямую опрашивал сервис.
+
+* **Только в ClickHouse Cloud** — не подходит для OSS ClickHouse
+* Datadog **не** считает эти метрики пользовательскими
+* **Не** предотвращает переход сервиса в состояние простоя
+* Поставляется с предварительно настроенным набором панелей мониторинга и мониторов
+
+Информацию по шагам онбординга см. в [руководстве Datadog по интеграции ClickHouse Cloud](https://docs.datadoghq.com/integrations/clickhouse-cloud/).
+
+<div id="clickhouse-cloud-prometheus-integration">
+  ### Интеграция Prometheus с ClickHouse Cloud
+</div>
+
+Самый распространённый и универсальный способ собирать телеметрию на уровне сервиса и организации в ClickHouse Cloud.
+
+Настройте Datadog Agent с помощью [интеграции OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) для периодического опроса ClickHouse Cloud API и сбора метрик. Подробные сведения о настройке см. на [странице интеграции Prometheus](/ru/integrations/prometheus#integrating-with-datadog).
+
+* **Только в ClickHouse Cloud** — не подходит для OSS ClickHouse
+* В Datadog эти метрики учитываются как **пользовательские метрики**
+* **Не** предотвращает переход сервиса в режим простоя
+
+<div id="clickhouse-datadog-agent-integration">
+  ### Интеграция ClickHouse с Datadog Agent
+</div>
+
+Это самый распространённый способ передачи данных из сервисов OSS ClickHouse в Datadog. Он также работает с ClickHouse Cloud, но с некоторыми оговорками.
+
+Datadog Agent периодически опрашивает экземпляр ClickHouse и собирает метрики и журналы. Эта интеграция включает предварительно настроенный набор панелей мониторинга.
+
+**OSS ClickHouse:** журналы и метрики поддерживаются полностью.
+
+**ClickHouse Cloud (частичная поддержка):**
+
+* Только метрики — журналы не поддерживаются
+* Требуется `datadog-cluster-agent` вместо `datadog-agent`
+* **Не позволит сервису перейти в режим простоя**
+
+<div id="clickhouse-datadog-dbm">
+  ### ClickHouse Datadog DBM
+</div>
+
+Database Monitoring (DBM) для ClickHouse разрабатывает и поддерживает Datadog. Для этого Datadog Agent настраивается на сбор данных из системных таблиц экземпляра ClickHouse, что позволяет получать информацию о производительности на уровне запросов, аналогичную той, что встроенно доступна в ClickHouse Cloud Console. ClickHouse не участвует в этой интеграции — по всем проблемам обращайтесь в Datadog, а не в ClickHouse.
+
+* Метрики бесплатны; отдельно оплачиваются журналы и ингестия данных из системных таблиц
+* **OSS ClickHouse:** полностью поддерживается
+* **ClickHouse Cloud (частичная поддержка):** требует `datadog-cluster-agent` вместо `datadog-agent`; **не даст сервису перейти в режим простоя**
 
 <CommunityMonitoring />
 
 <div id="billing-usage-api">
-  ## API биллинга и использования
+  ## API Billing &amp; Usage
 </div>
 
-Billing &amp; Usage API позволяет программно получать доступ к данным о биллинге и использовании вашей организации в Cloud. Это полезно при создании собственных панелей мониторинга затрат или интеграции данных о биллинге в существующие процессы финансовой отчетности.
+API Billing &amp; Usage позволяет программно получать доступ к данным о биллинге и использовании вашей организации в Cloud. Это полезно при создании собственных панелей мониторинга затрат или интеграции данных о биллинге в существующие процессы финансовой отчетности.
 
-Полное справочное описание API см. в [документации Billing API](/ru/api-reference/organization/get-list-of-available-organizations#tag/Billing).
+Полное справочное описание API см. в [документации Billing API](/ru/products/cloud/api-reference/billing/get-organization-usage-costs).

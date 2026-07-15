@@ -53,13 +53,12 @@ mongodb(uri, collection, structure[, oid_columns])
 | `collection`  | リモートコレクションの名前。                                   |
 | `structure`   | この関数が返す ClickHouse テーブルのスキーマ。                    |
 | `oid_columns` | WHERE 句内で `oid` として扱うカラムのカンマ区切りリスト。デフォルトは `_id`。 |
-| :::           |                                                  |
 
 名前付きコレクションを使用して引数を渡すこともできます:
 
 ```sql
 mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
--- または
+-- or
 mongodb(_named_collection_[, uri][, structure][, oid_columns])
 ```
 

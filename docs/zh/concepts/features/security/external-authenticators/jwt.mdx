@@ -105,13 +105,15 @@ JWT 用户与常规 ClickHouse 用户在几个重要方面有所不同。
   ### 身份与命名
 </div>
 
-每个 JWT 用户都会获得一个根据 `iss`、`sub` 和 `aud` claims 计算出的确定性 UUID。该 UUID 在不同登录之间是**稳定的**。同一用户即使用不同的令牌多次登录 (只要签发方、主体和受众相同) ，获得的 UUID 也始终相同。
+每个 JWT 用户都会获得一个根据 `iss`、`sub` 和 `aud` 声明 计算出的确定性 UUID。该 UUID 在不同登录之间是**稳定的**。同一用户即使用不同的令牌多次登录 (只要签发方、主体和受众相同) ，获得的 UUID 也始终相同。
 
 不过，用户名是**易变的**。其构造方式如下：
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+`<claims_hash>` 是一个根据 `iss`、`sub` 和 `aud` 声明，以及 `clickhouse:roles` 和 `clickhouse:grants` 声明 共同计算得出的哈希值。`iss` 和 `aud` 声明 **仅**通过这个哈希参与；它们不再内联到可见的用户名前缀中。当 `iss`/`aud` 是较长且不透明的 IdP URL (例如 Microsoft Entra 或 Okta) 时，这样既能让名称保持紧凑、易读，又仍可确保不同的 `(iss, sub, aud)` Tuple，以及不同的 `clickhouse:roles` / `clickhouse:grants` 集合，会映射到不同且稳定的名称。不参与该哈希计算的 声明 (例如 `iat`、`exp`、`nbf` 或无关的自定义 声明) 不会改变用户名。
 
 `<claims_hash>` 部分会在 `clickhouse:roles` 或 `clickhouse:grants` 声明发生变化时相应变化。这意味着，即使是同一身份，具有不同角色或授权集合的令牌也会生成不同的用户名。
 
@@ -150,7 +152,7 @@ ClickHouse 会跟踪每个稳定身份最近一次通过身份验证的令牌的
 通过用户当前的用户名引用该用户：
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>

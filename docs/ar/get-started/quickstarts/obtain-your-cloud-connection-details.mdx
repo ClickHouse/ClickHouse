@@ -17,8 +17,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">التحليلات اللحظية</Badge>
   <Badge size="lg" color="blue">مستودعات البيانات</Badge>
-  <Badge size="lg" color="blue">قابلية الرصد</Badge>
-  <Badge size="lg" color="blue">الذكاء الاصطناعي/تعلّم الآلة</Badge>
+  <Badge size="lg" color="blue">الرصد</Badge>
+  <Badge size="lg" color="blue">AI/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -40,17 +40,13 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 وبحلول النهاية، ستعرف أين تجد هذه التفاصيل في Cloud console وكيف تتحقق من الاتصال باستخدام أمر `curl` بسيط، لتكون جاهزًا للاتصال من أدوات مثل `clickhouse-local` أو `clickhouse-client` أو أي برنامج تشغيل لـ ClickHouse.
 
 <Steps titleSize="h3">
-  <Step>
-    ### افتح ClickHouse Cloud console
-
+  <Step title="افتح ClickHouse Cloud console" id="open-the-cloud-console">
     انتقل إلى [ClickHouse Cloud console](https://console.clickhouse.cloud/) وسجّل الدخول إلى حسابك.
 
     من لوحة المعلومات الرئيسية، حدّد الخدمة التي تريد الاتصال بها. إذا كانت الخدمة في حالة idled، فانقر عليها وانتظر حتى تعود للعمل قبل المتابعة، إذ يجب أن تكون قيد التشغيل للتحقق من الاتصال في خطوة لاحقة.
   </Step>
 
-  <Step>
-    ### اعثر على تفاصيل الاتصال الخاصة بك
-
+  <Step title="اعثر على تفاصيل الاتصال الخاصة بك" id="find-your-connection-details">
     انقر على خدمتك لفتح صفحة تفاصيلها، ثم انقر على زر **Connect** في الشريط الجانبي الأيسر:
 
     <img className="block dark:hidden w-2/3 mx-auto" src="/images/get-started/quickstarts/connect-light.webp" alt="زر Connect في ClickHouse Cloud console (الوضع الفاتح)" />
@@ -77,9 +73,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Note>
   </Step>
 
-  <Step>
-    ### تعرّف على بروتوكولات الاتصال
-
+  <Step title="تعرّف على بروتوكولات الاتصال" id="understand-the-connection-protocols">
     توفّر ClickHouse Cloud بروتوكولين رئيسيين للشبكة، لكل منهما منفذه الخاص:
 
     * **البروتوكول الأصلي (المنفذ 9440)** - بروتوكول ثنائي يُستخدم بواسطة `clickhouse-client` و`clickhouse-local` ومعظم برامج التشغيل الخاصة باللغات. وهو الخيار الأسرع ويدعم جميع ميزات ClickHouse. ويتطلب استخدام TLS على Cloud.
@@ -90,9 +84,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     في معظم أدلة البدء السريع ومسارات عمل CLI في هذه السلسلة، ستستخدم **البروتوكول الأصلي على المنفذ 9440**.
   </Step>
 
-  <Step>
-    ### احفظ تفاصيل الاتصال لإعادة استخدامها
-
+  <Step title="احفظ تفاصيل الاتصال لإعادة استخدامها" id="save-your-connection-details-for-reuse">
     ستستخدم تفاصيل الاتصال هذه كثيرًا عبر أدلة البدء السريع. ولتجنب إعادة كتابتها في كل مرة، يمكنك تصديرها كمتغيرات بيئة في جلسة الطرفية لديك:
 
     ```bash
@@ -111,7 +103,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 لديك الآن جميع تفاصيل الاتصال اللازمة للاتصال بخدمة ClickHouse Cloud الخاصة بك من أي أداة خارجية. وسيُستخدم اسم المضيف والمنفذ واسم المستخدم وكلمة المرور التي وجدتها هنا في بقية سلسلة أدلة البدء السريع.
 

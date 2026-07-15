@@ -76,7 +76,7 @@ gcs(named_collection[, option=value [,..]])
   ## 示例
 </div>
 
-从 GCS 文件 `https://storage.googleapis.com/my-test-bucket-768/data.csv` 对应的表中选取前两行：
+从 GCS 文件 `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz` 中选取前两行。压缩方法会根据 `.gz` 文件扩展名自动识别：
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-类似，不过是来自使用 `gzip` 压缩方法的文件：
+与上面的查询相同，不过这里显式指定了 `gzip` 压缩方法，而不是依赖自动检测：
 
 ```sql
 SELECT *

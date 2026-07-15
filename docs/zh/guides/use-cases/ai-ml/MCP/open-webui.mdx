@@ -2,7 +2,7 @@
 slug: /use-cases/AI/MCP/open-webui
 sidebarTitle: '集成 Open WebUI'
 title: '在 Open WebUI 中使用 ClickHouse MCP 服务器'
-description: '本指南介绍如何使用 Docker 为 Open WebUI 设置 ClickHouse MCP 服务器。'
+description: '本指南介绍如何使用 Docker 配置 Open WebUI，并将其连接到 ClickHouse MCP 服务器。'
 keywords: ['AI', 'Open WebUI', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,34 +10,28 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-> 本指南介绍如何为 [Open WebUI](https://github.com/open-webui/open-webui) 配置 ClickHouse MCP 服务器，
+> 本指南介绍如何配置 [Open WebUI](https://github.com/open-webui/open-webui) 与 ClickHouse MCP 服务器，
 > 并将其连接到 ClickHouse 示例数据集。
 
 <Steps>
-  <Step>
-    ## 安装 uv
-
-    要按照本指南操作，你需要先安装 [uv](https://docs.astral.sh/uv/)。
-    如果你不想使用 uv，则需要更新 MCP 服务器配置，改用其他包管理器。
+  <Step title="安装 uv" id="install-uv">
+    按照本指南操作前，需要先安装 [uv](https://docs.astral.sh/uv/)。
+    如果不想使用 uv，则需要更新 MCP 服务器的 config，改用其他 package manager。
   </Step>
 
-  <Step>
-    ## 启动 Open WebUI
-
+  <Step title="启动 Open WebUI" id="launch-open-webui">
     要启动 Open WebUI，可以运行以下命令：
 
     ```bash
     uv run --with open-webui open-webui serve
     ```
 
-    访问 http://localhost:8080/ 即可打开 UI。
+    访问 [http://localhost:8080/](http://localhost:8080/) 即可打开 UI。
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse MCP 服务器
-
-    要设置 ClickHouse MCP 服务器，我们需要先将 MCP 服务器转换为 Open API 端点。
-    首先，设置环境变量，以便连接到 ClickHouse SQL Playground：
+  <Step title="配置 ClickHouse MCP 服务器" id="configure-clickhouse-mcp-server">
+    要配置 ClickHouse MCP 服务器，需要先将 MCP 服务器转换为 Open API 端点。
+    首先，设置环境变量，以便连接到 ClickHouse SQL playground：
 
     ```bash
     export CLICKHOUSE_HOST="sql-clickhouse.clickhouse.com"
@@ -51,7 +45,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     uvx mcpo --port 8000 -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
     ```
 
-    访问 http://localhost:8000/docs 即可查看已创建的端点列表。
+    访问 [http://localhost:8000/docs](http://localhost:8000/docs) 即可查看已创建的端点列表。
 
     <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="Open API 端点" size="md" />
 
@@ -63,41 +57,37 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="Open WebUI 工具" size="md" />
 
-    将 http://localhost:8000 添加为工具 URL：
+    将 [http://localhost:8000](http://localhost:8000) 添加为工具 URL：
 
     <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="Open WebUI 工具" size="md" />
 
-    完成后，你应该会在聊天栏的工具图标旁看到一个 `1`：
+    完成后，聊天栏中的工具图标旁应该会显示一个 `1`：
 
     <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="Open WebUI 可用工具" size="md" />
 
-    点击工具图标后，就可以查看可用工具列表：
+    点击工具图标后，即可查看可用工具列表：
 
     <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="Open WebUI 工具列表" size="md" />
   </Step>
 
-  <Step>
-    ## 配置 OpenAI
-
+  <Step title="配置 OpenAI" id="configure-openai">
     默认情况下，Open WebUI 使用 Ollama 模型，但也可以添加与 OpenAI 兼容的端点。
-    这些连接可通过设置菜单进行配置，不过这次需要点击 `Connections` 选项卡：
+    这些内容可通过设置菜单进行配置，这里需要点击 `Connections` 选项卡：
 
     <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="Open WebUI 连接" size="md" />
 
-    添加端点和你的 OpenAI 密钥：
+    添加该端点以及 OpenAI 密钥：
 
-    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - 添加 OpenAI 连接" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - 添加 OpenAI 作为连接" size="md" />
 
-    之后，OpenAI 模型就会显示在顶部菜单中：
+    随后，OpenAI 模型就会出现在顶部菜单中：
 
     <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI - 模型" size="md" />
   </Step>
 
-  <Step>
-    ## 在 Open WebUI 中与 ClickHouse MCP 服务器对话
+  <Step title="通过 Open WebUI 与 ClickHouse MCP 服务器聊天" id="chat-to-clickhouse-mcp-server">
+    接下来即可开始对话，Open WebUI 会在需要时调用 MCP 服务器：
 
-    然后，你就可以开始对话；如有需要，Open WebUI 会调用 MCP 服务器：
-
-    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - 与 ClickHouse MCP 服务器对话" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - 与 ClickHouse MCP 服务器聊天" size="md" />
   </Step>
 </Steps>

@@ -234,7 +234,7 @@ Les Highlighted Attributes et les Highlighted Trace Attributes peuvent être con
 
 Ces attributs sont définis dans la configuration de la source et peuvent être des expressions SQL arbitraires. Si l’expression SQL renvoie une valeur au format URL, l’attribut sera affiché sous forme de lien. Les valeurs vides ne sont pas affichées.
 
-Par exemple, cette source de trace a été configurée avec un Highlighted Attributes et un Highlighted Trace Attributes :
+Par exemple, cette source de trace a été configurée avec un Highlighted Attribute et un Highlighted Trace Attribute :
 
 <Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Configuration des Highlighted Attributes" size="md" />
 
@@ -250,14 +250,14 @@ Cliquer sur un attribut permet d’utiliser cet attribut comme valeur de recherc
   ### Sources corrélées
 </div>
 
-Pour activer une corrélation complète entre les sources dans ClickStack, vous devez configurer des sources corrélées pour les logs, les traces, les métriques et les sessions. Cela permet à HyperDX d&#39;associer les données liées et de fournir un contexte détaillé lors de l&#39;affichage des événements.
+Pour activer une corrélation complète entre les sources dans ClickStack, vous devez configurer des sources corrélées pour les logs, les traces, les métriques et les sessions. Cela permet à HyperDX d’associer les données liées et de fournir un contexte détaillé lors de l’affichage des événements.
 
 * `Logs` : peuvent être corrélés avec les traces et les métriques.
 * `Traces` : peuvent être corrélées avec les logs, les sessions et les métriques.
 * `Metrics` : peuvent être corrélées avec les logs.
 * `Sessions` : peuvent être corrélées avec les traces.
 
-La configuration de ces corrélations active plusieurs fonctionnalités. Par exemple, HyperDX peut afficher les logs pertinents aux côtés d&#39;une trace ou mettre en évidence des anomalies de métriques liées à une session.
+La configuration de ces corrélations active plusieurs fonctionnalités. Par exemple, HyperDX peut afficher les logs pertinents aux côtés d’une trace ou mettre en évidence des anomalies de métriques liées à une session.
 
 Par exemple, ci-dessous, la source de logs est configurée avec des sources corrélées :
 

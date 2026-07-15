@@ -34,23 +34,17 @@ Você precisará de permissões de administrador no seu IdP, da capacidade de ad
 </div>
 
 <Steps>
-  <Step>
-    ### Acesse as configurações da organização
-
+  <Step title="Acesse as configurações da organização" id="access-organization-settings">
     Clique no nome da sua organização no canto inferior esquerdo e selecione Detalhes da organização.
   </Step>
 
-  <Step>
-    ### Ative o logon único SAML
-
+  <Step title="Ative o logon único SAML" id="enable-saml-sso">
     Clique no botão de alternância ao lado de `Enable SAML single sign-on`. Deixe esta tela aberta, pois você precisará consultá-la várias vezes durante o processo de configuração.
 
     <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="Iniciar a configuração do SAML" force />
   </Step>
 
-  <Step>
-    ### Crie um aplicativo no seu provedor de identidade
-
+  <Step title="Crie um aplicativo no seu provedor de identidade" id="create-idp-application">
     Crie um aplicativo no seu provedor de identidade e copie os valores da tela `Enable SAML single sign-on` para a configuração do seu provedor de identidade. Para mais informações sobre esta etapa, consulte abaixo as instruções do seu provedor de identidade específico.
 
     * [Configurar o SAML no Okta](#configure-okta-saml)
@@ -65,43 +59,33 @@ Você precisará de permissões de administrador no seu IdP, da capacidade de ad
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Criar aplicativo no provedor de identidade" force />
   </Step>
 
-  <Step>
-    ### Adicione a URL de metadados à sua configuração SAML
-
+  <Step title="Adicione a URL de metadados à sua configuração SAML" id="add-metadata-url">
     Obtenha a `Metadata URL` do seu provedor SAML. Volte ao ClickHouse Cloud, clique em `Next: Provide metadata URL` e cole a URL na caixa de texto.
 
     <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="Adicionar URL de metadados" force />
   </Step>
 
-  <Step>
-    ### Obtenha o código de verificação do domínio
-
+  <Step title="Obtenha o código de verificação do domínio" id="get-domain-verification-code">
     Clique em `Next: Verify your domains`. Insira seu domínio na caixa de texto e clique em `Check domain`. O sistema gerará um código de verificação aleatório para adicionar a um registro TXT no seu provedor de DNS.
 
     <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="Adicionar domínio para verificar" force />
   </Step>
 
-  <Step>
-    ### Verifique seu domínio
-
+  <Step title="Verifique seu domínio" id="verify-your-domain">
     Crie um registro TXT no seu provedor de DNS. Copie `TXT record name` para o campo Nome do registro TXT no seu provedor de DNS. Copie `Value` para o campo Conteúdo no seu provedor de DNS. Clique em `Verify and Finish` para concluir o processo.
 
     <Note>
-      Pode levar alguns minutos para que o registro DNS seja atualizado e validado. Você pode sair da página de configuração e voltar mais tarde para concluir o processo sem precisar recomeçar.
+      Pode levar alguns minutos para que o registro DNS seja atualizado e validado. Você pode sair da página de configuração e voltar mais tarde para concluir o processo sem precisar recomeçar. O valor de verificação é válido por 48 horas a partir do momento em que é gerado pela primeira vez.
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Verifique seu domínio" force />
   </Step>
 
-  <Step>
-    ### Atualizar a função padrão e o tempo limite da sessão
-
+  <Step title="Atualizar a função padrão e o tempo limite da sessão" id="update-defaults">
     Quando a configuração do SAML estiver concluída, você poderá definir quais funções padrão serão atribuídas a todos os usuários ao fazer login e também ajustar as configurações de tempo limite da sessão. Para ver uma lista das funções de sistema disponíveis que podem ser atribuídas, consulte [Funções e permissões do Console](/pt-BR/products/cloud/reference/security/console-roles).
   </Step>
 
-  <Step>
-    ### Configure o seu usuário Admin
-
+  <Step title="Configure o seu usuário Admin" id="configure-your-admin-user">
     <Note>
       Os usuários configurados com um método de authentication diferente serão mantidos até que um Admin da sua organização os remova.
     </Note>
@@ -126,9 +110,7 @@ Você precisará de permissões de administrador no seu IdP, da capacidade de ad
     </Tip>
   </Step>
 
-  <Step>
-    ### Remover outros métodos de autenticação
-
+  <Step title="Remover outros métodos de autenticação" id="remove-other-auth-methods">
     Remova todos os usuários que estejam usando um método que não seja SAML para concluir a integração e restrinja o acesso apenas aos usuários provenientes da conexão com seu provedor de identidade.
   </Step>
 </Steps>

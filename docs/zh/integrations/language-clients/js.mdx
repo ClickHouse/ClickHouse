@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 用于连接 ClickHouse 的官方 JavaScript 客户端。
 该客户端使用 TypeScript 编写，并为客户端公开 API 提供类型定义。
@@ -157,13 +156,13 @@ const client = createClient({
   #### Node.js 专用配置参数
 </div>
 
-| 设置                                                                             | 描述                                 | 默认值    | 另请参见                                                                                                      |
-| ------------------------------------------------------------------------------ | ---------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| **max&#95;open&#95;connections**?: number                                      | 每个主机允许的最大连接套接字数。                   | `10`   | -                                                                                                         |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | 配置 TLS 证书。                         | -      | [TLS 文档](/zh/integrations/language-clients/js#tls-certificates-nodejs-only)                                  |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                  | -      | [Keep-Alive 文档](/zh/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                   |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | 为客户端指定自定义 HTTP Agent。              | -      | [HTTP agent 文档](/zh/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)        |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | 将基本身份验证凭据设置到 `Authorization` 请求头中。 | `true` | [HTTP agent 文档中此设置的用法](/zh/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| 设置                                                                                                           | 描述                                 | 默认值    | 另请参见                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| **max&#95;open&#95;connections**?: number                                                                    | 每个主机允许的最大连接套接字数。                   | `10`   | -                                                                                                         |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                                     | 配置 TLS 证书。                         | -      | [TLS 文档](/zh/integrations/language-clients/js#tls-certificates-nodejs-only)                                  |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                               | -                                  | -      | [Keep-Alive 文档](/zh/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                   |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Experimental</Badge>   | 为客户端指定自定义 HTTP Agent。              | -      | [HTTP agent 文档](/zh/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)        |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Experimental</Badge> | 将基本身份验证凭据设置到 `Authorization` 请求头中。 | `true` | [HTTP agent 文档中此设置的用法](/zh/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### URL 配置

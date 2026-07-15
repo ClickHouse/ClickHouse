@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -69,10 +70,10 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL 선택" size="lg" border />
 
 <div id="add-your-source-mysql-database-connection">
-  ### 소스 MySQL 데이터베이스 연결 추가
+  ### 원본 MySQL 데이터베이스 연결 추가
 </div>
 
-4. 사전 준비 단계에서 구성한 소스 MySQL 데이터베이스의 연결 정보를 입력합니다.
+4. 사전 준비 단계에서 구성한 원본 MySQL 데이터베이스의 연결 정보를 입력합니다.
 
 <Info>
   연결 정보를 추가하기 전에 방화벽 규칙에서 ClickPipes IP 주소를 허용 목록에 추가했는지 확인하십시오. 다음 페이지에서 [ClickPipes IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 확인할 수 있습니다.
@@ -80,6 +81,12 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="연결 정보 입력" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (선택 사항) TLS 설정 변경하기
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (선택 사항) SSH 터널링 설정하기

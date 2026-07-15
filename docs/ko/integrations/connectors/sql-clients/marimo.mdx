@@ -20,105 +20,101 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 
 <Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="ClickHouse에 연결" />
 
-<div id="install-marimo-sql">
-  ## 1. SQL 지원이 포함된 marimo 설치
-</div>
+<Steps>
+  <Step title="SQL 지원과 함께 marimo 설치" id="install-marimo-sql">
+    ```shell
+    pip install "marimo[sql]" clickhouse_connect
+    marimo edit clickhouse_demo.py
+    ```
 
-```shell
-pip install "marimo[sql]" clickhouse_connect
-marimo edit clickhouse_demo.py
-```
+    그러면 localhost에서 실행 중인 웹 브라우저가 열립니다.
+  </Step>
 
-그러면 localhost를 가리키는 웹 브라우저가 열립니다.
+  <Step title="ClickHouse에 연결" id="connect-to-clickhouse">
+    marimo 편집기 왼쪽의 데이터 소스 패널로 이동한 다음 &#39;Add database&#39;를 클릭합니다.
 
-<div id="connect-to-clickhouse">
-  ## 2. ClickHouse에 연결하기.
-</div>
+    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="새 데이터베이스 추가" />
 
-marimo 편집기 왼쪽의 데이터 소스 패널로 이동한 다음 &quot;Add database&quot;를 클릭하세요.
+    그러면 데이터베이스 세부 정보를 입력하라는 메시지가 표시됩니다.
 
-<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="새 데이터베이스 추가" />
+    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="데이터베이스 세부 정보 입력" />
 
-데이터베이스 정보를 입력하라는 메시지가 표시됩니다.
+    그런 다음 연결을 설정하기 위해 실행할 수 있는 셀이 생성됩니다.
 
-<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="데이터베이스 정보 입력" />
+    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="ClickHouse에 연결하기 위해 셀 실행" />
+  </Step>
 
-그러면 연결을 설정할 수 있는 셀이 생성됩니다.
+  <Step title="SQL 실행" id="run-sql">
+    연결을 설정한 후 새 SQL 셀을 만들고 ClickHouse 엔진을 선택합니다.
 
-<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="ClickHouse에 연결하려면 셀 실행" />
+    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="SQL 엔진 선택" />
 
-<div id="run-sql">
-  ## 3. SQL 실행
-</div>
+    이 가이드에서는 New York Taxi 데이터셋을 사용합니다.
 
-연결을 설정한 후 새 SQL 셀을 만들고 ClickHouse 엔진을 선택합니다.
+    ```sql
+    CREATE TABLE trips (
+        trip_id             UInt32,
+        pickup_datetime     DateTime,
+        dropoff_datetime    DateTime,
+        pickup_longitude    Nullable(Float64),
+        pickup_latitude     Nullable(Float64),
+        dropoff_longitude   Nullable(Float64),
+        dropoff_latitude    Nullable(Float64),
+        passenger_count     UInt8,
+        trip_distance       Float32,
+        fare_amount         Float32,
+        extra               Float32,
+        tip_amount          Float32,
+        tolls_amount        Float32,
+        total_amount        Float32,
+        payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+        pickup_ntaname      LowCardinality(String),
+        dropoff_ntaname     LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    PRIMARY KEY (pickup_datetime, dropoff_datetime);
+    ```
 
-<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="SQL 엔진 선택" />
+    ```sql
+    INSERT INTO trips
+    SELECT
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+        'TabSeparatedWithNames'
+    );
+    ```
 
-이 가이드에서는 New York Taxi 데이터셋을 사용합니다.
+    ```sql
+    SELECT * FROM trips LIMIT 1000;
+    ```
 
-```sql
-CREATE TABLE trips (
-    trip_id             UInt32,
-    pickup_datetime     DateTime,
-    dropoff_datetime    DateTime,
-    pickup_longitude    Nullable(Float64),
-    pickup_latitude     Nullable(Float64),
-    dropoff_longitude   Nullable(Float64),
-    dropoff_latitude    Nullable(Float64),
-    passenger_count     UInt8,
-    trip_distance       Float32,
-    fare_amount         Float32,
-    extra               Float32,
-    tip_amount          Float32,
-    tolls_amount        Float32,
-    total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-    pickup_ntaname      LowCardinality(String),
-    dropoff_ntaname     LowCardinality(String)
-)
-ENGINE = MergeTree
-PRIMARY KEY (pickup_datetime, dropoff_datetime);
-```
+    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="데이터프레임 결과" />
 
-```sql
-INSERT INTO trips
-SELECT
-    trip_id,
-    pickup_datetime,
-    dropoff_datetime,
-    pickup_longitude,
-    pickup_latitude,
-    dropoff_longitude,
-    dropoff_latitude,
-    passenger_count,
-    trip_distance,
-    fare_amount,
-    extra,
-    tip_amount,
-    tolls_amount,
-    total_amount,
-    payment_type,
-    pickup_ntaname,
-    dropoff_ntaname
-FROM gcs(
-    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
-    'TabSeparatedWithNames'
-);
-```
+    이제 결과를 데이터프레임에서 확인할 수 있습니다. 특정 픽업 위치를 기준으로 비용이 가장 높은 하차 지점을 시각화해 보겠습니다. marimo는 이를 위한 여러 UI 구성 요소를 제공합니다. 여기서는 위치를 선택하기 위해 드롭다운을 사용하고, 차트 시각화에는 altair를 사용하겠습니다.
 
-```sql
-SELECT * FROM trips LIMIT 1000;
-```
+    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="드롭다운, 테이블, 차트 조합" />
 
-<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="데이터프레임 결과" />
+    marimo의 반응형 실행 모델은 SQL 쿼리에도 확장되므로, SQL을 변경하면 의존하는 셀의 후속 계산이 자동으로 트리거됩니다(또는 비용이 큰 계산의 경우 선택적으로 셀을 오래된 상태로 표시할 수 있습니다). 따라서 쿼리가 업데이트되면 차트와 테이블도 함께 변경됩니다.
 
-이제 결과를 데이터프레임에서 확인할 수 있습니다. 특정 픽업 위치를 기준으로 비용이 가장 높은 하차 지점을 시각화해 보겠습니다. marimo는 이를 위한 여러 UI 구성 요소를 제공합니다. 여기서는 위치를 선택하기 위해 드롭다운을 사용하고, 차트 시각화에는 altair를 사용하겠습니다.
+    데이터를 탐색하기에 더 깔끔한 인터페이스가 필요하다면 App View를 전환할 수도 있습니다.
 
-<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="드롭다운, 테이블, 차트 조합" />
-
-marimo의 반응형 실행 모델은 SQL 쿼리에도 확장되므로, SQL을 변경하면 의존하는 셀의 후속 계산이 자동으로 트리거됩니다(또는 비용이 큰 계산의 경우 선택적으로 셀을 오래된 상태로 표시할 수 있습니다). 따라서 쿼리가 업데이트되면 차트와 테이블도 함께 변경됩니다.
-
-데이터를 탐색하기에 더 깔끔한 인터페이스가 필요하다면 App View를 전환할 수도 있습니다.
-
-<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="App View 실행" />
+    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="App View 실행" />
+  </Step>
+</Steps>

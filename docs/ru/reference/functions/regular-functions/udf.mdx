@@ -6,30 +6,26 @@ title: 'Пользовательские функции (UDF)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<div id="udfs-user-defined-functions">
-  # Пользовательская функция (UDF) Пользовательские функции
-</div>
 
 ClickHouse поддерживает несколько типов пользовательских функций (UDF):
 
 * [исполняемые пользовательские функции](#executable-user-defined-functions) запускают внешнюю программу или скрипт (Python, Bash и т. д.) и потоково передают им блоки данных через STDIN / STDOUT. Используйте их для интеграции существующего кода или инструментов без перекомпиляции ClickHouse. По сравнению с внутрипроцессными вариантами у них выше накладные расходы на каждый вызов, поэтому они лучше подходят для более сложной логики или случаев, когда нужна другая среда выполнения.
 * [пользовательские функции SQL](#sql-user-defined-functions) определяются с помощью `CREATE FUNCTION` исключительно на SQL. Они подставляются/разворачиваются в план запроса (без отдельного процесса), что делает их лёгкими и идеально подходящими для повторного использования логики выражений или упрощения сложных вычисляемых столбцов.
 * [Экспериментальные пользовательские функции WebAssembly](#webassembly-user-defined-functions) выполняют код, скомпилированный в WebAssembly, внутри песочницы в процессе сервера. Они обеспечивают меньшие накладные расходы на каждый вызов, чем внешние исполняемые файлы, и лучшую изоляцию, чем нативные расширения, что делает их подходящими для пользовательских алгоритмов, написанных на языках, которые можно компилировать в WASM (например, C/C++/Rust).
+* [Экспериментальные исполняемые пользовательские функции на основе драйвера](#driver-based-executable-user-defined-functions) позволяют предоставляемому оператором &quot;драйверу&quot; преобразовывать фрагмент кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемую пользовательскую функцию при создании функции (например, путём компиляции). Они основаны на исполняемых пользовательских функциях и требуют серверной конфигурации драйвера.
 
 <div id="executable-user-defined-functions">
   ## Исполняемые пользовательские функции
 </div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  Эта возможность доступна в рамках закрытой предварительной версии в ClickHouse Cloud.
-  Чтобы получить доступ, обратитесь в ClickHouse Support: https://clickhouse.cloud/support.
+  В ClickHouse Cloud исполняемые UDF находятся в публичной бета-версии и создаются через интерфейс консоли Cloud. См. [Пользовательские функции в Cloud](/ru/products/cloud/features/sql-console-features/user-defined-functions), чтобы ознакомиться со специальным процессом для Cloud.
 </Note>
 
 ClickHouse может вызывать любую внешнюю исполняемую программу или скрипт для обработки данных.
@@ -526,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 Подробнее см. в документации [Пользовательские функции WebAssembly](/ru/reference/functions/regular-functions/wasm_udf).
+
+<div id="driver-based-executable-user-defined-functions">
+  ## Исполняемые пользовательские функции на базе драйверов
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  Это экспериментальная возможность, которая в будущих релизах может измениться с нарушением обратной совместимости. Включите её с помощью настройки сервера [`allow_experimental_executable_udf_drivers`](/ru/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers).
+</Note>
+
+*Драйвер* — это предоставляемый оператором адаптер, который превращает фрагмент пользовательского кода в исполняемую [пользовательскую функцию](#executable-user-defined-functions). Когда функция создаётся с `ENGINE = DriverName(...)`, ClickHouse запускает `create_command` драйвера, передавая ему сигнатуру функции и тело кода; драйвер компилирует тело или иным образом его обрабатывает и выводит конфигурацию исполняемой пользовательской функции, которую ClickHouse затем сохраняет и загружает.
+
+Это позволяет администраторам дать пользователям безопасный и строго ограниченный способ определять функции на произвольном языке (например, на C, компилируемом внутри изолированного контейнера), не предоставляя им доступ к конфигурационным файлам или файловой системе сервера. Набор доступных драйверов полностью контролируется оператором.
+
+<div id="enabling-drivers">
+  ### Включение драйверов
+</div>
+
+Исполняемые UDF на базе драйверов по умолчанию отключены. Чтобы их включить:
+
+1. Установите экспериментальный флаг в конфигурации сервера:
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. Укажите в `user_defined_executable_function_drivers_config` один или несколько файлов конфигурации драйверов (поддерживаются glob-шаблоны) и при необходимости задайте [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) — каталог, где хранятся сгенерированные конфигурации исполняемых UDF:
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+Реестр драйверов загружается при запуске сервера и обновляется командой `SYSTEM RELOAD CONFIG`, поэтому драйверы можно добавлять, изменять или удалять без перезапуска сервера.
+
+<div id="driver-configuration">
+  ### Конфигурация драйвера
+</div>
+
+Драйвер описывается XML- или YAML-файлом с корневым элементом `<driver>`. Поддерживаются следующие поля:
+
+| Поле               | Описание                                                                                                                                                                                | Обязательно |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `name`             | Имя драйвера, используемое в `CREATE FUNCTION ... ENGINE = <name>(...)`.                                                                                                                | Да          |
+| `create_command`   | Путь к программе, которая вызывается для создания UDF из фрагмента кода. Относительные пути разрешаются относительно файла конфигурации драйвера.                                       | Да          |
+| `drop_command`     | Путь к программе, которая вызывается при удалении функции, основанной на этом драйвере.                                                                                                 | Нет         |
+| `engine_arguments` | Объявляет аргументы, допустимые внутри `ENGINE = DriverName(...)`. Каждый дочерний элемент — имя аргумента; дочерний элемент `<required>true</required>` помечает его как обязательный. | Нет         |
+| `env`              | Переменные окружения, экспортируемые при вызове команд драйвера.                                                                                                                        | Нет         |
+
+Пример конфигурации драйвера:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### Контракт вызова драйвера
+</div>
+
+При выполнении `CREATE FUNCTION` вызывается `create_command` с заданными переменными `env` и следующими аргументами:
+
+* `--name <function_name>`
+* `--return <return_type>` (если указана секция `RETURNS`)
+* `--args <signature>` (если указана секция `ARGUMENTS`), где signature — это объявленный список аргументов, например `x UInt8, y DateTime`
+* `--<key> <value>` для каждого объявленного аргумента движка, указанного в `ENGINE = DriverName(key = value)`
+
+Тело пользовательского кода (текст после `AS`) передаётся на стандартный ввод команды. Команда должна вывести конфигурацию исполняемой UDF в стандартный вывод. Формат определяется автоматически: вывод, начинающийся с `<`, обрабатывается как XML, иначе — как YAML. Имя функции, заданное в сгенерированной конфигурации, должно совпадать с именем создаваемой функции. Если `create_command` завершается с ненулевым кодом выхода, оператор завершается ошибкой с исключением, включающим код выхода и содержимое стандартного потока ошибок драйвера.
+
+`drop_command`, если он указан, вызывается таким же образом (без тела кода в stdin) при удалении функции.
+
+<div id="creating-a-function-with-a-driver">
+  ### Создание FUNCTION
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+ClickHouse выполняет `create_command` драйвера, записывает сгенерированную конфигурацию в [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path), после чего её подхватывает существующий загрузчик исполняемых UDF. После этого функцию можно вызывать как и любую другую функцию.
+
+<div id="dropping-a-function-with-a-driver">
+  ### Удаление функции
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION` вызывает `drop_command` драйвера (если она задана), удаляет сгенерированную динамическую конфигурацию и отдельный рабочий каталог функции, перезагружает загрузчик исполняемых UDF и удаляет сохранённый запрос.
+
+<div id="driver-persistence-and-restart">
+  ### Сохранение и перезапуск
+</div>
+
+Исходный запрос сохраняется в виде оператора `ATTACH FUNCTION ...` в каталоге пользовательских SQL-объектов, поэтому функция сохраняется после перезапуска сервера. При запуске сгенерированные конфигурации из [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) загружаются напрямую, без повторного запуска драйвера. Если для сохранённого `ATTACH FUNCTION` нет соответствующей сгенерированной конфигурации (например, если динамический каталог был утерян), драйвер запускается повторно, чтобы создать её заново.
+
+<div id="driver-limitations">
+  ### Ограничения
+</div>
+
+* Эта возможность экспериментальная и доступна только при включении `allow_experimental_executable_udf_drivers`.
+* Исполняемые UDF на базе драйверов не поддерживаются с реплицируемым хранилищем пользовательских функций (`ON CLUSTER` и `<user_defined_zookeeper_path>`), поскольку реплицируется только исходный запрос, а не сгенерированные артефакты.
+* `RESTORE` исполняемого UDF на базе драйверов из резервной копии сохраняет запрос, но не запускает драйвер повторно; сгенерированная конфигурация материализуется позже в процессе восстановления при перезапуске.
+
+<div id="example-c-drivers">
+  ### Пример драйверов на C
+</div>
+
+В дереве исходного кода есть демонстрационные драйверы в `programs/server/user_defined_executable_function_drivers_config.d/`, которые компилируют и выполняют тело функции на C. Это лишь примеры, и **пакеты их не устанавливают**:
+
+* `DockerC` - компилирует и выполняет код внутри изолированных контейнеров Docker (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`, а также с ограничениями по памяти/CPU/PID), создавая UDF `executable_pool`.
+* `GVisorC` - вариант, запускающий скомпилированный бинарный файл в среде выполнения `runsc` от [gVisor](https://gvisor.dev/).
+* `UnsafeC` - компилирует и выполняет код напрямую на хосте, без песочницы. Как следует из названия, он не обеспечивает никакой изоляции и предназначен только для доверенных окружений и тестирования.
+
+Эти драйверы-примеры служат отправной точкой; прежде чем открывать к ним доступ недоверенным пользователям, проверьте и при необходимости усильте изоляцию для вашей среды.
 
 <div id="related-content">
   ## См. также

@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Подключение каталога Iceberg'
 title: 'Как подключить каталог Iceberg в ClickHouse Cloud'
-useCases: ['Data warehousing']
+useCases: ['Хранилище данных']
 products: ['Cloud']
 skillLevel: 'Начальный'
 description: 'Узнайте, как подключить ClickHouse Cloud к вашему каталогу данных и выполнять запросы к таблицам Iceberg.'
@@ -51,14 +51,12 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 В результате ClickHouse Cloud будет подключен к вашему каталогу Iceberg, и вы сможете выполнять SQL-запросы к таблицам Iceberg без копирования данных.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Создайте подключение к DataLakeCatalog
-
+  <Step title="Создайте подключение к DataLakeCatalog" id="create-a-datalakecatalog-connection">
     На этом шаге вы подключитесь к своему Data Lake Catalog в ClickHouse Cloud.
 
     1. Откройте свой сервис ClickHouse Cloud.
 
-    2. Перейдите в **Data Sources → Connect to your Data Lake Catalog**.
+    2. Перейдите в **Data Sources â Connect to your Data Lake Catalog**.
 
     3. Выберите каталог данных в раскрывающемся списке.
 
@@ -77,9 +75,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     5. Сохраните каталог. После этого на странице Data Sources должен отобразиться каталог данных с количеством таблиц, доступных в базе данных.
   </Step>
 
-  <Step>
-    ### Выполните запрос к таблице Iceberg
-
+  <Step title="Выполните запрос к таблице Iceberg" id="query-iceberg-table">
     На этом шаге вы выполните запрос к таблице Iceberg из своего каталога данных.
 
     1. Нажав `Show Tables` или `SQL Console`, вы попадете в консоль SQL,
@@ -94,7 +90,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## Следующие шаги
+<div id="next-steps">
+  ## Следующие шаги
+</div>
 
 Теперь, когда вы подключились к своему озеру данных, вы можете попробовать записать таблицу Iceberg в ClickHouse.
 

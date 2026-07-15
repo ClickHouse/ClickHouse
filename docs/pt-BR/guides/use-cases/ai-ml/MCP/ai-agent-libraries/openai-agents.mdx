@@ -28,9 +28,7 @@ pode interagir com o [playground SQL do ClickHouse](https://sql.clickhouse.com/)
 Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
 
 <Steps>
-  <Step>
-    ## Instale as bibliotecas
-
+  <Step title="Instale as bibliotecas" id="install-libraries">
     Instale as bibliotecas necessárias executando os seguintes comandos:
 
     ```python
@@ -39,9 +37,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar as credenciais
-
+  <Step title="Configurar as credenciais" id="setup-credentials">
     Em seguida, você precisará fornecer sua chave de API da OpenAI:
 
     ```python
@@ -54,9 +50,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializar o MCP Server e o agente OpenAI
-
+  <Step title="Inicializar o MCP Server e o agente OpenAI" id="initialize-mcp-and-agent">
     Agora configure o ClickHouse MCP server para apontar para o playground SQL do ClickHouse,
     inicialize seu agente OpenAI e faça uma pergunta:
 
@@ -68,7 +62,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     def simple_render_chunk(chunk):
         """Simple version that just filters important events"""
 
-        # Chamadas de ferramentas
+        # Tool calls
         if (hasattr(chunk, 'type') and
                 chunk.type == 'run_item_stream_event'):
 
@@ -79,13 +73,13 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
 
             elif chunk.name == 'tool_output':
                 try:
-                    # Trata tanto saída em string quanto já parseada
+                    # Handle both string and already-parsed output
                     if isinstance(chunk.item.output, str):
                         output = json.loads(chunk.item.output)
                     else:
                         output = chunk.item.output
 
-                    # Trata tanto o formato dict quanto o formato list
+                    # Handle both dict and list formats
                     if isinstance(output, dict):
                         if output.get('type') == 'text':
                             text = output['text']
@@ -94,7 +88,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     elif isinstance(output, list) and len(output) > 0:
-                        # Trata o formato list
+                        # Handle list format
                         first_item = output[0]
                         if isinstance(first_item, dict) and first_item.get('type') == 'text':
                             text = first_item['text']
@@ -103,11 +97,11 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     else:
-                        # Fallback - apenas imprime a saída bruta
+                        # Fallback - just print the raw output
                         print(f"✅ Result: {str(output)[:100]}...")
 
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                    # Fallback para saída bruta se o parsing falhar
+                    # Fallback to raw output if parsing fails
                     print(f"✅ Result: {str(chunk.item.output)[:100]}...")
 
             elif chunk.name == 'message_output_created':
@@ -118,7 +112,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
                 except (AttributeError, IndexError):
                     print(f"💬 Response: {str(chunk.item)[:100]}...")
 
-        # Deltas de texto para streaming
+        # Text deltas for streaming
         elif (hasattr(chunk, 'type') and
               chunk.type == 'raw_response_event' and
               hasattr(chunk, 'data') and

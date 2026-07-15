@@ -69,7 +69,8 @@ Parâmetros obrigatórios:
 Parâmetros opcionais:
 
 * `kafka_security_protocol` - Protocolo usado para se comunicar com os brokers. Valores possíveis: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - Mecanismo SASL a ser usado na autenticação. Valores possíveis: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - Mecanismo SASL a ser usado na autenticação. Valores possíveis: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - Região da AWS para autenticação MSK IAM. Detectada automaticamente a partir do endereço do broker se não for especificada. Especifique explicitamente ao usar aliases do PrivateLink ou hostname DNS personalizados que não contenham informações de região. Padrão: vazio (detecção automática).
 * `kafka_sasl_username` - nome de usuário SASL para uso com os mecanismos `PLAIN` e `SASL-SCRAM-..`.
 * `kafka_sasl_password` - senha SASL para uso com os mecanismos `PLAIN` e `SASL-SCRAM-..`.
 * `kafka_schema` — Parâmetro que deve ser usado se o formato exigir uma definição de esquema. Por exemplo, [Cap&#39;n Proto](https://capnproto.org/) exige o caminho para o arquivo de esquema e o nome do objeto raiz `schema.capnp:Message`.
@@ -248,6 +249,116 @@ Assim como o GraphiteMergeTree, o motor Kafka oferece suporte a uma configuraç�
 ```
 
 Para ver uma lista das opções de configuração disponíveis, consulte a [referência de configuração do librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use o sublinhado (`_`) em vez do ponto na configuração do ClickHouse. Por exemplo, `check.crcs=true` será `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-aws-msk-iam">
+  ### Autenticação IAM do AWS MSK
+</div>
+
+<Note>
+  A autenticação IAM do AWS MSK exige que o ClickHouse seja compilado com o suporte ao AWS S3 ativado.
+</Note>
+
+O AWS MSK oferece suporte à autenticação baseada em IAM, permitindo a conexão com clusters Kafka usando credenciais da AWS em vez de gerenciar nomes de usuário e senhas separados.
+
+**Configuração básica:**
+
+Defina `kafka_sasl_mechanism = 'AWS_MSK_IAM'` nas configurações da tabela:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+A região da AWS é extraída automaticamente do endpoint do broker por correspondência de padrões:
+
+* MSK provisionado: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* MSK serverless: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* Endpoint da VPC: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**Credenciais da AWS:**
+
+As credenciais são sempre carregadas de `~/.aws/credentials` e `~/.aws/config` (arquivos de perfil da AWS), quando presentes. Para também habilitar perfis de instância do EC2, variáveis de ambiente (`AWS_ACCESS_KEY_ID`, etc.), roles de tarefa do ECS e outras fontes automáticas de credenciais, adicione à configuração do servidor:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+Essa configuração só pode ser definida por administradores do servidor. Padrão: `false`.
+
+**PrivateLink e DNS personalizado:**
+
+Ao usar aliases do PrivateLink ou hostnames DNS personalizados que não contêm informações de região, especifique explicitamente a região da AWS:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**Permissões do IAM:**
+
+Permissões do consumidor (para ler mensagens):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+Permissões do produtor (para gravar mensagens):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Suporte a Kerberos

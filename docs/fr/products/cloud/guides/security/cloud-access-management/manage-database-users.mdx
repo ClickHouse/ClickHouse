@@ -21,15 +21,13 @@ Les utilisateurs de la console SQL sont créés pour chaque session et authentif
   ## Utilisateurs et rôles de la console SQL
 </div>
 
-Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des autorisations Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les attributions de rôles de la console SQL](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
+Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des permissions Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les attributions de rôles de la console SQL](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
 
 Pour créer un rôle personnalisé pour un utilisateur de la console SQL et lui attribuer un rôle générique, exécutez les commandes suivantes. L’adresse e-mail doit correspondre à celle de l’utilisateur dans la console.
 
 <Steps>
-  <Step>
-    #### Créer `database_developer` et accorder les privilèges
-
-    Créez le rôle `database_developer` et accordez les privilèges `SHOW`, `CREATE`, `ALTER` et `DELETE`.
+  <Step title={<>Créer <code>database_developer</code> et accorder les permissions</>} id="create-role-grant-permissions">
+    Créez le rôle `database_developer` et accordez les permissions `SHOW`, `CREATE`, `ALTER` et `DELETE`.
 
     ```sql
     CREATE ROLE OR REPLACE database_developer;
@@ -40,9 +38,7 @@ Pour créer un rôle personnalisé pour un utilisateur de la console SQL et lui 
     ```
   </Step>
 
-  <Step>
-    #### Créer un rôle utilisateur de la console SQL
-
+  <Step title="Créer un rôle utilisateur de la console SQL" id="create-sql-console-user-role">
     Créez un rôle pour l’utilisateur de la console SQL my.user@domain.com et attribuez-lui le rôle database&#95;developer.
 
     ```sql
@@ -51,9 +47,7 @@ Pour créer un rôle personnalisé pour un utilisateur de la console SQL et lui 
     ```
   </Step>
 
-  <Step>
-    #### L’utilisateur se voit attribuer le nouveau rôle lorsqu’il utilise la console SQL
-
+  <Step title="L’utilisateur se voit attribuer le nouveau rôle lorsqu’il utilise la console SQL" id="use-assigned-new-role">
     L’utilisateur se verra attribuer le rôle associé à son adresse e-mail chaque fois qu’il utilisera la console SQL.
   </Step>
 </Steps>
@@ -98,9 +92,9 @@ Pour une présentation détaillée avec des exemples, consultez [Comment se conn
 
 Configurez les éléments suivants au sein des services et des bases de données à l’aide de l’instruction SQL [GRANT](/fr/reference/statements/grant).
 
-| Role    | Description                                                                       |
-| :------ | :-------------------------------------------------------------------------------- |
-| Default | Accès administratif complet aux services                                          |
+| Role    | Description                                                                          |
+| :------ | :----------------------------------------------------------------------------------- |
+| Default | Accès administratif complet aux services                                             |
 | Custom  | À configurer à l’aide de l’instruction SQL [`GRANT`](/fr/reference/statements/grant) |
 
 * Les rôles de base de données sont cumulatifs. Cela signifie que si un utilisateur est membre de deux rôles, il dispose du niveau d’accès le plus élevé accordé par l’un ou l’autre de ces rôles. L’ajout de rôles ne réduit pas ses accès.
@@ -137,9 +131,7 @@ Vous pouvez utiliser un générateur de hachage SHA256 ou une fonction telle que
 Le processus suivant permet de générer une liste complète des accès dans la console SQL et les bases de données de votre organisation.
 
 <Steps>
-  <Step>
-    #### Obtenir la liste de tous les privilèges de la base de données
-
+  <Step title="Obtenir la liste de tous les privilèges de la base de données" id="get-a-list-of-all-database-grants">
     Exécutez les requêtes suivantes pour obtenir la liste de tous les privilèges de la base de données.
 
     ```sql
@@ -165,9 +157,7 @@ Le processus suivant permet de générer une liste complète des accès dans la 
     ```
   </Step>
 
-  <Step>
-    #### Associer la liste des privilèges aux utilisateurs de la Console ayant accès à la console SQL
-
+  <Step title="Associer la liste des privilèges aux utilisateurs de la Console ayant accès à la console SQL" id="associate-grant-list-to-console-users-with-access-to-sql-console">
     Associez cette liste aux utilisateurs de la Console qui ont accès à la console SQL.
 
     a. Accédez à la Console.
@@ -183,7 +173,7 @@ Le processus suivant permet de générer une liste complète des accès dans la 
 </Steps>
 
 <div id="warehouse-users">
-  ## Utilisateurs du warehouse
+  ## Utilisateurs du Warehouse
 </div>
 
-Les utilisateurs du warehouse sont communs à tous les services d’un même warehouse. Pour plus d’informations, consultez les [contrôles d’accès au warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).
+Les utilisateurs du Warehouse sont partagés entre les services d&#39;un même Warehouse. Pour plus d&#39;informations, consultez les [contrôles d&#39;accès du Warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).

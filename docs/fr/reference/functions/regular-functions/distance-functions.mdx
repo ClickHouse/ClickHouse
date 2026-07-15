@@ -180,16 +180,17 @@ Calcule la distance approximative entre deux points (les valeurs des vecteurs co
 **Syntaxe**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **Alias** : `distanceL2Transposed`
 
 **Arguments**
 
-* `vectors` — Vecteurs. [`QBit(T, UInt64)`](/fr/reference/data-types/qbit)
+* `vectors` — Vecteurs. [`QBit(T, UInt64[, UInt64])`](/fr/reference/data-types/qbit)
 * `reference` — Vecteur de référence. [`Array(T)`](/fr/reference/data-types/array)
 * `p` — Nombre de bits de chaque élément du vecteur à utiliser pour le calcul de la distance (de 1 à la largeur en bits de l’élément). Le niveau de quantification détermine le compromis entre précision et vitesse. Utiliser moins de bits accélère les E/S et les calculs, au prix d’une précision moindre, tandis qu’en utiliser davantage améliore la précision au détriment des performances. [`UInt`](/fr/reference/data-types/int-uint)
+* `used_dims` — Facultatif. Nombre de dimensions initiales à lire, pour une recherche à dimension réduite (Matryoshka) sur un `QBit` avec stride. Doit être un multiple du stride du QBit sans dépasser sa dimension, et le vecteur de référence doit comporter exactement ce nombre d’éléments. Seuls les groupes de stride couvrant ces dimensions sont lus. [`UInt`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -653,16 +654,17 @@ Calcule la [distance cosinus](https://en.wikipedia.org/wiki/Cosine_similarity#Co
 **Syntaxe**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **Alias** : `distanceCosineTransposed`
 
 **Arguments**
 
-* `vectors` — Vecteurs. [`QBit(T, UInt64)`](/fr/reference/data-types/qbit)
+* `vectors` — Vecteurs. [`QBit(T, UInt64[, UInt64])`](/fr/reference/data-types/qbit)
 * `reference` — Vecteur de référence. [`Array(T)`](/fr/reference/data-types/array)
-* `p` — Nombre de bits de chaque élément du vecteur à utiliser pour le calcul de la distance (de 1 à la largeur en bits de l’élément). Le niveau de quantification détermine le compromis entre précision et vitesse. Utiliser moins de bits accélère les opérations d’I/O et les calculs, au prix d’une précision réduite, tandis qu’utiliser davantage de bits améliore la précision au détriment des performances. [`UInt`](/fr/reference/data-types/int-uint)
+* `p` — Nombre de bits de chaque élément du vecteur à utiliser pour le calcul de la distance (de 1 à la largeur en bits de l’élément). Le niveau de quantification détermine le compromis entre précision et vitesse. Utiliser moins de bits accélère les opérations d’E/S et les calculs, au prix d’une précision réduite, tandis qu’utiliser davantage de bits améliore la précision au détriment des performances. [`UInt`](/fr/reference/data-types/int-uint)
+* `used_dims` — Facultatif. Nombre de dimensions initiales à lire, pour une recherche à dimension réduite (Matryoshka) sur un `QBit` avec stride. Doit être un multiple du stride du QBit sans dépasser sa dimension, et le vecteur de référence doit comporter exactement ce nombre d’éléments. Seuls les groupes de stride couvrant ces dimensions sont lus. [`UInt`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -682,6 +684,49 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
 │                          0.10557281085638826 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+Introduit dans : v26.7.0
+
+Calcule le [produit scalaire](https://en.wikipedia.org/wiki/Dot_product) approximatif (produit intérieur) de deux vecteurs (les valeurs des vecteurs correspondent aux coordonnées). Contrairement aux fonctions de distance, il s’agit d’une mesure de similarité : plus la valeur renvoyée est élevée, plus les vecteurs sont similaires.
+
+**Syntaxe**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**Alias** : `scalarProductTransposed`
+
+**Arguments**
+
+* `vectors` — Vecteurs. [`QBit(T, UInt64[, UInt64])`](/fr/reference/data-types/qbit)
+* `reference` — Vecteur de référence. [`Array(T)`](/fr/reference/data-types/array)
+* `p` — Nombre de bits de chaque élément du vecteur à utiliser pour le calcul (de 1 à la largeur en bits de l’élément). Le niveau de quantification détermine le compromis entre précision et vitesse. Utiliser moins de bits accélère les opérations d’E/S et les calculs, au prix d’une précision réduite, tandis qu’utiliser davantage de bits améliore la précision au détriment des performances. [`UInt`](/fr/reference/data-types/int-uint)
+* `used_dims` — Facultatif. Nombre de dimensions initiales à lire, pour une recherche à dimension réduite (Matryoshka) sur un `QBit` avec stride. Doit être un multiple du stride du QBit sans dépasser sa dimension, et le vecteur de référence doit contenir exactement ce nombre d’éléments. Seuls les groupes de stride couvrant ces dimensions sont lus. [`UInt`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Renvoie le produit scalaire approché des deux vecteurs. Renvoie toujours un Float64. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Utilisation de base**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                        2 │
+└──────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

@@ -25,32 +25,28 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 ClickPipe の設定を開始するには、**Replicate data in ClickHouse** をクリックします。
 
 <Steps>
-  <Step>
-    ## レプリケーションサービスを設定する
-
+  <Step title="レプリケーションサービスを設定する" id="configure-replication-service">
     レプリケーション設定を入力します。
 
-    * **Integration name**: この ClickPipe の名前
+    * **インテグレーション名**: この ClickPipe の名前
     * **ClickHouse service**: 既存の ClickHouse Cloud サービスを選択するか、新しく作成します
     * **Postgres database**: レプリケーション元のソースデータベース
     * **Replication method**: 次のいずれかを選択します。
-      * **Initial load + CDC**: 既存データを取り込み、新しい変更があればテーブルを継続的に更新します (推奨)
+      * **Initial load + CDC（変更データキャプチャ）**: 既存データを取り込み、新しい変更があればテーブルを継続的に更新します (推奨)
       * **Initial load only**: 既存データを一回限りでスナップショット取得し、その後の更新は行いません
-      * **CDC only**: 初期スナップショットをスキップし、以降の新しい変更のみをキャプチャします
+      * **CDC（変更データキャプチャ） only**: 初期スナップショットをスキップし、以降の新しい変更のみをキャプチャします
 
     <Image img="/images/managed-postgres/replication-service-step.webp" alt="インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービス設定" size="md" border />
 
     続行するには **Next** をクリックします。
   </Step>
 
-  <Step>
-    ## レプリケーション設定を構成する
-
+  <Step title="レプリケーション設定を構成する" id="replication-settings">
     データのレプリケーション方法を細かく調整します。
 
-    * **Sync interval (seconds)**: Postgres から変更を取得する間隔 (デフォルト: 60)
+    * **同期間隔 (seconds)**: Postgres から変更を取得する間隔 (デフォルト: 60)
     * **Parallel threads for initial load**: 初期スナップショット時に使用するスレッド数 (デフォルト: 4)
-    * **Pull batch size**: レプリケーション中にバッチごとに取得する行数 (デフォルト: 100000)
+    * **Pull バッチサイズ**: レプリケーション中にバッチごとに取得する行数 (デフォルト: 100000)
     * **Snapshot number of rows per partition**: 初期スナップショット時のパーティションごとの行数 (デフォルト: 100000)
     * **Snapshot number of tables in parallel**: 同時にスナップショットを取得するテーブル数 (デフォルト: 1)
 
@@ -59,9 +55,7 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
     続行するには **Next** をクリックします。
   </Step>
 
-  <Step>
-    ## レプリケートするテーブルを選択する
-
+  <Step title="レプリケートするテーブルを選択する" id="select-tables">
     宛先データベースを選択し、レプリケートするテーブルを指定します。
 
     * **Destination database**: 既存の ClickHouse データベースを選択するか、新しく作成します
@@ -76,9 +70,7 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
     レプリケーションを開始するには、**Replicate data to ClickHouse** をクリックします。
   </Step>
 
-  <Step>
-    ## ClickPipe を監視する
-
+  <Step title="ClickPipe を監視する" id="monitor-clickpipe">
     ClickPipe が開始されると、同じメニューに一覧表示されます。すべてのデータの初期スナップショットには、テーブルのサイズによっては時間がかかる場合があります。
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="宛先サービスとステータスを含む Running 状態の ClickPipe を示す ClickHouse 連携の一覧" size="md" border />

@@ -67,7 +67,8 @@ SETTINGS
 可选参数：
 
 * `kafka_security_protocol` - 与消息代理通信时使用的协议。可能的值：`plaintext`、`ssl`、`sasl_plaintext`、`sasl_ssl`。
-* `kafka_sasl_mechanism` - 用于身份验证的 SASL 机制。可选值：`GSSAPI`、`PLAIN`、`SCRAM-SHA-256`、`SCRAM-SHA-512`、`OAUTHBEARER`。
+* `kafka_sasl_mechanism` - 用于身份验证的 SASL 机制。可选值：`GSSAPI`、`PLAIN`、`SCRAM-SHA-256`、`SCRAM-SHA-512`、`OAUTHBEARER`、`AWS_MSK_IAM`。
+* `kafka_aws_region` - 用于 MSK IAM 身份验证的 AWS 区域。如果未指定，则从 broker 地址自动检测。使用不包含区域信息的 PrivateLink 别名或自定义 DNS 主机名时，请显式指定。默认值：空 (自动检测)。
 * `kafka_sasl_username` - 用于 `PLAIN` 和 `SASL-SCRAM-..` 机制的 SASL 用户名。
 * `kafka_sasl_password` - 用于 `PLAIN` 和 `SASL-SCRAM-..` 机制的 SASL 密码。
 * `kafka_schema` — 如果该 format 需要 schema 定义，则必须使用此参数。例如，[Cap&#39;n Proto](https://capnproto.org/) 需要提供 schema 文件的路径以及根对象 `schema.capnp:Message` 的名称。
@@ -246,6 +247,116 @@ SETTINGS
 ```
 
 有关可用配置项的完整列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中，请使用下划线 (`_`) 而非点号 (`.`) 。例如，`check.crcs=true` 应写为 `<check_crcs>true</check_crcs>`。
+
+<div id="kafka-aws-msk-iam">
+  ### AWS MSK IAM 身份验证
+</div>
+
+<Note>
+  AWS MSK IAM 身份验证要求 ClickHouse 在构建时启用 AWS S3 支持。
+</Note>
+
+AWS MSK 支持基于 IAM 的身份验证，允许使用 AWS 凭证连接到 Kafka 集群，而无需单独管理用户名和密码。
+
+**基础设置：**
+
+在表设置中将 `kafka_sasl_mechanism = 'AWS_MSK_IAM'` 设置为：
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+AWS 区域会通过模式匹配从 broker 端点中自动提取：
+
+* 预置型 MSK：`b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* Serverless MSK：`boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC 端点：`vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**AWS 凭证：**
+
+如果存在，凭证始终会从 `~/.aws/credentials` 和 `~/.aws/config` (AWS profile 文件) 中加载。若还要启用 EC2 实例 profile、环境变量 (`AWS_ACCESS_KEY_ID` 等) 、ECS 任务角色以及其他自动凭证来源，请在服务器配置中添加：
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+此设置只能由服务器管理员进行配置。默认值：`false`。
+
+**PrivateLink 和自定义 DNS：**
+
+使用不包含区域信息的 PrivateLink 别名或自定义 DNS 主机名时，请显式指定 AWS 区域：
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**IAM 权限：**
+
+用于读取消息的消费者权限：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+生产者权限 (用于写入消息) ：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Kerberos 支持

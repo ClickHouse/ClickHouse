@@ -40,9 +40,7 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
 * Accès réseau HTTP depuis ClickStack vers votre Temporal Cloud
 
 <Steps>
-  <Step>
-    #### Créer une clé Temporal Cloud
-
+  <Step title="Créer une clé Temporal Cloud" id="create-temporal-cloud-key">
     Assurez-vous de disposer d’une clé d’API Temporal Cloud. Vous pouvez la créer en suivant le [guide d’authentification](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication) de la documentation Temporal.
 
     <Warning>
@@ -52,9 +50,7 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
     </Warning>
   </Step>
 
-  <Step>
-    #### Créer une configuration personnalisée de l’OTel collector
-
+  <Step title="Créer une configuration personnalisée de l’OTel collector" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. La configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `temporal-metrics.yaml` avec la configuration suivante :
@@ -111,9 +107,7 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé dans `/etc/otelcol-contrib/custom.config.yaml`
@@ -153,9 +147,7 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
     ```
   </Step>
 
-  <Step>
-    #### Vérifier les métriques dans HyperDX
-
+  <Step title="Vérifier les métriques dans HyperDX" id="verifying-metrics">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les métriques remontent bien :
 
     1. Accédez à Metrics Explorer
@@ -173,13 +165,11 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
 Pour vous aider à démarrer la surveillance de Temporal Cloud avec ClickStack, nous fournissons quelques exemples de visualisations pour les métriques Temporal.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer le tableau de bord préconfiguré
-
+  <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit, sous le menu à trois points
 
@@ -190,9 +180,7 @@ Pour vous aider à démarrer la surveillance de Temporal Cloud avec ClickStack, 
     <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Boîte de dialogue Finish Import" />
   </Step>
 
-  <Step>
-    #### Afficher le tableau de bord
-
+  <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
 
     <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Tableau de bord des métriques Temporal" />
@@ -296,7 +284,7 @@ Si ClickStack ne parvient pas à joindre Temporal Cloud, assurez-vous que votre 
 * Surveillez plusieurs comptes Temporal Cloud en dupliquant la configuration du receiver avec différents endpoints et noms de service
 
 <div id="going-to-production">
-  ## Mise en production
+  ## Passage en production
 </div>
 
-Ce guide utilise l&#39;OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
+Ce guide utilise l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

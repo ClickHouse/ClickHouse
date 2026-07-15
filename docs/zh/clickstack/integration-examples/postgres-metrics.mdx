@@ -31,13 +31,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
 * 正在运行的 ClickStack 实例
 * 已安装 PostgreSQL (版本 9.6 或更高)
-* ClickStack 能够通过网络访问 PostgreSQL (默认端口 5432)
+* ClickStack 可通过网络访问 PostgreSQL (默认端口 5432)
 * 具有相应权限的 PostgreSQL 监控用户
 
 <Steps>
-  <Step>
-    #### 确保监控用户具有所需权限
-
+  <Step title="确保监控用户具有所需权限" id="monitoring-permissions">
     PostgreSQL 接收器需要一个对统计信息视图具有读取权限的用户。将 `pg_monitor` 角色授予你的监控用户：
 
     ```sql
@@ -45,10 +43,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量，来扩展基础 OpenTelemetry collector 配置。
+  <Step title="创建自定义 OTel collector 配置" id="create-custom-config">
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量，扩展基础 OpenTelemetry collector 配置。
 
     创建 `postgres-metrics.yaml`：
 
@@ -93,9 +89,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 使用自定义配置部署 ClickStack
-
+  <Step title="使用自定义配置部署 ClickStack" id="deploy-clickstack">
     挂载你的自定义配置：
 
     ```bash
@@ -111,9 +105,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 验证指标采集
-
+  <Step title="验证指标采集" id="verify-metrics">
     配置完成后，登录 HyperDX 并确认指标已开始流入：
 
     1. 进入指标浏览器
@@ -137,10 +129,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <Steps>
-  <Step>
-    #### 下载样本指标数据集
-
-    下载预先生成的指标文件 (包含 24 小时的 PostgreSQL 指标和逼真的变化模式) ：
+  <Step title="下载样本指标数据集" id="download-sample">
+    下载预先生成的指标文件 (包含 24 小时的 PostgreSQL 指标和逼真的变化模式)：
 
     ```bash
     # 下载 Gauge 指标（连接数、数据库大小）
@@ -152,15 +142,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     该数据集包含以下逼真的模式：
 
-    * **早晨连接高峰 (08:00)&#x20;**&#x20;- 登录高峰期
-    * **缓存性能问题 (11:00)&#x20;**&#x20;- `Blocks_read` 激增
-    * **应用程序缺陷 (14:00-14:30)&#x20;**&#x20;- 回滚率飙升至 15%
-    * **死锁事件 (14:15、16:30)&#x20;**&#x20;- 罕见死锁
+    * **早晨连接高峰 (08:00)** - 登录高峰期
+    * **缓存性能问题 (11:00)** - `Blocks_read` 激增
+    * **应用程序缺陷 (14:00-14:30)** - 回滚率飙升至 15%
+    * **死锁事件 (14:15、16:30)** - 罕见死锁
   </Step>
 
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     启动一个 ClickStack 实例：
 
     ```bash
@@ -172,9 +160,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     等待大约 30 秒，让 ClickStack 完全启动。
   </Step>
 
-  <Step>
-    #### 将指标加载到 ClickStack 中
-
+  <Step title="将指标加载到 ClickStack 中" id="load-metrics">
     将指标直接加载到 ClickHouse：
 
     ```bash
@@ -188,9 +174,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
-
+  <Step title="在 HyperDX 中验证指标" id="verify-metrics-demo">
     加载完成后，查看这些指标的最快方式是使用预置仪表盘。
 
     继续前往 [Dashboards and visualization](#dashboards) 部分，导入仪表盘，一次查看多个 PostgreSQL 指标。
@@ -210,13 +194,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你快速开始使用 ClickStack 监控 PostgreSQL，我们提供了 PostgreSQL 指标的核心可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预置仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX 并进入仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
@@ -227,9 +209,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="完成导入对话框" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，所有可视化内容都已预先配置好：
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="PostgreSQL 指标仪表盘" />
@@ -301,7 +281,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * 复制 receiver 配置，并为其指定不同的端点和服务名称，以监控多个 PostgreSQL 实例
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 进入生产环境
 </div>
 
-本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

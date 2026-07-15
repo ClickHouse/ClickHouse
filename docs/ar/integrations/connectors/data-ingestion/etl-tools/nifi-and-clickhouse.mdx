@@ -20,29 +20,21 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 <a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> هو برنامج مفتوح المصدر لإدارة سير العمل، صُمم لأتمتة تدفق البيانات بين الأنظمة البرمجية. ويتيح إنشاء مسارات بيانات ETL، ويأتي مزودًا بأكثر من 300 معالج بيانات. يوضح هذا الدليل العملي خطوة بخطوة كيفية توصيل Apache NiFi بـ ClickHouse كمصدر ووجهة، وكيفية تحميل مجموعة بيانات تجريبية.
 
 <Steps>
-  <Step>
-    ## جهّز تفاصيل الاتصال الخاصة بك
-
+  <Step title="جهّز تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## نزِّل Apache NiFi وشغِّله
-
-    لإعداد جديد، نزِّل الملف التنفيذي من https://nifi.apache.org/download.html ثم ابدأ بتشغيل `./bin/nifi.sh start`
+  <Step title="نزِّل Apache NiFi وشغِّله" id="2-download-and-run-apache-nifi">
+    لإعداد جديد، نزِّل الملف التنفيذي من [https://nifi.apache.org/download.html](https://nifi.apache.org/download.html) ثم ابدأ بتشغيل `./bin/nifi.sh start`
   </Step>
 
-  <Step>
-    ## تنزيل برنامج تشغيل ClickHouse JDBC
-
+  <Step title="تنزيل برنامج تشغيل ClickHouse JDBC" id="3-download-the-clickhouse-jdbc-driver">
     1. انتقل إلى <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">صفحة إصدارات برنامج تشغيل ClickHouse JDBC</a> على GitHub وابحث عن أحدث إصدار من JDBC
     2. ضمن هذا الإصدار، انقر على &quot;Show all xx assets&quot; ثم ابحث عن ملف JAR الذي يحتوي على الكلمة المفتاحية &quot;shaded&quot; أو &quot;all&quot;، مثل `clickhouse-jdbc-0.5.0-all.jar`
     3. ضع ملف JAR في مجلد يمكن لـ Apache NiFi الوصول إليه، ودوّن المسار المطلق
   </Step>
 
-  <Step>
-    ## أضِف خدمة وحدة التحكم `DBCPConnectionPool` واضبط خصائصها
-
+  <Step title={<>أضِف خدمة وحدة التحكم <code>DBCPConnectionPool</code> واضبط خصائصها</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. لتهيئة خدمة وحدة تحكم في Apache NiFi، انتقل إلى صفحة تهيئة تدفق NiFi بالنقر على زر &quot;الترس&quot;
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="صفحة تهيئة تدفق NiFi مع تمييز زر الترس" />
@@ -61,13 +53,13 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 
     5. ضمن قسم &quot;الخصائص&quot;، أدخل القيم التالية
 
-    | الخاصية                      | القيمة                                                             | ملاحظة                                                    |
-    | ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
-    | URL اتصال قاعدة البيانات     | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | استبدل HOSTNAME في URL الاتصال بما يناسب                  |
-    | اسم فئة مشغّل قاعدة البيانات | com.clickhouse.jdbc.ClickHouseDriver                               |                                                           |
-    | مواقع مشغّل قاعدة البيانات   | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | المسار المطلق إلى ملف JAR الخاص بـ ClickHouse JDBC driver |
-    | مستخدم قاعدة البيانات        | default                                                            | اسم مستخدم ClickHouse                                     |
-    | كلمة المرور                  | password                                                           | كلمة مرور ClickHouse                                      |
+    | الخاصية                      | القيمة                                                                                   | ملاحظة                                                    |
+    | ---------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+    | URL اتصال قاعدة البيانات     | jdbc[https://HOSTNAME:8443/default?ssl=true](https://HOSTNAME:8443/default?ssl=true)true | استبدل HOSTNAME في URL الاتصال بما يناسب                  |
+    | اسم فئة مشغّل قاعدة البيانات | com.clickhouse.jdbc.ClickHouseDriver                                                     |                                                           |
+    | مواقع مشغّل قاعدة البيانات   | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar                       | المسار المطلق إلى ملف JAR الخاص بـ ClickHouse JDBC driver |
+    | مستخدم قاعدة البيانات        | default                                                                                  | اسم مستخدم ClickHouse                                     |
+    | كلمة المرور                  | password                                                                                 | كلمة مرور ClickHouse                                      |
 
     6. في قسم الإعدادات، غيِّر اسم خدمة وحدة التحكم إلى &quot;ClickHouse JDBC&quot; لتسهيل الرجوع إليها
 
@@ -86,9 +78,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="قائمة خدمات وحدة التحكم تعرض خدمة ClickHouse JDBC مُمكَّنة" />
   </Step>
 
-  <Step>
-    ## القراءة من جدول باستخدام المعالج `ExecuteSQL`
-
+  <Step title={<>القراءة من جدول باستخدام المعالج <code>ExecuteSQL</code></>} id="5-read-from-a-table-using-the-executesql-processor">
     1. أضف المعالج ​`​ExecuteSQL`، إلى جانب المعالجات المناسبة السابقة واللاحقة
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="لوحة NiFi تعرض المعالج ExecuteSQL ضمن سير عمل" />
@@ -113,9 +103,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="عارض محتوى FlowFile يعرض نتائج الاستعلام في العرض المنسّق" />
   </Step>
 
-  <Step>
-    ## الكتابة إلى جدول باستخدام المعالجَين `MergeRecord` و`PutDatabaseRecord`
-
+  <Step title={<>الكتابة إلى جدول باستخدام <code>MergeRecord</code> و <code>PutDatabaseRecord</code> المعالج</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
     1. لكتابة عدة صفوف في عملية insert واحدة، نحتاج أولاً إلى دمج عدة سجلات في سجل واحد. يمكن تنفيذ ذلك باستخدام المعالج `MergeRecord`
 
     2. ضمن قسم &quot;الخصائص&quot; في المعالج `MergeRecord`، أدخل القيم التالية

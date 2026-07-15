@@ -70,7 +70,7 @@ A ilustração abaixo mostra um exemplo básico de sincronização de uma tabela
 
 **Etapa 2** mostra três operações na tabela users: inserção de uma nova linha, atualização de uma linha existente e exclusão de outra linha.
 
-**Etapa 3** mostra como o ClickPipes replica as operações INSERT, UPDATE e DELETE no ClickHouse como inserts versionados. O UPDATE aparece como uma nova versão da linha com ID 2, enquanto o DELETE aparece como uma nova versão do ID 1, marcada como true usando `_is_deleted`. Por causa disso, o ClickHouse passa a ter três linhas a mais que o PostgreSQL.
+**Etapa 3** mostra como o ClickPipes replica as operações INSERT, UPDATE e DELETE no ClickHouse como inserções versionadas. O UPDATE aparece como uma nova versão da linha com ID 2, enquanto o DELETE aparece como uma nova versão do ID 1, marcada como true usando `_is_deleted`. Por causa disso, o ClickHouse passa a ter três linhas a mais que o PostgreSQL.
 
 Como resultado, executar uma consulta simples como `SELECT count(*) FROM users;` pode produzir resultados diferentes no ClickHouse e no PostgreSQL. De acordo com a [documentação de merges do ClickHouse](/pt-BR/concepts/core-concepts/merges#replacing-merges), versões antigas de linhas acabam sendo descartadas durante o processo de merge. No entanto, o momento em que esse merge ocorre é imprevisível, o que significa que as consultas no ClickHouse podem retornar resultados inconsistentes até que isso aconteça.
 

@@ -1,0 +1,178 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: '데모 데이 - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: '2026-07-02 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="notebook-citations">
+  ## 노트북 인용
+</div>
+
+*시연: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 노트북 타일(셀)에 직접 링크할 수 있으며, 분기 간 링크도 지원합니다. 사용자 지정 Markdown에서는 절대 링크와 상대 해시 링크를 모두 사용할 수 있으므로, 특정 주장에 대한 정확한 근거를 다른 사람에게 훨씬 더 쉽게 보여줄 수 있습니다.
+
+더 큰 변화는 agent 측입니다. 이제 노트북에서 생성된 요약에는 근거가 된 타일에 대한 인용이 포함되므로, 독자는 요약만 믿지 않고 기반 데이터를 바로 확인할 수 있습니다.
+
+기존 노트북이 열리는 방식도 변경했습니다. 이제 요약 타일은 접힌 상태가 아니라 기본적으로 펼쳐진 상태로 열리며, 노트북으로 다시 돌아왔을 때 보통 이 방식이 더 유용합니다.
+
+<div id="otel-metrics-table-primary-key-optimization">
+  ## OTel 메트릭 테이블 프라이머리 키 최적화
+</div>
+
+*시연: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OTel 메트릭 테이블의 프라이머리 키(primary key)를 검증하고 줄이는 작업에 대한 심층 분석입니다. 여기서 유용한 지표는 그래뉼당 프라이머리 키 바이트 수입니다. 즉, 전체 프라이머리 키 크기를 그래뉼 수로 나눈 값입니다. 이렇게 하면 큰 테이블일수록 그래뉼이 더 많다는 점이 자연스럽게 반영되어, 보다 공정하게 비교할 수 있습니다.
+
+기존 스키마(schema)는 그래뉼당 약 148바이트였습니다. 새 스키마는 약 17바이트 수준으로, 프라이머리 키 크기가 약 9배 줄었고 운영 환경의 메모리 사용량도 비슷한 수준으로 감소했습니다.
+
+스키마 변경 자체는 비교적 작습니다. 이제 `MetricName`은 `LowCardinality`를 사용하며, 고유한 메트릭 이름 수가 매우 많은 경우가 아니라면 문제되지 않습니다. 그런 경우에도 정말 극단적인 상황에서만 이슈가 될 것입니다. 타임스탬프는 나노초 정밀도의 `DateTime64`에서 초 단위 정밀도의 일반 `DateTime`으로 바뀌는데, 메트릭에는 이 정도면 충분합니다. 필요하면 스키마를 직접 변경해 나노초 정밀도를 계속 유지할 수도 있습니다.
+
+또한 시간에 대한 명시적인 최소/최대 인덱스를 추가했고, 프라이머리 키에 있던 전체 속성 맵을 해시로 대체했습니다. 동일한 변경 사항이 모든 메트릭 테이블 스키마에 적용되었으며, 현재 OTel collector 업스트림에도 반영하고 있습니다.
+
+**관련 PR:** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) fix: 메모리 사용량 개선을 위한 메트릭 PK 변경
+
+<div id="trend-and-spark-lines-behind-numbers">
+  ## 숫자 뒤에 표시되는 추세/스파크라인
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 숫자 타일은 값 뒤에 추세선이나 영역 차트를 표시할 수 있습니다. 이는 Grafana에서 오랫동안 인기 있던 기능으로, 이제 ClickStack에서도 사용할 수 있습니다.
+
+이 기능은 타일의 표시 설정에서 켤 수 있습니다. 기본값은 배경 차트 없음이며, 다른 옵션으로 선과 영역을 선택할 수 있습니다. 별도의 구성은 거의 필요하지 않지만, 대시보드를 한층 더 완성도 있게 보이게 해줍니다.
+
+현재 배경 차트는 선언형 숫자 타일에서만 작동하므로 아직 custom SQL은 사용할 수 없습니다. 차트에 무엇을 그릴지 더 세밀하게 제어하고 싶다는 사용자 의견을 반영해, 이 부분은 후속 작업으로 검토하고 있습니다.
+
+**관련 PR:** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): 숫자 타일에 배경 추세 스파크라인 추가, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): 숫자 타일 배경 스파크라인이 표시된 값과 일치하도록 수정, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): 숫자 타일에서 공용 Sparkline Primitive 추출
+
+<div id="table-visual-improvements">
+  ## 테이블 시각적 개선 사항
+</div>
+
+*데모: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+테이블 타일에 가독성을 높이는 몇 가지 개선 사항이 추가되었습니다. 모두 구체적인 사용자 피드백을 반영한 결과입니다. 이제 디스플레이 설정에서 행 배경을 교대로 표시하도록 설정할 수 있어, 폭이 넓거나 정보 밀도가 높은 테이블도 훨씬 쉽게 훑어볼 수 있습니다. 또한 헤더 행과 그 아래 데이터 사이의 구분선도 더 깔끔하고 눈에 잘 띄게 개선되었습니다.
+
+이제 컬럼마다 Number 타일과 동일한 스타일 옵션을 사용해 개별 색상을 지정할 수 있습니다. 기본 색상 하나를 설정할 수도 있고, 셀별로 평가되는 임계값을 추가할 수도 있어 오류는 빨간색으로, 정상 값은 초록색으로 표시할 수 있습니다.
+
+작은 변화들이지만, 모두 실제 사용자들이 「이 테이블에 이런 기능이 있으면 좋겠다」라고 남긴 의견에서 출발한 개선 사항입니다.
+
+**관련 PR:** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): table tile header separator and optional alternate row background, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): per-column color on table tiles
+
+<div id="grafana-plugin-improvements">
+  ## Grafana 플러그인 개선 사항
+</div>
+
+*시연: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+곧 ClickStack Grafana 플러그인에 추가될 기능을 간단히 정리했습니다.
+
+이제 데이터 소스 구성은 기존의 다중 데이터베이스 설정과 함께 단일 테이블 모드도 지원합니다. 예를 들어 production logs 같은 단일 테이블을 지정하면 쿼리 편집기가 탐색에 최적화된 간결한 빌더로 전환됩니다. service name 같은 필드에 대한 빠른 필터는 물론, 포함 및 제외 필터링도 사용할 수 있으며, 필요할 때는 SQL도 그대로 사용할 수 있습니다.
+
+또한 많은 사용자가 익숙한 동일한 drill-down 패턴을 사용하는 OTel logs 및 traces용 사전 구성 대시보드도 제공할 예정입니다. logs 대시보드에는 서비스별 개요, 볼륨 차트, 로그 상세 정보가 포함됩니다. Trace Explore에서는 서비스별 보기, 지연 시간 heatmap, 작업별 분석을 제공합니다. 또한 logs와 traces를 함께 보여 주고 스팬 name별로 그룹화하는 통합 서비스 대시보드도 있어, 여러 도구를 오가지 않고도 단일 서비스를 조사할 수 있습니다.
+
+이 모든 대시보드는 기본 스키마에서 별도 설정 없이 바로 동작합니다. 신규 사용자는 즉시 사용할 수 있으며, 이를 자체 대시보드를 만들기 위한 출발점으로 활용할 수 있습니다.
+
+마법사 스타일의 새 빌더도 2개 추가됩니다. variable builder를 사용하면 custom SQL을 작성하는 대신 컬럼 값을 선택할 수 있습니다. 예를 들어 파드 이름으로 variable을 만들고 반환되는 값을 미리 확인할 수 있습니다.
+
+annotation builder는 선택한 필드의 변경 감지 쿼리로부터 어노테이션을 생성합니다. 서비스의 version 속성을 지정하면 해당 값이 바뀔 때마다 사용자가 직접 SQL을 작성하지 않아도 배포 marker를 추가할 수 있습니다.
+
+<div id="sidebar-and-span-view-improvements">
+  ## 사이드바 및 스팬 보기 개선 사항
+</div>
+
+*시연: [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+탐색과 트레이스 보기를 전반적으로 다듬는 대규모 개선 사항입니다.
+
+이제 검색 페이지에서 작업하는 동안 사이드바를 열린 상태로 고정할 수 있으므로, 사이드바를 닫지 않고도 스크롤하면서 다른 행을 선택할 수 있습니다. 탐색 시 현재 탭 컨텍스트도 유지됩니다. 뒤로 가기 버튼은 패널을 단순히 닫는 대신 브레드크럼 경로를 사용해, 사용자가 있던 정확한 위치로 돌아가도록 합니다.
+
+키보드 단축키 팝업도 추가되어 사용 가능한 단축키를 쉽게 확인할 수 있습니다. 연결된 트레이스가 있는 로그에는 해당 트레이스로 바로 이동할 수 있는 칩이 표시됩니다.
+
+스팬 보기에는 가장 눈에 띄는 개선이 적용되었습니다. 스팬은 서비스 이름별로 색상이 지정되며, 서비스가 바뀔 때마다 다른 색상으로 순환 표시됩니다. 또한 새로운 minimap이 추가되어, 커다란 트레이스도 회색 막대가 빽빽한 화면보다 훨씬 읽기 쉬워졌습니다. 시간 범위를 드래그해 확대할 수 있고, 클릭 한 번으로 보기를 초기화할 수 있습니다. 새로운 탐색 이력 스택을 통해 트레이스 사이를 이동하고 이전에 보던 위치로 다시 돌아갈 수도 있습니다.
+
+선택한 스팬에는 펼치기 및 접기 제어가 개선되어, 각 하위 스팬을 하나씩 닫지 않아도 됩니다. 또한 매우 짧은 스팬에도 최소 렌더링 너비를 적용하는 커뮤니티 기여 수정 사항을 머지했습니다. 예를 들어 몇 마이크로초 동안 지속되는 스팬도 끝까지 확대하지 않아도 타임라인에서 계속 볼 수 있습니다.
+
+**관련 PR:** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: trace timeline minimap 추가
+
+<div id="metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp">
+  ## MCP의 메트릭 쿼리, 대시보드 eval, 그리고 개선된 알림 오류 보고
+</div>
+
+*시연: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이번 사이클에는 MCP server의 3가지 개선 사항이 함께 적용되었습니다.
+
+이제 MCP는 기본 데이터에 접근하기 위해 대시보드를 거치지 않고도, 노트북을 포함한 곳에서 메트릭 쿼리를 직접 실행할 수 있습니다.
+
+또한 대시보드 구축을 위한 end-to-end eval도 추가했습니다. 현재 약 75%의 사례를 통과하고 있으며, 편법으로 통과하기 어렵도록 distractor를 꾸준히 추가하고 있습니다. 실제 환경에서 MCP가 문제가 있는 대시보드를 만들면 그 실패 사례를 다시 eval 세트에 반영할 수 있습니다. 시간이 지나면 Raw SQL source가 잘못된 쿼리를 생성하는 문제처럼 반복적인 실패로 이어지기 전에 이러한 문제를 포착할 수 있을 것입니다.
+
+이제 도구 오류는 하나의 일반적인 버킷으로 처리되지 않고 범주별로 분류됩니다. 사용자가 작성한 잘못된 SQL 쿼리는 데이터베이스 timeout과 같은 내부 실패와 별도로 처리됩니다. 이를 통해 MCP 상태와 관련해 더 유용한 알림을 만드는 데 필요한 구분이 가능해졌습니다.
+
+**관련 PR:** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): first-class metric source support, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): classify MCP tool errors by category for alerting
+
+<div id="otel-collector-batch-processor-updates">
+  ## OTel collector batch processor 업데이트
+</div>
+
+*시연: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OpenTelemetry는 배칭을 독립형 batch processor에서 exporter 구성으로 옮기고 있습니다. ClickStack collector는 이미 두 가지 방식을 모두 지원하고 있었기 때문에 변경해야 할 코드는 없었습니다. 결국 이번 변경은 문서 업데이트로 이어졌습니다.
+
+기존 모델에서는 전용 batch processor가 파이프라인에 배치되어, 행을 exporter로 넘기기 전에 버퍼에 저장했습니다. 이 방식에는 자체 batch 크기, 최대 batch 크기, timeout 설정이 있었습니다.
+
+OpenTelemetry가 표준으로 삼고 있는 모델에서는 batcher를 processors 체인에 두지 않고 exporter와 함께 구성합니다. 최소 및 최대 batch 크기, 큐 크기 등 대부분의 개념은 그대로 유지됩니다. 또한 exporter 기반 구성은 기존 batch processor에서 지원하지 않았던 차단 동작, 바이트 기반 제한, 영속성도 지원합니다.
+
+이제 문서에서는 exporter 기반 구성을 권장하며, 기존 batch processor 설정을 마이그레이션하는 방법도 설명합니다. 또한 대부분의 배포에서 합리적인 기본값으로 짧은 timeout과 함께 최소 5,000개 행을 권장합니다. 좋지 않은 배칭 구성은 여전히 ClickHouse를 처음 사용할 때 좋지 않은 경험으로 이어지는 가장 흔한 원인 중 하나입니다.
+
+<div id="surrounding-context-for-arbitrary-attributes">
+  ## 임의 속성에 대한 주변 컨텍스트
+</div>
+
+*시연: [@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+주변 컨텍스트를 사용하면 로그 한 줄을 열고 그 주변에서 어떤 일이 일어나고 있었는지 확인할 수 있습니다. 기본적으로 이 컨텍스트는 서비스, 파드 또는 노드를 기준으로 그룹화됩니다. 이는 대부분의 OTel 스키마 배포에서 잘 작동하지만, 사용자 지정 스키마를 사용하는 경우 자체 속성을 기준으로 이 보기를 깔끔하게 구성할 방법이 없었습니다.
+
+이제 로그 줄의 어떤 속성이든 OTel 스키마에서 왔든 사용자 지정 스키마에서 왔든 상관없이 주변 컨텍스트 보기의 기준으로 사용할 수 있습니다. 익숙한 서비스, 파드, 노드 옵션도 그대로 제공되지만, 텔레메트리 SDK 버전이나 로그 줄의 다른 어떤 필드를 기준으로도 쉽게 그룹화할 수 있습니다. 또한 언제든지 선택을 해제하고 다시 시작할 수 있습니다.
+
+**관련 PR:** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) 수정: 주변 컨텍스트에서 service name 표현식 및 빠른 속성 필터 지원

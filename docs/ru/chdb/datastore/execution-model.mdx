@@ -1,0 +1,466 @@
+---
+title: 'Модель выполнения DataStore'
+sidebarTitle: 'Модель выполнения'
+slug: /chdb/datastore/execution-model
+description: 'Понимание отложенного вычисления, триггеров выполнения и кэширования в DataStore'
+keywords: ['chDB', 'DataStore', 'отложенное', 'вычисление', 'выполнение', 'кэширование']
+doc_type: 'guide'
+---
+
+Чтобы эффективно использовать DataStore и добиться оптимальной производительности, важно понимать его модель отложенного вычисления.
+
+<div id="lazy-evaluation">
+  ## Отложенное вычисление
+</div>
+
+DataStore использует **отложенное вычисление** — операции не выполняются сразу, а фиксируются и компилируются в оптимизированные SQL-запросы. Выполнение происходит только тогда, когда результаты действительно нужны.
+
+<div id="lazy-vs-eager">
+  ### Пример: отложенное и немедленное вычисление
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# These operations are NOT executed yet
+result = (ds
+    .filter(ds['amount'] > 1000)    # Recorded, not executed
+    .select('region', 'amount')      # Recorded, not executed
+    .groupby('region')               # Recorded, not executed
+    .agg({'amount': 'sum'})          # Recorded, not executed
+    .sort('sum', ascending=False)    # Recorded, not executed
+)
+
+# Still no execution - just building the query plan
+print(result.to_sql())
+# SELECT region, SUM(amount) AS sum
+# FROM file('sales.csv', 'CSVWithNames')
+# WHERE amount > 1000
+# GROUP BY region
+# ORDER BY sum DESC
+
+# NOW execution happens
+df = result.to_df()  # <-- Triggers execution
+```
+
+<div id="benefits">
+  ### Преимущества отложенного вычисления
+</div>
+
+1. **Оптимизация запросов**: Несколько операций компилируются в один оптимизированный SQL-запрос
+2. **Pushdown фильтров**: Фильтры применяются на уровне источника данных
+3. **Исключение лишних столбцов**: Считываются только нужные столбцы
+4. **Отложенные решения**: Движок выполнения можно выбрать при выполнении
+5. **Просмотр плана**: Перед выполнением запроса можно просмотреть план и отладить его
+
+***
+
+<div id="triggers">
+  ## Триггеры выполнения
+</div>
+
+Выполнение автоматически запускается, когда требуются фактические значения:
+
+<div id="automatic-triggers">
+  ### Автоматические триггеры
+</div>
+
+| Триггер              | Пример             | Описание                   |
+| -------------------- | ------------------ | -------------------------- |
+| `print()` / `repr()` | `print(ds)`        | Показать результаты        |
+| `len()`              | `len(ds)`          | Получить число строк       |
+| `.columns`           | `ds.columns`       | Получить имена столбцов    |
+| `.dtypes`            | `ds.dtypes`        | Получить типы столбцов     |
+| `.shape`             | `ds.shape`         | Получить размеры           |
+| `.index`             | `ds.index`         | Получить индекс строк      |
+| `.values`            | `ds.values`        | Получить массив NumPy      |
+| Iteration            | `for row in ds`    | Перебирать строки          |
+| `to_df()`            | `ds.to_df()`       | Преобразовать в pandas     |
+| `to_pandas()`        | `ds.to_pandas()`   | Псевдоним для to&#95;df    |
+| `to_dict()`          | `ds.to_dict()`     | Преобразовать в словарь    |
+| `to_numpy()`         | `ds.to_numpy()`    | Преобразовать в массив     |
+| `.equals()`          | `ds.equals(other)` | Сравнить объекты DataStore |
+
+**Примеры:**
+
+```python
+# All these trigger execution
+print(ds)              # Display
+len(ds)                # 1000
+ds.columns             # Index(['name', 'age', 'city'])
+ds.shape               # (1000, 3)
+list(ds)               # List of values
+ds.to_df()             # pandas DataFrame
+```
+
+<div id="stay-lazy">
+  ### Операции, которые остаются отложенными
+</div>
+
+| Operation              | Returns     | Description                 |
+| ---------------------- | ----------- | --------------------------- |
+| `filter()`             | DataStore   | Добавляет предложение WHERE |
+| `select()`             | DataStore   | Добавляет выбор столбцов    |
+| `sort()`               | DataStore   | Добавляет ORDER BY          |
+| `groupby()`            | LazyGroupBy | Подготавливает GROUP BY     |
+| `join()`               | DataStore   | Добавляет JOIN              |
+| `ds['col']`            | ColumnExpr  | Ссылка на столбец           |
+| `ds[['col1', 'col2']]` | DataStore   | Выбор столбцов              |
+
+**Примеры:**
+
+```python
+# These do NOT trigger execution - they stay lazy
+result = ds.filter(ds['age'] > 25)      # Returns DataStore
+result = ds.select('name', 'age')        # Returns DataStore
+result = ds['name']                      # Returns ColumnExpr
+result = ds.groupby('city')              # Returns LazyGroupBy
+```
+
+***
+
+<div id="three-phase">
+  ## Трёхфазное выполнение
+</div>
+
+Операции DataStore используют трёхфазную модель выполнения:
+
+<div id="phase-1">
+  ### Фаза 1: Отложенное построение SQL-запроса
+</div>
+
+Операции, которые можно представить в виде SQL-запроса, накапливаются:
+
+```python
+result = (ds
+    .filter(ds['status'] == 'active')   # WHERE
+    .select('user_id', 'amount')         # SELECT
+    .groupby('user_id')                  # GROUP BY
+    .agg({'amount': 'sum'})              # SUM()
+    .sort('sum', ascending=False)        # ORDER BY
+    .limit(10)                           # LIMIT
+)
+# All compiled into one SQL query
+```
+
+<div id="phase-2">
+  ### Фаза 2: Момент выполнения
+</div>
+
+Когда срабатывает триггер, выполняется накопленный SQL:
+
+```python
+# Execution triggered here
+df = result.to_df()  
+# The single optimized SQL query runs now
+```
+
+<div id="phase-3">
+  ### Фаза 3: Операции с DataFrame (если есть)
+</div>
+
+Если после выполнения вы применяете цепочку операций, доступных только в pandas:
+
+```python
+# Mixed operations
+result = (ds
+    .filter(ds['amount'] > 100)          # Phase 1: SQL
+    .to_df()                             # Phase 2: Execute
+    .pivot_table(...)                    # Phase 3: pandas
+)
+```
+
+***
+
+<div id="explain">
+  ## Просмотр Execution Plan
+</div>
+
+Используйте `explain()`, чтобы увидеть, что будет выполнено:
+
+```python title="Query"
+ds = pd.read_csv("sales.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View execution plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  1. Source: file('sales.csv', 'CSVWithNames')
+  2. Filter: amount > 1000
+  3. GroupBy: region
+  4. Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('sales.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+Используйте `verbose=True` для получения более подробной информации:
+
+```python
+query.explain(verbose=True)
+```
+
+Полную документацию см. в разделе [Отладка: explain()](/ru/chdb/debugging/explain).
+
+***
+
+<div id="caching">
+  ## Кэширование
+</div>
+
+DataStore кэширует результаты выполнения, чтобы избежать лишних запросов.
+
+<div id="how-caching">
+  ### Как работает кэширование
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25)
+
+# First access - executes query
+print(result.shape)  # Executes and caches
+
+# Second access - uses cache
+print(result.columns)  # Uses cached result
+
+# Third access - uses cache
+df = result.to_df()  # Uses cached result
+```
+
+<div id="cache-invalidation">
+  ### Инвалидация кэша
+</div>
+
+Кэш сбрасывается, когда операции изменяют DataStore:
+
+```python
+result = ds.filter(ds['age'] > 25)
+print(result.shape)  # Executes, caches
+
+# New operation invalidates cache
+result2 = result.filter(result['city'] == 'NYC')
+print(result2.shape)  # Re-executes (different query)
+```
+
+<div id="cache-control">
+  ### Управление кэшем вручную
+</div>
+
+```python
+# Clear cache
+ds.clear_cache()
+
+# Disable caching
+from chdb.datastore.config import config
+config.set_cache_enabled(False)
+```
+
+***
+
+<div id="mixing">
+  ## Сочетание SQL и операций Pandas
+</div>
+
+DataStore эффективно обрабатывает операции, сочетающие SQL и Pandas:
+
+<div id="sql-ops">
+  ### SQL-совместимые операции
+</div>
+
+Они преобразуются в SQL:
+
+* `filter()`, `where()`
+* `select()`
+* `groupby()`, `agg()`
+* `sort()`, `orderby()`
+* `limit()`, `offset()`
+* `join()`, `union()`
+* `distinct()`
+* Операции со столбцами (математика, сравнение, строковые методы)
+
+<div id="pandas-ops">
+  ### Операции только в Pandas
+</div>
+
+Они запускают выполнение и используют pandas:
+
+* `apply()` с пользовательскими функциями
+* `pivot_table()` со сложными агрегациями
+* `stack()`, `unstack()`
+* операции над уже выполненными DataFrames
+
+<div id="hybrid">
+  ### Гибридные конвейеры
+</div>
+
+```python
+# SQL phase
+result = (ds
+    .filter(ds['amount'] > 100)      # SQL
+    .groupby('category')              # SQL
+    .agg({'amount': 'sum'})           # SQL
+)
+
+# Execution + pandas phase
+result = (result
+    .to_df()                          # Execute SQL
+    .pivot_table(...)                 # pandas operation
+)
+```
+
+***
+
+<div id="engine-selection">
+  ## Выбор движка выполнения
+</div>
+
+DataStore может выполнять операции на разных движках:
+
+<div id="auto-mode">
+  ### Автоматический режим (по умолчанию)
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.set_execution_engine('auto')  # Default
+# Automatically selects best engine per operation
+```
+
+<div id="chdb-engine">
+  ### Принудительное использование движка chDB
+</div>
+
+```python
+config.set_execution_engine('chdb')
+# All operations use ClickHouse SQL
+```
+
+<div id="pandas-engine">
+  ### Принудительно использовать движок pandas
+</div>
+
+```python
+config.set_execution_engine('pandas')
+# All operations use pandas
+```
+
+Подробнее см. в разделе [Конфигурация: движок выполнения](/ru/chdb/configuration/execution-engine).
+
+***
+
+<div id="performance">
+  ## Влияние на производительность
+</div>
+
+<div id="filter-early">
+  ### Хорошо: фильтруйте как можно раньше
+</div>
+
+```python
+# Good: Filter in SQL, then aggregate
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')  # Reduces data early
+    .groupby('category')
+    .agg({'amount': 'sum'})
+)
+```
+
+<div id="filter-late">
+  ### Плохо: поздняя фильтрация
+</div>
+
+```python
+# Bad: Aggregate all, then filter
+result = (ds
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .to_df()
+    .query('sum > 1000')  # Pandas filter after aggregation
+)
+```
+
+<div id="select-early">
+  ### Хорошо: выбирайте столбцы заранее
+</div>
+
+```python
+# Good: Select columns in SQL
+result = (ds
+    .select('user_id', 'amount', 'date')
+    .filter(ds['date'] >= '2024-01-01')
+    .groupby('user_id')
+    .agg({'amount': 'sum'})
+)
+```
+
+<div id="sql-work">
+  ### Хорошо: доверьте SQL эту работу
+</div>
+
+```python
+# Good: Complex aggregation in SQL
+result = (ds
+    .groupby('category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .limit(10)
+)
+# One SQL query does everything
+
+# Bad: Multiple separate queries
+sums = ds.groupby('category')['amount'].sum().to_df()
+means = ds.groupby('category')['amount'].mean().to_df()
+# Two queries instead of one
+```
+
+***
+
+<div id="best-practices">
+  ## Краткая сводка лучших практик
+</div>
+
+1. **Выстраивайте Operations в цепочку перед выполнением** - Сначала сформируйте полный запрос, затем запускайте его один раз
+2. **Фильтруйте как можно раньше** - Уменьшайте объём данных как можно ближе к источнику
+3. **Выбирайте только нужные столбцы** - Отсечение столбцов повышает производительность
+4. **Используйте `explain()`, чтобы понять выполнение** - Выполните Debug перед запуском
+5. **Поручите SQL агрегации** - ClickHouse оптимизирован для этого
+6. **Помните о триггерах выполнения** - Избегайте случайного преждевременного запуска
+7. **Используйте кэширование с умом** - Понимайте, когда кэш сбрасывается

@@ -659,13 +659,14 @@ ClickHouse 提供了 Quantized Bit (`QBit`) 数据类型，通过以下方式解
 要声明一个 `QBit` 类型的列，请使用以下语法：
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 其中：
 
-* `element_type` – 每个向量元素的数据类型。支持的类型有 `BFloat16`、`Float32` 和 `Float64`
+* `element_type` – 每个向量元素的数据类型。支持的类型有 `Int8`、`BFloat16`、`Float32` 和 `Float64`
 * `dimension` – 每个向量中的元素个数
+* `stride` – 可选。`dimension` 的一个除数，它会将各维度划分为 `dimension / stride` 个连续分组，并分别存储在独立的流中，因此如果只对前几个维度进行搜索，需要读取的流就更少 (对 Matryoshka 嵌入向量很有用) 。默认值为 `dimension`，此时该类型在字节级别上与非 stride 的 `QBit` 完全相同。详见 [`QBit` 数据类型页面](/zh/reference/data-types/qbit)。
 
 <div id="qbit-create">
   #### 创建 `QBit` 表并插入数据

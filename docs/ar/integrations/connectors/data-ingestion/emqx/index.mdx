@@ -49,11 +49,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_3.webp" size="sm" border alt="شاشة بيانات اعتماد ClickHouse Cloud التي تعرض اسم المستخدم وكلمة المرور" />
 
-بعد ذلك، ستحصل على مثيل ClickHouse قيد التشغيل. انقر على &quot;Connect&quot; للحصول على عنوان الاتصال بالمثيل في ClickHouse Cloud.
+بعد ذلك، ستحصل على مثيل ClickHouse قيد التشغيل. انقر على &quot;Connect&quot; للحصول على عنوان اتصال المثيل في ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="لوحة معلومات المثيل قيد التشغيل في ClickHouse Cloud مع خيارات الاتصال" />
 
-انقر على &quot;Connect to SQL Console&quot; لإنشاء قاعدة بيانات وجدول من أجل التكامل مع EMQX Cloud.
+انقر على &quot;Connect to SQL Console&quot; لإنشاء قاعدة بيانات وجدول للتكامل مع EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_5.webp" size="lg" border alt="واجهة SQL Console في ClickHouse Cloud" />
 
@@ -126,11 +126,11 @@ PRIMARY KEY (client_id, timestamp)
 
 قبل أن نبدأ إعداد تكامل ClickHouse، نحتاج أولًا إلى تمكين NAT gateway. افتراضيًا، يتم نشر وسيط MQTT داخل VPC خاصة، لذلك لا يمكنه إرسال البيانات إلى أنظمة تابعة لجهات خارجية عبر الشبكة العامة.
 
-ارجع إلى صفحة Overview ومرّر إلى أسفل الصفحة، حيث ستجد أداة NAT gateway. انقر على زر Subscribe واتبع التعليمات. تجدر الإشارة إلى أن NAT Gateway خدمة مدفوعة إضافية، لكنها توفّر أيضًا فترة تجريبية مجانية لمدة 14 يومًا.
+ارجع إلى صفحة النظرة العامة ومرّر إلى أسفل الصفحة، حيث ستجد أداة NAT gateway. انقر على زر Subscribe واتبع التعليمات. تجدر الإشارة إلى أن NAT Gateway خدمة مدفوعة إضافية، لكنها توفّر أيضًا فترة تجريبية مجانية لمدة 14 يومًا.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="لوحة إعداد NAT Gateway في EMQX Cloud" />
 
-بعد إنشائه، ستجد عنوان IP العام في الأداة. يُرجى ملاحظة أنه إذا اخترت &quot;الاتصال من موقع محدد&quot; أثناء إعداد ClickHouse Cloud، فستحتاج إلى إضافة عنوان IP هذا إلى قائمة السماح.
+بعد إنشائه، ستجد عنوان IP العام في الأداة. يُرجى ملاحظة أنه إذا اخترت &quot;الاتصال من موقع محدد&quot; أثناء إعداد ClickHouse Cloud، فستحتاج إلى إضافة عنوان IP هذا إلى قائمة السماح."
 
 <div id="integration-emqx-cloud-with-clickhouse-cloud">
   ## تكامل EMQX Cloud مع ClickHouse Cloud
@@ -278,7 +278,7 @@ INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_
   ### تحقّق من البيانات المحفوظة
 </div>
 
-الآن حان الوقت لإلقاء نظرة على البيانات في ClickHouse Cloud. من الناحية المثالية، ستنتقل البيانات التي ترسلها باستخدام MQTTX إلى EMQX Cloud وتُحفَظ في قاعدة بيانات ClickHouse Cloud بمساعدة تكامل البيانات الأصلي.
+الآن حان الوقت لإلقاء نظرة على البيانات في ClickHouse Cloud. من الناحية المثالية، ستنتقل البيانات التي ترسلها باستخدام MQTTX إلى EMQX Cloud وتُحفَظ في قاعدة بيانات ClickHouse Cloud بمساعدة Data Integration الأصلي.
 
 يمكنك الاتصال بـ SQL Console في لوحة ClickHouse Cloud أو استخدام أي أداة عميل لجلب البيانات من ClickHouse. في هذا الدليل العملي، استخدمنا SQL Console.
 من خلال تنفيذ SQL:

@@ -19,85 +19,75 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 
 Draxlr предлагает интуитивно понятный интерфейс для подключения к базе данных ClickHouse, позволяя вашей команде изучать данные, визуализировать их и публиковать аналитические материалы за считанные минуты. Это руководство поможет вам выполнить необходимые шаги для успешного подключения.
 
-<div id="1-get-your-clickhouse-credentials">
-  ## 1. Получите учетные данные ClickHouse
-</div>
+<Steps>
+  <Step title="Получите учетные данные ClickHouse" id="1-get-your-clickhouse-credentials">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Подключите Draxlr к ClickHouse" id="2--connect-draxlr-to-clickhouse">
+    1. Нажмите кнопку **Connect a Database** на панели навигации.
 
-<div id="2--connect-draxlr-to-clickhouse">
-  ## 2.  Подключите Draxlr к ClickHouse
-</div>
+    2. Выберите **ClickHouse** из списка доступных баз данных и нажмите **Next**.
 
-1. Нажмите кнопку **Connect a Database** на панели навигации.
+    3. Выберите один из хостинг-сервисов и нажмите **Next**.
 
-2. Выберите **ClickHouse** из списка доступных баз данных и нажмите **Next**.
+    4. Укажите любое имя в поле **Connection Name**.
 
-3. Выберите один из хостинг-провайдеров и нажмите **Next**.
+    5. Введите сведения о подключении в форму.
 
-4. Укажите любое имя в поле **Connection Name**.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="Форма подключения Draxlr с параметрами конфигурации базы данных ClickHouse" border />
 
-5. Введите сведения о подключении в форму.
+    6. Нажмите кнопку **Next** и дождитесь установки подключения. Если подключение прошло успешно, вы увидите страницу с таблицами.
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="Форма подключения Draxlr с параметрами конфигурации базы данных ClickHouse" border />
+  <Step title="Изучение данных" id="4-explore-your-data">
+    1. Нажмите на одну из таблиц в списке.
 
-6. Нажмите кнопку **Next** и дождитесь установки подключения. Если подключение выполнено успешно, откроется страница с таблицами.
+    2. Вы перейдете на страницу Explore, где сможете просмотреть данные в таблице.
 
-<div id="4-explore-your-data">
-  ## 4. Изучение данных
-</div>
+    3. Вы можете добавлять filters, выполнять JOIN и применять sort к данным.
 
-1. Нажмите на одну из таблиц в списке.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="Интерфейс изучения данных Draxlr с параметрами фильтрации и сортировки" border />
 
-2. Вы перейдёте на страницу Explore, где сможете просмотреть данные в таблице.
+    4. Вы также можете использовать кнопку **Graph** и выбрать тип графика для визуализации данных.
 
-3. Здесь можно добавлять фильтры, выполнять JOIN и задавать сортировку данных.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="Параметры визуализации графиков Draxlr для данных ClickHouse" border />
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="Интерфейс изучения данных Draxlr с фильтрами и параметрами сортировки" border />
+  <Step title="Использование SQL-запросов" id="4-using-sql-queries">
+    1. Нажмите кнопку **Explore** на панели навигации.
 
-4. Вы также можете нажать кнопку **Graph** и выбрать тип графика для визуализации данных.
+    2. Нажмите кнопку **Raw Query** и введите запрос в текстовое поле.
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="Параметры визуализации графиков Draxlr для данных ClickHouse" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Интерфейс SQL-запросов Draxlr для ClickHouse" border />
 
-<div id="4-using-sql-queries">
-  ## 4. Использование SQL-запросов
-</div>
+    3. Нажмите кнопку **Execute Query**, чтобы увидеть результаты.
+  </Step>
 
-1. Нажмите кнопку Explore на панели навигации.
+  <Step title="Сохранение запроса" id="4-saving-you-query">
+    1. После выполнения запроса нажмите кнопку **Save Query**.
 
-2. Нажмите кнопку **Raw Query** и введите запрос в текстовое поле.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="Диалог сохранения запроса в Draxlr с параметрами панели мониторинга" border />
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Интерфейс SQL-запросов Draxlr для ClickHouse" border />
+    2. Вы можете задать имя запроса в текстовом поле **Query Name** и выбрать папку, к которой его отнести.
 
-3. Нажмите кнопку **Execute Query**, чтобы просмотреть результаты.
+    3. Вы также можете использовать параметр **Add to dashboard**, чтобы добавить результат на панель мониторинга.
 
-<div id="4-saving-you-query">
-  ## 4. Сохранение запроса
-</div>
+    4. Нажмите кнопку **Save**, чтобы сохранить запрос.
+  </Step>
 
-1. После выполнения запроса нажмите кнопку **Save Query**.
+  <Step title="Создание панелей мониторинга" id="5-building-dashboards">
+    1. Нажмите кнопку **Dashboards** на панели навигации.
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="Диалог сохранения запроса в Draxlr с параметрами панели мониторинга" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Интерфейс управления панелями мониторинга Draxlr" border />
 
-2. В текстовом поле **Query Name** можно указать имя запроса и выбрать папку для его сохранения.
+    2. Вы можете добавить новую панель мониторинга, нажав кнопку **Add +** на левой боковой панели.
 
-3. Вы также можете использовать параметр **Add to dashboard**, чтобы добавить результат на панель мониторинга.
+    3. Чтобы добавить новый виджет, нажмите кнопку **Add** в правом верхнем углу.
 
-4. Нажмите кнопку **Save**, чтобы сохранить запрос.
-
-<div id="5-building-dashboards">
-  ## 5. Создание панелей мониторинга
-</div>
-
-1. Нажмите кнопку **Dashboards** на панели навигации.
-
-<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Интерфейс управления панелями мониторинга Draxlr" border />
-
-2. Чтобы добавить новую панель мониторинга, нажмите кнопку **Add +** на левой боковой панели.
-
-3. Чтобы добавить новый виджет, нажмите кнопку **Add** в правом верхнем углу.
-
-4. Выберите запрос из списка сохранённых запросов, укажите тип визуализации и нажмите кнопку **Add Dashboard Item**.
+    4. Вы можете выбрать запрос из списка сохраненных запросов и указать тип визуализации, затем нажать кнопку **Add Dashboard Item**.
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Подробнее

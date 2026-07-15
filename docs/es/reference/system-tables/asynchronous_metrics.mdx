@@ -318,6 +318,18 @@ Número de errores de memoria ECC corregibles. Un valor alto de este indicador s
 
 El número de errores de memoria ECC no corregibles. Un valor distinto de cero indica que la RAM está defectuosa y debe sustituirse de inmediato, ya que puede provocar corrupción de datos. Fuente: `/sys/devices/system/edac/mc/`
 
+<div id="executableuserdefinedfunctionmemoryresidentbytes">
+  ### ExecutableUserDefinedFunctionMemoryResidentBytes
+</div>
+
+Suma del tamaño del conjunto residente (VmRSS) de todos los procesos en ejecución de las funciones definidas por el usuario `executable` y `executable_pool`, y de sus procesos descendientes, en bytes. Se incluyen los workers inactivos de `executable_pool`. Las páginas compartidas se contabilizan una vez por proceso, por lo que la suma constituye un límite superior y puede superar la huella única de memoria física de los procesos UDF.
+
+<div id="executableuserdefinedfunctionprocesses">
+  ### ExecutableUserDefinedFunctionProcesses
+</div>
+
+Número de procesos en ejecución iniciados para las funciones definidas por el usuario de tipo executable y executable&#95;pool, incluidos los procesos descendientes.
+
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>

@@ -53,7 +53,7 @@ Les principales ressources cloud que ClickHouse Cloud déploiera dans votre comp
 
 * **VPC :** un Virtual Private Cloud dédié à votre déploiement ClickHouse. Il peut être géré soit par ClickHouse, soit par vous, le client, et est généralement mis en peering avec les VPC de vos applications.
 * **Rôles et stratégies IAM :** les rôles et permissions nécessaires pour Kubernetes, les services ClickHouse et la stack de supervision. Ils peuvent être provisionnés par ClickHouse ou fournis par le client.
-* **Buckets de stockage :** utilisés pour stocker les data parts, les sauvegardes et, éventuellement, les archives de métriques et de logs à long terme.
+* **Buckets de stockage :** utilisés pour stocker les parties de données, les sauvegardes et, éventuellement, les archives de métriques et de logs à long terme.
 * **Cluster Kubernetes :** il peut s&#39;agir d&#39;Amazon EKS, de Google GKE ou d&#39;Azure AKS, selon votre fournisseur de cloud, et il héberge les serveurs ClickHouse ainsi que les services de support présentés dans le schéma d&#39;architecture.
 
 Par défaut, ClickHouse Cloud provisionne un nouveau VPC dédié et configure les rôles IAM nécessaires pour garantir le fonctionnement sécurisé des services Kubernetes. Pour les organisations ayant des besoins avancés en matière de réseau ou de sécurité, il est également possible de gérer le VPC et les rôles IAM de manière indépendante. Cette approche permet une personnalisation plus poussée des configurations réseau et un contrôle plus précis des permissions. Toutefois, choisir de gérer vous-même ces ressources augmentera vos responsabilités opérationnelles.

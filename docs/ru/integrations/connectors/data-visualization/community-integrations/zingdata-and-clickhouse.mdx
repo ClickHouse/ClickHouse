@@ -32,7 +32,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 
    * Чтобы использовать ClickHouse с Zing Data на мобильном устройстве, скачайте приложение Zing Data в [Google Play Store](https://play.google.com/store/apps/details?id=com.getzingdata.android) или [Apple App Store](https://apps.apple.com/us/app/zing-data-collaborative-bi/id1563294091).
 
-   * Чтобы использовать ClickHouse с Zing Data в веб-версии, откройте [веб-консоль Zing](https://console.getzingdata.com/) и создайте учетную запись.
+   * Чтобы использовать ClickHouse с Zing Data в веб-версии, откройте [веб-консоль Zing](https://console.getzingdata.com/) и создайте аккаунт.
 
 3. Добавьте источник данных
 
@@ -50,7 +50,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 
    <br />
 
-5. Если подключение прошло успешно, Zing предложит выбрать таблицы. Выберите нужные таблицы и нажмите **Save**. Если Zing не сможет подключиться к вашему источнику данных, появится сообщение с просьбой проверить учетные данные и повторить попытку. Если проблема сохраняется даже после проверки учетных данных и повторной попытки, <a id="contact_link" href="mailto:hello@getzingdata.com">обратитесь в поддержку Zing здесь.</a>
+5. Если подключение прошло успешно, Zing предложит выбрать таблицы. Выберите нужные таблицы и нажмите **Save**. Если Zing не сможет подключиться к вашему источнику данных, появится сообщение с просьбой проверить учетные данные и повторить попытку. Если проблема сохраняется даже после этого, <a id="contact_link" href="mailto:hello@getzingdata.com">обратитесь в поддержку Zing здесь.</a>
 
    <Image size="md" img="/images/integrations/data-visualization/zing_03.webp" alt="Интерфейс выбора таблиц в Zing Data, показывающий доступные таблицы ClickHouse с флажками" border />
 
@@ -62,9 +62,9 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
   ## Создание диаграмм и панелей мониторинга в Zing Data
 </div>
 
-1. После добавления источника данных ClickHouse нажмите **Zing App** в веб-версии или источник данных на мобильном устройстве, чтобы начать создавать диаграммы.
+1. После добавления источника данных ClickHouse нажмите **Zing App** в веб-версии или выберите источник данных в мобильном приложении, чтобы начать создавать диаграммы.
 
-2. Нажмите на таблицу в списке таблиц, чтобы создать диаграмму.
+2. Нажмите на таблицу в списке, чтобы создать диаграмму.
 
    <Image size="sm" img="/images/integrations/data-visualization/zing_04.webp" alt="Интерфейс Zing Data со списком таблиц и доступными таблицами ClickHouse" border />
 
@@ -72,25 +72,25 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 
 3. Используйте визуальный конструктор запросов, чтобы выбрать нужные поля, агрегации и т. д., затем нажмите **Run Question**.
 
-   <Image size="md" img="/images/integrations/data-visualization/zing_05.webp" alt="Интерфейс визуального конструктора запросов в Zing Data с выбором полей и параметрами агрегации" border />
+   <Image size="md" img="/images/integrations/data-visualization/zing_05.webp" alt="Интерфейс визуального конструктора запросов Zing Data с выбором полей и параметрами агрегации" border />
 
    <br />
 
-4. Если вы знакомы с SQL, вы также можете написать собственный SQL для выполнения запросов и создания диаграммы.
+4. Если вы знакомы с SQL, вы также можете написать произвольный SQL-запрос, выполнить его и создать диаграмму.
 
-   <Image size="md" img="/images/integrations/data-visualization/zing_06.webp" alt="Режим редактора SQL в Zing Data с интерфейсом для написания SQL-запроса" border />
+   <Image size="md" img="/images/integrations/data-visualization/zing_06.webp" alt="Режим редактора SQL в Zing Data с интерфейсом для написания SQL-запросов" border />
 
-   <Image size="md" img="/images/integrations/data-visualization/zing_07.webp" alt="Результаты SQL-запроса в Zing Data с данными в табличном формате" border />
+   <Image size="md" img="/images/integrations/data-visualization/zing_07.webp" alt="Результаты SQL-запроса в Zing Data с данными, отображаемыми в табличном формате" border />
 
-5. Пример диаграммы будет выглядеть так. Запрос можно сохранить через меню с тремя точками. Вы можете добавить комментарий к диаграмме, отметить тегом участников команды, создать оповещения в реальном времени, изменить тип диаграммы и т. д.
+5. Например, диаграмма может выглядеть так. Запрос можно сохранить через меню с тремя точками. Вы можете добавить комментарий к диаграмме, упомянуть участников команды, создать оповещения в реальном времени, изменить тип диаграммы и т. д.
 
-   <Image size="md" img="/images/integrations/data-visualization/zing_08.webp" alt="Пример диаграммы в Zing Data с данными из ClickHouse и меню параметров" border />
+   <Image size="md" img="/images/integrations/data-visualization/zing_08.webp" alt="Пример визуализации диаграммы в Zing Data с данными из ClickHouse и меню параметров" border />
 
    <br />
 
-6. Панели мониторинга можно создавать с помощью значка &quot;+&quot; в разделе **Dashboards** на главном экране. В них можно перетаскивать существующие запросы, чтобы отображать их на панели мониторинга.
+6. Панели мониторинга можно создавать с помощью значка &quot;+&quot; в разделе **Dashboards** на главном экране. Существующие запросы можно перетащить на панель мониторинга для отображения.
 
-   <Image size="md" img="/images/integrations/data-visualization/zing_09.webp" alt="Панель мониторинга в Zing Data с несколькими визуализациями, размещенными на макете панели" border />
+   <Image size="md" img="/images/integrations/data-visualization/zing_09.webp" alt="Представление панели мониторинга в Zing Data с несколькими визуализациями, расположенными на панели мониторинга" border />
 
    <br />
 

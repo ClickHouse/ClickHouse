@@ -42,16 +42,12 @@ Pour démarrer le processus d’onboarding, veuillez [nous contacter](https://cl
 Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de votre organisation.
 
 <Steps>
-  <Step>
-    ### Choisissez un fournisseur Cloud
-
+  <Step title="Choisissez un fournisseur Cloud" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choisir un CSP" background="black" />
   </Step>
 
-  <Step>
-    ### Configuration du compte/projet/abonnement
-
-    La configuration initiale de BYOC peut être effectuée à l&#39;aide d&#39;un [modèle CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), d&#39;un [module Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou d&#39;un [module Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Elle crée une identité hautement privilégiée (IAM role/compte de service/principal de service), qui permet aux contrôleurs BYOC de ClickHouse Cloud de gérer votre infrastructure.
+  <Step title="Configuration du compte/projet/abonnement" id="account-setup">
+    La configuration initiale de BYOC peut être effectuée à l&#39;aide d&#39;un [modèle CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), d&#39;un [module Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou d&#39;un [module Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Elle crée une identité hautement privilégiée (rôle IAM/compte de service/principal de service), qui permet aux contrôleurs BYOC de ClickHouse Cloud de gérer votre infrastructure.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialiser le compte" background="black" />
 
@@ -73,9 +69,7 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
     ```
   </Step>
 
-  <Step>
-    ### Configurer l&#39;infrastructure BYOC
-
+  <Step title="Configurer l'infrastructure BYOC" id="setup-byoc-infrastructure">
     Vous serez invité à configurer l&#39;infrastructure, y compris les buckets de stockage objet, le VPC/VNet et le cluster Kubernetes, depuis la console ClickHouse Cloud. Certaines configurations doivent être définies à ce stade, car elles ne pourront pas être modifiées par la suite. Plus précisément :
 
     * **Région** : toutes les **régions publiques** répertoriées dans notre documentation [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont pas prises en charge actuellement.

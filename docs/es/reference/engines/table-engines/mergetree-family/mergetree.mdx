@@ -982,7 +982,7 @@ Si ejecuta la consulta `SELECT` entre fusiones, puede obtener datos vencidos. Pa
 Además de los dispositivos de bloque locales, ClickHouse admite estos tipos de almacenamiento:
 
 * [`s3` para S3 y MinIO](#table_engine-mergetree-s3)
-* [`gcs` para GCS](/es/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` para GCS](/es/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` para Azure Blob Storage](/es/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` para HDFS](/es/reference/engines/table-engines/integrations/hdfs)
 * [`web` para acceso de solo lectura desde la web](/es/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1444,9 +1444,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `TDigest`
 
-  Resúmenes [TDigest](https://github.com/tdunning/t-digest) que permiten calcular percentiles aproximados (por ejemplo, el percentil 90) para columnas numéricas.
+<Warning>
+  Las estadísticas de tipo `tdigest` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
+</Warning>
 
-  Sintaxis: `tdigest`
+Resúmenes [TDigest](https://github.com/tdunning/t-digest) que permiten calcular percentiles aproximados (por ejemplo, el percentil 90) para columnas numéricas.
+
+Sintaxis: `tdigest`
 
 * `Uniq`
 
@@ -1456,9 +1460,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `CountMin`
 
-  Resúmenes [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que proporcionan un recuento aproximado de la frecuencia de cada valor de una columna.
+<Warning>
+  Las estadísticas de tipo `countmin` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
+</Warning>
 
-  Sintaxis `countmin`
+Resúmenes [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que proporcionan un recuento aproximado de la frecuencia de cada valor de una columna.
+
+Sintaxis `countmin`
 
 <div id="supported-data-types">
   ### Tipos de datos compatibles

@@ -878,12 +878,12 @@ Calcule JavaHash à partir de :
 
 <Warning>
   Cette fonction de hachage est peu performante.
-  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
+  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez calculer le même résultat.
 </Warning>
 
 <Note>
-  Java ne prend en charge que le calcul du hachage d&#39;entiers signés.
-  Donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
+  Java ne prend en charge que le calcul du hachage d&#39;entiers signés,
+  donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
 </Note>
 
 **Syntaxe**
@@ -1893,7 +1893,7 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 Introduit dans : v23.2.0
 
-Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite en argument au lieu d’utiliser une clé fixe.
+Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite comme argument au lieu d’utiliser une clé fixe.
 
 <Tip>
   **utilisez sipHash128ReferenceKeyed pour les nouveaux projets**

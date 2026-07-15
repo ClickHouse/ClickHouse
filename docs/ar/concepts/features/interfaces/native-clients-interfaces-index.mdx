@@ -1,18 +1,44 @@
 ---
 description: 'العملاء والواجهات الأصلية لـ ClickHouse'
-keywords: ['العملاء', 'الواجهات', 'CLI', 'SQL Console', 'برامج التشغيل']
+keywords: ['العملاء', 'الواجهات', 'CLI', 'واجهة SQL', 'برامج التشغيل']
 slug: /interfaces/natives-clients-and-interfaces
 title: 'العملاء والواجهات الأصلية'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-يوفّر ClickHouse عدة عملاء وواجهات أصلية تتيح لك الاتصال به.
+يوفّر ClickHouse مجموعة من العملاء والواجهات الأصلية المختلفة التي تتيح لك الاتصال بـ ClickHouse.
 
-لمزيد من المعلومات، راجع الصفحات أدناه:
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/ar/concepts/features/interfaces/cli">
+    واجهة CLI لـ ClickHouse: محليًا وعلى Cloud.
+  </Card>
 
-| القسم                                                              | الملخص                                                      |
-| ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| [clickhousectl](/ar/concepts/features/interfaces/cli)                 | واجهة CLI لـ ClickHouse: محليًا وفي Cloud.                  |
-| [ClickHouse Client](/ar/concepts/features/interfaces/client)          | عميل سطر أوامر أصلي يدعم خيارات سطر الأوامر وملفات التهيئة. |
-| [Drivers &amp; Interfaces](/ar/concepts/features/interfaces/overview) | مجموعة من واجهات الشبكة والمكتبات والواجهات المرئية.        |
-| [SQL Console](/ar/integrations/connectors/sql-clients/sql-console)    | طريقة سريعة وسهلة للتفاعل مع بياناتك في ClickHouse Cloud.   |
+  <Card title="عميل ClickHouse" icon="keyboard" href="/ar/concepts/features/interfaces/client">
+    عميل سطر أوامر أصلي يدعم خيارات سطر الأوامر وملفات التهيئة.
+  </Card>
+
+  <Card title="برامج التشغيل والواجهات" icon="plug" href="/ar/concepts/features/interfaces/overview">
+    واجهات الشبكة وبرامج التشغيل والأدوات للاتصال بـ ClickHouse.
+  </Card>
+
+  <Card title="مكتبة عميل C++" icon="code" href="/ar/concepts/features/interfaces/cpp">
+    مكتبة عميل ClickHouse للغة C++.
+  </Card>
+
+  <Card title="استنتاج المخطط" icon="wand-magic-sparkles" href="/ar/concepts/features/interfaces/schema-inference">
+    استنتاج المخطط تلقائيًا من بيانات الإدخال.
+  </Card>
+
+  <Card title="الطرفية على الويب" icon="globe" href="/ar/concepts/features/interfaces/web-terminal">
+    جلسة `clickhouse-client` في المتصفح عبر WebSocket.
+  </Card>
+
+  <Card title="واجهة SQL على الويب (Play)" icon="browser" href="/ar/concepts/features/interfaces/web-sql">
+    واجهة SQL مدمجة داخل المتصفح يوفّرها ClickHouse عند `/play`.
+  </Card>
+
+  <Card title="واجهات الجهات الخارجية" icon="puzzle-piece" href="/ar/concepts/features/interfaces/third-party/index">
+    أدوات ومكتبات وعمليات تكامل من جهات خارجية.
+  </Card>
+</CardGroup>

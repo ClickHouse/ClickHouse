@@ -272,40 +272,32 @@ Vous allez restaurer vos données dans un nouveau service Cloud.
 Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
 
 <Steps>
-  <Step>
-    #### Ouvrir Cloud Console
-
+  <Step title="Ouvrir Cloud Console" id="open-cloud-console">
     Accédez à [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step>
-    #### Créer un nouveau service
-
+  <Step title="Créer un nouveau service" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="créer un nouveau service" />
   </Step>
 
-  <Step>
-    #### Configurer et créer un service
-
+  <Step title="Configurer et créer un service" id="configure-and-create">
     Choisissez la région et la configuration souhaitées, puis cliquez sur `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="configurer les préférences du service" />
   </Step>
 
-  <Step>
-    #### Créer un rôle d&#39;accès
-
+  <Step title="Créer un rôle d'accès" id="create-an-access-role">
     Ouvrez la SQL Console
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="configurer les préférences du service" />
 
-    ### Configurer l&#39;accès à S3
+    ### Configurer l’accès à S3
 
     Pour restaurer votre sauvegarde depuis S3, vous devez configurer un accès sécurisé entre ClickHouse Cloud et votre bucket S3.
 
-    1. Suivez les étapes de [&quot;Accessing S3 data securely&quot;](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour créer un rôle d&#39;accès et obtenir l&#39;ARN du rôle.
+    1. Suivez les étapes de [&quot;Accessing S3 data securely&quot;](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour créer un rôle d’accès et obtenir l’ARN du rôle.
 
-    2. Mettez à jour la politique du bucket S3 que vous avez créée dans [&quot;How to create an S3 bucket and IAM role&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) en y ajoutant l&#39;ARN du rôle de l&#39;étape précédente.
+    2. Mettez à jour la politique du bucket S3 que vous avez créée dans [&quot;How to create an S3 bucket and IAM role&quot;](/fr/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) en y ajoutant l’ARN du rôle de l’étape précédente.
 
     Votre politique de bucket S3 mise à jour ressemblera à ceci :
 

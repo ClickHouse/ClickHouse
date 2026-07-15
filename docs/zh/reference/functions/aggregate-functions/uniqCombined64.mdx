@@ -27,14 +27,15 @@ doc_type: 'reference'
 * 内存消耗少数倍
 * 计算精度高数倍
 
-<Accordion title="实现细节">
+<details>
+  <summary>实现细节</summary>
   此函数会先为聚合中所有参数的所有数据类型计算 64 位哈希，然后基于该哈希进行计算。
   它结合使用三种算法：数组、哈希表，以及带误差校正表的 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)：
 
   * 当不同元素数量较少时，使用数组
   * 当集合大小进一步增大时，使用哈希表
   * 当元素数量更多时，使用 HyperLogLog，此时会占用固定大小的内存
-</Accordion>
+</details>
 
 **语法**
 
@@ -72,19 +73,19 @@ SELECT uniqCombined64(number) FROM numbers(1e10);
 **与 uniqCombined 的比较**
 
 ```sql title=Query
--- 使用大数据集的 uniqCombined64
+-- uniqCombined64 with large dataset
 SELECT uniqCombined64(number) FROM numbers(1e10);
 
--- 使用相同数据集的 uniqCombined 近似效果较差
+-- uniqCombined with same dataset shows poor approximation
 SELECT uniqCombined(number) FROM numbers(1e10);
 ```
 
 ```response title=Response
 ┌─uniqCombined64(number)─┐
-│             9998568925 │ -- 100亿
+│             9998568925 │ -- 10.00 billion
 └────────────────────────┘
 ┌─uniqCombined(number)─┐
-│           5545308725 │ -- 55.5亿
+│           5545308725 │ -- 5.55 billion
 └──────────────────────┘
 ```
 

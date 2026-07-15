@@ -1,17 +1,24 @@
 ---
-title: 'コンセプト'
+title: '概念'
 slug: /concepts
-description: 'コンセプトのランディングページ'
-keywords: ['コンセプト', 'OLAP', '高速']
+description: '概念のランディングページ'
+keywords: ['概念', 'OLAP', '高速']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-このドキュメントのセクションでは、ClickHouse がなぜこれほど高速かつ効率的なのか、その背景にあるコンセプトを掘り下げていきます。
+このドキュメントのセクションでは、ClickHouse がこれほど高速かつ効率的である理由を支える概念を掘り下げていきます。
 
-| Page                                                                      | Description                             |
-| ------------------------------------------------------------------------- | --------------------------------------- |
-| [ClickHouse はなぜこれほど高速なのか？](/ja/get-started/about/why-clickhouse-is-so-fast)  | ClickHouse がこれほど高速な理由を学びます。             |
-| [OLAP とは何ですか？](/concepts/olap)                                                 | オンライン分析処理とは何かを学びます。                     |
-| [ClickHouse がユニークな理由は？](/ja/get-started/about/distinctive-features)          | ClickHouse をユニークたらしめている特長を学びます。         |
-| [用語集](/ja/concepts/core-concepts/glossary)                                   | このページには、ドキュメント全体でよく登場する用語をまとめた用語集があります。 |
-| [よくある質問](/ja/resources/support-center/knowledge-base/general-faqs/faq-index) | ClickHouse についてよく寄せられる質問をまとめています。       |
+<CardGroup cols={2}>
+  <Card title="基礎" icon="cubes" href="/ja/concepts/core-concepts/index">
+    テーブルパーツ、パーティション、マージ、プライマリインデックスなどを含む、ClickHouse の仕組みに関する基本概念を学びます。
+  </Card>
+
+  <Card title="ClickHouse の概念" icon="lightbulb" href="/ja/concepts/features/index">
+    materialized view、Dictionaries、パフォーマンスチューニング、操作、構成、セキュリティなど、ClickHouse の各種概念を確認できます。
+  </Card>
+
+  <Card title="ベストプラクティス" icon="list-check" href="/ja/concepts/best-practices/index">
+    ClickHouse を使用する際に従うべきベストプラクティス。
+  </Card>
+</CardGroup>

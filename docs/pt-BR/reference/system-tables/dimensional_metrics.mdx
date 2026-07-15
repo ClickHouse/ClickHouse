@@ -69,6 +69,30 @@ Indica falhas em scripts de inicialização por tipo de erro. É definida como 1
 
 Número de partes de dados do MergeTree, identificadas pelo estado da parte, pelo tipo da parte e por serem ou não partes de projeção.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+Número de segmentos de arquivo removidos de um cache do sistema de arquivos, identificado pelo nome do cache. Desativado por padrão; habilite com `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+Total de bytes de segmentos de arquivo removidos de um cache do sistema de arquivos, identificado pelo nome do cache. Desativada por padrão; habilite com `expose_prometheus_eviction_metrics`.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+Número de segmentos de arquivo removidos de um cache do sistema de arquivos, identificados pelo nome do cache e pelo ID do usuário. Desativado por padrão; habilite com `expose_prometheus_eviction_metrics` e `expose_prometheus_eviction_metrics_per_user`.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+Total de bytes de segmentos de arquivo removidos de um cache do sistema de arquivos, identificados pelo nome do cache e pelo ID do usuário. Desativado por padrão; habilite com `expose_prometheus_eviction_metrics` e `expose_prometheus_eviction_metrics_per_user`.
+
 <div id="see-also">
   ## Veja também
 </div>

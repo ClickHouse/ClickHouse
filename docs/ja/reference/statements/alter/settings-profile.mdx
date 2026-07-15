@@ -6,7 +6,7 @@ title: 'ALTER SETTINGS PROFILE'
 doc_type: 'reference'
 ---
 
-settings profile を変更します。
+settings プロファイル を変更します。
 
 構文:
 
@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -23,7 +24,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
 ```
 
-`ON CLUSTER` 句を使用すると、クラスター上で settings profile を変更できます。詳しくは [Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
+`ON CLUSTER` 句を使用すると、クラスター上で settings プロファイル を変更できます。詳しくは [Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
 
 <div id="replacing-vs-modifying">
   ## 設定の置き換えと変更
@@ -67,6 +68,8 @@ SHOW CREATE SETTINGS PROFILE p;
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — すべての設定、またはすべての親プロファイルを削除します。
 
 これらの句は、複数を 1 つのステートメントに組み合わせることもできます。たとえば `DROP SETTINGS a ADD SETTINGS b = 1` のように記述できます。
+
+`SET variable = value` は `MODIFY SETTINGS variable = value` の別名です。`SET` のほうが自然に感じられること、またインクリメンタルな変更を意図していたのに、置き換え用の `SETTINGS` 句を入力してしまうのがよくあるミスであることから、この別名が用意されています。
 
 <div id="examples">
   ## 例

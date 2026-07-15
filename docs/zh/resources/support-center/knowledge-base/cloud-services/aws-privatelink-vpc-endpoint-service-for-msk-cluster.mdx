@@ -1,0 +1,204 @@
+---
+title: 适用于 MSK 集群的 AWS PrivateLink VPC endpoint service
+description: 通过 AWS PrivateLink VPC endpoint service 将 MSK 集群暴露给 ClickPipes 的设置步骤。
+date: 2026-07-09
+tags: ['安全与身份验证', 'Cloud 管理']
+keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## 概述
+</div>
+
+本指南介绍如何通过 [AWS PrivateLink VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) 将亚马逊 MSK 集群开放给 ClickPipes 使用。
+
+当 [MSK multi-VPC connectivity](/zh/integrations/clickpipes/aws-privatelink#msk-multi-vpc) 不可用或无法满足需求时，可采用此方法，例如：
+
+* ClickPipes 到 MSK 的跨区域连接。
+* MSK Express 集群。
+* 必须在私网连接中保留 broker 主机名的 Kafka 部署。
+
+对于同一区域内的标准 MSK 集群，MSK multi-VPC connectivity 通常更简单，也是推荐选项。
+
+同样的 PrivateLink 模式也可用于通过 AWS 对外提供的自管理或本地部署 Kafka 集群，但本文中的示例使用的是 MSK。
+
+<div id="how-the-setup-works">
+  ## 设置的工作原理
+</div>
+
+Kafka 客户端首先连接到引导消息代理，拉取集群元数据，然后直接连接到该元数据中通告的 broker 主机名。
+
+因此，仅在所有 broker 前放置一个负载均衡器，不足以实现可靠的 MSK PrivateLink 设置。相反，请为每个 broker 创建一条 PrivateLink 路径：
+
+```text
+MSK broker hostname
+  -> ClickPipes reverse private endpoint with custom private DNS
+  -> VPC endpoint service
+  -> Network Load Balancer
+  -> MSK broker private IP
+```
+
+每个 broker 都有自己独立的：
+
+* 内部 Network Load Balancer (NLB)。
+* 以 broker 私网 IP 为目标的 IP target group。
+* 以该 NLB 为后端的 VPC endpoint service。
+* ClickPipes 反向专用终结点 (RPE) 。
+* 与该 broker 主机名匹配的自定义私有 DNS name。
+
+NLB 应使用 TCP 透传。这样，Kafka 客户端就能继续使用原始的 MSK broker 主机名进行 TLS SNI 和证书验证。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+* 位于私有子网内的 MSK 集群。
+* MSK 集群的 broker 主机名和私有 IP 地址。
+* 具有在 MSK VPC 中创建 NLB、目标组、监听器和 VPC endpoint service 的权限。
+* 在每个 VPC endpoint service 上允许的 ClickPipes AWS 账户主体：`arn:aws:iam::072088201116:root`。
+* 已为你的 ClickHouse Cloud 服务启用自定义私有 DNS 功能。如果在创建反向专用终结点时看不到 `Custom private DNS name` 字段，请联系 ClickHouse 支持团队。
+
+<div id="get-broker-hostnames-and-private-ips">
+  ## 获取 broker 主机名和私网 IP
+</div>
+
+使用 AWS 命令行客户端列出 MSK broker 节点：
+
+```bash
+aws kafka list-nodes \
+    --cluster-arn <MSK_CLUSTER_ARN> \
+    --query 'NodeInfoList[].BrokerNodeInfo.{BrokerId:BrokerId,Host:Endpoints[0],PrivateIp:ClientVpcIpAddress}' \
+    --output table
+```
+
+记录每个 broker 的主机名、私网 IP 地址和 Kafka 端口。对于 MSK IAM 身份验证，端口通常为 `9098`。
+
+ClickPipe 会将这些 broker 主机名用作其 Kafka broker。对于这种基于 UI 的设置，请勿使用 MSK bootstrap broker 字符串。
+
+<div id="create-one-endpoint-service-per-broker">
+  ## 为每个 broker 创建一个 endpoint service
+</div>
+
+对每个 MSK broker 都重复执行以下步骤。
+
+<div id="create-an-internal-nlb">
+  ### 创建内部 NLB
+</div>
+
+在 MSK VPC 中创建一个内部 Network Load Balancer。该 NLB 应使用私有子网，且不得对互联网开放。
+
+如果 NLB 关联了安全组 (Security Group) ，请禁用 `Enforce Security Group Inbound Rules on Private Link Traffic`。这是允许来自 ClickPipes VPC 端点的流量到达 NLB 所必需的。
+
+<div id="create-an-ip-target-group">
+  ### 创建 IP 目标组
+</div>
+
+按以下配置创建目标组：
+
+* 目标类型：`IP`。
+* 协议：`TCP`。
+* 端口：broker 的 Kafka 端口，例如 MSK IAM 使用 `9098`。
+* 目标：仅填写一个 broker 的私网 IP 地址。
+
+在流量端口上使用 TCP 健康检查。
+
+<div id="create-a-tcp-listener">
+  ### 创建 TCP 监听器
+</div>
+
+在 broker 的 Kafka 端口上创建 NLB 监听器，并将流量转发到该 broker 对应的目标组。
+
+<div id="create-the-vpc-endpoint-service">
+  ### 创建 VPC endpoint service
+</div>
+
+创建一个以 broker 专用 NLB 为后端的 VPC endpoint service。
+
+将 ClickPipes AWS 主体添加到允许的主体列表中：
+
+```text
+arn:aws:iam::072088201116:root
+```
+
+如果 MSK 集群和 ClickPipes 位于不同的 AWS 区域，请将 ClickPipes 所在区域添加到端点服务的支持区域中，以启用[跨区域访问](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)。
+
+记下端点服务名称。其格式类似于：
+
+```text
+com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
+```
+
+<div id="create-clickpipes-reverse-private-endpoints">
+  ## 创建 ClickPipes 反向专用终结点
+</div>
+
+在 ClickHouse Cloud 控制台中，为每个 broker 端点服务创建一个反向专用终结点：
+
+1. 进入你的 ClickHouse Cloud 服务。
+2. 开始创建一个 ClickPipe。
+3. 选择 `Reverse private endpoint`。
+4. 选择 `VPC endpoint service` 作为 VPC 端点类型。
+5. 输入该 broker 对应的 VPC endpoint service 名称。
+6. 在 `Custom private DNS name` 中，输入该 broker 原始的 MSK broker 主机名。
+7. 创建端点。
+8. 如果端点处于待接受状态，请在 AWS VPC endpoint service 控制台中接受该端点连接请求。
+
+重复此过程，直到每个 broker 主机名都有对应的 RPE。
+
+有关自定义私有 DNS 的行为、命名规则以及 API/Terraform 选项，请参见
+[自定义私有 DNS](/zh/integrations/clickpipes/aws-privatelink#custom-private-dns)。
+
+你也可以使用 [OpenAPI](/zh/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) 或 Terraform 创建这些反向专用终结点。
+
+对于 OpenAPI，请为每个 broker 创建一个反向专用终结点，将 `type` 设置为 `VPC_ENDPOINT_SERVICE`，填写该 broker 对应的 VPC endpoint service 名称，并为该 broker 主机名配置一条自定义私有 DNS 映射：
+
+```json
+{
+  "description": "MSK broker 1",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.eu-central-1.vpce-svc-0123456789abcdef0",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com"
+    }
+  ]
+}
+```
+
+如果使用 Terraform，请使用 [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) 创建端点，并使用 [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) 配置 broker 主机名映射。
+
+<div id="create-the-kafka-clickpipe">
+  ## 创建 Kafka ClickPipe
+</div>
+
+按照 [ClickPipes AWS PrivateLink 指南](/zh/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+使用反向专用终结点创建 ClickPipe。
+
+创建 Kafka ClickPipe 时：
+
+* 使用原始 MSK broker 主机名作为 broker 列表，并包含你的 MSK listener 及其身份验证方法所使用的端口。
+* 不要使用 MSK 引导 broker 字符串。
+* 选择或关联所有 broker 专用的反向专用终结点。
+* 配置 MSK 集群所需的身份验证方法，例如 IAM role 身份验证。
+
+端口取决于你的 MSK listener。例如，IAM 身份验证通常使用 `9098`，SASL/SCRAM 通常使用 `9096`，TLS 通常使用 `9094`。请根据 MSK 集群配置或引导 broker 输出确认正确的端口。
+
+示例 broker 列表：
+
+```text
+b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-3.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098
+```
+
+broker 列表中的每个主机名都必须与某个 RPE 上配置的 `Custom private DNS name` 保持一致。
+
+<div id="terraform-automation">
+  ## Terraform 自动化
+</div>
+
+[aws-msk-vpc-endpoint-service Terraform 模块](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/aws-msk-vpc-endpoint-service)展示了如何将此设置自动化。它会创建针对各个 broker 的 NLB、目标组、VPC endpoint service、ClickPipes RPE，以及自定义私有 DNS 映射。
+
+该 Terraform 模块可为每个 RPE 管理多个自定义私有 DNS 映射，包括引导主机名和 broker 主机名。本文重点介绍在 ClickPipes UI 中手动操作的工作流程，其中每个 RPE 都使用一个 broker 主机名作为其自定义私有 DNS name。

@@ -1661,9 +1661,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-```
-
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2212,8 +2209,8 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Символы цифр в кружке
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Преобразует в 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + нижний индекс 2 + O + верхний индекс 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Преобразует в H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3894,7 +3891,7 @@ SELECT upper('clickhouse')
 Добавленный в: v1.1.0
 
 Преобразует строку в верхний регистр, предполагая, что строка содержит корректный текст в кодировке UTF-8.
-Если это предположение нарушено, исключение не генерируется, а результат не определён.
+Если это предположение нарушено, исключение не сгенерируется, а результат не определён.
 
 <Note>
   Эта функция не определяет язык, поэтому, например, для турецкого языка результат может быть не совсем корректным (i/İ vs. i/I).

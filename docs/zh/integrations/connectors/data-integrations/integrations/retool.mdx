@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Retool'
 slug: /integrations/retool
-keywords: ['clickhouse', 'retool', '连接', '集成', 'ui', '管理员', '面板', '仪表板', '无代码', '无代码']
-description: '借助您的数据，快速构建具备丰富用户界面的 Web 和移动应用，自动化复杂任务，并集成 AI。'
+keywords: ['clickhouse', 'retool', 'connect', 'integrate', 'ui', 'admin', 'panel', 'dashboard', 'nocode', 'no-code']
+description: '借助你的数据，快速构建具有丰富用户界面的 Web 和移动应用，自动化复杂任务，并集成 AI。'
 title: '将 Retool 连接到 ClickHouse'
 doc_type: 'guide'
 integration:
@@ -17,45 +17,43 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-<div id="1-gather-your-connection-details">
-  ## 1. 准备连接信息
-</div>
+<Steps>
+  <Step title="收集连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="创建 ClickHouse 资源" id="2-create-a-clickhouse-resource">
+    登录到你的 Retool 账户，然后进入 *Resources* 选项卡。选择 &quot;Create New&quot; -&gt; &quot;Resource&quot;：
 
-<div id="2-create-a-clickhouse-resource">
-  ## 2. 创建 ClickHouse 资源
-</div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="创建新资源" />
 
-登录到你的 Retool 账户，然后进入 *Resources* 选项卡。选择“Create New”-&gt;“Resource”：
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="创建新资源" />
+    在可用连接器列表中选择 &quot;JDBC&quot;：
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="选择 JDBC 连接器" />
 
-在可用连接器列表中选择“JDBC”：
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="选择 JDBC 连接器" />
+    在设置向导中，确保选择 `com.clickhouse.jdbc.ClickHouseDriver` 作为 &quot;Driver name&quot;：
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="选择正确的驱动程序" />
 
-在设置向导中，确保选择 `com.clickhouse.jdbc.ClickHouseDriver` 作为“Driver name”：
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="选择正确的驱动程序" />
+    按以下格式填写你的 ClickHouse 凭据：`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`。
+    如果你的实例需要 SSL，或者你使用的是 ClickHouse Cloud，请在 connection string 中添加 `&ssl=true`，使其如下所示：`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="填写你的凭据" />
 
-按以下格式填写你的 ClickHouse 凭据：`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`。
-如果你的实例需要 SSL，或者你使用的是 ClickHouse Cloud，请在 connection string 中添加 `&ssl=true`，使其如下所示：`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="填写你的凭据" />
+    之后，测试你的连接：
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="测试你的连接" />
 
-之后，测试你的连接：
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="测试你的连接" />
-
-<br />
-
-现在，你应该可以在应用中使用你的 ClickHouse 资源了。
+    现在，你应该可以在应用中使用你的 ClickHouse 资源了。
+  </Step>
+</Steps>

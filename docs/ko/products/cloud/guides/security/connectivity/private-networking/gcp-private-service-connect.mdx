@@ -36,7 +36,7 @@ Private Service Connect (PSC)는 소비자가 가상 프라이빗 클라우드(V
 1. Private Service Connect용 GCP 서비스 어태치먼트를 가져옵니다.
 2. 서비스 엔드포인트를 생성합니다.
 3. &quot;Endpoint ID&quot;를 ClickHouse Cloud 서비스에 추가합니다.
-4. &quot;Endpoint ID&quot;를 ClickHouse 서비스 허용 목록에 추가합니다.
+4. &quot;Endpoint ID&quot;를 ClickHouse 서비스 허용 목록에 추가합니다。
 
 <div id="attention">
   ## 주의
@@ -236,7 +236,7 @@ output "psc_connection_id" {
   ## ClickHouse Cloud 조직에 Endpoint ID를 추가
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### 옵션 1: ClickHouse Cloud 콘솔
 </div>
 
@@ -303,7 +303,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 Private Service Connect를 통해 사용할 각 인스턴스의 허용 목록에 Endpoint ID를 추가해야 합니다.
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### 옵션 1: ClickHouse Cloud 콘솔
 </div>
 

@@ -29,23 +29,21 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Info>
 
 <Steps>
-  <Step>
-    ### 저장된 쿼리 만들기
-
+  <Step title="저장된 쿼리 만들기" id="creating-a-saved-query">
     이미 저장된 쿼리가 있으면 이 단계는 건너뛰어도 됩니다.
 
-    새 쿼리 탭을 여십시오. 예시로는 약 45억 개의 레코드가 포함된 [youtube 데이터셋](/ko/get-started/sample-datasets/youtube-dislikes)을 사용하겠습니다.
-    [&quot;Create table&quot;](/ko/get-started/sample-datasets/youtube-dislikes#create-the-table) 섹션의 단계에 따라 Cloud 서비스에 테이블을 생성하고 데이터를 삽입하십시오.
+    Open a new query tab. For demonstration purposes, we&#39;ll use the [youtube dataset](/ko/get-started/sample-datasets/youtube-dislikes), which contains approximately 4.5 billion records.
+    Follow the steps in section [&quot;Create table&quot;](/ko/get-started/sample-datasets/youtube-dislikes#create-the-table) to create the table on your Cloud service and insert data to it.
 
     <Tip>
-      **행 수를 `LIMIT`로 제한**
+      **`LIMIT` the number of rows**
 
-      예시 데이터셋 튜토리얼에서는 46억 5천만 개의 행을 삽입하므로 시간이 다소 걸릴 수 있습니다.
-      이 가이드에서는 `LIMIT` 절을 사용해 더 적은 양의 데이터를 삽입하는 것을 권장합니다.
-      예를 들어 1천만 개의 행만 삽입할 수 있습니다.
+      The example dataset tutorial inserts a lot of data - 4.65 billion rows which can take some time to insert.
+      For the purposes of this guide we recommend to use the `LIMIT` clause to insert a smaller amount of data,
+      for example 10 million rows.
     </Tip>
 
-    예시 쿼리에서는 사용자가 입력한 `year` 매개변수를 기준으로 동영상당 평균 조회수가 높은 상위 10명의 업로더를 반환합니다.
+    As an example query, we&#39;ll return the top 10 uploaders by average views per video in a user-inputted `year` parameter.
 
     ```sql highlight={11}
     WITH sum(view_count) AS view_sum,
@@ -64,63 +62,57 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       LIMIT 10
     ```
 
-    이 쿼리에는 위 코드 조각에서 강조 표시된 매개변수(`year`)가 포함되어 있습니다.
-    쿼리 매개변수는 `{ }` 안에 매개변수 유형과 함께 지정할 수 있습니다.
-    SQL 콘솔 쿼리 편집기는 ClickHouse 쿼리 매개변수 표현식을 자동으로 감지하고 각 매개변수에 대한 입력 필드를 제공합니다.
+    Note that this query contains a parameter (`year`) which is highlighted in the snippet above.
+    You can specify 쿼리 매개변수 using `{ }` together with the type of the parameter.
+    The SQL console query editor automatically detects ClickHouse 쿼리 매개변수 expressions and provides an input for each parameter.
 
-    이제 SQL Editor 오른쪽의 쿼리 변수 입력 상자에 연도 `2010`을 입력하여 쿼리가 정상적으로 동작하는지 빠르게 확인해 보겠습니다:
+    Let&#39;s quickly run this query to make sure that it works by specifying the year `2010` in the 쿼리 변수 input box on the right side of the SQL editor:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="예시 쿼리 테스트" />
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Test the example query" />
 
-    다음으로 쿼리를 저장합니다:
+    Next, save the query:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="예시 쿼리 저장" />
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Save example query" />
 
-    저장된 쿼리에 관한 자세한 내용은 [&quot;Saving a query&quot;](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query) 섹션에서 확인할 수 있습니다.
+    More documentation around 저장된 쿼리 can be found in section [&quot;Saving a query&quot;](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### Query API endpoint 구성
+  <Step title="Configuring the Query API 엔드포인트" id="configuring-the-query-api-endpoint">
+    Query API endpoint can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
+    You&#39;ll be prompted to specify which API Keys should be able to access the endpoint:
 
-    쿼리 보기에서 **Share** 버튼을 클릭한 다음 `API Endpoint`를 선택하면 Query API endpoint를 직접 구성할 수 있습니다.
-    그러면 어떤 API Key가 엔드포인트에 접근할 수 있는지 지정하라는 안내가 표시됩니다:
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configure query endpoint" />
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="쿼리 엔드포인트 구성" />
+    After selecting an API Key, you will be asked to:
 
-    API Key를 선택한 후에는 다음 항목을 설정해야 합니다:
+    * Select the 데이터베이스 역할 that will be used to run the query (`Full access`, `Read only` or `Create a custom role`)
+    * Specify cross-origin resource sharing (CORS) allowed domains
 
-    * 쿼리 실행에 사용할 데이터베이스 역할 선택 (`Full access`, `Read only` 또는 `Create a custom role`)
-    * CORS(Cross-Origin Resource Sharing) 허용 도메인 지정
+    After selecting these options, the Query API 엔드포인트 will automatically be provisioned.
 
-    이 옵션을 선택하면 Query API endpoint가 자동으로 프로비저닝됩니다.
+    An example `curl` command will be displayed so you can send a test request:
 
-    테스트 요청을 보낼 수 있도록 예시 `curl` 명령도 표시됩니다:
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Endpoint curl command" />
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="엔드포인트 curl 명령" />
-
-    편의를 위해 인터페이스에 표시되는 `curl` 명령을 아래에도 제공합니다:
+    The curl command displayed in the interface is given below for convenience:
 
     ```bash
     curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
     ```
   </Step>
 
-  <Step>
-    ### Query API 매개변수
-
-    쿼리 매개변수는 `{parameter_name: type}` 구문으로 지정할 수 있습니다. 이러한 매개변수는 자동으로 감지되며, 예시 요청 payload에는 `queryVariables` 객체가 포함되어 이 객체를 통해 매개변수를 전달할 수 있습니다.
+  <Step title="Query API parameters" id="query-api-parameters">
+    쿼리의 쿼리 매개변수 can be specified with the syntax `{parameter_name: type}`. These parameters will be automatically detected and the example request payload will contain a `queryVariables` object through which you can pass these parameters.
   </Step>
 
-  <Step>
-    ### 테스트 및 모니터링
+  <Step title="Testing and monitoring" id="testing-and-monitoring">
+    Once a Query API 엔드포인트 is created, you can test that it works by using `curl` or any other HTTP client:
 
-    Query API endpoint가 생성되면 `curl` 또는 다른 HTTP 클라이언트를 사용해 정상적으로 동작하는지 테스트할 수 있습니다:
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="endpoint curl test" />
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="엔드포인트 curl 테스트" />
+    After you&#39;ve sent your first request, a new button should appear immediately to the right of the **Share** button. Clicking it will open a flyout containing monitoring data about the query:
 
-    첫 번째 요청을 보내면 **Share** 버튼 바로 오른쪽에 새 버튼이 즉시 나타납니다. 이 버튼을 클릭하면 쿼리에 대한 모니터링 데이터가 포함된 플라이아웃이 열립니다:
-
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="엔드포인트 모니터링" />
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Endpoint monitoring" />
   </Step>
 </Steps>
 

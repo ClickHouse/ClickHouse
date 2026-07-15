@@ -981,7 +981,7 @@ ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수
 로컬 블록 디바이스 외에도 ClickHouse는 다음과 같은 저장소 유형을 지원합니다:
 
 * [`s3` for S3 및 MinIO](#table_engine-mergetree-s3)
-* [`gcs` for GCS](/ko/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` for GCS](/ko/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` for Azure Blob Storage](/ko/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` for HDFS](/ko/reference/engines/table-engines/integrations/hdfs)
 * [`web` for 웹의 읽기 전용 스토리지](/ko/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1443,9 +1443,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `TDigest`
 
-  숫자 컬럼의 근사 백분위수(예: 90번째 백분위수)를 계산할 수 있게 해주는 [TDigest](https://github.com/tdunning/t-digest) 스케치입니다.
+<Warning>
+  `tdigest` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
+</Warning>
 
-  구문: `tdigest`
+숫자 컬럼의 근사 백분위수(예: 90번째 백분위수)를 계산할 수 있게 해주는 [TDigest](https://github.com/tdunning/t-digest) 스케치입니다.
+
+구문: `tdigest`
 
 * `Uniq`
 
@@ -1455,9 +1459,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `CountMin`
 
-  컬럼의 각 값이 나타나는 빈도를 근사적으로 계산해 주는 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 스케치입니다.
+<Warning>
+  `countmin` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
+</Warning>
 
-  구문 `countmin`
+컬럼의 각 값이 나타나는 빈도를 근사적으로 계산해 주는 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 스케치입니다.
+
+구문 `countmin`
 
 <div id="supported-data-types">
   ### 지원되는 데이터 타입

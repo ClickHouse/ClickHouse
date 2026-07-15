@@ -85,7 +85,7 @@ clickhousectl local client
 
 <Image img="/images/deployment-modes/ch-local.webp" alt="clickHouse-local" size="sm" />
 
-该工具尤其适合即席数据分析，特别是在处理本地文件或存储于云存储服务中的数据时。你可以使用 ClickHouse 的 SQL 方言直接查询各种格式的文件 (CSV、JSON、Parquet 等) ，因此它非常适合快速进行数据探索或一次性分析任务。
+该工具尤其适合即席数据分析，特别是在处理本地文件或存储于云存储服务中的数据时。你可以使用 ClickHouse 的 SQL 方言直接查询各种格式的文件 (CSV、JSON、Parquet 等)，因此它非常适合快速进行数据探索或一次性分析任务。
 
 由于 clickhouse-local 包含了 ClickHouse 的全部功能，你可以用它执行数据转换、格式转换，或其他任何通常会借助 ClickHouse Server 完成的数据库操作。虽然它主要用于临时操作，但在需要时也可以使用与 ClickHouse Server 相同的存储引擎来持久化数据。
 
@@ -95,7 +95,7 @@ clickhousectl local client
   ## chDB
 </div>
 
-[chDB](/zh/products/chdb/index) 是以进程内数据库引擎形式嵌入的 ClickHouse，目前以 Python 作为主要实现，同时也提供 Go、Rust、NodeJS 和 Bun 版本。这种部署方式可将 ClickHouse 强大的 OLAP 能力直接带入你的应用进程内，无需单独安装数据库。
+[chDB](/zh/chdb/index) 是以进程内数据库引擎形式嵌入的 ClickHouse，目前以 Python 作为主要实现，同时也提供 Go、Rust、Node.js 和 Bun 版本。这种部署方式可将 ClickHouse 强大的 OLAP 能力直接带入你的应用进程内，无需单独安装数据库。
 
 <Image img="/images/deployment-modes/chdb.webp" alt="chDB - 嵌入式 ClickHouse" size="sm" />
 

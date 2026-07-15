@@ -63,7 +63,7 @@ Para usar atualizações leves, a materialização das colunas `_block_number` e
   ## Exclusões leves
 </div>
 
-Uma consulta de [exclusão leve](/pt-BR/reference/statements/delete) pode ser executada como um `UPDATE` leve em vez de uma mutação `ALTER UPDATE`. A implementação de exclusão leve é controlada pela configuração [`lightweight_delete_mode`](/pt-BR/reference/settings/session-settings#lightweight_delete_mode).
+Uma consulta de [`DELETE` leve](/pt-BR/reference/statements/delete) pode ser executada como um `UPDATE` leve em vez de uma mutação `ALTER UPDATE`. A implementação de `DELETE` leve é controlada pela configuração [`lightweight_delete_mode`](/pt-BR/reference/settings/session-settings#lightweight_delete_mode).
 
 <div id="performance-considerations">
   ## Considerações de desempenho
@@ -145,5 +145,5 @@ O modo join é mais lento e requer mais memória do que o modo de merge, mas é 
 </div>
 
 * [`ALTER UPDATE`](/pt-BR/reference/statements/alter/update) - Operações de `UPDATE` pesadas
-* [exclusão leve](/pt-BR/reference/statements/delete) - Operações de exclusão leve
+* [Lightweight `DELETE`](/pt-BR/reference/statements/delete) - Operações leves de `DELETE`
 * [`APPLY PATCHES`](/pt-BR/reference/statements/alter/apply-patches) - Força a materialização física de patches nas partes de dados (operação de mutação)

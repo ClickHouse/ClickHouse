@@ -76,7 +76,7 @@ gcs(named_collection[, option=value [,..]])
   ## 예시
 </div>
 
-GCS 파일 `https://storage.googleapis.com/my-test-bucket-768/data.csv`의 테이블에서 처음 두 행을 선택하는 예시입니다:
+GCS 파일 `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`에서 처음 두 행을 선택하는 예시입니다. 압축 방식은 `.gz` 파일 확장자를 기준으로 자동 감지됩니다:
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-`gzip` 압축 방식을 사용하는 파일의 경우도 비슷합니다:
+위와 같은 쿼리이지만, 자동 감지에 의존하지 않고 `gzip` 압축 방식을 명시적으로 지정했습니다:
 
 ```sql
 SELECT *

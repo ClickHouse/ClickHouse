@@ -69,7 +69,8 @@ SETTINGS
 Необязательные параметры:
 
 * `kafka_security_protocol` — протокол, используемый для связи с брокерами. Возможные значения: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - механизм SASL, используемый для аутентификации. Возможные значения: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - механизм SASL, используемый для аутентификации. Возможные значения: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - регион AWS для аутентификации MSK IAM. Если не указан, автоматически определяется по адресу брокера. Указывайте его явно при использовании псевдонимов PrivateLink или пользовательских DNS-имен хостов, не содержащих информации о регионе. По умолчанию: пусто (автоопределение).
 * `kafka_sasl_username` - имя пользователя для SASL-аутентификации при использовании механизмов `PLAIN` и `SASL-SCRAM-..`.
 * `kafka_sasl_password` — пароль SASL для механизмов `PLAIN` и `SASL-SCRAM-..`.
 * `kafka_schema` — параметр, который необходимо использовать, если для формата требуется определение схемы. Например, [Cap&#39;n Proto](https://capnproto.org/) требует указать путь к файлу схемы и имя корневого объекта `schema.capnp:Message`.
@@ -248,6 +249,116 @@ SETTINGS
 ```
 
 Список возможных параметров конфигурации см. в [справочнике по конфигурации librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). В конфигурации ClickHouse используйте символ подчёркивания (`_`) вместо точки. Например, `check.crcs=true` записывается как `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-aws-msk-iam">
+  ### Аутентификация AWS MSK IAM
+</div>
+
+<Note>
+  Для аутентификации AWS MSK IAM требуется, чтобы ClickHouse был собран с включенной поддержкой AWS S3.
+</Note>
+
+AWS MSK поддерживает аутентификацию на основе IAM, что позволяет подключаться к кластерам Kafka с помощью учетных данных AWS вместо использования отдельных имен пользователей и паролей.
+
+**Базовая настройка:**
+
+Задайте `kafka_sasl_mechanism = 'AWS_MSK_IAM'` в настройках таблицы:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+Регион AWS автоматически извлекается из конечной точки брокера путем сопоставления с шаблоном:
+
+* Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**Учетные данные AWS:**
+
+Учетные данные всегда загружаются из `~/.aws/credentials` и `~/.aws/config` (файлов профиля AWS), если они присутствуют. Чтобы также включить профили экземпляров EC2, переменные среды (`AWS_ACCESS_KEY_ID` и т. д.), роли задач ECS и другие автоматические источники учетных данных, добавьте в конфигурацию сервера:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+Этот параметр могут настраивать только администраторы сервера. Значение по умолчанию: `false`.
+
+**PrivateLink и пользовательский DNS:**
+
+Если вы используете псевдонимы PrivateLink или пользовательские DNS-имена хостов, не содержащие сведений о регионе, явно укажите регион AWS:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**Разрешения IAM:**
+
+Разрешения для consumer (для чтения сообщений):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+Разрешения для producer (на запись сообщений):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Поддержка Kerberos

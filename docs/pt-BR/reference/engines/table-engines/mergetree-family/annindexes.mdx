@@ -647,9 +647,9 @@ Mais conjuntos de dados de exemplo que usam busca vetorial aproximada:
 
 Uma abordagem comum para acelerar a busca vetorial exata é usar um [tipo de dado float](/pt-BR/reference/data-types/float) com menor precisão.
 Por exemplo, se os vetores forem armazenados como `Array(BFloat16)` em vez de `Array(Float32)`, o tamanho dos dados será reduzido pela metade, e espera-se que o tempo de execução das consultas diminua proporcionalmente.
-Esse método é conhecido como quantização. Embora acelere o processamento, ele pode reduzir a precisão dos resultados, apesar de realizar uma varredura exaustiva de todos os vetores.
+Esse método é conhecido como quantização. Embora acelere o processamento, ele pode reduzir a exatidão dos resultados, apesar de realizar uma varredura exaustiva de todos os vetores.
 
-Com a quantização tradicional, perdemos precisão tanto durante a busca quanto no armazenamento dos dados. No exemplo acima, armazenaríamos `BFloat16` em vez de `Float32`, o que significa que nunca poderemos realizar uma busca mais precisa depois, mesmo que isso seja desejado. Uma alternativa é armazenar duas cópias dos dados: uma quantizada e outra com precisão total. Embora isso funcione, exige armazenamento redundante. Considere um cenário em que temos `Float64` como dado original e queremos executar buscas com diferentes níveis de precisão (16 bits, 32 bits ou 64 bits completos). Precisaríamos armazenar três cópias separadas dos dados.
+Com a quantização tradicional, perdemos precisão tanto durante a busca quanto no armazenamento dos dados. No exemplo acima, armazenaríamos `BFloat16` em vez de `Float32`, o que significa que nunca poderemos realizar uma busca mais exata depois, mesmo que isso seja desejado. Uma alternativa é armazenar duas cópias dos dados: uma quantizada e outra com precisão total. Embora isso funcione, exige armazenamento redundante. Considere um cenário em que temos `Float64` como dado original e queremos executar buscas com diferentes níveis de precisão (16 bits, 32 bits ou 64 bits completos). Precisaríamos armazenar três cópias separadas dos dados.
 
 O ClickHouse oferece o tipo de dado Quantized Bit (`QBit`), que resolve essas limitações ao:
 
@@ -661,13 +661,14 @@ Isso é feito armazenando os dados em um formato agrupado por bits (ou seja, tod
 Para declarar uma coluna do tipo `QBit`, use a seguinte sintaxe:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Onde:
 
-* `element_type` – o tipo de cada elemento do vetor. Os tipos aceitos são `BFloat16`, `Float32` e `Float64`
+* `element_type` – o tipo de cada elemento do vetor. Os tipos aceitos são `Int8`, `BFloat16`, `Float32` e `Float64`
 * `dimension` – o número de elementos em cada vetor
+* `stride` – opcional. Um divisor de `dimension` que particiona as dimensões em `dimension / stride` grupos contíguos armazenados em streams separados, de modo que uma busca apenas nas dimensões iniciais leia menos streams (útil para embeddings Matryoshka). O padrão é `dimension`, caso em que o tipo é idêntico em bytes a um `QBit` sem `stride`. Consulte a [página do tipo de dado `QBit`](/pt-BR/reference/data-types/qbit) para mais detalhes.
 
 <div id="qbit-create">
   #### Criando uma tabela `QBit` e adicionando dados

@@ -17,64 +17,58 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 <CommunityMaintainedBadge />
 
 <div id="open-the-tablumio-startup-page">
-  ## افتح صفحة البدء لـ TABLUM.IO
+  ## افتح صفحة البدء الخاصة بـ TABLUM.IO
 </div>
 
 <Note>
-  يمكنك تثبيت إصدار مستضاف ذاتيًا من TABLUM.IO على خادم Linux لديك باستخدام Docker.
+  يمكنك تثبيت إصدار مُستضاف ذاتيًا من TABLUM.IO على خادم Linux لديك باستخدام Docker.
 </Note>
 
-<div id="1-sign-up-or-sign-in-to-the-service">
-  ## 1. أنشئ حسابًا أو سجّل الدخول إلى الخدمة
-</div>
+<Steps>
+  <Step title="سجّل أو سجّل الدخول إلى الخدمة" id="1-sign-up-or-sign-in-to-the-service">
+    أولاً، سجّل في TABLUM.IO باستخدام بريدك الإلكتروني أو استخدم تسجيل الدخول السريع عبر حسابات Google أو Facebook.
 
-أولًا، أنشئ حسابًا على TABLUM.IO باستخدام بريدك الإلكتروني أو استخدم تسجيل دخول سريعًا عبر حسابات Google أو Facebook.
+    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="صفحة تسجيل الدخول إلى TABLUM.IO" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="صفحة تسجيل الدخول إلى TABLUM.IO" />
+  <Step title="أضِف موصل ClickHouse" id="2-add-a-clickhouse-connector">
+    اجمع تفاصيل الاتصال الخاصة بـ ClickHouse، ثم انتقل إلى علامة التبويب **Connector**، واملأ حقول URL للمضيف والمنفذ واسم المستخدم وكلمة المرور واسم قاعدة البيانات واسم الموصّل. بعد إكمال هذه الحقول، انقر على زر **Test connection** للتحقق من صحة التفاصيل، ثم انقر على **Save connector for me** لحفظه بشكل دائم.
 
-<div id="2-add-a-clickhouse-connector">
-  ## 2. أضِف موصل ClickHouse
-</div>
+    <Tip>
+      تأكد من تحديد منفذ **HTTP** الصحيح وضبط وضع **SSL** وفقًا لتفاصيل الاتصال لديك.
+    </Tip>
 
-اجمع تفاصيل الاتصال الخاصة بـ ClickHouse، ثم انتقل إلى علامة التبويب **Connector**، واملأ حقول URL للمضيف والمنفذ واسم المستخدم وكلمة المرور واسم قاعدة البيانات واسم الموصّل. بعد إكمال هذه الحقول، انقر على زر **Test connection** للتحقق من صحة التفاصيل، ثم انقر على **Save connector for me** لحفظه بشكل دائم.
+    <Tip>
+      عادةً ما يكون المنفذ 8443 عند استخدام TLS، أو 8123 عند عدم استخدام TLS.
+    </Tip>
 
-<Tip>
-  تأكد من تحديد منفذ **HTTP** الصحيح وضبط وضع **SSL** وفقًا لتفاصيل الاتصال لديك.
-</Tip>
+    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="إضافة موصل ClickHouse في TABLUM.IO" />
+  </Step>
 
-<Tip>
-  عادةً ما يكون المنفذ 8443 عند استخدام TLS، أو 8123 عند عدم استخدام TLS.
-</Tip>
+  <Step title="حدّد الموصّل" id="3-select-the-connector">
+    انتقل إلى علامة التبويب **Dataset**. حدّد موصل ClickHouse الذي أُنشئ مؤخرًا من القائمة المنسدلة. في اللوحة اليمنى، سترى قائمة بالجداول والمخططات المتاحة.
 
-<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="إضافة موصل ClickHouse في TABLUM.IO" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="تحديد موصل ClickHouse في TABLUM.IO" />
+  </Step>
 
-<div id="3-select-the-connector">
-  ## 3. اختر الموصل
-</div>
+  <Step title="أدخل استعلام SQL وشغّله" id="4-input-a-sql-query-and-run-it">
+    اكتب استعلامًا في SQL Console واضغط على **Run Query**. ستُعرض النتائج على شكل جدول بيانات.
 
-انتقل إلى علامة التبويب **Dataset**. اختر موصل ClickHouse الذي تم إنشاؤه مؤخرًا من القائمة المنسدلة. في اللوحة اليمنى، سترى قائمة بالجداول والمخططات المتاحة.
+    <Tip>
+      انقر بزر الماوس الأيمن على اسم العمود لفتح القائمة المنسدلة التي تحتوي على خيارات الفرز والتصفية وإجراءات أخرى.
+    </Tip>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="اختيار موصل ClickHouse في TABLUM.IO" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="تشغيل استعلام SQL في TABLUM.IO" />
 
-<div id="4-input-a-sql-query-and-run-it">
-  ## 4. أدخِل استعلام SQL وشغِّله
-</div>
+    <Note>
+      باستخدام TABLUM.IO، يمكنك
 
-اكتب استعلامًا في SQL Console ثم اضغط **تشغيل الاستعلام**. ستُعرَض النتائج على شكل جدول بيانات.
-
-<Tip>
-  انقر بزر الماوس الأيمن على اسم العمود لفتح القائمة المنسدلة التي تتضمن خيارات الفرز والتصفية وإجراءات أخرى.
-</Tip>
-
-<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="تشغيل استعلام SQL في TABLUM.IO" />
-
-<Note>
-  باستخدام TABLUM.IO، يمكنك
-
-  * إنشاء عدة موصلات ClickHouse واستخدامها ضمن حسابك في TABLUM.IO،
-  * تشغيل الاستعلامات على أي بيانات تم تحميلها بغض النظر عن مصدر البيانات،
-  * مشاركة النتائج كقاعدة بيانات ClickHouse جديدة.
-</Note>
+      * إنشاء عدة موصلات ClickHouse واستخدامها ضمن حسابك في TABLUM.IO،
+      * تشغيل استعلامات على أي بيانات تم تحميلها بغض النظر عن مصدر البيانات،
+      * مشاركة النتائج كقاعدة بيانات ClickHouse جديدة.
+    </Note>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## تعرّف على المزيد

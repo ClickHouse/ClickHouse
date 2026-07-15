@@ -16,10 +16,10 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   ## Étapes à suivre
 </div>
 
-Les étapes suivantes permettent d’activer SSL pour un seul serveur ClickHouse à l’aide de [Let&#39;s Encrypt](https://letsencrypt.org/), une autorité de certification (CA) gratuite, automatisée et ouverte, conçue pour permettre à chacun de sécuriser facilement ses sites web avec HTTPS. En automatisant le processus de délivrance et de renouvellement des certificats, Let&#39;s Encrypt garantit que les sites web restent sécurisés sans nécessiter d’intervention manuelle.
+Les étapes suivantes permettent d’activer SSL pour un seul serveur ClickHouse à l’aide de [Let&#39;s Encrypt](https://letsencrypt.org/), une autorité de certification (CA) gratuite, automatisée et ouverte, conçue pour permettre à chacun de sécuriser facilement ses sites web avec HTTPS. En automatisant le processus d’émission et de renouvellement des certificats, Let&#39;s Encrypt garantit que les sites web restent sécurisés sans nécessiter d’intervention manuelle.
 
 <Note>
-  Nous supposons que ClickHouse a été installé dans les emplacements standard des paquets dans le guide suivant. Nous utilisons le domaine `product-test-server.clickhouse-dev.com` dans tous les exemples. Remplacez-le par votre propre domaine.
+  Nous supposons que ClickHouse a été installé aux emplacements standard des paquets dans le guide suivant. Nous utilisons le domaine `product-test-server.clickhouse-dev.com` dans tous les exemples. Remplacez-le par votre propre domaine.
 </Note>
 
 1. Vérifiez que vous disposez d’un enregistrement DNS `A` ou `AAAA` pointant vers votre serveur. Vous pouvez le vérifier à l’aide de l’outil Linux `dig`. Par exemple, voici la réponse pour `product-test-server.clickhouse-dev.com` lors de l’utilisation du serveur DNS Cloudflare `1.1.1.1` :

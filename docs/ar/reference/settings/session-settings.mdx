@@ -198,15 +198,17 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 عدد الخيوط المستخدمة لدمج نتائج التجميع الوسيطة في الوضع الموفّر للذاكرة. كلما زاد هذا العدد، زاد استهلاك الذاكرة. وتعني القيمة 0 — نفس قيمة `max_threads`.
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-اسم المجموعة المسماة التي تستخدمها دوال الذكاء الاصطناعي لبيانات اعتماد المزوّد والتهيئة (`provider` و`endpoint` و`model` و`api_key` الاختياري وغيرها). عند تركها فارغة، يُرفَع استثناء.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+
+اسم المجموعة المُسمّاة التي يستخدمها `aiEmbed` عندما لا يمرّر الاستدعاء `credentials` ضمن خريطة المعلمات. وتعني القيمة الفارغة عدم وجود قيمة افتراضية: لذا يجب على مثل هذه الاستدعاءات تمرير `credentials` صراحةً. ويُحتفَظ به منفصلًا عن `ai_function_text_default_credentials` لأن نقطة نهاية التضمين والنموذج يختلفان عن نظيريهما الخاصَّين بالدردشة.
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "إعداد جديد"}]}]} />
 
 التأخير الأولي، بالملي ثانية، قبل أول إعادة محاولة لطلب واجهة برمجة تطبيقات لدالة الذكاء الاصطناعي بعد فشله. ويتضاعف التأخير مع كل محاولة لاحقة (تراجع أُسّي). على سبيل المثال، مع الإعدادات الافتراضية: 1000ms، 2000ms، 4000ms.
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+
+اسم المجموعة المُسمّاة التي تستخدمها دوال الذكاء الاصطناعي النصية (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`) عندما لا يمرّر الاستدعاء `credentials` ضمن خريطة المعلمات. وتعني القيمة الفارغة عدم وجود قيمة افتراضية: لذلك يجب على هذه الاستدعاءات تمرير `credentials` صراحةً. تختلف نقطة النهاية `chat-completions` والنموذج المرتبط بها عن نظيريهما في `التضمين`، لذا فهذا الإعداد منفصل عن `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -407,19 +421,6 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 السماح باستخدام دوال النوافذ المُهملة والمُعرَّضة للأخطاء (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "تم تعطيل الدوال المهجورة snowflakeToDateTime[64] و dateTime[64]ToSnowflake."}]}]} />
-
-الدوال `snowflakeToDateTime` و `snowflakeToDateTime64` و `dateTimeToSnowflake` و `dateTime64ToSnowflake` مهجورة ومُعطَّلة افتراضيًا.
-يُرجى استخدام الدوال `snowflakeIDToDateTime` و `snowflakeIDToDateTime64` و `dateTimeToSnowflakeID` و `dateTime64ToSnowflakeID` بدلًا منها.
-
-لإعادة تفعيل الدوال المهجورة (على سبيل المثال، خلال فترة انتقالية)، يُرجى ضبط هذا الإعداد على `true`.
-
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
 </div>
@@ -484,7 +485,7 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "تمكين محلل الاستعلامات والمخطط افتراضيًا."}]}]} />
 
-السماح باستخدام محلل الاستعلامات الجديد.
+السماح باستخدام محلل الاستعلامات.
 
 <div id="allow_experimental_cleanup_old_data_files_compaction">
   ## allow_experimental_cleanup_old_data_files_compaction
@@ -618,13 +619,15 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**البديل**: `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "نُقلت ميزة الكتابة في Delta Lake إلى Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
 
-يُفعّل ميزة الكتابة عبر delta-kernel.
+يُمكّن ميزة الكتابة عبر delta-kernel.
 
 <div id="allow_experimental_expire_snapshots">
   ## allow_experimental_expire_snapshots
@@ -654,7 +657,7 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد يسمح بتحليل حقول Iceberg من النوعين geometry/geography على أنها من النوع Geometry."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد يسمح بتحليل حقول Iceberg من النوعين geometry\/geography على أنها من النوع Geometry."}]}]} />
 
 يسمح بتحليل حقول Iceberg من النوعين `geometry` و`geography` على أنها من النوع `Geometry` ‏(Variant) في ClickHouse.
 
@@ -823,18 +826,6 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 فعّل PRQL، وهو بديل لـ SQL.
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد للتحكم في وضع التطبيق الكسول التجريبي لـ posting list"}]}]} />
-
-إذا ضُبط هذا الإعداد على true، فسيُسمح باستخدام وضع التطبيق الكسول لـ posting list في استعلامات الفهرس النصي.
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -875,6 +866,18 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد لتفعيل عبارة UNIQUE KEY التجريبية في جداول عائلة MergeTree"}]}]} />
 
 يسمح بإنشاء جداول باستخدام العبارة `UNIQUE KEY` في محركات عائلة MergeTree.
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين توسيع أحرف البدل في table function ‏`url` عبر سرد صفحات فهرس HTTP."}]}]} />
+
+يسمح بتوسيع أحرف البدل تجريبيًا لكلٍّ من `url()` و `ENGINE = URL` استنادًا إلى صفحات فهرس HTTP.
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1065,7 +1068,7 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "السماح بوسائط المنطقة الزمنية غير الثابتة في بعض الدوال المرتبطة بالوقت مثل toTimeZone() وfromUnixTimestamp*() وsnowflakeToDateTime*()."}]}]} />
 
-السماح بوسائط المنطقة الزمنية غير الثابتة في بعض الدوال المرتبطة بالوقت مثل toTimeZone() وfromUnixTimestamp*() وsnowflakeToDateTime*().
+السماح بوسائط المنطقة الزمنية غير الثابتة في بعض الدوال المرتبطة بالوقت مثل toTimeZone() وfromUnixTimestamp*() وsnowflakeIDToDateTime*().
 هذا الإعداد موجود فقط لأسباب تتعلق بالتوافق. في ClickHouse، تكون المنطقة الزمنية خاصيةً من خصائص نوع البيانات، وبالتالي من خصائص العمود.
 يؤدي تمكين هذا الإعداد إلى إعطاء انطباع خاطئ بأن القيم المختلفة داخل العمود يمكن أن تكون لها مناطق زمنية مختلفة.
 لذلك، يُرجى عدم تمكين هذا الإعداد.
@@ -1191,6 +1194,20 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 عند نقل الشروط من WHERE إلى PREWHERE، اسمح بإعادة ترتيب هذه الشروط لتحسين التصفية
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "فحص أمان جديد: يُطلِق `ALTER TABLE ... REPLACE PARTITION ... FROM ...` الآن استثناءً عندما لا يحتوي الجدول المصدر على أي أجزاء في القسم المطلوب (ما يعالج الفقدان الصامت للبيانات في [#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727)). ويمكن الإبقاء على السلوك السابق، وهو إسقاط قسم الوجهة بصمت، عبر ضبط `allow_replace_partition_from_empty_source = 1`."}]}]} />
+
+اسمح لـ `ALTER TABLE ... REPLACE PARTITION ... FROM ...` بإسقاط قسم الوجهة بصمت عندما لا يحتوي المصدر على أي أجزاء في ذلك القسم.
+
+يكون هذا غير مسموح به افتراضيًا: إذ إن `REPLACE PARTITION` من مصدر لا يحتوي على أي بيانات في القسم المطلوب يُطلِق استثناءً، لأن العملية في هذه الحالة تصبح فعليًا `DROP PARTITION` صامتًا على الوجهة (تُزال بيانات الوجهة ولا يحل محلها شيء)، وهو سبب شائع لفقدان البيانات غير المقصود (راجع [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
+
+فعِّل هذا الإعداد لاستعادة السلوك السابق، على سبيل المثال عندما تستخدم عمدًا قسمًا فارغًا في المصدر لمسح البيانات من الوجهة. وإذا كنت تريد إسقاطًا غير مشروط، فالأفضل استخدام `ALTER TABLE ... DROP PARTITION ...` بدلًا من ذلك.
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1237,7 +1254,7 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "تمكين الإخراج المباشر لتمثيلات الأعمدة الخاصة مثل Sparse/Replicated في بعض تنسيقات الإخراج"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "إضافة إعداد للسماح بإخراج تمثيلات الأعمدة الخاصة مثل Sparse/Replicated دون تحويلها إلى تمثيل عمود كامل"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "تمكين الإخراج المباشر لتمثيلات الأعمدة الخاصة مثل Sparse\/Replicated في بعض تنسيقات الإخراج"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "إضافة إعداد للسماح بإخراج تمثيلات الأعمدة الخاصة مثل Sparse\/Replicated دون تحويلها إلى تمثيل عمود كامل"}]}]} />
 
 يسمح بإخراج الأعمدة ذات أنواع التسلسل الخاصة مثل Sparse وReplicated دون تحويلها إلى تمثيل عمود كامل.
 يساعد ذلك على تجنب النسخ غير الضروري للبيانات أثناء التنسيق.
@@ -1321,7 +1338,7 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "حظر PRIMARY KEY/ORDER BY المريبَين في MergeTree (أي SimpleAggregateFunction)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "حظر PRIMARY KEY\/ORDER BY المريبَين في MergeTree (أي SimpleAggregateFunction)"}]}]} />
 
 السماح باستخدام `PRIMARY KEY`/`ORDER BY` المريبَين في MergeTree (أي SimpleAggregateFunction).
 
@@ -1341,7 +1358,7 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "عدم السماح افتراضيًا باستخدام النوعين Variant/Dynamic في GROUP BY"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "عدم السماح افتراضيًا باستخدام النوعين Variant\/Dynamic في GROUP BY"}]}]} />
 
 يسمح باستخدام النوعين [Variant](/ar/reference/data-types/variant) و[Dynamic](/ar/reference/data-types/dynamic) في مفاتيح GROUP BY أو يقيّده.
 
@@ -1351,7 +1368,7 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "عدم السماح افتراضيًا بنوعي Variant/Dynamic في مفاتيح ORDER BY"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "عدم السماح افتراضيًا بالنوعين Variant/Dynamic في مفاتيح ORDER BY"}]}]} />
 
 يتيح أو يقيّد استخدام النوعين [Variant](/ar/reference/data-types/variant) و[Dynamic](/ar/reference/data-types/dynamic) في مفاتيح ORDER BY.
 
@@ -1493,7 +1510,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد توافق جديد"}]}]} />
 
-عندما يمكن أن يشير معرّف متعدد الأجزاء مثل `b.id` إما إلى العمود `id` في جدول يحمل الاسم المستعار `b` أو إلى عمود فرعي `b.id` من نوع Tuple تابع لعمود آخر، فامنح الأفضلية لتفسير بادئة الاسم المستعار (أي العمود `id` في `b`). افتراضيًا، يفضّل analyzer الجديد العمود الفرعي. فعِّل هذا الإعداد لمطابقة آلية التحليل في analyzer القديم.
+عندما يمكن أن يشير معرّف متعدد الأجزاء مثل `b.id` إما إلى العمود `id` في جدول يحمل الاسم المستعار `b` أو إلى عمود فرعي `b.id` من نوع Tuple تابع لعمود آخر، فامنح الأفضلية لتفسير بادئة الاسم المستعار (أي العمود `id` في `b`). افتراضيًا، يفضّل مُحلِّل العمود الفرعي. فعِّل هذا الإعداد لمطابقة آلية التحليل في المُحلِّل القديم.
 
 <div id="analyzer_inline_views">
   ## analyzer_inline_views
@@ -1518,7 +1535,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 يُفعّل السلوك القديم لخادم ClickHouse في عمليات `ANY INNER|LEFT JOIN`.
 
 <Note>
-  استخدم هذا الإعداد فقط للحفاظ على التوافق مع الإصدارات السابقة إذا كانت حالات الاستخدام لديك تعتمد على سلوك `JOIN` القديم.
+  استخدم هذا الإعداد فقط للتوافق مع الإصدارات السابقة إذا كانت حالات الاستخدام لديك تعتمد على سلوك `JOIN` القديم.
 </Note>
 
 عند تفعيل السلوك القديم:
@@ -3105,8 +3122,8 @@ SETTINGS convert_query_to_cnf = true;
 
 القيم الممكنة:
 
-0 — معطَّل.
-1 — مفعَّل.
+* 0 — معطَّل.
+* 1 — مفعَّل.
 
 عند التفعيل، يُجري ClickHouse إزالة تكرار للكتل في العروض المُجسَّدة التي تعتمد على جداول Replicated*.
 ويُعد هذا الإعداد مفيدًا لضمان عدم احتواء العروض المُجسَّدة على بيانات مكررة عند إعادة محاولة عملية الإدراج بسبب حدوث فشل.
@@ -3294,7 +3311,7 @@ ENGINE = Log
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "أُضيف هذا الإعداد في 26.5 للتحكم في سلوك partition pruning الخاص بـ `FINAL` الذي طُرح بصمت في 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). وقد سُجِّل التغيير الدلالي المهم ضمن قسم 26.3، لذا فإن `compatibility = '26.2'` يعيده؛ وهذه الخانة موجودة لكي يقبل فحص الترقية من 26.4 الاسم المُضاف حديثًا."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "يتحكم هذا الإعداد في تخطي مخطِّط `FINAL` لعملية partition pruning بشكل غير مشروط عندما لا يكون عمود مفتاح partition ضمن مفتاح الفرز. وقد طُرح تغيير السلوك نفسه بصمت في 26.3 عبر https://github.com/ClickHouse/ClickHouse/pull/98242؛ وتوثّق هذه الخانة ذلك بأثر رجعي بحيث إن `compatibility = '26.2'` يعيد سلوك ما قبل هذا التراجع (0 = تقليم قبل `FINAL`، سريع؛ 1 = تأجيل التقليم، آمن من ناحية الصحة)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "أُضيف هذا الإعداد في 26.5 للتحكم في سلوك partition pruning الخاص بـ `FINAL` الذي طُرح بصمت في 26.3 (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242). وقد سُجِّل التغيير الدلالي المهم ضمن قسم 26.3، لذا فإن `compatibility = '26.2'` يعيده؛ وهذه الخانة موجودة لكي يقبل فحص الترقية من 26.4 الاسم المُضاف حديثًا."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "يتحكم هذا الإعداد في تخطي مخطِّط `FINAL` لعملية partition pruning بشكل غير مشروط عندما لا يكون عمود مفتاح partition ضمن مفتاح الفرز. وقد طُرح تغيير السلوك نفسه بصمت في 26.3 عبر https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242؛ وتوثّق هذه الخانة ذلك بأثر رجعي بحيث إن `compatibility = '26.2'` يعيد سلوك ما قبل هذا التراجع (0 = تقليم قبل `FINAL`، سريع؛ 1 = تأجيل التقليم، آمن من ناحية الصحة)."}]}]} />
 
 عند تمكينه (وهو الإعداد الافتراضي)، يتم تخطي partition pruning لاستعلامات `FINAL` على الجداول التي لا تكون
 أعمدة مفتاح partition فيها جزءًا من مفتاح الفرز. وهذا هو السلوك الآمن من ناحية الصحة
@@ -3563,7 +3580,7 @@ ENGINE = Log
 * 0 — معطّل.
 
 <Note>
-  يؤثر هذا الإعداد أيضًا في الدُفعات التالفة (التي قد تظهر بسبب توقّف غير طبيعي لـ server (الجهاز)، مع عدم استخدام `fsync_after_insert`/`fsync_directories` لمحرك الجداول [Distributed](/ar/reference/engines/table-engines/special/distributed)).
+  يؤثر هذا الإعداد أيضًا في الدُفعات التالفة (التي قد تظهر بسبب توقّف غير طبيعي لـ server (الجهاز)، مع عدم استخدام `fsync_after_insert`/`fsync_directories` لمحرك الجدول [Distributed](/ar/reference/engines/table-engines/special/distributed)).
 </Note>
 
 <Note>
@@ -3831,6 +3848,18 @@ ENGINE = Log
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "إعداد جديد"}]}]} />
 
 لا يكون لهذا تأثير إلا في ClickHouse Cloud. هذه هي مهلة تلقّي البيانات من خادم distributed cache، بالمللي ثانية. وإذا لم يتم تلقّي أي بايتات خلال هذه المدة، فسيتم رفع استثناء.
+
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد لإظهار العمودين `certificate` و`signature` في `system.distributed_cache_registry`."}]}]} />
+
+لا يكون له تأثير إلا في ClickHouse Cloud. يعرض العمودين `certificate` و`signature` في جدول `system.distributed_cache_registry`. تكون هذه الأعمدة فارغة افتراضيًا لإبقاء المخرجات مختصرة؛ فعِّل هذا الإعداد لفحصها.
 
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
@@ -4190,6 +4219,18 @@ FORMAT PrettyCompactMonoBlock
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد لتسلسل الخطة الموزعة للنسخ المتماثلة"}]}]} />
 
 قم بتسلسل خطة الاستعلام الموزّع لتنفيذها على النسخ المتماثلة.
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد تجريبي جديد لتحديد عدد العاملين عديمي الحالة الذين سيُخصَّصون لاستعلام موزّع. تؤدي القيمة صفر إلى تعطيل هذا التخصيص."}]}]} />
+
+عدد العاملين عديمي الحالة الذين سيُستخدمون لتنفيذ هذا الاستعلام. تؤدي القيمة صفر إلى تعطيل تخصيص العاملين عديمي الحالة للخطط الموزعة.
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -5180,6 +5221,25 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 القيمة الافتراضية في Cloud: `0`.
 
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "اعتبارًا من الإصدار 26.7، تكون القيم الافتراضية في `EXPLAIN PLAN` هي `actions=1, compact=1, pretty=1`. اضبط هذا على `legacy` لاستعادة المخرجات التي كانت مستخدمة قبل 26.7."}]}]} />
+
+التنسيق الافتراضي المستخدم في `EXPLAIN PLAN`.
+
+القيم الممكنة:
+
+* `pretty` (الافتراضي منذ 26.7) — تكون `actions` و`compact` و`pretty` مضبوطة افتراضيًا على `true`، مما ينتج خطة مدمجة ومنسقة ومشروحة بـ `actions`.
+* `legacy` — المخرجات المستخدمة قبل 26.7.
+
+يؤدي تحديد خيارات `actions` أو `compact` أو `pretty` صراحةً في تعليمة `EXPLAIN` (على سبيل المثال، `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) دائمًا إلى تجاوز هذا الإعداد.
+
+يحتفظ `EXPLAIN PLAN` مع `json = 1` أو `distributed = 1` بالقيم الافتراضية القديمة (قبل 26.7) بغض النظر عن هذا الإعداد، ما لم يتم تعيين `actions` أو `compact` أو `pretty` صراحةً. ولا يمكن لمخرجات `pretty` تمثيل نتائج JSON أو الخطط الموزعة على مستوى كل shard، لذا لا تُعرَض هذه الأوضاع بشكل صحيح إلا بصيغة `legacy`.
+
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
 </div>
@@ -5705,7 +5765,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "تحسين التوافق مع MySQL DATE_FORMAT()/STR_TO_DATE()"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "تحسين التوافق مع MySQL DATE_FORMAT()\/STR_TO_DATE()"}]}]} />
 
 يعرض محدِّد التنسيق &#39;%f&#39; في الدالة &#39;formatDateTime&#39; صفراً واحداً بدلاً من ستة أصفار إذا كانت القيمة المنسّقة لا تحتوي على كسور من الثانية.
 
@@ -6822,11 +6882,11 @@ Expression ((Projection + Before ORDER BY))
 
 لا يُستخدم `insert_deduplication_token` في إزالة التكرار *إلا* عندما لا يكون فارغًا.
 
-بالنسبة إلى الجداول المكررة، افتراضيًا لا تُزال التكرارات إلا من أحدث 100 عملية insert لكل قسم (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-أما بالنسبة إلى not replicated tables، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+بالنسبة إلى الجداول المكررة، افتراضيًا لا تُزال التكرارات إلا من أحدث 100 عملية إدراج لكل قسم (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
+أما بالنسبة إلى الجداول غير المكررة، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
 <Note>
-  يعمل `insert_deduplication_token` على مستوى قسم (تمامًا مثل checksum الخاصة بـ `insert_deduplication`). ويمكن لعدة أقسام أن تحمل القيمة نفسها لـ `insert_deduplication_token`.
+  يُتتبَّع `insert_deduplication_token` لكل قسم على حدة، لذلك يمكن لعدة أقسام مكتوبة بعملية إدراج واحدة أن تحمل الرمز نفسه. ومن دون رمز، يُحتسب checksum الافتراضي للمحتوى (`insert_deduplication_version = new_unified_hash`) على مستوى block المُدرَج بالكامل، لذلك لا تُزال تكرارات عملية إدراج إلا عندما تتطابق بياناتها بالكامل مع عملية إدراج سابقة (إعادة محاولة)، وليس عندما تتطابق صفوف قسم واحد مصادفةً مع عملية إدراج مختلفة.
 </Note>
 
 مثال:
@@ -6961,14 +7021,14 @@ timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 
 الكتابة بالنصاب
 
-لا تنجح عملية `INSERT` إلا عندما يتمكن ClickHouse من كتابة البيانات بنجاح إلى `insert_quorum` من النسخ المتماثلة خلال `insert_quorum_timeout`. وإذا لم يصل عدد النسخ المتماثلة التي نجحت الكتابة إليها إلى `insert_quorum` لأي سبب، فتُعدّ عملية الكتابة فاشلة، وسيحذف ClickHouse الـ كتلة المُدرَج من جميع النسخ المتماثلة التي كُتبت إليها البيانات بالفعل.
+لا تنجح عملية `INSERT` إلا عندما يتمكن ClickHouse من كتابة البيانات بنجاح إلى `insert_quorum` من النسخ المتماثلة خلال `insert_quorum_timeout`. وإذا لم يصل عدد النسخ المتماثلة التي نجحت الكتابة إليها إلى `insert_quorum` لأي سبب، فتُعدّ عملية الكتابة فاشلة، وسيحذف ClickHouse الكتلة المُدرجة من جميع النسخ المتماثلة التي كُتبت إليها البيانات بالفعل.
 
 عندما يكون `insert_quorum_parallel` معطّلًا، تكون جميع النسخ المتماثلة ضمن النصاب متسقة، أي إنها تحتوي على بيانات جميع استعلامات `INSERT` السابقة (أي يكون تسلسل `INSERT` خطيًا). وعند قراءة البيانات المكتوبة باستخدام `insert_quorum` مع تعطيل `insert_quorum_parallel`، يمكنك تفعيل الاتساق التسلسلي لاستعلامات `SELECT` باستخدام [select&#95;sequential&#95;consistency](#select_sequential_consistency).
 
 يُصدر ClickHouse استثناءً في الحالات التالية:
 
 * إذا كان عدد النسخ المتماثلة المتاحة وقت تنفيذ الاستعلام أقل من `insert_quorum`.
-* عندما يكون `insert_quorum_parallel` معطّلًا وتُجرى محاولة لكتابة البيانات قبل أن يكون الـ كتلة السابق قد أُدرج بعد في `insert_quorum` من النسخ المتماثلة. وقد يحدث هذا إذا حاول المستخدم تنفيذ استعلام `INSERT` آخر على الجدول نفسه قبل اكتمال الاستعلام السابق الذي يستخدم `insert_quorum`.
+* عندما يكون `insert_quorum_parallel` معطّلًا وتُجرى محاولة لكتابة البيانات قبل أن تكون الكتلة السابقة قد أُدرجت بعد في `insert_quorum` من النسخ المتماثلة. وقد يحدث هذا إذا حاول المستخدم تنفيذ استعلام `INSERT` آخر على الجدول نفسه قبل اكتمال الاستعلام السابق الذي يستخدم `insert_quorum`.
 
 انظر أيضًا:
 
@@ -6985,7 +7045,7 @@ timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "استخدم عمليات `INSERT` المتوازية بالنصاب افتراضيًا. وهي أسهل استخدامًا بكثير من عمليات `INSERT` المتسلسلة بالنصاب"}]}]} />
 
 <Note>
-  لا ينطبق هذا الإعداد على SharedMergeTree، راجع [SharedMergeTree consistency](/ar/products/cloud/features/infrastructure/shared-merge-tree#consistency) لمزيد من المعلومات.
+  لا ينطبق هذا الإعداد على SharedMergeTree، راجع [اتساق SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree#consistency) لمزيد من المعلومات.
 </Note>
 
 يُمكّن هذا الإعداد أو يعطّل التوازي في استعلامات `INSERT` بالنصاب. عند تمكينه، يمكن إرسال استعلامات `INSERT` إضافية قبل اكتمال الاستعلامات السابقة. وعند تعطيله، ستُرفض عمليات الكتابة الإضافية إلى الجدول نفسه.
@@ -7215,8 +7275,8 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 القيم الممكنة:
 
-* 0 — إذا كان الجدول الأيمن يحتوي على أكثر من صف مطابق واحد، فسيُضم أول صف يتم العثور عليه فقط.
-* 1 — إذا كان الجدول الأيمن يحتوي على أكثر من صف مطابق واحد، فسيُضم آخر صف يتم العثور عليه فقط.
+* 0 — إذا كان الجدول الأيمن يحتوي على أكثر من صف مطابق واحد، فسيُضم أول صف يُعثر عليه فقط.
+* 1 — إذا كان الجدول الأيمن يحتوي على أكثر من صف مطابق واحد، فسيُضم آخر صف يُعثر عليه فقط.
 
 انظر أيضًا:
 
@@ -8169,7 +8229,7 @@ log_query_views=1
 
 <Note>
   إذا تجاوز استخدام الذاكرة أثناء عمليات GROUP BY هذه العتبة (بالبايت)،
-  فسيتم تفعيل وضع «التجميع الخارجي» (كتابة البيانات المؤقتة إلى القرص).
+  فسيتم تفعيل وضع «التجميع الخارجي» (تفريغ إلى القرص).
 
   القيمة الموصى بها هي نصف ذاكرة النظام المتاحة.
 </Note>
@@ -8327,14 +8387,14 @@ throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/sessio
 إلا في مرحلة القراءة على العقد الطرفية، وسيُتجاهل في مرحلة دمج النتائج على
 العقدة الجذرية.
 
-على سبيل المثال، يتكون الـ cluster من shardين، ويحتوي كل shard على جدول
+على سبيل المثال، يتكون الـ عنقود من shardين، ويحتوي كل shard على جدول
 فيه 100 بايت من البيانات. إن استعلامًا موزعًا من المفترض أن يقرأ جميع
 البيانات من كلا الجدولين مع الإعداد `max_bytes_to_read=150` سيفشل لأن
 الإجمالي سيكون 200 بايت. أما الاستعلام الذي يستخدم
 `max_bytes_to_read_leaf=150` فسينجح لأن العقد الطرفية ستقرأ 100 بايت كحد
 أقصى.
 
-يُتحقق من هذا القيد لكل chunk من البيانات تتم معالجته.
+يُتحقق من هذا القيد لكل كتلة بيانات تتم معالجتها.
 
 <Note>
   هذا الإعداد غير مستقر مع `prefer_localhost_replica=1`.
@@ -8385,7 +8445,7 @@ throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/sessio
   هذا إعداد مخصّص للمستخدمين الخبراء، ولا ينبغي تغييره إذا كنت لا تزال في بداية استخدام ClickHouse.
 </Note>
 
-لا تخلط بين الكتل المستخدمة للضغط (جزء من الذاكرة يتكوّن من بايتات) والكتل المستخدمة في معالجة الاستعلامات (مجموعة من الصفوف من جدول).
+لا تخلط بين الكتل المستخدمة للضغط (كتلة بيانات من الذاكرة تتكوّن من بايتات) والكتل المستخدمة في معالجة الاستعلامات (مجموعة من الصفوف من جدول).
 
 <div id="max_concurrent_queries_for_all_users">
   ## max_concurrent_queries_for_all_users
@@ -8593,7 +8653,7 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 يحدّد الحد الأقصى لعدد خيوط التنفيذ المتوازية لمرحلة قراءة البيانات في استعلام `SELECT` مع المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier).
 
@@ -9027,7 +9087,7 @@ SELECT getSetting('max_memory_usage_for_user');
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "إضافة إعداد منفصل للتحكم في عدد الخيوط عند تحليل البيانات من الملفات بالتوازي"}]}]} />
 
@@ -9039,9 +9099,9 @@ SELECT getSetting('max_memory_usage_for_user');
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
-قيد على إسقاط الأقسام أثناء تنفيذ الاستعلام. تعني القيمة `0` أنه يمكنك إسقاط الأقسام دون أي قيود.
+قيد على إسقاط التقسيمات أثناء تنفيذ الاستعلام. تعني القيمة `0` أنه يمكنك إسقاط التقسيمات دون أي قيود.
 
-Cloud default value: 1 تيرابايت.
+القيمة الافتراضية في Cloud: 1 تيرابايت.
 
 <Note>
   يحلّ إعداد الاستعلام هذا محل إعداد الخادم المكافئ له، راجع [max&#95;partition&#95;size&#95;to&#95;drop](/ar/reference/settings/server-settings/settings#max_partition_size_to_drop)
@@ -9053,33 +9113,33 @@ Cloud default value: 1 تيرابايت.
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.5"},{"label": "100"},{"label": "إضافة حدّ لعدد الأقسام في كتلة واحدة"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.5"},{"label": "100"},{"label": "إضافة حدّ لعدد التقسيمات في كتلة واحدة"}]}]} />
 
-يحدّد الحد الأقصى لعدد الأقسام في كتلة واحدة مُدرجة،
-ويتم طرح استثناء إذا كانت الكتلة تحتوي على عدد كبير جدًا من الأقسام.
+يحدّد الحد الأقصى لعدد التقسيمات في كتلة واحدة مُدرجة،
+ويتم طرح استثناء إذا كانت الكتلة تحتوي على عدد كبير جدًا من التقسيمات.
 
 * عدد صحيح موجب.
-* `0` — عدد غير محدود من الأقسام.
+* `0` — عدد غير محدود من التقسيمات.
 
 **التفاصيل**
 
-عند إدراج البيانات، يحسب ClickHouse عدد الأقسام في
-الكتلة المُدرجة. وإذا كان عدد الأقسام أكبر من
+عند إدراج البيانات، يحسب ClickHouse عدد التقسيمات في
+الكتلة المُدرجة. وإذا كان عدد التقسيمات أكبر من
 `max_partitions_per_insert_block`، فإن ClickHouse إمّا يسجّل تحذيرًا أو يطرح
 استثناءً استنادًا إلى `throw_on_max_partitions_per_insert_block`. ويكون نص الاستثناء
 كما يلي:
 
-> &quot;عدد الأقسام كبير جدًا بالنسبة إلى كتلة INSERT واحدة (عدد الأقسام `partitions_count`، والحد هو &quot; + toString(max&#95;partitions) + &quot;).
+> &quot;عدد التقسيمات كبير جدًا بالنسبة إلى كتلة INSERT واحدة (عدد التقسيمات `partitions_count`، والحد هو &quot; + toString(max&#95;partitions) + &quot;).
 > يتم التحكم في هذا الحد بواسطة الإعداد &#39;max&#95;partitions&#95;per&#95;insert&#95;block&#39;.
-> يُعد العدد الكبير من الأقسام من المفاهيم الخاطئة الشائعة. وسيؤدي ذلك إلى
+> يُعد العدد الكبير من التقسيمات من المفاهيم الخاطئة الشائعة. وسيؤدي ذلك إلى
 > تأثير سلبي حاد على الأداء، بما في ذلك بطء تشغيل server، وبطء استعلامات INSERT
-> وبطء استعلامات SELECT. العدد الإجمالي الموصى به للأقسام في table هو
-> أقل من 1000..10000. يرجى ملاحظة أن partitioning ليس مخصصًا لتسريع
+> وبطء استعلامات SELECT. العدد الإجمالي الموصى به للتقسيمات في table هو
+> أقل من 1000..10000. يرجى ملاحظة أن التقسيم ليس مخصصًا لتسريع
 > استعلامات SELECT (يكفي order by key لجعل الاستعلامات النطاقية سريعة).
-> الأقسام مخصصة لمعالجة البيانات (DROP PARTITION، إلخ).&quot;
+> التقسيمات مخصصة لمعالجة البيانات (DROP PARTITION، إلخ).&quot;
 
 <Note>
-  هذا الإعداد هو safety threshold لأن استخدام عدد كبير من الأقسام يُعد من المفاهيم الخاطئة الشائعة.
+  هذا الإعداد هو safety threshold لأن استخدام عدد كبير من التقسيمات يُعد من المفاهيم الخاطئة الشائعة.
 </Note>
 
 <div id="max_partitions_to_read">
@@ -9088,7 +9148,7 @@ Cloud default value: 1 تيرابايت.
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
-يحدّد الحد الأقصى لعدد الأقسام التي يمكن الوصول إليها في استعلام واحد.
+يحدّد الحد الأقصى لعدد التقسيمات التي يمكن الوصول إليها في استعلام واحد.
 
 يمكن تجاوز قيمة الإعداد المحددة عند إنشاء الجدول باستخدام إعداد على مستوى الاستعلام.
 
@@ -9564,7 +9624,7 @@ throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/sessio
 
 قيد على حذف الجداول وقت تنفيذ الاستعلام. تعني القيمة `0` أنه يمكنك حذف جميع الجداول دون أي قيود.
 
-Cloud default value: 1 TB.
+قيمة Cloud الافتراضية: 1 TB.
 
 <Note>
   يتجاوز إعداد الاستعلام هذا إعداد الخادم المكافئ له، راجع [max&#95;table&#95;size&#95;to&#95;drop](/ar/reference/settings/server-settings/settings#max_table_size_to_drop)
@@ -9634,7 +9694,7 @@ Cloud default value: 1 TB.
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 الحد الأقصى لعدد خيوط معالجة الاستعلام، باستثناء الخيوط المخصّصة لاسترجاع البيانات من الخوادم البعيدة (راجع المعلمة [&#39;max&#95;distributed&#95;connections&#39;](/ar/reference/settings/session-settings#max_distributed_connections)).
 
@@ -10677,6 +10737,16 @@ Possible values:
 
 * [تحسين GROUP BY](/ar/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "إعداد جديد لدفع `LIMIT` إلى التجميع بالترتيب لإنهاء التنفيذ مبكرًا عندما يكون `ORDER BY` بادئة لوصف الفرز في `GROUP BY`."}]}]} />
+
+عند تفعيله، ومع كون التجميع بالترتيب نشطًا، يُدفَع LIMIT إلى خطوة التجميع لتمكين الإنهاء المبكر بعد إنتاج عدد كافٍ من المجموعات. يقلّل ذلك من كمية البيانات المقروءة عندما يطابق `ORDER BY` بادئة مفتاح `GROUP BY`. وقد يؤدي ذلك إلى تقليل القيمة المُبلَّغ عنها بواسطة `rows_before_limit_at_least`؛ استخدم `exact_rows_before_limit` إذا كنت بحاجة إلى أعداد دقيقة.
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10694,6 +10764,16 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
 
 يُولِّد مقارنات ثابتة في سلاسل AND لتحسين قدرة التصفية. ويدعم المعاملات `<` و `<=` و `>` و `>=` و `=` وأي مزيج منها. على سبيل المثال، `(a < b) AND (b < c) AND (c < 5)` ستصبح `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "إعداد جديد يحدّ من حجم العمل الذي ينفذه تحسين `optimize_and_compare_chain` (ويُقاس بعدد عُقَد شجرة الاستعلام التي جرى حساب hash لها) حتى لا يطغى على تحليل الاستعلامات التي تحتوي على عدد كبير جدًا من سلاسل `AND` الخاصة بالمقارنات أو سلاسل كبيرة جدًا منها. تعيد القيمة السابقة `0` (غير محدود) سلوك ما قبل 26.7 حيث لم يكن هذا التحسين مقيّدًا، لذا فإن ضبط `compatibility` على إصدار أقدم يُبقي اشتقاق الشروط الانتقالية من دون ميزانية. اضبطه على `0` لتعطيل الميزانية."}]}]} />
+
+ميزانية العمل لتحسين `optimize_and_compare_chain` أثناء تحليل الاستعلام، وتُقاس بعدد عُقَد شجرة الاستعلام التي يُحسَب لها hash بواسطة `getTreeHash` (وهي التكلفة الأساسية لهذا التحسين). بمجرد أن يحسب الاستعلام hash لعدد من العُقَد يتجاوز هذا الحد أثناء تطبيق التحسين، يتوقف عن تطبيقه على بقية الاستعلام. يحدّ هذا من زمن التحليل للاستعلامات التي تحتوي على عدد كبير جدًا من سلاسل `AND` الخاصة بالمقارنات أو سلاسل كبيرة جدًا منها، حيث يمكن لهذا التحسين لولا ذلك أن يهيمن على التحليل من دون أن يحقق أي تبسيط. ويظل التوقف المبكر آمنًا دائمًا: فهو يعني فقط الاستغناء عن تحسين، ولا يغيّر النتائج مطلقًا. اضبطه على `0` لتعطيل الميزانية (غير محدود).
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -11152,7 +11232,7 @@ SELECT * FROM test2;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-يعيد كتابة الدوال التجميعية التي تستخدم تعبير if كوسيطة عندما تكون مكافئة منطقيًا.
+أعِد كتابة الدوال التجميعية التي تستخدم تعبير if كوسيطة عندما تكون مكافئة منطقيًا.
 على سبيل المثال، يمكن إعادة كتابة `avg(if(cond, col, null))` إلى `avgOrNullIf(cond, col)`. وقد يؤدي ذلك إلى تحسين الأداء.
 
 <Note>
@@ -11613,7 +11693,7 @@ FROM default.fuse_tbl AS __table1
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "إعداد جديد لتمكين المعالجة المتوازية للصفوف غير المنضمّة في عمليات الربط RIGHT/FULL باستخدام parallel_hash."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "إعداد جديد لتمكين المعالجة المتوازية للصفوف غير المنضمّة في عمليات الربط RIGHT\/FULL باستخدام parallel_hash."}]}]} />
 
 يسمح لعدة خيوط بمعالجة الصفوف غير المنضمّة من الجدول الأيمن بالتوازي أثناء عمليتَي RIGHT JOIN وFULL JOIN.
 يمكن أن يؤدي ذلك إلى تسريع مرحلة الصفوف غير المنضمّة عند استخدام خوارزمية الربط `parallel_hash` مع الجداول الكبيرة.
@@ -11881,7 +11961,7 @@ FROM default.fuse_tbl AS __table1
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "تحسين التوافق مع MySQL DATE_FORMAT/STR_TO_DATE"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "تحسين التوافق مع MySQL DATE_FORMAT\/STR_TO_DATE"}]}]} />
 
 يتوقع المُنسِّق &#39;%e&#39; في الدالة &#39;parseDateTime&#39; أن تُستكمَل الأيام المكوّنة من رقم واحد بمسافة، فمثلًا يُقبل &#39; 2&#39;، لكن &#39;2&#39; يتسبب في حدوث خطأ.
 
@@ -12596,11 +12676,11 @@ a   Tuple(
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "auto"},{"label": "إعداد جديد. كان الجدول الأيمن يُختار دائمًا سابقًا."}]}]} />
 
-حدِّد أي طرف من طرفَي JOIN يجب أن يكون جدول البناء (ويُسمى أيضًا الداخلي، وهو الذي يُدرَج في جدول التجزئة في `hash join`) في خطة الاستعلام. لا يدعم هذا الإعداد إلا درجة الصرامة `ALL` في JOIN مع عبارة `JOIN ON`. القيم الممكنة هي:
+حدِّد أي طرف من طرفَي JOIN يجب أن يكون جدول البناء (ويُسمى أيضًا الداخلي، وهو الذي يُدرَج في جدول التجزئة في `hash join`) في خطة الاستعلام. لا يدعم هذا الإعداد إلا مع درجة الصرامة `ALL` في JOIN باستخدام عبارة `JOIN ON`. القيم الممكنة هي:
 
 * &#39;auto&#39;: دع المخطِّط يقرر أي جدول سيُستخدم كجدول البناء.
-  * &#39;false&#39;: لا تبدِّل الجداول مطلقًا (الجدول الأيمن هو جدول البناء).
-  * &#39;true&#39;: بدِّل الجداول دائمًا (الجدول الأيسر هو جدول البناء).
+* &#39;false&#39;: لا تبدِّل الجداول مطلقًا (الجدول الأيمن هو جدول البناء).
+* &#39;true&#39;: بدِّل الجداول دائمًا (الجدول الأيسر هو جدول البناء).
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12675,7 +12755,7 @@ a   Tuple(
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 يحدّ هذا الإعداد من العدد الإجمالي لعمليات التحسين المُطبَّقة على خطة الاستعلام؛ راجع الإعداد [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations).
-وهو مفيد لتجنّب إطالة وقت التحسين في الاستعلامات المعقّدة.
+وهو مفيد لتجنّب طول وقت التحسين في الاستعلامات المعقّدة.
 في استعلام EXPLAIN PLAN، يتوقف تطبيق التحسينات بعد بلوغ هذا الحد وتُعاد الخطة كما هي.
 أما عند تنفيذ الاستعلامات العادية، فإذا تجاوز العدد الفعلي لعمليات التحسين هذا الإعداد، يُطرَح استثناء.
 
@@ -12711,7 +12791,7 @@ a   Tuple(
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-يبدّل تحسينًا على مستوى خطة الاستعلام يدمج المرشحات المتتالية.
+يبدّل تحسينًا على مستوى خطة الاستعلام يدمج عوامل التصفية المتتالية.
 لا يسري مفعوله إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) تساوي 1.
 
 <Note>
@@ -12765,9 +12845,10 @@ a   Tuple(
 
 يحدّد خوارزميات ترتيب JOIN التي تجب تجربتها أثناء تحسين خطة الاستعلام. الخوارزميات التالية متاحة:
 
-* `greedy` - خوارزمية جشعة أساسية - تعمل بسرعة، لكنها قد لا تنتج أفضل ترتيب لعمليات JOIN
-* `dpsize` - يطبّق خوارزمية DPsize حاليًا على عمليات INNER JOIN فقط - يراعي جميع ترتيبات JOIN الممكنة ويعثر على الترتيب الأمثل، لكنه قد يكون بطيئًا للاستعلامات التي تتضمن عددًا كبيرًا من الجداول وشروط JOIN
-* `dphyp` - يطبّق خوارزمية DPhyp (البرمجة الديناميكية عبر تقسيم الرسم البياني الفائق) حاليًا على عمليات INNER JOIN فقط - يستكشف مجال البحث نفسه الذي تستكشفه `dpsize`، لكنه لا يُعدِّد إلا أزواج الرسوم البيانية الفرعية المتصلة، مما يولّد عددًا أقل من عمليات JOIN الوسيطة في رسوم JOIN البيانية المتناثرة، وذلك مقابل عدم أخذ الضربات الديكارتية في الحسبان
+* &#39;greedy&#39; - خوارزمية جشعة أساسية - تعمل بسرعة، لكنها قد لا تنتج أفضل ترتيب لعمليات JOIN
+* &#39;dpsize&#39; - يطبّق خوارزمية DPsize حاليًا على عمليات INNER JOIN فقط - يراعي جميع ترتيبات JOIN الممكنة ويعثر على الترتيب الأمثل، لكنه قد يكون بطيئًا للاستعلامات التي تتضمن عددًا كبيرًا من الجداول وشروط JOIN.
+* &#39;dpsub&#39; - يطبّق خوارزمية DPsub التي تدعم كلًا من عمليات INNER JOIN وغير INNER JOIN - يراعي جميع ترتيبات JOIN الممكنة ويعثر على الترتيب الأمثل، لكنه قد يكون بطيئًا للاستعلامات التي تتضمن عددًا كبيرًا من الجداول وشروط JOIN.
+* &#39;dphyp&#39; - يطبّق خوارزمية DPhyp (البرمجة الديناميكية عبر تقسيم الرسم البياني الفائق) حاليًا على عمليات INNER JOIN فقط - يستكشف مجال البحث نفسه الذي تستكشفه `dpsize`، لكنه لا يُعدِّد إلا أزواج الرسوم البيانية الفرعية المتصلة، مما يولّد عددًا أقل من عمليات JOIN الوسيطة في رسوم JOIN البيانية المتناثرة، وذلك مقابل عدم أخذ الضربات الديكارتية في الحسبان
   يمكن تحديد عدة خوارزميات في صورة قائمة مفصولة بفواصل، مثل `dphyp,greedy`. وتُجرَّب هذه الخوارزميات بالترتيب؛ فإذا تعذّر على إحدى الخوارزميات التعامل مع الاستعلام (على سبيل المثال، بسبب عمليات OUTER JOIN أو المكوّنات غير المتصلة)، تُستخدَم الخوارزمية التالية كخيار احتياطي.
 
 <div id="query_plan_optimize_join_order_limit">
@@ -13018,9 +13099,9 @@ a   Tuple(
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد لتمكين تحسين على مستوى خطة الاستعلام يدفع `ORDER BY ... LIMIT n` عبر ربط LEFT/RIGHT عندما لا يشير مفتاح الفرز إلا إلى الجانب الذي يحتفظ به الربط."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد لتمكين تحسين على مستوى خطة الاستعلام يدفع `ORDER BY ... LIMIT n` عبر join LEFT/RIGHT عندما لا يشير مفتاح الفرز إلا إلى الجانب الذي يحتفظ به join."}]}]} />
 
-يؤدي هذا إلى تفعيل تحسين على مستوى خطة الاستعلام يدفع `ORDER BY ... LIMIT n` إلى أسفل عبر عملية join عندما لا يشير مفتاح الفرز إلا إلى الأعمدة في الجانب الذي يحتفظ به الـ join ‏(LEFT/RIGHT). ويقيّد عدد الصفوف التي يجب أن ينتجها الإدخال الخاص بالجانب المُحتفَظ به قبل إجراء الربط.
+يؤدي هذا إلى تفعيل تحسين على مستوى خطة الاستعلام يدفع `ORDER BY ... LIMIT n` إلى أسفل عبر عملية join عندما لا يشير مفتاح الفرز إلا إلى الأعمدة في الجانب الذي يحتفظ به الـ join ‏(LEFT/RIGHT). ويقيّد عدد الصفوف التي يجب أن ينتجها الإدخال الخاص بالجانب المُحتفَظ به قبل إجراء join.
 لا يسري مفعوله إلا إذا كانت قيمة الإعداد [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) تساوي 1.
 
 القيم الممكنة:
@@ -13077,7 +13158,7 @@ a   Tuple(
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-يحدّد الفترة الزمنية لمؤقّت الزمن الحقيقي الخاص بـ [أداة توصيف الاستعلام](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler). ويقيس مؤقّت الزمن الحقيقي وقت الساعة.
+يحدّد الفترة الزمنية لمؤقّت الساعة الفعلية الخاص بـ [أداة توصيف الاستعلام](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler). ويقيس مؤقّت الساعة الفعلية وقت الساعة.
 
 القيم الممكنة:
 
@@ -13460,6 +13541,21 @@ a   Tuple(
 * `0` — لا تنتظر.
 * عدد صحيح سالب — انتظر لمدة غير محدودة.
 * عدد صحيح موجب — عدد الثواني التي يجب انتظارها.
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لحجز الذاكرة لعبء عمل محدد قبل بدء استعلام."}]}]} />
+
+يُستخدم في جدولة أعباء العمل. وهو الحد الأدنى من RAM المحجوزة لاستخدامها في تشغيل استعلام على خادم واحد. يتم الحجز من خلال التسلسل الهرمي لـ WORKLOAD باستخدام قيمة إعداد الاستعلام `workload`.
+إذا لم تكن هناك ذاكرة كافية متاحة لعبء العمل، فسيُمنع الاستعلام من البدء ويظل في حالة انتظار إلى أن يمكن استيفاء الحجز.
+تعني القيمة `0` عدم وجود حجز.
+لا يسري هذا الإعداد إلا إذا تم إنشاء مورد MEMORY RESERVATION.
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -14497,7 +14593,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "عدم السماح افتراضيًا باستعلام SELECT مباشر لـ Kafka/RabbitMQ/FileLog"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "عدم السماح افتراضيًا باستعلام SELECT مباشر لـ Kafka\/RabbitMQ\/FileLog"}]}]} />
 
 السماح باستعلام SELECT مباشر لمحركات Kafka وRabbitMQ وFileLog وRedis Streams وS3Queue وAzureQueue وNATS. في حال وجود عروض مادية مرفقة، لا يُسمح باستعلام SELECT حتى إذا كان هذا الإعداد مُمكّنًا.
 إذا لم تكن هناك عروض مادية مرفقة، فإن تمكين هذا الإعداد يتيح قراءة البيانات. انتبه إلى أن البيانات المقروءة تُزال عادةً من قائمة الانتظار. ولتجنّب إزالة البيانات المقروءة، يجب تهيئة إعدادات المحرك ذات الصلة بشكل صحيح.
@@ -14642,17 +14738,6 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 * LZ4 — يُستخدم ضغط [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)).
 * NONE — لا يُستخدم أي ضغط.
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "إعداد جديد لعتبة كثافة قائمة النشر الكسولة"}]}]} />
-
-عتبة الكثافة لاختيار الخوارزمية في وضع قائمة النشر الكسولة.
-أقل من العتبة: تقاطع leapfrog. عند العتبة أو أعلى منها: bitmap بطريقة brute-force.
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14662,6 +14747,19 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "إعداد جديد"}]}]} />
 
 الحد الأقصى لانتقائية عامل التصفية لاستخدام التلميح المُنشأ من الفهرس النصي المعكوس.
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**الأسماء البديلة**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "أُعيدت تسميته من `text_index_density_threshold` (مع الإبقاء عليه كاسم بديل)؛ ويحدّد خوارزمية تقاطع الـ قائمة النشر في وضع التطبيق lazy للـ قائمة النشر."}]}]} />
+
+عتبة كثافة الـ قائمة النشر التي تحدّد خوارزمية التقاطع في وضع التطبيق lazy للـ قائمة النشر (`text_index_posting_list_apply_mode = 'lazy'`).
+دون العتبة: تقاطع leapfrog (يفضّل الـ قوائم النشر المتفرقة). عند العتبة أو أعلى منها: تقاطع brute-force bitmap (يفضّل الـ قوائم النشر الكثيفة).
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14698,7 +14796,7 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 
 يتحكم في كيفية تطبيق قوائم النشر أثناء استعلامات الفهرس النصي.
 &#39;materialize&#39; (الافتراضي) يفك ترميز قوائم النشر مباشرةً إلى Roaring Bitmaps.
-&#39;lazy&#39; يستخدم فك ترميز عند الطلب يعتمد على المؤشر (يتطلب تنسيق الفهرس V2 و allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply).
+&#39;lazy&#39; يستخدم فك ترميز عند الطلب يعتمد على المؤشر (يتطلب تنسيق فهرس مع codec مُسلسل).
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14992,6 +15090,16 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
 * `/test/data.csv` يُحل إلى `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` يُحل إلى `https://other.com/test/data.csv`
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "إعداد جديد لتقييد عدد الأدلة المقروءة عند توسيع أحرف البدل في دالة الجدول `url`."}]}]} />
+
+الحد الأقصى لعدد الأدلة التي يمكن اجتيازها أثناء توسيع أحرف البدل في URL من صفحات الفهرس.
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -15026,9 +15134,9 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "استخدام التنسيق المضغوط افتراضيًا لعمليات async INSERT في جداول Distributed"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "استخدام التنسيق المضغوط افتراضيًا لعمليات غير متزامن INSERT في جداول Distributed"}]}]} />
 
-يستخدم التنسيق المضغوط لتخزين الكتل الخاصة بعمليات INSERT في الخلفية (`distributed_foreground_insert`) إلى الجداول التي تستخدم المحرك `Distributed`.
+يستخدم التنسيق المضغوط لتخزين الكتل لعمليات INSERT في الخلفية (`distributed_foreground_insert`) في الجداول التي تستخدم المحرك `Distributed`.
 
 القيم الممكنة:
 
@@ -15037,7 +15145,7 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
 
 <Note>
   - عند استخدام `use_compact_format_in_distributed_parts_names=0`، لن تُطبَّق التغييرات في تعريف العنقود على عمليات INSERT في الخلفية.
-  - عند استخدام `use_compact_format_in_distributed_parts_names=1`، فإن تغيير ترتيب العقد في تعريف العنقود سيؤدي إلى تغيير `shard_index`/`replica_index`، لذا انتبه.
+  - عند استخدام `use_compact_format_in_distributed_parts_names=1`، فإن تغيير ترتيب العُقد في تعريف العنقود سيؤدي إلى تغيير `shard_index`/`replica_index`، لذا انتبه.
 </Note>
 
 <div id="use_concurrency_control">
@@ -15147,9 +15255,9 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "إعداد جديد. يتيح للمستخدم استخدام المنطق القديم للدالة toTime، الذي يعمل مثل toTimeWithFixedDate."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "استخدم دالة `toTime` الجديدة (لتحويل القيم إلى نوع البيانات `Time`) افتراضيًا بدلًا من الدالة القديمة `toTime` (التي لا تزال متاحة باسم `toTimeWithFixedDate`)."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "إعداد جديد. يتيح للمستخدم استخدام المنطق القديم للدالة toTime، الذي يعمل مثل toTimeWithFixedDate."}]}]} />
 
 عند التمكين، يتيح هذا الإعداد استخدام الدالة القديمة toTime، التي تحوّل قيمة date with time إلى تاريخ ثابت محدد مع الحفاظ على الوقت.
 بخلاف ذلك، تُستخدم دالة toTime الجديدة، التي تحوّل أنواعًا مختلفة من البيانات إلى النوع Time.
@@ -15409,7 +15517,7 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "أصبح فهرس النص الآن GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "مُمكّن افتراضيًا"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "أصبح فهرس النص الآن GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "مُمكّن افتراضيًا"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 تمكين استخدام فهارس تخطي البيانات أثناء قراءة البيانات.
 
@@ -15497,11 +15605,11 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "تم تمكين ذاكرة التخزين المؤقت لترويسة الفهرس النصي على مستوى النظام."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-ما إذا كان سيتم استخدام ذاكرة تخزين مؤقتة لترويسة الفهرس النصي بعد فك تسلسلها.
+ما إذا كان سيتم تخزين ترويسات الفهرس النصي التي خضعت لفك التسلسل مؤقتًا في الذاكرة.
 يمكن أن يؤدي استخدام ذاكرة التخزين المؤقتة لترويسة الفهرس النصي إلى تقليل زمن الاستجابة بشكل كبير وزيادة معدل النقل عند العمل مع عدد كبير من استعلامات الفهرس النصي.
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
@@ -15522,18 +15630,18 @@ URL الأساسي المستخدم لحل عناوين URL النسبية في 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-ما إذا كان يجب استخدام ذاكرة تخزين مؤقت لقوائم النشر الخاصة بالفهرس النصي بعد فك تسلسلها.
+ما إذا كان يجب تخزين قوائم النشر الخاصة بالفهرس النصي بعد فك تسلسلها مؤقتًا في الذاكرة.
 يمكن أن يؤدي استخدام ذاكرة التخزين المؤقت لقوائم النشر الخاصة بالفهرس النصي إلى تقليل زمن الاستجابة بشكل كبير وزيادة معدل النقل عند العمل مع عدد كبير من استعلامات الفهرس النصي.
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "تم تمكين ذاكرة التخزين المؤقت لرموز الفهرس النصي على مستوى النظام."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-ما إذا كان سيتم استخدام ذاكرة تخزين مؤقت لبيانات تعريف رموز الفهرس النصي بعد فك التسلسل.
+ما إذا كان سيتم تخزين بيانات تعريف رموز الفهرس النصي بعد فك التسلسل مؤقتًا في الذاكرة.
 يمكن أن يؤدي استخدام ذاكرة التخزين المؤقت لرموز الفهرس النصي إلى تقليل زمن الاستجابة بشكل كبير وزيادة معدل النقل عند التعامل مع عدد كبير من استعلامات الفهرس النصي.
 
 <div id="use_top_k_dynamic_filtering">

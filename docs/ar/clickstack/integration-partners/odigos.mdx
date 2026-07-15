@@ -82,9 +82,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### نشر Odigos باستخدام Helm
-
+  <Step title="نشر Odigos باستخدام Helm" id="deploy-odigos">
     يتطلّب Odigos Enterprise رمز ترخيص للنشر المحلي. صدِّره في جلسة shell لديك:
 
     ```bash
@@ -114,9 +112,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     ```
   </Step>
 
-  <Step>
-    #### أضِف المصادر في واجهة Odigos
-
+  <Step title="أضِف المصادر في واجهة Odigos" id="add-sources">
     1. نفِّذ إعادة توجيه المنفذ لخدمة واجهة Odigos:
 
     ```bash
@@ -129,9 +125,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     5. تحقّق من تهيئة أعباء العمل للرصد بنجاح في عمود المصادر.
   </Step>
 
-  <Step>
-    #### أضِف ClickStack كوجهة في واجهة Odigos
-
+  <Step title="أضِف ClickStack كوجهة في واجهة Odigos" id="add-destination-ui">
     لإرسال بيانات القياس عن بُعد إلى ClickStack، أضِف وجهة **OTLP HTTP** في Odigos. يعتمد الإعداد الدقيق على طريقة نشر ClickStack. في ClickStack مفتوح المصدر، يكون مجمّع OpenTelemetry مضمنًا، ويُنشأ لك مفتاح الاستيعاب تلقائيًا في واجهة HyperDX. أما في ClickStack المُدار، فتشغّل أنت مجمّع ClickStack مستقلًا خاصًا بك، وتحدّد رمز authentication بنفسك عند بدء تشغيل الحاوية.
 
     <Tip>
@@ -193,9 +187,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     </Tabs>
   </Step>
 
-  <Step>
-    #### تحقّق من بيانات القياس عن بُعد في ClickStack
-
+  <Step title="تحقّق من بيانات القياس عن بُعد في ClickStack" id="verify-telemetry">
     1. افتح واجهة ClickStack ‏(HyperDX):
        * **ClickStack مفتوح المصدر**: على سبيل المثال، `http://<host>:8080` على صورة all-in-one.
        * **ClickStack المُدار**: افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud)، ثم انقر على **Launch ClickStack**. راجع [الانتقال إلى واجهة ClickStack](/ar/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) لمزيد من التفاصيل.

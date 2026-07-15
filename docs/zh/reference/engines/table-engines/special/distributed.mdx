@@ -61,19 +61,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
   ### Distributed 设置
 </div>
 
-| 设置                                         | 描述                                                                                                                                                       | 默认值     |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `fsync_after_insert`                       | 在向 Distributed 执行后台 `INSERT` 后，对文件数据执行 `fsync`。保证操作系统会将**发起节点**磁盘上插入的全部数据刷写到文件中。                                                                         | `false` |
-| `fsync_directories`                        | 对目录执行 `fsync`。保证操作系统在完成与 Distributed 表后台 `INSERT` 相关的操作后 (如插入后、将数据发送到分片后等) 刷新目录元数据。                                                                      | `false` |
-| `skip_unavailable_shards`                  | 如果为 true，ClickHouse 会静默跳过不可用的分片。以下情况下，分片会被标记为不可用：1) 由于连接失败而无法访问该分片。2) 无法通过 DNS 解析该分片。3) 该分片上不存在该表。                                                       | `false` |
-| `bytes_to_throw_insert`                    | 如果后台 `INSERT` 的待处理压缩字节数超过此值，将抛出异常。`0` - 不抛出。                                                                                                             | `0`     |
-| `bytes_to_delay_insert`                    | 如果后台 `INSERT` 的待处理压缩字节数超过此值，查询将被延迟。`0` - 不延迟。                                                                                                            | `0`     |
-| `max_delay_to_insert`                      | 当后台发送存在大量待处理字节时，向分布式表插入数据的最大延迟时间 (秒) 。                                                                                                                   | `60`    |
-| `background_insert_batch`                  | 与 [`distributed_background_insert_batch`](/zh/reference/settings/session-settings#distributed_background_insert_batch) 相同                                   | `0`     |
-| `background_insert_split_batch_on_failure` | 与 [`distributed_background_insert_split_batch_on_failure`](/zh/reference/settings/session-settings#distributed_background_insert_split_batch_on_failure) 相同 | `0`     |
-| `background_insert_sleep_time_ms`          | 与 [`distributed_background_insert_sleep_time_ms`](/zh/reference/settings/session-settings#distributed_background_insert_sleep_time_ms) 相同                   | `0`     |
-| `background_insert_max_sleep_time_ms`      | 与 [`distributed_background_insert_max_sleep_time_ms`](/zh/reference/settings/session-settings#distributed_background_insert_max_sleep_time_ms) 相同           | `0`     |
-| `flush_on_detach`                          | 在 `DETACH`/`DROP`/服务器关闭时，将数据刷写到远程节点。                                                                                                                     | `true`  |
+| 设置                                         | 描述                                                                                                                                                                                  | 默认值                            |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `fsync_after_insert`                       | 在向 Distributed 执行后台 `INSERT` 后，对文件数据执行 `fsync`。保证操作系统会将**发起节点**磁盘上插入的全部数据刷写到文件中。                                                                                                    | `false`                        |
+| `fsync_directories`                        | 对目录执行 `fsync`。保证操作系统在完成与 Distributed 表后台 `INSERT` 相关的操作后 (如插入后、将数据发送到分片后等) 刷新目录元数据。                                                                                                 | `false`                        |
+| `skip_unavailable_shards`                  | 如果为 true，ClickHouse 会静默跳过不可用的分片。此设置的行为由 `skip_unavailable_shards_mode` 参数控制。                                                                                                        | `false`                        |
+| `skip_unavailable_shards_mode`             | 控制在启用 `skip_unavailable_shards` 时，会忽略来自远程分片的哪些异常：`unavailable` 仅忽略连接错误；`unavailable_or_table_missing` 还会忽略缺失的表或数据库；`unavailable_or_exception_before_processing` 还会忽略分片返回数据前收到的任何异常。 | `unavailable_or_table_missing` |
+| `bytes_to_throw_insert`                    | 如果后台 `INSERT` 的待处理压缩字节数超过此值，将抛出异常。`0` - 不抛出。                                                                                                                                        | `0`                            |
+| `bytes_to_delay_insert`                    | 如果后台 `INSERT` 的待处理压缩字节数超过此值，查询将被延迟。`0` - 不延迟。                                                                                                                                       | `0`                            |
+| `max_delay_to_insert`                      | 当后台发送存在大量待处理字节时，向分布式表插入数据的最大延迟时间 (秒) 。                                                                                                                                              | `60`                           |
+| `background_insert_batch`                  | 与 [`distributed_background_insert_batch`](/zh/reference/settings/session-settings#distributed_background_insert_batch) 相同                                                              | `0`                            |
+| `background_insert_split_batch_on_failure` | 与 [`distributed_background_insert_split_batch_on_failure`](/zh/reference/settings/session-settings#distributed_background_insert_split_batch_on_failure) 相同                            | `0`                            |
+| `background_insert_sleep_time_ms`          | 与 [`distributed_background_insert_sleep_time_ms`](/zh/reference/settings/session-settings#distributed_background_insert_sleep_time_ms) 相同                                              | `0`                            |
+| `background_insert_max_sleep_time_ms`      | 与 [`distributed_background_insert_max_sleep_time_ms`](/zh/reference/settings/session-settings#distributed_background_insert_max_sleep_time_ms) 相同                                      | `0`                            |
+| `flush_on_detach`                          | 在 `DETACH`/`DROP`/服务器关闭时，将数据刷写到远程节点。                                                                                                                                                | `true`                         |
 
 <Note>
   **持久性设置** (`fsync_...`)：

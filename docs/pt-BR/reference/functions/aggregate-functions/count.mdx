@@ -72,7 +72,7 @@ SELECT count() FROM t
 **Exemplo de COUNT(DISTINCT)**
 
 ```sql title=Query
--- Este exemplo mostra que `count(DISTINCT num)` é executado pela função `uniqExact` de acordo com o valor da configuração `count_distinct_implementation`.
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

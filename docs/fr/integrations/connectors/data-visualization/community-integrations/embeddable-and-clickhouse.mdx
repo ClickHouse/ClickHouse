@@ -1,9 +1,9 @@
 ---
 sidebarTitle: 'Embeddable'
 slug: /integrations/embeddable
-keywords: ['clickhouse', 'Embeddable', 'connecter', 'intégrer', 'UI']
-description: 'Embeddable est une boîte à outils destinée aux développeurs pour créer rapidement des expériences d’analytics interactives et entièrement personnalisées directement dans votre application.'
-title: 'Connexion d’Embeddable à ClickHouse'
+keywords: ['ClickHouse', 'Embeddable', 'connecter', 'intégrer', 'UI']
+description: 'Embeddable est un kit de développement permettant de créer directement dans votre application des expériences d’analytics rapides, interactives et entièrement personnalisées.'
+title: 'Connecter Embeddable à ClickHouse'
 doc_type: 'guide'
 integration:
   - support_level: 'community'
@@ -15,65 +15,63 @@ import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-Dans [Embeddable](https://embeddable.com/), vous définissez des [Modèles de données](https://docs.embeddable.com/data-modeling/introduction) et des [Composants](https://docs.embeddable.com/development/introduction) dans le code (stocké dans votre propre dépôt de code) et utilisez notre **SDK** pour les mettre à la disposition de votre équipe dans le puissant **builder no-code** d’Embeddable.
+Dans [Embeddable](https://embeddable.com/), vous définissez des [Modèles de données](https://docs.embeddable.com/data-modeling/introduction) et des [Composants](https://docs.embeddable.com/development/introduction) dans le code (stocké dans votre propre repository de code) et utilisez notre **SDK** pour les mettre à la disposition de votre équipe dans le puissant **builder no-code** d’Embeddable.
 
-Au final, vous pouvez proposer des analyses rapides et interactives, destinées à vos clients, directement dans votre produit ; conçues par votre équipe produit ; développées par votre équipe d’ingénierie ; maintenues par vos équipes en contact avec les clients et vos équipes data. Exactement comme il se doit.
+Le résultat final vous permet de proposer rapidement des analytics interactives orientées client directement dans votre produit ; conçues par votre équipe produit ; développées par votre équipe d’ingénierie ; maintenues par vos équipes en contact avec les clients et vos équipes data. Exactement comme il se doit.
 
-La sécurité intégrée au niveau des lignes signifie que chaque utilisateur ne voit que les données qu’il est autorisé à consulter. Et grâce à deux niveaux de mise en cache entièrement configurables, vous pouvez proposer des analyses rapides, en temps réel et à grande échelle.
+La sécurité intégrée au niveau des lignes signifie que chaque utilisateur ne voit que les données qu’il est autorisé à voir. Et deux niveaux de mise en cache entièrement configurables vous permettent de fournir des analytics rapides en temps réel à grande échelle.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Rassemblez vos informations de connexion
-</div>
+<Steps>
+  <Step title="Rassemblez vos informations de connexion" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Créer un type de connexion ClickHouse" id="2-create-a-clickhouse-connection-type">
+    Ajoutez une connexion à une base de données à l’aide de l’Embeddable API. Cette connexion permet de vous connecter à votre service ClickHouse. Vous pouvez ajouter une connexion à l’aide de l’appel d’API suivant :
 
-<div id="2-create-a-clickhouse-connection-type">
-  ## 2. Créer un type de connexion ClickHouse
-</div>
+    ```javascript title="Query"
+    // for security reasons, this must *never* be called from your client-side
+    fetch('https://api.embeddable.com/api/v1/connections', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}` /* keep your API Key secure */,
+      },
+      body: JSON.stringify({
+        name: 'my-clickhouse-db',
+        type: 'clickhouse',
+        credentials: {
+          host: 'my.clickhouse.host',
+          user: 'clickhouse_user',
+          port: 8443,
+          password: '*****',
+        },
+      }),
+    });
+    ```
 
-Ajoutez une connexion à une base de données à l’aide de l’Embeddable API. Cette connexion permet de vous connecter à votre service ClickHouse. Vous pouvez ajouter une connexion à l’aide de l’appel d’API suivant :
+    ```text title="Response"
+    Status 201 { errorMessage: null }
+    ```
 
-```javascript title="Query"
-// for security reasons, this must *never* be called from your client-side
-fetch('https://api.embeddable.com/api/v1/connections', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    Authorization: `Bearer ${apiKey}` /* keep your API Key secure */,
-  },
-  body: JSON.stringify({
-    name: 'my-clickhouse-db',
-    type: 'clickhouse',
-    credentials: {
-      host: 'my.clickhouse.host',
-      user: 'clickhouse_user',
-      port: 8443,
-      password: '*****',
-    },
-  }),
-});
-```
+    Ce qui précède correspond à une action `CREATE`, mais toutes les opérations `CRUD` sont disponibles.
 
-```text title="Response"
-Status 201 { errorMessage: null }
-```
+    La `apiKey` se trouve en cliquant sur &quot;**Publish**&quot; dans l’un de vos dashboards Embeddable.
 
-Ce qui précède correspond à une action `CREATE`, mais toutes les opérations `CRUD` sont disponibles.
+    Le `name` est un nom unique permettant d’identifier cette connexion.
 
-La `apiKey` se trouve en cliquant sur &quot;**Publish**&quot; dans l’un de vos dashboards Embeddable.
+    * Par défaut, vos modèles de données rechercheront une connexion appelée &quot;default&quot;, mais vous pouvez fournir à vos modèles différents noms `data_source` afin de connecter différents modèles de données à différentes connexions (il suffit de spécifier le nom de data&#95;source dans le modèle)
 
-Le `name` est un nom unique permettant d’identifier cette connexion.
+    Le `type` indique à Embeddable quel pilote utiliser.
 
-* Par défaut, vos modèles de données rechercheront une connexion appelée &quot;default&quot;, mais vous pouvez fournir à vos modèles différents noms `data_source` afin de connecter différents modèles de données à différentes connexions (il suffit de spécifier le nom de data&#95;source dans le modèle)
+    * Ici, vous devrez utiliser `clickhouse`, mais vous pouvez connecter plusieurs sources de données différentes à un même espace de travail Embeddable, vous pouvez donc aussi en utiliser d’autres, comme : `postgres`, `bigquery`, `mongodb`, etc.
 
-Le `type` indique à Embeddable quel pilote utiliser.
+    Le `credentials` est un objet JavaScript contenant les identifiants nécessaires attendus par le pilote.
 
-* Ici, vous devrez utiliser `clickhouse`, mais vous pouvez connecter plusieurs sources de données différentes à un même espace de travail Embeddable, vous pouvez donc aussi en utiliser d’autres, comme : `postgres`, `bigquery`, `mongodb`, etc.
+    * Ceux-ci sont chiffrés de manière sécurisée et utilisés uniquement pour récupérer exactement les données que vous avez décrites dans vos modèles de données.
+      Embeddable vous recommande vivement de créer un utilisateur de base de données en lecture seule pour chaque connexion (Embeddable lira uniquement les données de votre base de données, sans jamais y écrire).
 
-Le `credentials` est un objet JavaScript contenant les identifiants nécessaires attendus par le pilote.
-
-* Ceux-ci sont chiffrés de manière sécurisée et utilisés uniquement pour récupérer exactement les données que vous avez décrites dans vos modèles de données.
-  Embeddable vous recommande vivement de créer un utilisateur de base de données en lecture seule pour chaque connexion (Embeddable lira uniquement les données de votre base de données, sans jamais y écrire).
-
-Pour permettre la connexion à différentes bases de données pour la prod, la QA, le test, etc. (ou pour prendre en charge différentes bases de données pour différents clients), vous pouvez attribuer chaque connexion à un environnement (voir [Environments API](https://docs.embeddable.com/data/environments)).
+    Pour permettre la connexion à différentes bases de données pour la prod, la QA, le test, etc. (ou pour prendre en charge différentes bases de données pour différents clients), vous pouvez attribuer chaque connexion à un environnement (voir [Environments API](https://docs.embeddable.com/data/environments)).
+  </Step>
+</Steps>

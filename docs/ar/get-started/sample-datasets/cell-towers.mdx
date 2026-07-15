@@ -36,7 +36,7 @@ import SupersetDocker from '/snippets/ar/_add_superset_detail.mdx';
 
 مجموعة البيانات هذه من [OpenCelliD](https://www.opencellid.org/) — أكبر قاعدة بيانات مفتوحة لأبراج الاتصالات الخلوية في العالم.
 
-حتى عام 2021، كانت تضم أكثر من 40 مليون سجل عن أبراج الاتصالات الخلوية (GSM وLTE وUMTS وغيرها) حول العالم، مع إحداثياتها الجغرافية وبياناتها الوصفية (رمز البلد والشبكة وما إلى ذلك).
+اعتبارًا من عام 2021، كانت تضم أكثر من 40 مليون سجل عن أبراج الاتصالات الخلوية (GSM وLTE وUMTS وغيرها) حول العالم، مع إحداثياتها الجغرافية وبياناتها الوصفية (رمز البلد والشبكة وما إلى ذلك).
 
 يخضع مشروع OpenCelliD لترخيص Creative Commons Attribution-ShareAlike 4.0 International License، ونحن نعيد توزيع لقطة من مجموعة البيانات هذه بموجب شروط الترخيص نفسه. ويمكن تنزيل الإصدار الأحدث من مجموعة البيانات بعد تسجيل الدخول.
 
@@ -52,7 +52,7 @@ import SupersetDocker from '/snippets/ar/_add_superset_detail.mdx';
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="تحميل مجموعة بيانات أبراج الاتصالات الخلوية" />
 
-    ### افحص مخطط جدول cell_towers
+    ### افحص مخطط جدول cell&#95;towers
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -106,7 +106,7 @@ import SupersetDocker from '/snippets/ar/_add_superset_detail.mdx';
     ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
     ```
 
-    2. استورد مجموعة البيانات من حاوية S3 عامة (686 ميجابايت):
+    2. استورد مجموعة البيانات من حاوية S3 عامة (686 MB):
 
     ```sql
     INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
@@ -348,7 +348,7 @@ WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
   #### حدِّد الاستعلام المستخدم للخريطة
 </div>
 
-يتطلب مخطط deck.gl Scatterplot خط طول وخط عرض، كما يمكن أيضًا تطبيق عامل تصفية واحد أو أكثر على الاستعلام. في هذا المثال، يُطبَّق عاملَا تصفية: أحدهما لأبراج الاتصالات الخلوية التي تستخدم تقنية UMTS، والآخر لرمز البلد لشبكات الهاتف المحمول المخصَّص لهولندا.
+يتطلب مخطط deck.gl Scatterplot خط طول وخط عرض، كما يمكن أيضًا تطبيق عامل تصفية واحد أو أكثر على الاستعلام. في هذا المثال، يُطبَّق عاملَا تصفية: أحدهما لأبراج الاتصالات الخلوية التي تستخدم تقنية UMTS، والآخر لرمز بلد الهاتف المحمول المخصَّص لهولندا.
 
 يحتوي الحقلان `lon` و`lat` على خط الطول وخط العرض:
 

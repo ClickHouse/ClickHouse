@@ -661,13 +661,14 @@ ClickHouse는 이러한 한계를 해결하기 위해 Quantized Bit (`QBit`) 데
 `QBit` 타입의 컬럼을 선언하려면 다음 구문을 사용하십시오:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 여기서:
 
-* `element_type` – 각 벡터 요소의 타입입니다. 지원되는 타입은 `BFloat16`, `Float32`, `Float64`입니다.
+* `element_type` – 각 벡터 요소의 타입입니다. 지원되는 타입은 `Int8`, `BFloat16`, `Float32`, `Float64`입니다.
 * `dimension` – 각 벡터의 차원입니다.
+* `stride` – 선택 사항입니다. `dimension`의 제수로, 차원을 각각 별도의 스트림에 저장되는 `dimension / stride`개의 연속된 그룹으로 나눕니다. 따라서 앞쪽 차원만 대상으로 검색할 경우 더 적은 수의 스트림만 읽으면 됩니다(Matryoshka embeddings에 유용함). 기본값은 `dimension`이며, 이 경우 해당 타입은 stride가 없는 `QBit`와 바이트 단위로 동일합니다. 자세한 내용은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit)를 참조하십시오.
 
 <div id="qbit-create">
   #### `QBit` 테이블 만들기 및 데이터 추가

@@ -6,33 +6,31 @@ title: 'الدوال المعرّفة من قبل المستخدم (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="udfs-user-defined-functions">
-  # UDFs الدوال المعرّفة من قِبل المستخدم
-</div>
-
-يدعم ClickHouse عدة أنواع من الدوال المعرّفة من قِبل المستخدم (UDFs):
+يدعم ClickHouse عدة أنواع من الدوال المعرّفة من قبل المستخدم (UDFs):
 
 * تبدأ [Executable UDFs](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه blocks من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى runtime مختلف.
 * تُعرَّف [SQL UDFs](#sql-user-defined-functions) باستخدام `CREATE FUNCTION` بالكامل ضمن SQL. وتُضمَّن/تُوسَّع داخل query plan (من دون حدٍّ فاصل على مستوى العملية)، مما يجعلها lightweight ومثالية لإعادة استخدام منطق expression أو تبسيط columns المحسوبة المعقدة.
 * تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُجمَّعة إلى WebAssembly داخل sandbox ضمن server process. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
+* تتيح [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) لـ operator يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى executable UDF عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى executable UDFs وتتطلب إعداد driver على جانب server.
 
-## الدوال المعرفة من قبل المستخدم القابلة للتنفيذ
+<div id="executable-user-defined-functions">
+  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ
+</div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  هذه الميزة متاحة ضمن المعاينة الخاصة في ClickHouse Cloud.
-  يرجى التواصل مع ClickHouse Support عبر https://clickhouse.cloud/support لطلب الوصول.
+  في ClickHouse Cloud، تكون UDFs القابلة للتنفيذ متاحة ضمن الإصدار التجريبي العام، ويتم إنشاؤها عبر واجهة مستخدم Cloud Console. راجع [الدوال المعرّفة من قبل المستخدم في Cloud](/ar/products/cloud/features/sql-console-features/user-defined-functions) للاطلاع على سير العمل الخاص بـ Cloud.
 </Note>
 
 يمكن لـ ClickHouse استدعاء أي برنامج خارجي قابل للتنفيذ أو برنامج نصي لمعالجة البيانات.
 
-يمكن أن يوجد تكوين الدوال المعرفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
+يمكن أن يوجد تكوين الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
 ويُحدَّد مسار هذا التكوين في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings#user_defined_executable_functions_config).
 
 يتضمن تكوين الدالة الإعدادات التالية:
@@ -524,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 راجِع وثائق [دوال WebAssembly المعرّفة من قبل المستخدم](/ar/reference/functions/regular-functions/wasm_udf) لمزيد من التفاصيل.
+
+<div id="driver-based-executable-user-defined-functions">
+  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ المعتمدة على برامج التشغيل
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  هذه ميزة تجريبية قد تتغيّر مستقبلاً بطرق قد لا تكون متوافقة مع الإصدارات السابقة. فعِّلها باستخدام إعداد الخادم [`allow_experimental_executable_udf_drivers`](/ar/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers).
+</Note>
+
+*برنامج التشغيل* هو مهايئ يوفّره المشغّل لتحويل مقتطف من شيفرة المستخدم إلى [دالة معرّفة من قبل المستخدم قابلة للتنفيذ](#executable-user-defined-functions) يمكن تشغيلها. عند إنشاء دالة باستخدام `ENGINE = DriverName(...)`، يشغّل ClickHouse الأمر `create_command` الخاص ببرنامج التشغيل، مع تمرير توقيع الدالة ومحتوى الشيفرة إليه. بعد ذلك، يترجم برنامج التشغيل هذا المحتوى أو يعالجه بطريقة أخرى، ثم يطبع إعدادات دالة معرّفة من قبل المستخدم قابلة للتنفيذ، ليقوم ClickHouse بعدها بتخزينها وتحميلها.
+
+يتيح ذلك للمسؤولين توفير طريقة آمنة ومحدودة للمستخدمين لتعريف دوال بلغة برمجة كيفما كانت (على سبيل المثال، C بعد ترجمتها داخل حاوية معزولة) من دون منحهم إمكانية الوصول إلى ملفات تهيئة الخادم أو نظام الملفات. وتظل مجموعة برامج التشغيل المتاحة خاضعة بالكامل لسيطرة المشغّل.
+
+<div id="enabling-drivers">
+  ### تمكين برامج التشغيل
+</div>
+
+تكون UDFs القابلة للتنفيذ المعتمدة على برامج التشغيل معطّلة افتراضيًا. لتمكينها:
+
+1. عيّن خيار Experimental في إعدادات الخادم:
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. وجّه `user_defined_executable_function_drivers_config` إلى ملف configuration واحد أو أكثر لبرامج التشغيل (مع دعم نمط `glob`)، واضبط اختياريًا [`dynamic_user_defined_executable_functions_path`](/ar/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)، وهو الدليل الذي تُخزَّن فيه ملفات configuration المُولَّدة الخاصة بـ UDFs القابلة للتنفيذ:
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+يُحمَّل سجل برامج التشغيل عند بدء تشغيل الخادم، ويُحدَّث عند `SYSTEM RELOAD CONFIG`، لذلك يمكن إضافة برامج التشغيل أو تعديلها أو إزالتها دون إعادة تشغيل الخادم.
+
+<div id="driver-configuration">
+  ### إعداد برنامج التشغيل
+</div>
+
+يُعرَّف برنامج التشغيل من خلال ملف XML (أو YAML) يحتوي على عنصر `<driver>` في المستوى الأعلى. الحقول التالية مدعومة:
+
+| الحقل              | الوصف                                                                                                                                                     | مطلوب |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `name`             | اسم برنامج التشغيل، كما يُستخدم في `CREATE FUNCTION ... ENGINE = <name>(...)`.                                                                            | نعم   |
+| `create_command`   | المسار إلى البرنامج الذي يُستدعى لإنشاء UDF من مقتطف شيفرة. تُفسَّر المسارات النسبية بالاستناد إلى ملف إعداد برنامج التشغيل.                              | نعم   |
+| `drop_command`     | المسار إلى البرنامج الذي يُستدعى عند حذف دالة تستند إلى برنامج التشغيل هذا.                                                                               | لا    |
+| `engine_arguments` | يحدّد الوسيطات المسموح بها داخل `ENGINE = DriverName(...)`. كل عنصر فرعي هو اسم وسيطة؛ ويُشير العنصر الفرعي `<required>true</required>` إلى أنها إلزامية. | لا    |
+| `env`              | متغيرات البيئة المُصدَّرة عند استدعاء أوامر برنامج التشغيل.                                                                                               | لا    |
+
+مثال على إعداد برنامج التشغيل:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### بروتوكول استدعاء برنامج التشغيل
+</div>
+
+عند تنفيذ `CREATE FUNCTION`، يُستدعى `create_command` بعد ضبط متغيرات `env` المهيأة، مع تمرير الوسيطات التالية:
+
+* `--name <function_name>`
+* `--return <return_type>` (إذا وُجد بند `RETURNS`)
+* `--args <signature>` (إذا وُجد بند `ARGUMENTS`)، حيث يمثّل التوقيع قائمة الوسيطات المعلنة، مثل `x UInt8, y DateTime`
+* `--<key> <value>` لكل وسيط engine مُعلن وممرَّر في `ENGINE = DriverName(key = value)`
+
+يُرسَل متن شيفرة المستخدم (النص بعد `AS`) إلى الإدخال القياسي للأمر. ويجب أن يطبع الأمر تهيئة UDF executable إلى المخرج القياسي. ويُكتشَف format تلقائيًا: فإذا بدأ المخرج بـ `<` عُدّ XML، وإلا عُدّ YAML. ويجب أن يطابق اسم الدالة المعرَّفة في التهيئة المُولَّدة الاسم الذي يجري إنشاؤه. وإذا أنهى `create_command` التنفيذ بحالة غير صفرية، يفشل statement مع Exception تتضمن رمز الخروج والخطأ القياسي لبرنامج التشغيل.
+
+ويُستدعى `drop_command`، عند وجوده، بالطريقة نفسها (ولكن من دون متن شيفرة على `stdin`) عند حذف الدالة.
+
+<div id="creating-a-function-with-a-driver">
+  ### إنشاء function
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+يشغّل ClickHouse الأمر `create_command` الخاص ببرنامج التشغيل، ويكتب التهيئة الناتجة إلى [`dynamic_user_defined_executable_functions_path`](/ar/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)، ثم يكتشفها مُحمِّل UDF التنفيذي الحالي. بعد ذلك يمكن استدعاء الدالة مثل أي دالة أخرى.
+
+<div id="dropping-a-function-with-a-driver">
+  ### حذف دالة
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+يستدعي `DROP FUNCTION` الأمر `drop_command` الخاص ببرنامج التشغيل (إن وُجد)، ويزيل التهيئة الديناميكية المُنشأة ودليل العمل الخاص بكل دالة، ويُعيد تحميل مُحمِّل UDF التنفيذي، ويزيل الاستعلام المحفوظ.
+
+<div id="driver-persistence-and-restart">
+  ### الاستمرارية وإعادة التشغيل
+</div>
+
+يُحفَظ الاستعلام الأصلي على هيئة عبارة `ATTACH FUNCTION ...` في دليل كائنات SQL المعرَّفة من قبل المستخدم، بحيث تبقى الدالة بعد إعادة تشغيل الخادم. عند بدء التشغيل، تُحمَّل التهيئات المُولَّدة في [`dynamic_user_defined_executable_functions_path`](/ar/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) مباشرةً من دون إعادة تشغيل برنامج التشغيل. وإذا لم تكن لعبارة `ATTACH FUNCTION` المحفوظة تهيئة مُولَّدة مطابقة (على سبيل المثال، إذا فُقد الدليل الديناميكي)، فستُعاد تشغيل برنامج التشغيل لإعادة إنشائها.
+
+<div id="driver-limitations">
+  ### القيود
+</div>
+
+* هذه الميزة تجريبية ولا تتاح إلا عند تفعيل `allow_experimental_executable_udf_drivers`.
+* الدوال المستندة إلى برامج التشغيل غير مدعومة مع التخزين المُكرَّر للدوال المعرّفة من قبل المستخدم (`ON CLUSTER` و `<user_defined_zookeeper_path>`)، لأن الاستعلام الأصلي فقط هو الذي يُكرَّر، وليس الملفات الناتجة.
+* تؤدي عملية `RESTORE` لدالة مستندة إلى برنامج تشغيل جرى أخذ نسخة احتياطية لها إلى الاحتفاظ بالاستعلام، لكنها لا تعيد تشغيل برنامج التشغيل؛ إذ تُطبَّق التهيئة المُولَّدة وتُحفَظ لاحقًا أثناء استرداد إعادة التشغيل.
+
+<div id="example-c-drivers">
+  ### مثال على برامج تشغيل C
+</div>
+
+تتضمن شجرة المصدر برامج تشغيل تجريبية لإثبات المفهوم ضمن `programs/server/user_defined_executable_function_drivers_config.d/`، وهي تُترجم جسم دالة بلغة C وتُشغّله. وهذه مجرد أمثلة و**لا تُثبَّت عبر الحزم**:
+
+* `DockerC` - يترجم الشيفرة ويشغّلها داخل حاويات Docker معزولة (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`، بالإضافة إلى حدود الذاكرة/CPU/PID)، ويُنتج UDF من النوع `executable_pool`.
+* `GVisorC` - نسخة بديلة تشغّل الملف التنفيذي المترجم ضمن بيئة التشغيل [gVisor](https://gvisor.dev/) `runsc`.
+* `UnsafeC` - يترجم الشيفرة ويشغّلها مباشرة على المضيف من دون sandbox. وكما يوحي الاسم، فهو لا يوفّر أي عزل، وهو مخصّص فقط للبيئات الموثوقة ولأغراض الاختبار.
+
+صُمِّمت برامج التشغيل التجريبية هذه كنقطة بداية؛ لذا راجع آليات العزل وعزّزها بما يناسب بيئتك قبل إتاحتها لمستخدمين غير موثوقين.
 
 <div id="related-content">
   ## محتوى ذو صلة

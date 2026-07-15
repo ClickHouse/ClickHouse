@@ -19,9 +19,9 @@ S3 ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通
 | 名称                                     | 徽标                                                                                          | 详情                                                                                                                    |
 | -------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **Amazon S3**                          | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 标志" width="32" />   | 默认情况下，持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行，但也可配置为[按任意顺序摄取文件](#continuous-ingestion-any-order)。 |
-| **Cloudflare R2** <br /> *兼容 S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 标志" width="32" />   | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
-| **DigitalOcean Spaces** <br /> *兼容 S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 标志" width="32" /> | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
-| **OVH Object Storage** <br /> *兼容 S3*  | <img src="/images/integrations/logos/ovh.webp" alt="云存储标志" width="32" />                     | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                                  |
+| **Cloudflare R2** <br /> *兼容 S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 标志" width="32" />   | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                         |
+| **DigitalOcean Spaces** <br /> *兼容 S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 标志" width="32" /> | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                         |
+| **OVH Object Storage** <br /> *兼容 S3*  | <img src="/images/integrations/logos/ovh.webp" alt="云存储标志" width="32" />                    | 持续摄取要求按[词典序](#continuous-ingestion-lexicographical-order)进行。不支持无序模式。                                         |
 
 <Tip>
   由于不同对象存储服务提供商的 URL 格式和 API 实现存在差异，并非所有兼容 S3 的服务都能直接开箱即用。如果你在使用上方未列出的服务时遇到问题，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
@@ -195,11 +195,11 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
   #### IAM role
 </div>
 
-如需使用[基于角色的访问](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)进行身份验证，请在设置 ClickPipe 连接 时，在 **Authentication method** 下选择 `IAM role`。
+如需使用[基于角色的访问](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `IAM role`。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="S3 ClickPipes 的 IAM 身份验证" size="lg" border />
 
-请按照[本指南](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)创建具有 S3 访问所需信任策略的[role](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)。然后，在 `IAM role ARN` 中填入 IAM role ARN。
+请按照[本指南](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)[创建角色](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)，并为其配置 S3 访问所需的信任策略。然后，在 `IAM role ARN` 中填写 IAM role ARN。
 
 <div id="network-access">
   ### 网络访问
@@ -238,7 +238,7 @@ ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的
 | `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                    |
 | `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
 | `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)的方式推送到已附加的视图。                         |
-| `Use cluster function`               | true    | 是否在多个节点之间并行处理文件。                                                                                                  |
+| `Use cluster function`               | true    | 是否在多个节点上并行处理文件。                                                                                                   |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 高级设置" size="lg" border />
 

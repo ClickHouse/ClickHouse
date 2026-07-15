@@ -982,7 +982,7 @@ Se você executar a consulta `SELECT` entre as mesclagens, poderá obter dados e
 Além de dispositivos de bloco locais, o ClickHouse oferece suporte a estes tipos de armazenamento:
 
 * [`s3` para S3 e MinIO](#table_engine-mergetree-s3)
-* [`gcs` para GCS](/pt-BR/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` para GCS](/pt-BR/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` para Azure Blob Storage](/pt-BR/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` para HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs)
 * [`web` para somente leitura via web](/pt-BR/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1444,9 +1444,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `TDigest`
 
-  Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular percentis aproximados (por exemplo, o 90º percentil) para colunas numéricas.
+<Warning>
+  Estatísticas do tipo `tdigest` têm alto custo de criação e podem desacelerar a ingestão de dados.
+</Warning>
 
-  Sintaxe: `tdigest`
+Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular percentis aproximados (por exemplo, o 90º percentil) para colunas numéricas.
+
+Sintaxe: `tdigest`
 
 * `Uniq`
 
@@ -1456,9 +1460,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `CountMin`
 
-  Sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que fornecem uma contagem aproximada da frequência de cada valor em uma coluna.
+<Warning>
+  Estatísticas do tipo `countmin` têm alto custo de criação e podem desacelerar a ingestão de dados.
+</Warning>
 
-  Sintaxe: `countmin`
+Sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que fornecem uma contagem aproximada da frequência de cada valor em uma coluna.
+
+Sintaxe: `countmin`
 
 <div id="supported-data-types">
   ### Tipos de dados suportados

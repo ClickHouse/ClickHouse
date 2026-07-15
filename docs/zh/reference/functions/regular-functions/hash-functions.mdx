@@ -712,7 +712,7 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 
 引入版本：v20.1.0
 
-根据字符串计算 “HiveHash”。
+根据字符串计算 &quot;HiveHash&quot;。
 它实际上就是将符号位清零后的 [`JavaHash`](#javaHash)。
 在 3.0 之前的版本中，[Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) 使用此函数。
 
@@ -1908,7 +1908,7 @@ sipHash128Keyed((k0, k1), [arg1, arg2, ...])
 
 **参数**
 
-* `(k0, k1)` — 由两个 UInt64 值组成、表示键的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
+* `(k0, k1)` — 由两个 UInt64 值组成、表示密钥的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
 * `arg1[, arg2, ...]` — 用于计算哈希的数量可变的输入参数。[`Any`](/zh/reference/data-types/index)
 
 **返回值**

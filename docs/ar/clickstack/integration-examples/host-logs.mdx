@@ -34,9 +34,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * إمكانية تعديل ملفات تكوين ClickStack
 
 <Steps>
-  <Step>
-    #### تأكّد من وجود ملفات syslog
-
+  <Step title="تأكّد من وجود ملفات syslog" id="verify-syslog">
     أولاً، تأكّد من أن نظامك يُنشئ ملفات syslog:
 
     ```bash
@@ -57,9 +55,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step>
-    #### إنشاء تهيئة مخصصة لـ OTel collector
-
+  <Step title="إنشاء تهيئة مخصصة لـ OTel collector" id="custom-otel">
     يتيح لك ClickStack توسيع إعداد OpenTelemetry Collector الأساسي عن طريق ربط ملف إعداد مخصص وضبط متغير بيئة.
 
     أنشئ ملفًا باسم `host-logs-monitoring.yaml` يتضمن إعدادات نظامك:
@@ -203,9 +199,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### هيّئ ClickStack لتحميل إعدادات مخصصة
-
+  <Step title="هيّئ ClickStack لتحميل إعدادات مخصصة" id="load-custom">
     لتمكين إعدادات المجمّع المخصصة في نشر ClickStack الحالي لديك، يجب عليك:
 
     1. ربط ملف الإعدادات المخصص في المسار `/etc/otelcol-contrib/custom.config.yaml`
@@ -247,9 +241,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقّق من السجلات في HyperDX
-
+  <Step title="التحقّق من السجلات في HyperDX" id="verifying-logs">
     بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق:
 
     1. انتقل إلى عرض البحث
@@ -264,15 +256,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة بيانات تجريبية
+  ## مجموعة البيانات التجريبية
 </div>
 
 للمستخدمين الذين يريدون اختبار تكامل سجلات المضيف قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات نموذجية من سجلات النظام المُنشأة مسبقًا بأنماط واقعية.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات النموذجية
-
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف السجل النموذجي:
 
     ```bash
@@ -290,9 +280,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * مزيج من العمليات العادية والأحداث البارزة
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة المجمّع للاختبار
-
+  <Step title="أنشئ تهيئة collector للاختبار" id="test-config">
     أنشئ ملفًا باسم `host-logs-demo.yaml` باستخدام التهيئة التالية:
 
     ```yaml
@@ -334,9 +322,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### شغّل ClickStack باستخدام التهيئة التجريبية
-
+  <Step title="شغّل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
     شغّل ClickStack باستخدام السجلات التجريبية وهذه التهيئة:
 
     ```bash
@@ -350,13 +336,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **يؤدي هذا إلى ربط ملف السجل مباشرةً داخل الحاوية. ويتم ذلك لأغراض الاختبار باستخدام بيانات تجريبية ثابتة.**
-
     </Note>
   </Step>
 
-  <Step>
-    #### تحقّق من السجلات في HyperDX
-
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
     بعد تشغيل ClickStack:
 
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
@@ -382,13 +365,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة سجلات المضيف باستخدام ClickStack، نوفر تصورات أساسية لسجلات النظام.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعداد لوحة المعلومات
+  <Step title="نزّل إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">نزّل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استورد لوحة المعلومات الجاهزة
-
+  <Step title="استورد لوحة المعلومات الجاهزة" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
@@ -399,9 +380,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إتمام الاستيراد" />
   </Step>
 
-  <Step>
-    #### اعرض لوحة المعلومات
-
+  <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
@@ -516,4 +495,4 @@ tail -5 /var/log/system.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أمّا لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر على بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

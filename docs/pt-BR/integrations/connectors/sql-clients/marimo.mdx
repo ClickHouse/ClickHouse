@@ -20,105 +20,101 @@ import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMainta
 
 <Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Conectar ao ClickHouse" />
 
-<div id="install-marimo-sql">
-  ## 1. Instale o marimo com suporte a SQL
-</div>
+<Steps>
+  <Step title="Instalar o marimo com suporte a SQL" id="install-marimo-sql">
+    ```shell
+    pip install "marimo[sql]" clickhouse_connect
+    marimo edit clickhouse_demo.py
+    ```
 
-```shell
-pip install "marimo[sql]" clickhouse_connect
-marimo edit clickhouse_demo.py
-```
+    Isso deve abrir um navegador da web em execução no localhost.
+  </Step>
 
-Isso deve abrir um navegador no localhost.
+  <Step title="Conectando ao ClickHouse." id="connect-to-clickhouse">
+    Navegue até o painel de fontes de dados no lado esquerdo do editor do marimo e clique em &#39;Add database&#39;.
 
-<div id="connect-to-clickhouse">
-  ## 2. Conectar-se ao ClickHouse.
-</div>
+    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Adicionar um novo banco de dados" />
 
-Navegue até o painel de fontes de dados no lado esquerdo do editor do marimo e clique em &#39;Add database&#39;.
+    Você será solicitado a preencher os detalhes do banco de dados.
 
-<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Adicionar um novo banco de dados" />
+    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Preencher os detalhes do banco de dados" />
 
-Você deverá preencher os detalhes do banco de dados.
+    Em seguida, você terá uma célula que pode ser executada para estabelecer uma conexão.
 
-<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Preencha os detalhes do banco de dados" />
+    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Executar a célula para se conectar ao ClickHouse" />
+  </Step>
 
-Em seguida, você terá uma célula que poderá ser executada para estabelecer uma conexão.
+  <Step title="Executar SQL" id="run-sql">
+    Depois de configurar uma conexão, você pode criar uma nova célula SQL e escolher o mecanismo do ClickHouse.
 
-<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Execute a célula para se conectar ao ClickHouse" />
+    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Escolha o mecanismo SQL" />
 
-<div id="run-sql">
-  ## 3. Executar SQL
-</div>
+    Para este guia, usaremos o dataset New York Taxi.
 
-Depois de configurar uma conexão, você pode criar uma nova célula SQL e escolher o mecanismo do ClickHouse.
+    ```sql
+    CREATE TABLE trips (
+        trip_id             UInt32,
+        pickup_datetime     DateTime,
+        dropoff_datetime    DateTime,
+        pickup_longitude    Nullable(Float64),
+        pickup_latitude     Nullable(Float64),
+        dropoff_longitude   Nullable(Float64),
+        dropoff_latitude    Nullable(Float64),
+        passenger_count     UInt8,
+        trip_distance       Float32,
+        fare_amount         Float32,
+        extra               Float32,
+        tip_amount          Float32,
+        tolls_amount        Float32,
+        total_amount        Float32,
+        payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+        pickup_ntaname      LowCardinality(String),
+        dropoff_ntaname     LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    PRIMARY KEY (pickup_datetime, dropoff_datetime);
+    ```
 
-<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Escolha o mecanismo SQL" />
+    ```sql
+    INSERT INTO trips
+    SELECT
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+        'TabSeparatedWithNames'
+    );
+    ```
 
-Para este guia, usaremos o dataset New York Taxi.
+    ```sql
+    SELECT * FROM trips LIMIT 1000;
+    ```
 
-```sql
-CREATE TABLE trips (
-    trip_id             UInt32,
-    pickup_datetime     DateTime,
-    dropoff_datetime    DateTime,
-    pickup_longitude    Nullable(Float64),
-    pickup_latitude     Nullable(Float64),
-    dropoff_longitude   Nullable(Float64),
-    dropoff_latitude    Nullable(Float64),
-    passenger_count     UInt8,
-    trip_distance       Float32,
-    fare_amount         Float32,
-    extra               Float32,
-    tip_amount          Float32,
-    tolls_amount        Float32,
-    total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-    pickup_ntaname      LowCardinality(String),
-    dropoff_ntaname     LowCardinality(String)
-)
-ENGINE = MergeTree
-PRIMARY KEY (pickup_datetime, dropoff_datetime);
-```
+    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Resultados em um DataFrame" />
 
-```sql
-INSERT INTO trips
-SELECT
-    trip_id,
-    pickup_datetime,
-    dropoff_datetime,
-    pickup_longitude,
-    pickup_latitude,
-    dropoff_longitude,
-    dropoff_latitude,
-    passenger_count,
-    trip_distance,
-    fare_amount,
-    extra,
-    tip_amount,
-    tolls_amount,
-    total_amount,
-    payment_type,
-    pickup_ntaname,
-    dropoff_ntaname
-FROM gcs(
-    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
-    'TabSeparatedWithNames'
-);
-```
+    Agora, você pode ver os resultados em um DataFrame. Quero visualizar as corridas mais caras a partir de um determinado local de embarque. O marimo fornece vários componentes de UI para ajudar nisso. Vou usar uma lista suspensa para selecionar o local e o Altair para criar os gráficos.
 
-```sql
-SELECT * FROM trips LIMIT 1000;
-```
+    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinação de lista suspensa, tabela e gráfico" />
 
-<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Resultados em um DataFrame" />
+    O modelo de execução reativa do marimo também se estende às consultas SQL, então alterações no SQL acionam automaticamente os cálculos subsequentes das células dependentes (ou, opcionalmente, marcam células como desatualizadas no caso de cálculos mais caros). Por isso, o gráfico e a tabela mudam quando a consulta é atualizada.
 
-Agora, você pode ver os resultados em um DataFrame. Quero visualizar as corridas mais caras a partir de um determinado local de embarque. O marimo fornece vários componentes de UI para ajudar nisso. Vou usar uma lista suspensa para selecionar o local e o Altair para criar os gráficos.
+    Você também pode alternar para o App View para ter uma interface limpa para explorar seus dados.
 
-<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinação de lista suspensa, tabela e gráfico" />
-
-O modelo de execução reativa do marimo também se estende às consultas SQL, então alterações no SQL acionam automaticamente os cálculos subsequentes das células dependentes (ou, opcionalmente, marcam células como desatualizadas no caso de cálculos mais caros). Por isso, o gráfico e a tabela mudam quando a consulta é atualizada.
-
-Você também pode alternar para o App View para ter uma interface limpa para explorar seus dados.
-
-<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Executar App View" />
+    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Executar App View" />
+  </Step>
+</Steps>

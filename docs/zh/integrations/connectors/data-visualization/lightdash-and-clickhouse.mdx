@@ -27,14 +27,12 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
 </div>
 
 在本指南中，你将了解 **Lightdash** 如何连接到 **ClickHouse**，以探索 dbt **模型**并构建交互式仪表盘。
-下方示例展示了一个基于 ClickHouse 数据构建的完整仪表盘。
+下方示例展示了一个由 ClickHouse 数据驱动的已完成仪表盘。
 
 <Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash 仪表盘示例" border />
 
 <Steps>
-  <Step>
-    ### 收集连接信息
-
+  <Step title="收集连接信息" id="connection-data-required">
     设置 Lightdash 与 ClickHouse 的连接时，您需要准备以下信息：
 
     * **Host:** 您的 ClickHouse database 运行所在的地址
@@ -52,9 +50,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### 为 ClickHouse 配置 dbt profile
-
+  <Step title="为 ClickHouse 配置 dbt profile" id="configuring-your-dbt-profile-for-clickhouse">
     在 Lightdash 中，connection 基于你现有的 **dbt 项目**。
     要连接到 ClickHouse，请确保本地的 `~/.dbt/profiles.yml` 文件中包含有效的 ClickHouse 目标配置。
 
@@ -65,9 +61,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     <br />
   </Step>
 
-  <Step>
-    ### 创建连接到 ClickHouse 的 Lightdash 项目
-
+  <Step title="创建连接到 ClickHouse 的 Lightdash 项目" id="creating-a-lightdash-project-connected-to-clickhouse">
     为 ClickHouse 配置好 dbt profile 后，你还需要将 **dbt 项目** 连接到 Lightdash。
 
     由于这一流程对所有仓库都相同，这里不再赘述——你可以按照 Lightdash 官方指南导入 dbt 项目：
@@ -79,9 +73,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### 在 Lightdash 中探索 ClickHouse 数据
-
+  <Step title="在 Lightdash 中探索 ClickHouse 数据" id="exploring-your-clickhouse-data-in-lightdash">
     连接后，Lightdash 会自动同步你的 dbt 模型，并提供：
 
     * YAML 中定义的 **维度** 和 **measures**
@@ -93,9 +85,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### 在 Lightdash 中定义指标和维度
-
+  <Step title="在 Lightdash 中定义指标和维度" id="defining-metrics-and-dimensions-in-lightdash">
     在 Lightdash 中，所有**指标**和**维度**都直接定义在 dbt 模型的 `.yml` 文件中。这样可以让你的业务逻辑纳入版本控制、保持一致，并且完全透明。
 
     <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt=".yml 文件中定义指标的示例" border />
@@ -112,9 +102,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### 从表中查询数据
-
+  <Step title="从表中查询数据" id="querying-your-data-from-tables">
     当你的 dbt 项目连接到 Lightdash 并完成同步后，就可以直接从 **表** (或“explores”) 开始探索数据。
     每个表都对应一个 dbt 模型，并包含你在 YAML 中定义的指标和维度。
 
@@ -136,9 +124,7 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### 构建仪表盘
-
+  <Step title="构建仪表盘" id="building-dashboards">
     在探索数据并保存可视化内容后，您可以将它们组合成**仪表盘**，与团队共享。
 
     Lightdash 中的仪表盘支持完整的交互功能——您可以应用过滤器、添加选项卡，并查看由实时 ClickHouse 查询驱动的图表。
@@ -160,10 +146,8 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     ***
   </Step>
 
-  <Step>
-    ### Ask AI：由 dbt 驱动的自助分析
-
-    Lightdash 中的 **AI 智能体**让数据探索真正实现自助化。
+  <Step title="Ask AI：由 dbt 驱动的自助分析" id="ask-ai">
+    **AI 智能体**在 Lightdash 中让数据探索真正实现自助化。
     你无需编写查询，只要用自然语言提出问题——例如 *“我们的月度收入增长是多少？”*——AI 智能体就会自动生成合适的可视化，并引用你在 dbt 中定义的指标和模型，以确保结果准确且一致。
 
     它基于你在 dbt 中使用的同一语义层，这意味着每个答案都受到治理、可解释且响应迅速——而这一切都由 ClickHouse 提供支持。

@@ -48,12 +48,10 @@ Você precisará de:
 </div>
 
 <Steps>
-  <Step>
-    ### Ative o SCIM
+  <Step title="Ative o SCIM" id="enable-scim-provisioning">
+    Faça login no **ClickHouse Cloud Console** como administrador da organização e abra **Configurações da organização → SAML and SCIM settings → SCIM Configuration**.
 
-    Faça login no **ClickHouse Cloud Console** como administrador da organização e abra **Organization settings → SAML and SCIM settings → SCIM Configuration**.
-
-    ![Acesse a guia de configuração do SCIM em Organization settings](/images/cloud/security/scim-okta/scim-okta-01.webp)
+    ![Acesse a guia de configuração do SCIM em Configurações da organização](/images/cloud/security/scim-okta/scim-okta-01.webp)
 
     Clique em `Enable SCIM`. O SCIM é liberado assim que o SAML SSO é conectado — se a opção estiver desabilitada, conclua primeiro a configuração do SAML.
 
@@ -68,9 +66,7 @@ Você precisará de:
     Copie-a — você vai colá-la no Okta depois.
   </Step>
 
-  <Step>
-    ### Gere um token de acesso do SCIM
-
+  <Step title="Gere um token de acesso do SCIM" id="generate-scim-token">
     Localize a seção `Create an API key` e escolha uma data de expiração.
 
     <Tip>
@@ -84,9 +80,7 @@ Você precisará de:
     ![Gere uma nova chave de API do SCIM](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### Defina o mapeamento de função
-
+  <Step title="Defina o mapeamento de função" id="define-role-mapping">
     No painel SCIM Configuration, clique em **Map roles in &quot;Users and roles&quot;** (ou navegue diretamente por **Users and roles → Roles**).
 
     Os grupos do SCIM são associados às funções do ClickHouse Cloud pelo nome, com algumas regras importantes:
@@ -103,9 +97,7 @@ Você precisará de:
 </div>
 
 <Steps>
-  <Step>
-    ### Abra o aplicativo do ClickHouse Cloud no Okta
-
+  <Step title="Abra o aplicativo do ClickHouse Cloud no Okta" id="open-clickhouse-cloud-app">
     No **Okta Admin Console**, vá para **Applications → Applications** e procure o aplicativo que você criou ao configurar o SAML SSO para o ClickHouse Cloud. Abra-o.
 
     Se você ainda não criou o aplicativo SAML, siga primeiro o [guia de configuração do SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup) — o provisionamento SCIM é configurado no mesmo aplicativo.
@@ -119,9 +111,7 @@ Você precisará de:
     ![A guia Provisioning agora aparece no aplicativo](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### Conecte o Okta ao endpoint SCIM
-
+  <Step title="Conecte o Okta ao endpoint SCIM" id="connect-okta-scim">
     Abra a aba **Provisioning** do aplicativo e clique em `Edit`. Preencha o formulário:
 
     * **URL base do conector SCIM** — a URL do endpoint SCIM mencionada anteriormente.
@@ -147,9 +137,7 @@ Você precisará de:
     Clique em `Save`.
   </Step>
 
-  <Step>
-    ### Configurar o comportamento do Provisioning
-
+  <Step title="Configurar o comportamento do Provisioning" id="configure-provisioning-behavior">
     Ainda na aba **Provisioning**, clique em `To App` na barra lateral esquerda. Clique em `Edit` e ative:
 
     | Configuração                   | Ação      | O que faz                                                                                          |
@@ -166,9 +154,7 @@ Você precisará de:
     ![Salve as configurações de Provisioning e volte para a aba Sign On](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### Mapear atributos do usuário
-
+  <Step title="Mapear atributos do usuário" id="map-user-attributes">
     O Okta e o ClickHouse Cloud precisam estar alinhados sobre como os campos do usuário são mapeados. Na aba **Provisioning**, clique em `To App` e revise os **Attribute Mappings** da sua aplicação. Os padrões da aplicação SAML do Okta geralmente são suficientes — confira a tabela abaixo:
 
     | atributo do Okta  | atributo do ClickHouse Cloud (SCIM) | Obrigatório                                                 |
@@ -189,9 +175,7 @@ Você precisará de:
     </Warning>
   </Step>
 
-  <Step>
-    ### Enviar grupos e atribuir usuários
-
+  <Step title="Enviar grupos e atribuir usuários" id="push-groups-and-assign-users">
     É aqui que as funções são aplicadas automaticamente.
 
     **Crie grupos no Okta.** Para cada mapeamento de função que você configurou anteriormente, crie ou identifique um grupo no Okta com o **mesmo nome de exibição exato**. Por exemplo, se o seu mapeamento diz `ClickHouse-Admins → Admin`, crie um grupo chamado `ClickHouse-Admins` no Okta.
@@ -225,7 +209,7 @@ Você precisará de:
   ## Teste a integração
 </div>
 
-Depois que o Provisioning estiver configurado, volte para **Configurações → Users and roles** no Console do ClickHouse Cloud para confirmar que os usuários sincronizados apareceram com as funções esperadas.
+Depois que o Provisioning estiver configurado, volte para **Configurações → Users and roles** no ClickHouse Cloud Console para confirmar que os usuários sincronizados apareceram com as funções esperadas.
 
 ![Verifique a sincronização de usuários em Users and roles](/images/cloud/security/scim-okta/scim-okta-18.webp)
 

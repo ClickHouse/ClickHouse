@@ -121,7 +121,7 @@ DeltaLake 테이블을 생성하려면 해당 테이블이 이미 S3, GCP 또는
 DeltaLake 테이블 엔진을 사용해 테이블을 생성한 후에는 다음과 같이 데이터를 삽입할 수 있습니다.
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
@@ -130,6 +130,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 <Note>
   테이블 엔진을 사용한 쓰기는 delta kernel을 통해서만 지원됩니다.
   Azure에 대한 쓰기는 아직 지원되지 않지만, S3 및 GCS는 지원됩니다.
+
+  Delta Lake 쓰기는 베타 기능이며 `SET allow_delta_lake_writes = 1`로 활성화해야 합니다(26.7 버전부터 사용 가능하며, 그 이전 버전에서는 `SET allow_experimental_delta_lake_writes = 1`을 사용하십시오).
 </Note>
 
 <div id="data-cache">

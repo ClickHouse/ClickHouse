@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 Para migrar desde los [esquemas predeterminados basados en Map](/es/clickstack/ingesting-data/schemas), sigue estos pasos:
 
 <Steps>
-  <Step>
-    ### Detén el OTel collector
-  </Step>
+  <Step title="Detén el OTel collector" id="stop-the-collector" />
 
-  <Step>
-    ### Cambia el nombre de las tablas existentes y actualiza las fuentes de datos
-
+  <Step title="Cambia el nombre de las tablas existentes y actualiza las fuentes" id="rename-existing-tables-sources">
     Cambia el nombre de las tablas existentes y actualiza las fuentes de datos en HyperDX.
 
     Por ejemplo:
@@ -130,23 +126,17 @@ Para migrar desde los [esquemas predeterminados basados en Map](/es/clickstack/i
     ```
   </Step>
 
-  <Step>
-    ### Despliega el OTel collector
-
-    Despliega el OTel collector con `OTEL_AGENT_FEATURE_GATE_ARG` configurado.
+  <Step title="Despliega el collector" id="deploy-the-collector">
+    Despliega el collector con `OTEL_AGENT_FEATURE_GATE_ARG` configurado.
   </Step>
 
-  <Step>
-    ### Reinicia el contenedor de HyperDX con compatibilidad para esquemas JSON
-
+  <Step title="Reinicia el contenedor de HyperDX con compatibilidad para esquemas JSON" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### Crea nuevas fuentes de datos
-
+  <Step title="Crea nuevas fuentes de datos" id="create-new-data-sources">
     Crea nuevas fuentes de datos en HyperDX que apunten a las tablas JSON.
   </Step>
 </Steps>

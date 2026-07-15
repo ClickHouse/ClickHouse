@@ -221,7 +221,7 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### هل يمكن أتمتة إنشاء ClickPipe أو تنفيذه عبر واجهة برمجة تطبيقات أو CLI؟
 </div>
 
-يمكن أيضًا إنشاء Postgres ClickPipe وإدارته عبر نقاط النهاية الخاصة بـ [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi). هذه الميزة ما تزال في مرحلة بيتا، ويمكن العثور على مرجع واجهة برمجة التطبيقات [هنا](/ar/api-reference/organization/get-list-of-available-organizations#tag/beta). كما نعمل حاليًا على دعم Terraform لإنشاء Postgres ClickPipes أيضًا.
+يمكن أيضًا إنشاء Postgres ClickPipe وإدارته عبر نقاط النهاية الخاصة بـ [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi). هذه الميزة ما تزال في مرحلة بيتا، ويمكن العثور على مرجع واجهة برمجة تطبيقات [هنا](/ar/products/cloud/api-reference/clickpipes/list-clickpipes). كما نعمل حاليًا على دعم Terraform لإنشاء Postgres ClickPipes أيضًا.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### كيف أُسرّع التحميل الأولي؟
@@ -436,10 +436,10 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 * ما إذا كانت هناك سياسات صفوف على جانب ClickHouse قد تؤدي إلى تصفية بعض الصفوف.
 
 <div id="failover-slot">
-  ### هل يمكنني جعل ClickPipe ينشئ فتحة نسخ متماثل مع تمكين failover؟
+  ### هل يمكنني جعل ClickPipe ينشئ فتحة النسخ المتماثل مع تمكين failover؟
 </div>
 
-نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة نسخ متماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
+نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة النسخ المتماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 

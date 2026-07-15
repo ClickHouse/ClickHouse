@@ -65,7 +65,7 @@ Con el particionamiento habilitado, ClickHouse solo [fusiona](/es/concepts/core-
 
 <br />
 
-Como se muestra en el diagrama anterior, las partes que pertenecen a particiones distintas nunca se fusionan. Si se elige una clave de partición con alta cardinalidad, las partes distribuidas entre miles de particiones nunca serán candidatas a fusión, lo que hará que se superen los límites preconfigurados y provocará el temido error `Too many parts`. Resolver este problema es sencillo: elija una clave de partición razonable con una [cardinalidad inferior a 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
+Como se muestra en el diagrama anterior, las partes que pertenecen a particiones distintas nunca se fusionan. Si se elige una clave de partición con alta cardinalidad, las partes distribuidas entre miles de particiones nunca serán candidatas a fusión - superando los límites preconfigurados y provocando el temido error `Too many parts`. Resolver este problema es sencillo: elija una clave de partición razonable con una [cardinalidad inferior a 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
 
 <div id="monitoring-partitions">
   ## Monitorización de particiones

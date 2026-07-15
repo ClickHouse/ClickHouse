@@ -1,19 +1,41 @@
 ---
 slug: /managing-data/core-concepts
-title: 'Concepts fondamentaux'
-description: 'Découvrez les concepts fondamentaux du fonctionnement de ClickHouse'
-keywords: ['concepts', 'partie', 'partition', 'index primaire']
+title: 'Concepts de base'
+description: 'Découvrez les concepts de base du fonctionnement de ClickHouse'
+keywords: ['concepts', 'part de la table', 'partition', 'index primaire']
 doc_type: 'guide'
+mode: wide
 ---
 
 Dans cette section de la documentation,
-vous découvrirez quelques concepts fondamentaux du fonctionnement de ClickHouse.
+vous découvrirez certains des concepts de base du fonctionnement de ClickHouse.
 
-| Page                                                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Parties de table](/fr/concepts/core-concepts/parts)                                     | Découvrez ce que sont les parties de table dans ClickHouse.                                                                                                                                                                                                                                                                                                                                                             |
-| [Partitions de table](./partitions.mdx)                                               | Découvrez ce que sont les partitions de table et à quoi elles servent.                                                                                                                                                                                                                                                                                                                                                  |
-| [Fusions de parties de table](./merges.mdx)                                           | Découvrez ce que sont les fusions de parties de table et à quoi elles servent.                                                                                                                                                                                                                                                                                                                                          |
-| [Segments et réplicas de table](/fr/guides/oss/deployment-and-scaling/shards)            | Découvrez ce que sont les segments et les réplicas de table, ainsi que leur utilité.                                                                                                                                                                                                                                                                                                                                    |
-| [Index primaires](./primary-indexes.mdx)                                              | Présente l&#39;index primaire clairsemé de ClickHouse et explique comment il permet d&#39;éviter efficacement la lecture de données inutiles lors de l&#39;exécution des requêtes. Explique comment l&#39;index est construit et utilisé, avec des exemples et des outils pour en observer l&#39;effet. Contient des liens vers une analyse approfondie pour les cas d&#39;utilisation avancés et les bonnes pratiques. |
-| [Vue d&#39;ensemble de l&#39;architecture](/fr/concepts/core-concepts/academic-overview) | Une vue d&#39;ensemble académique concise de tous les composants de l&#39;architecture de ClickHouse, basée sur notre article scientifique VLDB 2024.                                                                                                                                                                                                                                                                   |
+<CardGroup cols={2}>
+  <Card title="Glossaire" icon="book-open" href="/fr/concepts/core-concepts/glossary">
+    Mots et expressions ClickHouse couramment utilisés, ainsi que leurs définitions.
+  </Card>
+
+  <Card title="Parts de la table" icon="cubes" href="/fr/concepts/core-concepts/parts">
+    Découvrez ce que sont les parts de la table dans ClickHouse.
+  </Card>
+
+  <Card title="Partitions de table" icon="table-cells-large" href="/fr/concepts/core-concepts/partitions">
+    Découvrez ce que sont les partitions de table et à quoi elles servent.
+  </Card>
+
+  <Card title="Fusions de parts de la table" icon="code-merge" href="/fr/concepts/core-concepts/merges">
+    Découvrez ce que sont les fusions de parts de la table et à quoi elles servent.
+  </Card>
+
+  <Card title="Index primaires" icon="key" href="/fr/concepts/core-concepts/primary-indexes">
+    Comment l’index primaire sparse de ClickHouse permet d’ignorer efficacement les données inutiles lors de l’exécution des requêtes.
+  </Card>
+
+  <Card title="Parallélisme des requêtes" icon="bolt" href="/fr/concepts/core-concepts/query-parallelism">
+    Comment ClickHouse parallélise l’exécution des requêtes à l’aide de lanes de traitement et du paramètre `max_threads`.
+  </Card>
+
+  <Card title="Vue d’ensemble de l’architecture" icon="graduation-cap" href="/fr/concepts/core-concepts/academic-overview">
+    Une vue d’ensemble académique concise de tous les composants de l’architecture de ClickHouse, fondée sur notre article scientifique VLDB 2024.
+  </Card>
+</CardGroup>

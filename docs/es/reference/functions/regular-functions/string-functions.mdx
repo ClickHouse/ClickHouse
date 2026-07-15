@@ -1661,9 +1661,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-```
-
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2212,8 +2209,8 @@ Devuelve la forma NFKC normalizada de la cadena UTF-8. [`String`](/es/reference/
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Caracteres de números en círculo
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Se convierte en 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Devuelve la forma normalizada NFKD de la cadena codificada en UTF-8. [`String`](
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subíndice 2 + O + superíndice 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Convierte a H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response

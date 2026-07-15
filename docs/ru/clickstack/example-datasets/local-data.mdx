@@ -18,19 +18,17 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     В этом руководстве предполагается, что вы прошли [руководство по началу работы с Управляемым ClickStack](/ru/clickstack/deployment/managed) и [сохранили учётные данные подключения](/ru/clickstack/getting-started/managed#next-steps).
 
     <Steps>
-      <Step>
-        ### Создайте пользовательскую конфигурацию OpenTelemetry
-
+      <Step title="Создайте пользовательскую конфигурацию OpenTelemetry" id="create-otel-configuration">
         Создайте файл `custom-local-config.yaml` со следующим содержимым:
 
         ```yaml
         receivers:
           filelog:
             include:
-              - /host/var/log/**/*.log        # Журналы Linux с хоста
+              - /host/var/log/**/*.log        # Linux logs from host
               - /host/var/log/syslog
               - /host/var/log/messages
-              - /host/private/var/log/*.log   # Журналы macOS с хоста
+              - /host/private/var/log/*.log   # macOS logs from host
             start_at: beginning
             resource:
               service.name: "system-logs"
@@ -102,9 +100,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         Подробнее о структуре конфигурации OpenTelemetry (OTel) см. в [официальном руководстве](https://opentelemetry.io/docs/collector/configuration/).
       </Step>
 
-      <Step>
-        ### Запустите OpenTelemetry Collector
-
+      <Step title="Запустите OpenTelemetry Collector" id="start-the-otel-collector">
         Запустите автономный коллектор с помощью следующей команды:
 
         ```shell
@@ -124,17 +120,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         Коллектор сразу начнет собирать локальные системные журналы и метрики.
       </Step>
 
-      <Step>
-        ### Выберите сервис
-
+      <Step title="Выберите сервис" id="select-your-service">
         На главной странице ClickHouse Cloud выберите сервис с Управляемым ClickStack.
 
         <Image img="/images/clickstack/select_service.webp" alt="Выберите сервис" size="lg" />
       </Step>
 
-      <Step>
-        ### Просмотр системных журналов
-
+      <Step title="Просмотр системных журналов" id="navigate-to-the-hyperdx-ui">
         Выберите `ClickStack` в левом меню, чтобы перейти в интерфейс ClickStack, где вы будете автоматически авторизованы.
 
         В интерфейсе поиска уже должны отображаться локальные системные журналы. Разверните фильтры и выберите `system.log`:
@@ -142,9 +134,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Локальные журналы HyperDX" size="lg" />
       </Step>
 
-      <Step>
-        ### Изучение системных метрик
-
+      <Step title="Изучение системных метрик" id="explore-system-metrics">
         Мы можем изучать наши метрики с помощью графиков.
 
         Перейдите в Chart Explorer через левое меню. Выберите source `Metrics` и `Maximum` в качестве типа агрегации.
@@ -167,7 +157,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Tab>
 
   <Tab title="ClickStack с открытым исходным кодом">
-    ### Создание пользовательской конфигурации OpenTelemetry
+    ### Создайте пользовательскую конфигурацию OpenTelemetry
 
     Создайте файл `custom-local-config.yaml` со следующим содержимым:
 
@@ -175,10 +165,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     receivers:
       filelog:
         include:
-          - /host/var/log/**/*.log        # Журналы Linux с хоста
+          - /host/var/log/**/*.log        # Linux logs from host
           - /host/var/log/syslog
           - /host/var/log/messages
-          - /host/private/var/log/*.log   # Журналы macOS с хоста
+          - /host/private/var/log/*.log   # macOS logs from host
         start_at: beginning
         resource:
           service.name: "system-logs"
@@ -235,19 +225,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
             - clickhouse
     ```
 
-    Данная конфигурация собирает системные журналы и метрики для систем OSX и Linux и отправляет результаты в ClickStack. Конфигурация расширяет коллектор ClickStack, добавляя новые приёмники и конвейеры — при этом используются уже существующий экспортёр `clickhouse` и процессоры (`memory_limiter`, `batch`), настроенные в базовом коллекторе ClickStack.
+    Эта конфигурация собирает системные журналы и метрики для систем OSX и Linux и отправляет результаты в ClickStack. Она расширяет коллектор ClickStack, добавляя новые приёмники и конвейеры: при этом используются уже настроенные в базовом коллекторе ClickStack экспортёр `clickhouse` и процессоры (`memory_limiter`, `batch`).
 
     <Info>
       **Временные метки при ингестии**
 
-      Эта конфигурация корректирует временные метки при приёме, назначая каждому событию обновлённое значение времени. В идеале следует [предварительно обработать или разобрать временные метки](/ru/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) с помощью процессоров или операторов OTel для файлов журналов, чтобы сохранить точное время события.
+      Эта конфигурация корректирует временные метки при приёме данных, присваивая каждому событию обновлённое значение времени. В идеале временные метки следует [предварительно обрабатывать или разбирать](/ru/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) с помощью процессоров или операторов OTel в файлах журналов, чтобы сохранить точное время события.
 
-      В этом примере конфигурации, если приёмник или файловый процессор настроен на запуск с начала файла, всем существующим записям журнала будет назначена одна и та же скорректированная временная метка — время обработки, а не исходное время события. Любые новые события, добавленные в файл, получат временные метки, приблизительно соответствующие фактическому времени их создания.
+      В этом примере, если приёмник или обработчик файлов настроен на запуск с начала файла, всем существующим записям журнала будет присвоена одна и та же скорректированная временная метка — время обработки, а не исходное время события. Все новые события, добавленные в файл, получат временные метки, примерно соответствующие фактическому времени их создания.
 
-      Чтобы избежать такого поведения, можно установить начальную позицию `end` в конфигурации приёмника. Это гарантирует, что ингестироваться будут только новые записи и им будут назначаться временные метки, близкие к их реальному времени поступления.
+      Чтобы избежать такого поведения, можно указать начальную позицию `end` в конфигурации приёмника. Это гарантирует, что в ингестию будут попадать только новые записи и им будут присваиваться временные метки, близкие к реальному времени их поступления.
     </Info>
 
-    Для получения подробной информации о структуре конфигурации OpenTelemetry (OTel) рекомендуем обратиться к [официальному руководству](https://opentelemetry.io/docs/collector/configuration/).
+    Подробнее о структуре конфигурации OpenTelemetry (OTel) см. в [официальном руководстве](https://opentelemetry.io/docs/collector/configuration/).
 
     ### Запуск ClickStack с пользовательской конфигурацией
 
@@ -272,7 +262,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       Обратите внимание, что мы монтируем `/var/log` хоста в `/host/var/log` внутри контейнера, чтобы избежать конфликтов с собственными файлами журналов контейнера.
     </Info>
 
-    ### Explore системных журналов
+    ### Просмотр системных журналов
 
     Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс ClickStack при локальном развёртывании.
 
@@ -280,24 +270,24 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Локальные журналы HyperDX" size="lg" />
 
-    ### Explore системных метрик
+    ### Изучение системных метрик
 
-    Мы можем исследовать наши метрики с помощью графиков.
+    Мы можем изучать наши метрики с помощью графиков.
 
     Перейдите в Chart Explorer через левое меню. Выберите источник `Metrics` и тип агрегации `Maximum`.
 
     В меню `Select a Metric` просто введите `memory`, затем выберите `system.memory.utilization (Gauge)`.
 
-    Нажмите кнопку Run, чтобы отобразить использование памяти в динамике.
+    Нажмите кнопку `Run`, чтобы увидеть использование памяти с течением времени.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory с течением времени" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Использование памяти с течением времени" size="lg" />
 
-    Обратите внимание, что число возвращается как число с плавающей точкой `%`. Для более наглядного отображения выберите `Set number format`.
+    Обратите внимание, что значение возвращается в виде числа с плавающей точкой в `%`. Чтобы отобразить его нагляднее, выберите `Set number format`.
 
     <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Формат числа" size="lg" />
 
-    В открывшемся меню выберите `Percentage` из выпадающего списка `Output format` и нажмите `Apply`.
+    В следующем меню выберите `Percentage` в раскрывающемся списке `Output format`, затем нажмите `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Память, % времени" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Процент использования памяти с течением времени" size="lg" />
   </Tab>
 </Tabs>

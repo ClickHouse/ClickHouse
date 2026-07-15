@@ -42,7 +42,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla original de
 
 * `host:port` — Dirección del servidor PostgreSQL.
 * `database` — Nombre de la base de datos remota.
-* `table` — Nombre de la tabla remota.
+* `table` — Nombre de la tabla remota, o una consulta pasada a PostgreSQL tal cual (consulte [Pasar una consulta en lugar de un nombre de tabla](#passing-a-query)).
 * `user` — Usuario de PostgreSQL.
 * `password` — Contraseña del usuario.
 * `schema` — Esquema de tabla distinto del predeterminado. Opcional.
@@ -78,7 +78,26 @@ Las cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, se 
 
 Todos los joins, las agregaciones, la ordenación, las condiciones `IN [ array ]` y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a PostgreSQL.
 
-Las consultas `INSERT` del lado de PostgreSQL se ejecutan como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de una transacción de PostgreSQL con auto-commit después de cada sentencia `INSERT`.
+<div id="passing-a-query">
+  ## Pasar una consulta en lugar de un nombre de tabla
+</div>
+
+En lugar de un nombre de tabla, el argumento `table` puede ser una consulta `SELECT` que se pasa a PostgreSQL tal como está. La estructura de la tabla se infiere a partir del resultado de la consulta. La consulta puede escribirse como una subconsulta o envolverse en la función `query`:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Esto es útil para hacer pushdown de joins, agregaciones o cualquier otro procesamiento a PostgreSQL. Dicha tabla es de solo lectura: no se permite hacer `INSERT` en ella. La misma sintaxis es compatible con la [función de tabla `postgresql`](/es/reference/functions/table-functions/postgresql).
+
+<Note>
+  La forma de subconsulta `(SELECT ...)` es analizada por ClickHouse y se vuelve a serializar en el dialecto de PostgreSQL (entrecomillado de identificadores de PostgreSQL y escape de literales de cadena) antes de enviarse al servidor. Por lo tanto, debe ser válida en ClickHouse SQL. Para pasar sintaxis específica de PostgreSQL que ClickHouse no analiza, use la forma `query('...')`, cuyo texto se envía literalmente a PostgreSQL.
+
+  Cualquier `WHERE`, `LIMIT`, agregación, etc. externo de la consulta de ClickHouse que la rodea **no** se delega a la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde PostgreSQL, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings#external_table_strict_query), un filtro externo que no pueda delegarse se rechaza con una excepción en lugar de aplicarse localmente.
+</Note>
+
+Las consultas `INSERT` del lado de PostgreSQL se ejecutan como `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` dentro de una transacción de PostgreSQL con auto-commit después de cada sentencia `INSERT`.
 
 Los tipos `Array` de PostgreSQL se convierten en arrays de ClickHouse.
 

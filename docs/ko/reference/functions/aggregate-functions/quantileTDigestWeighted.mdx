@@ -28,7 +28,7 @@ State 크기 대비 정밀도 비율 측면에서는 이 함수가 `quantile`보
 이 경우 [`quantiles`](/ko/reference/functions/aggregate-functions/quantiles#quantiles) 함수를 사용하십시오.
 
 <Note>
-  `quantileTDigestWeighted`는 [매우 작은 데이터 세트에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
+  `quantileTDigestWeighted`는 [매우 작은 데이터 집합에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
   이 경우 대신 [`quantileTDigest`](/ko/reference/functions/aggregate-functions/quantileTDigest) 사용을 고려하십시오.
 </Note>
 

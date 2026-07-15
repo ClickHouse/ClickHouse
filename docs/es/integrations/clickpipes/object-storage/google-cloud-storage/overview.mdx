@@ -155,7 +155,7 @@ La autenticación mediante cuenta de servicio es obligatoria cuando se usa el [m
   #### Credenciales HMAC
 </div>
 
-Para usar [claves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) para autenticarte, selecciona `Credentials` en **Authentication method** al configurar la conexión de ClickPipe. Luego, proporciona la clave de acceso (p. ej., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) y la clave secreta (p. ej., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) en `Access key` y `Secret key`, respectivamente.
+Para usar [claves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) para autenticarte, selecciona `Credentials` en **Authentication method** al configurar tu conexión de ClickPipe. Luego, proporciona la clave de acceso (p. ej., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) y la clave secreta (p. ej., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) en `Access key` y `Secret key`, respectivamente.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="Credenciales HMAC para GCS ClickPipes" size="lg" border />
 
@@ -180,18 +180,18 @@ Los ClickPipes de GCS utilizan dos rutas de red distintas para el descubrimiento
 
 ClickPipes proporciona valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 
-| Setting                              | Default value | Description                                                                                                                                                   |
-| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | Número de bytes que se procesan en un único lote de inserción.                                                                                                |
-| `Max file count`                     | 100           | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                      |
+| Setting                              | Default value | Description                                                                                                                                                      |
+| ------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | Número de bytes que se procesan en un único lote de inserción.                                                                                                   |
+| `Max file count`                     | 100           | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                         |
 | `Max threads`                        | auto(3)       | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                                    |
 | `Max insert threads`                 | 1             | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.                |
 | `Min insert block size bytes`        | 1GB           | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que puede insertarse en una tabla.                      |
 | `Max download threads`               | 4             | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                                 |
-| `Object storage polling interval`    | 30s           | Configura el tiempo máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                     |
+| `Object storage polling interval`    | 30s           | Configura el tiempo máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                        |
 | `Parallel distributed insert select` | 2             | [Configuración de parallel distributed insert select](/es/reference/settings/session-settings#parallel_distributed_insert_select).                               |
 | `Parallel view processing`           | false         | Si se debe habilitar el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true          | Si los archivos deben procesarse en paralelo en varios nodos.                                                                                                 |
+| `Use cluster function`               | true          | Si los archivos deben procesarse en paralelo en varios nodos.                                                                                                    |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 

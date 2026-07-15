@@ -126,22 +126,16 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step>
-    #### 下载仪表盘 JSON
-
+  <Step title="下载仪表盘 JSON" id="download">
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">下载仪表盘 JSON</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 在 Grafana 中打开导入界面
-
+  <Step title="在 Grafana 中打开导入界面" id="open-import">
     前往 **Dashboards → New → Import**。上传 JSON 文件或粘贴其内容。
   </Step>
 
-  <Step>
-    #### 选择 Prometheus 数据源
-
-    系统提示输入 `DS_PROMETHEUS` 时，选择抓取了[上一节](#configuring-prometheus)中所配置端点的 Prometheus 数据源。
+  <Step title="选择 Prometheus 数据源" id="pick-datasource">
+    系统提示输入 `DS_PROMETHEUS` 时，选择抓取[上一节](#configuring-prometheus)中所配置端点的 Prometheus 数据源。
   </Step>
 </Steps>
 

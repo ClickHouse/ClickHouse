@@ -19,9 +19,7 @@ La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des vers
 à lancer des serveurs et à exécuter des requêtes.
 
 <Steps>
-  <Step>
-    ## Installer la CLI de ClickHouse
-
+  <Step title="Installer la CLI de ClickHouse" id="install-the-cli">
     ```bash
     curl https://clickhouse.com/cli | sh
     ```
@@ -29,9 +27,7 @@ La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des vers
     Un alias `chctl` est également créé automatiquement pour plus de simplicité.
   </Step>
 
-  <Step>
-    ## Installer ClickHouse
-
+  <Step title="Installer ClickHouse" id="cli-install-clickhouse">
     Installez la dernière version de ClickHouse et définissez-la comme version par défaut :
 
     ```bash
@@ -60,9 +56,7 @@ La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des vers
     </Info>
   </Step>
 
-  <Step>
-    ## Démarrer clickhouse-server
-
+  <Step title="Démarrer clickhouse-server" id="cli-start-clickhouse-server">
     ```bash
     clickhousectl local server start
     ```
@@ -74,9 +68,7 @@ La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des vers
     ```
   </Step>
 
-  <Step>
-    ## Démarrer clickhouse-client
-
+  <Step title="Démarrer clickhouse-client" id="cli-start-clickhouse-client">
     ```bash
     clickhousectl local client
     ```

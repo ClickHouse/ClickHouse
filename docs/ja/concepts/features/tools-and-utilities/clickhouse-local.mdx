@@ -239,13 +239,15 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--echo [ <bool> ]` — 実行前に各クエリを表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。注意: `--echo` は省略可能な値を取るようになったため、値を指定しない `--echo` の直後に置かれた位置引数のクエリはその値として解釈されます。代わりに `--echo --query "..."`、`--echo -q "..."`、`--echo=false`、またはパイプされた `stdin` を使用してください。
 * `--echo-formatted [ <bool> ]` — 表示するクエリをフォーマットします。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
 * `--echo-query-id [ <bool> ]` — 実行前に `query_id` を表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
+* `--echo-query-separator <string>` — フォーマット済みで表示されるクエリの前にこの区切り文字を表示します (`--echo-formatted` が必要)。これにより、入力したクエリと整形後に表示されるクエリを区別しやすくなります。デフォルトは空 (無効) です。
 * `--highlight`, `--hilite` `<bool>` — コマンドプロンプトと表示されるクエリのシンタックスハイライトを切り替えます。デフォルトで有効です。ハイライトはターミナルへの出力時にのみ適用されます。
+* `--hints <bool>` — カーソルが入力末尾にあるとき、最もよく一致する候補について、入力に応じた自動補完ヒント (インラインの &quot;ghost&quot; テキスト) を表示します。Up/Down (または Ctrl-Up/Ctrl-Down) でヒントを移動し、Tab または Right でインラインヒントを受け入れます。`Enter` はヒントが明示的に選択されている場合にのみそのヒントを受け入れ、それ以外の場合はクエリを実行します。`Tab` は従来の補完リストも開きます。`--highlight` (ヒントの表示に色が必要) と候補提示機能が必要です (そのため `--disable_suggestion` を指定するとヒントも無効になります) 。デフォルトで有効です。
 * `--verbose` — クエリ実行の詳細を表示します。
 * `--logger.console` — コンソールにログを出力します。
 * `--logger.log` — ログファイル名。
 * `--logger.level` — ログレベル。
 * `--ignore-error` — クエリが失敗しても処理を停止しません。
-* `-c`, `--config-file` — ClickHouse server と同じ形式の設定ファイルへのパス。デフォルトでは設定は空です。
+* `-c`, `--config-file` — ClickHouseサーバー と同じ形式の設定ファイルへのパス。デフォルトでは設定は空です。
 * `--no-system-tables` — システムテーブルをアタッチしません。
 * `--help` — `clickhouse-local` の引数リファレンス。
 * `-V`, `--version` — バージョン情報を表示して終了します。
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## TCP および HTTP リスナーの起動
+</div>
+
+`clickhouse-local` は、TCP (ネイティブプロトコル) および HTTP 接続を受け付ける軽量なサーバーとして動作させることができます。これは、実行中の `clickhouse-local` インスタンスのデータベースやテーブルに、他の ClickHouse ツールやアプリケーションからアクセスできるようにしたい場合に便利です。なお、受信した各接続にはそれぞれ独自のセッションが割り当てられます。つまり、対話型 `clickhouse-local` セッションの一時テーブルやセッションレベルの設定は、外部接続からは参照できません。
+
+リスナーを開くには `SYSTEM START LISTEN` を、閉じるには `SYSTEM STOP LISTEN` を使用します。
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+`--listen_host`、`--tcp_port`、`--http_port` オプションは、バインド先のアドレスとポートを設定します。デフォルトのポートは、TCP が `9000`、HTTP が `8123` です。
+
+<Warning>
+  **セキュリティ**
+
+  デフォルトでは、`clickhouse-local` は一時ユーザー設定で実行されるため、開かれたリスナーはいずれも認証されません。`users_config` 設定でカスタムの `users.xml` を指定して (たとえば `--config-file` を使用して) ユーザーとアクセス制御を明示的に設定している場合を除き、ループバックアドレス (`127.0.0.1` または `::1`) にバインドしてください。認証なしで非ループバックアドレスで待ち受けると、選択したポートに到達できるすべての相手に、ローカルインスタンスのデータが公開されます。
+</Warning>
 
 <div id="related-content-1">
   ## 関連コンテンツ

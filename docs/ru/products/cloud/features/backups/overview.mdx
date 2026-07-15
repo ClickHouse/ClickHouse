@@ -89,18 +89,14 @@ ClickHouse Cloud позволяет экспортировать резервн�
 Чтобы экспортировать резервные копии в свою облачную учетную запись, у вас есть два варианта:
 
 <Steps>
-  <Step>
-    ##### Через интерфейс Cloud Console
-
+  <Step title="Через интерфейс Cloud Console" id="via-ui">
     Внешние резервные копии можно [настроить в интерфейсе](/ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
     После этого по умолчанию резервные копии будут создаваться ежедневно (как указано в [политике резервного копирования по умолчанию](/ru/products/cloud/features/backups/overview#default-backup-policy)).
     Однако мы также поддерживаем [настраиваемые](/ru/products/cloud/guides/backups/configurable-backups) резервные копии в вашей облачной учетной записи, что позволяет задать собственное расписание.
     Важно отметить, что все резервные копии в вашем бакете являются полными и никак не связаны с предыдущими или будущими резервными копиями.
   </Step>
 
-  <Step>
-    ##### С помощью SQL-команд
-
+  <Step title="С помощью SQL-команд" id="using-commands">
     Вы можете использовать [SQL-команды](/ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands), чтобы экспортировать резервные копии в ваш бакет.
   </Step>
 </Steps>

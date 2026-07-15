@@ -3,51 +3,51 @@ title: Настройка MySQL в ClickHouse Cloud
 ---
 
 <Steps>
-  <Step>
-    #### Выберите `Connect your app`
-
+  <Step title={<>Выберите <code>Connect your app</code></>} id="select-connect-your-app">
     После создания сервиса ClickHouse Cloud на экране `Connect your app` выберите MySQL в раскрывающемся списке.
 
-    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="Экран учетных данных ClickHouse Cloud с раскрывающимся списком выбора интерфейса MySQL" border />
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="Экран учетных данных ClickHouse Cloud с раскрывающимся списком выбора интерфейса MySQL" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### Включите интерфейс MySQL
+  <Step title="Включите интерфейс MySQL" id="enable-mysql-interface">
+    Включите интерфейс MySQL для этого сервиса с помощью переключателя.
+    После этого для сервиса будет открыт порт `3306`, а на экране появятся сведения для подключения по MySQL, включая ваше уникальное имя пользователя MySQL.
 
-    Переведите переключатель в активное положение, чтобы включить интерфейс MySQL для этого сервиса.
-    Это откроет для сервиса порт `3306` и покажет экран подключения MySQL с вашим уникальным именем пользователя MySQL.
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="Переключатель включения интерфейса MySQL в ClickHouse Cloud и сведения о подключении" />
+    </Frame>
 
-    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="Переключатель включения интерфейса MySQL в ClickHouse Cloud и сведения о подключении" border />
-
-    Кроме того, чтобы включить интерфейс MySQL для существующего сервиса:
+    Также интерфейс MySQL можно включить для существующего сервиса:
   </Step>
 
-  <Step>
-    #### Выберите `Connect`
-
-    Убедитесь, что ваш сервис находится в состоянии `Running`, затем выберите сервис, для которого хотите включить интерфейс MySQL.
+  <Step title={<>Выберите <code>Connect</code></>} id="select-connect">
+    Убедитесь, что сервис находится в состоянии `Running`, затем нажмите на сервис, для которого хотите включить интерфейс MySQL.
     В левом меню выберите &quot;Connect&quot;:
 
-    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="Экран подключения сервиса ClickHouse Cloud с выделенной опцией Connect" border />
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="Экран подключения сервиса ClickHouse Cloud с выделенной опцией Connect" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### Выберите `MySQL`
-
+  <Step title={<>Выберите <code>MySQL</code></>} id="choose-mysql">
     Выберите `MySQL` в раскрывающемся списке `Connect With`.
 
-    <Image size="md" img="/images/_snippets/mysql4.webp" alt="Экран подключения ClickHouse Cloud с выбранной опцией MySQL" border />
+    <Frame>
+      <img src="/images/_snippets/mysql4.webp" alt="Экран подключения ClickHouse Cloud с выбранной опцией MySQL" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### Включите интерфейс MySQL
-
-    Переведите переключатель в активное положение, чтобы включить интерфейс MySQL для этого сервиса.
-    Это откроет для сервиса порт `3306` и покажет экран подключения MySQL с вашим уникальным именем пользователя MySQL.
+  <Step title="Включите интерфейс MySQL" id="enable-mysql-interface-existing-service">
+    Включите интерфейс MySQL для этого сервиса с помощью переключателя.
+    После этого для сервиса будет открыт порт `3306`, а на экране появятся сведения для подключения по MySQL, включая ваше уникальное имя пользователя MySQL.
   </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="Экран подключения ClickHouse Cloud с включенным интерфейсом MySQL, показывающий сведения о подключении" border />
+<Frame>
+  <img src="/images/_snippets/mysql5.webp" alt="Экран подключения ClickHouse Cloud с включенным интерфейсом MySQL и сведениями о подключении" />
+</Frame>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Создание пользователя MySQL только для чтения в ClickHouse Cloud
@@ -69,9 +69,7 @@ ClickHouse Cloud автоматически создаёт пользовате�
 </Note>
 
 <Steps>
-  <Step>
-    #### Создайте профиль настроек только для чтения
-
+  <Step title="Создайте профиль настроек только для чтения" id="create-a-custom-settings-user">
     Создайте [профиль настроек](/ru/reference/statements/create/settings-profile) для пользователя только для чтения,
     установив параметр `readonly` в `1`:
 
@@ -80,9 +78,7 @@ ClickHouse Cloud автоматически создаёт пользовате�
     ```
   </Step>
 
-  <Step>
-    #### Создайте нового пользователя MySQL только для чтения
-
+  <Step title="Создайте нового пользователя MySQL только для чтения" id="create-a-readonly-mysql-user">
     [Создайте пользователя](/ru/reference/statements/create/user) с именем в следующем формате:
 
     ```sql
@@ -98,9 +94,7 @@ ClickHouse Cloud автоматически создаёт пользовате�
     ```
   </Step>
 
-  <Step>
-    #### Выдайте новому пользователю разрешения на доступ к нужным таблицам
-
+  <Step title="Выдайте новому пользователю разрешения на доступ к нужным таблицам" id="grant-the-new-user-the-necessary-permissions">
     [Выдайте](/ru/reference/statements/grant) новому пользователю необходимые разрешения для работы с нужными таблицами или базами данных.
     Например, если нужно предоставить доступ только к `system.query_log`:
 

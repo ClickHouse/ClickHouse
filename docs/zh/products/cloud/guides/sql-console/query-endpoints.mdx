@@ -29,9 +29,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Info>
 
 <Steps>
-  <Step>
-    ### 创建已保存的查询
-
+  <Step title="创建已保存的查询" id="creating-a-saved-query">
     如果你已经有已保存的查询，可以跳过此步骤。
 
     打开一个新的查询标签页。为了演示，我们将使用 [youtube dataset](/zh/get-started/sample-datasets/youtube-dislikes)，其中包含大约 45 亿条记录。
@@ -79,9 +77,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     有关已保存查询的更多文档，请参阅 [&quot;Saving a query&quot;](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query) 部分。
   </Step>
 
-  <Step>
-    ### 配置查询 API 端点
-
+  <Step title="配置查询 API 端点" id="configuring-the-query-api-endpoint">
     可以直接在查询视图中点击 **共享** 按钮并选择 `API Endpoint` 来配置查询 API 端点。
     系统会提示你指定哪些 API 密钥可以访问该端点：
 
@@ -105,15 +101,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 查询 API 参数
-
+  <Step title="查询 API 参数" id="query-api-parameters">
     查询参数可使用 `{parameter_name: type}` 语法来指定。系统会自动检测这些参数，示例请求载荷中将包含一个 `queryVariables` 对象，你可以通过它传递这些参数。
   </Step>
 
-  <Step>
-    ### 测试与监控
-
+  <Step title="测试与监控" id="testing-and-monitoring">
     创建查询 API 端点后，你可以使用 `curl` 或任何其他 HTTP 客户端测试其是否正常工作：
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="端点 curl 测试" />

@@ -58,9 +58,7 @@ La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de
 En las implementaciones autogestionadas, para usar el perfilador de consultas, siga los pasos que se indican a continuación:
 
 <Steps>
-  <Step>
-    ### Instale ClickHouse con información de depuración
-
+  <Step title="Instale ClickHouse con información de depuración" id="debug-info">
     Instale el paquete `clickhouse-common-static-dbg`:
 
     1. Siga las instrucciones del paso [&quot;Configurar el repositorio de Debian&quot;](/es/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,9 +67,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
     4. Ejecute `clickhouse-client`. El servidor detectará automáticamente los símbolos de depuración de clickhouse-common-static-dbg; no necesita hacer nada especial para habilitarlos
   </Step>
 
-  <Step>
-    ### Compruebe la configuración del servidor
-
+  <Step title="Compruebe la configuración del servidor" id="server-config">
     Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
 
     ```xml
@@ -97,9 +93,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
     Después de reiniciar el servidor, ClickHouse no limpia la tabla y todas las direcciones de memoria virtual almacenadas pueden quedar inválidas.
   </Step>
 
-  <Step>
-    ### Configure los temporizadores del perfilador
-
+  <Step title="Configure los temporizadores del perfilador" id="configure-profile-timers">
     Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings#query_profiler_real_time_period_ns).
     Ambas opciones pueden usarse simultáneamente.
 
@@ -111,9 +105,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
     Si necesita perfilar cada consulta individual, use una frecuencia de muestreo más alta.
   </Step>
 
-  <Step>
-    ### Analice la tabla del sistema `trace_log`
-
+  <Step title={<>Analice la tabla del sistema <code>trace_log</code></>} id="analyze-trace-log-system-table">
     Para analizar la tabla del sistema `trace_log`, habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions):
 
     ```sql

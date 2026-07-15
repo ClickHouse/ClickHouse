@@ -24,33 +24,25 @@ import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFe
 管理员可以一次邀请多位用户，并在发出邀请时分配一个或多个角色。
 
 <Steps>
-  <Step>
-    ### 进入组织设置并选择 Users and roles
-
-    在 services 页面中，选择您的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
+  <Step title="进入组织设置并选择 Users and roles" id="users-and-roles-1">
+    在服务页面中，选择您的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 在左上角选择“Invite members”
-
+  <Step title="在左上角选择“Invite members”" id="invite-members">
     点击左上角的 `Invite members` 按钮。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 输入新成员的电子邮件地址并分配角色
-
+  <Step title="输入新成员的电子邮件地址并分配角色" id="add-email-and-roles">
     在邀请页面顶部输入电子邮件地址。选择要分配给这些用户的一个或多个角色。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 点击 `Send invites`
-
+  <Step title={<>点击 <code>Send invites</code></>} id="send-invites">
     点击页面底部的 `Send invites`。用户会收到一封电子邮件，并可通过该邮件加入组织。有关接受邀请的更多信息，请参阅 [管理我的账户](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account)。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -82,34 +74,26 @@ import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFe
 被赋予 Admin 角色的用户可随时更新其他用户的权限。
 
 <Steps>
-  <Step>
-    ### 进入 组织设置 并选择 Users and roles
-
+  <Step title="进入组织设置并选择 Users and roles" id="users-and-roles-2">
     在服务页面中，选择您的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 选择要更新的用户，然后选择 Edit
-
+  <Step title="选择要更新的用户，然后选择 Edit" id="select-user-to-update">
     在要修改访问权限的用户所在行末尾，选择对应的菜单项。然后在弹出菜单中选择 `Edit`。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 更新权限
-
+  <Step title="更新权限" id="update-permissions">
     点击 `Roles` 框以展开菜单。选中或取消选中复选框，为该用户添加或移除角色。有关角色及其对应权限的列表，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 保存更改
-
-    使用标签页底部的 `Save changes` 按钮保存更改。
+  <Step title="保存更改" id="save-changes">
+    使用选项卡底部的 `Save changes` 按钮保存更改。
   </Step>
 </Steps>
 

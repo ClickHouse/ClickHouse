@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatique', 'rest', 'curl']
 ---
 
-Tous les types de ClickPipes peuvent être créés, mis à jour et supprimés de manière programmatique à l’aide de la [ClickHouse Cloud OpenAPI](/fr/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). Cette page présente l’authentification et les points de terminaison ClickPipes disponibles, avec des exemples de requêtes `curl` pour chaque type de ClickPipe.
+Tous les types de ClickPipes peuvent être créés, mis à jour et supprimés de manière programmatique à l’aide de la [ClickHouse Cloud OpenAPI](/fr/products/cloud/api-reference/clickpipes/list-clickpipes). Cette page présente l’authentification et les points de terminaison ClickPipes disponibles, avec des exemples de requêtes `curl` pour chaque type de ClickPipe.
 
 <div id="authentication">
   ## Authentification
@@ -42,7 +42,7 @@ Tous les points de terminaison ClickPipes sont rattachés à un service ClickHou
 | -------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Lister tous les ClickPipes                          |
 | `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Créer un ClickPipe                                  |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Récupérer un ClickPipe                              |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Obtenir un ClickPipe                                |
 | `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Mettre à jour un ClickPipe                          |
 | `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Supprimer un ClickPipe                              |
 | `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Récupérer les paramètres du ClickPipe               |
@@ -57,7 +57,7 @@ Pour les ClickPipes CDC (Postgres, MySQL, MongoDB), il existe des points de term
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | Récupérer la mise à l’échelle des ClickPipes CDC     |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Mettre à jour la mise à l’échelle des ClickPipes CDC |
 
-Pour obtenir les schémas complets de requête et de réponse pour chaque point de terminaison, consultez la [Swagger UI](/fr/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+Pour obtenir les schémas complets de requête et de réponse pour chaque point de terminaison, consultez la [référence de l’API](/fr/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="examples">
   ## Exemples
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## Création de ClickPipes
 </div>
 
-Le corps de la requête `POST /clickpipes` varie selon le type de source. Les exemples ci-dessous montrent la structure de chaque type de ClickPipe pris en charge. Pour les schémas JSON de référence, consultez la [Swagger UI](/fr/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+Le corps de la requête `POST /clickpipes` varie selon le type de source. Les exemples ci-dessous montrent la structure de chaque type de ClickPipe pris en charge. Pour les schémas JSON de référence, consultez la [référence de l’API](/fr/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="create-kafka">
   ### Kafka

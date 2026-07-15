@@ -48,9 +48,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
 </div>
 
 <Steps>
-  <Step>
-    ### SCIM を有効にする
-
+  <Step title="SCIM を有効にする" id="enable-scim-provisioning">
     組織管理者として **ClickHouse Cloud Console** にサインインし、**組織設定 → SAML and SCIM settings → SCIM Configuration** を開きます。
 
     ![組織設定で SCIM 設定タブに移動する](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +66,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     これをコピーしてください。後で Okta に貼り付けます。
   </Step>
 
-  <Step>
-    ### SCIM アクセストークンを生成する
-
+  <Step title="SCIM アクセストークンを生成する" id="generate-scim-token">
     `Create an API key` セクションで有効期限を選択します。
 
     <Tip>
@@ -84,9 +80,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![新しい SCIM API key を生成する](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### ロールマッピングを定義する
-
+  <Step title="ロールマッピングを定義する" id="define-role-mapping">
     SCIM Configuration パネルで **Map roles in &quot;Users and roles&quot;** をクリックします (または **Users and roles → Roles** から直接移動します)。
 
     SCIM グループは名前に基づいて ClickHouse Cloud のロールに紐付けられます。あわせて次のルールに注意してください。
@@ -103,9 +97,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
 </div>
 
 <Steps>
-  <Step>
-    ### Okta で ClickHouse Cloud アプリケーションを開く
-
+  <Step title="Okta で ClickHouse Cloud アプリケーションを開く" id="open-clickhouse-cloud-app">
     **Okta Admin Console** で **Applications → Applications** に移動し、ClickHouse Cloud の SAML SSO 設定時に作成したアプリケーションを検索して開きます。
 
     まだ SAML アプリケーションを作成していない場合は、先に [SAML SSO setup guide](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) に従ってください。SCIM プロビジョニングは同じアプリケーションで設定します。
@@ -119,9 +111,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![アプリケーションに Provisioning タブが表示された状態](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### Okta を SCIM エンドポイントに接続する
-
+  <Step title="Okta を SCIM エンドポイントに接続する" id="connect-okta-scim">
     アプリケーションの **Provisioning** タブを開き、`Edit` をクリックします。フォームに必要事項を入力します。
 
     * **SCIM connector base URL** — 先ほどの SCIM エンドポイント URL。
@@ -147,9 +137,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     `Save` をクリックします。
   </Step>
 
-  <Step>
-    ### Provisioning の動作を設定する
-
+  <Step title="Provisioning の動作を設定する" id="configure-provisioning-behavior">
     引き続き **Provisioning** タブで、左側のサイドバーにある `To App` をクリックします。`Edit` をクリックし、以下を有効にします。
 
     | 設定                     | 操作  | 内容                                                   |
@@ -166,9 +154,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     ![Provisioning の設定を保存して Sign On タブに戻る](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### ユーザー属性をマッピングする
-
+  <Step title="ユーザー属性をマッピングする" id="map-user-attributes">
     Okta と ClickHouse Cloud で、どのユーザーフィールドを対応付けるか一致している必要があります。**Provisioning** タブで `To App` をクリックし、アプリケーションの **Attribute Mappings** を確認してください。通常は Okta SAML アプリケーションのデフォルト設定で問題ありませんが、以下の表を確認してください。
 
     | Okta 属性           | ClickHouse Cloud (SCIM) 属性 | 必須                                  |
@@ -189,9 +175,7 @@ ClickHouse Cloud は、ユーザーとグループのライフサイクルを自
     </Warning>
   </Step>
 
-  <Step>
-    ### グループをプッシュしてユーザーを割り当てる
-
+  <Step title="グループをプッシュしてユーザーを割り当てる" id="push-groups-and-assign-users">
     ここでロールが自動的に適用されます。
 
     **Okta でグループを作成します。** 先ほど設定した各ロールマッピングに対して、**表示名が完全に一致する** Okta グループを作成するか、既存のグループを特定します。たとえば、マッピングが `ClickHouse-Admins → Admin` であれば、Okta で `ClickHouse-Admins` という名前のグループを作成します。

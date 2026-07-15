@@ -56,7 +56,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 조직에서 현재 사용 중인 마켓플레이스 구독을 다른 조직에서 사용 중인 구독으로 변경합니다.
 
 <div id="steps-switch-org-already-active">
-  ### 조직의 청구 방식을 신용카드에서 다른 조직에 이미 활성화되어 있는 마켓플레이스 구독으로 전환하는 단계
+  ### 조직의 청구 방식을 신용카드에서 다른 조직에서 이미 활성화된 마켓플레이스 구독으로 전환하는 단계
 </div>
 
 1. ClickHouse Cloud 콘솔의 **청구** 페이지로 이동합니다.
@@ -65,12 +65,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 <Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="결제 수단 편집" size="lg" />
 
 3. **결제 수단 편집** 대화 상자에서 현재 사용 중인 신용카드가 기본 결제 수단으로 표시됩니다.
-4. 신용카드 아래에는 다른 조직에서 사용할 수 있는 마켓플레이스 구독이 표시됩니다. 각 항목에는 마켓플레이스 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
-5. 이 조직의 사용량을 청구할 마켓플레이스 구독을 선택합니다.
+4. 신용카드 아래에는 다른 조직의 사용 가능한 마켓플레이스 구독이 표시됩니다. 각 항목에는 마켓플레이스 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
+5. 이 조직의 사용량에 청구할 마켓플레이스 구독을 선택합니다.
 6. 확인하려면 **결제 수단 업데이트**를 클릭합니다.
 
 <div id="steps-switch-org-different-org">
-  ### 조직의 현재 marketplace subscription을 다른 조직에서 사용 중인 것으로 변경하는 단계
+  ### 조직의 현재 마켓플레이스 구독을 다른 조직에서 사용 중인 것으로 변경하는 단계
 </div>
 
 1. ClickHouse Cloud 콘솔의 **청구** 페이지로 이동합니다.
@@ -78,9 +78,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="결제 수단 편집" size="lg" />
 
-3. **결제 수단 편집** 대화 상자에서 현재 marketplace subscription이 결제 수단으로 표시됩니다.
-4. 현재 marketplace subscription 아래에는 다른 조직의 사용 가능한 marketplace subscription이 표시됩니다. 각 항목에는 marketplace 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
-5. 이 조직의 사용량이 청구될 새 marketplace subscription을 선택합니다.
+3. **결제 수단 편집** 대화 상자에서 현재 마켓플레이스 구독이 결제 수단으로 표시됩니다.
+4. 현재 마켓플레이스 구독 아래에는 다른 조직의 사용 가능한 마켓플레이스 구독이 표시됩니다. 각 항목에는 marketplace 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
+5. 이 조직의 사용량이 청구될 새 마켓플레이스 구독을 선택합니다.
 6. 확인하려면 **결제 수단 업데이트**를 클릭합니다.
 
 <div id="add-backup-cc-to-marketplace-org">
@@ -98,16 +98,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 1. ClickHouse Cloud 콘솔의 **청구** 페이지로 이동합니다.
-2. 청구 페이지 상단에는 프라이머리 결제 수단이 Marketplace 구독으로, 백업 결제 수단이 **None**으로 표시됩니다.
+2. 청구 페이지 상단에는 기본 결제 수단이 마켓플레이스 구독으로, 백업 결제 수단이 **None**으로 표시됩니다.
 3. 백업 결제 수단을 설정하려면 **add credit card** 버튼을 클릭합니다.
 
 <Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="백업 신용카드 추가" size="lg" />
 
-4. 안내에 따라 신용카드의 청구지 주소 정보를 추가하거나 업데이트합니다. 저장하면 **청구** 페이지에 프라이머리 Marketplace 구독과 함께 백업 신용카드가 표시됩니다.
+4. 안내에 따라 신용카드의 청구지 주소 정보를 추가하거나 업데이트합니다. 저장하면 **청구** 페이지에 프라이머리 마켓플레이스 구독과 함께 백업 신용카드가 표시됩니다.
 
 <Note>
   백업 신용카드를 구성한 후에는 버튼을 클릭해 신용카드를 수정하고 프라이머리 결제 수단으로 설정할 수도 있습니다.
-  하지만 이렇게 하면 해당 신용카드가 조직의 유일한 결제 수단이 되며, Marketplace 구독은 ClickHouse Cloud에서 완전히 제거됩니다.
+  하지만 이렇게 하면 해당 신용카드가 조직의 유일한 결제 수단이 되며, 마켓플레이스 구독은 ClickHouse Cloud에서 완전히 제거됩니다.
   다시 구성하려면 [&quot;클라우드 제공업체에서 marketplace 청구 설정&quot;](#set-up-marketplace-billing-from-cp) 섹션의 단계에 따라 marketplace 계정으로 돌아가야 합니다.
 </Note>
 

@@ -45,9 +45,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
 ***
 
 <Steps>
-  <Step>
-    ## المرحلة 1: إنشاء شهادات FIPS
-
+  <Step title="المرحلة 1: إنشاء شهادات FIPS" id="phase-1-create-fips-certificates">
     يتطلب الامتثال لمعيار FIPS شهادات TLS مُنشأة باستخدام خوارزميات معتمدة من FIPS وفي بيئة مُمكّنة لـ FIPS. تحتاج إلى ثلاث مجموعات من الشهادات:
 
     | الشهادة | المفتاح الخاص | المفتاح العام | SAN مطلوب                                                                                                                                       |
@@ -65,9 +63,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 2: تثبيت المتطلبات الأساسية لـ Kubernetes
-
+  <Step title="المرحلة 2: تثبيت المتطلبات الأساسية لـ Kubernetes" id="phase-2-install-kubernetes-prerequisites">
     ### تثبيت VolumeSnapshot CRDs
 
     ```bash
@@ -96,9 +92,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 3: تثبيت المشغِّل
-
+  <Step title="المرحلة 3: تثبيت المشغِّل" id="phase-3-install-operator">
     لاحظ صيغة نقطة نهاية FIPS الخاصة بـ ECR: `0000000000.dkr-ecr-fips.us-west-2.on.aws` (وليست نقطة النهاية القياسية `.amazonaws.com`).
 
     ```text
@@ -130,9 +124,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 4: إنشاء أسرار الشهادات
-
+  <Step title="المرحلة 4: إنشاء أسرار الشهادات" id="phase-4-create-certificate-secrets">
     يجب تثبيت الأسرار في مساحة الاسم نفسها في Kubernetes التي سيعمل فيها عنقود ClickHouse. إذا كان اسم العنقود هو `default-xx-01`، فستكون مساحة الاسم هي `ns-default-xx-01`.
 
     تأكد من وجود مساحة الاسم، ثم أنشئ الأسرار. **لا تغيّر أسماء الأسرار أو أسماء المفاتيح.**
@@ -159,9 +151,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 5: نشر مجموعة ClickHouse
-
+  <Step title="المرحلة 5: نشر مجموعة ClickHouse" id="phase-5-deploy-clickhouse-cluster">
     استخدم إصدار FIPS الصحيح من نقاط النهاية الخاصة بـ ECR وS3. يمكن الاطلاع على نقاط نهاية FIPS على [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
 
     ```text expandable
@@ -264,9 +254,7 @@ description: "يغطي هذا الدليل نشر ClickHouse Private مع الا
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 6: التحقق من التثبيت
-
+  <Step title="المرحلة 6: التحقق من التثبيت" id="phase-6-verify-installation">
     ### إعادة توجيه المنفذ إلى منفذ TLS
 
     مع تفعيل وضع FIPS، يستخدم ClickHouse بروتوكول TLS على المنفذ **9440** بدلًا من المنفذ القياسي 9000.

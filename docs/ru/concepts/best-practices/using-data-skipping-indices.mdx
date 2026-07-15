@@ -183,7 +183,7 @@ CREATE TABLE stackoverflow.posts
   `ParentId` String,
   `CommunityOwnedDate` DateTime64(3, 'UTC'),
   `ClosedDate` DateTime64(3, 'UTC'),
-  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --индекс здесь
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
@@ -257,7 +257,7 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 Мы также показываем анимацию того, как minmax индекс пропуска данных отбрасывает все блоки строк, которые заведомо не могут содержать совпадений с предикатом `ViewCount` &gt; 10,000,000 в нашем примере запроса:
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Использование индексов пропуска" />
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Использование индексов пропуска данных" />
 
 <div id="related-docs">
   ## Связанные документы

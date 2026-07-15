@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Looker'
 slug: /integrations/looker
-keywords: ['clickhouse', 'looker', 'connect', 'integrate', 'ui']
-description: 'Looker は、BI、データアプリケーション、組み込みアナリティクスのためのエンタープライズ向けプラットフォームであり、リアルタイムでインサイトを探索・共有できます。'
+keywords: ['clickhouse', 'looker', '接続', 'インテグレーション', 'UI']
+description: 'Looker は、BI、データアプリケーション、埋め込み分析のためのエンタープライズ向けプラットフォームであり、インサイトをリアルタイムで探索・共有するのに役立ちます。'
 title: 'Looker'
 doc_type: 'guide'
 integration:
@@ -17,46 +17,44 @@ import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-Looker は、公式の ClickHouse データソースを使用して、ClickHouse Cloud またはオンプレミス環境にデプロイされた ClickHouse に接続できます。
+Looker は、公式の ClickHouse データソースを介して ClickHouse Cloud またはオンプレミス環境に接続できます。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse データソースを作成する" id="2-create-a-clickhouse-data-source">
+    Admin -&gt; Database -&gt; Connections に移動し、右上の「Add Connection」ボタンをクリックします。
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. ClickHouse データソースを作成する
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Looker のデータベース管理インターフェイスで新しい接続を追加する" border />
 
-Admin -&gt; Database -&gt; Connections に移動し、右上の「Add Connection」ボタンをクリックします。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Looker のデータベース管理インターフェイスで新しい接続を追加する" border />
+    データソース名を入力し、dialect のドロップダウンから `ClickHouse` を選択します。フォームに認証情報を入力します。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Looker の接続フォームで ClickHouse の認証情報を指定する" border />
 
-データソース名を入力し、dialect のドロップダウンから `ClickHouse` を選択します。フォームに認証情報を入力します。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Looker の接続フォームで ClickHouse の認証情報を指定する" border />
+    ClickHouse Cloud を使用している場合、またはデプロイメントで SSL が必要な場合は、追加設定で SSL を有効にしてください。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Looker の設定で ClickHouse 接続の SSL を有効にする" border />
 
-ClickHouse Cloud を使用している場合、またはデプロイメントで SSL が必要な場合は、追加設定で SSL を有効にしてください。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Looker の設定で ClickHouse 接続の SSL を有効にする" border />
+    まず接続をテストし、完了したら新しい ClickHouse データソースに接続します。
 
-<br />
+    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="ClickHouse データソースをテストして接続する" border />
 
-まず接続をテストし、完了したら新しい ClickHouse データソースに接続します。
+    <br />
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="ClickHouse データソースをテストして接続する" border />
-
-<br />
-
-これで、ClickHouse データソースを Looker プロジェクトに関連付けられるようになります。
+    これで、ClickHouse データソースを Looker プロジェクトに関連付けられるようになります。
+  </Step>
+</Steps>
 
 <div id="3-known-limitations">
-  ## 3. 既知の制限事項
+  ## 既知の制限事項
 </div>
 
 1. 次のデータ型は、デフォルトで文字列として処理されます:

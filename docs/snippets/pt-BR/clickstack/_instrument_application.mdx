@@ -3,9 +3,7 @@ title: Instrumentar um aplicativo
 ---
 
 <Steps>
-  <Step>
-    ## Faça o clone e execute a aplicação
-
+  <Step title="Faça o clone e execute a aplicação" id="clone-and-run-the-application">
     Clone o repositório, instale as dependências e crie seu arquivo `.env`:
 
     ```bash
@@ -23,14 +21,14 @@ title: Instrumentar um aplicativo
 
     Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios, e um campo de busca. Explore a interface: mude de ano, abra os detalhes das histórias.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+    </Frame>
 
     Neste ponto, o aplicativo está em execução, mas ainda não foi instrumentado. O ClickStack não mostra dados: ele está aguardando telemetria. Este é o estado &quot;antes&quot;.
   </Step>
 
-  <Step>
-    ## Obtenha os detalhes da conexão
-
+  <Step title="Obtenha os detalhes da conexão" id="get-connection-details">
     A aplicação precisa de dois valores para se comunicar com o coletor:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: o endpoint OTLP que seu coletor expõe (geralmente na porta `4318` para OTLP via HTTP).
@@ -47,9 +45,7 @@ title: Instrumentar um aplicativo
     O SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para definir o header de autorização para os três sinais: traces, métricas e logs. Se o seu collector estiver em execução localmente e não exigir autenticação, você pode deixar o valor vazio (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), mas a variável precisa estar presente; o SDK ignora completamente a inicialização se ela não estiver definida ou se estiver totalmente vazia.
   </Step>
 
-  <Step>
-    ## Instrumente a aplicação
-
+  <Step title="Instrumente a aplicação" id="instrument-the-application">
     A instrumentação tem três partes: instalar os SDKs, alterar o comando de inicialização e habilitar o SDK do navegador. Nada disso altera as regras de negócio da aplicação.
 
     ### Instale os SDKs
@@ -102,9 +98,7 @@ title: Instrumentar um aplicativo
     </Warning>
   </Step>
 
-  <Step>
-    ## Gere tráfego e visualize a telemetria
-
+  <Step title="Gere tráfego e visualize a telemetria" id="generate-traffic-and-view-telemetry">
     Reinicie a aplicação para que o novo comando de inicialização e o bundle do navegador recém-compilado entrem em vigor:
 
     ```bash
@@ -118,15 +112,21 @@ title: Instrumentar um aplicativo
 
     1. Vá para **Busca** e filtre pelos últimos 5 minutos. Os logs de `hn-analyzer-api` começarão a aparecer.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+    </Frame>
 
     2. Clique em uma requisição e suba pelo trace. Você verá o span do handler do Express, um span HTTP filho apontando para o cluster do ClickHouse com a duração real da rede, além de registros `console.log` correlacionados no mesmo trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+    </Frame>
 
     3. Abra **Session Replay** para reproduzir um vídeo com linha do tempo navegável de uma sessão do navegador, sincronizado com a linha do tempo do trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+    </Frame>
 
     Logs, métricas, traces e replays de sessão chegam à mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
   </Step>

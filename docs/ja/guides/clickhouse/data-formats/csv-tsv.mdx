@@ -326,7 +326,7 @@ FORMAT CSVWithNamesAndTypes
 "2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
 ```
 
-このフォーマットには、2 つのヘッダー行が含まれます。1 つはカラム名、もう 1 つはカラムの型です。これにより、ClickHouse (および他のアプリケーション) は、[このようなファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv) からデータを読み込む際にカラムの型を識別できます。
+このフォーマットには、2 つのヘッダー行が含まれます。1 つはカラム名、もう 1 つはカラム型です。これにより、ClickHouse (および他のアプリケーション) は、[このようなファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv) からデータを読み込む際にカラム型を識別できます。
 
 ```sql
 DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
@@ -340,7 +340,7 @@ DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
 └───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-これにより ClickHouse は、推測する代わりに (2 行目の) ヘッダー行に基づいてカラムの型を判別するようになりました。
+これにより ClickHouse は、推測する代わりに (2 行目の) ヘッダー行に基づいてカラム型を判別するようになりました。
 
 <div id="custom-delimiters-separators-and-escaping-rules">
   ## カスタムの区切り文字、セパレーター、エスケープルール

@@ -7,7 +7,7 @@ title: 'Analyseur'
 doc_type: 'reference'
 ---
 
-Dans la version `24.3` de ClickHouse, le nouvel analyseur de requêtes a été activé par défaut.
+Dans la version `24.3` de ClickHouse, l’analyseur a été activé par défaut.
 Vous trouverez plus de détails sur son fonctionnement [ici](/fr/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
 <div id="known-incompatibilities">
@@ -146,7 +146,7 @@ Pour garantir des résultats cohérents et conformes aux attentes, en particulie
   #### Gestion des modificateurs de type pour les colonnes dans la clause `USING`
 </div>
 
-Dans la nouvelle version de l’analyseur, les règles de détermination du supertype commun pour les colonnes spécifiées dans la clause `USING` ont été harmonisées afin de produire des résultats plus prévisibles,
+Dans l’analyseur, les règles de détermination du supertype commun pour les colonnes spécifiées dans la clause `USING` ont été harmonisées afin de produire des résultats plus prévisibles,
 en particulier lors de l’utilisation de modificateurs de type tels que `LowCardinality` et `Nullable`.
 
 * `LowCardinality(T)` et `T` : lorsqu’une colonne de type `LowCardinality(T)` est mise en jointure avec une colonne de type `T`, le supertype commun obtenu sera `T`, ce qui supprime de fait le modificateur `LowCardinality`.
@@ -232,7 +232,7 @@ La liste des fonctionnalités que l&#39;analyseur ne prend pas encore en charge 
   ## Migration vers Cloud
 </div>
 
-Nous activons le nouvel analyseur de requêtes sur toutes les instances où il est actuellement désactivé, afin de permettre de nouvelles optimisations fonctionnelles et de performance. Cette modification applique des règles de portée SQL plus strictes et oblige les clients à mettre à jour manuellement les requêtes non conformes.
+Nous activons l’analyseur sur toutes les instances où il est actuellement désactivé, afin de permettre de nouvelles optimisations fonctionnelles et de performance. Cette modification applique des règles de portée SQL plus strictes et oblige les clients à mettre à jour manuellement les requêtes non conformes.
 
 <div id="migration-workflow">
   ### Workflow de migration

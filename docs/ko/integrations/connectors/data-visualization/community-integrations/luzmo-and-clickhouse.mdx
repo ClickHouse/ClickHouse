@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Luzmo'
 slug: /integrations/luzmo
-keywords: ['ClickHouse', 'Luzmo', '연결', '통합', 'UI', '임베디드']
-description: 'Luzmo는 소프트웨어 및 SaaS 애플리케이션에 특화된, 네이티브 ClickHouse 통합을 제공하는 임베디드 애널리틱스 플랫폼입니다.'
+keywords: ['clickhouse', 'Luzmo', '연결', '통합', 'UI', '내장']
+description: 'Luzmo는 소프트웨어 및 SaaS 애플리케이션에 특화된, 네이티브 ClickHouse 통합을 지원하는 임베디드 애널리틱스 플랫폼입니다.'
 title: 'Luzmo를 ClickHouse와 통합하기'
 sidebar: 'integrations'
 doc_type: 'guide'
@@ -17,36 +17,34 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-<div id="1-setup-a-clickhouse-connection">
-  ## 1. ClickHouse 연결 설정
-</div>
+<Steps>
+  <Step title="ClickHouse 연결 설정" id="1-setup-a-clickhouse-connection">
+    ClickHouse에 연결하려면 **Connections 페이지**로 이동한 다음 **New Connection**을 선택하고, New Connection 모달에서 ClickHouse를 선택하십시오.
 
-ClickHouse에 연결하려면 **Connections 페이지**로 이동한 다음 **New Connection**을 선택하고, New Connection 모달에서 ClickHouse를 선택하십시오.
+    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="ClickHouse가 선택된 Create a New Connection 대화 상자를 보여주는 Luzmo 인터페이스" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="ClickHouse가 선택된 Create a New Connection 대화 상자를 보여주는 Luzmo 인터페이스" border />
+    그러면 **host**, **username**, **password**를 입력하라는 메시지가 표시됩니다.
 
-그러면 **host**, **username**, **password**를 입력하라는 메시지가 표시됩니다.
+    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="ClickHouse host, username, password 입력 필드를 보여주는 Luzmo 연결 구성 양식" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="ClickHouse host, username, password 입력 필드를 보여주는 Luzmo 연결 구성 양식" border />
+    * **Host**: ClickHouse 데이터베이스가 노출된 호스트입니다. 데이터를 wire 상에서 안전하게 전송하기 위해 여기서는 `https`만 허용됩니다. host URL은 다음 구조를 따라야 합니다: `https://url-to-clickhouse-db:port/database`
+      기본적으로 플러그인은 &#39;default&#39; 데이터베이스와 443 포트에 연결됩니다. &#39;/&#39; 뒤에 데이터베이스를 지정하면 연결할 데이터베이스를 구성할 수 있습니다.
+    * **Username**: ClickHouse 클러스터에 연결할 때 사용할 사용자 이름입니다.
+    * **Password**: ClickHouse 클러스터에 연결할 때 사용할 비밀번호입니다.
 
-* **Host**: ClickHouse 데이터베이스가 노출된 호스트입니다. 데이터를 wire 상에서 안전하게 전송하기 위해 여기서는 `https`만 허용됩니다. host URL은 다음 구조를 따라야 합니다: `https://url-to-clickhouse-db:port/database`
-  기본적으로 플러그인은 &#39;default&#39; 데이터베이스와 443 포트에 연결됩니다. &#39;/&#39; 뒤에 데이터베이스를 지정하면 연결할 데이터베이스를 구성할 수 있습니다.
-* **Username**: ClickHouse 클러스터에 연결할 때 사용할 사용자 이름입니다.
-* **Password**: ClickHouse 클러스터에 연결할 때 사용할 비밀번호입니다.
+    API를 통해 [ClickHouse 연결을 생성](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody)하는 방법은 개발자 문서의 예시를 참조하십시오.
+  </Step>
 
-API를 통해 [ClickHouse 연결을 생성](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody)하는 방법은 개발자 문서의 예시를 참조하십시오.
+  <Step title="데이터셋 추가" id="2-add-datasets">
+    ClickHouse에 연결한 후에는 [여기](https://academy.luzmo.com/article/ldx3iltg)에 설명된 대로 데이터셋을 추가할 수 있습니다. ClickHouse에서 사용할 수 있는 하나 이상의 데이터셋을 선택하고, 대시보드에서 함께 사용할 수 있도록 Luzmo에서 이를 [연결](https://academy.luzmo.com/article/gkrx48x5)할 수 있습니다. 또한 [analytics용 데이터 준비](https://academy.luzmo.com/article/u492qov0)에 관한 이 문서도 확인해 보십시오.
 
-<div id="2-add-datasets">
-  ## 2. 데이터셋 추가
-</div>
+    API를 사용하여 데이터셋을 추가하는 방법은 [개발자 문서의 이 예시](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody)를 참조하십시오.
 
-ClickHouse를 연결한 후에는 [여기](https://academy.luzmo.com/article/ldx3iltg)에 설명된 대로 데이터셋을 추가할 수 있습니다. ClickHouse에서 사용할 수 있는 데이터셋을 하나 이상 선택한 다음, Luzmo에서 이를 [연결](https://academy.luzmo.com/article/gkrx48x5)해 하나의 대시보드에서 함께 사용할 수 있도록 하십시오. 또한 [분석용 데이터 준비하기](https://academy.luzmo.com/article/u492qov0) 문서도 확인해 보십시오.
+    이제 이러한 데이터셋으로 아름다운 (내장) 대시보드를 만들거나, 클라이언트의 질문에 답할 수 있는 AI Data Analyst([Luzmo IQ](https://luzmo.com/iq))를 구동할 수도 있습니다.
 
-API를 사용해 데이터셋을 추가하는 방법은 [개발자 문서의 이 예시](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody)를 참조하십시오.
-
-이제 데이터셋을 활용해 보기 좋은 (임베디드) 대시보드를 만들거나, 고객의 질문에 답할 수 있는 AI 데이터 분석가([Luzmo IQ](https://luzmo.com/iq))를 구동할 수도 있습니다.
-
-<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="ClickHouse 데이터를 여러 시각화로 보여주는 Luzmo 대시보드 예시" border />
+    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="ClickHouse의 데이터를 여러 시각화로 보여주는 Luzmo 대시보드 예시" border />
+  </Step>
+</Steps>
 
 <div id="usage-notes">
   ## 사용 시 참고 사항

@@ -674,9 +674,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 아래 예시는 기존 스키마를 유지하면서 `ServiceName`보다 앞에 `SeverityText` 컬럼이 포함된 새 프라이머리 키로 로그 테이블을 새로 만드는 간단한 방법을 보여줍니다.
 
 <Steps>
-  <Step>
-    #### 새 테이블 생성
-
+  <Step title="새 테이블 생성" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -689,14 +687,12 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
       위 예시에서는 `PRIMARY KEY`와 `ORDER BY`를 모두 지정해야 합니다.
       ClickStack에서는 이 둘이 거의 항상 동일합니다.
       `ORDER BY`는 물리적 데이터 배치를 제어하고, `PRIMARY KEY`는 희소 인덱스(sparse index)를 정의합니다.
-      아주 드물게 매우 큰 workload에서는 둘이 다를 수 있지만, 대부분은 둘을 일치시키는 것이 좋습니다.
+      아주 드물게 매우 큰 워크로드에서는 둘이 다를 수 있지만, 대부분은 둘을 일치시키는 것이 좋습니다.
     </Info>
   </Step>
 
-  <Step>
-    #### 테이블 교환 및 삭제
-
-    `EXCHANGE` statement는 테이블 이름을 [원자적으로](/ko/concepts/core-concepts/glossary#atomicity) 스왑하는 데 사용됩니다. 임시 테이블(이제 이전 기본 테이블이 된 테이블)은 삭제할 수 있습니다.
+  <Step title="테이블 교환 및 삭제" id="exhange-and-drop-table">
+    `EXCHANGE` 문는 테이블 이름을 [원자적으로](/ko/concepts/core-concepts/glossary#atomicity) 스왑하는 데 사용됩니다. 임시 테이블(이제 이전 기본 테이블이 된 테이블)은 삭제할 수 있습니다.
 
     ```sql
     EXCHANGE TABLES otel_logs_temp AND otel_logs
@@ -716,9 +712,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 아래에서도 프라이머리 키의 첫 번째 컬럼으로 `SeverityText`를 추가하는 동일한 예시를 사용합니다. 이 경우 새 데이터용 테이블을 만들고, 과거 데이터 분석을 위해 기존 테이블은 유지합니다.
 
 <Steps>
-  <Step>
-    #### 새 테이블 생성
-
+  <Step title="새 테이블 생성" id="create-new-table-with-key-2">
     원하는 프라이머리 키로 새 테이블을 생성합니다. `_23_01_2025` 접미사에 유의하고, 현재 날짜에 맞게 조정하십시오. 예:
 
     ```sql
@@ -728,9 +722,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
   </Step>
 
-  <Step>
-    #### Merge 테이블 생성
-
+  <Step title="Merge 테이블 생성" id="create-merge-table">
     [Merge 엔진](/ko/reference/engines/table-engines/special/merge)은 MergeTree와 혼동하지 마십시오. 이 엔진은 자체적으로 데이터를 저장하지 않지만, 여러 다른 테이블을 동시에 읽을 수 있게 해줍니다.
 
     ```sql
@@ -746,9 +738,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     이제 이 테이블을 쿼리하여 `otel_logs`의 데이터가 반환되는지 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    #### Merge 테이블에서 읽도록 ClickStack UI 업데이트
-
+  <Step title="Merge 테이블에서 읽도록 ClickStack UI 업데이트" id="update-clickstack-ui-to-read-from-merge-tree">
     ClickStack UI가 로그 데이터 소스의 테이블로 `otel_logs_merge`를 사용하도록 구성합니다.
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Merge 테이블 선택" />
@@ -756,9 +746,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     이 시점에는 원래 프라이머리 키를 사용하는 `otel_logs`로 계속 쓰기가 이루어지고, 읽기에는 Merge 테이블이 사용됩니다. 사용자에게 보이는 변경 사항은 없으며 수집에도 영향이 없습니다.
   </Step>
 
-  <Step>
-    #### 테이블 교환
-
+  <Step title="테이블 교환" id="exchange-the-tables">
     이제 `EXCHANGE` 문을 사용하여 `otel_logs` 테이블과 `otel_logs_23_01_2025` 테이블의 이름을 원자적으로 스왑합니다.
 
     ```sql
@@ -774,9 +762,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 이 프로세스는 프라이머리 키(primary key)에 추가 변경이 필요할 때마다 맞게 조정해 적용할 수 있습니다. 예를 들어, 일주일 후 `SeverityText`가 아니라 `SeverityNumber`를 프라이머리 키의 일부로 포함해야 한다고 판단할 수 있습니다. 아래 프로세스는 프라이머리 키 변경이 필요할 때마다 반복해서 적용할 수 있습니다.
 
 <Steps>
-  <Step>
-    #### 새 테이블 생성
-
+  <Step title="새 테이블 생성" id="create-new-table-with-key-3">
     원하는 프라이머리 키로 새 테이블을 생성합니다.
     아래 예시에서는 테이블 날짜를 나타내는 접미사(suffix)로 `30_01_2025`를 사용합니다. 예:
 
@@ -787,16 +773,14 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
   </Step>
 
-  <Step>
-    #### 테이블 교환
-
+  <Step title="테이블 교환" id="exchange-the-tables-v2">
     이제 `EXCHANGE` 문을 사용하여 `otel_logs` 테이블과 `otel_logs_30_01_2025` 테이블의 이름을 원자적으로 스왑합니다.
 
     ```sql
     EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
     ```
 
-    이제 쓰기 작업은 업데이트된 프라이머리 키를 사용하는 새 `otel_logs` 테이블로 전달됩니다. 기존 데이터는 `otel_logs_30_01_2025`에 그대로 남아 있으며, 머지 테이블을 통해 액세스할 수 있습니다.
+    이제 쓰기 작업은 업데이트된 프라이머리 키를 사용하는 새 `otel_logs` 테이블로 전달됩니다. 기존 데이터는 `otel_logs_30_01_2025`에 그대로 남아 있으며, Merge 테이블을 통해 액세스할 수 있습니다.
   </Step>
 </Steps>
 
@@ -983,7 +967,7 @@ ORDER BY t;
   ### 대안
 </div>
 
-여러 개의 정렬 키가 필요하더라도 프로젝션만이 유일한 선택지는 아닙니다. 운영상의 제약과 ClickStack에서 쿼리를 라우팅하려는 방식에 따라 다음 옵션을 고려하십시오.
+여러 `ORDER BY` 키가 필요하다면 프로젝션만이 유일한 선택지는 아닙니다. 운영상의 제약과 ClickStack에서 쿼리를 어떻게 라우팅할지에 따라 다음 옵션을 고려하십시오.
 
-* OpenTelemetry collector가 서로 다른 `ORDER BY` 키를 가진 두 테이블에 쓰도록 구성하고, 각 테이블에 대해 별도의 ClickStack 소스를 생성하십시오.
-* 복사 pipeline으로 materialized view를 생성하십시오. 즉, 기본 테이블에 materialized view를 연결해 원시 행을 다른 정렬 키를 가진 보조 테이블로 선택하도록 합니다(비정규화 또는 라우팅 패턴). 이 대상 테이블에 대한 소스를 생성하십시오. 예시는 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)에서 확인할 수 있습니다.
+* OpenTelemetry collector가 서로 다른 `ORDER BY` 키를 가진 두 개의 테이블에 쓰도록 구성하고, 각 테이블에 대해 별도의 ClickStack source를 생성합니다.
+* materialized view를 복사 pipeline으로 사용합니다. 즉, 메인 테이블에 materialized view를 연결해 원시 행을 서로 다른 `ORDER BY` 키를 가진 보조 테이블로 SELECT하도록 합니다(비정규화 또는 라우팅 패턴). 그런 다음 이 대상 테이블에 대한 source를 생성합니다. 예시는 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)에서 확인할 수 있습니다.

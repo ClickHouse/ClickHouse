@@ -11,6 +11,10 @@ doc_type: 'справочник'
 import SystemLogParameters from '/snippets/ru/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # Настройки сервера
+</div>
+
 В этом разделе приведены описания настроек сервера. Это настройки, которые
 нельзя изменять на уровне сеанса или запроса.
 
@@ -79,6 +83,12 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="No" />Максимальный размер элемента Array в байтах для функции groupArray. Это ограничение проверяется при сериализации и помогает избежать слишком большого размера состояния.
+
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает экспериментальную поддержку драйверов для исполняемых пользовательских функций, объявляемых через `user_defined_executable_function_drivers_config`. Драйвер преобразует фрагмент пользовательского кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемую UDF.
 
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
@@ -400,6 +410,12 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 <background_pool_size>16</background_pool_size>
 ```
 
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />Начальное количество воркеров, выделяемых для каждого фонового пула планировщика. Каждый пул по мере необходимости постепенно увеличивается до настроенного предела (`background_schedule_pool_size` и связанных параметров), когда нагрузка превышает текущее количество воркеров. Меньшие значения снижают накладные расходы при запуске и число бездействующих потоков; большие — устраняют задержку планирования первой задачи на загруженных серверах.
+
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
 </div>
@@ -431,7 +447,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />Максимальное число потоков, используемых для постоянного выполнения некоторых лёгких периодических операций для реплицируемых таблиц, стриминга Kafka и обновления DNS-кэша.
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />Максимальное число потоков, используемых для выполнения лёгких периодических операций для реплицируемых таблиц, стриминга Kafka, обновления DNS-кэша и подобных задач. Потоки создаются по мере необходимости, вплоть до этого предела, поэтому сервер с небольшой фоновой нагрузкой использует гораздо меньше потоков, чем это число.
 
 <div id="backup_log">
   ## backup_log
@@ -676,6 +692,18 @@ ClickHouse перезагружает встроенные словари каж
     </case>
 </compression>
 ```
+
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Да" />
+
+Управляет тем, как слот CPU выделяются запросам.
+
+Когда `true` (по умолчанию), запрос начинает с одного слота CPU и запрашивает дополнительные слоты у планировщика только тогда, когда его конвейер действительно создаёт больше работы, которую можно распараллелить. Это позволяет избежать ситуации, когда запрос резервирует до `max_threads` слотов, но фактически использует лишь часть из них, из-за чего другим параллельным запросам не хватает ресурсов. Применяется как к управлению параллелизмом, так и к вытесняющему планировщику CPU для рабочих нагрузок.
+
+Когда `false`, запрос при запуске сразу запрашивает все слоты `max_threads`.
 
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
@@ -1164,7 +1192,7 @@ ClickHouse перезагружает встроенные словари каж
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Да" />Размер параметра SO&#95;RCVBUF для подключений к диску (S3, Azure, GCS). Если задано значение больше 0, оно отключает автоподстройку ядра TCP для буфера приёма и использует указанное значение. 0 = значение ядра по умолчанию (автоподстройка). Примечание: при возврате этого параметра к значению 0 автоподстройка восстанавливается только для вновь созданных подключений; существующие подключения в пуле сохраняют фиксированные размеры буфера до пересоздания.
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="Да" />Размер параметра SO&#95;RCVBUF для подключений к диску (S3, Azure, GCS). По умолчанию — 204800 (200 КБ): доступ к Объектному хранилищу обычно выполняется в пределах одного Region, где произведение пропускной способности на задержку значительно меньше 100 КБ, поэтому небольшое ограничение обеспечивает полную пропускную способность и при этом позволяет избежать многомебибайтных буферов на сокет, которые иначе выделялись бы из-за автоподстройки ядра. Установите 0, чтобы вместо этого использовать автоподстройку ядра TCP для буфера приёма. Примечание: при возврате этого параметра к значению 0 автоподстройка восстанавливается только для вновь созданных подключений; существующие подключения в пуле сохраняют фиксированные размеры буфера до пересоздания.
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1370,6 +1398,21 @@ ClickHouse перезагружает встроенные словари каж
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Размер очереди пула потоков, используемого для удаления distributed cache.
+
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="Нет" />
+
+Каталог для хранения файлов конфигурации исполняемых UDF, динамически создаваемых драйверами (см. `CREATE FUNCTION ... ENGINE = DriverName(...)`).
+При перезапуске сервера каталог сканируется на наличие файлов конфигурации, после чего соответствующие UDF загружаются без повторного вызова драйвера.
+
+**Пример**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
 
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
@@ -1715,28 +1758,16 @@ ClickHouse перезагружает встроенные словари каж
 Чтобы добавить новый HTTP-обработчик, просто добавьте новый `<rule>`.
 Правила проверяются сверху вниз в заданном порядке,
 и при первом совпадении запускается обработчик.
-Правило без условий сопоставления (только `handler`) соответствует любому запросу; поскольку правила проверяются по порядку,
-такое правило имеет смысл использовать только как fallback, размещая его последним.
 
-Следующие настройки можно задать с помощью вложенных тегов (все эти вложенные теги необязательны, кроме `handler`):
+Следующие настройки можно задать с помощью вложенных тегов:
 
-| Sub-tags             | Definition                                                                                                                                                                                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                | Для сопоставления пути URL запроса. Query string при сопоставлении игнорируется                                                                                                                                                                                  |
-| `url_prefix`         | Для сопоставления пути URL запроса с базовым путем: самим путем или любым путем ниже него по границе сегмента пути (например, &#39;/api/v1&#39; соответствует /api/v1, /api/v1/ и /api/v1/write, но не /api/v1beta). Query string при сопоставлении игнорируется |
-| `url_regexp`         | Для сопоставления пути URL запроса с регулярным выражением. Query string при сопоставлении игнорируется                                                                                                                                                          |
-| `full_url`           | Для сопоставления полного URL запроса `scheme://host:port/path`. Query string при сопоставлении игнорируется, а хостом является IP-адрес connection (не заголовок `Host`)                                                                                        |
-| `full_url_prefix`    | Для сопоставления полного URL запроса `scheme://host:port/path` с base URL `scheme://host:port/base_path` по границе сегмента пути (см. `url_prefix`). Query string при сопоставлении игнорируется                                                               |
-| `full_url_regexp`    | Для сопоставления полного URL запроса `scheme://host:port/path` с регулярным выражением. Query string при сопоставлении игнорируется                                                                                                                             |
-| `methods`            | Для сопоставления методов запроса можно перечислить несколько методов через запятую                                                                                                                                                                              |
-| `headers`            | Для сопоставления заголовков запроса сопоставляется каждый дочерний элемент (имя дочернего элемента — имя заголовка)                                                                                                                                             |
-| `headers_regexp`     | Аналогично `headers`, но значение каждого дочернего элемента сопоставляется с регулярным выражением                                                                                                                                                              |
-| `empty_query_string` | Проверяет, что в URL отсутствует query string                                                                                                                                                                                                                    |
-| `handler`            | Обработчик запроса (обязательно)                                                                                                                                                                                                                                 |
-
-<Note>
-  Вместо `url_regexp`, `full_url_regexp` и `headers_regexp` можно также записать регулярное выражение в `url`, `full_url` или `headers`, используя префикс `regex:` (например, `<url>regex:/api/.*</url>`). Это по-прежнему поддерживается для обратной совместимости, но является устаревшим: предпочтительнее использовать специальные вложенные теги `url_regexp`, `full_url_regexp` и `headers_regexp`.
-</Note>
+| Sub-tags             | Definition                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                | Для сопоставления URL запроса можно использовать префикс &#39;regex:&#39; для сопоставления по регулярному выражению (необязательно)                                                                                         |
+| `methods`            | Для сопоставления методов запроса можно перечислить несколько методов через запятую (необязательно)                                                                                                                          |
+| `headers`            | Для сопоставления заголовков запроса сопоставляется каждый дочерний элемент (имя дочернего элемента — имя заголовка); можно использовать префикс &#39;regex:&#39; для сопоставления по регулярному выражению (необязательно) |
+| `handler`            | Обработчик запроса                                                                                                                                                                                                           |
+| `empty_query_string` | Проверяет, что в URL отсутствует query string                                                                                                                                                                                |
 
 `handler` содержит следующие настройки, которые можно задать с помощью вложенных тегов:
 
@@ -1991,15 +2022,19 @@ ClickHouse перезагружает встроенные словари каж
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="No" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="No" />
 
-Этот параметр позволяет выполнить миграцию с версии кода, в которой дедупликация вставок для sync и async inserts работает совершенно по-разному и непрозрачно, на версию кода, в которой вставленные данные будут дедуплицироваться одинаково для sync и async inserts.
-Значение `old_separate_hashes` означает, что ClickHouse будет использовать разные хеши дедупликации для sync и async inserts (как и раньше).
-Это значение следует использовать по умолчанию, если миграцию начинать не планируется.
-Значение `compatible_double_hashes` означает, что ClickHouse будет использовать два хеша дедупликации: старый — для sync или async inserts, и другой, новый, — для всех inserts. Это значение следует использовать, чтобы безопасно перевести существующие экземпляры на новое поведение.
-Это значение должно быть включено в течение некоторого времени (см. настройки replicated&#95;deduplication&#95;window и non&#95;replicated&#95;deduplication&#95;window), чтобы убедиться, что во время миграции не теряются ни sync, ни async inserts.
-Наконец, значение `new_unified_hash` означает, что ClickHouse будет использовать новый хеш дедупликации для sync и async inserts. Это значение можно включать на новых экземплярах ClickHouse или на экземплярах, которые уже некоторое время использовали значение `compatible_double_hashes`.
-Значение по умолчанию сначала будет установлено в `compatible_double_hashes`, а затем позднее — в `new_unified_hash` в будущих версиях ClickHouse, чтобы безопасно завершить миграцию в два этапа.
+Этот параметр позволяет выполнить миграцию с версии кода, в которой дедупликация вставок для sync и async вставок работает совершенно по-разному и непрозрачно, на версию кода, в которой вставленные данные будут дедуплицироваться одинаково для sync и async вставок.
+Значение `old_separate_hashes` означает, что ClickHouse будет использовать разные хеши дедупликации для sync и async вставок (как и раньше).
+Это значение сохраняет прежнее поведение до миграции для экземпляров, на которых миграция намеренно не была начата; использовать его в качестве значения по умолчанию больше не рекомендуется.
+Значение `compatible_double_hashes` означает, что ClickHouse будет использовать два хеша дедупликации: старый — для sync или async вставок, и другой, новый, — для всех вставок. Это значение следует использовать, чтобы безопасно перевести существующие экземпляры на новое поведение.
+Это значение должно быть включено в течение некоторого времени (см. настройки replicated&#95;deduplication&#95;window и non&#95;replicated&#95;deduplication&#95;window), чтобы убедиться, что во время миграции не теряются ни sync, ни async вставки.
+Наконец, значение `new_unified_hash` означает, что ClickHouse будет использовать новый хеш дедупликации для sync и async вставок. Это значение можно включать на новых экземплярах ClickHouse или на экземплярах, которые уже некоторое время использовали значение `compatible_double_hashes`.
+При `new_unified_hash` хеш дедупликации охватывает весь вставленный block, поэтому вставка дедуплицируется только тогда, когда все ее данные полностью совпадают с предыдущей вставкой (retry), а не отдельно для каждой партиции.
+При `new_unified_hash` async вставки также используют единый хеш и используют общее с sync окно дедупликации (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`); настройки окна `*_for_async_inserts` применяются только к прежнему варианту `old_separate_hashes` / `compatible_double_hashes`.
+Значением по умолчанию был `compatible_double_hashes` на одном из этапов миграции, а теперь это `new_unified_hash`, что безопасно завершает миграцию в два этапа.
+Экземпляры, обновленные напрямую с `old_separate_hashes`, должны работать с `compatible_double_hashes`, пока не истечет самое длинное из соответствующих окон дедупликации (окно sync `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, окно async `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts`, которое по умолчанию составляет одну неделю, если используются async вставки, и `non_replicated_deduplication_window`), прежде чем полагаться на единый хеш. В противном случае id, существовавшие до обновления и все еще находящиеся в каталогах `blocks` / `async_blocks`, не видны единому хешу, и их повторы могут быть приняты как новые вставки, создавая дубликаты.
+Async вставки добавляют еще один нюанс при переключении на `new_unified_hash`: при `compatible_double_hashes` их дедупликация фактически охватывает окно async (id в `async_blocks` хранится именно столько), тогда как `new_unified_hash` обращается только к `deduplication_hashes` (которые хранятся в течение окна sync), поэтому async вставки старше окна sync после переключения могут быть повторно приняты, даже если выждать необходимое время. Перед переключением рабочих нагрузок async либо увеличьте `replicated_deduplication_window` / `replicated_deduplication_window_seconds` до размера окна async и поддерживайте этот режим в течение полного окна async, либо остановите async вставки на время окна async, либо сохраните `compatible_double_hashes`.
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2212,7 +2247,7 @@ ClickHouse поддерживает динамическую ротацию ме
 **Пример**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2410,7 +2445,7 @@ Backlog (размер очереди ожидающих подключений) 
 | Key                          | Description                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `async`                      | Если `true` (по умолчанию), логирование выполняется асинхронно (один фоновый поток на каждый выходной канал). В противном случае запись выполняется в потоке, который вызывает LOG                                                                                                                                                               |
-| `async_queue_max_size`       | При использовании асинхронного логирования максимальное количество сообщений, которое может храниться в очереди в ожидании flush. Лишние сообщения будут отброшены                                                                                                                                                                               |
+| `async_queue_max_size`       | При использовании асинхронного логирования максимальное количество сообщений, которое может храниться в очереди в ожидании сброса. Лишние сообщения будут отброшены                                                                                                                                                                               |
 | `console`                    | Включает логирование в консоль. Установите `1` или `true`, чтобы включить. Значение по умолчанию — `1`, если ClickHouse не работает в режиме демона, иначе `0`.                                                                                                                                                                                  |
 | `console_log_level`          | Уровень логирования для вывода в консоль. По умолчанию используется значение `level`.                                                                                                                                                                                                                                                            |
 | `console_shutdown_log_level` | уровень при остановке используется для задания уровня логирования консоли при остановке server.                                                                                                                                                                                                                                                  |
@@ -2951,6 +2986,17 @@ Backlog (размер очереди ожидающих подключений) 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Максимальное количество облегчённых снимков, которые могут удерживаться одновременно. Ноль означает отсутствие ограничений. Если количество снимков достигает этого предела, при попытке создать новый снимок генерируется исключение.
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+Максимальный размер ответа HTTP-страницы индекса, используемой для получения списка каталогов по HTTP.
+Если ответ превышает этот предел, запрос завершается с ошибкой.
+
+По умолчанию: `10485760` (10 MiB).
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -3158,6 +3204,14 @@ ClickHouse использует потоки из пула потоков IO д�
 ```xml
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
+
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Да" />
+
+Верхняя граница неотслеживаемой памяти в байтах, которую все потоки, выполняющиеся на одном CPU, могут одновременно удерживать до её передачи в трекер памяти. Если `max_untracked_memory` ограничивает отдельный поток, то этот параметр ограничивает суммарный объём на CPU, чтобы множество потоков не могли превратить свой лимит на поток в значительное превышение выделения памяти на уровне всего сервера. Таким образом, общий объём неотслеживаемой памяти приблизительно ограничен значением `number_of_cpus * max_per_cpu_untracked_memory`. Значение `0` отключает ограничение на CPU (в этом случае применяется только ограничение на поток `max_untracked_memory`). Только для Linux.
 
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
@@ -3464,7 +3518,7 @@ ClickHouse использует потоки из глобального пул�
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
 Ограничение на общее количество одновременно ожидающих запросов.
-Выполнение ожидающего запроса блокируется, пока необходимые таблицы асинхронно загружаются (см. [`async_load_databases`](/ru/reference/settings/server-settings/settings#async_load_databases).
+Выполнение ожидающего запроса блокируется, пока необходимые таблицы загружаются асинхронно (см. [`async_load_databases`](/ru/reference/settings/server-settings/settings#async_load_databases).
 
 <Note>
   Ожидающие запросы не учитываются при проверке ограничений, задаваемых следующими настройками:
@@ -3545,6 +3599,29 @@ ClickHouse использует потоки из глобального пул�
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 Пороговое соотношение для очистки jemalloc относительно объема памяти, доступного серверу ClickHouse. Когда общее использование памяти превышает это значение, фоновый воркер памяти принудительно очищает грязные страницы. Если установлено значение 0, принудительная очистка на основе общего объема памяти отключается.
+
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
+
+На каждом тике `MemoryWorker` дополнительно резервировать
+`ratio * min(resident - previous_resident, resident - tracked)` поверх
+наблюдаемого RSS, исходя из предположения, что к следующему тику рост может
+быть таким же, как в прошлый раз (`resident - previous_resident` — это прирост RSS
+за последний тик). Прирост ограничивается значением `resident - tracked`, то есть частью
+RSS, не видимой глобальному трекеру памяти, потому что рост, который уже
+отслеживается, обрабатывается обычной проверкой жёсткого лимита. Резерв
+применяется к счётчику `rss`, который глобальная проверка жёсткого лимита
+использует через `MemoryTracker::allocImpl`, поэтому, когда экстраполированное значение превышает
+`max_server_memory_usage`, последующие выделения памяти генерируют исключение
+`MEMORY_LIMIT_EXCEEDED` до того, как сработает OOM-killer ядра. Значение `0`
+отключает спекулятивный механизм (с возвратом к `rss = resident`); значение по умолчанию `1`
+резервирует полный дельта-прирост как запас на следующий интервал. При использовании
+санитайзеров (`ASan`, `UBSan`, `MSan`, `TSan`) значение по умолчанию равно `0`, поскольку
+разрыв `resident - tracked` в основном определяется shadow-памятью санитайзеров / overhead
+их runtime, а не задержкой учёта в трекере.
 
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
@@ -4332,6 +4409,29 @@ SSL-конфигурация клиента и сервера.
 <path>/var/lib/clickhouse/</path>
 ```
 
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+Объём неотслеживаемой памяти в байтах, который каждый поток может удерживать, не затрагивая общий per-CPU бюджет. Это снижает накладные расходы на per-CPU учёт при небольших выделениях памяти и представляет собой запас сверх `max_per_cpu_untracked_memory * number_of_cpus` в худшем случае. Значение `0` убирает этот запас: каждое выделение памяти обновляет общий per-CPU счётчик (максимальная точность, но выше конкуренция). Только для Linux.
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+Максимальный размер в байтах кэша предварительно обработанных полигонов, используемого функцией `pointInPolygon` с постоянным аргументом-полигоном.
+Записи сверх этого лимита вытесняются в порядке наименее недавнего использования.
+Значение `0` отключает кэш: все кэшированные полигоны удаляются, а каждый последующий запрос заново выполняет предварительную обработку своего постоянного полигона.
+Кэш также можно очистить вручную, не изменяя этот лимит, с помощью запроса [`SYSTEM DROP POINT IN POLYGON CACHE`](/ru/reference/statements/system#drop-point-in-polygon-cache).
+
+<Note>
+  Этот параметр можно изменить во время работы, и он вступит в силу немедленно.
+</Note>
+
 <div id="postgresql_port">
   ## postgresql_port
 </div>
@@ -5064,6 +5164,12 @@ DDL-запросы будут ожидать только реплики из т
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Если установлено значение true, в трассировках стека будут отображаться адреса
 
+<div id="show_license_expiration_warnings">
+  ## show_license_expiration_warnings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Да" />Показывает предупреждение о скором истечении срока действия лицензии в system.warnings
+
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
 </div>
@@ -5378,7 +5484,7 @@ TCP-порт для защищённого соединения с клиент�
 
 И кэш для `local_disk`, и временные данные будут храниться в `/tiny_local_cache` в файловой системе под управлением `tiny_local_cache`.
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5387,6 +5493,7 @@ TCP-порт для защищённого соединения с клиент�
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5395,10 +5502,13 @@ TCP-порт для защищённого соединения с клиент�
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5665,7 +5775,7 @@ TCP-порт для защищённого соединения с клиент�
 
 Когда `/disk1` заполнен, временные данные будут сохраняться на `/disk2`.
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5678,6 +5788,7 @@ TCP-порт для защищённого соединения с клиент�
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5686,10 +5797,13 @@ TCP-порт для защищённого соединения с клиент�
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5810,6 +5924,24 @@ TCP-порт для защищённого соединения с клиент�
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при политике SLRU) в кэше несжатых данных относительно общего размера кэша.
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики кэширования delete-битмапа для UNIQUE KEY (SLRU или LRU).
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Да" />Максимальный размер в байтах внутрипроцессного кэша для битмапов удаления по UNIQUE KEY для каждой части. Установите 0, чтобы отключить кэш.
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Нет" />Размер защищённой очереди (в случае политики SLRU) в кэше delete-битмапов UNIQUE KEY относительно общего размера кэша.
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6189,16 +6321,14 @@ ClickHouse использует этот параметр для всех таб
 
 Также есть настройка `zookeeper_load_balancing` (optional), которая позволяет выбрать алгоритм выбора узла ZooKeeper:
 
-| Название алгоритма               | Описание                                                                                                                          |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `random`                         | случайным образом выбирает один из узлов ZooKeeper.                                                                               |
-| `in_order`                       | выбирает первый узел ZooKeeper; если он недоступен, то второй, и так далее.                                                       |
-| `nearest_hostname`               | выбирает узел ZooKeeper с именем хоста, наиболее похожим на имя хоста сервера; сравнение выполняется по префиксу имени.           |
-| `hostname_levenshtein_distance`  | как `nearest_hostname`, но сравнивает имена хостов по расстоянию Левенштейна.                                                     |
-| `hostname_longest_common_prefix` | как `nearest_hostname`, но отдаёт предпочтение узлу, имя хоста которого имеет самый длинный общий префикс с именем хоста сервера. |
-| `hostname_longest_common_suffix` | как `nearest_hostname`, но отдаёт предпочтение узлу, имя хоста которого имеет самый длинный общий суффикс с именем хоста сервера. |
-| `first_or_random`                | выбирает первый узел ZooKeeper; если он недоступен, случайным образом выбирает один из оставшихся узлов ZooKeeper.                |
-| `round_robin`                    | выбирает первый узел ZooKeeper, а при переподключении — следующий.                                                                |
+| Название алгоритма              | Описание                                                                                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `random`                        | случайным образом выбирает один из узлов ZooKeeper.                                                                     |
+| `in_order`                      | выбирает первый узел ZooKeeper; если он недоступен, то второй, и так далее.                                             |
+| `nearest_hostname`              | выбирает узел ZooKeeper с именем хоста, наиболее похожим на имя хоста сервера; сравнение выполняется по префиксу имени. |
+| `hostname_levenshtein_distance` | как `nearest&#95;hostname`, но сравнивает имена хостов по расстоянию Левенштейна.                                       |
+| `first_or_random`               | выбирает первый узел ZooKeeper; если он недоступен, случайным образом выбирает один из оставшихся узлов ZooKeeper.      |
+| `round_robin`                   | выбирает первый узел ZooKeeper, а при переподключении — следующий.                                                      |
 
 **Пример конфигурации**
 
@@ -6218,7 +6348,7 @@ ClickHouse использует этот параметр для всех таб
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

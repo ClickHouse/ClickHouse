@@ -661,13 +661,14 @@ Esto se consigue almacenando los datos en un formato agrupado por bits (es decir
 Para declarar una columna de tipo `QBit`, usa la siguiente sintaxis:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Donde:
 
-* `element_type` – el tipo de cada elemento del vector. Los tipos admitidos son `BFloat16`, `Float32` y `Float64`
+* `element_type` – el tipo de cada elemento del vector. Los tipos admitidos son `Int8`, `BFloat16`, `Float32` y `Float64`
 * `dimension` – la cantidad de elementos de cada vector
+* `stride` – opcional. Un divisor de `dimension` que particiona las dimensiones en `dimension / stride` grupos contiguos almacenados en flujos separados, de modo que una búsqueda solo sobre las dimensiones iniciales lea menos flujos (útil para los embeddings Matryoshka). El valor predeterminado es `dimension`, en cuyo caso el tipo es idéntico, byte por byte, a un `QBit` sin `stride`. Consulta la [página del tipo de dato `QBit`](/es/reference/data-types/qbit) para obtener más información.
 
 <div id="qbit-create">
   #### Creación de una tabla `QBit` y adición de datos

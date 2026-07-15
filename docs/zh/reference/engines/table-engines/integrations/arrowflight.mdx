@@ -46,7 +46,7 @@ CREATE TABLE remote_flight_data
 | -------------------------- | ------- | ------- | --------------------- |
 | `host` or `hostname`       | 否       | `""`    | 服务器主机名。               |
 | `port`                     | 是       | —       | 服务器端口。                |
-| `dataset`                  | 是       | —       | 数据集名称或描述符。            |
+| `dataset`                  | 否       | `""`    | 数据集名称或描述符。            |
 | `use_basic_authentication` | 否       | `true`  | 启用基本身份验证。             |
 | `user` or `username`       | 启用身份验证时 | —       | 用于身份验证的用户名。           |
 | `password`                 | 否       | `""`    | 用于身份验证的密码。            |

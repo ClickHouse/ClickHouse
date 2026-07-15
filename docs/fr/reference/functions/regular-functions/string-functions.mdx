@@ -1595,8 +1595,8 @@ SELECT initcap('John''s cat won''t eat.');
 Introduit dans : v23.7.0
 
 Comme [`initcap`](#initcap), `initcapUTF8` convertit la première lettre de chaque mot en majuscule et le reste en minuscules.
-Suppose que la chaîne contient un texte encodé en UTF-8 valide.
-Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat n&#39;est pas défini.
+Suppose que la chaîne contient un texte valide encodé en UTF-8.
+Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat est indéfini.
 
 <Note>
   Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être tout à fait correct (i/İ vs. i/I).
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2190,7 +2187,7 @@ SELECT
 
 Introduit dans : v21.11.0
 
-Normalise une chaîne en UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+Normalise une chaîne UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 
 **Syntaxe**
 
@@ -2204,7 +2201,7 @@ normalizeUTF8NFKC(str)
 
 **Valeur renvoyée**
 
-Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/reference/data-types/string)
+Renvoie la forme normalisée NFKC de la chaîne UTF-8. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -2212,8 +2209,8 @@ Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/referen
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Renvoie la forme normalisée NFKD de la chaîne UTF-8. [`String`](/fr/reference/
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3893,7 +3890,7 @@ SELECT upper('clickhouse')
 
 Introduit dans : v1.1.0
 
-Convertit une chaîne en majuscules, en supposant qu’elle contient du texte UTF-8 valide.
+Convertit une chaîne en majuscules, en supposant qu’elle contient du texte encodé en UTF-8 valide.
 Si cette hypothèse n’est pas respectée, aucune exception n’est levée et le résultat est indéfini.
 
 <Note>

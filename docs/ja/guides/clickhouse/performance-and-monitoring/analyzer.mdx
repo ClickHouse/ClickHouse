@@ -7,7 +7,7 @@ title: 'アナライザ'
 doc_type: 'reference'
 ---
 
-ClickHouse バージョン `24.3` では、新しいクエリアナライザがデフォルトで有効化されました。
+ClickHouse バージョン `24.3` では、アナライザがデフォルトで有効化されました。
 その動作の詳細については、[こちら](/ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)をご覧ください。
 
 <div id="known-incompatibilities">
@@ -146,7 +146,7 @@ FULL JOIN t2 USING (payload);
   #### `USING` 句におけるカラムの型修飾子の扱い
 </div>
 
-新しいバージョンのアナライザでは、`USING` 句で指定されたカラムの共通スーパータイプを決定するルールが標準化され、より予測可能な結果が得られるようになりました。特に、`LowCardinality` や `Nullable` のような型修飾子を扱う場合にその傾向が顕著です。
+アナライザでは、`USING` 句で指定されたカラムの共通スーパータイプを決定するルールが標準化され、より予測可能な結果が得られるようになりました。特に、`LowCardinality` や `Nullable` のような型修飾子を扱う場合にその傾向が顕著です。
 
 * `LowCardinality(T)` と `T`: 型 `LowCardinality(T)` のカラムを型 `T` のカラムと JOIN した場合、結果の共通スーパータイプは `T` となり、`LowCardinality` 修飾子は実質的に破棄されます。
 * `Nullable(T)` と `T`: 型 `Nullable(T)` のカラムを型 `T` のカラムと JOIN した場合、結果の共通スーパータイプは `Nullable(T)` となり、Nullable の性質が保持されます。
@@ -231,7 +231,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
   ## Cloud 移行
 </div>
 
-新たな機能とパフォーマンスの最適化をサポートするため、現在無効になっているすべてのインスタンスで新しいクエリ アナライザを有効化しています。この変更により SQL のスコープ規則がより厳格になり、準拠していないクエリはお客様側で手動で更新する必要があります。
+新たな機能とパフォーマンスの最適化をサポートするため、現在無効になっているすべてのインスタンスでアナライザを有効化しています。この変更により SQL のスコープ規則がより厳格になり、準拠していないクエリはお客様側で手動で更新する必要があります。
 
 <div id="migration-workflow">
   ### 移行ワークフロー

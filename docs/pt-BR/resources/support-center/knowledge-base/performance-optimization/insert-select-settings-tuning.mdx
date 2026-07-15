@@ -19,24 +19,24 @@ Como posso resolver isso?
 
 Abaixo estão algumas das configurações que podem ser ajustadas para evitar esse erro. Trata-se de um ajuste avançado do ClickHouse, e esses valores só devem ser definidos após entender as especificações do serviço ClickHouse Cloud ou do cluster on-premises do ClickHouse em que serão usados. Portanto, não considere esses valores como uma &quot;solução única para todos os casos&quot;.
 
-[max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (padrão `1_048_576`)
+[max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size) = `100_000_000` (padrão `1_048_576`)
 
 Aumentar de ~1M para 100M permitirá a formação de blocos maiores
 
 Observação: essa configuração se aplica apenas quando o servidor forma os blocos, ou seja, em INSERT via interface HTTP, e não no clickhouse-client
 
-[min&#95;insert&#95;block&#95;size&#95;rows](/pt-BR/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (padrão `1_048_576`)
+[min&#95;insert&#95;block&#95;size&#95;rows](/pt-BR/reference/settings/session-settings#min_insert_block_size_rows) = `100_000_000` (padrão `1_048_576`)
 
 Aumentar de ~1M para 100M permitirá a formação de blocos maiores.
 
-[min&#95;insert&#95;block&#95;size&#95;bytes](/pt-BR/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (padrão `268_435_456`)
+[min&#95;insert&#95;block&#95;size&#95;bytes](/pt-BR/reference/settings/session-settings#min_insert_block_size_bytes) = `500_000_000` (padrão `268_435_456`)
 
 Aumentar de 268,44 MB para 500 MB permitirá a formação de blocos maiores.
 
-[parts&#95;to&#95;delay&#95;insert](/pt-BR/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (padrão `150`)
+[parts&#95;to&#95;delay&#95;insert](/pt-BR/reference/settings/merge-tree-settings#parts_to_delay_insert) = `500` (padrão `150`)
 
 Aumentar esse valor evita que INSERTs sejam artificialmente desacelerados quando o número de partes ativas em uma única partição é atingido.
 
-[parts&#95;to&#95;throw&#95;insert](/pt-BR/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (padrão `3000`)
+[parts&#95;to&#95;throw&#95;insert](/pt-BR/reference/settings/merge-tree-settings#parts_to_throw_insert) = `1500` (padrão `3000`)
 
 Aumentar esse valor geralmente afetaria o desempenho das consultas na tabela, mas isso seria aceitável para migração de dados.

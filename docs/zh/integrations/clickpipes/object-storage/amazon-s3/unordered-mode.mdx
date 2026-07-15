@@ -23,10 +23,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 摄取数据时可能会发生各种故障，从而导致部分插入或数据重复。对象存储 ClickPipes 对插入失败具备容错能力，并通过临时暂存表提供精确一次语义。数据会先插入暂存表；如果出现问题，暂存表会被清空，并在干净状态下重试插入。只有在插入成功完成后，分区才会被移动到目标表。
 
 <Steps>
-  <Step>
-    ## 创建亚马逊 SQS 队列
-
+  <Step title="创建亚马逊 SQS 队列" id="create-sqs-queue">
     **1.** 在 AWS Console 中，导航至 **Simple Queue Service &gt; Create queue**。使用默认设置创建一个新的标准队列。
+
+    <Warning>
+      **每个 ClickPipe 对应一个队列**
+
+      每个 ClickPipe 都需要一个专用的 SQS 队列。SQS 只会将每条消息投递给一个消费者：如果两个或更多 ClickPipe (或任何其他应用程序) 消费同一个队列，那么每个事件只会被其中一个接收，而未收到该事件的管道会在无提示的情况下跳过相应文件。即使这些 ClickPipe 使用不同的路径模式，这一点也同样适用——收到某个与自身不匹配文件事件的管道会将其丢弃，而其他管道也永远不会看到该事件。要使用多个 ClickPipe 从同一个存储桶摄取数据，请为每个 ClickPipe 创建一个队列，并使用 EventBridge 规则将事件路由到各个队列。
+    </Warning>
 
     <Tip>
       我们强烈建议为 SQS 队列配置 **死信队列 (DLQ)&#x20;**，以便更轻松地调试并重试失败的消息。如果配置了 DLQ，失败的消息会被重新放回队列并再次处理，最多重试次数由 DLQ `maxReceiveCount` 参数中配置的值决定。
@@ -119,7 +123,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         }
         ```
 
-        **b.** 在 S3 存储桶属性中，为 `ObjectCreated` 事件启用 **Event notifications**，并将目标设置为 SQS 队列。你也可以指定前缀或后缀，以过滤哪些对象会触发通知；如果这样做，请确保它与为 ClickPipe 设置的路径一致。
+        **b.** 在 S3 存储桶属性中，启用 **Event notifications**，选择 **All object create events** (`s3:ObjectCreated:*`) 作为事件类型，并将目标设置为 SQS 队列。不要改为选择单独的事件类型：上传操作可能会因执行方式不同而触发不同的 `ObjectCreated` 事件 (例如，分段上传触发的是 `CompleteMultipartUpload`，而不是 `Put`) ，而事件类型未被选中的文件将永远不会投递到队列中。你也可以指定前缀或后缀，以过滤哪些对象会触发通知；如果这样做，请确保它与为 ClickPipe 设置的路径一致。
 
         <Note>
           S3 不允许在同一个存储桶中为相同事件类型配置多个相互重叠的通知规则。如果你已经为该存储桶中的 `ObjectCreated` 事件配置了通知规则，请改用 EventBridge 方案。
@@ -128,9 +132,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Tabs>
   </Step>
 
-  <Step>
-    ## 配置 IAM role
-
+  <Step title="配置 IAM role" id="configure-iam-role">
     **1.** 在 ClickHouse Cloud 控制台中，前往 **Settings &gt; Network security 信息**，复制你的服务的 **IAM role ARN**。
 
     **2.** 在 AWS Console 中，前往 **IAM &gt; Roles &gt; Create role**。选择 **Custom trust policy**，粘贴以下内容，并将 `<ch-cloud-arn>` 替换为上一步复制的 IAM role ARN：
@@ -191,12 +193,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 使用无序模式创建 ClickPipe
-
+  <Step title="使用无序模式创建 ClickPipe" id="create-clickpipe">
     **1.** 在 ClickHouse Cloud 控制台中，前往 **数据源 &gt; 创建 ClickPipe**，然后选择 **亚马逊 S3**。填写连接 S3 存储桶所需的信息。在 **身份验证方法** 下，选择 **IAM role**，并填写你在上一步创建的角色 ARN。
 
-    **2.** 在 **传入数据** 下，启用 **持续摄取**。选择 **任意顺序** 作为摄取模式，并填写与你的存储桶关联的队列的 **SQS queue URL**。
+    **2.** 在 **传入数据** 下，启用 **持续摄取**。选择 **任意顺序** 作为摄取模式，并填写与你的存储桶关联的队列的 **SQS queue URL**。该队列必须专供此 ClickPipe 使用——请参阅[创建亚马逊 SQS 队列](#create-sqs-queue)。
 
     **3.** 在 **解析信息** 下，为目标表定义 **排序键**。按需调整映射后的 schema，然后为 ClickPipes 数据库用户配置角色。
 

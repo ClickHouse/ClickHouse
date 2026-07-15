@@ -18,9 +18,9 @@ Ce guide fournit aux équipes d’entreprise qui évaluent ClickHouse Cloud des 
   ## Tableau de bord d’observabilité avancé
 </div>
 
-ClickHouse Cloud fournit une surveillance complète via des interfaces de tableau de bord intégrées, accessibles depuis la section Monitoring. Ces tableaux de bord visualisent en temps réel les métriques système et de performance sans configuration supplémentaire et constituent les principaux outils de surveillance de la production en temps réel dans ClickHouse Cloud.
+ClickHouse Cloud fournit un monitoring complet via des interfaces de tableau de bord intégrées, accessibles depuis la section Monitoring. Ces tableaux de bord visualisent en temps réel les métriques système et de performance sans configuration supplémentaire et constituent les principaux outils de monitoring de la production en temps réel dans ClickHouse Cloud.
 
-* **Advanced Dashboard** : L’interface principale de tableau de bord, accessible via Monitoring → Advanced dashboard, offre une visibilité en temps réel sur le taux de requêtes, l’utilisation des ressources, l’état du système et les performances du stockage. Ce tableau de bord ne nécessite pas d’authentification distincte, n’empêche pas les instances de passer en idling et n’ajoute pas de charge de requête à votre système de production. Chaque visualization s’appuie sur des requêtes SQL personnalisables, avec des charts prêtes à l’emploi regroupées en métriques ClickHouse-specific, system health et Cloud-specific. Vous pouvez étendre la surveillance en créant des requêtes personnalisées directement dans la SQL Console.
+* **Advanced Dashboard** : L’interface principale de tableau de bord, accessible via Monitoring → Advanced dashboard, offre une visibilité en temps réel sur le taux de requêtes, l’utilisation des ressources, l’état du système et les performances du stockage. Ce tableau de bord ne nécessite pas d’authentification distincte, n’empêche pas les instances de passer en idling et n’ajoute pas de charge de requête à votre système de production. Chaque visualization s’appuie sur des requêtes SQL personnalisables, avec des charts prêtes à l’emploi regroupées en métriques ClickHouse-specific, system health et Cloud-specific. Vous pouvez étendre le monitoring en créant des requêtes personnalisées directement dans la SQL Console.
 
 <Note>
   L’accès à ces métriques n’exécute pas de requête sur le service sous-jacent et ne réactive pas les services idle.
@@ -30,7 +30,7 @@ ClickHouse Cloud fournit une surveillance complète via des interfaces de tablea
 
 Les utilisateurs qui souhaitent étendre ces visualizations peuvent utiliser la fonctionnalité dashboards de ClickHouse Cloud en interrogeant directement les tables système.
 
-* **Native advanced dashboard** : Une interface de tableau de bord alternative, accessible via « You can still access the native advanced dashboard » dans la section Monitoring. Elle s’ouvre dans un onglet séparé avec authentification et fournit une UI alternative pour surveiller l’état du système et du service. Ce tableau de bord permet des analyses avancées, dans lesquelles vous pouvez modifier les requêtes SQL sous-jacentes.
+* **Native advanced dashboard** : Une interface de tableau de bord alternative, accessible via « You can still access the native advanced dashboard » dans la section Monitoring. Elle s’ouvre dans un onglet séparé avec authentification et fournit une UI alternative pour le monitoring de l’état du système et du service. Ce tableau de bord permet des analyses avancées, dans lesquelles vous pouvez modifier les requêtes SQL sous-jacentes.
 
 <Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
 

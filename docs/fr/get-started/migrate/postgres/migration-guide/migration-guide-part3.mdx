@@ -26,9 +26,9 @@ Les utilisateurs venant de bases de données OLTP recherchent souvent un concept
 
 Pour comprendre pourquoi il n’est pas approprié d’utiliser votre clé primaire OLTP dans ClickHouse, il faut comprendre les bases de l’indexation dans ClickHouse. Nous prenons Postgres comme point de comparaison, mais ces concepts généraux s’appliquent à d’autres bases de données OLTP.
 
-* Les clés primaires de Postgres sont, par définition, uniques pour chaque ligne. L’utilisation de [structures B-tree](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) permet de retrouver efficacement des lignes individuelles à partir de cette clé. Bien que ClickHouse puisse être optimisé pour retrouver une ligne unique, les charges de travail analytiques nécessitent généralement de lire quelques colonnes sur un grand nombre de lignes. Le plus souvent, les filtres doivent identifier **un sous-ensemble de lignes** sur lequel une agrégation sera effectuée.
-* L’efficacité en mémoire et sur disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, qui sont ensuite fusionnés en arrière-plan selon certaines règles. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, leurs index primaires le sont également. Contrairement à Postgres, ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle **l’indexation éparse**.
-* **L’indexation éparse** est possible parce que ClickHouse stocke sur disque les lignes d’une part dans l’ordre d’une clé spécifiée. Au lieu de localiser directement des lignes individuelles (comme avec un index basé sur un B-Tree), l’index primaire épars lui permet d’identifier rapidement, via une recherche binaire sur les entrées d’index, des groupes de lignes susceptibles de correspondre à la requête. Les groupes de lignes potentiellement correspondantes ainsi localisés sont ensuite transmis en parallèle au moteur ClickHouse afin de trouver les correspondances. Cette conception permet de conserver un index primaire compact (il tient entièrement en mémoire principale) tout en accélérant significativement le temps d’exécution des requêtes, en particulier pour les requêtes sur des plages de valeurs, typiques des cas d’usage analytiques.
+* Les clés primaires de Postgres sont, par définition, uniques pour chaque ligne. L’utilisation de [structures B-tree](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) permet de retrouver efficacement des lignes individuelles à partir de cette clé. Bien que ClickHouse puisse être optimisé pour retrouver une valeur de ligne unique, les charges de travail analytiques nécessitent généralement de lire quelques colonnes sur un grand nombre de lignes. Le plus souvent, les filtres doivent identifier **un sous-ensemble de lignes** sur lequel une agrégation sera effectuée.
+* L’efficacité en mémoire et sur disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, qui sont ensuite fusionnés en arrière-plan selon certaines règles. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part fusionnée le sont également. Contrairement à Postgres, ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle **l’indexation éparse**.
+* **L’indexation éparse** est possible parce que ClickHouse stocke sur disque les lignes d’une part dans l’ordre d’une clé spécifiée. Au lieu de localiser directement des lignes individuelles (comme avec un index basé sur un B-Tree), l’index primaire épars lui permet d’identifier rapidement, via une recherche binaire sur les entrées d’index, des groupes de lignes susceptibles de correspondre à la requête. Les groupes de lignes potentiellement correspondantes ainsi localisés sont ensuite transmis en parallèle au moteur ClickHouse afin de trouver les correspondances. Cette conception permet de conserver un index primaire compact (il tient entièrement en mémoire principale) tout en accélérant significativement les temps d’exécution des requêtes, en particulier pour les requêtes sur des plages de valeurs, typiques des cas d’usage analytiques.
 
 Pour plus de détails, nous recommandons ce [guide approfondi](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
@@ -295,8 +295,8 @@ Nous recommandons d&#39;utiliser des projections lorsque :
   [évaluez le surcoût de stockage](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <Note>
-  Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans les
-  projections. Cela permet de stocker les projections de manière plus économe en espace.
+  Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans
+  les projections. Cela permet de stocker les projections de manière plus économe en espace.
 
   Pour plus de détails, voir [« Projections »](/fr/concepts/features/projections/projections)
 </Note>
@@ -305,8 +305,8 @@ Nous recommandons d&#39;utiliser des projections lorsque :
   ## Dénormalisation
 </div>
 
-Comme Postgres est une base de données relationnelle, son modèle de données est fortement [normalisé](https://en.wikipedia.org/wiki/Database_normalization), avec souvent des centaines de tables. Dans ClickHouse, la dénormalisation peut parfois s’avérer utile pour optimiser les performances des JOIN.
+Comme Postgres est une base de données relationnelle, son modèle de données est fortement [normalisé](https://en.wikipedia.org/wiki/Database_normalization) et implique souvent des centaines de tables. Dans ClickHouse, la dénormalisation peut parfois s’avérer utile pour optimiser les performances des JOIN.
 
 Vous pouvez consulter ce [guide](/fr/guides/clickhouse/data-modelling/denormalization), qui présente les avantages de la dénormalisation du Stack Overflow dataset dans ClickHouse.
 
-Ceci conclut notre guide d’introduction si vous migrez de Postgres vers ClickHouse. Nous vous recommandons de lire le [guide de modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design) pour en savoir plus sur les fonctionnalités avancées de ClickHouse.
+Ceci conclut notre guide d’introduction à la migration de Postgres vers ClickHouse. Nous vous recommandons de lire le [guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design) pour en savoir plus sur les fonctionnalités avancées de ClickHouse.

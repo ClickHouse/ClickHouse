@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 
 Omni는 공식 ClickHouse 데이터 소스를 통해 ClickHouse Cloud 또는 온프레미스 배포 환경에 연결할 수 있습니다.
 
-<div id="1-gather-your-connection-details">
-  ## 1. 연결 정보를 준비합니다
-</div>
+<Steps>
+  <Step title="연결 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="ClickHouse 데이터 소스 생성" id="2-create-a-clickhouse-data-source">
+    Admin -&gt; Connections로 이동한 다음 오른쪽 상단에 있는 &quot;Add Connection&quot; 버튼을 클릭하세요.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. ClickHouse 데이터 소스 생성
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Connections 섹션에서 Add Connection 버튼이 표시된 Omni 관리자 인터페이스" border />
 
-Admin -&gt; Connections로 이동한 다음, 오른쪽 상단의 &quot;Add Connection&quot; 버튼을 클릭하세요.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Connections 섹션에서 Add Connection 버튼을 보여주는 Omni 관리자 인터페이스" border />
+    `ClickHouse`를 선택하세요. 양식에 자격 증명을 입력하세요.
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="자격 증명 입력 필드가 표시된 ClickHouse용 Omni 연결 구성 인터페이스" border />
 
-`ClickHouse`를 선택하세요. 양식에 자격 증명을 입력하세요.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="자격 증명 입력 필드를 보여주는 ClickHouse용 Omni 연결 구성 인터페이스" border />
-
-<br />
-
-이제 Omni에서 ClickHouse 데이터를 쿼리하고 시각화할 수 있습니다.
+    이제 Omni에서 ClickHouse 데이터를 쿼리하고 시각화할 수 있습니다.
+  </Step>
+</Steps>

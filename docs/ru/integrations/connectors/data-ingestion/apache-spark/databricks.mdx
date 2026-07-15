@@ -53,9 +53,9 @@ import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupporte
    * Выберите **DBFS** или **Workspace** → Перейдите к загруженному JAR-файлу
    * Нажмите **Install**
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Вкладка Libraries в Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Вкладка Libraries в Databricks" />
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="Установка библиотеки из тома рабочего пространства" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Установка библиотеки из тома рабочего пространства" />
 
 4. Перезапустите кластер, чтобы загрузить библиотеку
 
@@ -90,7 +90,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Настройка библиотек Maven в Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Настройка библиотек Maven в Databricks" />
 
 3. Нажмите **Install** и перезапустите кластер, чтобы загрузить библиотеку
 
@@ -336,4 +336,4 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 
 * [Руководство по Spark Native Connector](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Полная документация по коннектору
 * [Документация по TableProvider API](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - Подробная информация о доступе на основе формата
-* [Документация по Catalog API](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - Подробная информация о доступе через каталог
+* [Документация по Catalog API](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - Подробная информация о доступе на основе каталога

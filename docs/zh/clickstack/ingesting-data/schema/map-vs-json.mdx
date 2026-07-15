@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 如需从[默认的基于 Map 的 schema](/zh/clickstack/ingesting-data/schemas)迁移，请按以下步骤操作：
 
 <Steps>
-  <Step>
-    ### 停止 OTel collector
-  </Step>
+  <Step title="停止 OTel collector" id="stop-the-collector" />
 
-  <Step>
-    ### 重命名现有表并更新数据源
-
+  <Step title="重命名现有表并更新数据源" id="rename-existing-tables-sources">
     重命名现有表，并更新 HyperDX 中的数据源。
 
     例如：
@@ -130,23 +126,17 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step>
-    ### 部署 collector
-
+  <Step title="部署 collector" id="deploy-the-collector">
     部署 collector，并设置 `OTEL_AGENT_FEATURE_GATE_ARG`。
   </Step>
 
-  <Step>
-    ### 重启 HyperDX 容器以启用 JSON schema 支持
-
+  <Step title="重启 HyperDX 容器以启用 JSON schema 支持" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### 创建新的数据源
-
+  <Step title="创建新的数据源" id="create-new-data-sources">
     在 HyperDX 中创建指向 JSON 表的新数据源。
   </Step>
 </Steps>

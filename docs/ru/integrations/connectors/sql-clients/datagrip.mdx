@@ -19,60 +19,56 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 <CommunityMaintainedBadge />
 
 <div id="start-or-download-datagrip">
-  ## Запустите DataGrip или скачайте его
+  ## Запустите или скачайте DataGrip
 </div>
 
 DataGrip доступен по адресу https://www.jetbrains.com/datagrip/
 
-<div id="1-gather-your-connection-details">
-  ## 1. Соберите сведения о подключении
-</div>
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Загрузите драйвер ClickHouse" id="2-load-the-clickhouse-driver">
+    1. Запустите DataGrip и на вкладке **Data Sources** в диалоговом окне **Data Sources and Drivers** нажмите значок **+**
 
-<div id="2-load-the-clickhouse-driver">
-  ## 2. Загрузите драйвер ClickHouse
-</div>
+    <Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="Вкладка Data Sources в DataGrip с выделенным значком +" />
 
-1. Запустите DataGrip и на вкладке **Data Sources** в диалоговом окне **Data Sources and Drivers** нажмите значок **+**
+    Выберите **ClickHouse**
 
-<Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="Вкладка Data Sources в DataGrip с выделенным значком +" />
+    <Tip>
+      По мере создания подключений порядок меняется, поэтому ClickHouse может пока не находиться вверху списка.
+    </Tip>
 
-Выберите **ClickHouse**
+    <Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="Выбор ClickHouse в DataGrip из списка источников данных" />
 
-<Tip>
-  По мере создания подключений порядок меняется, поэтому ClickHouse может пока не отображаться вверху списка.
-</Tip>
+    * Перейдите на вкладку **Drivers** и загрузите драйвер ClickHouse
 
-<Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="Выбор ClickHouse в DataGrip из списка источников данных" />
+      DataGrip не поставляется с драйверами, чтобы минимизировать размер загрузки. На вкладке **Drivers**
+      выберите **ClickHouse** в списке **Complete Support** и нажмите значок **+**. В параметре **Provided Driver** выберите драйвер **Latest stable**:
 
-* Перейдите на вкладку **Drivers** и загрузите драйвер ClickHouse
+    <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="Вкладка Drivers в DataGrip, показывающая установку драйвера ClickHouse" />
+  </Step>
 
-  DataGrip не включает драйверы по умолчанию, чтобы уменьшить размер загрузки. На вкладке **Drivers**
-  выберите **ClickHouse** в списке **Complete Support** и нажмите значок **+**. В поле **Provided Driver** выберите драйвер **Latest stable**:
+  <Step title="Подключение к ClickHouse" id="3-connect-to-clickhouse">
+    * Укажите сведения о подключении к базе данных и нажмите **Test Connection**.
+      На первом шаге вы собрали сведения о подключении — заполните URL хоста, порт, имя пользователя, пароль и имя базы данных, затем проверьте подключение.
 
-<Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="Вкладка Drivers в DataGrip, где показана установка драйвера ClickHouse" />
+    <Tip>
+      В поле **Host** указывайте только имя хоста (например, `your-host.clickhouse.cloud`) без префикса протокола, такого как `https://`.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. Подключение к ClickHouse
-</div>
+      Для подключений к ClickHouse Cloud необходимо добавить `?ssl=true` в поле **URL** под полем хоста. Полный JDBC URL должен выглядеть так:
 
-* Укажите сведения о подключении к базе данных и нажмите **Test Connection**.
-  На первом шаге вы собрали сведения о подключении — заполните URL хоста, порт, имя пользователя, пароль и имя базы данных, затем проверьте подключение.
+      `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
 
-<Tip>
-  В поле **Host** указывайте только имя хоста (например, `your-host.clickhouse.cloud`) без префикса протокола, такого как `https://`.
+      ClickHouse Cloud требует SSL-шифрования для всех подключений. Без параметра `?ssl=true` вы увидите ошибку &quot;Connection reset&quot; даже при правильных учетных данных.
 
-  Для подключений к ClickHouse Cloud необходимо добавить `?ssl=true` в поле **URL** под полем хоста. Полный JDBC URL должен выглядеть так:
+      Подробнее о настройках JDBC URL см. в репозитории [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
+    </Tip>
 
-  `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
-
-  ClickHouse Cloud требует SSL-шифрования для всех подключений. Без параметра `?ssl=true` вы увидите ошибку &quot;Connection reset&quot; даже при правильных учетных данных.
-
-  Подробнее о настройках JDBC URL см. в репозитории [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
-</Tip>
-
-<Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="Форма сведений о подключении в DataGrip с настройками ClickHouse" />
+    <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="Форма сведений о подключении в DataGrip с настройками ClickHouse" />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Узнайте больше

@@ -51,7 +51,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。
 * `partition_strategy` – 可选值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。默认值为 `file_like_engine_default_partition_strategy` 设置 (在早于 `26.6` 的 `compatibility` 设置下为 `WILDCARD`，否则为 `HIVE`) 。
 * `partition_columns_in_data_file` - 仅与 `HIVE` 分区策略一起使用。用于告知 ClickHouse 是否应在数据文件中包含分区列。默认为 `false`。
-* `storage_class_name` - 可选值：`STANDARD` 或 `INTELLIGENT_TIERING`，可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
+* `storage_class_name` - 可选值：`STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE`。仅支持可立即检索的 S3 storage classes (不支持 `GLACIER` 和 `DEEP_ARCHIVE` 等归档类) 。可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
 * `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问控制的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
 <div id="data-cache">

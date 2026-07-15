@@ -16,9 +16,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez de deixar que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
 
 <Steps>
-  <Step>
-    ### Configure sua VPC existente
-
+  <Step title="Configure sua VPC existente" id="configure-existing-vpc">
     1. Adicione a tag `clickhouse-byoc="true"` à VPC.
     2. Aloque pelo menos 3 sub-redes privadas em 3 zonas de disponibilidade diferentes para uso do ClickHouse Cloud.
     3. Certifique-se de que cada sub-rede tenha um intervalo CIDR mínimo de `/23` (por exemplo, 10.0.0.0/23) para fornecer endereços IP suficientes para a implantação do ClickHouse.
@@ -29,17 +27,13 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="Tags da sub-rede da VPC BYOC" />
   </Step>
 
-  <Step>
-    ### Configure o endpoint de gateway do S3
-
+  <Step title="Configure o endpoint de gateway do S3" id="configure-s3-endpoint">
     Se sua VPC ainda não tiver um endpoint de gateway do S3 configurado, será necessário criar um para habilitar a comunicação segura e privada entre sua VPC e o Amazon S3. Esse endpoint permite que seus serviços do ClickHouse acessem o S3 sem passar pela internet pública. Consulte a captura de tela abaixo para ver um exemplo de configuração.
 
     <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="Endpoint S3 do BYOC" />
   </Step>
 
-  <Step>
-    ### Garanta a conectividade de rede
-
+  <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
     **Acesso de saída à internet**
     Sua VPC deve permitir pelo menos acesso de saída à internet para que os componentes do ClickHouse BYOC possam se comunicar com o plano de controle do Tailscale. O Tailscale é usado para fornecer uma rede segura de confiança zero para operações privadas de gerenciamento. O registro inicial e a configuração com o Tailscale exigem conectividade com a internet pública, que pode ser obtida diretamente ou por meio de um NAT gateway. Essa conectividade é necessária para manter a privacidade e a segurança da sua implantação BYOC.
 
@@ -47,15 +41,13 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     Certifique-se de que sua VPC tenha resolução de DNS funcional e não bloqueie, interfira nem sobrescreva nomes DNS padrão. O ClickHouse BYOC depende de DNS para resolver os servidores de controle do Tailscale e os endpoints de serviço do ClickHouse. Se o DNS não estiver disponível ou estiver configurado incorretamente, os serviços BYOC poderão falhar ao se conectar ou operar corretamente.
   </Step>
 
-  <Step>
-    ### Configure sua conta AWS
-
+  <Step title="Configure sua conta AWS" id="configure-aws-account">
     A configuração inicial do BYOC cria uma função do IAM privilegiada (`ClickHouseManagementRole`) que permite que os controladores BYOC do ClickHouse Cloud gerenciem sua infraestrutura. Isso pode ser feito usando um [template do CloudFormation](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) ou um [módulo do Terraform](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
 
     Ao implantar uma configuração `BYO-VPC`, defina o parâmetro `IncludeVPCWritePermissions` como `false` para garantir que o ClickHouse Cloud não receba permissões para modificar sua VPC gerenciada pelo cliente.
 
     <Note>
-      Os buckets de armazenamento, o cluster Kubernetes e os recursos de compute necessários para executar o ClickHouse não estão incluídos nesta configuração inicial. Eles serão provisionados em uma etapa posterior. Embora você controle sua VPC, o ClickHouse Cloud ainda exige permissões de IAM para criar e gerenciar o cluster Kubernetes, funções do IAM para service accounts, buckets do S3 e outros recursos essenciais na sua conta AWS.
+      Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren&#39;t included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
     </Note>
 
     #### Módulo alternativo do Terraform
@@ -71,9 +63,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     ```
   </Step>
 
-  <Step>
-    ### Configure a infraestrutura do BYOC
-
+  <Step title="Configure a infraestrutura do BYOC" id="set-up-byoc-infrastructure">
     No console do ClickHouse Cloud, configure o seguinte ao configurar uma nova infraestrutura:
 
     1. Em **Configuração da VPC**, selecione **Usar VPC existente**.
@@ -91,19 +81,57 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
 </Steps>
 
 <div id="customer-managed-iam-roles">
-  ## Funções do IAM gerenciadas pelo cliente
+  ## IAM roles gerenciados pelo cliente
 </div>
 
-Para organizações com requisitos avançados de segurança ou políticas rigorosas de conformidade, você pode fornecer suas próprias funções do IAM em vez de deixar que o ClickHouse Cloud as crie. Essa abordagem dá a você controle total sobre as permissões do IAM e permite aplicar as políticas de segurança da sua organização.
+Para organizações com requisitos avançados de segurança ou políticas rígidas de compliance, você pode fornecer seus próprios IAM roles em vez de deixar que o ClickHouse Cloud os crie. Essa abordagem dá a você controle total sobre as permissões do IAM e permite aplicar as políticas de segurança da sua organização.
 
 <Info>
-  As funções do IAM gerenciadas pelo cliente estão em prévia privada. Se você precisar desse recurso, entre em contato com o suporte do ClickHouse para discutir seus requisitos específicos e o cronograma.
-
-  Quando estiver disponível, esse recurso permitirá que você:
-
-  * Forneça funções do IAM pré-configuradas para o ClickHouse Cloud usar
-  * Remova permissões de gravação das permissões relacionadas ao IAM para a `ClickHouseManagementRole` usada para acesso entre contas
-  * Mantenha controle total sobre as permissões das funções e as relações de confiança
+  IAM roles gerenciados pelo cliente estão em prévia privada. Entre em contato com o suporte do ClickHouse para habilitar esse recurso para sua organização antes de seguir as etapas abaixo.
 </Info>
 
-Para obter informações sobre as funções do IAM que o ClickHouse Cloud cria por padrão, consulte a [Referência de privilégios do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege).
+Com IAM roles gerenciados pelo cliente, você:
+
+* Cria antecipadamente os IAM roles por infraestrutura que, de outra forma, seriam criados pelo ClickHouse Cloud
+* Remove as permissões de gravação do IAM do `ClickHouseManagementRole` usado para acesso entre contas
+* Mantém controle total sobre as permissões dos roles e as relações de confiança
+
+<Steps>
+  <Step title="Configurar o role de gerenciamento sem permissões de gravação do IAM" id="byo-iam-management-role">
+    Ao realizar a [configuração inicial do BYOC](/pt-BR/cloud/reference/byoc/onboarding/standard), desative as permissões de gravação do IAM no role de gerenciamento. Com o template do CloudFormation, defina o parâmetro `IncludeIAMWritePermissions` como `false`. Com o módulo do Terraform:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    Substitua `<version>` pela tag mais recente na [página de lançamentos](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) do módulo — use sempre o lançamento mais recente.
+  </Step>
+
+  <Step title="Criar os IAM roles por infraestrutura" id="byo-iam-per-infra-roles">
+    Antes de cada infraestrutura BYOC ser provisionada, crie os IAM roles necessários (roles de identidade de pod do EKS, o role de acesso S3 do ClickHouse e o role de gerenciamento do plano de dados) com o módulo por infraestrutura do [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    Substitua `<version>` pela tag mais recente na [página de lançamentos](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) do módulo — use sempre o lançamento mais recente.
+  </Step>
+
+  <Step title="Manter os roles por infraestrutura atualizados" id="byo-iam-keep-up-to-date">
+    <Warning>
+      O ClickHouse adiciona periodicamente roles e permissões exigidos por novos recursos da plataforma. Quando o ClickHouse notificar você sobre uma atualização, reaplique o módulo por infraestrutura no lançamento mais recente — executar uma versão desatualizada pode fazer com que o provisionamento e os upgrades da sua infraestrutura BYOC falhem.
+    </Warning>
+  </Step>
+</Steps>
+
+Para informações sobre os IAM roles que o ClickHouse Cloud cria por padrão, consulte a [Referência de privilégios do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege).

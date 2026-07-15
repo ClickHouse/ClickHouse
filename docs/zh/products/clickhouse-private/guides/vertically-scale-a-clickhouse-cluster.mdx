@@ -11,13 +11,11 @@ description: "使用 Private API 调整 ClickHouse 集群的 CPU 和内存资源
   ## 前置条件
 </div>
 
-* 已安装并可访问 ClickHouse Private API (例如，通过到 `http://localhost:8080/` 的端口转发) 
-* 至少已部署一个 ClickHouse 集群 (本指南使用 `default-xx-01`) 
+* 已安装并可访问 ClickHouse Private API (例如，通过到 `http://localhost:8080/` 的端口转发)
+* 至少已部署一个 ClickHouse 集群 (本指南使用 `default-xx-01`)
 
 <Steps>
-  <Step>
-    ## 1. 创建扩缩容请求
-
+  <Step title="1. 创建扩缩容请求" id="1-create-the-scale-request">
     创建一个包含所需资源分配的 JSON 文件：
 
     ```json
@@ -34,9 +32,7 @@ description: "使用 Private API 调整 ClickHouse 集群的 CPU 和内存资源
     将其保存为 `scale.json`。
   </Step>
 
-  <Step>
-    ## 2. 发送请求
-
+  <Step title="2. 发送请求" id="2-send-the-request">
     ```bash
     curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
         -H "Content-Type: application/json" \
@@ -44,26 +40,22 @@ description: "使用 Private API 调整 ClickHouse 集群的 CPU 和内存资源
     ```
   </Step>
 
-  <Step>
-    ## 3. CPU:内存比例限制
-
+  <Step title="3. CPU:内存比例限制" id="3-cpumemory-ratio-enforcement">
     API 会强制执行 **1:4 的 CPU 与内存比例** (每 4 GiB 内存对应 1 个 CPU 核心) ，并允许 5% 的误差范围。
 
     如果你只提供一种资源类型，API 会自动推导另一种。例如，仅指定 `"memory": "16Gi"` 时，CPU 会被设置为 4 核。
 
     **支持的资源数量格式：**
 
-    | 类型  | 示例                                            |
-    | --- | --------------------------------------------- |
-    | CPU | `"4"` (核心) 、`"2.5"` (小数) 、`"500m"` (毫核)       |
-    | 内存  | `"16Gi"` (gibibytes) 、`"4096Mi"` (mebibytes)  |
+    | 类型  | 示例                                           |
+    | --- | -------------------------------------------- |
+    | CPU | `"4"` (核心), `"2.5"` (小数), `"500m"` (毫核)      |
+    | 内存  | `"16Gi"` (gibibytes), `"4096Mi"` (mebibytes) |
 
     对于内存，建议使用二进制单位 (Ki、Mi、Gi) 。
   </Step>
 
-  <Step>
-    ## 4. 监控扩缩容进度
-
+  <Step title="4. 监控扩缩容进度" id="4-monitor-scaling-progress">
     检查集群状态以跟踪扩缩容操作：
 
     ```bash

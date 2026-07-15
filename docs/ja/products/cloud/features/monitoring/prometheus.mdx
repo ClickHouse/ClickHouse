@@ -205,7 +205,7 @@ Grafana と統合する主な方法は 2 つあります。
 以下では、これらのオプションの使用方法を説明します。特に ClickHouse Cloud Prometheus エンドポイントに固有の詳細に焦点を当てます。
 
 <div id="grafana-cloud-with-metrics-endpoint">
-  ### メトリクス エンドポイントを使用した Grafana Cloud
+  ### Metrics Endpoint を使用した Grafana Cloud
 </div>
 
 * Grafana Cloud アカウントにログインします
@@ -213,7 +213,7 @@ Grafana と統合する主な方法は 2 つあります。
 * Scrape URL が Prometheus エンドポイントを指すように設定し、ベーシック認証を使用して API キー/シークレットで接続を構成します
 * 接続テストを実行し、接続できることを確認します
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Grafana のメトリクス エンドポイントを設定" border />
+<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Grafana の Metrics Endpoint を設定" border />
 
 <br />
 
@@ -285,8 +285,8 @@ prometheus.scrape "clickhouse_cloud" {
 Grafana をセルフマネージドで利用している場合、Alloy エージェントのインストール手順は[こちら](https://grafana.com/docs/alloy/latest/get-started/install/)で確認できます。ここでは、Alloy が Prometheus メトリクスを任意の宛先に送信するよう設定済みであることを前提としています。以下の `prometheus.scrape` コンポーネントにより、Alloy は ClickHouse Cloud エンドポイント をスクレイプします。スクレイプしたメトリクスは `prometheus.remote_write` が受け取る想定です。これが存在しない場合は、`forward_to key` を対象の宛先に合わせて調整してください。
 
 ```yaml
-// prometheus.scrape コンポーネントにより、Alloy が ClickHouse Cloud の Prometheus エンドポイントをスクレイプします。
-  // forward_to キーを、使用する remote_write の receiver に合わせて調整してください。
+// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
+  // Adjust the forward_to key to match your remote_write receiver if it differs.
   prometheus.scrape "clickhouse_cloud" {
   targets = [{
   __address__ = "api.clickhouse.cloud",
@@ -310,9 +310,9 @@ Grafana をセルフマネージドで利用している場合、Alloy エージ
 }
 ```
 
-設定が完了すると、メトリクスエクスプローラーに ClickHouse 関連のメトリクスが表示されるようになります。
+設定が完了すると、メトリクス エクスプローラーに ClickHouse 関連のメトリクスが表示されるようになります。
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana メトリクスエクスプローラー" border />
+<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana メトリクス エクスプローラー" border />
 
 <br />
 
@@ -345,7 +345,7 @@ instances:
 </div>
 
 * [監視の概要](/ja/products/cloud/features/monitoring/overview) — ClickHouse Cloud のすべての監視方法を比較
-* [Cloud Console での監視](/ja/products/cloud/features/monitoring/cloud-console) — 外部ツール不要の組み込みダッシュボード
-* [コミュニティおよびパートナーのインテグレーション](/ja/products/cloud/features/monitoring/integrations) — Datadog agent のインテグレーションとコミュニティソリューション
+* [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — 外部ツール不要の組み込みダッシュボード
+* [コミュニティおよびパートナーのインテグレーション](/ja/products/cloud/features/monitoring/integrations) — Datadog agent のインテグレーションとコミュニティ提供のソリューション
 * [システムテーブルのクエリ](/ja/products/cloud/features/monitoring/system-tables) — システムメトリクスに SQL で直接アクセス
-* [Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — Managed Postgres サービスのメトリクスをスクレイプ
+* [Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — Managed Postgres サービスからメトリクスをスクレイプ

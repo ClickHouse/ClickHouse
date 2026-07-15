@@ -32,9 +32,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <br />
 
 <Steps>
-  <Step>
-    ### النشر باستخدام Docker
-
+  <Step title="النشر باستخدام Docker" id="deploy-with-docker">
     سيشغّل الأمر التالي مجمّع OpenTelemetry (على المنفذين 4317 و4318) وواجهة HyperDX (على المنفذ 8080).
 
     ```shell
@@ -48,23 +46,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ### الانتقال إلى واجهة HyperDX
-
+  <Step title="الانتقال إلى واجهة HyperDX" id="navigate-to-hyperdx-ui">
     زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
 
     أنشئ مستخدمًا بإدخال اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
 
     عند النقر على `Create`، ستُنشأ مصادر البيانات لمثيل ClickHouse المدمج.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="واجهة HyperDX" size="lg" />
 
     للاطلاع على مثال لاستخدام مثيل ClickHouse بديل، راجع [&quot;استخدام ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step>
-    ### إدخال البيانات
-
+  <Step title="إدخال البيانات" id="ingest-data">
     لإدخال البيانات، راجع [&quot;إدخال البيانات&quot;](/ar/clickstack/ingesting-data/index).
   </Step>
 </Steps>

@@ -2,7 +2,7 @@
 title: Inserciones asíncronas
 ---
 
-Las inserciones asíncronas en ClickHouse ofrecen una potente alternativa cuando la agrupación por lotes del lado del cliente no es viable. Esto resulta especialmente valioso en cargas de trabajo de observabilidad, donde cientos o miles de agentes envían datos continuamente —logs, métricas y trazas—, a menudo en cargas útiles pequeñas y en tiempo real. Almacenar temporalmente los datos en el lado del cliente en estos entornos aumenta la complejidad, ya que requiere una cola centralizada para garantizar que se puedan enviar lotes lo bastante grandes.
+Las inserciones asíncronas en ClickHouse ofrecen una potente alternativa cuando la agrupación por lotes del lado del cliente no es viable. Esto resulta especialmente valioso en workloads de observabilidad, donde cientos o miles de agentes envían datos continuamente —logs, métricas y trazas—, a menudo en cargas útiles pequeñas y en tiempo real. Almacenar temporalmente los datos en el lado del cliente en estos entornos aumenta la complejidad, ya que requiere una cola centralizada para garantizar que se puedan enviar lotes lo bastante grandes.
 
 <Note>
   No se recomienda enviar muchos lotes pequeños en modo síncrono, ya que esto provoca la creación de muchas partes. Esto dará lugar a un rendimiento deficiente de las consultas y a errores de [&quot;too many part&quot;](/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts).
@@ -12,7 +12,9 @@ Las inserciones asíncronas trasladan la responsabilidad de la agrupación por l
 
 El comportamiento principal se controla mediante la configuración [`async_insert`](/es/reference/settings/session-settings#async_insert).
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="Inserciones asíncronas" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="Inserciones asíncronas" />
+</Frame>
 
 Las inserciones asíncronas son compatibles tanto con las interfaces HTTP como con native TCP.
 
@@ -24,7 +26,7 @@ Cuando están habilitadas (`async_insert = 1`), las inserciones se almacenan en 
 
 El primer umbral que se alcanza desencadena el vaciado.
 
-Este proceso de agrupación por lotes es invisible para los clientes y ayuda a ClickHouse a fusionar de forma eficiente el tráfico de inserción procedente de múltiples fuentes. Sin embargo, hasta que no se produce un vaciado, los datos no pueden consultarse. Es importante destacar que existen múltiples búferes por combinación de forma de inserción y configuración y que, en los clusters, los búferes se mantienen por nodo, lo que permite un control detallado en entornos multiinquilino. Por lo demás, la mecánica de inserción es idéntica a la descrita para las [inserciones síncronas](/es/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
+Este proceso de agrupación por lotes es invisible para los clientes y ayuda a ClickHouse a fusionar de forma eficiente el tráfico de inserción procedente de múltiples fuentes. Sin embargo, hasta que no se produce un vaciado, los datos no pueden consultarse. Es importante destacar que existen múltiples búferes por combinación de forma de inserción y configuración y que, en los clústeres, los búferes se mantienen por nodo, lo que permite un control detallado en entornos multiinquilino. Por lo demás, la mecánica de inserción es idéntica a la descrita para las [inserciones síncronas](/es/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
 <div id="choosing-a-return-mode">
   ### Elegir un modo de retorno

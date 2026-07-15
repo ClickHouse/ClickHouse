@@ -27,14 +27,15 @@ En comparación con la función uniq, la función uniqCombined:
 * Calcula con una precisión varias veces mayor
 * Normalmente tiene un rendimiento ligeramente inferior. En algunos escenarios, uniqCombined puede rendir mejor que uniq; por ejemplo, con consultas distribuidas que transmiten una gran cantidad de estados de agregación por la red
 
-<Accordion title="Detalles de implementación">
+<details>
+  <summary>Detalles de implementación</summary>
   Esta función calcula un hash (de 64 bits para String y de 32 bits en caso contrario) para todos los parámetros de la agregación y luego lo utiliza en los cálculos.
   Utiliza una combinación de tres algoritmos: array, tabla hash y HyperLogLog con una tabla de corrección de errores:
 
   * Para una pequeña cantidad de elementos distintos, se utiliza un array
   * Cuando el tamaño del conjunto es mayor, se utiliza una tabla hash
   * Para una cantidad mayor de elementos, se utiliza HyperLogLog, que ocupará una cantidad fija de memoria
-</Accordion>
+</details>
 
 **Sintaxis**
 

@@ -30,7 +30,7 @@ ClickHouse 支持窗口和窗口函数的标准 SQL 语法。
 | `percent_rank()`/`percentRank()`                                    | ✅   | 可高效计算某个值在分区内的相对排名。它可替代更冗长且计算开销更高的手动 SQL 写法：`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`。                                                                                                                                        |
 | `cume_dist()`                                                       | ✅   | 计算某个值在一组值中的累计分布。返回值小于或等于当前行值的行所占的百分比。                                                                                                                                                                                                                                                         |
 | `lag/lead(value, offset)`                                           | ✅   | 你也可以使用以下任一变通方法：<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`，或者对于 `lead`，使用 `FOLLOWING` 替代 `PRECEDING` <br /> 2) `lagInFrame/leadInFrame`，它们与前者类似，但会遵循窗口帧。若要获得与 `lag/lead` 完全相同的行为，请使用 `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`。 |
-| `ntile(buckets)`                                                    | ✅   | 例如，可将窗口指定为 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`。                                                                                                                                                                                            |
+| [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)     | ✅   | 例如，可将窗口指定为 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`。                                                                                                                                                                                            |
 
 <div id="syntax">
   ## 语法
@@ -84,8 +84,13 @@ WINDOW window_name as ([
 | [`nth_value(x, offset)`](/zh/reference/functions/window-functions/nth_value)                                                                   | 返回其有序窗口帧中第 n 行 (偏移量) 对应计算结果里的第一个非 NULL 值。                            |
 | [`rank()`](/zh/reference/functions/window-functions/rank)                                                                                      | 对当前行在其分区内进行排名，排名中会有空缺。                                               |
 | [`dense_rank()`](/zh/reference/functions/window-functions/dense_rank)                                                                          | 对当前行在其分区内进行排名，排名中没有空缺。                                               |
+| [`percent_rank()`](/zh/reference/functions/window-functions/percent_rank)                                                                      | 计算当前行在其分区内的相对排名，结果是介于 0 和 1 之间的值。                                    |
+| [`cume_dist()`](/zh/reference/functions/window-functions/cume_dist)                                                                            | 计算某个值在一组值中的累计分布。                                                     |
+| [`lag(x, offset)`](/zh/reference/functions/window-functions/lag)                                                                               | 返回分区内当前行之前偏移若干行处计算出的值。                                               |
+| [`lead(x, offset)`](/zh/reference/functions/window-functions/lead)                                                                             | 返回分区内当前行之后偏移若干行处计算出的值。                                               |
 | [`lagInFrame(x)`](/zh/reference/functions/window-functions/lagInFrame)                                                                         | 返回其有序窗口帧中位于当前行之前指定物理偏移位置的行所计算出的值。                                    |
 | [`leadInFrame(x)`](/zh/reference/functions/window-functions/leadInFrame)                                                                       | 返回其有序窗口帧中位于当前行之后偏移若干行的位置所计算出的值。                                      |
+| [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)                                                                             | 将分区内的有序行划分为给定数量的桶，并返回当前行所在的桶编号。                                      |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/zh/reference/functions/window-functions/nonNegativeDerivative) | 计算 `metric_column` 相对于 `timestamp_column` 的非负导数。这是 ClickHouse 特有的函数。 |
 
 <div id="examples">

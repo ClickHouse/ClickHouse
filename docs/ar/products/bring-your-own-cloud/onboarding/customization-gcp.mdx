@@ -10,35 +10,29 @@ doc_type: 'reference'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="customer-managed-vpc-gcp">
-  ## ‏VPC مُدارة من العميل (BYO-VPC) لـ GCP
+  ## Customer-managed VPC (BYO-VPC) for GCP
 </div>
 
-إذا كنت تفضّل استخدام VPC حالية لنشر ClickHouse BYOC بدلًا من أن يقوم ClickHouse Cloud بإنشاء VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في تكوين الشبكة، ويتيح لك دمج ClickHouse BYOC ضمن البنية التحتية الحالية لشبكتك.
+إذا كنت تفضّل استخدام شبكة VPC الحالية لنشر ClickHouse BYOC بدلًا من أن يقوم ClickHouse Cloud بإنشاء VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في تكوين الشبكة، ويتيح لك دمج ClickHouse BYOC ضمن البنية التحتية الحالية لشبكتك.
 
 <Steps>
-  <Step>
-    ### تكوين VPC الحالية
-
-    1. خصّص شبكة فرعية خاصة واحدة على الأقل في [منطقة تدعمها ClickHouse BYOC](/ar/products/cloud/reference/supported-regions) لعنقود ClickHouse Kubernetes ‏(GKE). تأكد من أن الشبكة الفرعية تحتوي على نطاق CIDR لا يقل عن `/24` (على سبيل المثال: 10.0.0.0/24) لتوفير عدد كافٍ من عناوين IP لعُقد عنقود GKE.
+  <Step title="تكوين شبكة VPC الحالية" id="configure-existing-vpc">
+    1. خصّص شبكة فرعية خاصة واحدة على الأقل في [منطقة تدعمها ClickHouse BYOC](/ar/products/cloud/reference/supported-regions) لعنقود ClickHouse Kubernetes (GKE). تأكد من أن الشبكة الفرعية تحتوي على نطاق CIDR لا يقل عن `/24` (على سبيل المثال: 10.0.0.0/24) لتوفير عدد كافٍ من عناوين IP لعُقد عنقود GKE.
     2. داخل الشبكة الفرعية الخاصة، خصّص نطاق IPv4 ثانويًا واحدًا على الأقل لاستخدامه لوحدات Pod في عنقود GKE. ينبغي أن يكون النطاق الثانوي `/23` على الأقل لتوفير عدد كافٍ من عناوين IP لوحدات Pod في عنقود GKE.
     3. فعّل **Private Google Access** على الشبكة الفرعية. يتيح ذلك لعُقد GKE الوصول إلى واجهات برمجة تطبيقات Google وخدماتها من دون الحاجة إلى عناوين IP خارجية.
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="تفاصيل الشبكة الفرعية لـ BYOC على GCP، مع عرض نطاقات IPv4 الأساسية والثانوية وتفعيل Private Google Access" />
   </Step>
 
-  <Step>
-    ### تأكد من توفر اتصال الشبكة
-
+  <Step title="ضمان اتصال الشبكة" id="ensure-network-connectivity">
     **بوابة Cloud NAT**
-    تأكد من نشر [بوابة Cloud NAT](https://cloud.google.com/nat/docs/overview) لـ VPC. تتطلب مكونات ClickHouse BYOC اتصالاً صادرًا بالإنترنت للتواصل مع مستوى التحكم الخاص بـ Tailscale. ويُستخدم Tailscale لتوفير شبكة آمنة قائمة على مبدأ انعدام الثقة لعمليات الإدارة الخاصة. وتوفّر بوابة Cloud NAT هذا الاتصال الصادر للمثيلات التي لا تملك عناوين IP خارجية.
+    تأكد من نشر [بوابة Cloud NAT](https://cloud.google.com/nat/docs/overview) لـ VPC. تتطلب مكونات ClickHouse BYOC اتصالًا صادرًا بالإنترنت للتواصل مع مستوى التحكم الخاص بـ Tailscale. ويُستخدم Tailscale لتوفير شبكة آمنة قائمة على مبدأ انعدام الثقة لعمليات الإدارة الخاصة. وتوفّر بوابة Cloud NAT هذا الاتصال الصادر للمثيلات التي لا تملك عناوين IP خارجية.
 
     **DNS Resolution**
     تأكد من أن VPC لديك تتمتع بآلية DNS resolution تعمل بشكل صحيح، وأنها لا تحجب أسماء DNS القياسية ولا تتداخل معها أو تستبدلها. يعتمد ClickHouse BYOC على DNS لتحليل أسماء خوادم التحكم الخاصة بـ Tailscale ونقاط نهاية خدمة ClickHouse. إذا لم يكن DNS متاحًا أو كان تكوينه غير صحيح، فقد تتعذر خدمات BYOC عن الاتصال أو العمل بشكل صحيح.
   </Step>
 
-  <Step>
-    ### إعداد البنية التحتية لـ BYOC
-
+  <Step title="إعداد البنية التحتية لـ BYOC" id="set-up-byoc-infrastructure">
     في وحدة تحكم ClickHouse Cloud، قم بتكوين ما يلي عند إعداد بنية تحتية جديدة:
 
     1. ضمن **VPC configuration**، اختر **Use existing VPC**.

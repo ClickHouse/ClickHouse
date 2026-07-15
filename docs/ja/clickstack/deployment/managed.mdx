@@ -55,31 +55,23 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### 新しいサービスを作成する
-
+      <Step title="新しいサービスを作成する" id="create-a-service">
         ClickHouse Cloud のランディングページで `New service` を選択し、新しいサービスを作成します。
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="サービス作成画面" border />
       </Step>
 
-      <Step>
-        ### プロバイダー、リージョン、リソースを指定する
-
+      <Step title="プロバイダー、リージョン、リソースを指定する" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### インジェストを設定する
-
+      <Step title="インジェストを設定する" id="setup-ingestion-create-new">
         サービスのプロビジョニングが完了したら、そのサービスが選択されていることを確認し、左側のメニューで &quot;ClickStack&quot; をクリックします。
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### ClickStack UI に移動する
-
+      <Step title="ClickStack UI に移動する" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### サービスを選択
-
+      <Step title="サービスを選択" id="select-service">
         ClickHouse Cloud のランディングページで、Managed ClickStack を有効にする対象のサービスを選択します。
 
         <Warning>
@@ -107,9 +97,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="サービスを選択" size="lg" />
       </Step>
 
-      <Step>
-        ### ClickStack UI に移動する
-
+      <Step title="ClickStack UI に移動する" id="navigate-to-the-clickstack-ui-existing">
         左側のナビゲーションメニューから &#39;ClickStack&#39; を選択します。ClickStack UI にリダイレクトされ、ClickHouse Cloud の権限に基づいて自動的に認証されます。
 
         サービスに OpenTelemetry テーブルがすでに存在する場合、それらは自動検出され、対応するデータソースが作成されます。
@@ -127,9 +115,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
         この手順が成功したら、これで完了です。準備はすべて整いました 🎉。失敗した場合は、インジェストの設定に進んでください。
       </Step>
 
-      <Step>
-        ### インジェストの設定
-
+      <Step title="インジェストを設定する" id="setup-ingestion-existing-service">
         自動検出に失敗した場合、または既存のテーブルがない場合は、インジェストのセットアップを行うよう求められます。
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI でインジェストを設定する" size="lg" />
@@ -153,7 +139,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             ### collector を起動する
 
-            以下では、推奨される方法である **ClickStack distribution of the OpenTelemetry Collector** の使用を前提としています。これには追加の processing が含まれており、ClickHouse Cloud 向けに最適化されています。独自の OpenTelemetry Collector を使用したい場合は、[「既存の collector を設定する」](#configure-existing-collectors) を参照してください。
+            以下では、推奨される方法である **ClickStack distribution of the OpenTelemetry Collector** の使用を前提としています。これには追加の processing が含まれており、ClickHouse Cloud 向けに最適化されています。独自の OpenTelemetry Collector を使用したい場合は、[「既存の collector を設定する」](#configure-existing-collectors-existing) を参照してください。
 
             すばやく始めるには、表示されている Docker コマンドをコピーして実行してください。
 
@@ -199,9 +185,9 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
           </Tab>
 
           <Tab title="Vector">
-            [Vector](https://vector.dev) は、高性能でベンダーに依存しないオブザーバビリティ向けデータパイプラインであり、特にその柔軟性とリソース使用量の少なさから、ログのインジェストで広く利用されています。
+            [Vector](https://vector.dev) は、高性能でベンダー中立なオブザーバビリティ向けデータパイプラインであり、特にその柔軟性とリソース使用量の少なさから、ログのインジェストで広く利用されています。
 
-            Vector を ClickStack と併用する場合、スキーマはユーザー自身で定義する必要があります。これらのスキーマは OpenTelemetry の規約に従うこともできますが、ユーザー定義のイベント構造を表す完全にカスタムなものにすることも可能です。
+            Vector を ClickStack と併用する場合、スキーマはユーザー自身で定義する必要があります。これらのスキーマは OpenTelemetry の規約に従うこともできますが、ユーザー定義のイベント構造を表す、完全にカスタムなものにすることも可能です。
 
             <Info>
               **timestamp が必要です**
@@ -260,9 +246,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step>
-        ### ClickStack UI に移動する
-
+      <Step title="ClickStack UI に移動する" id="navigate-to-clickstack-ui-existing-service">
         インジェストの設定を完了し、データの送信を開始したら、&quot;Next&quot; を選択します。
 
         <Tabs>

@@ -7,7 +7,7 @@ title: 'Analizador'
 doc_type: 'referencia'
 ---
 
-En la versión `24.3` de ClickHouse, el nuevo analizador de consultas estaba habilitado de forma predeterminada.
+En la versión `24.3` de ClickHouse, el analizador de consultas estaba habilitado de forma predeterminada.
 Puede obtener más información sobre su funcionamiento [aquí](/es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
 <div id="known-incompatibilities">
@@ -146,7 +146,7 @@ Para garantizar resultados coherentes y previsibles, especialmente al migrar con
   #### Manejo de los modificadores de tipo de las columnas en la cláusula `USING`
 </div>
 
-En la nueva versión del analizador, se han estandarizado las reglas para determinar el supertipo común de las columnas especificadas en la cláusula `USING`, con el fin de producir resultados más predecibles,
+En el analizador, se han estandarizado las reglas para determinar el supertipo común de las columnas especificadas en la cláusula `USING`, con el fin de producir resultados más predecibles,
 especialmente al trabajar con modificadores de tipo como `LowCardinality` y `Nullable`.
 
 * `LowCardinality(T)` y `T`: Cuando una columna de tipo `LowCardinality(T)` se combina con una columna de tipo `T`, el supertipo común resultante será `T`, lo que en la práctica descarta el modificador `LowCardinality`.
@@ -232,7 +232,7 @@ A continuación se muestra la lista de funcionalidades que el analizador no admi
   ## Migración a Cloud
 </div>
 
-Estamos habilitando el nuevo analizador de consultas en todas las instancias donde actualmente está deshabilitado para permitir nuevas optimizaciones funcionales y de rendimiento. Este cambio impone reglas de ámbito de SQL más estrictas, por lo que los clientes deberán actualizar manualmente las consultas que no las cumplan.
+Estamos habilitando el analizador en todas las instancias donde actualmente está deshabilitado para permitir nuevas optimizaciones funcionales y de rendimiento. Este cambio impone reglas de ámbito de SQL más estrictas, por lo que los clientes deberán actualizar manualmente las consultas que no las cumplan.
 
 <div id="migration-workflow">
   ### Flujo de migración

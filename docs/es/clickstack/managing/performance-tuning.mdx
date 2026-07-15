@@ -141,7 +141,7 @@ Ahora los usuarios pueden consultar los nombres de los pods de Kubernetes de for
 
 <Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Filtrado de trazas v2" />
 
-En los datos recién insertados, esto evita por completo el acceso al mapa y reduce significativamente la E/S.
+En los datos recién insertados, esto evita por completo el acceso al Map y reduce significativamente la E/S.
 
 Sin embargo, incluso si los usuarios siguen consultando la ruta del atributo original, por ejemplo `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`, **ClickStack reescribirá automáticamente la consulta** internamente para usar la columna materializada `PodName`, es decir, usando el predicado:
 
@@ -681,9 +681,7 @@ Si tienes claros los patrones de acceso antes de la ingestión de datos, simplem
 El siguiente ejemplo muestra una forma sencilla de crear una nueva tabla de logs con el esquema existente, pero con una nueva clave primaria que incluye la columna `SeverityText` antes de `ServiceName`.
 
 <Steps>
-  <Step>
-    #### Crear una nueva tabla
-
+  <Step title="Crear una nueva tabla" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -700,10 +698,8 @@ El siguiente ejemplo muestra una forma sencilla de crear una nueva tabla de logs
     </Info>
   </Step>
 
-  <Step>
-    #### Intercambiar y eliminar la tabla
-
-    La instrucción `EXCHANGE` se usa para intercambiar los nombres de las tablas de forma [atómica](/es/concepts/core-concepts/glossary#atomicity). La tabla temporal (ahora la antigua tabla predeterminada) se puede eliminar.
+  <Step title="Intercambiar y eliminar la tabla" id="exhange-and-drop-table">
+    La sentencia `EXCHANGE` se usa para intercambiar los nombres de las tablas de forma [atómica](/es/concepts/core-concepts/glossary#atomicity). La tabla temporal (ahora la antigua tabla predeterminada) se puede eliminar.
 
     ```sql
     EXCHANGE TABLES otel_logs_temp AND otel_logs
@@ -723,9 +719,7 @@ El siguiente proceso puede utilizarse para garantizar que los datos antiguos se 
 A continuación se usa el mismo ejemplo de introducir `SeverityText` como primera columna de la clave primaria. En este caso, se crea una tabla para los datos nuevos y se conserva la tabla anterior para el análisis histórico.
 
 <Steps>
-  <Step>
-    #### Crear una nueva tabla
-
+  <Step title="Crear una nueva tabla" id="create-new-table-with-key-2">
     Crea la nueva tabla con la clave primaria deseada. Ten en cuenta el sufijo `_23_01_2025`: adáptalo para que corresponda a la fecha actual. Por ejemplo:
 
     ```sql
@@ -735,9 +729,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
     ```
   </Step>
 
-  <Step>
-    #### Crear una tabla Merge
-
+  <Step title="Crear una tabla Merge" id="create-merge-table">
     El [motor Merge](/es/reference/engines/table-engines/special/merge) (no debe confundirse con MergeTree) no almacena datos por sí mismo, pero permite leer simultáneamente de cualquier número de tablas.
 
     ```sql
@@ -753,9 +745,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
     Ahora puedes consultar esta tabla para confirmar que devuelve datos de `otel_logs`.
   </Step>
 
-  <Step>
-    #### Actualizar la UI de ClickStack para leer desde la tabla Merge
-
+  <Step title="Actualizar la UI de ClickStack para leer desde la tabla Merge" id="update-clickstack-ui-to-read-from-merge-tree">
     Configura la UI de ClickStack para usar `otel_logs_merge` como tabla de la fuente de datos de logs.
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Seleccionar tabla Merge" />
@@ -763,9 +753,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
     En este punto, las escrituras continúan en `otel_logs` con la clave primaria original, mientras que las lecturas usan la tabla Merge. No hay cambios visibles para los usuarios ni impacto en la ingestión.
   </Step>
 
-  <Step>
-    #### Intercambiar las tablas
-
+  <Step title="Intercambiar las tablas" id="exchange-the-tables">
     Ahora se utiliza una sentencia `EXCHANGE` para intercambiar atómicamente los nombres de las tablas `otel_logs` y `otel_logs_23_01_2025`.
 
     ```sql
@@ -781,9 +769,7 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
 Este proceso puede adaptarse si se requieren más cambios en la clave primaria. Por ejemplo, si una semana después decides que, en realidad, `SeverityNumber` debería formar parte de la clave primaria en lugar de `SeverityText`. El siguiente proceso puede adaptarse tantas veces como sea necesario para aplicar cambios en la clave primaria.
 
 <Steps>
-  <Step>
-    #### Crear una nueva tabla
-
+  <Step title="Crear una nueva tabla" id="create-new-table-with-key-3">
     Crea la nueva tabla con la clave primaria deseada.
     En el ejemplo siguiente, `30_01_2025` se usa como sufijo para indicar la fecha de la tabla. Por ejemplo:
 
@@ -794,9 +780,7 @@ Este proceso puede adaptarse si se requieren más cambios en la clave primaria. 
     ```
   </Step>
 
-  <Step>
-    #### Intercambiar las tablas
-
+  <Step title="Intercambiar las tablas" id="exchange-the-tables-v2">
     Ahora se utiliza una sentencia `EXCHANGE` para intercambiar atómicamente los nombres de las tablas `otel_logs` y `otel_logs_30_01_2025`.
 
     ```sql
@@ -991,7 +975,7 @@ Las versiones más recientes de ClickHouse también admiten proyecciones aún m�
   ### Alternativas
 </div>
 
-Si necesita varias claves de ordenación, las proyecciones no son la única opción. En función de las restricciones operativas y de cómo quiera que ClickStack dirija las consultas, considere lo siguiente:
+Si necesita varias claves de ordenación, las proyecciones no son la única opción. Según las restricciones operativas y cómo quiera que ClickStack dirija las consultas, considere lo siguiente:
 
-* Configurar su OpenTelemetry Collector para que escriba en dos tablas con claves `ORDER BY` diferentes y crear fuentes de ClickStack independientes para cada tabla.
-* Crear una vista materializada como canalización de copia; es decir, adjuntar una vista materializada a la tabla principal que seleccione filas sin procesar en una tabla secundaria con una clave de ordenación distinta (un patrón de desnormalización o enrutamiento). Cree una fuente para esta tabla de destino. Puede encontrar ejemplos [aquí](/es/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
+* Configurar su OpenTelemetry Collector para escribir en dos tablas con claves `ORDER BY` diferentes y crear fuentes de ClickStack independientes para cada tabla.
+* Crear una vista materializada como canalización de copia; es decir, adjuntar una vista materializada a la tabla principal para copiar las filas sin procesar a una tabla secundaria con una clave de ordenación distinta (un patrón de desnormalización o enrutamiento). Cree una fuente para esta tabla de destino. Puede encontrar ejemplos [aquí](/es/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

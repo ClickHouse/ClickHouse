@@ -226,25 +226,19 @@ Una vez creadas las vistas materializadas en ClickHouse, deben registrarse en Cl
 Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corresponda a la **tabla de origen original** de la que se derivó la vista.
 
 <Steps>
-  <Step>
-    #### Editar la fuente
-
+  <Step title="Editar la fuente" id="edit-the-source">
     Vaya a la **fuente** correspondiente en HyperDX y abra el cuadro de diálogo **Edit configuration**. Desplácese hasta la sección de vistas materializadas.
 
     <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Editar fuentes" />
   </Step>
 
-  <Step>
-    #### Agregar la vista materializada
-
+  <Step title="Agregar la vista materializada" id="add-the-materialized-view">
     Seleccione **Add materialized view** y, a continuación, elija la base de datos y la tabla de destino que sustentan la vista materializada.
 
     <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Editar fuentes" />
   </Step>
 
-  <Step>
-    #### Seleccionar métricas
-
+  <Step title="Seleccionar métricas" id="select-metrics">
     En la mayoría de los casos, las columnas de timestamp, dimensión y métrica se inferirán automáticamente. Si no es así, especifíquelas manualmente.
 
     Para las métricas, debe mapear:
@@ -257,17 +251,13 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
     <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Seleccionar métricas" />
   </Step>
 
-  <Step>
-    #### Seleccionar la granularidad temporal
-
+  <Step title="Seleccionar la granularidad temporal" id="select-time-granularity">
     Seleccione la **granularidad temporal** de la vista materializada, por ejemplo, un minuto.
 
     <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Seleccionar granularidad temporal" />
   </Step>
 
-  <Step>
-    #### Seleccionar la fecha mínima
-
+  <Step title="Seleccionar la fecha mínima" id="specify-the-minimum-date">
     Especifique la fecha mínima para la que la vista materializada contiene datos. Esto representa el timestamp más antiguo disponible en la vista y, por lo general, es el momento en que se creó, suponiendo que la ingestión haya sido continua.
 
     <Note>
@@ -284,9 +274,7 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
     ```
   </Step>
 
-  <Step>
-    #### Guardar la fuente
-
+  <Step title="Guardar la fuente" id="save-the-source">
     Guarde la configuración de la fuente.
 
     <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Guardar fuente" />
@@ -309,8 +297,8 @@ ClickStack proporciona indicadores visuales claros para confirmar si se está us
 
 1. **Compruebe el estado de la optimización** Al ver un dashboard o una visualización, busque el rayo o el icono `Accelerated`:
 
-* **Rayo verde**: indica que la consulta está acelerada mediante una vista materializada.
-* **Rayo naranja**: indica que la consulta se ejecuta sobre la tabla de origen.
+* **Rayo verde** indica que la consulta está acelerada mediante una vista materializada.
+* **Rayo naranja** indica que la consulta se ejecuta sobre la tabla de origen.
 
 <Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualización acelerada" />
 
@@ -481,9 +469,7 @@ Como se explicó antes, las vistas materializadas incrementales no se rellenan a
 Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consultas de agregación relativamente ligeras** en las que el relleno histórico completo puede completarse en un tiempo razonable sin agotar los recursos del clúster. Suele ser apropiado cuando la consulta de relleno histórico puede ejecutarse en minutos, o como mucho en unas pocas horas, y cuando son aceptables aumentos temporales en el uso de CPU y de E/S. Para conjuntos de datos más grandes o agregaciones más costosas, considere en su lugar los enfoques de relleno histórico incremental o basado en bloques que se describen a continuación.
 
 <Steps>
-  <Step>
-    ##### Determinar la cobertura actual de la vista
-
+  <Step title="Determinar la cobertura actual de la vista" id="determine-current-coverage-of-view">
     Antes de intentar cualquier relleno histórico, determine primero qué datos contiene ya la vista materializada. Esto se hace consultando la marca de tiempo mínima presente en la tabla de destino:
 
     ```sql
@@ -494,9 +480,7 @@ Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consulta
     Esta marca de tiempo representa el punto más antiguo a partir del cual la vista puede responder consultas. Cualquier consulta de ClickStack que solicite datos anteriores a esta marca de tiempo recurrirá a la tabla base.
   </Step>
 
-  <Step>
-    ##### Decidir si es necesario el relleno histórico
-
+  <Step title="Decidir si es necesario el relleno histórico" id="decide-whether-backfilling-is-neccessary">
     En la mayoría de las implementaciones de ClickStack, las consultas se centran en datos recientes, como las últimas 24 horas. En estos casos, las vistas recién creadas pasan a ser totalmente utilizables poco después de su creación, y el relleno histórico no es necesario.
 
     Si la marca de tiempo devuelta en el paso anterior es lo bastante antigua para sus casos de uso, no es necesario realizar ningún relleno histórico. El relleno histórico solo debe considerarse cuando:
@@ -506,9 +490,7 @@ Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consulta
     * El tamaño del conjunto de datos y el coste de la agregación hacen viable el relleno histórico.
   </Step>
 
-  <Step>
-    ##### Rellenar los datos históricos faltantes
-
+  <Step title="Rellenar los datos históricos faltantes" id="backfill-missing-historical-data">
     Si se requiere relleno histórico, complete la tabla de destino de la vista materializada para las marcas de tiempo anteriores al mínimo actual usando la consulta de la vista, modificada para leer únicamente datos anteriores a la marca de tiempo registrada arriba. Como la tabla de destino usa AggregatingMergeTree, la consulta de relleno histórico **debe insertar estados de agregación, no valores finales**.
 
     <Warning>
@@ -557,9 +539,7 @@ Este enfoque es adecuado cuando:
 La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/special/null) como búfer de ingestión. Aunque la tabla Null no almacena datos, cualquier vista materializada asociada a ella seguirá ejecutándose, lo que permite calcular los estados de agregación de forma incremental a medida que los datos pasan por ella.
 
 <Steps>
-  <Step>
-    ##### Crear una tabla Null para el relleno histórico
-
+  <Step title="Crear una tabla Null para el relleno histórico" id="create-null-table">
     Cree una tabla Null ligera que contenga solo las columnas necesarias para la agregación de la vista materializada. Esto minimiza el uso de E/S y memoria.
 
     ```sql
@@ -574,9 +554,7 @@ La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/s
     ```
   </Step>
 
-  <Step>
-    ##### Asociar una vista materializada a la tabla Null
-
+  <Step title="Asociar una vista materializada a la tabla Null" id="attach-mv-to-null-table">
     A continuación, cree una vista materializada sobre la tabla Null que apunte a la misma tabla de agregación que usa su vista materializada principal.
 
     ```sql
@@ -601,9 +579,7 @@ La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/s
     Esta vista materializada se ejecutará de forma incremental a medida que se inserten filas en la tabla Null, generando estados de agregación en bloques pequeños.
   </Step>
 
-  <Step>
-    ##### Hacer relleno histórico de los datos de forma incremental
-
+  <Step title="Hacer relleno histórico de los datos de forma incremental" id="incremental-backfill">
     Por último, inserte los datos históricos en la tabla Null. La vista materializada procesará los datos bloque por bloque, emitiendo estados de agregación en la tabla de destino sin persistir las filas originales.
 
     ```sql

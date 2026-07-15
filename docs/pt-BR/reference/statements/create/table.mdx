@@ -497,10 +497,16 @@ Esses codecs foram projetados para tornar a compressão mais eficiente ao explor
 
 <ExperimentalBadge />
 
-`ALP()` — Compressão adaptativa sem perdas para dados de ponto flutuante baseada em escala decimal. O ALP tenta representar cada valor como um inteiro exato escalonado usando potências de 10 e, em seguida, comprime os inteiros resultantes com Frame-of-Reference e bit-packing. Valores que não podem ser representados com exatidão são armazenados como exceções brutas. Funciona melhor para números oriundos de valores decimais (por exemplo, medições e moeda). Compatível com `Float32` e `Float64`. Para detalhes, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Compressão adaptativa sem perdas para dados de ponto flutuante. Oferece suporte a `Float32` e `Float64`. Para mais detalhes, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+O codec aceita um argumento `variant` opcional:
+
+* `ALP()` ou `ALP(AUTO)` (padrão) — Usa STD e recorre a RD com base no tamanho estimado após a compressão.
+* `ALP(STD)` — Variante padrão do ALP. Representa cada valor como um inteiro escalado exato usando potências de dez e, em seguida, comprime os inteiros resultantes com Frame-of-Reference e empacotamento de bits. Valores que não podem ser representados são armazenados como exceções brutas. Funciona melhor para números originados de valores decimais (por exemplo, medições e preços).
+* `ALP(RD)` — Variante Real Doubles. Reinterpreta o padrão de bits de cada valor e o divide em uma parte alta (sinal + expoente + bits mais significativos da mantissa) e uma parte baixa. As partes altas são codificadas com Dicionário (até 8 entradas), e as partes baixas são empacotadas em bits. Funciona melhor quando muitos valores compartilham os mesmos bits altos.
 
 <Note>
-  Este codec é experimental e requer `SET allow_experimental_codecs = 1` para ser usado.
+  Este codec é experimental e exige `SET allow_experimental_codecs = 1` para ser usado.
 </Note>
 
 <div id="fpc">

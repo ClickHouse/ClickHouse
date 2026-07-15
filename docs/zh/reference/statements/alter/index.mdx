@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/zh/reference/statements/alter/delete)                         |
 | [UPDATE](/zh/reference/statements/alter/update)                         |
 | [ORDER BY](/zh/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/zh/reference/statements/alter/sample-by)                   |
 | [INDEX](/zh/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/zh/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/zh/reference/statements/alter/constraint)                 |
 | [TTL](/zh/reference/statements/alter/ttl)                               |
 | [STATISTICS](/zh/reference/statements/alter/statistics)                 |
+| [SETTING](/zh/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/zh/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/zh/reference/statements/alter/apply-patches)           |
 
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/zh/reference/statements/alter/role)                         |
 | [QUOTA](/zh/reference/statements/alter/quota)                       |
 | [ROW POLICY](/zh/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/zh/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/zh/reference/statements/alter/settings-profile) |
 
-| 语句                                                                     | 描述                                                                                        |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/zh/reference/statements/alter/comment)  | 为表添加、修改或删除注释，无论之前是否设置过。                                                                   |
-| [ALTER NAMED COLLECTION](/zh/reference/statements/alter/named-collection) | 修改 [Named Collections](/zh/concepts/features/configuration/server-config/named-collections)。 |
+| 语句                                                                                | 描述                                                                                        |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/zh/reference/statements/alter/comment)             | 为表添加、修改或删除注释，无论之前是否设置过。                                                                   |
+| [ALTER DATABASE ... MODIFY COMMENT](/zh/reference/statements/alter/database-comment) | 为数据库添加、修改或删除注释，无论之前是否设置过。                                                                 |
+| [ALTER NAMED COLLECTION](/zh/reference/statements/alter/named-collection)            | 修改 [Named Collections](/zh/concepts/features/configuration/server-config/named-collections)。 |
 
 <div id="mutations">
   ## 变更

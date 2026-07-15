@@ -11,9 +11,7 @@ doc_type: 'guide'
 إذا لم تكن بحاجة إلى تثبيت ClickHouse لبيئة الإنتاج، فيمكنك تشغيل برنامج نصي للتثبيت باستخدام curl. سيحدّد البرنامج النصي ملفًا تنفيذيًا مناسبًا لنظام التشغيل لديك.
 
 <Steps>
-  <Step>
-    ## ثبّت ClickHouse باستخدام curl
-
+  <Step title="ثبّت ClickHouse باستخدام curl" id="install-clickhouse-using-curl">
     شغّل الأمر التالي لتنزيل ملف تنفيذي واحد لنظام التشغيل لديك.
 
     ```bash
@@ -36,9 +34,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-local
-
+  <Step title="ابدأ clickhouse-local" id="start-clickhouse-local">
     يتيح لك `clickhouse-local` معالجة الملفات المحلية والبعيدة باستخدام
     بناء SQL القوي في ClickHouse ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
     في موقع مؤقت، ما يعني أنه بعد إعادة تشغيل `clickhouse-local`
@@ -51,9 +47,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-server
-
+  <Step title="ابدأ clickhouse-server" id="start-clickhouse-server">
     إذا كنت ترغب في الاحتفاظ بالبيانات، فستحتاج إلى تشغيل `clickhouse-server`. يمكنك
     بدء تشغيل خادم ClickHouse باستخدام الأمر التالي:
 
@@ -62,9 +56,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-client
-
+  <Step title="ابدأ clickhouse-client" id="start-clickhouse-client">
     بعد تشغيل الخادم، افتح نافذة طرفية جديدة وشغّل الأمر التالي
     لتشغيل `clickhouse-client`:
 

@@ -122,7 +122,7 @@ doc_type: 'reference'
 使用 DeltaLake 表引擎创建表后，可以通过以下方式向表中插入数据：
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
@@ -131,6 +131,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 <Note>
   仅支持通过 delta kernel 向该表引擎写入数据。
   目前尚不支持向 Azure 写入，但支持 S3 和 GCS。
+
+  Delta Lake 写入目前处于 Beta 阶段，必须使用 `SET allow_delta_lake_writes = 1` 启用 (自版本 26.7 起可用；在更早版本中请使用 `SET allow_experimental_delta_lake_writes = 1`) 。
 </Note>
 
 <div id="data-cache">

@@ -1661,9 +1661,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-```
-
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2190,7 +2187,7 @@ SELECT
 
 首次引入于：v21.11.0
 
-按照 [NFKC 规范化结果](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
+按照 [NFKC 规范化形式](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
 
 **语法**
 
@@ -2204,7 +2201,7 @@ normalizeUTF8NFKC(str)
 
 **返回值**
 
-返回 UTF-8 字符串的 NFKC 规范化结果。[`String`](/zh/reference/data-types/string)
+返回 UTF-8 字符串的 NFKC 规范化形式。[`String`](/zh/reference/data-types/string)
 
 **示例**
 
@@ -2212,8 +2209,8 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 带圆圈的数字字符
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 转换为 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下标 2 + O + 上标 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- 转换为 H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response

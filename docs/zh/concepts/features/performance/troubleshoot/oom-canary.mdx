@@ -1,0 +1,115 @@
+---
+description: '一个作为“牺牲品”的子进程，会在 ClickHouse server 之前吸引 Linux OOM killer，从而让 server 有机会卸载部分负载并继续存活。'
+slug: /operations/settings/oom-canary
+title: 'OOM canary'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  OOM canary 仍处于 Experimental 阶段，默认处于禁用状态。在完成生产环境验证之前，
+  其行为在不同 ClickHouse 版本之间可能会发生变化。
+</Note>
+
+<div id="overview">
+  ## 概述
+</div>
+
+当主机或内存 cgroup 耗尽内存时，Linux OOM (内存不足) killer 会使用 `SIGKILL` 终止一个进程——通常是占用内存最多的那个；而在专用主机上，这往往就是 `clickhouse-server` 本身。这样一来，整个服务器会直接丢失，而不是获得恢复的机会。
+
+OOM canary 改变了“谁先死”。它会运行一个小型的*牺牲性*子进程，使其成为最容易被 OOM 选中的目标，这样内核杀掉的就是它，而不是服务器。随后，服务器会检测到该进程已死亡，确认这是一次 OOM 事件，并缓解内存压力，从而让自己存活下来。
+
+canary 不会提高任何 memory limit，也不能替代正确设置的 limits (参见 [内存 overcommit](/zh/concepts/features/configuration/settings/memory-overcommit) 和 `max_server_memory_usage`) 。它是最后一道防线：用少量固定的内存，换取在内存突增时存活下来的机会。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+canary 是一个独立的 `clickhouse oom-canary` 进程。它会将自身的
+`oom_score_adj` 设为最大值 (`1000`) ，让内核优先将其作为目标；随后分配、触碰并对
+`oom_canary_size` 字节执行 `mlock` (默认 100 MB) ，以确保其常驻内存集真实存在。若
+server 退出，它也会被自动终止。
+
+在 server 中，一个监控线程会通过 `pidfd` 监视 canary，并在
+它死亡时作出响应：
+
+* 因 `SIGKILL` 被杀死，**且**存在 cgroup OOM 证据 → 执行 OOM 响应，然后
+  重新启动一个新的 canary。
+* 被杀死但**没有** OOM 证据 (例如手动执行 `kill -9`) ，或者因暂时性故障退出
+  → 仅重新启动，不执行响应。
+* 永久性设置失败，或 server 关闭 → canary 会自行禁用。
+
+OOM 证据仅来自 cgroup v2 `memory.events.local` 中的 `oom_kill`
+计数器。这特意限定为 cgroup 本地：分层计数器或主机级计数器可能会因不相关进程而递增，
+从而触发误响应。
+
+确认发生 OOM 后，会执行以下彼此独立的响应步骤：记录一条 `FATAL`
+消息，清理 allocator (jemalloc) 的 arenas，尽最大努力取消所有正在运行的
+查询，取消所有合并和变更，并在
+[`system.crash_log`](/zh/reference/system-tables/crash_log) 中排入一个事件。系统日志不会同步刷新，
+因为在内存压力下强制执行 I/O 可能会让情况变得更糟。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+* **Linux ≥ 5.3。** 监控器通过 `pidfd_open` 持有 canary；在较旧的内核上，
+  canary 会在启动时自行禁用。在非 Linux 平台上，它是空操作。
+* **用于 OOM 响应且带有 `memory.events.local` 的 cgroup v2。** 如果没有它，
+  canary 在收到 `SIGKILL` 后仍会重新启动，但无法确认是否发生了 OOM，因此
+  响应永远不会执行 (启动时会记录一条警告) 。
+* **`mlock` 能力 (可选) 。** 锁定 canary 的内存需要
+  `CAP_IPC_LOCK` 或足够的 `RLIMIT_MEMLOCK`；如果失败，canary 会记录一条
+  警告，并且其内存可能被换出，从而削弱其作为 OOM 目标的作用。
+
+<Warning>
+  **memory.oom.group**
+
+  如果为 server 的 cgroup 启用了 cgroup v2 `memory.oom.group`，内核
+  会在发生 OOM 时将整个 cgroup 作为一个整体杀死——server 会与
+  canary 一同终止，响应也永远不会执行。在这种模式下，canary 无法保护 server；
+  启动时会记录一条警告。
+</Warning>
+
+<div id="configuration">
+  ## 配置
+</div>
+
+canary 由[服务器设置](/zh/reference/settings/server-settings/settings)控制，
+作为服务器配置的顶层元素进行设置，并在重启后生效。
+
+| Setting                              | Default              | Description                                                                                       |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------- |
+| `oom_canary_enable`                  | `false`              | 启用 OOM canary。                                                                                    |
+| `oom_canary_size`                    | `104857600` (100 MB) | canary 分配并实际触及的字节数。值越大，它就越容易成为 OOM 的目标。                                                           |
+| `oom_canary_relaunch`                | `true`               | canary 终止后将其重新启动 (除非是永久性初始化失败或正常关闭) ，并受以下限制约束。                                                    |
+| `oom_canary_max_rapid_relaunches`    | `10`                 | 为避免反复重启，在禁用自动重新启动前允许的连续*快速*重新启动最大次数。一旦某个 canary 的存活时间超过 `oom_canary_max_backoff_seconds`，该计数就会重置。 |
+| `oom_canary_initial_backoff_seconds` | `1`                  | 两次重新启动之间的初始延迟；每次翻倍，直到达到最大值。                                                                       |
+| `oom_canary_max_backoff_seconds`     | `60`                 | 两次重新启动之间的最大延迟。                                                                                    |
+
+```xml
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>104857600</oom_canary_size>
+</clickhouse>
+```
+
+<div id="observability">
+  ## 可观测性
+</div>
+
+已确认的 OOM 会在
+[`system.crash_log`](/zh/reference/system-tables/crash_log) 中产生一行记录，其中 `signal = 9`，且
+`signal_description` 中会提到 `OOM Canary`：
+
+```sql
+SELECT event_time, signal, signal_description
+FROM system.crash_log
+WHERE signal = 9 AND signal_description LIKE '%OOM Canary%'
+ORDER BY event_time DESC;
+```
+
+canary 的生命周期以及每个 OOM 响应步骤也都会记入服务器日志。

@@ -130,10 +130,10 @@ CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
 </Info>
 
 <div id="migration-logical-replication-create-subscription">
-  ### أنشئ subscription على قاعدة بيانات ClickHouse Managed Postgres المستهدفة
+  ### أنشئ اشتراك على قاعدة بيانات ClickHouse Managed Postgres المستهدفة
 </div>
 
-بعد ذلك، اتصل بقاعدة بيانات ClickHouse Managed Postgres المستهدفة وأنشئ subscription يتصل بالـ publication على قاعدة البيانات المصدر.
+بعد ذلك، اتصل بقاعدة بيانات ClickHouse Managed Postgres المستهدفة وأنشئ اشتراك يتصل بالـ منشور على قاعدة البيانات المصدر.
 
 ```sql
 CREATE SUBSCRIPTION demo_rds_subscription
@@ -141,7 +141,7 @@ CONNECTION 'postgresql://<user>:<password>@<host>:<port>/<database>'
 PUBLICATION <pub_name_you_entered_above>;
 ```
 
-سيؤدي هذا تلقائيًا إلى إنشاء replication slot على قاعدة البيانات المصدر وبدء نسخ البيانات من الجداول المحددة إلى قاعدة البيانات الهدف. وقد تستغرق هذه العملية بعض الوقت، بحسب حجم بياناتك.
+سيؤدي هذا تلقائيًا إلى إنشاء فتحة النسخ المتماثل على قاعدة البيانات المصدر وبدء نسخ البيانات من الجداول المحددة إلى قاعدة البيانات الهدف. وقد تستغرق هذه العملية بعض الوقت، بحسب حجم بياناتك.
 
 في حالتنا، بعد إعداد الاشتراك، بدأت البيانات بالتدفق:
 
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## الخطوات التالية
 </div>
 
-تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأصبحت الآن جاهزًا تمامًا لاستكشاف ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لتبدأ:
+تهانينا! لقد أكملت بنجاح ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأصبحت الآن جاهزًا لاستكشاف ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لتبدأ به:
 
 * [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)

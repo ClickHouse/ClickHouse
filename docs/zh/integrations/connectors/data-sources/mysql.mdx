@@ -25,149 +25,145 @@ import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/Experim
   ## 使用 MySQL 表引擎将 ClickHouse 连接到 MySQL
 </div>
 
-`MySQL` 表引擎可让您将 ClickHouse 连接到 MySQL。您可以在 ClickHouse 或 MySQL 表中执行 **SELECT** 和 **INSERT** 语句。本文介绍 `MySQL` 表引擎的基本用法。
+`MySQL` 表引擎可让你将 ClickHouse 连接到 MySQL。**SELECT** 和 **INSERT** 语句既可以在 ClickHouse 中执行，也可以在 MySQL 表中执行。本文介绍如何使用 `MySQL` 表引擎的基本方法。
 
-<div id="1-configure-mysql">
-  ### 1. 配置 MySQL
-</div>
+<Steps>
+  <Step title="配置 MySQL" id="1-configure-mysql">
+    1. 在 MySQL 中创建一个数据库：
 
-1. 在 MySQL 中创建数据库：
+    ```sql
+    CREATE DATABASE db1;
+    ```
 
-```sql
-  CREATE DATABASE db1;
-```
+    2. 创建一个表：
 
-2. 创建表：
+    ```sql
+    CREATE TABLE db1.table1 (
+      id INT,
+      column1 VARCHAR(255)
+    );
+    ```
 
-```sql
-  CREATE TABLE db1.table1 (
-    id INT,
-    column1 VARCHAR(255)
-  );
-```
+    3. 插入示例行：
 
-3. 插入示例数据行：
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (1, 'abc'),
+      (2, 'def'),
+      (3, 'ghi');
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (1, 'abc'),
-    (2, 'def'),
-    (3, 'ghi');
-```
+    4. 创建一个用户，以便从 ClickHouse 连接：
 
-4. 创建一个供 ClickHouse 连接使用的用户：
+    ```sql
+    CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+    ```
 
-```sql
-  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
-```
+    5. 根据需要授予特权。 (为便于演示，这里向 `mysql_clickhouse` 用户授予管理员特权。)
 
-5. 按需授予权限。 (为便于演示，已向 `mysql_clickhouse` 用户授予管理员权限。)
+    ```sql
+    GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+    ```
 
-```sql
-  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
-```
+    <Note>
+      如果你在 ClickHouse Cloud 中使用此功能，可能需要允许 ClickHouse Cloud 的 IP 地址访问你的 MySQL 实例。
+      有关出口流量的详细信息，请查看 ClickHouse [Cloud Endpoints API](/zh/products/cloud/guides/sql-console/query-endpoints)。
+    </Note>
+  </Step>
 
-<Note>
-  如果你在 ClickHouse Cloud 中使用此功能，可能需要允许 ClickHouse Cloud 的 IP 地址访问你的 MySQL 实例。
-  有关出站流量的详细信息，请参阅 ClickHouse [Cloud 端点 API](/zh/products/cloud/guides/sql-console/query-endpoints)。
-</Note>
+  <Step title="在 ClickHouse 中定义表" id="2-define-a-table-in-clickhouse">
+    1. 现在我们来创建一个使用 `MySQL` 表引擎的 ClickHouse 表：
 
-<div id="2-define-a-table-in-clickhouse">
-  ### 2. 在 ClickHouse 中定义表
-</div>
+    ```sql
+    CREATE TABLE mysql_table1 (
+      id UInt64,
+      column1 String
+    )
+    ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+    ```
 
-1. 现在创建一个使用 `MySQL` 表引擎的 ClickHouse 表：
+    最少需要以下参数：
 
-```sql
-  CREATE TABLE mysql_table1 (
-    id UInt64,
-    column1 String
-  )
-  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
-```
+    | parameter | Description    | example               |
+    | --------- | -------------- | --------------------- |
+    | host      | 主机名或 IP 地址     | mysql-host.domain.com |
+    | database  | MySQL 数据库名称    | db1                   |
+    | table     | MySQL 表名称      | table1                |
+    | user      | 连接到 MySQL 的用户名 | mysql&#95;clickhouse  |
+    | password  | 连接到 MySQL 的密码  | Password123!          |
 
-至少需要以下参数：
+    <Note>
+      有关完整参数列表，请参阅 [MySQL 表引擎](/zh/reference/engines/table-engines/integrations/mysql) 文档页面。
+    </Note>
+  </Step>
 
-| parameter | Description   | example               |
-| --------- | ------------- | --------------------- |
-| host      | 主机名或 IP 地址    | mysql-host.domain.com |
-| database  | MySQL 数据库名称   | db1                   |
-| table     | MySQL 表名称     | table1                |
-| user      | 连接 MySQL 的用户名 | mysql&#95;clickhouse  |
-| password  | 连接 MySQL 的密码  | Password123!          |
+  <Step title="测试集成" id="3-test-the-integration">
+    1. 在 MySQL 中，插入一行示例数据：
 
-<Note>
-  完整参数列表请参阅 [MySQL 表引擎](/zh/reference/engines/table-engines/integrations/mysql) 文档页面。
-</Note>
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (4, 'jkl');
+    ```
 
-<div id="3-test-the-integration">
-  ### 3. 测试集成
-</div>
+    2. 注意：MySQL 表中现有的行以及你刚刚添加的新行，都已出现在 ClickHouse 表中：
 
-1. 在 MySQL 中，插入一行示例数据：
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM mysql_table1
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (4, 'jkl');
-```
+    你应该会看到 4 行：
 
-2. 注意：MySQL 表中现有的行以及你刚刚添加的新行，都已出现在 ClickHouse 表中：
+    ```response
+    Query id: 6d590083-841e-4e95-8715-ef37d3e95197
 
-```sql
-  SELECT
-      id,
-      column1
-  FROM mysql_table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ def     │
+    │  3 │ ghi     │
+    │  4 │ jkl     │
+    └────┴─────────┘
 
-你应该会看到 4 行：
+    4 rows in set. Elapsed: 0.044 sec.
+    ```
 
-```response
-  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+    3. 向 ClickHouse 表中添加一行数据：
 
-  ┌─id─┬─column1─┐
-  │  1 │ abc     │
-  │  2 │ def     │
-  │  3 │ ghi     │
-  │  4 │ jkl     │
-  └────┴─────────┘
+    ```sql
+    INSERT INTO mysql_table1
+      (id, column1)
+    VALUES
+      (5,'mno')
+    ```
 
-  4 rows in set. Elapsed: 0.044 sec.
-```
+    4. 注意，MySQL 中会出现新的一行：
 
-3. 向 ClickHouse 表中添加一行数据：
+    ```bash
+    mysql> select id,column1 from db1.table1;
+    ```
 
-```sql
-  INSERT INTO mysql_table1
-    (id, column1)
-  VALUES
-    (5,'mno')
-```
+    你应该会看到新增的行：
 
-4. 注意，MySQL 中会出现新的一行：
-
-```bash
-  mysql> select id,column1 from db1.table1;
-```
-
-你应该会看到新增的行：
-
-```response
-  +------+---------+
-  | id   | column1 |
-  +------+---------+
-  |    1 | abc     |
-  |    2 | def     |
-  |    3 | ghi     |
-  |    4 | jkl     |
-  |    5 | mno     |
-  +------+---------+
-  5 rows in set (0.01 sec)
-```
+    ```response
+    +------+---------+
+    | id   | column1 |
+    +------+---------+
+    |    1 | abc     |
+    |    2 | def     |
+    |    3 | ghi     |
+    |    4 | jkl     |
+    |    5 | mno     |
+    +------+---------+
+    5 rows in set (0.01 sec)
+    ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### 摘要

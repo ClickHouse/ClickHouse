@@ -980,7 +980,7 @@ ClickHouse はデータの有効期限切れを検出すると、通常のスケ
 ローカルのブロックデバイスに加えて、ClickHouse は次のストレージタイプをサポートしています。
 
 * [`s3` は S3 および MinIO 用](#table_engine-mergetree-s3)
-* [`gcs` は GCS 用](/ja/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` は GCS 用](/ja/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` は Azure Blob Storage 用](/ja/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` は HDFS 用](/ja/reference/engines/table-engines/integrations/hdfs)
 * [`web` は Web からの読み取り専用用](/ja/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1426,25 +1426,29 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
   カラムから導出される単一値サマリーをコンパクトにまとめたものです。カラム型に応じて、次の情報が格納されます:
 
-  * 値が数値で表現される任意のカラム (整数、浮動小数点数、`Decimal*`、`Date*`、`DateTime*`、`Enum*`、`IPv4` など) の場合: 最小値と最大値。これにより、範囲フィルタの選択性を推定でき、パーツ剪枝も可能になります。
+  * 値が数値で表現される任意のカラム (整数、浮動小数点数、`Decimal*`、`Date*`、`DateTime*`、`Enum*`、`IPv4` など) の場合: 最小値と最大値。これにより、範囲フィルターの選択性を推定でき、パーツ剪枝も可能になります。
   * `String` および `FixedString` カラムの場合: `NULL` ではない値の合計バイト長 (ここから平均文字列長を導き出せます) 。
   * `Nullable` および `LowCardinality(Nullable)` カラムの場合: `NULL` 値の件数。オプティマイザはこれを使って、選択性の推定から `NULL` 行を除外します。
 
-    単一の `Basic` 統計で、これらのうち複数を同時に格納できます。たとえば `Nullable(UInt32)` カラムでは、数値の最小値/最大値と `NULL` 件数の両方を追跡します。`MinMax` と比べると、`Basic` は `String` / `FixedString` カラムでも利用でき、`UUID` や `IPv6` のような型の `Nullable` wrapper に対しても、`NULL` 件数だけを追跡する目的で宣言できます。
+    単一の `Basic` 統計で、これらのうち複数を同時に格納できます。たとえば `Nullable(UInt32)` カラムでは、数値の最小値/最大値と `NULL` 件数の両方を追跡します。`MinMax` と比べると、`Basic` は `String` / `FixedString` カラムでも利用でき、`UUID` や `IPv6` のような型の `Nullable` ラッパーに対しても、`NULL` 件数だけを追跡する目的で宣言できます。
 
     構文: `basic`
 
 * `MinMax`
 
-  カラムの最小値と最大値です。数値カラムに対する範囲フィルタの選択性を推定するのに役立ちます。
+  カラムの最小値と最大値です。数値カラムに対する範囲フィルターの選択性を推定するのに役立ちます。
 
   構文: `minmax`
 
 * `TDigest`
 
-  数値カラムの近似パーセンタイル (例: 90 パーセンタイル) を計算できる [TDigest](https://github.com/tdunning/t-digest) スケッチです。
+<Warning>
+  `tdigest` 型の統計は作成コストが高く、データ取り込みが遅くなる可能性があります。
+</Warning>
 
-  構文: `tdigest`
+数値カラムの近似パーセンタイル (例: 90 パーセンタイル) を計算できる [TDigest](https://github.com/tdunning/t-digest) スケッチです。
+
+構文: `tdigest`
 
 * `Uniq`
 
@@ -1454,9 +1458,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `CountMin`
 
-  カラム内の各値の出現頻度を近似的に数えられる [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) スケッチです。
+<Warning>
+  `countmin` 型の統計は作成コストが高く、データ取り込みが遅くなる可能性があります。
+</Warning>
 
-  構文 `countmin`
+カラム内の各値の出現頻度を近似的に数えられる [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) スケッチです。
+
+構文 `countmin`
 
 <div id="supported-data-types">
   ### サポートされているデータ型

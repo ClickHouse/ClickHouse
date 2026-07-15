@@ -48,9 +48,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 </div>
 
 <Steps>
-  <Step>
-    ### تمكين SCIM
-
+  <Step title="تمكين SCIM" id="enable-scim-provisioning">
     سجّل الدخول إلى **ClickHouse Cloud Console** بصفة مسؤول المؤسسة، ثم افتح **Organization settings → SAML and SCIM settings → SCIM Configuration**.
 
     ![الانتقال إلى علامة تبويب تكوين SCIM في إعدادات المؤسسة](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +66,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     انسخه — فستحتاج إلى لصقه في Okta لاحقًا.
   </Step>
 
-  <Step>
-    ### إنشاء رمز وصول لـ SCIM
-
+  <Step title="إنشاء رمز وصول لـ SCIM" id="generate-scim-token">
     انتقل إلى قسم `Create an API key` واختر تاريخ انتهاء الصلاحية.
 
     <Tip>
@@ -84,9 +80,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![إنشاء مفتاح API جديد لـ SCIM](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### تحديد تعيين الأدوار
-
+  <Step title="تحديد تعيين الأدوار" id="define-role-mapping">
     من لوحة **SCIM Configuration**، انقر على **Map roles in &quot;Users and roles&quot;** (أو انتقل مباشرة عبر **Users and roles → Roles**).
 
     ترتبط مجموعات SCIM بأدوار ClickHouse Cloud حسب الاسم، مع بعض القواعد التي ينبغي مراعاتها:
@@ -103,9 +97,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
 </div>
 
 <Steps>
-  <Step>
-    ### افتح تطبيق ClickHouse Cloud في Okta
-
+  <Step title="افتح تطبيق ClickHouse Cloud في Okta" id="open-clickhouse-cloud-app">
     في **Okta Admin Console**، انتقل إلى **Applications → Applications** وابحث عن التطبيق الذي أنشأته عند إعداد SAML SSO لـ ClickHouse Cloud. ثم افتحه.
 
     إذا لم تكن قد أنشأت تطبيق SAML بعد، فاتبع أولاً [دليل إعداد SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) — إذ يتم إعداد SCIM provisioning على التطبيق نفسه.
@@ -119,9 +111,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![تظهر الآن علامة التبويب Provisioning في التطبيق](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### صِل Okta بنقطة نهاية SCIM
-
+  <Step title="صِل Okta بنقطة نهاية SCIM" id="connect-okta-scim">
     افتح علامة التبويب **Provisioning** الخاصة بالتطبيق وانقر على `Edit`. املأ النموذج:
 
     * **SCIM connector base URL** — عنوان URL الأساسي لموصل SCIM الذي ذكرناه سابقًا.
@@ -147,9 +137,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     انقر على `Save`.
   </Step>
 
-  <Step>
-    ### تكوين سلوك التوفير
-
+  <Step title="تكوين سلوك التوفير" id="configure-provisioning-behavior">
     وأنت لا تزال في تبويب **Provisioning**، انقر `To App` في الشريط الجانبي الأيسر. انقر `Edit` ثم فعِّل ما يلي:
 
     | الإعداد                | الإجراء | ما الذي يفعله                                                                |
@@ -166,9 +154,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     ![احفظ إعدادات التوفير وارجع إلى تبويب Sign On](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### تعيين سمات المستخدم
-
+  <Step title="تعيين سمات المستخدم" id="map-user-attributes">
     يجب أن يتوافق Okta وClickHouse Cloud في كيفية مطابقة حقول المستخدم. في علامة التبويب **Provisioning**، انقر على `To App` وراجع **Attribute Mappings** الخاصة بتطبيقك. تكون الإعدادات الافتراضية في تطبيق Okta SAML مناسبةً عادةً — تأكد من مطابقتها للجدول أدناه:
 
     | سمة Okta          | سمة ClickHouse Cloud ‏(SCIM) | مطلوب                                               |
@@ -189,9 +175,7 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
     </Warning>
   </Step>
 
-  <Step>
-    ### دفع المجموعات وتعيين المستخدمين
-
+  <Step title="دفع المجموعات وتعيين المستخدمين" id="push-groups-and-assign-users">
     هنا تُطبَّق الأدوار تلقائيًا.
 
     **أنشئ مجموعات في Okta.** لكل تعيين أدوار أعددته سابقًا، أنشئ أو حدِّد مجموعة في Okta تحمل **اسم العرض نفسه تمامًا**. على سبيل المثال، إذا كان التعيين لديك يقول `ClickHouse-Admins → Admin`، فأنشئ مجموعة باسم `ClickHouse-Admins` في Okta.
@@ -225,19 +209,19 @@ import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/Pri
   ## اختبر التكامل
 </div>
 
-بعد إعداد التزويد، ارجع إلى **Settings → Users and roles** في وحدة تحكم ClickHouse Cloud للتأكد من ظهور المستخدمين الذين تمت مزامنتهم بالأدوار المتوقعة.
+بعد إعداد التزويد، ارجع إلى **Settings → Users and roles** في ClickHouse Cloud Console للتأكد من ظهور المستخدمين الذين تمت مزامنتهم بالأدوار المتوقعة.
 
 ![التحقق من مزامنة المستخدمين في Users and roles](/images/cloud/security/scim-okta/scim-okta-18.webp)
 
-اتّبع خطة الاختبار القصيرة هذه باستخدام مستخدم اختبار واحد أو اثنين **قبل** إسناد فريقك بالكامل. يجب أن تنجح كل خطوة خلال بضع ثوانٍ؛ وإذا لم تنجح، فتحقّق من قائمة انتظار المهام في Okta وقسم [استكشاف الأخطاء وإصلاحها](#troubleshooting).
+اتّبع خطة الاختبار القصيرة هذه باستخدام مستخدم اختبار واحد أو اثنين **قبل** إسناد فريقك بالكامل. يجب أن تنجح كل خطوة خلال بضع ثوانٍ؛ وإذا لم تنجح، فتحقّق من قائمة انتظار Tasks في Okta وقسم [استكشاف الأخطاء وإصلاحها](#troubleshooting).
 
-| # | الإجراء في Okta                                                 | النتيجة المتوقعة في ClickHouse Cloud                                 |
-| - | --------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 1 | أضف مستخدم اختبار إلى مجموعة Okta ‏`ClickHouse-Admins`          | يظهر المستخدم في **Settings → Members** مع الدور **Admin**           |
-| 2 | يسجّل مستخدم الاختبار الدخول إلى ClickHouse Cloud عبر SSO       | يصل إلى لوحة المعلومات بصلاحية المسؤول                               |
-| 3 | حدّث الاسم الأول للمستخدم في Okta                               | يظهر الاسم المحدّث في **Members** خلال ثوانٍ                         |
-| 4 | انقل المستخدم من `ClickHouse-Admins` إلى `ClickHouse-Read-only` | يتغيّر دوره إلى **Read-only**                                        |
-| 5 | ألغِ إسناد المستخدم من التطبيق (أو عطّله في Okta)               | يُزال المستخدم من مؤسسة؛ وتفشل أي محاولات لاحقة لتسجيل الدخول |
+| # | الإجراء في Okta                                                 | النتيجة المتوقعة في ClickHouse Cloud                            |
+| - | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1 | أضف مستخدم اختبار إلى مجموعة Okta ‏`ClickHouse-Admins`          | يظهر المستخدم في **Settings → Members** مع الدور **Admin**      |
+| 2 | يسجّل مستخدم الاختبار الدخول إلى ClickHouse Cloud عبر SSO       | يصل إلى لوحة المعلومات بصلاحية المسؤول                          |
+| 3 | حدّث الاسم الأول للمستخدم في Okta                               | يظهر الاسم المحدّث في **Members** خلال ثوانٍ                    |
+| 4 | انقل المستخدم من `ClickHouse-Admins` إلى `ClickHouse-Read-only` | يتغيّر دوره إلى **Read-only**                                   |
+| 5 | ألغِ إسناد المستخدم من التطبيق (أو عطّله في Okta)               | يُزال المستخدم من المؤسسة؛ وتفشل أي محاولات لاحقة لتسجيل الدخول |
 
 إذا فشلت أي خطوة، فأصلح المشكلة الأساسية قبل المتابعة — إذ غالبًا ما تتفاقم الأعراض.
 

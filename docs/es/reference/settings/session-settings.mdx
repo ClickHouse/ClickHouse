@@ -198,15 +198,17 @@ Tamaño máximo del bloque, en bytes, acumulado durante la agregación en el ord
 
 Número de hilos que se deben usar para fusionar los resultados intermedios de agregación en el modo de uso eficiente de memoria. Cuanto mayor sea, más memoria se consumirá. 0 significa lo mismo que &#39;max&#95;threads&#39;.
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "Nueva configuración"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-Nombre de la colección con nombre que usan las funciones de IA para las credenciales del proveedor y la configuración (`provider`, `endpoint`, `model`, `api_key` opcional, etc.). Si está vacío, se genera una excepción.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "Nueva configuración"}]}]} />
+
+Nombre de la colección con nombre que usa `aiEmbed` cuando la llamada no proporciona `credentials` en su mapa de parámetros. Vacío significa que no hay ningún valor predeterminado: dichas llamadas deben proporcionar `credentials` explícitamente. Se mantiene separado de `ai_function_text_default_credentials` porque el endpoint y el modelo de embeddings son distintos de los de chat.
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ Tiempo de espera, en segundos, para cada solicitud HTTP realizada por las funcio
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Nueva configuración"}]}]} />
 
 Retraso inicial, en milisegundos, antes del primer reintento de una solicitud fallida a la API de una función de IA. El retraso se duplica en cada intento posterior (backoff exponencial). Por ejemplo, con la configuración predeterminada: 1000ms, 2000ms, 4000ms.
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "Nueva configuración"}]}]} />
+
+Nombre de la colección con nombre utilizada por las funciones de IA de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) cuando la llamada no pasa `credentials` en su mapa de parámetros. Vacío significa que no hay ningún valor predeterminado: esas llamadas deben pasar `credentials` explícitamente. Un endpoint y un modelo de chat completions son distintos de los de embeddings, por lo que esto es independiente de `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -407,19 +421,6 @@ Permite crear bases de datos con el motor Ordinary obsoleto
 
 Permite usar funciones de ventana obsoletas y propensas a errores (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Se deshabilitaron las funciones obsoletas snowflakeToDateTime[64] y dateTime[64]ToSnowflake."}]}]} />
-
-Las funciones `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` y `dateTime64ToSnowflake` están obsoletas y se deshabilitan de forma predeterminada.
-En su lugar, utilice las funciones `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` y `dateTime64ToSnowflakeID`.
-
-Para volver a habilitar las funciones obsoletas (por ejemplo, durante un período de transición), establezca este ajuste en `true`.
-
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
 </div>
@@ -484,7 +485,7 @@ Habilita las funciones de IA experimentales (p. ej., `aiGenerateContent`). Estas
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita el analizador y el planificador de forma predeterminada."}]}]} />
 
-Permite usar el nuevo analizador de consultas.
+Permite usar el analizador.
 
 <div id="allow_experimental_cleanup_old_data_files_compaction">
   ## allow_experimental_cleanup_old_data_files_compaction
@@ -618,11 +619,13 @@ Permite usar la implementación experimental de delta-kernel-rs.
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**Aliases**: `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Las escrituras de Delta Lake pasaron a Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
 
 Habilita la función de escritura de delta-kernel.
 
@@ -823,18 +826,6 @@ Habilita el transpilador SQL polyglot: transpila SQL de más de 30 dialectos (My
 
 Activa PRQL, una alternativa a SQL.
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nueva configuración para habilitar el modo experimental diferido de aplicación de posting list"}]}]} />
-
-Si se establece en `true`, permite usar el modo diferido de aplicación de posting list en consultas de índice de texto.
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -875,6 +866,18 @@ Permite crear tablas con el motor de tabla [TimeSeries](/es/reference/engines/ta
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nueva configuración para habilitar la cláusula experimental UNIQUE KEY en las tablas de la familia MergeTree"}]}]} />
 
 Permite crear tablas con la cláusula `UNIQUE KEY` en motores de la familia MergeTree.
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva configuración para habilitar la expansión de comodines en la función de tabla `url` mediante la enumeración de páginas de índice HTTP."}]}]} />
+
+Permite la expansión experimental de comodines para `url()` y `ENGINE = URL` a partir de páginas de índice HTTP.
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1065,7 +1068,7 @@ Permite ejecutar sentencias ALTER que afectan no solo a los metadatos de las tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Permite argumentos de zona horaria no constantes en determinadas funciones relacionadas con el tiempo, como toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()."}]}]} />
 
-Permite argumentos de zona horaria no constantes en determinadas funciones relacionadas con el tiempo, como toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+Permite argumentos de zona horaria no constantes en determinadas funciones relacionadas con el tiempo, como toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 Esta configuración existe únicamente por motivos de compatibilidad. En ClickHouse, la zona horaria es una propiedad del tipo de dato y, por tanto, de la columna.
 Habilitar esta configuración da la impresión errónea de que distintos valores dentro de una columna pueden tener distintas zonas horarias.
 Por lo tanto, no habilite esta configuración.
@@ -1191,6 +1194,20 @@ los argumentos se ignoran silenciosamente, igual que antes de la versión 26.5.
 
 Permite reordenar las condiciones al moverlas de WHERE a PREWHERE para optimizar el filtrado
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nueva comprobación de seguridad: `ALTER TABLE ... REPLACE PARTITION ... FROM ...` ahora lanza una excepción cuando la tabla de origen no tiene partes en la partición solicitada (corrige la pérdida silenciosa de datos en [#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727)). El comportamiento anterior, que eliminaba silenciosamente la partición de destino, se conserva configurando `allow_replace_partition_from_empty_source = 1`."}]}]} />
+
+Permite que `ALTER TABLE ... REPLACE PARTITION ... FROM ...` elimine silenciosamente la partición de destino cuando el origen no tiene partes en esa partición.
+
+De forma predeterminada, esto no está permitido: `REPLACE PARTITION` desde un origen que no tiene datos en la partición solicitada lanza una excepción, porque en este caso la operación en la práctica se convierte en un `DROP PARTITION` silencioso en el destino (se eliminan los datos del destino y nada los reemplaza), una causa habitual de pérdida accidental de datos (consulta [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
+
+Habilita esta configuración para restaurar el comportamiento anterior, por ejemplo, cuando uses intencionadamente una partición de origen vacía para borrar datos en el destino. Para una eliminación incondicional, es preferible usar `ALTER TABLE ... DROP PARTITION ...`.
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1237,7 +1254,7 @@ Permite utilizar la biblioteca simdjson en las funciones &#39;JSON*&#39; si las 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Habilita la salida directa de representaciones especiales de columnas, como Sparse/Replicated, en algunos formatos de salida"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Añade una configuración para permitir la salida de representaciones especiales de columnas, como Sparse/Replicated, sin convertirlas en columnas completas"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Habilita la salida directa de representaciones especiales de columnas, como Sparse\/Replicated, en algunos formatos de salida"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Añade una configuración para permitir la salida de representaciones especiales de columnas, como Sparse\/Replicated, sin convertirlas en columnas completas"}]}]} />
 
 Permite generar la salida de columnas con tipos especiales de serialización, como Sparse y Replicated, sin convertirlas en una representación de columna completa.
 Ayuda a evitar copias de datos innecesarias durante el formateo.
@@ -1321,9 +1338,9 @@ Posibles valores:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Prohíbe PRIMARY KEY/ORDER BY sospechosos en MergeTree (es decir, SimpleAggregateFunction)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Prohíbe PRIMARY KEY/ORDER BY sospechosos para MergeTree (es decir, SimpleAggregateFunction)"}]}]} />
 
-Permite `PRIMARY KEY`/`ORDER BY` sospechosos en MergeTree (es decir, SimpleAggregateFunction).
+Permite `PRIMARY KEY`/`ORDER BY` sospechosos para MergeTree (es decir, SimpleAggregateFunction).
 
 <div id="allow_suspicious_ttl_expressions">
   ## allow_suspicious_ttl_expressions
@@ -1493,7 +1510,7 @@ Forzar la resolución del identificador en JOIN USING a partir de la proyección
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nueva configuración de compatibilidad"}]}]} />
 
-Cuando un identificador de varias partes como `b.id` puede referirse tanto a la columna `id` de una tabla con alias `b` como a una subcolumna `b.id` de tipo Tuple de alguna otra columna, se prioriza la interpretación del prefijo como alias (la columna `id` de `b`). De forma predeterminada, el nuevo analizador prefiere la subcolumna. Habilítelo para que coincida con la resolución del analizador anterior.
+Cuando un identificador de varias partes como `b.id` puede referirse tanto a la columna `id` de una tabla con alias `b` como a una subcolumna `b.id` de tipo Tuple de alguna otra columna, se prioriza la interpretación del prefijo como alias (la columna `id` de `b`). De forma predeterminada, el analizador prefiere la subcolumna. Habilítelo para que coincida con la resolución del analizador anterior.
 
 <div id="analyzer_inline_views">
   ## analyzer_inline_views
@@ -2478,7 +2495,7 @@ Usar la inferencia de tipos durante la conversión de String a Dynamic
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Nueva configuración para habilitar o deshabilitar la inferencia de tipos durante CAST de String a Variant"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Nueva configuración para habilitar\/deshabilitar la inferencia de tipos durante CAST de String a Variant"}]}]} />
 
 Utiliza la inferencia de tipos durante la conversión de String a Variant.
 
@@ -2641,7 +2658,7 @@ Activa la recopilación de estadísticas de la tabla hash para optimizar la asig
 
 La configuración `compatibility` hace que ClickHouse use la configuración predeterminada de una versión anterior de ClickHouse, indicada en este ajuste.
 
-Si algunos ajustes tienen valores distintos de los predeterminados, esos valores se respetan (solo los ajustes que no se han modificado se ven afectados por la configuración `compatibility`).
+Si algunos ajustes tienen valores distintos de los predeterminados, esos valores se respetan (solo los ajustes que no se han modificado se ve n afectados por la configuración `compatibility`).
 
 Esta configuración acepta un número de versión de ClickHouse como cadena, por ejemplo `22.3` o `22.8`. Un valor vacío significa que esta configuración está deshabilitada.
 
@@ -3105,8 +3122,8 @@ Habilita o deshabilita la comprobación de deduplicación para las vistas materi
 
 Valores posibles:
 
-0 — Deshabilitado.
-1 — Habilitado.
+* 0 — Deshabilitado.
+* 1 — Habilitado.
 
 Cuando está habilitado, ClickHouse realiza la deduplicación de bloques en las vistas materializadas que dependen de tablas Replicated*.
 Esta configuración es útil para garantizar que las vistas materializadas no contengan datos duplicados cuando la operación de inserción se reintenta debido a un fallo.
@@ -3294,7 +3311,7 @@ El valor predeterminado es `CURRENT_USER`.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Ajuste añadido en 26.5 para controlar el comportamiento de poda de particiones de FINAL, introducido silenciosamente en 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). El cambio semántico relevante está registrado en el bloque 26.3 para que `compatibility = '26.2'` lo revierta; esta entrada existe para que la comprobación de actualización desde 26.4 acepte el nombre recién introducido."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "Controla la omisión incondicional de la poda de particiones por parte del planner de FINAL cuando la columna de la clave de partición no forma parte de la clave de ordenación. El cambio de comportamiento en sí se introdujo silenciosamente en 26.3 mediante https://github.com/ClickHouse/ClickHouse/pull/98242; esta entrada lo documenta retroactivamente para que `compatibility = '26.2'` restaure el comportamiento anterior a la regresión (0 = podar antes de FINAL, rápido; 1 = aplazar la poda, seguro desde el punto de vista de la corrección)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Ajuste añadido en 26.5 para controlar el comportamiento de poda de particiones de FINAL, introducido silenciosamente en 26.3 (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242). El cambio semántico relevante está registrado en el bloque 26.3 para que `compatibility = '26.2'` lo revierta; esta entrada existe para que la comprobación de actualización desde 26.4 acepte el nombre recién introducido."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "Controla la omisión incondicional de la poda de particiones por parte del planner de FINAL cuando la columna de la clave de partición no forma parte de la clave de ordenación. El cambio de comportamiento en sí se introdujo silenciosamente en 26.3 mediante https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242; esta entrada lo documenta retroactivamente para que `compatibility = '26.2'` restaure el comportamiento anterior a la regresión (0 = podar antes de FINAL, rápido; 1 = aplazar la poda, seguro desde el punto de vista de la corrección)."}]}]} />
 
 Cuando está habilitado (valor predeterminado), la poda de particiones se omite para las consultas `FINAL` en tablas cuyas
 columnas de la clave de partición no forman parte de la clave de ordenación. Este es el comportamiento seguro desde el punto de vista de la corrección
@@ -3832,6 +3849,18 @@ Valor predeterminado en Cloud: `20000`.
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para recibir datos del servidor de caché distribuida, en milisegundos. Si no se recibe ningún byte en este intervalo, se lanza una excepción.
 
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nueva configuración para mostrar las columnas `certificate` y `signature` en `system.distributed_cache_registry`."}]}]} />
+
+Solo tiene efecto en ClickHouse Cloud. Muestra las columnas `certificate` y `signature` de la tabla `system.distributed_cache_registry`. De forma predeterminada, estas columnas están vacías para mantener compacta la salida; habilita esta configuración para inspeccionarlas.
+
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
 </div>
@@ -4190,6 +4219,18 @@ Elimina los intercambios innecesarios en el plan de consulta distribuida. Desact
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración para serializar el plan distribuido para las réplicas"}]}]} />
 
 Serializa el plan de consulta distribuida para ejecutarlo en las réplicas.
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nueva configuración experimental para indicar cuántos workers sin estado se reservan para una consulta distribuida. Cero deshabilita la reserva."}]}]} />
+
+Cuántos workers sin estado se usarán para ejecutar esta consulta. Cero deshabilita la reserva de workers sin estado para planes distribuidos.
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -5179,6 +5220,25 @@ Ejecuta las subconsultas `EXISTS` no correlacionadas como subconsultas escalares
 
 Valor predeterminado en Cloud: `0`.
 
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "A partir de la versión 26.7, `EXPLAIN PLAN` usa por defecto `actions=1, compact=1, pretty=1`. Establezca este valor en `legacy` para restaurar la salida anterior a la 26.7."}]}]} />
+
+Formato predeterminado que usa `EXPLAIN PLAN`.
+
+Posibles valores:
+
+* `pretty` (predeterminado desde la versión 26.7) — `actions`, `compact` y `pretty` toman el valor `true` de forma predeterminada, lo que genera un plan compacto, `pretty` y anotado con acciones.
+* `legacy` — salida anterior a la 26.7.
+
+Si especifica explícitamente las opciones `actions`, `compact` o `pretty` en la instrucción `EXPLAIN` (por ejemplo, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`), este ajuste siempre queda anulado.
+
+`EXPLAIN PLAN` con `json = 1` o `distributed = 1` mantiene los valores predeterminados de `legacy` (anteriores a la 26.7) independientemente de este ajuste, a menos que `actions`, `compact` o `pretty` se establezcan explícitamente. La salida `pretty` no puede representar resultados JSON ni planes distribuidos por segmento, por lo que esos modos solo se muestran correctamente en formato `legacy`.
+
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
 </div>
@@ -5684,9 +5744,9 @@ Elimina los datos de forma recursiva en la consulta DROP. Evita el error &#39;El
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Se mejoró la compatibilidad con MySQL DATE_FORMAT/STR_TO_DATE"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Se mejoró la compatibilidad con MySQL DATE_FORMAT\/STR_TO_DATE"}]}]} />
 
-El especificador de formato &#39;%e&#39; de la función &#39;formatDateTime&#39; imprime los días de un solo dígito con un espacio delante, por ejemplo, &#39; 2&#39; en lugar de &#39;2&#39;.
+El formateador &#39;%e&#39; de la función &#39;formatDateTime&#39; imprime los días de un solo dígito con un espacio delante, por ejemplo, &#39; 2&#39; en lugar de &#39;2&#39;.
 
 <div id="formatdatetime_f_prints_scale_number_of_digits">
   ## formatdatetime_f_prints_scale_number_of_digits
@@ -5724,7 +5784,7 @@ Los formateadores &#39;%c&#39;, &#39;%l&#39; y &#39;%k&#39; de la función &#39;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1"},{"label": "Se mejoró la compatibilidad con MySQL DATE_FORMAT/STR_TO_DATE"}]}]} />
 
-El especificador de formato &#39;%M&#39; en las funciones &#39;formatDateTime&#39; y &#39;parseDateTime&#39; imprime/analiza el nombre del mes en lugar de los minutos.
+El formateador &#39;%M&#39; en las funciones &#39;formatDateTime&#39; y &#39;parseDateTime&#39; imprime/analiza el nombre del mes en lugar de los minutos.
 
 <div id="fsync_metadata">
   ## fsync_metadata
@@ -5752,7 +5812,7 @@ Tamaño máximo, en bytes, de un único valor de entrada para las funciones `bas
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Se añade una nueva configuración para conservar el comportamiento anterior de la función dateTrunc"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Se cambia el tipo de resultado de la función dateTrunc para argumentos DateTime64/Date32 a DateTime64/Date32, independientemente de la unidad de tiempo, para obtener el resultado correcto con valores negativos"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Se añade una nueva configuración para conservar el comportamiento anterior de la función dateTrunc"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Se cambia el tipo de resultado de la función dateTrunc para argumentos DateTime64\/Date32 a DateTime64\/Date32, independientemente de la unidad de tiempo, para obtener el resultado correcto con valores negativos"}]}]} />
 
 Permite cambiar el comportamiento del tipo de resultado de la función `dateTrunc`.
 
@@ -6347,7 +6407,7 @@ Activa el almacenamiento en búfer de la respuesta HTTP en el servidor.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Se cambió para mantener la coherencia entre formatos"}]}, {"id": "row-2","items": [{"label": "23.9"},{"label": "1"},{"label": "Genera JSON/XML válido cuando se produce una excepción en HTTP streaming."}]}]} />
 
-Escribe la excepción en el formato de salida para que la salida sea válida. Funciona con los formatos JSON y XML.
+Escribe la excepción en el formato de salida para generar una salida válida. Funciona con los formatos JSON y XML.
 
 <div id="http_zlib_compression_level">
   ## http_zlib_compression_level
@@ -6813,7 +6873,7 @@ Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#9
 
 Esta configuración permite que un usuario defina su propia semántica de deduplicación en MergeTree/ReplicatedMergeTree.
 Por ejemplo, si proporciona un valor único para esta configuración en cada sentencia INSERT,
-el usuario puede evitar que se deduzcan como duplicados los mismos datos insertados.
+el usuario puede evitar que se deduplicen los mismos datos insertados.
 
 Valores posibles:
 
@@ -6825,7 +6885,7 @@ En las tablas replicadas, de forma predeterminada, solo se deduplican las 100 in
 Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
 <Note>
-  `insert_deduplication_token` funciona a nivel de partición (igual que el checksum de `insert_deduplication`). Varias particiones pueden tener el mismo `insert_deduplication_token`.
+  `insert_deduplication_token` se rastrea por partición, por lo que varias particiones escritas por una sola inserción pueden llevar el mismo token. Sin un token, la suma de comprobación del contenido predeterminada (`insert_deduplication_version = new_unified_hash`) se calcula sobre todo el bloque insertado, por lo que una inserción se deduplica solo cuando todos sus datos coinciden con una inserción anterior (un reintento), no cuando las filas de una sola partición coinciden por casualidad con una inserción diferente.
 </Note>
 
 Ejemplo:
@@ -6839,11 +6899,11 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
 
--- el siguiente insert no se deduplicará porque insert_deduplication_token es diferente
+-- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
 
--- el siguiente insert se deduplicará porque insert_deduplication_token
--- es igual a uno de los anteriores
+-- the next insert will be deduplicated because insert_deduplication_token
+-- is the same as one of the previous
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
 
 SELECT * FROM test_table
@@ -6949,20 +7009,20 @@ Valores posibles:
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
 <Note>
-  Esta configuración no se aplica a SharedMergeTree; consulta [SharedMergeTree consistency](/es/products/cloud/features/infrastructure/shared-merge-tree#consistency) para obtener más información.
+  Esta configuración no se aplica a SharedMergeTree; consulta [consistencia de SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree#consistency) para obtener más información.
 </Note>
 
-Habilita las escrituras con quorum.
+Habilita las escrituras con cuórum.
 
-* Si `insert_quorum < 2`, las escrituras con quorum están deshabilitadas.
-* Si `insert_quorum >= 2`, las escrituras con quorum están habilitadas.
-* Si `insert_quorum = 'auto'`, usa la mayoría (`number_of_replicas / 2 + 1`) como número de quorum.
+* Si `insert_quorum < 2`, las escrituras con cuórum están deshabilitadas.
+* Si `insert_quorum >= 2`, las escrituras con cuórum están habilitadas.
+* Si `insert_quorum = 'auto'`, usa la mayoría (`number_of_replicas / 2 + 1`) como número de cuórum.
 
-Escrituras con quorum
+Escrituras con cuórum
 
 `INSERT` solo se realiza correctamente cuando ClickHouse logra escribir correctamente los datos en `insert_quorum` réplicas dentro de `insert_quorum_timeout`. Si, por cualquier motivo, el número de réplicas con escrituras correctas no alcanza `insert_quorum`, la escritura se considera fallida y ClickHouse eliminará el bloque insertado de todas las réplicas en las que ya se hayan escrito datos.
 
-Cuando `insert_quorum_parallel` está deshabilitado, todas las réplicas del quorum son consistentes; es decir, contienen datos de todas las consultas `INSERT` anteriores (la secuencia de `INSERT` se lineariza). Al leer datos escritos mediante `insert_quorum` y con `insert_quorum_parallel` deshabilitado, puedes activar la consistencia secuencial para las consultas `SELECT` mediante [select&#95;sequential&#95;consistency](#select_sequential_consistency).
+Cuando `insert_quorum_parallel` está deshabilitado, todas las réplicas del cuórum son consistentes; es decir, contienen datos de todas las consultas `INSERT` anteriores (la secuencia de `INSERT` se lineariza). Al leer datos escritos mediante `insert_quorum` y con `insert_quorum_parallel` deshabilitado, puedes activar la consistencia secuencial para las consultas `SELECT` mediante [select&#95;sequential&#95;consistency](#select_sequential_consistency).
 
 ClickHouse genera una excepción:
 
@@ -7206,7 +7266,7 @@ Igual que `direct,hash`, es decir, intenta usar direct join y hash join (en este
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Cambia el comportamiento de las operaciones `JOIN` con strictness `ANY`.
+Cambia el comportamiento de las operaciones `JOIN` con estrictez `ANY`.
 
 <Note>
   Esta configuración se aplica solo a las operaciones `JOIN` con tablas del motor [Join](/es/reference/engines/table-engines/special/join).
@@ -8118,8 +8178,8 @@ La profundidad máxima de anidamiento del árbol sintáctico de una consulta. Si
 El número máximo de elementos en el árbol sintáctico de una consulta. Si se supera, se lanza una excepción.
 
 <Note>
-  Actualmente, no se comprueba durante el análisis, sino solo después de analizar la consulta.
-  Esto significa que durante el análisis puede crearse un árbol sintáctico demasiado profundo,
+  Actualmente, no se comprueba durante el análisis sintáctico, sino solo después del análisis sintáctico de la consulta.
+  Esto significa que durante el análisis sintáctico puede crearse un árbol sintáctico demasiado profundo,
   pero la consulta fallará.
 </Note>
 
@@ -8599,7 +8659,7 @@ Número de reintentos al obtener una partición desde otro host.
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 Establece el número máximo de hilos paralelos para la fase de lectura de datos de la consulta `SELECT` con el modificador [FINAL](/es/reference/statements/select/from#final-modifier).
 
@@ -9033,7 +9093,7 @@ Valores posibles:
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "Añade un ajuste independiente para controlar el número de hilos en el análisis en paralelo de archivos"}]}]} />
 
@@ -9061,8 +9121,8 @@ Valor predeterminado de Cloud: 1 TB.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.5"},{"label": "100"},{"label": "Añade un límite al número de particiones en un bloque"}]}]} />
 
-Limita el número máximo de particiones en un único block insertado
-y se lanza una excepción si el block contiene demasiadas particiones.
+Limita el número máximo de particiones en un único bloque insertado
+y se lanza una excepción si el bloque contiene demasiadas particiones.
 
 * Entero positivo.
 * `0` — Número ilimitado de particiones.
@@ -9070,7 +9130,7 @@ y se lanza una excepción si el block contiene demasiadas particiones.
 **Detalles**
 
 Al insertar datos, ClickHouse calcula el número de particiones en el
-block insertado. Si el número de particiones es mayor que
+bloque insertado. Si el número de particiones es mayor que
 `max_partitions_per_insert_block`, ClickHouse registra una advertencia o lanza una
 excepción según `throw_on_max_partitions_per_insert_block`. Las excepciones tienen
 el siguiente texto:
@@ -9082,7 +9142,7 @@ el siguiente texto:
 > y consultas SELECT lentas. El número total recomendado de particiones para una tabla es
 > inferior a 1000..10000. Tenga en cuenta que la partición no está pensada para acelerar
 > las consultas SELECT (la clave ORDER BY es suficiente para que las consultas por rango sean rápidas).
-> Las particiones están pensadas para la manipulación de datos (DROP PARTITION, etc.).&quot;
+> Las particiones están pensadas para la manipulación de datos (DROP PARTITION, etc).&quot;
 
 <Note>
   Esta configuración es un umbral de seguridad porque usar un gran número de particiones es un error conceptual frecuente.
@@ -9133,8 +9193,8 @@ Si el número de filas que se leerán del índice de proyección es inferior o i
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
-El número máximo de bytes de la cadena de consulta que analiza el parser SQL.
-Los datos de la cláusula VALUES de las consultas INSERT se procesan mediante un parser de flujo independiente (que consume O(1) de RAM) y no se ven afectados por esta restricción.
+El número máximo de bytes de la cadena de consulta que analiza el analizador SQL.
+Los datos de la cláusula VALUES de las consultas INSERT se procesan mediante un analizador de flujo independiente (que consume O(1) de RAM) y no se ven afectados por esta restricción.
 
 <Note>
   `max_query_size` no puede establecerse dentro de una consulta SQL (por ejemplo, `SELECT now() SETTINGS max_query_size=10000`) porque ClickHouse necesita asignar un búfer para analizar la consulta, y el tamaño de este búfer lo determina la configuración `max_query_size`, que debe configurarse antes de ejecutar la consulta.
@@ -9559,7 +9619,7 @@ genera una excepción.
 
 <Tip>
   Esto permite realizar una comprobación de cordura para evitar que los usuarios de su
-  cluster escriban consultas excesivamente complejas.
+  clúster escriban consultas excesivamente complejas.
 </Tip>
 
 <div id="max_table_size_to_drop">
@@ -9640,7 +9700,7 @@ columnas constantes.
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 El número máximo de hilos de procesamiento de consultas, excluidos los hilos para recuperar datos de servidores remotos (consulte el parámetro [&#39;max&#95;distributed&#95;connections&#39;](/es/reference/settings/session-settings#max_distributed_connections)).
 
@@ -10683,6 +10743,16 @@ Valores posibles:
 
 * [optimización de GROUP BY](/es/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración para aplicar `LIMIT` a la agregación en orden y permitir la finalización anticipada cuando `ORDER BY` es un prefijo de la descripción de ordenación de `GROUP BY`."}]}]} />
+
+Cuando está habilitada y la agregación en orden está activa, aplica `LIMIT` en la etapa de agregación para permitir la finalización anticipada tras generar suficientes grupos. Esto reduce la cantidad de datos leídos cuando `ORDER BY` coincide con el prefijo de la clave de `GROUP BY`. Puede reducir el valor informado por `rows_before_limit_at_least`; use `exact_rows_before_limit` si se necesitan recuentos exactos.
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10700,6 +10770,16 @@ Elimina los agregadores min/max/any/anyLast de las claves de GROUP BY en la secc
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
 
 Propaga las comparaciones con constantes en cadenas de AND para mejorar la capacidad de filtrado. Admite los operadores `<`, `<=`, `>`, `>=`, `=` y sus combinaciones. Por ejemplo, `(a < b) AND (b < c) AND (c < 5)` pasaría a ser `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "Nueva configuración que limita el trabajo de la optimización `optimize_and_compare_chain` (medido en nodos del árbol de consultas procesados con hash) para que no llegue a dominar el análisis de consultas con cadenas `AND` de comparaciones muy numerosas o muy grandes. El valor anterior `0` (ilimitado) reproduce el comportamiento previo a la versión 26.7, en el que la optimización no tenía límite, por lo que `compatibility` configurado con una versión anterior sigue derivando predicados transitivos sin presupuesto. Establézcalo en `0` para desactivar el presupuesto."}]}]} />
+
+Presupuesto de trabajo para la optimización `optimize_and_compare_chain` durante el análisis de consultas, medido por el número de nodos del árbol de consultas a los que `getTreeHash` calcula un hash (el coste dominante de esta optimización). Cuando una consulta ha procesado con hash más nodos que este valor al aplicar la optimización, deja de aplicarla al resto de la consulta. Esto limita el tiempo de análisis de consultas con cadenas `AND` de comparaciones muy numerosas o muy grandes, en las que, de otro modo, la optimización podría dominar el análisis sin simplificar nada. Detenerse antes siempre es seguro: solo se renuncia a una optimización y nunca se modifican los resultados. Establézcalo en `0` para desactivar el presupuesto (ilimitado).
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -11162,7 +11242,7 @@ Reescribe las funciones de agregación cuyo argumento es una expresión `if` cua
 Por ejemplo, `avg(if(cond, col, null))` se puede reescribir como `avgOrNullIf(cond, col)`. Esto puede mejorar el rendimiento.
 
 <Note>
-  Solo se admite con el analizador (`enable_analyzer = 1`).
+  Solo se admite con el analyzer (`enable_analyzer = 1`).
 </Note>
 
 <div id="optimize_rewrite_array_exists_to_has">
@@ -11238,10 +11318,10 @@ Posibles valores:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Habilita o deshabilita la omisión de segmentos no utilizados para las consultas [SELECT](/es/reference/statements/select/index) que tienen una condición sobre la clave de segmentación en `WHERE/PREWHERE`, y activa optimizaciones relacionadas para las consultas distribuidas (por ejemplo, la agregación por clave de segmentación).
+Habilita o deshabilita la omisión de segmentos no utilizados para las consultas [SELECT](/es/reference/statements/select/index) que tienen una condición sobre la clave de sharding en `WHERE/PREWHERE`, y activa optimizaciones relacionadas para las consultas distribuidas (por ejemplo, la agregación por clave de sharding).
 
 <Note>
-  Se asume que los datos se distribuyen por la clave de segmentación; de lo contrario, una consulta devuelve un resultado incorrecto.
+  Se asume que los datos se distribuyen por la clave de sharding; de lo contrario, una consulta devuelve un resultado incorrecto.
 </Note>
 
 Posibles valores:
@@ -11897,7 +11977,7 @@ El formateador &#39;%e&#39; de la función &#39;parseDateTime&#39; requiere que 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "Compatibilidad mejorada con MySQL DATE_FORMAT/STR_TO_DATE"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "Compatibilidad mejorada con MySQL DATE_FORMAT\/STR_TO_DATE"}]}]} />
 
 Los formateadores &#39;%c&#39;, &#39;%l&#39; y &#39;%k&#39; de la función &#39;parseDateTime&#39; interpretan meses y horas sin ceros a la izquierda.
 
@@ -12605,8 +12685,8 @@ Aplica sharding a JOIN si las claves de JOIN contienen un prefijo de PRIMARY KEY
 Determina qué lado del join debe ser la tabla de construcción (también llamada interna, la que se inserta en la tabla hash para un hash join) en el plan de consulta. Esta configuración solo es compatible con la strictness `ALL` de `JOIN` con la cláusula `JOIN ON`. Los valores posibles son:
 
 * &#39;auto&#39;: Deja que el planificador decida qué tabla usar como tabla de construcción.
-  * &#39;false&#39;: No intercambiar nunca las tablas (la tabla derecha es la tabla de construcción).
-  * &#39;true&#39;: Intercambiar siempre las tablas (la tabla izquierda es la tabla de construcción).
+* &#39;false&#39;: No intercambiar nunca las tablas (la tabla derecha es la tabla de construcción).
+* &#39;true&#39;: Intercambiar siempre las tablas (la tabla izquierda es la tabla de construcción).
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12771,9 +12851,10 @@ Controla el número mínimo de columnas de carga útil del lado izquierdo necesa
 
 Especifica qué algoritmos de orden de JOIN se intentan durante la optimización del plan de consulta. Están disponibles los siguientes algoritmos:
 
-* `greedy` - algoritmo voraz básico - funciona rápido, pero puede que no produzca el mejor orden de JOIN
-* `dpsize` - implementa el algoritmo DPsize, actualmente solo para inner joins - considera todos los órdenes de JOIN posibles y encuentra el más óptimo, pero puede ser lento para consultas con muchas tablas y predicados de JOIN
-* `dphyp` - implementa el algoritmo DPhyp (programación dinámica mediante partición de hipergrafos), actualmente solo para inner joins - explora el mismo espacio de búsqueda que `dpsize`, pero enumera solo pares de subgrafos conectados, lo que genera menos JOIN intermedios en grafos de JOIN dispersos, a costa de no tener en cuenta productos cartesianos
+* &#39;greedy&#39; - algoritmo voraz básico - funciona rápido, pero puede que no produzca el mejor orden de JOIN
+* &#39;dpsize&#39; - implementa el algoritmo DPsize, actualmente solo para inner joins - considera todos los órdenes de JOIN posibles y encuentra el más óptimo, pero puede ser lento para consultas con muchas tablas y predicados de JOIN.
+* &#39;dpsub&#39; - implementa el algoritmo DPsub, que admite tanto inner joins como joins no internos - considera todos los órdenes de JOIN posibles y encuentra el más óptimo, pero puede ser lento para consultas con muchas tablas y predicados de JOIN.
+* &#39;dphyp&#39; - implementa el algoritmo DPhyp (programación dinámica mediante partición de hipergrafos), actualmente solo para inner joins - explora el mismo espacio de búsqueda que `dpsize`, pero enumera solo pares de subgrafos conectados, lo que genera menos JOIN intermedios en grafos de JOIN dispersos, a costa de no tener en cuenta productos cartesianos
   Se pueden especificar varios algoritmos como una lista separada por comas, por ejemplo, `dphyp,greedy`. Se prueban en orden; si un algoritmo no puede manejar la consulta (por ejemplo, debido a outer joins o componentes desconectados), se utiliza el siguiente como alternativa.
 
 <div id="query_plan_optimize_join_order_limit">
@@ -12940,7 +13021,7 @@ Activa o desactiva una optimización a nivel del plan de consulta que elimina pa
 Solo surte efecto si la configuración [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) es 1.
 
 <Note>
-  Esta es una configuración de nivel experto que solo deben usar los desarrolladores para tareas de depuración. Esta configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
+  Esta es una configuración de nivel experto que solo deberían usar los desarrolladores para tareas de depuración. Esta configuración puede cambiar en el futuro de formas incompatibles con versiones anteriores o eliminarse.
 </Note>
 
 Valores posibles:
@@ -12978,7 +13059,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Deshabilita esta lógica de forma predeterminada."}]}]} />
 
-Activa o desactiva una optimización a nivel del plan de consulta que utiliza el ordenamiento del almacenamiento al ordenar para funciones de ventana.
+Activa o desactiva una optimización a nivel del plan de consulta que utiliza la ordenación del almacenamiento al realizar la ordenación para funciones de ventana.
 Solo tiene efecto si el ajuste [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) es 1.
 
 <Note>
@@ -13042,7 +13123,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Nueva configuración."}]}]} />
 
-Activa o desactiva una optimización a nivel del plan de consulta que intenta utilizar el índice de similitud vectorial.
+Activa o desactiva una optimización a nivel del plan de consulta que intenta usar el índice de similitud vectorial.
 Solo tiene efecto si la configuración [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) es 1.
 
 <Note>
@@ -13466,6 +13547,21 @@ Posibles valores:
 * `0` — No esperar.
 * Entero negativo — Esperar indefinidamente.
 * Entero positivo — Número de segundos que se debe esperar.
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva configuración para reservar memoria para una carga de trabajo específica antes de iniciar una consulta."}]}]} />
+
+Se usa en la planificación de cargas de trabajo. Cantidad mínima de RAM reservada para ejecutar una consulta en un solo servidor. La reserva se realiza a través de la jerarquía WORKLOAD mediante el valor de la configuración de consulta `workload`.
+Si no hay suficiente memoria disponible para la carga de trabajo, se impide que la consulta se inicie y esta permanece en estado pendiente hasta que pueda completarse la reserva.
+Un valor de `0` significa que no hay reserva.
+Esta configuración surte efecto solo si se crea el recurso MEMORY RESERVATION.
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -14013,7 +14109,7 @@ Posibles valores:
 
 Uso
 
-Cuando la consistencia secuencial está habilitada, ClickHouse permite al cliente ejecutar la consulta `SELECT` solo en aquellas réplicas que contienen los datos de todas las consultas `INSERT` anteriores ejecutadas con `insert_quorum`. Si el cliente apunta a una réplica parcial, ClickHouse generará una excepción. La consulta `SELECT` no incluirá datos que aún no se hayan escrito en el quórum de réplicas.
+Cuando la consistencia secuencial está habilitada, ClickHouse permite al Client ejecutar la consulta `SELECT` solo en aquellas réplicas que contienen los datos de todas las consultas `INSERT` anteriores ejecutadas con `insert_quorum`. Si el Client apunta a una réplica parcial, ClickHouse generará una excepción. La consulta `SELECT` no incluirá datos que aún no se hayan escrito en el quórum de réplicas.
 
 Cuando `insert_quorum_parallel` está habilitado (valor predeterminado), `select_sequential_consistency` no funciona. Esto se debe a que las consultas paralelas `INSERT` pueden escribirse en distintos conjuntos de réplicas del quórum, por lo que no hay garantía de que una sola réplica haya recibido todas las escrituras.
 
@@ -14502,7 +14598,7 @@ Cuanto menor sea el valor, con mayor frecuencia se vacían los datos en la tabla
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "No permitir SELECT directo para Kafka/RabbitMQ/FileLog de forma predeterminada"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "No permitir SELECT directo para Kafka\/RabbitMQ\/FileLog de forma predeterminada"}]}]} />
 
 Permite realizar una consulta SELECT directa en los motores Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue y NATS. Si hay vistas materializadas asociadas, la consulta SELECT no está permitida aunque esta opción esté habilitada.
 Si no hay vistas materializadas asociadas, habilitar esta opción permite leer datos. Ten en cuenta que, por lo general, los datos leídos se eliminan de la cola. Para evitarlo, los ajustes relacionados del motor deben configurarse correctamente.
@@ -14647,17 +14743,6 @@ Valores posibles:
 * LZ4 — Se aplica compresión [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)).
 * NONE — No se aplica compresión.
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "Nueva configuración para el umbral de densidad del modo diferido de posting list"}]}]} />
-
-Umbral de densidad para la selección del algoritmo en el modo diferido de posting list.
-Por debajo del umbral: intersección leapfrog. En el umbral o por encima: bitmap por fuerza bruta.
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14667,6 +14752,19 @@ Por debajo del umbral: intersección leapfrog. En el umbral o por encima: bitmap
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "Nueva configuración"}]}]} />
 
 Selectividad máxima del filtro para utilizar la sugerencia generada a partir del índice de texto invertido.
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**Alias**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "Renombrado desde `text_index_density_threshold` (se mantiene como alias); selecciona el algoritmo de intersección de posting lists en el modo de aplicación diferida de posting lists."}]}]} />
+
+Umbral de densidad de posting lists que selecciona el algoritmo de intersección en el modo de aplicación diferida de posting lists (`text_index_posting_list_apply_mode = 'lazy'`).
+Por debajo del umbral: intersección leapfrog (favorece las posting lists dispersas). A partir del umbral: intersección de bitmap por fuerza bruta (favorece las posting lists densas).
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14703,7 +14801,7 @@ Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitad
 
 Controla cómo se aplican las posting lists durante las consultas de índice de texto.
 &#39;materialize&#39; (predeterminado) decodifica las posting lists de forma inmediata en Roaring Bitmaps.
-&#39;lazy&#39; usa decodificación bajo demanda basada en cursores (requiere el formato de índice V2 y allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply).
+&#39;lazy&#39; usa decodificación bajo demanda basada en cursores (requiere un formato de índice con un codec serializado).
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14997,6 +15095,16 @@ Por ejemplo, si `url_base` es `https://example.com/def/`, entonces:
 * `/test/data.csv` se resuelve en `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` se resuelve en `https://other.com/test/data.csv`
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "Nueva configuración para limitar la cantidad de directorios leídos al expandir comodines en la función de tabla `url`."}]}]} />
+
+Cantidad máxima de directorios que se pueden recorrer al expandir comodines de URL desde páginas de índice.
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -15033,7 +15141,7 @@ Utiliza la zona horaria del cliente para interpretar los valores de cadena DateT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Usar el formato compacto para `INSERT` asíncronos en tablas Distributed de forma predeterminada"}]}]} />
 
-Usa el formato compacto para almacenar bloques para `INSERT` en segundo plano (`distributed_foreground_insert`) en tablas con el engine `Distributed`.
+Usa el formato compacto para almacenar bloques para `INSERT` en segundo plano (`distributed_foreground_insert`) en tablas con el motor `Distributed`.
 
 Valores posibles:
 
@@ -15152,9 +15260,9 @@ predicado determinista para el lado de destino.
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Nueva configuración. Permite al usuario usar la lógica anterior de la función toTime, que funciona como toTimeWithFixedDate."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Use la nueva función `toTime` (que convierte valores al tipo de datos `Time`) de forma predeterminada en lugar de la `toTime` heredada (que sigue estando disponible como `toTimeWithFixedDate`)."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "Nueva configuración. Permite al usuario usar la lógica anterior de la función toTime, que funciona como toTimeWithFixedDate."}]}]} />
 
 Cuando está habilitada, permite usar la función heredada toTime, que convierte una fecha con hora en una fecha fija determinada, conservando la hora.
 De lo contrario, utiliza una nueva función toTime, que convierte distintos tipos de datos al tipo Time.
@@ -15414,7 +15522,7 @@ Valores posibles:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "El índice de texto ahora es GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "Habilitado de forma predeterminada"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "El índice de texto ahora es GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Habilitado de forma predeterminada"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Permite usar índices de omisión de datos durante la lectura de datos.
 
@@ -15502,11 +15610,11 @@ Utiliza la estructura de la tabla de inserción en lugar de inferir el esquema a
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Nueva opción"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Se habilitó globalmente la caché del encabezado del índice de texto."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "Nueva opción"}]}]} />
 
-Indica si se usa una caché del encabezado deserializado del índice de texto.
+Indica si se almacenan en caché en memoria los encabezados deserializados del índice de texto.
 Usar la caché del encabezado del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con un gran número de consultas con índices de texto.
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
@@ -15527,18 +15635,18 @@ Habilita la evaluación de consultas LIKE/ILIKE mediante el análisis del diccio
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Nueva opción"}]}]} />
 
-Si se debe usar una caché de listas de postings deserializadas del índice de texto.
+Si se deben almacenar en caché en memoria las listas de postings deserializadas del índice de texto.
 Usar la caché de postings del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas sobre índices de texto.
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Se habilitó globalmente la caché de tokens del índice de texto."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Indica si se debe usar una caché de información deserializada de los tokens del índice de texto.
+Indica si se debe almacenar en caché en memoria la información deserializada de los tokens del índice de texto.
 Usar la caché de tokens del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con una gran cantidad de consultas de índice de texto.
 
 <div id="use_top_k_dynamic_filtering">

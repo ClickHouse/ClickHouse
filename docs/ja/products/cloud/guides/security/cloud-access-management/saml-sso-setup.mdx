@@ -34,23 +34,17 @@ IdP での管理者権限、自身のドメインの DNS 設定に TXT レコー
 </div>
 
 <Steps>
-  <Step>
-    ### 組織設定にアクセスする
-
+  <Step title="組織設定にアクセスする" id="access-organization-settings">
     左下にある組織名をクリックし、[Organization details] を選択します。
   </Step>
 
-  <Step>
-    ### SAMLシングルサインオンを有効にする
-
+  <Step title="SAMLシングルサインオンを有効にする" id="enable-saml-sso">
     `Enable SAML single sign-on` の横にあるトグルをクリックします。セットアップ中にこの画面を何度か参照するため、このまま開いておいてください。
 
     <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="SAMLセットアップを開始" force />
   </Step>
 
-  <Step>
-    ### ID プロバイダーにアプリケーションを作成する
-
+  <Step title="ID プロバイダーにアプリケーションを作成する" id="create-idp-application">
     ID プロバイダー内にアプリケーションを作成し、`Enable SAML single sign-on` 画面に表示される値を ID プロバイダーの設定にコピーしてください。この手順の詳細については、以下の該当する ID プロバイダーの説明を参照してください。
 
     * [Okta SAML を設定する](#configure-okta-saml)
@@ -65,43 +59,33 @@ IdP での管理者権限、自身のドメインの DNS 設定に TXT レコー
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="ID プロバイダーのアプリケーションを作成する" force />
   </Step>
 
-  <Step>
-    ### メタデータURLをSAML設定に追加する
-
+  <Step title="メタデータURLをSAML設定に追加する" id="add-metadata-url">
     SAMLプロバイダから`Metadata URL`を取得します。ClickHouse Cloudに戻り、`Next: Provide metadata URL`をクリックして、URLをテキストボックスに貼り付けます。
 
     <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="メタデータURLを追加" force />
   </Step>
 
-  <Step>
-    ### ドメイン検証コードを取得する
-
+  <Step title="ドメイン検証コードを取得する" id="get-domain-verification-code">
     `Next: Verify your domains` をクリックします。テキストボックスにドメインを入力し、`Check domain` をクリックします。DNS プロバイダで TXT レコードに追加するためのランダムな検証コードが生成されます。
 
     <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="検証するドメインを追加" force />
   </Step>
 
-  <Step>
-    ### ドメインを確認する
-
+  <Step title="ドメインを確認する" id="verify-your-domain">
     DNSプロバイダーでTXTレコードを作成します。`TXT record name` を、DNSプロバイダー側のTXTレコードのNameフィールドにコピーします。`Value` を、DNSプロバイダー側のContentフィールドにコピーします。`Verify and Finish` をクリックして、手順を完了します。
 
     <Note>
-      DNSレコードの更新と確認が完了するまで、数分かかる場合があります。設定ページを離れても、最初からやり直すことなく、後で戻って手順を完了できます。
+      DNSレコードの更新と確認が完了するまで、数分かかる場合があります。設定ページを離れても、最初からやり直すことなく、後で戻って手順を完了できます。検証値は、最初に生成されてから48時間有効です。
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="ドメインを確認する" force />
   </Step>
 
-  <Step>
-    ### デフォルトのロールとセッションタイムアウトを更新
-
+  <Step title="デフォルトのロールとセッションタイムアウトを更新" id="update-defaults">
     SAML の設定が完了したら、すべてのユーザーにログイン時に割り当てるデフォルトのロールを設定し、セッションタイムアウトも調整できます。割り当て可能なシステムロールの一覧については、[Console のロールと権限](/ja/products/cloud/reference/security/console-roles)を参照してください。
   </Step>
 
-  <Step>
-    ### 管理者ユーザーを設定する
-
+  <Step title="管理者ユーザーを設定する" id="configure-your-admin-user">
     <Note>
       別の認証方式で設定されたユーザーは、組織内の管理者が削除するまで保持されます。
     </Note>
@@ -126,9 +110,7 @@ IdP での管理者権限、自身のドメインの DNS 設定に TXT レコー
     </Tip>
   </Step>
 
-  <Step>
-    ### 他の認証方式を削除する
-
+  <Step title="他の認証方式を削除する" id="remove-other-auth-methods">
     インテグレーションを完了するには、SAML 以外の方式を使用しているユーザーをすべて削除し、アクセスを identity provider connection に由来するユーザーのみに制限します。
   </Step>
 </Steps>
@@ -261,7 +243,7 @@ ClickHouse 組織ごとに、Okta で 2 つの App Integration を設定しま�
 Azure (Microsoft) SAML は、Azure Active Directory (AD) または Microsoft Entra と呼ばれることもあります。
 
 <Accordion title="Azure Enterprise Application を作成する">
-  組織ごとに異なるサインオン URL を使用して、1つのアプリケーションインテグレーションを設定します。
+  組織ごとに異なるサインオン URL を使用して、1 つのアプリケーションインテグレーションを設定します。
 
   1. Microsoft Entra 管理センターにサインインします。
 

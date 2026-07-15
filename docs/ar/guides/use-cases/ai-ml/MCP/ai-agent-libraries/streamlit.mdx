@@ -28,9 +28,7 @@ doc_type: 'guide'
 يمكنك اتباع الخطوات التالية لإنشاء تطبيق Streamlit الخاص بك.
 
 <Steps>
-  <Step>
-    ## تثبيت المكتبات
-
+  <Step title="تثبيت المكتبات" id="install-libraries">
     ثبّت المكتبات المطلوبة بتشغيل الأوامر التالية:
 
     ```bash
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## أنشئ ملف الأدوات المساعدة
-
+  <Step title="أنشئ ملف الأدوات المساعدة" id="create-utilities">
     أنشئ ملف `utils.py` يتضمن دالتين مساعدتين. الأولى دالة مولِّد غير متزامنة للتعامل مع
     استجابات التدفق من وكيل Agno. والثانية دالة لتطبيق الأنماط على تطبيق
     Streamlit:
@@ -67,9 +63,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## إعداد بيانات الاعتماد
-
+  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
     عيّن مفتاح واجهة برمجة تطبيقات Anthropic كمتغير بيئة:
 
     ```bash
@@ -84,9 +78,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## استيراد المكتبات المطلوبة
-
+  <Step title="استيراد المكتبات المطلوبة" id="import-libraries">
     ابدأ بإنشاء ملف تطبيق Streamlit الرئيسي (مثل `app.py`) ثم أضف تعليمات الاستيراد:
 
     ```python
@@ -110,9 +102,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## عرّف دالة البث الخاصة بـagent
-
+  <Step title="عرّف دالة البث الخاصة بـagent" id="define-agent-function">
     أضف الدالة الرئيسية لـagent التي تتصل بـ[بيئة SQL التفاعلية الخاصة بـClickHouse](https://sql.clickhouse.com/) وتبثّ الاستجابات:
 
     ```python
@@ -162,9 +152,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## أضف دوال غلاف متزامنة
-
+  <Step title="أضف دوال غلاف متزامنة" id="add-wrapper-functions">
     أضف دوال مساعدة للتعامل مع التدفق غير المتزامن في Streamlit:
 
     ```python
@@ -186,9 +174,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## أنشئ واجهة Streamlit
-
+  <Step title="أنشئ واجهة Streamlit" id="create-interface">
     أضف مكوّنات واجهة Streamlit ووظائف الدردشة:
 
     ```python
@@ -217,9 +203,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## تشغيل التطبيق
-
+  <Step title="تشغيل التطبيق" id="run-application">
     لبدء تطبيق الويب الخاص بـ ClickHouse AI Agent، يمكنك تشغيل
     الأمر التالي من الطرفية:
 

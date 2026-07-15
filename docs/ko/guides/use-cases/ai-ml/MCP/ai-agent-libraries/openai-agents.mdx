@@ -28,9 +28,7 @@ doc_type: 'guide'
 다음 단계는 Python REPL이나 스크립트에서 실행할 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행하여 필요한 라이브러리를 설치하십시오:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로 OpenAI API Key를 입력해야 합니다:
 
     ```python
@@ -54,9 +50,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCP Server 및 OpenAI 에이전트 초기화
-
+  <Step title="MCP Server 및 OpenAI 에이전트 초기화" id="initialize-mcp-and-agent">
     이제 ClickHouse MCP 서버가 ClickHouse SQL 플레이그라운드를 가리키도록 구성하고,
     OpenAI 에이전트를 초기화한 다음 질문을 입력하십시오:
 
@@ -66,9 +60,9 @@ doc_type: 'guide'
     import json
 
     def simple_render_chunk(chunk):
-        """중요한 이벤트만 필터링하는 간단한 버전"""
+        """Simple version that just filters important events"""
 
-        # 도구 호출
+        # Tool calls
         if (hasattr(chunk, 'type') and
                 chunk.type == 'run_item_stream_event'):
 
@@ -79,13 +73,13 @@ doc_type: 'guide'
 
             elif chunk.name == 'tool_output':
                 try:
-                    # 문자열 및 이미 파싱된 출력 모두 처리
+                    # Handle both string and already-parsed output
                     if isinstance(chunk.item.output, str):
                         output = json.loads(chunk.item.output)
                     else:
                         output = chunk.item.output
 
-                    # dict 및 list 포맷 모두 처리
+                    # Handle both dict and list formats
                     if isinstance(output, dict):
                         if output.get('type') == 'text':
                             text = output['text']
@@ -94,7 +88,7 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     elif isinstance(output, list) and len(output) > 0:
-                        # list 포맷 처리
+                        # Handle list format
                         first_item = output[0]
                         if isinstance(first_item, dict) and first_item.get('type') == 'text':
                             text = first_item['text']
@@ -103,11 +97,11 @@ doc_type: 'guide'
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     else:
-                        # 폴백 - 원시 출력을 그대로 출력
+                        # Fallback - just print the raw output
                         print(f"✅ Result: {str(output)[:100]}...")
 
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                    # 파싱 실패 시 원시 출력으로 폴백
+                    # Fallback to raw output if parsing fails
                     print(f"✅ Result: {str(chunk.item.output)[:100]}...")
 
             elif chunk.name == 'message_output_created':
@@ -118,7 +112,7 @@ doc_type: 'guide'
                 except (AttributeError, IndexError):
                     print(f"💬 Response: {str(chunk.item)[:100]}...")
 
-        # 스트리밍용 텍스트 델타
+        # Text deltas for streaming
         elif (hasattr(chunk, 'type') and
               chunk.type == 'raw_response_event' and
               hasattr(chunk, 'data') and

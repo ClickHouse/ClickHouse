@@ -134,6 +134,108 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 
 يحوّل دالة تجميع تُستخدم مع الجداول إلى دالة تجميع للمصفوفات، بحيث تُجمِّع العناصر المناظرة في المصفوفات وتُرجع مصفوفة من النتائج. على سبيل المثال، تُرجع `sumForEach` للمصفوفات `[1, 2]` و`[3, 4, 5]` و`[6, 7]` النتيجة `[10, 13, 5]` بعد جمع العناصر المناظرة معًا.
 
+<div id="-tuple">
+  ## -Tuple
+</div>
+
+يمكن إلحاق اللاحقة `-Tuple` بأي دالة تجميعية. تأخذ الدالة الناتجة وسيطًا واحدًا من النوع `Tuple` مقابل كل وسيط في الدالة التجميعية الأساسية، ويجب أن تحتوي جميع قيم `Tuple` على العدد نفسه من العناصر. ويُطبَّق التجميع بصورة مستقلة على موضع كل عنصر، بحيث يستقبل العنصر المناظر من كل `Tuple`، ويُرجع `Tuple` من النتائج.
+
+إذا كان `Tuple` الأول في الإدخال يحتوي على أسماء صريحة للعناصر، فستُحفَظ هذه الأسماء في النتيجة.
+
+الدوال التجميعية التي تتعامل مع قيم `NULL` بنفسها (`anyRespectNulls` و`anyLastRespectNulls` والمُعدِّل `RESPECT NULLS`) لا تدعم النوع `Nullable(Tuple(...))` كوسيط؛ استخدم عناصر `Nullable` بدلًا من ذلك.
+
+**الصياغة**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**الوسائط**
+
+* `tuple1[, tuple2, ...]` — أعمدة من النوع `Tuple`، عمود واحد لكل وسيط من وسائط دالة التجميع الأساسية، على أن يكون لها جميعًا العدد نفسه من العناصر. ويجب أن يكون كل عنصر من نوع تدعمه دالة التجميع الأساسية في موضع ذلك الوسيط.
+
+**القيم المُعادة**
+
+* قيمة `Tuple` تحتوي على نتيجة تطبيق دالة التجميع على كل عنصر بشكل مستقل.
+
+النوع: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**مثال**
+
+الاستعلام:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+النتيجة:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+عند الاستخدام مع `GROUP BY`:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+عند استخدامه مع دالة تجميع متعددة الوسائط: يمرّر كل وسيط `Tuple` وسيطًا واحدًا إلى الدالة الأساسية، وتُطابَق العناصر بحسب ترتيبها:
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1` و `b1` مرتبطان عكسيًا، بينما `a2` و `b2` يتناسبان طرديًا، لذا تكون النتيجة `(-1, 1)`.
+
+يمكن دمج `-Tuple` مع مُركِّبات أخرى مثل `-If`. على سبيل المثال: `sumTupleIf(tuple_column, cond)`.
+
 <div id="-distinct">
   ## -Distinct
 </div>

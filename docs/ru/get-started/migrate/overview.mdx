@@ -22,11 +22,14 @@ picture-in-picture"
 
 <br />
 
-Существует несколько вариантов переноса данных в ClickHouse Cloud, в зависимости от того, где они находятся сейчас:
+Существует несколько вариантов миграции в ClickHouse Cloud в зависимости от того, где сейчас находятся ваши данные:
 
-* [Из самоуправляемой версии в Cloud](/ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): используйте функцию `remoteSecure` для переноса данных
-* [Другая СУБД](/ru/get-started/migrate/other-methods/clickhouse-local-etl): используйте ETL-инструмент [clickhouse-local] вместе с подходящей табличной функцией ClickHouse для вашей текущей СУБД
-* [Откуда угодно!](/ru/get-started/migrate/other-methods/etl-tool-to-clickhouse): используйте один из множества популярных инструментов ETL/ELT, которые подключаются к самым разным источникам данных
-* [Объектное хранилище](/ru/get-started/migrate/other-methods/object-storage-to-clickhouse): легко выполняйте вставку данных из S3 в ClickHouse
-
-В примере [Миграция из Redshift](/ru/get-started/migrate/redshift/migration-guide) мы показываем три разных способа переноса данных в ClickHouse.
+| Путь миграции                                                            | Описание                                                                                                 |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| [PostgreSQL](/ru/get-started/migrate/postgres/index)                        | Перенос данных и запросов PostgreSQL в ClickHouse.                                                       |
+| [BigQuery](/ru/get-started/migrate/bigquery/index)                          | Перенос датасетов и рабочих нагрузок из BigQuery в ClickHouse Cloud.                                     |
+| [Snowflake](/ru/get-started/migrate/snowflake/overview)                     | Перенос данных Snowflake и SQL-нагрузок в ClickHouse Cloud.                                              |
+| [Elasticsearch](/ru/get-started/migrate/elastic/overview)                   | Перенос данных и запросов Elasticsearch в ClickHouse.                                                    |
+| [Redshift](/ru/get-started/migrate/redshift/overview)                       | Перенос данных и рабочих нагрузок Redshift в ClickHouse Cloud.                                           |
+| [OSS to Cloud](/ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)    | Перенос данных из самоуправляемого развертывания ClickHouse в ClickHouse Cloud.                          |
+| [Other methods](/ru/get-started/migrate/other-methods/clickhouse-local-etl) | Использование clickhouse-local, ETL-инструментов или объектного хранилища для других сценариев миграции. |

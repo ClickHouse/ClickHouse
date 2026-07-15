@@ -72,10 +72,10 @@ LIMIT 2
 </div>
 
 `s3://ch-docs-s3-bucket/people_10k/`의 S3 스토리지에 있는 테이블을 예로 들어 보겠습니다.
-테이블에 데이터를 삽입하려면 먼저 실험 기능을 활성화하세요:
+Delta Lake 쓰기는 기본적으로 비활성화된 베타 기능입니다. 다음과 같이 활성화하세요(`allow_delta_lake_writes`는 버전 26.7부터 사용할 수 있으며, 그 이전 버전에서는 `allow_experimental_delta_lake_writes`를 사용하세요):
 
 ```sql title="Query"
-SET allow_experimental_delta_lake_writes=1
+SET allow_delta_lake_writes=1
 ```
 
 다음과 같이 작성합니다:

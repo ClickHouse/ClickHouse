@@ -82,9 +82,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### 使用 Helm 部署 Odigos
-
+  <Step title="使用 Helm 部署 Odigos" id="deploy-odigos">
     Odigos Enterprise 需要本地部署许可证令牌。请在 shell 中将其导出：
 
     ```bash
@@ -114,9 +112,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
     ```
   </Step>
 
-  <Step>
-    #### 在 Odigos UI 中添加数据源
-
+  <Step title="在 Odigos UI 中添加数据源" id="add-sources">
     1. 为 Odigos UI 服务设置端口转发：
 
     ```bash
@@ -129,9 +125,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
     5. 在 Sources 列中确认工作负载已成功插桩。
   </Step>
 
-  <Step>
-    #### 在 Odigos UI 中将 ClickStack 添加为目标端
-
+  <Step title="在 Odigos UI 中将 ClickStack 添加为目标端" id="add-destination-ui">
     要将遥测数据发送到 ClickStack，请在 Odigos 中添加一个 **OTLP HTTP** 目标端。具体配置取决于 ClickStack 的部署方式。对于开源 ClickStack，OpenTelemetry collector 已内置，HyperDX UI 会自动为你生成摄取 key。对于托管 ClickStack，则需要你自行运行独立的 ClickStack collector，并在启动容器时自行选择身份验证令牌。
 
     <Tip>
@@ -193,9 +187,7 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
     </Tabs>
   </Step>
 
-  <Step>
-    #### 在 ClickStack 中验证遥测数据
-
+  <Step title="在 ClickStack 中验证遥测数据" id="verify-telemetry">
     1. 打开 ClickStack UI (HyperDX) ：
        * **开源 ClickStack**：例如，在一体化 image 中访问 `http://<host>:8080`。
        * **托管 ClickStack**：在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的 service，然后点击 **Launch ClickStack**。详情请参见[导航到 ClickStack UI](/zh/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud)。

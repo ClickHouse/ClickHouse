@@ -1,35 +1,31 @@
 ---
-description: 'Documentação sobre funções definidas pelo usuário (UDFs)'
+description: 'Documentação de funções definidas pelo usuário (UDFs)'
 sidebarTitle: 'UDF'
 slug: /sql-reference/functions/udf
 title: 'Funções definidas pelo usuário (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<div id="udfs-user-defined-functions">
-  # UDFs Funções definidas pelo usuário
-</div>
 
 O ClickHouse oferece suporte a vários tipos de funções definidas pelo usuário (UDFs):
 
 * [UDFs executáveis](#executable-user-defined-functions) iniciam um programa ou script externo (Python, Bash etc.) e enviam blocos de dados para ele via STDIN / STDOUT. Use-as para integrar código ou ferramentas existentes sem recompilar o ClickHouse. Elas têm maior sobrecarga por chamada em comparação com opções executadas no mesmo processo e são mais indicadas para lógicas mais pesadas ou quando é necessário um runtime diferente.
 * [UDFs SQL](#sql-user-defined-functions) são definidas com `CREATE FUNCTION` exclusivamente em SQL. Elas são inline/expandidas no plano da consulta (sem separação de processo), o que as torna leves e ideais para reutilizar lógica de expressão ou simplificar colunas calculadas complexas.
 * [UDFs WebAssembly experimentais](#webassembly-user-defined-functions) executam código compilado em WebAssembly dentro de um sandbox no processo do servidor. Elas oferecem menor sobrecarga por chamada do que executáveis externos, com melhor isolamento do que extensões nativas, o que as torna adequadas para algoritmos personalizados escritos em linguagens que podem gerar WASM (por exemplo, C/C++/Rust).
+* [UDFs executáveis experimentais baseadas em driver](#driver-based-executable-user-defined-functions) permitem que um &quot;driver&quot; fornecido pelo operador transforme um trecho de código fornecido em `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` em uma UDF executável no momento da criação da função (por exemplo, por meio de compilação). Elas se baseiam em UDFs executáveis e exigem configuração do driver no lado do servidor.
 
 <div id="executable-user-defined-functions">
   ## Funções executáveis definidas pelo usuário
 </div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  Este recurso está disponível em visualização privada no ClickHouse Cloud.
-  Entre em contato com o suporte do ClickHouse em https://clickhouse.cloud/support para obter acesso.
+  No ClickHouse Cloud, as UDFs executáveis estão em beta público e são criadas pela UI do console do Cloud. Consulte [Funções definidas pelo usuário no Cloud](/pt-BR/products/cloud/features/sql-console-features/user-defined-functions) para ver o fluxo de trabalho específico do Cloud.
 </Note>
 
 O ClickHouse pode chamar qualquer programa executável externo ou script para processar dados.
@@ -526,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 Consulte a documentação de [Funções definidas pelo usuário em WebAssembly](/pt-BR/reference/functions/regular-functions/wasm_udf) para mais detalhes.
+
+<div id="driver-based-executable-user-defined-functions">
+  ## Funções executáveis definidas pelo usuário baseadas em driver
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  Este é um recurso experimental que pode mudar de forma incompatível com versões anteriores em lançamentos futuros. Ative-o com a configuração de servidor [`allow_experimental_executable_udf_drivers`](/pt-BR/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers).
+</Note>
+
+Um *driver* é um adaptador fornecido pelo operador que transforma um trecho de código do usuário em uma [UDF executável](#executable-user-defined-functions). Quando uma função é criada com `ENGINE = DriverName(...)`, o ClickHouse executa o `create_command` do driver, passando a assinatura da função e o corpo do código; o driver compila ou processa esse corpo de outra forma e gera uma configuração de UDF executável, que o ClickHouse então armazena e carrega.
+
+Isso permite que os administradores ofereçam aos usuários uma forma segura e restrita de definir funções em uma linguagem arbitrária (por exemplo, C compilado dentro de um contêiner em sandbox) sem dar a eles acesso aos arquivos de configuração ou ao sistema de arquivos do servidor. O conjunto de drivers disponíveis é controlado inteiramente pelo operador.
+
+<div id="enabling-drivers">
+  ### Habilitando drivers
+</div>
+
+UDFs executáveis baseadas em driver ficam desabilitadas por padrão. Para habilitá-las:
+
+1. Defina o controle experimental na configuração do servidor:
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. Aponte `user_defined_executable_function_drivers_config` para um ou mais arquivos de configuração de driver (com suporte a glob) e, opcionalmente, defina [`dynamic_user_defined_executable_functions_path`](/pt-BR/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path), o diretório em que as configurações geradas de UDFs executáveis são armazenadas:
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+O registro de drivers é carregado na inicialização do servidor e atualizado em `SYSTEM RELOAD CONFIG`, portanto os drivers podem ser adicionados, alterados ou removidos sem reiniciar o servidor.
+
+<div id="driver-configuration">
+  ### Configuração do driver
+</div>
+
+Um driver é descrito por um arquivo XML (ou YAML) com um elemento `<driver>` no nível superior. Os campos a seguir são compatíveis:
+
+| Field              | Description                                                                                                                                                                | Required |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `name`             | O nome do driver, como usado em `CREATE FUNCTION ... ENGINE = <name>(...)`.                                                                                                | Sim      |
+| `create_command`   | Caminho para o programa invocado para criar uma UDF a partir de um trecho de código. Caminhos relativos são resolvidos em relação ao arquivo de configuração do driver.    | Sim      |
+| `drop_command`     | Caminho para o programa invocado quando uma função baseada neste driver é removida.                                                                                        | Não      |
+| `engine_arguments` | Declara os argumentos permitidos em `ENGINE = DriverName(...)`. Cada elemento filho é um nome de argumento; um filho `<required>true</required>` o marca como obrigatório. | Não      |
+| `env`              | Variáveis de ambiente exportadas ao invocar os comandos do driver.                                                                                                         | Não      |
+
+Exemplo de configuração do driver:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### Contrato de invocação do driver
+</div>
+
+Quando `CREATE FUNCTION` é executado, `create_command` é invocado com as variáveis `env` configuradas e os seguintes argumentos:
+
+* `--name <function_name>`
+* `--return <return_type>` (se uma cláusula `RETURNS` estiver presente)
+* `--args <signature>` (se uma cláusula `ARGUMENTS` estiver presente), em que a assinatura é a lista de argumentos declarados, por exemplo `x UInt8, y DateTime`
+* `--<key> <value>` para cada argumento de engine declarado fornecido em `ENGINE = DriverName(key = value)`
+
+O corpo do código do usuário (o texto após `AS`) é enviado para a entrada padrão do comando. O comando deve imprimir a configuração de uma UDF executável em sua saída padrão. O formato é detectado automaticamente: uma saída que começa com `<` é tratada como XML; caso contrário, como YAML. O nome da função definido na configuração gerada deve corresponder ao nome que está sendo criado. Se `create_command` encerrar com um status diferente de zero, a instrução falhará com uma exceção que inclui o código de saída e o erro padrão do driver.
+
+`drop_command`, quando presente, é invocado da mesma forma (sem um corpo de código no stdin) quando a função é removida.
+
+<div id="creating-a-function-with-a-driver">
+  ### Criando uma FUNCTION
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+O ClickHouse executa o `create_command` do driver, grava a configuração gerada em [`dynamic_user_defined_executable_functions_path`](/pt-BR/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) e o carregador existente de UDF executáveis a carrega. A função pode então ser chamada como qualquer outra função.
+
+<div id="dropping-a-function-with-a-driver">
+  ### Removendo uma função
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION` invoca o `drop_command` do driver (se houver), remove a configuração dinâmica gerada e o diretório de trabalho de cada função, recarrega o carregador de UDF executável e remove a consulta persistida.
+
+<div id="driver-persistence-and-restart">
+  ### Persistência e reinicialização
+</div>
+
+A consulta que deu origem é persistida como uma instrução `ATTACH FUNCTION ...` no diretório de objetos SQL definidos pelo usuário, para que a função sobreviva à reinicialização do servidor. Na inicialização, as configurações geradas em [`dynamic_user_defined_executable_functions_path`](/pt-BR/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) são carregadas diretamente, sem executar novamente o driver. Se uma instrução `ATTACH FUNCTION` persistida não tiver uma configuração gerada correspondente (por exemplo, se o diretório dinâmico tiver sido perdido), o driver será executado novamente para recriá-la.
+
+<div id="driver-limitations">
+  ### Limitações
+</div>
+
+* A funcionalidade é experimental e fica condicionada a `allow_experimental_executable_udf_drivers`.
+* Funções baseadas em driver não têm suporte com armazenamento replicado de funções definidas pelo usuário (`ON CLUSTER` e `<user_defined_zookeeper_path>`), porque apenas a consulta que deu origem é replicada, não os artefatos gerados.
+* O `RESTORE` de uma função baseada em driver a partir de backup preserva a consulta, mas não executa novamente o driver; a configuração gerada é materializada posteriormente pela recuperação na reinicialização.
+
+<div id="example-c-drivers">
+  ### Exemplo de drivers em C
+</div>
+
+A árvore de código-fonte inclui drivers de prova de conceito em `programs/server/user_defined_executable_function_drivers_config.d/` que compilam e executam um corpo de função em C. Eles são exemplos e **não são instalados pelos pacotes**:
+
+* `DockerC` - compila e executa o código dentro de contêineres Docker em sandbox (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`, além de limites de memória/CPU/PID), gerando uma UDF `executable_pool`.
+* `GVisorC` - uma variante que executa o binário compilado no runtime `runsc` do [gVisor](https://gvisor.dev/).
+* `UnsafeC` - compila e executa o código diretamente no host, sem sandbox. Como o nome indica, não oferece isolamento e se destina apenas a ambientes confiáveis e testes.
+
+Esses drivers de exemplo servem como ponto de partida; revise e reforce o sandboxing para o seu ambiente antes de expô-los a usuários não confiáveis.
 
 <div id="related-content">
   ## Conteúdo relacionado

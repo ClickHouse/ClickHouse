@@ -18,50 +18,46 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 <CommunityMaintainedBadge />
 
 <div id="start-or-download-dbvisualizer">
-  ## ابدأ باستخدام DbVisualizer أو نزّله
+  ## تشغيل DbVisualizer أو تنزيله
 </div>
 
-يتوفر DbVisualizer على الرابط https://www.dbvis.com/download/
+DbVisualizer متاح على https://www.dbvis.com/download/
 
-<div id="1-gather-your-connection-details">
-  ## 1. اجمع بيانات الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="إدارة برامج تشغيل JDBC المضمّنة" id="2-built-in-jdbc-driver-management">
+    يتضمن DbVisualizer أحدث برامج تشغيل JDBC الخاصة بـ ClickHouse. كما يوفّر إدارة مدمجة بالكامل لبرامج تشغيل JDBC، مع الإشارة إلى أحدث الإصدارات وكذلك الإصدارات السابقة من برامج التشغيل.
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. الإدارة المضمّنة لبرنامج تشغيل JDBC
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="واجهة مدير برامج التشغيل في DbVisualizer تعرض تهيئة ClickHouse JDBC driver" />
+  </Step>
 
-يتضمن DbVisualizer أحدث برامج تشغيل JDBC الخاصة بـ ClickHouse. كما يوفّر إدارة مدمجة وكاملة لبرامج تشغيل JDBC، مع الإشارة إلى أحدث الإصدارات وكذلك الإصدارات الأقدم من برامج التشغيل.
+  <Step title="الاتصال بـ ClickHouse" id="3-connect-to-clickhouse">
+    للاتصال بقاعدة بيانات باستخدام DbVisualizer، يجب أولاً إنشاء اتصال بقاعدة البيانات وإعداده.
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="واجهة مدير برامج التشغيل في DbVisualizer تعرض إعداد ClickHouse برنامج تشغيل JDBC" />
+    1. أنشئ اتصالًا جديدًا من **Database-&gt;Create Database Connection** وحدد برنامج التشغيل لقاعدة بياناتك من القائمة المنبثقة.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. الاتصال بـ ClickHouse
-</div>
+    2. سيتم فتح علامة تبويب **Object View** للاتصال الجديد.
 
-للاتصال بقاعدة بيانات باستخدام DbVisualizer، يجب أولاً إنشاء اتصال بقاعدة البيانات وإعداده.
+    3. أدخل اسمًا للاتصال في حقل **Name**، ويمكنك اختياريًا إدخال وصف للاتصال في حقل **Notes**.
 
-1. أنشئ اتصالًا جديدًا من **Database-&gt;Create Database Connection** وحدد برنامج التشغيل لقاعدة بياناتك من القائمة المنبثقة.
+    4. اترك **Database Type** على **Auto Detect**.
 
-2. سيتم فتح علامة تبويب **Object View** للاتصال الجديد.
+    5. إذا كان برنامج التشغيل المحدد في **Driver Type** مميزًا بعلامة اختيار خضراء، فهو جاهز للاستخدام. وإذا لم يكن مميزًا بعلامة اختيار خضراء، فقد تحتاج إلى تهيئة برنامج التشغيل في **Driver Manager**.
 
-3. أدخل اسمًا للاتصال في حقل **Name**، ويمكنك اختياريًا إدخال وصف للاتصال في حقل **Notes**.
+    6. أدخل معلومات خادم قاعدة البيانات في الحقول المتبقية.
 
-4. اترك **Database Type** على **Auto Detect**.
+    7. تحقق من إمكانية إنشاء اتصال عبر الشبكة إلى العنوان والمنفذ المحددين بالنقر على زر **Ping Server**.
 
-5. إذا كان برنامج التشغيل المحدد في **Driver Type** مميزًا بعلامة اختيار خضراء، فهو جاهز للاستخدام. وإذا لم يكن مميزًا بعلامة اختيار خضراء، فقد تحتاج إلى تهيئة برنامج التشغيل في **Driver Manager**.
+    8. إذا أظهرت نتيجة **Ping Server** أنه يمكن الوصول إلى الخادم، فانقر على **Connect** للاتصال بخادم قاعدة البيانات.
 
-6. أدخل معلومات خادم قاعدة البيانات في الحقول المتبقية.
-
-7. تحقق من إمكانية إنشاء اتصال عبر الشبكة إلى العنوان والمنفذ المحددين بالنقر على زر **Ping Server**.
-
-8. إذا أظهرت نتيجة **Ping Server** أنه يمكن الوصول إلى الخادم، فانقر على **Connect** للاتصال بخادم قاعدة البيانات.
-
-<Tip>
-راجع [إصلاح مشكلات الاتصال](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) للاطلاع على بعض النصائح إذا واجهت مشكلات في الاتصال بقاعدة البيانات.
-</Tip>
+    <Tip>
+      راجع [إصلاح مشكلات الاتصال](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) للاطلاع على بعض النصائح إذا واجهت مشكلات في الاتصال بقاعدة البيانات.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## تعرّف على المزيد

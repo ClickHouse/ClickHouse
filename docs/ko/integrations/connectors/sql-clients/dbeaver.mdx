@@ -1,14 +1,14 @@
 ---
 slug: /integrations/dbeaver
 sidebarTitle: 'DBeaver'
-description: 'DBeaver는 멀티 플랫폼 데이터베이스 도구입니다.'
-title: 'DBeaver를 ClickHouse에 연결'
+description: 'DBeaver는 여러 플랫폼에서 사용할 수 있는 데이터베이스 도구입니다.'
+title: 'DBeaver를 ClickHouse에 연결하기'
 doc_type: 'guide'
 integration:
   - support_level: 'partner'
   - category: 'sql_client'
   - website: 'https://github.com/dbeaver/dbeaver'
-keywords: ['DBeaver', '데이터베이스 관리', 'SQL 클라이언트', 'JDBC 연결', '멀티 플랫폼']
+keywords: ['DBeaver', '데이터베이스 관리', 'SQL 클라이언트', 'JDBC 연결', '다중 플랫폼']
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
@@ -17,75 +17,69 @@ import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx"
 
 <PartnerBadge />
 
-DBeaver는 여러 에디션으로 제공됩니다. 이 가이드에서는 [DBeaver Community](https://dbeaver.io/)를 사용합니다. 다양한 에디션과 기능은 [여기](https://dbeaver.com/edition/)에서 확인하십시오. DBeaver는 JDBC를 사용해 ClickHouse에 연결합니다.
+DBeaver는 여러 가지 에디션으로 제공됩니다. 이 가이드에서는 [DBeaver Community](https://dbeaver.io/)를 사용합니다. 다양한 에디션과 기능은 [여기](https://dbeaver.com/edition/)에서 확인할 수 있습니다. DBeaver는 JDBC를 사용해 ClickHouse에 연결합니다.
 
 <Note>
-  ClickHouse의 `Nullable` 컬럼 지원이 개선된 DBeaver 23.1.0 이상 버전을 사용하십시오.
+  ClickHouse의 `Nullable` 컬럼 지원이 개선된 DBeaver 23.1.0 이상을 사용하십시오.
 </Note>
 
-<div id="1-gather-your-clickhouse-details">
-  ## 1. ClickHouse 연결 정보 수집
-</div>
+<Steps>
+  <Step title="ClickHouse 연결 정보 수집" id="1-gather-your-clickhouse-details">
+    DBeaver는 HTTP(S) 상의 JDBC를 사용해 ClickHouse에 연결하므로 다음 정보가 필요합니다:
 
-DBeaver는 HTTP(S) 기반 JDBC를 사용해 ClickHouse에 연결하므로 다음 정보가 필요합니다.
+    * 엔드포인트
+    * 포트 번호
+    * 사용자 이름
+    * 비밀번호
+  </Step>
 
-* endpoint
-* 포트 번호
-* 사용자 이름
-* 비밀번호
+  <Step title="DBeaver 다운로드" id="2-download-dbeaver">
+    DBeaver는 https://dbeaver.io/download/ 에서 다운로드할 수 있습니다.
+  </Step>
 
-<div id="2-download-dbeaver">
-  ## 2. DBeaver 다운로드
-</div>
+  <Step title="데이터베이스 추가" id="3-add-a-database">
+    * **Database &gt; New Database Connection** 메뉴 또는 **Database Navigator**의 **New Database Connection** 아이콘을 사용해 **Connect to a database** 대화 상자를 엽니다:
 
-DBeaver는 https://dbeaver.io/download/ 에서 다운로드할 수 있습니다.
+    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="새 데이터베이스 추가" />
 
-<div id="3-add-a-database">
-  ## 3. 데이터베이스 추가
-</div>
+    * **Analytical**을 선택한 다음 **ClickHouse**를 선택합니다:
 
-* **Database &gt; New Database Connection** 메뉴 또는 **Database Navigator**의 **New Database Connection** 아이콘을 사용해 **Connect to a database** 대화 상자를 엽니다:
+    * JDBC URL을 구성합니다. **Main** 탭에서 Host, Port, Username, Password, Database를 설정합니다:
 
-<Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="새 데이터베이스 추가" />
+    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="호스트명, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름 설정" />
 
-* **Analytical**을 선택한 다음 **ClickHouse**를 선택합니다:
+    * 기본적으로 **SSL &gt; Use SSL** 속성은 설정되지 않습니다. ClickHouse Cloud 또는 HTTP 포트에서 SSL이 필요한 server에 연결하는 경우 **SSL &gt; Use SSL**을 켭니다:
 
-* JDBC URL을 구성합니다. **Main** 탭에서 Host, Port, Username, Password, Database를 설정합니다:
+    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="필요한 경우 SSL 활성화" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="호스트명, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름 설정" />
+    * 연결을 테스트합니다:
 
-* 기본적으로 **SSL &gt; Use SSL** 속성은 설정되지 않습니다. ClickHouse Cloud 또는 HTTP 포트에서 SSL이 필요한 server에 연결하는 경우 **SSL &gt; Use SSL**을 켭니다:
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="연결 테스트" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="필요한 경우 SSL 활성화" />
+    DBeaver가 ClickHouse 드라이버가 설치되지 않은 것을 감지하면 드라이버를 다운로드하도록 안내합니다:
 
-* 연결을 테스트합니다:
+    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="ClickHouse 드라이버 다운로드" />
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="연결 테스트" />
+    * 드라이버를 다운로드한 후 연결을 다시 **Test**합니다:
 
-DBeaver가 ClickHouse 드라이버가 설치되지 않은 것을 감지하면 드라이버를 다운로드하도록 안내합니다:
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="연결 테스트" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="ClickHouse 드라이버 다운로드" />
+  <Step title="ClickHouse 쿼리" id="4-query-clickhouse">
+    쿼리 편집기를 열고 쿼리를 실행합니다.
 
-* 드라이버를 다운로드한 후 연결을 다시 **Test**합니다:
+    * 연결을 마우스 오른쪽 버튼으로 클릭하고 **SQL Editor &gt; Open SQL Script**를 선택해 쿼리 편집기를 엽니다:
 
-<Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="연결 테스트" />
+    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="SQL 편집기 열기" />
 
-<div id="4-query-clickhouse">
-  ## 4. ClickHouse에서 쿼리하기
-</div>
+    * `system.query_log`에 대한 예시 쿼리:
 
-쿼리 편집기를 열고 쿼리를 실행합니다.
-
-* 연결을 마우스 오른쪽 버튼으로 클릭한 다음 **SQL Editor &gt; Open SQL Script**를 선택하여 쿼리 편집기를 엽니다.
-
-<Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="SQL Editor 열기" />
-
-* `system.query_log`에 대한 예시 쿼리:
-
-<Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="예시 쿼리" />
+    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="예시 쿼리" />
+  </Step>
+</Steps>
 
 <div id="next-steps">
   ## 다음 단계
 </div>
 
-DBeaver의 기능은 [DBeaver 위키](https://github.com/dbeaver/dbeaver/wiki)에서, ClickHouse의 기능은 [ClickHouse 문서](/ko/)에서 확인하십시오.
+DBeaver의 기능에 대해 알아보려면 [DBeaver wiki](https://github.com/dbeaver/dbeaver/wiki)를 참조하고, ClickHouse의 기능에 대해 알아보려면 [ClickHouse documentation](/ko/)을 참조하십시오.

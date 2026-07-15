@@ -13,16 +13,12 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
 > `deb` 또는 `rpm` 패키지를 설치할 수 없는 모든 Linux 배포판에서는 공식적으로 미리 컴파일된 `tgz` 아카이브를 사용하는 것이 좋습니다.
 
 <Steps>
-  <Step>
-    ## 권장 사항 검토
-
+  <Step title="권장 사항 검토" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 최신 안정 버전 다운로드 및 설치
-
-    필요한 버전은 리포지토리 https://packages.clickhouse.com/tgz/ 에서 `curl` 또는 `wget`을 사용해 다운로드할 수 있습니다.
+  <Step title="최신 안정 버전 다운로드 및 설치" id="install-latest-stable">
+    필요한 버전은 리포지토리 [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/) 에서 `curl` 또는 `wget`을 사용해 다운로드할 수 있습니다.
     그런 다음 다운로드한 아카이브를 압축 해제하고 설치 스크립트로 설치합니다.
 
     아래는 최신 안정 버전을 설치하는 예시입니다.
@@ -34,9 +30,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 최신 ClickHouse 버전 가져오기
-
+  <Step title="최신 ClickHouse 버전 가져오기" id="get-latest-version">
     GitHub에서 최신 ClickHouse 버전을 가져와 `LATEST_VERSION` 변수에 저장합니다.
 
     ```bash
@@ -46,9 +40,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 시스템 아키텍처 감지
-
+  <Step title="시스템 아키텍처 감지" id="detect-system-architecture">
     시스템 아키텍처를 감지하고 그에 따라 ARCH 변수를 설정합니다.
 
     ```bash
@@ -60,9 +52,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 각 ClickHouse 구성 요소의 tarball 다운로드
-
+  <Step title="각 ClickHouse 구성 요소의 tarball 다운로드" id="download-tarballs">
     각 ClickHouse 구성 요소의 tarball을 다운로드합니다. 이 루프는 먼저 아키텍처별
     패키지를 시도한 다음, 없으면 일반 패키지를 사용합니다.
 
@@ -75,9 +65,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 패키지 압축 해제 및 설치
-
+  <Step title="패키지 압축 해제 및 설치" id="extract-and-install">
     아래 명령을 실행하여 다음 패키지를 압축 해제하고 설치합니다.
 
     * `clickhouse-common-static`

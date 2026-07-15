@@ -1,0 +1,178 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: 'デモデイズ - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: '2026-07-02 の ClickStackデモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="notebook-citations">
+  ## ノートブック の引用
+</div>
+
+*デモ: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ノートブック のタイル (セル) に、分岐をまたいでいても直接リンクできるようになりました。カスタム Markdown では、絶対リンクと相対ハッシュリンクのどちらも使えるため、主張の裏付けとなる正確な根拠を相手に示しやすくなります。
+
+より大きな変更はエージェント側です。ノートブック で生成される要約には、その根拠となったタイルへの引用が含まれるようになったため、読者は要約をそのまま信じるのではなく、元データへ直接たどれるようになりました。
+
+既存の ノートブック を開いたときの挙動も変更しました。要約タイルは、折りたたまれた状態ではなく、既定で展開された状態で開きます。通常は、後から見返すときはこちらのほうが便利です。
+
+<div id="otel-metrics-table-primary-key-optimization">
+  ## OTel メトリクス テーブルの主キー最適化
+</div>
+
+*デモ: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OTel メトリクス テーブルの主キーを検証し、縮小する方法を詳しく解説します。ここで有用な指標は、granule あたりの主キーバイト数です。これは主キー全体のサイズを granule 数で割ったもので、テーブルが大きいほど granule が自然に増える点を織り込めるため、公平な比較ができます。
+
+元のスキーマでは、granule あたり約 148 バイトでした。新しいスキーマでは 17 バイト前後となり、主キーサイズは約 9 分の 1 になっています。production 環境でのメモリ使用量も、同程度に削減されています。
+
+スキーマ変更自体は比較的小規模です。`MetricName` は `LowCardinality` を使うようになりましたが、極端に多くの異なるメトリクス名を扱わない限り問題ありません。そうした場合でも、懸念になるのはごく限られたケースだけです。タイムスタンプはナノ秒精度の `DateTime64` から、秒精度のシンプルな `DateTime` に変更されましたが、メトリクスにはそれで十分です。必要であれば、自分でスキーマを変更してナノ秒精度を維持することもできます。
+
+また、time 用に明示的な min/max 索引を追加し、主キー内の attributes マップ全体をハッシュに置き換えました。同じ変更はすべてのメトリクス テーブルのスキーマに適用されており、OTel collector にもアップストリームしています。
+
+**関連 PR:** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) fix: メモリ使用量を改善するため metrics PK を変更
+
+<div id="trend-and-spark-lines-behind-numbers">
+  ## 数値の背後に表示するトレンド/スパークライン
+</div>
+
+*デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+数値タイルで、値の背後にトレンドラインやエリアチャートを表示できるようになりました。これは Grafana で長く人気のある機能でしたが、今回 ClickStack にも追加されました。
+
+タイルの表示設定から有効にできます。デフォルトでは背景グラフは表示されず、ほかの選択肢として線と面を選べます。必要な設定はごくわずかですが、ダッシュボードの完成度が目に見えて向上します。
+
+現時点では、背景グラフは宣言型の数値タイルでのみ機能するため、まだ custom SQL は指定できません。グラフに何を描画するかをもっと細かく制御したいというユーザーの声を受けて、今後の対応として検討しています。
+
+**関連PR:** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): 数値タイルに背景トレンドスパークラインを追加, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): 数値タイルの背景スパークラインを表示値に一致させる, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): 数値タイルから共通の Sparkline primitive を抽出
+
+<div id="table-visual-improvements">
+  ## テーブル表示の改善
+</div>
+
+*デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+テーブルタイルには、可読性を高めるための改善がいくつか加えられました。いずれも、具体的なユーザーフィードバックに基づくものです。表示設定から行の背景を交互に表示できるようになり、列数が多いテーブルや情報量の多いテーブルでも、かなり見やすくなりました。さらに、ヘッダー行とその下のデータを区切る境界線も、よりすっきりと見やすくなっています。
+
+各カラムに対して、数値タイルと同じスタイル設定を使って色を付けられるようになりました。デフォルトの色を1つ設定することも、セルごとに評価されるしきい値を追加することもできます。これにより、エラーは赤、通常の値は緑のまま表示するといったことが可能です。
+
+どれも小さな変更ですが、その一つひとつが、実際のユーザーから寄せられた「このテーブルでこれができたらいいのに」という声から生まれたものです。
+
+**関連PR:** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): table tile header separator and optional alternate row background, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): per-column color on table tiles
+
+<div id="grafana-plugin-improvements">
+  ## Grafana プラグインの改善
+</div>
+
+*デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack Grafana プラグインに近日追加予定の機能をまとめて紹介します。
+
+データソース設定で、従来のマルチデータベース構成に加えて単一テーブルモードもサポートされるようになりました。たとえば本番環境のログ用テーブルのように 1 つのテーブルを指定すると、クエリエディタは探索向けに設計されたコンパクトなビルダーに切り替わります。service name などのフィールドに対するクイックフィルターに加え、include / exclude フィルタリングも利用でき、必要に応じて SQL も引き続き使えます。
+
+また、OTel の logs と traces 向けに、使い慣れた drill-down パターンを採用した既製の ダッシュボード も提供します。logs dashboard には、サービスごとの概要、ボリュームチャート、ログ詳細が含まれます。Trace Explore では、サービスビュー、レイテンシのヒートマップ、オペレーションの内訳を確認できます。さらに、logs と traces をまとめて表示する統合サービス dashboard もあり、span 名ごとにグループ化されるため、ツールを行き来せずに 1 つのサービスを調査できます。
+
+これらの ダッシュボード はすべて、default の スキーマ ですぐに利用できます。新規ユーザーはすぐに使い始められ、その後は自分用の ダッシュボード を作成する際の出発点として活用できます。
+
+さらに、ウィザード形式の新しいビルダーも 2 つあります。Variable builder では custom SQL を書かずにカラムの値を選択できます。たとえば、ポッド 名から Variable を作成し、返される値をプレビューできます。
+
+annotation builder は、選択したフィールドに対する変更検出クエリから annotations を生成します。サービスの version 属性 を指定すると、その値が変わるたびにデプロイメントマーカーを追加でき、SQL を自分で書く必要はありません。
+
+<div id="sidebar-and-span-view-improvements">
+  ## サイドバーとスパン表示の改善
+</div>
+
+*デモ担当 [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ナビゲーションとトレース表示まわりに、多数の改善を加えました。
+
+サイドバーは、検索ページで作業中も開いたまま固定できるようになり、閉じることなくスクロールして他の行を選択できます。ナビゲーションでは現在のタブのコンテキストも保持されます。戻るボタンはパンくずリストを使って、単にパネルを閉じるのではなく、直前にいた場所へ正確に戻ります。
+
+キーボードショートカットのポップアップも追加され、利用可能なキーバインドを簡単に確認できます。関連するトレースがあるログには、そのトレースへ直接移動できるチップが表示されるようになりました。
+
+スパン表示には、特に目に見える改善が加えられています。スパンはサービス名ごとに色分けされ、サービスが切り替わるたびに別の色が使われます。また、新しいミニマップにより、大規模なトレースも灰色のバーが並ぶだけの表示よりずっと読みやすくなりました。時間範囲をドラッグしてズームインし、クリックで表示をリセットできます。さらに、新しい履歴スタックにより、トレース間を移動して元の位置に戻ることもできます。
+
+選択したスパンでは展開・折りたたみの操作も改善され、子要素をひとつずつ閉じる手間が省けます。また、非常に短いスパンにも最小表示幅を持たせる、コミュニティ提供の修正も取り込みました。たとえば数マイクロ秒しか続かないスパンでも、タイムライン上で見える状態を保てるため、最大までズームインする必要がありません。
+
+**関連PR:** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: trace タイムラインのミニマップを追加
+
+<div id="metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp">
+  ## MCP におけるメトリクスクエリ、ダッシュボード評価、アラート用エラー報告の改善
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+今回のサイクルでは、MCPサーバーに関する 3 つの改善がまとめて導入されました。
+
+MCP では、基盤データにアクセスするためだけにダッシュボードを経由しなくても、ノートブックからのものを含め、直接メトリクスクエリを実行できるようになりました。
+
+また、ダッシュボード構築のためのエンドツーエンド eval も追加しました。現在はおよそ 75% のケースで通過しており、安易に攻略されないよう distractor を継続的に追加しています。実運用で MCP が壊れたダッシュボードを作成した場合、その失敗を eval セットに戻せます。これにより、Raw SQL ソースが誤ったクエリを生成するといった問題を、繰り返し発生する障害になる前に検出できるようになるはずです。
+
+ツールのエラーは、1 つの汎用的なバケットにまとめられるのではなく、カテゴリごとに分類されるようになりました。ユーザーによる不正な SQL クエリは、データベースのタイムアウトのような内部障害とは分けて処理されます。これにより、MCP の健全性に関して、より有用なアラートを構築するために必要な区別が可能になります。
+
+**関連 PR:** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): first-class metric source support, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): classify MCP tool errors by category for alerting
+
+<div id="otel-collector-batch-processor-updates">
+  ## OTel collector batch processor の更新
+</div>
+
+*[@SpencerTorres](https://github.com/SpencerTorres) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OpenTelemetry では、Batching を独立した batch processor から exporter の設定へ移行しています。ClickStack collector は以前から両方の方式をサポートしていたため、コードの変更は不要でした。そのため、今回の対応はドキュメント更新のみとなりました。
+
+従来のモデルでは、専用の batch processor が pipeline 内に配置され、行をバッファリングしてからエクスポーターに渡していました。この batch processor には、バッチサイズ、最大バッチサイズ、timeout の設定が個別にありました。
+
+OpenTelemetry が標準化を進めている新しいモデルでは、batcher はプロセッサ chain に置くのではなく、エクスポーター側に配置されます。最小・最大バッチサイズや queue サイズなど、従来の概念の多くはそのまま引き継がれています。さらに、exporter ベースの設定では、blocking 動作、バイト単位の制限、永続化もサポートされています。これらはいずれも従来の batch processor では利用できませんでした。
+
+現在のドキュメントでは exporter ベースの設定を推奨しており、既存の batch processor 設定を移行する方法も説明しています。また、多くのデプロイメントに対する妥当なデフォルトとして、短い timeout と最小 5,000 行を推奨しています。Batching 設定の不備は、ClickHouse を初めて使う際の体験が悪くなる原因として、今も特に多く見られます。
+
+<div id="surrounding-context-for-arbitrary-attributes">
+  ## 任意の属性の周辺コンテキスト
+</div>
+
+*デモ: [@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+周辺コンテキストを使うと、ログ行を開いて、その前後でほかに何が起きていたかを確認できます。デフォルトでは、このコンテキストはサービス、ポッド、またはノードごとにグループ化されます。これはほとんどの OTel スキーマのデプロイメントで有効ですが、カスタムスキーマを使用している場合は、自分の属性を基準にこのビューを構築する明確な方法がありませんでした。
+
+これで、OTel スキーマ由来かカスタムスキーマ由来かにかかわらず、ログ行上の任意の属性をコンテキストビューの基準として使えるようになりました。従来どおりサービス、ポッド、ノードの選択肢も利用できますが、テレメトリー SDK のバージョンや、そのログ行上のほかの任意のフィールドでグループ化することもできます。また、選択はいつでも解除して最初からやり直せます。
+
+**関連 PR:** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) fix: surrounding context で service name expression とクイック属性フィルターをサポート

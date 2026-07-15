@@ -25,9 +25,7 @@ description: "يوضح هذا الدليل كيفية تثبيت ClickHouse Priv
 ***
 
 <Steps>
-  <Step>
-    ## الخطوة 1: نسخ صور الحاويات
-
+  <Step title="الخطوة 1: نسخ صور الحاويات" id="step-1-copy-container-images">
     استخدم skopeo لنسخ صورة Private API ومخطط Helm إلى ECR الخاص بك.
 
     ```ini
@@ -53,9 +51,7 @@ description: "يوضح هذا الدليل كيفية تثبيت ClickHouse Priv
     ***
   </Step>
 
-  <Step>
-    ## الخطوة 2: التثبيت عبر Helm
-
+  <Step title="الخطوة 2: التثبيت عبر Helm" id="step-2-install-via-helm">
     يُثبَّت Private API في مساحة أسماء مخصصة.
 
     ```text
@@ -80,9 +76,7 @@ description: "يوضح هذا الدليل كيفية تثبيت ClickHouse Priv
     ***
   </Step>
 
-  <Step>
-    ## الخطوة 3: تهيئة المصادقة
-
+  <Step title="الخطوة 3: تهيئة المصادقة" id="step-3-configure-authentication">
     تكون المصادقة الأساسية معطّلة افتراضيًا. في بيئات الإنتاج، فعّلها من خلال ضبط قيم Helm التالية:
 
     * `api.basicAuth.enabled=true`
@@ -94,9 +88,7 @@ description: "يوضح هذا الدليل كيفية تثبيت ClickHouse Priv
     ***
   </Step>
 
-  <Step>
-    ## الخطوة 4: التحقق من التثبيت
-
+  <Step title="الخطوة 4: التحقق من التثبيت" id="step-4-verify-installation">
     ### تحقق من الجراب
 
     ```bash

@@ -497,10 +497,16 @@ Estos códecs están diseñados para hacer que la compresión sea más eficaz ap
 
 <ExperimentalBadge />
 
-`ALP()` — Compresión adaptativa sin pérdidas para datos de coma flotante basada en el escalado decimal. ALP intenta representar cada valor como un entero escalado exacto mediante potencias de diez y, a continuación, comprime los enteros resultantes con Frame-of-Reference y empaquetado de bits. Los valores que no pueden representarse exactamente se almacenan como excepciones en bruto. Funciona mejor con números derivados de valores decimales (p. ej., mediciones, moneda). Es compatible con `Float32` y `Float64`. Para obtener más información, consulte [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Compresión adaptativa sin pérdida para datos de coma flotante. Compatible con `Float32` y `Float64`. Para más detalles, consulta [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+El códec acepta un argumento opcional de variante:
+
+* `ALP()` o `ALP(AUTO)` (predeterminado) — Usa STD y recurre a RD en función del tamaño comprimido estimado.
+* `ALP(STD)` — Variante estándar de ALP. Representa cada valor como un entero escalado exacto usando potencias decimales y, después, comprime los enteros resultantes con Frame-of-Reference y empaquetado de bits. Los valores que no pueden representarse se almacenan como excepciones sin codificar. Funciona mejor con números procedentes de valores decimales (p. ej., mediciones, precios).
+* `ALP(RD)` — Variante Real Doubles. Reinterpreta el patrón de bits de cada valor y lo divide en una parte alta (signo + exponente + bits superiores de la mantisa) y una parte baja. Las partes altas se codifican mediante diccionario (hasta 8 entradas) y las partes bajas se empaquetan en bits. Funciona mejor cuando muchos valores comparten los mismos bits altos.
 
 <Note>
-  Este códec es experimental y requiere `SET allow_experimental_codecs = 1` para poder utilizarse.
+  Este códec es experimental y requiere `SET allow_experimental_codecs = 1` para poder usarlo.
 </Note>
 
 <div id="fpc">

@@ -105,13 +105,15 @@ Los usuarios JWT se diferencian de los usuarios habituales de ClickHouse en vari
   ### Identidad y nombres
 </div>
 
-Cada usuario de JWT recibe un UUID determinista calculado a partir de las claims `iss`, `sub` y `aud`. Este UUID es **estable** entre inicios de sesión. Un usuario que inicia sesión varias veces con distintos tokens (pero con el mismo emisor, sujeto y audiencia) siempre obtiene el mismo UUID.
+Cada usuario JWT recibe un UUID determinista calculado a partir de las claims `iss`, `sub` y `aud`. Este UUID es **estable** entre inicios de sesión. Un usuario que inicia sesión varias veces con distintos tokens (pero con el mismo emisor, sujeto y audiencia) siempre obtiene el mismo UUID.
 
 Sin embargo, el nombre de usuario es **volátil**. Se construye así:
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+El `<claims_hash>` es un hash derivado de las claims `iss`, `sub` y `aud`, junto con las claims `clickhouse:roles` y `clickhouse:grants`. Las claims `iss` y `aud` participan **solo** a través de este hash; ya no se incorporan directamente en el prefijo visible del nombre de usuario. Esto mantiene el nombre compacto y legible cuando `iss`/`aud` son URL de IdP largas y opacas (por ejemplo, Microsoft Entra u Okta), al tiempo que sigue garantizando que las tuplas `(iss, sub, aud)` distintas y los conjuntos distintos de `clickhouse:roles` / `clickhouse:grants` se asignen a nombres distintos y estables. Las claims que no intervienen en el hash (por ejemplo `iat`, `exp`, `nbf` o claims personalizadas no relacionadas) no cambian el nombre de usuario.
 
 La parte `<claims_hash>` cambia cada vez que cambian las claims `clickhouse:roles` o `clickhouse:grants`. Esto significa que los tokens con distintos conjuntos de roles o permisos generan nombres de usuario diferentes incluso para la misma identidad.
 
@@ -150,14 +152,14 @@ Como el UUID es estable, puede asignar perfiles de configuración, cuotas, polí
 Haga referencia al usuario mediante su nombre de usuario actual:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>
   El nombre de usuario y el UUID de una identidad determinada pueden encontrarse en las columnas `name` e `id` de `system.users` mientras el usuario esté activo.
 </Note>
 
-Ten en cuenta que `ALTER USER` no funciona directamente con los usuarios JWT, ya que son de solo lectura. Para asignar perfiles de configuración, quotas o políticas, usa las sentencias `ALTER SETTINGS PROFILE`, `ALTER QUOTA` o `ALTER ROW POLICY`, como se muestra arriba.
+Ten en cuenta que `ALTER USER` no funciona directamente con los usuarios JWT, ya que son de solo lectura. Para asignar perfiles de configuración, cuotas o políticas, usa las sentencias `ALTER SETTINGS PROFILE`, `ALTER QUOTA` o `ALTER ROW POLICY`, como se muestra arriba.
 
 <div id="differences-from-regular-users">
   ## Diferencias con los usuarios normales

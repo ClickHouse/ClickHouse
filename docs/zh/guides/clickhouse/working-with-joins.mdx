@@ -106,10 +106,10 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
 
 <Note>
-  可以将 ClickHouse [配置为](/zh/reference/settings/session-settings#join_use_nulls)返回 [NULL](/zh/reference/syntax#null) 而非默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
+  可以将 ClickHouse [配置为](/zh/reference/settings/session-settings#join_use_nulls)返回 [NULL](/zh/reference/syntax#null)，而不是默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
 </Note>
 
-此查询会找出所有没有类型的电影：它查询 `movies` 表中在 `genres` 表里没有匹配项的所有行，因此这些行会在 `movie_id` 列中得到默认值 0 (在查询时) ：
+此查询会找出所有没有类型的电影：它从 `movies` 表中查询所有在 `genres` 表里没有匹配项的行，因此这些行在查询时会在 `movie_id` 列中得到默认值 0：
 
 ```sql
 SELECT m.name
@@ -317,7 +317,7 @@ LIMIT 10;
 ```
 
 <div id="left--right--inner-any-join">
-  ## &#x20;(LEFT / RIGHT / INNER) ANY JOIN
+  ## (LEFT / RIGHT / INNER) ANY JOIN
 </div>
 
 `LEFT ANY JOIN` 是 `LEFT OUTER JOIN` + `LEFT SEMI JOIN` 的组合，也就是说，ClickHouse 会返回左表中每一行的列值：如果能在右表中找到匹配行，就将其与该匹配行的列值组合；如果找不到匹配行，则与右表的默认列值组合。
@@ -413,7 +413,7 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 为了计算每笔交易的实际成本，我们需要将交易与时间上最接近的报价相匹配。
 
-使用 `ASOF JOIN` 可以轻松而简洁地实现这一点：使用 `ON` 子句指定精确匹配条件，使用 `AND` 子句指定最接近匹配条件——对于某个特定代码 (精确匹配) ，需要从 `quotes` 表中找到时间“最接近”、且时间等于或早于该代码某笔交易时间的那一行 (非精确匹配) ：
+使用 `ASOF JOIN` 可以轻松而简洁地实现这一点：使用 `ON` 子句指定精确匹配条件，使用 `AND` 子句指定最接近匹配条件——对于某个特定代码 (精确匹配) ，需要从 `quotes` 表中找到时间“最接近”、且时间恰好等于或早于该代码某笔交易时间的那一行 (非精确匹配) ：
 
 ```sql
 SELECT
@@ -456,5 +456,5 @@ final_price:        9645
   ## 摘要
 </div>
 
-本指南介绍 ClickHouse 如何支持所有标准 SQL JOIN 类型，以及专为分析查询设计的特殊 JOIN。
-有关 JOIN 的更多信息，请参阅 [JOIN](/zh/reference/statements/select/join) 语句文档。
+本指南介绍了 ClickHouse 如何支持所有标准 SQL JOIN 类型，以及用于增强分析查询能力的专用 JOIN。
+有关 JOIN 语句的更多信息，请参阅 [JOIN](/zh/reference/statements/select/join) 文档。

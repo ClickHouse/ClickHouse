@@ -1499,7 +1499,7 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 
 導入バージョン: v24.1.0
 
-[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の仕組みに従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
+[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の方式に従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
 入力文字列は UTF エンコードされており、ASCII 文字列に変換可能である必要があります。そうでない場合は例外がスローされます。
 
 <Note>
@@ -1518,7 +1518,7 @@ idnaEncode(s)
 
 **戻り値**
 
-入力値に対する IDNA の仕組みに従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
+入力値に対する IDNA 方式に従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2212,8 +2209,8 @@ UTF-8 文字列を NFKC で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 丸囲み数字
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 1 2 3 に変換される
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ UTF-8 文字列を NFKD で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下付き文字 2 + O + 上付き文字 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- H 2 O 2 に変換
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3912,7 +3909,7 @@ upperUTF8(s)
 
 **戻り値**
 
-String型の値。[`String`](/ja/reference/data-types/string)
+String データ型の値。[`String`](/ja/reference/data-types/string)
 
 **例**
 

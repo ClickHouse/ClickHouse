@@ -14,9 +14,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 يمكن تهيئة ClickHouse لاستخدام LDAP لمصادقة مستخدمي قاعدة البيانات في ClickHouse. يقدّم هذا الدليل مثالًا بسيطًا على دمج ClickHouse مع نظام LDAP للمصادقة عبر دليل متاح للعامة.
 
 <Steps>
-  <Step>
-    ## تهيئة إعدادات اتصال LDAP في ClickHouse
-
+  <Step title="تهيئة إعدادات اتصال LDAP في ClickHouse" id="1-configure-ldap-connection-settings-in-clickhouse">
     1. اختبر اتصالك بخادم LDAP العام هذا:
 
        ```bash
@@ -116,9 +114,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
     4. أعد تشغيل ClickHouse server لتطبيق الإعدادات.
   </Step>
 
-  <Step>
-    ## تكوين أدوار قاعدة بيانات ClickHouse وصلاحياتها
-
+  <Step title="تكوين أدوار قاعدة بيانات ClickHouse وصلاحياتها" id="2-configure-clickhouse-database-roles-and-permissions">
     <Note>
       تفترض الإجراءات الواردة في هذا القسم أن ميزة SQL للتحكم في الوصول وإدارة الحسابات في ClickHouse قد تم تفعيلها. لتفعيلها، راجع [دليل مستخدمي SQL والأدوار](/ar/concepts/features/security/access-rights).
     </Note>
@@ -134,9 +130,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
        ```
   </Step>
 
-  <Step>
-    ## اختبر إعداد LDAP
-
+  <Step title="اختبر إعداد LDAP" id="3-test-the-ldap-configuration">
     1. سجّل الدخول باستخدام عميل ClickHouse
        ```bash
        $ clickhouse-client --user einstein --password password

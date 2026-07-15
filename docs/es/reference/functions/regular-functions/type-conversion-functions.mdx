@@ -2712,9 +2712,9 @@ Devuelve un valor brain-float de 16 bits o `NULL` en caso contrario. [`BFloat16`
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- argumentos no compatibles
-       toBFloat16OrNull('12.3'), -- uso habitual
-       toBFloat16OrNull('12.3456789') -- pérdida silenciosa de precisión
+SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
+       toBFloat16OrNull('12.3'), -- typical use
+       toBFloat16OrNull('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -2758,7 +2758,7 @@ toBFloat16OrZero(x)
 
 **Argumentos**
 
-* `x` — Una representación en `String` de un número. [`String`](/es/reference/data-types/string)
+* `x` — Una representación en cadena de un número. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -2769,9 +2769,9 @@ Devuelve un valor brain-float de 16 bits; de lo contrario, `0`. [`BFloat16`](/es
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- argumentos no compatibles
-       toBFloat16OrZero('12.3'), -- uso típico
-       toBFloat16OrZero('12.3456789') -- pérdida silenciosa de precisión
+SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
+       toBFloat16OrZero('12.3'), -- typical use
+       toBFloat16OrZero('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -3618,7 +3618,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 Introducido en: v18.12.0
 
 Convierte un valor de entrada en un valor del tipo [`Decimal(38, S)`](/es/reference/data-types/decimal) con escala `S`.
-Genera una excepción en caso de error.
+Lanza una excepción en caso de error.
 
 Argumentos admitidos:
 
@@ -3650,7 +3650,7 @@ toDecimal128(expr, S)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o la representación textual de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
 * `S` — Parámetro de escala entre 0 y 38, que especifica cuántos dígitos puede tener la parte fraccionaria de un número. [`UInt8`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
@@ -3670,7 +3670,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 a:      99
 type_a: Decimal(38, 1)
@@ -3792,13 +3792,13 @@ Es similar a [`toDecimal128`](#toDecimal128), pero devuelve `0` en lugar de gene
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
-* Valores o representaciones de cadena del tipo Float*.
+* Valores o representaciones en cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo Float*.
 
 Argumentos no admitidos (devuelven `0`):
 
-* Valores o representaciones de cadena de valores Float* `NaN` e `Inf` (sin distinguir entre mayúsculas y minúsculas).
-* Representaciones de cadena de valores binarios y hexadecimales.
+* Valores o representaciones en cadena de valores Float* `NaN` e `Inf` (sin distinguir entre mayúsculas y minúsculas).
+* Representaciones en cadena de valores binarios y hexadecimales.
 
 <Note>
   Si el valor de entrada supera los límites de `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, la función devuelve `0`.
@@ -3839,17 +3839,17 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 Introducido en: v20.8.0
 
-Convierte un valor de entrada en un valor de tipo [`Decimal(76, S)`](/es/reference/data-types/decimal) con escala `S`. Genera una excepción en caso de error.
+Convierte un valor de entrada en un valor de tipo [`Decimal(76, S)`](/es/reference/data-types/decimal) con escala `S`. Lanza una excepción en caso de error.
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
-* Valores o representaciones de cadena del tipo Float*.
+* Valores o representaciones en cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo Float*.
 
 Argumentos no admitidos:
 
-* Valores o representaciones de cadena de valores Float* `NaN` e `Inf` (sin distinción entre mayúsculas y minúsculas).
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toDecimal256('0xc0fe', 1);`.
+* Valores o representaciones en cadena de valores Float* `NaN` e `Inf` (sin distinción entre mayúsculas y minúsculas).
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toDecimal256('0xc0fe', 1);`.
 
 <Note>
   Puede producirse un desbordamiento si el valor de `expr` supera los límites de `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
@@ -3891,7 +3891,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 a:      99
 type_a: Decimal(76, 1)
@@ -4070,13 +4070,13 @@ Convierte un valor de entrada en un valor de tipo [`Decimal(9, S)`](/es/referenc
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
-* Valores o representaciones de cadena del tipo Float*.
+* Valores o representaciones en cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo Float*.
 
 Argumentos no admitidos:
 
-* Valores o representaciones de cadena de valores Float* `NaN` e `Inf` (sin distinguir entre mayúsculas y minúsculas).
-* Representaciones de cadena de valores binarios y hexadecimales, por ejemplo, `SELECT toDecimal32('0xc0fe', 1);`.
+* Valores o representaciones en cadena de valores Float* `NaN` e `Inf` (sin distinguir entre mayúsculas y minúsculas).
+* Representaciones en cadena de valores binarios y hexadecimales, por ejemplo, `SELECT toDecimal32('0xc0fe', 1);`.
 
 <Note>
   Puede producirse un desbordamiento si el valor de `expr` supera los límites de `Decimal32`: `(-1*10^(9 - S), 1*10^(9 - S))`.
@@ -4087,7 +4087,7 @@ Argumentos no admitidos:
 <Warning>
   Las conversiones descartan los dígitos adicionales y pueden comportarse de forma inesperada al trabajar con entradas Float32/Float64, ya que las operaciones se realizan mediante instrucciones de coma flotante.
   Por ejemplo: `toDecimal32(1.15, 2)` es igual a `1.14` porque 1.15 * 100 en coma flotante es 114.99.
-  Puede usar una entrada String para que las operaciones utilicen el tipo entero subyacente: `toDecimal32('1.15', 2) = 1.15`
+  Puede usar una entrada de tipo String para que las operaciones utilicen el tipo entero subyacente: `toDecimal32('1.15', 2) = 1.15`
 </Warning>
 
 **Sintaxis**
@@ -4118,7 +4118,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 a:      2
 type_a: Decimal(9, 1)
@@ -4260,7 +4260,7 @@ toDecimal32OrZero(expr, S)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`Expression`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena. [`Expression`](/es/reference/data-types/special-data-types/expression)
 * `S` — Parámetro de escala entre 0 y 9 que especifica cuántos dígitos puede tener la parte fraccionaria de un número. [`UInt8`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
@@ -4320,7 +4320,7 @@ toDecimal64(expr, S)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`Expression`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena. [`Expression`](/es/reference/data-types/special-data-types/expression)
 * `S` — Parámetro de escala entre 0 y 18 que especifica cuántos dígitos puede tener la parte fraccionaria de un número. [`UInt8`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
@@ -4340,7 +4340,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 a:      2.0
 type_a: Decimal(18, 1)
@@ -5063,7 +5063,7 @@ Argumentos no admitidos:
 * Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt128('0xc0fe');`.
 
 <Note>
-  Si el valor de entrada no puede representarse dentro de los límites de Int128, el resultado se desborda por arriba o por abajo.
+  Si el valor de entrada no puede representarse dentro de los límites de Int128, el resultado presenta desbordamiento o subdesbordamiento.
   Esto no se considera un error.
 </Note>
 
@@ -5081,7 +5081,7 @@ toInt128(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o su representación en cadena. [`Expresión`](/es/reference/data-types/special-data-types/expression)
+* `expr` — expresión que devuelve un número o la representación en cadena de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -5307,7 +5307,7 @@ toInt16(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`expresión`](/es/reference/data-types/special-data-types/expression)
+* `expr` — expresión que devuelve un número o la representación en cadena de un número. [`expresión`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -5433,7 +5433,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-fila 1:
+Row 1:
 ──────
 toInt16OrNull('-16'): -16
 toInt16OrNull('abc'): \N
@@ -5493,7 +5493,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toInt16OrZero('16'): 16
 toInt16OrZero('abc'): 0
@@ -5557,7 +5557,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-fila 1:
+Row 1:
 ──────
 toInt256(-256):     -256
 toInt256(-256.256): -256
@@ -5620,15 +5620,15 @@ Al igual que [`toInt256`](#toInt256), esta función convierte un valor de entrad
 
 Argumentos admitidos:
 
-* Representaciones de cadena de (U)Int*.
+* Representaciones en cadena de (U)Int*.
 
 Argumentos no admitidos (devuelven `NULL`):
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt256OrNull('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt256OrNull('0xc0fe');`.
 
 <Note>
-  Si el valor de entrada no puede representarse dentro de los límites de [Int256](/es/reference/data-types/int-uint), se produce un desbordamiento por exceso o por defecto en el resultado.
+  Si el valor de entrada no puede representarse dentro de los límites de [Int256](/es/reference/data-types/int-uint), se produce un desbordamiento o subdesbordamiento en el resultado.
   Esto no se considera un error.
 </Note>
 
@@ -5664,7 +5664,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toInt256OrNull('-256'): -256
 toInt256OrNull('abc'):  \N
@@ -5783,7 +5783,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toInt32(-32):    -32
 toInt32(-32.32): -32
@@ -5890,7 +5890,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-fila 1:
+Row 1:
 ──────
 toInt32OrNull('-32'): -32
 toInt32OrNull('abc'): \N
@@ -5950,7 +5950,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-fila 1:
+Row 1:
 ──────
 toInt32OrZero('32'): 32
 toInt32OrZero('abc'): 0
@@ -5967,13 +5967,13 @@ Lanza una excepción si se produce un error.
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo (U)Int*.
 * Valores del tipo Float*.
 
 Argumentos no admitidos:
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales, por ejemplo, `SELECT toInt64('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales, por ejemplo, `SELECT toInt64('0xc0fe');`.
 
 <Note>
   Si el valor de entrada no puede representarse dentro de los límites de [Int64](/es/reference/data-types/int-uint), el resultado se desborda por exceso o por defecto.
@@ -6018,7 +6018,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-fila 1:
+Row 1:
 ──────
 toInt64(-64):    -64
 toInt64(-64.64): -64
@@ -6193,16 +6193,16 @@ Lanza una excepción en caso de error.
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo (U)Int*.
 * Valores del tipo Float*.
 
 Argumentos no admitidos:
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores en binario y hexadecimal; por ejemplo, `SELECT toInt8('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt8('0xc0fe');`.
 
 <Note>
-  Si el valor de entrada no puede representarse dentro de los límites de [Int8](/es/reference/data-types/int-uint), se produce un desbordamiento por exceso o subdesbordamiento en el resultado.
+  Si el valor de entrada no puede representarse dentro de los límites de [Int8](/es/reference/data-types/int-uint), se produce un desbordamiento o subdesbordamiento en el resultado.
   Esto no se considera un error.
   Por ejemplo: `SELECT toInt8(128) == -128;`.
 </Note>
@@ -6244,7 +6244,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toInt8(-8):   -8
 toInt8(-8.8): -8
@@ -6351,7 +6351,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toInt8OrNull('-8'):  -8
 toInt8OrNull('abc'): \N
@@ -6367,15 +6367,15 @@ Al igual que [`toInt8`](#toInt8), esta función convierte un valor de entrada en
 
 Argumentos admitidos:
 
-* Representaciones de cadena de (U)Int*.
+* Representaciones en cadena de (U)Int*.
 
 Argumentos no admitidos (devuelven `0`):
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt8OrZero('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toInt8OrZero('0xc0fe');`.
 
 <Note>
-  Si el valor de entrada no puede representarse dentro de los límites de [Int8](/es/reference/data-types/int-uint), se produce desbordamiento o subdesbordamiento en el resultado.
+  Si el valor de entrada no puede representarse dentro de los límites de [Int8](/es/reference/data-types/int-uint), se produce un desbordamiento o subdesbordamiento en el resultado.
   Esto no se considera un error.
 </Note>
 
@@ -7061,7 +7061,7 @@ SELECT
 Introducido en: v1.1.0
 
 Convierte un valor de entrada al tipo [Time](/es/reference/data-types/time).
-Admite la conversión desde String, FixedString, DateTime o tipos numéricos que representan segundos desde la medianoche.
+Admite la conversión desde String, FixedString, DateTime, DateTime64 o tipos numéricos que representan segundos desde la medianoche.
 
 **Sintaxis**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **Argumentos**
 
-* `x` — Valor de entrada que se debe convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime`](/es/reference/data-types/datetime) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
+* `x` — Valor de entrada que se debe convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
 
 **Valor devuelto**
 
@@ -7079,10 +7079,12 @@ Devuelve el valor convertido. [`Time`](/es/reference/data-types/time)
 
 **Ejemplos**
 
-**Conversión de String a Time**
+**Conversión de DateTime64 a Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **Conversión de DateTime a Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**Conversión de entero a Time**
+**Conversión de entero (segundos desde epoch) a Time**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,29 +7122,31 @@ SELECT toTime(52225)
 Introducido en: v25.6.0
 
 Convierte un valor de entrada al tipo [Time64](/es/reference/data-types/time64).
-Admite la conversión desde String, FixedString, DateTime64 o tipos numéricos que representan microsegundos transcurridos desde la medianoche.
-Proporciona precisión de microsegundos para los valores de tiempo.
+Admite la conversión desde String, FixedString, DateTime64 o tipos numéricos que representan los segundos transcurridos desde la medianoche.
+Proporciona precisión de subsegundos para valores de tiempo, con hasta `scale` dígitos fraccionarios.
 
 **Sintaxis**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **Argumentos**
 
-* `x` — Valor de entrada que se debe convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime64`](/es/reference/data-types/datetime64) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
+* `x` — Valor de entrada que se va a convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime64`](/es/reference/data-types/datetime64) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
+* `scale` — Precisión (número de dígitos fraccionarios, `0`–`9`) del `Time64` resultante. [`(U)Int*`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
 
-Devuelve el valor de entrada convertido con precisión de microsegundos. [`Time64(6)`](/es/reference/data-types/time64)
+Devuelve el valor convertido con el valor de `scale` solicitado. [`Time64`](/es/reference/data-types/time64)
 
 **Ejemplos**
 
 **Conversión de String a Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7156,19 @@ SELECT toTime64('14:30:25.123456')
 **Conversión de DateTime64 a Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**Conversión de enteros a Time64**
+**Conversión de Float (segundos transcurridos desde la medianoche) a Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7362,7 +7372,7 @@ toUInt128(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o su representación en cadena. [`Expression`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena. [`Expression`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -7381,7 +7391,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toUInt128(128):   128
 toUInt128(128.8): 128
@@ -7470,7 +7480,7 @@ toUInt128OrNull(x)
 
 **Argumentos**
 
-* `x` — Una representación en cadena de un número. [`String`](/es/reference/data-types/string)
+* `x` — Una representación en cadena. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -7530,7 +7540,7 @@ toUInt128OrZero(x)
 
 **Argumentos**
 
-* `x` — La representación textual de un número. [`String`](/es/reference/data-types/string)
+* `x` — La representación en cadena. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -7597,7 +7607,7 @@ toUInt16(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o una representación textual de un número. [`Expression`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o una representación en cadena. [`Expression`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -7616,7 +7626,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toUInt16(16):    16
 toUInt16(16.16): 16
@@ -7705,7 +7715,7 @@ toUInt16OrNull(x)
 
 **Argumentos**
 
-* `x` — Una representación en cadena de un número. [`String`](/es/reference/data-types/string)
+* `x` — Una representación en cadena. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -7910,12 +7920,12 @@ Al igual que [`toUInt256`](#toUInt256), esta función convierte un valor de entr
 
 Argumentos admitidos:
 
-* Representaciones de cadena de (U)Int*.
+* Representaciones en cadena de (U)Int*.
 
 Argumentos no admitidos (devuelven `NULL`):
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt256OrNull('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt256OrNull('0xc0fe');`.
 
 <Note>
   Si el valor de entrada no puede representarse dentro de los límites de [`UInt256`](/es/reference/data-types/int-uint), se produce un desbordamiento o un subdesbordamiento del resultado.
@@ -8082,7 +8092,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toUInt32(32):    32
 toUInt32(32.32): 32
@@ -8298,7 +8308,7 @@ toUInt64(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o la representación textual de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -8317,7 +8327,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toUInt64(64):    64
 toUInt64(64.64): 64
@@ -8406,7 +8416,7 @@ toUInt64OrNull(x)
 
 **Argumentos**
 
-* `x` — Una representación textual de un número. [`String`](/es/reference/data-types/string)
+* `x` — Una representación en cadena de un número. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -8440,12 +8450,12 @@ Al igual que [`toUInt64`](#toUInt64), esta función convierte un valor de entrad
 
 Argumentos admitidos:
 
-* Representaciones de cadena de (U)Int*.
+* Representaciones en cadena de (U)Int*.
 
 Argumentos no admitidos (devuelven `0`):
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt64OrZero('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt64OrZero('0xc0fe');`.
 
 <Note>
   Si el valor de entrada no puede representarse dentro de los límites de [`UInt64`](/es/reference/data-types/int-uint), se produce un desbordamiento o subdesbordamiento del resultado.
@@ -8466,7 +8476,7 @@ toUInt64OrZero(x)
 
 **Argumentos**
 
-* `x` — La representación en String de un número. [`String`](/es/reference/data-types/string)
+* `x` — La representación en cadena de un número. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -8496,18 +8506,18 @@ toUInt64OrZero('abc'): 0
 
 Introducido en: v1.1.0
 
-Convierte un valor de entrada a un valor de tipo [`UInt8`](/es/reference/data-types/int-uint).
+Convierte un valor de entrada en un valor de tipo [`UInt8`](/es/reference/data-types/int-uint).
 Lanza una excepción en caso de error.
 
 Argumentos admitidos:
 
-* Valores o representaciones de cadena del tipo (U)Int*.
+* Valores o representaciones en cadena del tipo (U)Int*.
 * Valores del tipo Float*.
 
 Argumentos no admitidos:
 
-* Representaciones de cadena de valores Float*, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt8('0xc0fe');`.
+* Representaciones en cadena de valores Float*, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt8('0xc0fe');`.
 
 <Note>
   Si el valor de entrada no puede representarse dentro de los límites de [UInt8](/es/reference/data-types/int-uint), se produce un desbordamiento o subdesbordamiento en el resultado.
@@ -8533,7 +8543,7 @@ toUInt8(expr)
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o su representación textual. [`Expresión`](/es/reference/data-types/special-data-types/expression)
+* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`Expresión`](/es/reference/data-types/special-data-types/expression)
 
 **Valor devuelto**
 
@@ -8615,12 +8625,12 @@ Al igual que [`toUInt8`](#toUInt8), esta función convierte un valor de entrada 
 
 Argumentos admitidos:
 
-* Representaciones de cadena de (U)Int8/16/32/128/256.
+* Representaciones en cadena de (U)Int8/16/32/128/256.
 
 Argumentos no admitidos (devuelven `NULL`):
 
-* Representaciones de cadena de valores Float* normales, incluidos `NaN` e `Inf`.
-* Representaciones de cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt8OrNull('0xc0fe');`.
+* Representaciones en cadena de valores Float* normales, incluidos `NaN` e `Inf`.
+* Representaciones en cadena de valores binarios y hexadecimales; por ejemplo, `SELECT toUInt8OrNull('0xc0fe');`.
 
 <Note>
   Si el valor de entrada no puede representarse dentro de los límites de [`UInt8`](/es/reference/data-types/int-uint), se produce desbordamiento o subdesbordamiento en el resultado.

@@ -84,7 +84,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30
 
 * **TPS un 802 % superior** (9.0x más rápido)
 
-**Análisis**: La brecha de rendimiento se amplía drásticamente en las cargas de trabajo intensivas en lectura limitadas por IO. **Postgres managed by ClickHouse alcanzó 84.8K TPS**, mientras que RDS con 16.000 IOPS aprovisionadas logró solo 9.4K TPS, a pesar de contar con recursos de cómputo equivalentes. La diferencia clave es que el almacenamiento NVMe de ClickHouse escala mejor con una mayor concurrencia, mientras que el almacenamiento conectado por red sigue limitado por los límites de IOPS aprovisionadas. Incluso con IOPS aprovisionadas, RDS siguió siendo 9x más lento que ClickHouse, lo que demuestra la importancia crítica de la arquitectura de almacenamiento para las cargas de trabajo intensivas en IO.
+**Análisis**: La brecha de rendimiento se amplía drásticamente en las cargas de trabajo intensivas en lectura limitadas por IO. **Postgres managed by ClickHouse alcanzó 84.8K TPS**, mientras que RDS con 16.000 IOPS aprovisionadas logró solo 9.4K TPS, a pesar de contar con recursos de cómputo equivalentes. La diferencia clave es que el almacenamiento NVMe de ClickHouse escala mejor con una mayor concurrencia, mientras que el almacenamiento conectado a la red sigue limitado por los límites de IOPS aprovisionadas. Incluso con IOPS aprovisionadas, RDS siguió siendo 9x más lento que ClickHouse, lo que demuestra la importancia crítica de la arquitectura de almacenamiento para las cargas de trabajo intensivas en IO.
 
 <div id="test1-setup">
   #### Configuración

@@ -48,9 +48,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
 </div>
 
 <Steps>
-  <Step>
-    ### 启用 SCIM
-
+  <Step title="启用 SCIM" id="enable-scim-provisioning">
     以组织管理员身份登录 **ClickHouse Cloud 控制台**，然后打开 **组织设置 → SAML 和 SCIM 设置 → SCIM 配置**。
 
     ![在组织设置中进入 SCIM 配置选项卡](/images/cloud/security/scim-okta/scim-okta-01.webp)
@@ -68,9 +66,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     复制它——稍后您需要将其粘贴到 Okta 中。
   </Step>
 
-  <Step>
-    ### 生成 SCIM 访问令牌
-
+  <Step title="生成 SCIM 访问令牌" id="generate-scim-token">
     找到 `Create an API key` 部分，并选择过期日期。
 
     <Tip>
@@ -84,10 +80,8 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![生成新的 SCIM API 密钥](/images/cloud/security/scim-okta/scim-okta-07.webp)
   </Step>
 
-  <Step>
-    ### 定义角色映射
-
-    在 SCIM 配置面板中，点击 **Map roles in &quot;用户和角色&quot;** (或直接进入 **用户和角色 → Roles**) 。
+  <Step title="定义角色映射" id="define-role-mapping">
+    在 SCIM 配置面板中，点击 **“用户和角色”中的“映射角色”** (或直接进入 **用户和角色 → Roles**) 。
 
     SCIM 组会按名称绑定到 ClickHouse Cloud 角色，但需要注意以下规则：
 
@@ -103,9 +97,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
 </div>
 
 <Steps>
-  <Step>
-    ### 在 Okta 中打开您的 ClickHouse Cloud 应用
-
+  <Step title="在 Okta 中打开您的 ClickHouse Cloud 应用" id="open-clickhouse-cloud-app">
     在 **Okta Admin Console** 中，前往 **Applications → Applications**，搜索您在为 ClickHouse Cloud 配置 SAML 单点登录时创建的应用。打开它。
 
     如果您尚未创建该 SAML 应用，请先参考 [SAML SSO 设置指南](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)——SCIM 预配也是在同一个应用中配置的。
@@ -119,9 +111,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![应用中现已显示 Provisioning 选项卡](/images/cloud/security/scim-okta/scim-okta-05.webp)
   </Step>
 
-  <Step>
-    ### 将 Okta 连接到 SCIM 端点
-
+  <Step title="将 Okta 连接到 SCIM 端点" id="connect-okta-scim">
     打开应用的 **Provisioning** 选项卡，然后点击 `Edit`。填写表单：
 
     * **SCIM connector base URL** — 前面步骤中的 SCIM 端点 URL。
@@ -147,9 +137,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     点击 `Save`。
   </Step>
 
-  <Step>
-    ### 配置预配行为
-
+  <Step title="配置预配行为" id="configure-provisioning-behavior">
     仍在 **Provisioning** 选项卡中，点击左侧边栏中的 `To App`。点击 `Edit` 并启用：
 
     | 设置                     | 操作      | 作用                                            |
@@ -166,9 +154,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     ![保存预配设置并返回 Sign On 选项卡](/images/cloud/security/scim-okta/scim-okta-10b.webp)
   </Step>
 
-  <Step>
-    ### 映射用户属性
-
+  <Step title="映射用户属性" id="map-user-attributes">
     Okta 和 ClickHouse Cloud 需要就用户字段的对应关系保持一致。在 **Provisioning** 选项卡中，点击 `To App`，然后检查你的应用的 **Attribute Mappings**。Okta SAML 应用的默认设置通常就可以满足需求——请核对下表：
 
     | Okta attribute    | ClickHouse Cloud (SCIM) attribute | Required                       |
@@ -189,9 +175,7 @@ ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，
     </Warning>
   </Step>
 
-  <Step>
-    ### 推送组并分配用户
-
+  <Step title="推送组并分配用户" id="push-groups-and-assign-users">
     角色就是在这里自动应用的。
 
     **在 Okta 中创建组。** 对于你之前设置的每个角色映射，在 Okta 中创建或确认一个**显示名称完全一致**的组。例如，如果你的映射是 `ClickHouse-Admins → Admin`，就在 Okta 中创建一个名为 `ClickHouse-Admins` 的组。

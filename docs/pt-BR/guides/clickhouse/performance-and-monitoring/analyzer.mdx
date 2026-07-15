@@ -7,7 +7,7 @@ title: 'Analisador'
 doc_type: 'reference'
 ---
 
-Na versão `24.3` do ClickHouse, o novo analisador de consultas foi ativado por padrão.
+Na versão `24.3` do ClickHouse, o analisador de consultas foi ativado por padrão.
 Você pode ler mais detalhes sobre como ele funciona [aqui](/pt-BR/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
 <div id="known-incompatibilities">
@@ -146,7 +146,7 @@ Para garantir resultados consistentes e previsíveis, especialmente ao migrar co
   #### Tratamento de modificadores de tipo para colunas na cláusula `USING`
 </div>
 
-Na nova versão do analisador, as regras para determinar o supertipo comum de colunas especificadas na cláusula `USING` foram padronizadas para produzir resultados mais previsíveis,
+No analisador, as regras para determinar o supertipo comum de colunas especificadas na cláusula `USING` foram padronizadas para produzir resultados mais previsíveis,
 especialmente ao lidar com modificadores de tipo como `LowCardinality` e `Nullable`.
 
 * `LowCardinality(T)` e `T`: Quando uma coluna do tipo `LowCardinality(T)` é combinada com uma coluna do tipo `T` em um `join`, o supertipo comum resultante será `T`, descartando efetivamente o modificador `LowCardinality`.
@@ -232,7 +232,7 @@ A lista de recursos aos quais o analisador atualmente não dá suporte é aprese
   ## Migração para Cloud
 </div>
 
-Estamos habilitando o novo analisador de consultas em todas as instâncias nas quais ele ainda está desativado, para oferecer suporte a novas otimizações funcionais e de desempenho. Essa mudança impõe regras mais rigorosas de escopo em SQL, exigindo que os clientes atualizem manualmente as consultas que não estiverem em conformidade.
+Estamos habilitando o analisador em todas as instâncias nas quais ele ainda está desativado, para oferecer suporte a novas otimizações funcionais e de desempenho. Essa mudança impõe regras mais rigorosas de escopo em SQL, exigindo que os clientes atualizem manualmente as consultas que não estiverem em conformidade.
 
 <div id="migration-workflow">
   ### Fluxo de migração

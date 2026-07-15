@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `compression` — 압축 유형입니다. 지원되는 값: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. 이 매개변수는 선택 사항입니다. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다.
 * `partition_strategy` – 옵션: `WILDCARD` 또는 `HIVE`입니다. `WILDCARD`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `HIVE`는 와일드카드를 허용하지 않으며, 경로를 테이블 루트로 간주하고, 파일 이름은 Snowflake ID, 확장자는 파일 포맷으로 하는 Hive 스타일의 파티션 디렉터리를 생성합니다. 기본값은 `file_like_engine_default_partition_strategy` 설정입니다(`26.6`보다 오래된 `compatibility` 설정에서는 `WILDCARD`, 그 외에는 `HIVE`).
 * `partition_columns_in_data_file` - `HIVE` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.
-* `storage_class_name` - 옵션: `STANDARD` 또는 `INTELLIGENT_TIERING`이며, [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)을 지정할 수 있습니다.
+* `storage_class_name` - 옵션: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`입니다. 즉시 검색이 가능한 S3 storage classes만 지원됩니다(`GLACIER`, `DEEP_ARCHIVE`와 같은 아카이브 클래스는 지원되지 않습니다). [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)을 지정할 수 있습니다.
 * `extra_credentials` - 선택 사항입니다. ClickHouse Cloud에서 역할 기반 접근을 위한 `role_arn`을 전달하는 데 사용됩니다. 구성 단계는 [Secure S3](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.
 
 <div id="data-cache">

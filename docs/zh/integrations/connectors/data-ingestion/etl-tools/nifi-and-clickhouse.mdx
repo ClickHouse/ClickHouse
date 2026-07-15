@@ -20,29 +20,21 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 <a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> 是一款开源工作流管理软件，用于自动化不同软件系统之间的数据流转。它支持创建 ETL 数据管道，并内置了 300 多种数据处理器。本分步教程将介绍如何将 Apache NiFi 连接到 ClickHouse，使其既可作为源端，也可作为目标端，并加载一个样本数据集。
 
 <Steps>
-  <Step>
-    ## 准备连接信息
-
+  <Step title="准备连接信息" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## 下载并运行 Apache NiFi
-
-    对于全新部署，请从 https://nifi.apache.org/download.html 下载二进制程序，然后运行 `./bin/nifi.sh start` 启动服务
+  <Step title="下载并运行 Apache NiFi" id="2-download-and-run-apache-nifi">
+    对于全新部署，请从 [https://nifi.apache.org/download.html](https://nifi.apache.org/download.html) 下载二进制程序，然后运行 `./bin/nifi.sh start` 启动服务
   </Step>
 
-  <Step>
-    ## 下载 ClickHouse JDBC 驱动
-
+  <Step title="下载 ClickHouse JDBC 驱动" id="3-download-the-clickhouse-jdbc-driver">
     1. 访问 GitHub 上的 <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">ClickHouse JDBC 驱动发布页面</a>，查找最新的 JDBC 发布版本
     2. 在该发布版本页面中，点击 &quot;Show all xx assets&quot;，然后找到文件名中包含关键字 &quot;shaded&quot; 或 &quot;all&quot; 的 JAR 文件，例如 `clickhouse-jdbc-0.5.0-all.jar`
     3. 将该 JAR 文件放在 Apache NiFi 可访问的文件夹中，并记下其绝对路径
   </Step>
 
-  <Step>
-    ## 添加 `DBCPConnectionPool` Controller Service 并配置其属性
-
+  <Step title={<>添加 <code>DBCPConnectionPool</code> Controller Service 并配置其属性</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. 要在 Apache NiFi 中配置 Controller Service，请点击“齿轮”按钮，进入 NiFi Flow Configuration 页面
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="突出显示齿轮按钮的 NiFi Flow Configuration 页面" />
@@ -61,13 +53,13 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
     5. 在“Properties”部分中，输入以下值
 
-    | Property                   | 值                                                                  | 备注                                     |
-    | -------------------------- | ------------------------------------------------------------------ | -------------------------------------- |
-    | Database Connection URL    | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | 将 connection URL 中的 HOSTNAME 替换为相应的主机名 |
-    | Database Driver Class Name | com.clickhouse.jdbc.ClickHouseDriver                               |                                        |
-    | Database Driver Locations  | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | ClickHouse JDBC 驱动 JAR 文件的绝对路径         |
-    | Database User              | default                                                            | ClickHouse 用户名                         |
-    | Password                   | password                                                           | ClickHouse 密码                          |
+    | Property                   | 值                                                                                        | 备注                              |
+    | -------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------- |
+    | Database Connection URL    | jdbc[https://HOSTNAME:8443/default?ssl=true](https://HOSTNAME:8443/default?ssl=true)true | 相应替换 connection URL 中的 HOSTNAME |
+    | Database Driver Class Name | com.clickhouse.jdbc.ClickHouseDriver                                                     |                                 |
+    | Database Driver Locations  | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar                       | ClickHouse JDBC 驱动 JAR 文件的绝对路径  |
+    | Database User              | default                                                                                  | ClickHouse 用户名                  |
+    | Password                   | password                                                                                 | ClickHouse 密码                   |
 
     6. 在 Settings 部分中，将 Controller Service 的名称改为“ClickHouse JDBC”，以便后续识别
 
@@ -86,19 +78,17 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="显示已启用 ClickHouse JDBC 服务的 Controller Services 列表" />
   </Step>
 
-  <Step>
-    ## 使用 `ExecuteSQL` 处理器从表中读取数据
-
+  <Step title={<>使用 <code>ExecuteSQL</code> 处理器从表中读取数据</>} id="5-read-from-a-table-using-the-executesql-processor">
     1. 添加 `ExecuteSQL` 处理器，以及相应的上游和下游处理器
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="NiFi 画布，显示工作流中的 ExecuteSQL 处理器" />
 
     2. 在 `ExecuteSQL` 处理器的 &quot;Properties&quot; 部分中，填写以下值
 
-       | Property                            | Value                        | Remark                                |
-       | ----------------------------------- | ---------------------------- | ------------------------------------- |
-       | Database Connection Pooling Service | ClickHouse JDBC              | 选择为 ClickHouse 配置的 Controller Service |
-       | SQL select query                    | SELECT * FROM system.metrics | 在此输入查询                                |
+       | Property                            | Value                            | Remark                                |
+       | ----------------------------------- | -------------------------------- | ------------------------------------- |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | 选择为 ClickHouse 配置的 Controller Service |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | 在此输入查询                                |
 
     3. 启动 `ExecuteSQL` 处理器
 
@@ -113,9 +103,7 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="FlowFile 内容查看器，以 formatted 视图显示查询结果" />
   </Step>
 
-  <Step>
-    ## 使用 `MergeRecord` 和 `PutDatabaseRecord` 处理器向表中写入数据
-
+  <Step title={<>使用 <code>MergeRecord</code> 和 <code>PutDatabaseRecord</code> 处理器向表中写入数据</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
     1. 要在一次插入中写入多行，首先需要将多条记录合并为一条记录。这可以通过 `MergeRecord` 处理器实现
 
     2. 在 `MergeRecord` 处理器的 &quot;Properties&quot; 部分中，填入以下值

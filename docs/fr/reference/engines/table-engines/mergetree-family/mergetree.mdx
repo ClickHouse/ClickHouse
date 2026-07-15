@@ -982,7 +982,7 @@ Si vous exécutez la requête `SELECT` entre deux fusions, il se peut que vous o
 En plus des périphériques de bloc locaux, ClickHouse prend en charge les types de stockage suivants :
 
 * [`s3` pour S3 et MinIO](#table_engine-mergetree-s3)
-* [`gcs` pour GCS](/fr/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` pour GCS](/fr/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` pour Azure Blob Storage](/fr/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` pour HDFS](/fr/reference/engines/table-engines/integrations/hdfs)
 * [`web` pour un accès en lecture seule depuis le Web](/fr/concepts/features/configuration/server-config/storing-data#web-storage)
@@ -1444,9 +1444,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `TDigest`
 
-  Des sketches [TDigest](https://github.com/tdunning/t-digest) qui permettent de calculer des percentiles approximatifs (par ex. le 90e percentile) pour les colonnes numériques.
+<Warning>
+  Les statistiques de type `tdigest` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
+</Warning>
 
-  Syntaxe : `tdigest`
+Des sketches [TDigest](https://github.com/tdunning/t-digest) qui permettent de calculer des percentiles approximatifs (par ex. le 90e percentile) pour les colonnes numériques.
+
+Syntaxe : `tdigest`
 
 * `Uniq`
 
@@ -1456,9 +1460,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `CountMin`
 
-  Des sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) qui fournissent un décompte approximatif de la fréquence de chaque valeur dans une colonne.
+<Warning>
+  Les statistiques de type `countmin` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
+</Warning>
 
-  Syntaxe : `countmin`
+Des sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) qui fournissent un décompte approximatif de la fréquence de chaque valeur dans une colonne.
+
+Syntaxe : `countmin`
 
 <div id="supported-data-types">
   ### Types de données pris en charge

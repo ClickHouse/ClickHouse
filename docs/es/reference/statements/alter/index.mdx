@@ -15,10 +15,13 @@ La mayoría de las consultas `ALTER TABLE` modifican la configuración de la tab
 | [DELETE](/es/reference/statements/alter/delete)                         |
 | [UPDATE](/es/reference/statements/alter/update)                         |
 | [ORDER BY](/es/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/es/reference/statements/alter/sample-by)                   |
 | [INDEX](/es/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/es/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/es/reference/statements/alter/constraint)                 |
 | [TTL](/es/reference/statements/alter/ttl)                               |
 | [STATISTICS](/es/reference/statements/alter/statistics)                 |
+| [SETTING](/es/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/es/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/es/reference/statements/alter/apply-patches)           |
 
@@ -40,12 +43,14 @@ Estas sentencias `ALTER` modifican entidades relacionadas con el control de acce
 | [ROLE](/es/reference/statements/alter/role)                         |
 | [QUOTA](/es/reference/statements/alter/quota)                       |
 | [ROW POLICY](/es/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/es/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/es/reference/statements/alter/settings-profile) |
 
-| Sentencia                                                              | Descripción                                                                                                    |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/es/reference/statements/alter/comment)  | Agrega, modifica o elimina comentarios en la tabla, independientemente de si se habían establecido antes o no. |
-| [ALTER NAMED COLLECTION](/es/reference/statements/alter/named-collection) | Modifica las [Named Collections](/es/concepts/features/configuration/server-config/named-collections).            |
+| Sentencia                                                                         | Descripción                                                                                                            |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/es/reference/statements/alter/comment)             | Agrega, modifica o elimina comentarios en la tabla, independientemente de si se habían establecido antes o no.         |
+| [ALTER DATABASE ... MODIFY COMMENT](/es/reference/statements/alter/database-comment) | Agrega, modifica o elimina comentarios en la base de datos, independientemente de si se habían establecido antes o no. |
+| [ALTER NAMED COLLECTION](/es/reference/statements/alter/named-collection)            | Modifica las [Named Collections](/es/concepts/features/configuration/server-config/named-collections).                    |
 
 <div id="mutations">
   ## Mutaciones

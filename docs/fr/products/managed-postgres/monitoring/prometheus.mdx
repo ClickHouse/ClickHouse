@@ -130,27 +130,21 @@ base de données et les interblocages.
 </div>
 
 <Steps>
-  <Step>
-    #### Téléchargez le JSON du tableau de bord
-
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Télécharger le JSON du tableau de bord</TrackedLink>.
+  <Step title="Téléchargez le fichier JSON du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Télécharger le fichier JSON du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Ouvrez l’écran d’importation dans Grafana
-
+  <Step title="Ouvrez le flux d’importation dans Grafana" id="open-import">
     Accédez à **Tableaux de bord → Nouveau → Importer**. Téléversez le fichier JSON ou collez son contenu.
   </Step>
 
-  <Step>
-    #### Choisissez votre source de données Prometheus
-
-    Lorsque l’entrée `DS_PROMETHEUS` vous est demandée, sélectionnez la source de données Prometheus qui interroge le point de terminaison configuré dans la [section précédente](#configuring-prometheus).
+  <Step title="Choisissez votre source de données Prometheus" id="pick-datasource">
+    Lorsque l’entrée `DS_PROMETHEUS` vous est demandée, sélectionnez la source de données Prometheus qui récupère les métriques depuis le point de terminaison configuré dans la [section précédente](#configuring-prometheus).
   </Step>
 </Steps>
 
 Pour les déploiements Grafana provisionnés, placez le fichier JSON dans votre
-répertoire de provisionnement des tableaux de bord. Grafana associe la référence `${DS_PROMETHEUS}`
+chemin de provisionnement des tableaux de bord. Grafana associe la référence `${DS_PROMETHEUS}`
 à une source de données Prometheus disponible dans l’instance.
 
 <div id="template-variables">

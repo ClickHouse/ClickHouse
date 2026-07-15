@@ -19,85 +19,75 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
 Draxlr 提供直观的界面，可连接到您的 ClickHouse 数据库，让您的团队在几分钟内即可探索、可视化并发布洞察。本指南将引导您逐步完成连接配置。
 
-<div id="1-get-your-clickhouse-credentials">
-  ## 1. 获取 ClickHouse 凭据
-</div>
+<Steps>
+  <Step title="获取您的 ClickHouse 凭据" id="1-get-your-clickhouse-credentials">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="将 Draxlr 连接到 ClickHouse" id="2--connect-draxlr-to-clickhouse">
+    1. 点击导航栏中的 **Connect a Database** 按钮。
 
-<div id="2--connect-draxlr-to-clickhouse">
-  ## 2.  将 Draxlr 连接到 ClickHouse
-</div>
+    2. 在可用数据库列表中选择 **ClickHouse**，然后点击 **Next**。
 
-1. 点击导航栏中的 **Connect a Database** 按钮。
+    3. 选择一种托管服务，然后点击 **Next**。
 
-2. 在可用数据库列表中选择 **ClickHouse**，然后点击 Next。
+    4. 在 **Connection Name** 字段中填写任意名称。
 
-3. 选择一种托管服务，然后点击 Next。
+    5. 在表单中填写连接详情。
 
-4. 在 **Connection Name** 字段中输入任意名称。
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="显示 ClickHouse 数据库配置选项的 Draxlr 连接表单" border />
 
-5. 在表单中填写连接信息。
+    6. 点击 **Next** 按钮并等待连接建立。如果连接成功，您将看到表页面。
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="显示 ClickHouse 数据库配置选项的 Draxlr 连接表单" border />
+  <Step title="探索您的数据" id="4-explore-your-data">
+    1. 点击列表中的某个表。
 
-6. 点击 **Next** 按钮，等待连接建立完成。如果连接成功，你将看到表页面。
+    2. 这会带您进入 Explore 页面，查看表中的数据。
 
-<div id="4-explore-your-data">
-  ## 4. 探索您的数据
-</div>
+    3. 您可以开始添加过滤器、执行 joins，并对数据进行排序。
 
-1. 点击列表中的任意一个表。
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="显示过滤器和排序选项的 Draxlr 数据探索界面" border />
 
-2. 系统会将您带到 Explore 页面，以查看表中的数据。
+    4. 您还可以使用 **Graph** 按钮并选择图表类型，以可视化数据。
 
-3. 您可以开始为数据添加过滤器、执行 join，并添加排序。
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="适用于 ClickHouse 数据的 Draxlr 图表可视化选项" border />
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="Draxlr 数据探索界面，显示过滤器和排序选项" border />
+  <Step title="使用 SQL 查询" id="4-using-sql-queries">
+    1. 点击导航栏中的 **Explore** 按钮。
 
-4. 您还可以使用 **Graph** 按钮，并选择图表类型来可视化数据。
+    2. 点击 **Raw Query** 按钮，并在文本区域中输入您的查询。
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="用于 ClickHouse 数据的 Draxlr 图表可视化选项" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Draxlr 的 ClickHouse SQL 查询界面" border />
 
-<div id="4-using-sql-queries">
-  ## 4. 使用 SQL 查询
-</div>
+    3. 点击 **Execute Query** 按钮以查看结果。
+  </Step>
 
-1. 点击导航栏中的 Explore 按钮。
+  <Step title="保存您的查询" id="4-saving-you-query">
+    1. 执行查询后，点击 **Save Query** 按钮。
 
-2. 点击 **Raw Query** 按钮，并在文本区域中输入查询语句。
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="带有仪表盘选项的 Draxlr 保存查询对话框" border />
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Draxlr 的 ClickHouse SQL 查询界面" border />
+    2. 您可以在 **Query Name** 文本框中为查询命名，并选择一个文件夹对其进行分类。
 
-3. 点击 **Execute Query** 按钮查看结果。
+    3. 您还可以使用 **Add to dashboard** 选项将结果添加到仪表盘。
 
-<div id="4-saving-you-query">
-  ## 4. 保存查询
-</div>
+    4. 点击 **Save** 按钮以保存查询。
+  </Step>
 
-1. 执行查询后，点击 **Save Query** 按钮。
+  <Step title="构建仪表盘" id="5-building-dashboards">
+    1. 点击导航栏中的 **仪表盘** 按钮。
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="带有仪表盘选项的 Draxlr 保存查询对话框" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Draxlr 仪表盘管理界面" border />
 
-2. 你可以在 **Query Name** 文本框中为查询命名，并选择一个文件夹进行归类。
+    2. 您可以点击左侧边栏中的 **Add +** 按钮来添加新的仪表盘。
 
-3. 你还可以使用 **Add to dashboard** 选项，将结果添加到仪表盘。
+    3. 要添加新的小部件，请点击右上角的 **Add** 按钮。
 
-4. 点击 **Save** 按钮以保存查询。
-
-<div id="5-building-dashboards">
-  ## 5. 创建仪表盘
-</div>
-
-1. 点击导航栏中的 **Dashboards** 按钮。
-
-<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Draxlr 仪表盘管理界面" border />
-
-2. 点击左侧边栏中的 **Add +** 按钮，即可添加新仪表盘。
-
-3. 要添加新组件，请点击右上角的 **Add** 按钮。
-
-4. 你可以从已保存的查询列表中选择一个查询，选择可视化类型，然后点击 **Add Dashboard Item** 按钮。
+    4. 您可以从已保存查询列表中选择一个查询并选择可视化类型，然后点击 **Add Dashboard Item** 按钮。
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 了解更多

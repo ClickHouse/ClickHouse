@@ -311,7 +311,7 @@ As linhas inseridas são armazenadas em disco em ordem lexicográfica (crescente
   O ClickHouse permite inserir várias linhas com valores idênticos nas colunas da chave primária. Nesse caso (veja a linha 1 e a linha 2 no diagrama abaixo), a ordem final é determinada pela chave de ordenação especificada e, portanto, pelo valor da coluna `EventTime`.
 </Note>
 
-O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">sistema de gerenciamento de banco de dados orientado a colunas</a>. Como mostrado no diagrama abaixo
+O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">sistema de gerenciamento de banco de dados orientado a colunas</a>. Como mostrado no diagrama abaixo
 
 * na representação em disco, há um único arquivo de dados (*.bin) por coluna da tabela, no qual todos os valores dessa coluna são armazenados em formato <a href="/pt-BR/get-started/about/distinctive-features#data-compression" target="_blank">compactado</a>, e
 * as 8,87 milhões de linhas são armazenadas em disco em ordem lexicográfica crescente pelas colunas da chave primária (e pelas colunas adicionais da chave de ordenação), ou seja, neste caso
@@ -368,7 +368,7 @@ As primeiras 8192 linhas (com base na ordem física em disco) (seus valores de c
   ### O índice primário tem uma entrada por grânulo
 </div>
 
-O índice primário é criado com base nos grânulos mostrados no diagrama acima. Esse índice é um arquivo de array linear não compactado (primary.idx), que contém as chamadas marcas numéricas do índice, começando em 0.
+O índice primário é criado com base nos grânulos mostrados no diagrama acima. Esse índice é um arquivo de array simples não compactado (primary.idx), que contém as chamadas marcas numéricas do índice, começando em 0.
 
 O diagrama abaixo mostra que o índice armazena os valores das colunas da chave primária (os valores marcados em laranja no diagrama acima) da primeira linha de cada grânulo.
 Em outras palavras: o índice primário armazena os valores das colunas da chave primária de cada 8192ª linha da tabela (com base na ordem física das linhas definida pelas colunas da chave primária).
@@ -785,7 +785,7 @@ Quando o UserID tem alta cardinalidade, é improvável que o mesmo valor de User
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="Sparse Primary Indices 06" />
 
-Como podemos ver no diagrama acima, todas as marcas mostradas cujos valores de URL são menores que W3 acabam sendo selecionadas para transmitir as linhas do grânulo associado ao engine do ClickHouse.
+Como podemos ver no diagrama acima, todas as marcas mostradas cujos valores de URL são menores que W3 acabam sendo selecionadas para transmitir as linhas do grânulo associado ao mecanismo do ClickHouse.
 
 Isso acontece porque, embora todas as marcas de índice no diagrama se enquadrem no cenário 1 descrito acima, elas não satisfazem a pré-condição de exclusão mencionada de que *a marca de índice imediatamente seguinte tem o mesmo valor de UserID da marca atual* e, portanto, não podem ser excluídas.
 
@@ -879,7 +879,7 @@ A seguir, discutimos essas três opções para criar e usar vários índices pri
 
 <a name="secondary-table" />
 
-Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave (em relação à tabela original) na chave primária:
+Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave primária (em relação à tabela original):
 
 ```sql highlight={8}
 CREATE TABLE hits_URL_UserID
@@ -1119,7 +1119,7 @@ O log de trace correspondente no arquivo de log do servidor ClickHouse confirma 
   ### Opção 3: Projeções
 </div>
 
-Crie uma projeção na tabela existente:
+Crie uma projeção na nossa tabela existente:
 
 ```sql
 ALTER TABLE hits_UserID_URL

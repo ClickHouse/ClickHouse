@@ -99,7 +99,7 @@ Les hypertables Timescale ne stockent aucune des données qui y sont insérées.
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
 ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de changement générés par les tables spécifiées, puis servira à ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES` sauf si vous avez l’intention de répliquer toutes les tables, car l’inclusion de tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
 
 <Info>
   Certains services managés n’accordent pas à leurs administrateurs les autorisations nécessaires pour créer une publication sur l’ensemble d’un schéma. Si c’est le cas, ouvrez un ticket d’assistance auprès de votre fournisseur. Vous pouvez également ignorer cette étape (ainsi que les suivantes) et effectuer à la place un chargement unique de vos données.

@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 * `host:port` — عنوان خادم PostgreSQL.
 * `database` — اسم قاعدة البيانات البعيدة.
-* `table` — اسم الجدول البعيد.
+* `table` — اسم الجدول البعيد، أو استعلام يُمرَّر إلى PostgreSQL كما هو (راجع [تمرير استعلام بدلًا من اسم جدول](#passing-a-query)).
 * `user` — مستخدم PostgreSQL.
 * `password` — كلمة مرور المستخدم.
 * `schema` — مخطط الجدول غير الافتراضي. اختياري.
@@ -78,7 +78,26 @@ SELECT * FROM postgresql(postgres_creds, table='table1');
 
 تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]`، وقيد أخذ العينات الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام إلى PostgreSQL.
 
-تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL مع `auto-commit` بعد كل تعليمة `INSERT`.
+<div id="passing-a-query">
+  ## تمرير استعلام بدلًا من اسم جدول
+</div>
+
+بدلًا من اسم جدول، يمكن أن تكون الوسيطة `table` استعلام `SELECT` يُمرَّر إلى PostgreSQL كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي، أو تغليفه داخل الدالة `query`:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+يُعد هذا مفيدًا لدفع تنفيذ عمليات `JOIN` وعمليات التجميع أو أي معالجة أخرى إلى PostgreSQL. هذا الجدول للقراءة فقط: لا يُسمح بتنفيذ `INSERT` فيه. وتدعم دالة الجدول [`postgresql`](/ar/reference/functions/table-functions/postgresql) الصياغة نفسها.
+
+<Note>
+  تُحلَّل صيغة الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسلها وفق لهجة PostgreSQL ‏(وضع علامات الاقتباس لمعرّفات PostgreSQL وإفلات القيم الحرفية النصية) قبل إرسالها إلى الخادم. لذلك يجب أن تكون صالحة في ClickHouse SQL. ولتمرير صياغة خاصة بـ PostgreSQL لا يحللها ClickHouse، استخدم صيغة `query('...')`، حيث يُرسل نصها إلى PostgreSQL كما هو.
+
+  لا يتم دفع أي `WHERE` أو `LIMIT` خارجي أو aggregation أو غير ذلك من استعلام ClickHouse المحيط إلى الاستعلام المُمرَّر — بل يُطبَّق ذلك في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع Exception بدلًا من تطبيقه محليًا.
+</Note>
+
+تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL مع `auto-commit` بعد كل تعليمة `INSERT`.
 
 تُحوَّل أنواع `Array` في PostgreSQL إلى مصفوفات في ClickHouse.
 

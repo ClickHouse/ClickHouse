@@ -55,31 +55,23 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
     <br />
 
     <Steps>
-      <Step>
-        ### Crear un nuevo servicio
-
+      <Step title="Crear un nuevo servicio" id="create-a-service">
         En la página principal de ClickHouse Cloud, selecciona `New service` para crear un nuevo servicio.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Servicio Servicio" border />
       </Step>
 
-      <Step>
-        ### Especifica el proveedor, la región y el recurso
-
+      <Step title="Especifica el proveedor, la región y el recurso" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### Configura la ingestión
-
+      <Step title="Configura la ingestión" id="setup-ingestion-create-new">
         Una vez aprovisionado el servicio, asegúrate de que esté seleccionado y haz clic en &quot;ClickStack&quot; en el menú de la izquierda.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### Accede a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
     <br />
 
     <Steps>
-      <Step>
-        ### Selecciona un servicio
-
+      <Step title="Selecciona un servicio" id="select-service">
         En la página principal de ClickHouse Cloud, selecciona el servicio en el que deseas habilitar Managed ClickStack.
 
         <Warning>
@@ -107,9 +97,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
         <Image img="/images/clickstack/select_service.webp" alt="Seleccionar servicio" size="lg" />
       </Step>
 
-      <Step>
-        ### Ve a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-the-clickstack-ui-existing">
         Selecciona &#39;ClickStack&#39; en el menú de navegación de la izquierda. Se te redirigirá a la UI de ClickStack y se te autenticará automáticamente en función de tus permisos de ClickHouse Cloud.
 
         Si ya existen tablas de OpenTelemetry en tu servicio, se detectarán automáticamente y se crearán los orígenes de datos correspondientes.
@@ -127,9 +115,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
         Si este paso se completa correctamente, eso es todo: ya lo tienes todo listo 🎉. De lo contrario, continúa con la configuración de la ingestión.
       </Step>
 
-      <Step>
-        ### Configurar la ingestión
-
+      <Step title="Configura la ingestión" id="setup-ingestion-existing-service">
         Si la detección automática falla o no hay tablas existentes, se te pedirá que configures la ingestión.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Configurar la ingestión en la UI de ClickStack" size="lg" />
@@ -153,7 +139,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
 
             ### Iniciar un collector
 
-            A continuación se asume la opción recomendada: usar la **distribución de ClickStack de OpenTelemetry Collector**, que incluye procesamiento adicional y está optimizada específicamente para ClickHouse Cloud. Si quiere usar su propio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors)
+            A continuación se asume la opción recomendada: usar la **distribución de ClickStack de OpenTelemetry Collector**, que incluye procesamiento adicional y está optimizada específicamente para ClickHouse Cloud. Si quiere usar su propio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors-existing)
 
             Para empezar rápidamente, copie y ejecute el comando de Docker que se muestra.
 
@@ -260,9 +246,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
         </Tabs>
       </Step>
 
-      <Step>
-        ### Ve a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-existing-service">
         Una vez que hayas terminado de configurar la ingestión y hayas comenzado a enviar datos, selecciona &quot;Siguiente&quot;.
 
         <Tabs>
@@ -311,7 +295,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
 
 1. Vaya a su servicio en la consola de ClickHouse Cloud
 2. Vaya a **Settings** → **SQL Console Access**
-3. Establezca el nivel de acceso adecuado para cada usuario:
+3. Establezca el nivel de permiso adecuado para cada usuario:
    * **Service Admin → Full Access** - Necesario para habilitar alertas
    * **Service Read Only → Read Only** - Puede ver datos de observabilidad y crear dashboards
    * **No access** - No puede acceder a HyperDX

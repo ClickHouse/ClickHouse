@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * كلمة مرور Redis إذا كانت المصادقة مفعّلة
 
 <Steps>
-  <Step>
-    #### تحقّق من الاتصال بـ Redis
-
+  <Step title="تحقّق من الاتصال بـ Redis" id="verify-redis">
     أولًا، تحقّق من أنك تستطيع الاتصال بـ Redis وأن الأمر INFO يعمل:
 
     ```bash
@@ -63,9 +61,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * **عن بُعد**: `<redis-host>:6379`
   </Step>
 
-  <Step>
-    #### أنشئ إعدادًا مخصصًا لـ OTel collector
-
+  <Step title="أنشئ إعدادًا مخصصًا لـ OTel collector" id="custom-otel">
     يتيح لك ClickStack توسيع الإعداد الأساسي لـ OpenTelemetry collector من خلال تحميل ملف إعداد مخصص وتعيين متغير بيئة. ويُدمج الإعداد المخصص مع الإعداد الأساسي الذي يديره HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `redis-metrics.yaml` بالإعداد التالي:
@@ -146,9 +142,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### تكوين ClickStack لتحميل إعدادات مخصصة
-
+  <Step title="تكوين ClickStack لتحميل إعدادات مخصصة" id="load-custom">
     لتمكين إعدادات المجمّع المخصصة في عملية نشر ClickStack الحالية، يجب عليك:
 
     1. تركيب ملف الإعدادات المخصص في `/etc/otelcol-contrib/custom.config.yaml`
@@ -214,9 +208,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من المقاييس في HyperDX
-
+  <Step title="تحقّق من المقاييس في HyperDX" id="verifying-metrics">
     بمجرد اكتمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن المقاييس تتدفّق:
 
     1. انتقل إلى مستكشف المقاييس
@@ -234,9 +226,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل Redis Metrics قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماط Redis Metrics واقعية.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة بيانات نموذجية للمقاييس
-
+  <Step title="تنزيل مجموعة بيانات نموذجية للمقاييس" id="download-sample">
     نزّل ملفات المقاييس المُولَّدة مسبقًا (24 ساعة من Redis Metrics بأنماط واقعية):
 
     ```bash
@@ -255,9 +245,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * **أنماط الزيارات اليومية** - ذروات خلال ساعات العمل، وانخفاضات مسائية، وارتفاعات طفيفة عشوائية
   </Step>
 
-  <Step>
-    #### بدء ClickStack
-
+  <Step title="بدء ClickStack" id="start-clickstack">
     شغّل مثيلًا من ClickStack:
 
     ```bash
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     انتظر نحو 30 ثانية حتى يكتمل تشغيل ClickStack بالكامل.
   </Step>
 
-  <Step>
-    #### تحميل المقاييس إلى ClickStack
-
+  <Step title="تحميل المقاييس إلى ClickStack" id="load-metrics">
     حمّل المقاييس مباشرةً إلى ClickHouse:
 
     ```bash
@@ -285,9 +271,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### التحقق من المقاييس في HyperDX
-
+  <Step title="التحقق من المقاييس في HyperDX" id="verify-metrics">
     بعد تحميلها، أسرع طريقة لرؤية مقاييسك هي عبر لوحة المعلومات الجاهزة مسبقًا.
 
     انتقل إلى قسم [لوحات المعلومات والتصورات](#dashboards) لاستيراد لوحة المعلومات وعرض جميع بيانات Redis Metrics دفعةً واحدة.
@@ -311,14 +295,12 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة Redis باستخدام ClickStack، نوفر تصورات مرئية أساسية لـ Redis Metrics.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">تنزيل</TrackedLink> تهيئة لوحة المعلومات
+  <Step title="تنزيل إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">تنزيل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة المعلومات المعدّة مسبقًا
-
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
+  <Step title="استيراد لوحة المعلومات المعدّة مسبقًا" id="import-dashboard">
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
@@ -328,9 +310,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### عرض لوحة المعلومات
-
+  <Step title="عرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع إعداد جميع التصورات المرئية مسبقًا:
 
     <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="لوحة معلومات Redis Metrics" />
@@ -454,4 +434,4 @@ docker exec <clickstack-container> telnet redis 6379
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يبني هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. بالنسبة إلى عمليات النشر في بيئات الإنتاج، نوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على تهيئة بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. أمّا لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

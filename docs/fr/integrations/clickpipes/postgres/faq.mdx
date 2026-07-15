@@ -221,7 +221,7 @@ En résumé, même si les processus sync et normalize sont arrêtés pendant une
   ### La création d’un ClickPipe peut-elle être automatisée ou effectuée via l’API ou la CLI ?
 </div>
 
-Un Postgres ClickPipe peut également être créé et géré via des endpoints [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi). Cette fonctionnalité est en bêta, et la référence de l’API est disponible [ici](/fr/api-reference/organization/get-list-of-available-organizations#tag/beta). Nous travaillons activement à la prise en charge de Terraform pour permettre également la création de Postgres ClickPipes.
+Un Postgres ClickPipe peut également être créé et géré via des endpoints [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi). Cette fonctionnalité est en bêta, et la référence de l’API est disponible [ici](/fr/products/cloud/api-reference/clickpipes/list-clickpipes). Nous travaillons activement à la prise en charge de Terraform pour permettre également la création de Postgres ClickPipes.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### Comment accélérer mon chargement initial ?
@@ -436,7 +436,7 @@ Si votre chargement initial s’est terminé sans erreur, mais qu’il manque de
 * Qu’il n’existe pas de politiques de lignes côté ClickHouse susceptibles de filtrer certaines lignes.
 
 <div id="failover-slot">
-  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
+  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
 </div>
 
 Oui. Pour un Postgres ClickPipe dont le mode de réplication est défini sur CDC ou Snapshot + CDC, vous pouvez demander à ClickPipes de créer un slot de réplication avec le basculement activé en activant le commutateur ci-dessous dans la section `Advanced Settings` lors de la création du ClickPipe. Notez que votre version de Postgres doit être 17 ou supérieure pour utiliser cette fonctionnalité.

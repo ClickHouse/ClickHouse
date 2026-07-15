@@ -27,156 +27,150 @@ S3 기반 ClickHouse는 특히 「콜드」 데이터에 대한 쿼리 성능이
   AWS/GCS 수명 주기 정책은 구성하지 마십시오. 이는 지원되지 않으며 테이블이 손상될 수 있습니다.
 </Warning>
 
-<div id="1-use-s3-as-a-clickhouse-disk">
-  ## 1. S3를 ClickHouse 디스크로 사용
-</div>
+<Steps>
+  <Step title="S3를 ClickHouse 디스크로 사용" id="1-use-s3-as-a-clickhouse-disk">
+    ### 디스크 생성
 
-<div id="creating-a-disk">
-  ### 디스크 생성
-</div>
+    저장소 구성(Storage configuration)을 저장할 새 파일을 ClickHouse `config.d` 디렉터리에 만드십시오:
 
-저장소 구성(Storage configuration)을 저장할 새 파일을 ClickHouse `config.d` 디렉터리에 만드십시오:
+    ```bash
+    vim /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-```bash
-vim /etc/clickhouse-server/config.d/storage_config.xml
-```
+    다음 XML을 새로 만든 파일에 복사한 다음, `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`를 데이터를 저장할 AWS 버킷 정보로 바꾸십시오:
 
-다음 XML을 새로 만든 파일에 복사한 다음, `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`를 데이터를 저장할 AWS 버킷 정보로 바꾸십시오:
-
-```xml
-<clickhouse>
-  <storage_configuration>
-    <disks>
-      <s3_disk>
-        <type>s3</type>
-        <endpoint>$BUCKET</endpoint>
-        <access_key_id>$ACCESS_KEY_ID</access_key_id>
-        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
-        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
-      </s3_disk>
-      <s3_cache>
-        <type>cache</type>
-        <disk>s3_disk</disk>
-        <path>/var/lib/clickhouse/disks/s3_cache/</path>
-        <max_size>10Gi</max_size>
-      </s3_cache>
-    </disks>
-    <policies>
-      <s3_main>
-        <volumes>
-          <main>
+    ```xml
+    <clickhouse>
+      <storage_configuration>
+        <disks>
+          <s3_disk>
+            <type>s3</type>
+            <endpoint>$BUCKET</endpoint>
+            <access_key_id>$ACCESS_KEY_ID</access_key_id>
+            <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+            <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+          </s3_disk>
+          <s3_cache>
+            <type>cache</type>
             <disk>s3_disk</disk>
-          </main>
-        </volumes>
-      </s3_main>
-    </policies>
-  </storage_configuration>
-</clickhouse>
-```
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+          </s3_cache>
+        </disks>
+        <policies>
+          <s3_main>
+            <volumes>
+              <main>
+                <disk>s3_disk</disk>
+              </main>
+            </volumes>
+          </s3_main>
+        </policies>
+      </storage_configuration>
+    </clickhouse>
+    ```
 
-S3 디스크의 설정을 더 구체적으로 지정해야 하는 경우(예: `region`을 지정하거나 사용자 지정 HTTP `header`를 보내는 경우) 관련 설정 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)에서 확인할 수 있습니다.
+    S3 디스크의 설정을 더 구체적으로 지정해야 하는 경우(예: `region`을 지정하거나 사용자 지정 HTTP `header`를 보내는 경우) 관련 설정 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)에서 확인할 수 있습니다.
 
-또한 `access_key_id`와 `secret_access_key` 대신 아래 항목을 사용할 수도 있으며, 이 경우 환경 변수와 Amazon EC2 메타데이터에서 자격 증명을 가져오려고 시도합니다:
+    또한 `access_key_id`와 `secret_access_key` 대신 아래 항목을 사용할 수도 있으며, 이 경우 환경 변수와 Amazon EC2 메타데이터에서 자격 증명을 가져오려고 시도합니다:
 
-```bash
-<use_environment_credentials>true</use_environment_credentials>
-```
+    ```bash
+    <use_environment_credentials>true</use_environment_credentials>
+    ```
 
-설정 파일을 만든 후에는 파일 소유자를 clickhouse 사용자 및 그룹으로 변경해야 합니다:
+    설정 파일을 만든 후에는 파일 소유자를 clickhouse 사용자 및 그룹으로 변경해야 합니다:
 
-```bash
-chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
-```
+    ```bash
+    chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-이제 변경 사항을 적용하려면 ClickHouse 서버를 다시 시작하십시오:
+    이제 변경 사항을 적용하려면 ClickHouse 서버를 다시 시작하십시오:
 
-```bash
-service clickhouse-server restart
-```
+    ```bash
+    service clickhouse-server restart
+    ```
+  </Step>
 
-<div id="2-create-a-table-backed-by-s3">
-  ## 2. S3 기반 테이블 만들기
-</div>
+  <Step title="S3 기반 테이블 생성" id="2-create-a-table-backed-by-s3">
+    S3 디스크가 올바르게 구성되었는지 확인하려면 테이블을 생성하고 쿼리해 볼 수 있습니다.
 
-S3 디스크가 올바르게 구성되었는지 확인하려면 테이블을 생성하고 쿼리해 볼 수 있습니다.
+    새 S3 스토리지 정책을 지정하여 테이블을 생성하십시오:
 
-새 S3 스토리지 정책을 지정하여 테이블을 생성하세요:
+    ```sql
+    CREATE TABLE my_s3_table
+      (
+        `id` UInt64,
+        `column1` String
+      )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main';
+    ```
 
-```sql
-CREATE TABLE my_s3_table
-  (
-    `id` UInt64,
-    `column1` String
-  )
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main';
-```
+    엔진을 `S3BackedMergeTree`로 지정할 필요는 없었다는 점에 유의하십시오. ClickHouse는 테이블이 저장소로 S3를 사용하고 있음을 감지하면 내부적으로 엔진 유형을 자동으로 변환합니다.
 
-엔진을 `S3BackedMergeTree`로 지정할 필요는 없습니다. ClickHouse는 테이블이 저장소로 S3를 사용한다고 감지하면 내부적으로 엔진 유형을 자동으로 변환합니다.
+    테이블이 올바른 policy로 생성되었는지 확인하십시오:
 
-테이블이 올바른 정책으로 생성되었는지 확인하세요:
+    ```sql
+    SHOW CREATE TABLE my_s3_table;
+    ```
 
-```sql
-SHOW CREATE TABLE my_s3_table;
-```
+    다음과 같은 결과가 표시됩니다:
 
-다음과 같은 결과가 표시됩니다:
+    ```response
+    ┌─statement────────────────────────────────────────────────────
+    │ CREATE TABLE default.my_s3_table
+    (
+      `id` UInt64,
+      `column1` String
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main', index_granularity = 8192
+    └──────────────────────────────────────────────────────────────
+    ```
 
-```response
-┌─statement────────────────────────────────────────────────────
-│ CREATE TABLE default.my_s3_table
-(
-  `id` UInt64,
-  `column1` String
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main', index_granularity = 8192
-└──────────────────────────────────────────────────────────────
-```
+    이제 새 테이블에 몇 개의 행을 삽입하겠습니다:
 
-이제 새 테이블에 몇 개의 행을 삽입하겠습니다:
+    ```sql
+    INSERT INTO my_s3_table (id, column1)
+      VALUES (1, 'abc'), (2, 'xyz');
+    ```
 
-```sql
-INSERT INTO my_s3_table (id, column1)
-  VALUES (1, 'abc'), (2, 'xyz');
-```
+    행이 삽입되었는지 확인해 보겠습니다:
 
-행이 삽입되었는지 확인해 보겠습니다:
+    ```sql
+    SELECT * FROM my_s3_table;
+    ```
 
-```sql
-SELECT * FROM my_s3_table;
-```
+    ```response
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ xyz     │
+    └────┴─────────┘
 
-```response
-┌─id─┬─column1─┐
-│  1 │ abc     │
-│  2 │ xyz     │
-└────┴─────────┘
+    2 rows in set. Elapsed: 0.284 sec.
+    ```
 
-2 rows in set. Elapsed: 0.284 sec.
-```
+    AWS 콘솔에서 데이터가 S3에 성공적으로 삽입되었다면, 지정한 버킷에 ClickHouse가 새 파일을 생성한 것을 확인할 수 있습니다.
 
-AWS 콘솔에서 데이터가 S3에 성공적으로 적재되었다면, 지정한 S3 버킷에 ClickHouse가 새 파일을 생성한 것을 확인할 수 있습니다.
+    모든 것이 정상적으로 작동했다면, 이제 저장소와 컴퓨트가 분리된 ClickHouse를 사용하고 있습니다!
 
-모든 과정이 성공적으로 완료되었다면, 이제 스토리지와 컴퓨트가 분리된 ClickHouse를 사용하고 있습니다!
+    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="저장소와 컴퓨트 분리를 사용하는 S3 버킷 예시" border />
+  </Step>
 
-<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="컴퓨트와 스토리지 분리 구성을 사용하는 S3 버킷 예시" border />
+  <Step title="장애 허용을 위한 복제 구현(선택 사항)" id="3-implementing-replication-for-fault-tolerance-optional">
+    <Warning>
+      AWS/GCS 수명 주기 정책은 구성하지 마십시오. 이는 지원되지 않으며 테이블이 손상될 수 있습니다.
+    </Warning>
 
-<div id="3-implementing-replication-for-fault-tolerance-optional">
-  ## 3. 장애 허용을 위한 복제 구성(선택 사항)
-</div>
+    장애 허용을 위해 여러 AWS 리전에 분산된 여러 ClickHouse 서버 노드를 사용할 수 있으며, 각 노드에 대해 S3 버킷을 하나씩 사용할 수 있습니다.
 
-<Warning>
-  AWS/GCS 수명 주기 정책은 구성하지 마십시오. 이는 지원되지 않으며 테이블이 손상될 수 있습니다.
-</Warning>
+    S3 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진을 사용해 구현할 수 있습니다. 자세한 내용은 다음 가이드를 참조하십시오:
 
-장애 허용을 위해 여러 AWS 리전에 분산된 여러 ClickHouse 서버 노드를 사용하고, 각 노드에 S3 버킷을 하나씩 할당할 수 있습니다.
-
-S3 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진을 사용해 구성할 수 있습니다. 자세한 내용은 다음 가이드를 참조하십시오.
-
-* [S3 객체 스토리지를 사용해 2개의 AWS 리전에 걸쳐 단일 세그먼트를 복제하기](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+    * [S3 객체 스토리지를 사용하여 두 AWS 리전에 걸쳐 단일 세그먼트 복제하기](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## 추가 자료

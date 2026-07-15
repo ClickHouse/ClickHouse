@@ -2,7 +2,7 @@
 sidebarTitle: 'Retool'
 slug: /integrations/retool
 keywords: ['clickhouse', 'retool', 'conectar', 'integrar', 'ui', 'admin', 'painel', 'dashboard', 'sem código', 'no-code']
-description: 'Crie rapidamente apps web e mobile com interfaces de usuário avançadas, automatize tarefas complexas e integre IA — tudo com base nos seus dados.'
+description: 'Crie rapidamente apps web e mobile com interfaces ricas, automatize tarefas complexas e integre IA — tudo com base nos seus dados.'
 title: 'Conectando o Retool ao ClickHouse'
 doc_type: 'guide'
 integration:
@@ -17,45 +17,43 @@ import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.j
 
 <PartnerBadge />
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna as informações da conexão
-</div>
+<Steps>
+  <Step title="Reúna seus detalhes da conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Crie um recurso do ClickHouse" id="2-create-a-clickhouse-resource">
+    Faça login na sua conta do Retool e vá para a aba *Resources*. Escolha &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-<div id="2-create-a-clickhouse-resource">
-  ## 2. Crie um recurso do ClickHouse
-</div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Criando um novo recurso" />
 
-Faça login na sua conta do Retool e vá para a aba *Resources*. Escolha &quot;Create New&quot; -&gt; &quot;Resource&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Criando um novo recurso" />
+    Selecione &quot;JDBC&quot; na lista de conectores disponíveis:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Escolhendo o conector JDBC" />
 
-Selecione &quot;JDBC&quot; na lista de conectores disponíveis:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Escolhendo o conector JDBC" />
+    No assistente de configuração, certifique-se de selecionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Selecionando o driver correto" />
 
-No assistente de configuração, certifique-se de selecionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Selecionando o driver correto" />
+    Preencha suas credenciais do ClickHouse no seguinte formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
+    Se a sua instância exigir SSL ou se você estiver usando ClickHouse Cloud, adicione `&ssl=true` à string de conexão, para que ela fique assim: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificando suas credenciais" />
 
-Preencha suas credenciais do ClickHouse no seguinte formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
-Se a sua instância exigir SSL ou se você estiver usando ClickHouse Cloud, adicione `&ssl=true` à string de conexão, para que ela fique assim: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificando suas credenciais" />
+    Depois disso, teste sua conexão:
 
-<br />
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Testando sua conexão" />
 
-Depois disso, teste sua conexão:
+    <br />
 
-<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Testando sua conexão" />
-
-<br />
-
-Agora, você já pode prosseguir para o seu app usando seu recurso do ClickHouse.
+    Agora, você já pode prosseguir para o seu app usando seu recurso do ClickHouse.
+  </Step>
+</Steps>

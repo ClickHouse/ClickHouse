@@ -1,6 +1,6 @@
 ---
 slug: /integrations/data-ingestion-overview
-keywords: [ 'Airbyte', 'Apache Spark', 'Spark', 'Azure Synapse', 'Amazon Glue', 'Apache Beam', 'dbt', 'Fivetran', 'NiFi', 'dlt', 'Vector' ]
+keywords: [ 'Airbyte', 'Apache Airflow', 'Airflow', 'Apache Spark', 'Spark', 'Azure Synapse', 'Amazon Glue', 'Apache Beam', 'dbt', 'Fivetran', 'NiFi', 'dlt', 'Vector' ]
 title: 'データインジェスト'
 description: 'データインジェストセクションのランディングページ'
 doc_type: 'landing-page'
@@ -12,17 +12,21 @@ ClickHouse は、データインテグレーションや変換のためのさま
 | データインジェストツール                                                                                 | 説明                                                                                                                                  |
 | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | [Airbyte](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse)          | オープンソースのデータインテグレーションプラットフォームです。ELT データパイプラインを作成でき、140 を超える標準搭載コネクタが付属しています。                                                         |
+| [Apache Airflow](/ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)   | コードとしてワークフローを作成、スケジュール、監視するためのオープンソースプラットフォームで、DAG から ClickHouse クエリの実行やデータロードを行うための provider を備えています。                              |
 | [Apache Spark](/ja/integrations/connectors/data-ingestion/apache-spark/index)                   | 単一ノードのマシンまたはクラスター上で、データエンジニアリング、データサイエンス、機械学習を実行するためのマルチ言語エンジンです。                                                                   |
-| [Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink)                         | Flink の DataStream API を介して ClickHouse にリアルタイムでデータを取り込み、バッチ書き込みにも対応します。                                                             |
+| [Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink)                         | Flink の DataStream API を介して ClickHouse にリアルタイムでデータインジェストと処理を行い、バッチ書き込みにも対応します。                                                             |
 | [Amazon Glue](/ja/integrations/connectors/data-ingestion/AWS/glue)                              | Amazon Web Services (AWS) が提供する完全マネージド型のサーバーレスなデータインテグレーションサービスで、分析、機械学習、アプリケーション開発向けに、データの検出、準備、変換を簡素化します。                         |
 | [Artie](/ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse) | 本番データを ClickHouse にレプリケートする完全マネージド型のリアルタイムデータストリーミングプラットフォームで、顧客向け分析、運用ワークフロー、本番環境での Agentic AI を実現します。                             |
 | [Azure Synapse](/ja/integrations/connectors/data-ingestion/azure/azure-synapse)                 | Microsoft Azure が提供する完全マネージド型のクラウドベース分析サービスで、ビッグデータとデータウェアハウジングを組み合わせ、SQL、Apache Spark、データパイプラインを使用した大規模なデータインテグレーション、変換、分析を簡素化します。 |
 | [Azure Data Factory](/ja/integrations/connectors/data-ingestion/azure/azure-data-factory/index) | 大規模なデータワークフローを作成、スケジュール、オーケストレーションできるクラウドベースのデータインテグレーションサービスです。                                                                    |
 | [Apache Beam](/ja/integrations/connectors/data-ingestion/etl-tools/apache-beam)                 | 開発者がバッチおよびストリーム (連続) データ処理パイプラインの両方を定義して実行できる、オープンソースの統一プログラミングモデルです。                                                               |
+| [Apify](/ja/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse)              | Web スクレイピングとブラウザー自動化のプラットフォームで、このインテグレーションを使うと、スクレイピングおよびクロールしたデータを ClickHouse に読み込めます。                                             |
 | [BladePipe](/ja/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse)      | サブ秒レベルのレイテンシーで、プラットフォーム間のシームレスなデータフローを実現するリアルタイムのエンドツーエンドデータインテグレーションツールです。                                                         |
 | [dbt](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index)                           | SELECT 文を記述するだけで、分析エンジニアがデータウェアハウス内のデータを変換できるようにします。                                                                                |
 | [dlt](/ja/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse)                  | Python スクリプトに追加することで、さまざまな、しばしば複雑なデータソースから、適切に構造化されたライブデータセットへデータを読み込めるオープンソースライブラリです。                                              |
 | [Estuary](/ja/integrations/connectors/data-ingestion/community-integrations/estuary)            | 柔軟なデプロイオプションにより、ミリ秒レベルのレイテンシーを持つ ETL パイプラインを実現するデータプラットフォームです。                                                                      |
 | [Fivetran](/ja/integrations/connectors/data-ingestion/etl-tools/fivetran/index)                 | クラウドデータプラットフォーム間、およびそれらへの入力・それらからの出力を含むデータ移動を自動化するプラットフォームです。                                                                       |
+| [Google Dataflow](/ja/integrations/connectors/data-ingestion/GCP/google-dataflow/dataflow)      | ストリームおよびバッチのデータ処理向けの完全マネージド型 Google Cloud サービスで、ClickHouse にデータを読み込むための templates と Java runner を備えています。                            |
 | [NiFi](/ja/integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse)                | ソフトウェアシステム間のデータフローを自動化するために設計された、オープンソースのワークフロー管理ソフトウェアです。                                                                          |
+| [Streamkap](/ja/integrations/connectors/data-ingestion/streamkap/streamkap-and-clickhouse)      | SQL Server などのデータベースから ClickHouse にデータをレプリケートするための、リアルタイムの変更データキャプチャ (CDC) ストリーミングプラットフォームです。                                       |
 | [Vector](/ja/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse)             | 組織が自社のオブザーバビリティデータを制御できるようにする、高性能なオブザーバビリティデータパイプラインです。                                                                             |

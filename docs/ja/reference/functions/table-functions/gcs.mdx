@@ -76,7 +76,7 @@ gcs(named_collection[, option=value [,..]])
   ## 例
 </div>
 
-GCSファイル `https://storage.googleapis.com/my-test-bucket-768/data.csv` からテーブルの先頭2行を選択する例:
+GCSファイル `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz` から先頭2行を選択する例です。圧縮方式は `.gz` ファイル拡張子から自動的に検出されます:
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-同様に、`gzip` 圧縮方式のファイルからの場合:
+上記と同じクエリですが、自動検出に頼らず、`gzip` 圧縮方式を明示的に指定しています:
 
 ```sql
 SELECT *

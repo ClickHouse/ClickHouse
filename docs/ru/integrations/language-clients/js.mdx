@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Официальный JS-клиент для подключения к ClickHouse.
 Клиент написан на TypeScript и предоставляет типы для публичного API клиента.
@@ -157,13 +156,13 @@ const client = createClient({
   #### Параметры конфигурации для Node.js
 </div>
 
-| Параметр                                                                       | Описание                                                               | Значение по умолчанию | См. также                                                                                                                                        |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **max&#95;open&#95;connections**?: number                                      | Максимальное количество открытых сокетов на один хост.                 | `10`                  | -                                                                                                                                                |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | Настройка сертификатов TLS.                                            | -                     | [Документация по TLS](/ru/integrations/language-clients/js#tls-certificates-nodejs-only)                                                            |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                                                      | -                     | [Документация по Keep Alive](/ru/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                             |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | Пользовательский HTTP-агент для клиента.                               | -                     | [Документация по HTTP-агенту](/ru/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                                 |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | Устанавливает заголовок `Authorization` с учетными данными Basic Auth. | `true`                | [Использование этого параметра в документации по HTTP-агенту](/ru/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| Параметр                                                                                                          | Описание                                                               | Значение по умолчанию | См. также                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **max&#95;open&#95;connections**?: number                                                                         | Максимальное количество открытых сокетов на один хост.                 | `10`                  | -                                                                                                                                                |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                                          | Настройка сертификатов TLS.                                            | -                     | [Документация по TLS](/ru/integrations/language-clients/js#tls-certificates-nodejs-only)                                                            |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                                    | -                                                                      | -                     | [Документация по Keep Alive](/ru/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                             |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Экспериментальный</Badge>   | Пользовательский HTTP-агент для клиента.                               | -                     | [Документация по HTTP-агенту](/ru/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                                 |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Экспериментальный</Badge> | Устанавливает заголовок `Authorization` с учетными данными Basic Auth. | `true`                | [Использование этого параметра в документации по HTTP-агенту](/ru/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### Настройка URL

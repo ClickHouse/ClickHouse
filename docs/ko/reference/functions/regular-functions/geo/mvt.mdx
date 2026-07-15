@@ -34,22 +34,26 @@ Point, 선, Polygon 지오메트리를 지원하며, `Geometry` 타입과 구체
   ## MVTEncodeGeom
 </div>
 
-지리 좌표(경도/위도)로 주어진 도형을 `zoom`, `tile_x`, `tile_y`로 식별되는
-slippy-map 타일의 타일 내부 픽셀 공간으로 투영하고, 타일 경계에 맞게 잘라낸 다음 정수 픽셀 그리드에 스냅하여
-타일 공간의 도형을 반환합니다.
+지리 좌표(경도/위도)로 주어진 지오메트리를 `zoom`, `tile_x`, `tile_y`로 식별되는
+slippy-map 타일의 타일 내부 픽셀 공간으로 투영하고, 정수 픽셀 그리드에 스냅한 다음 타일 경계에 맞게 잘라내어
+타일 공간의 지오메트리를 반환합니다.
 
 투영에는 전체 `UInt32` 좌표 범위에 걸친 Web Mercator를 사용합니다. 반환되는 좌표의 원점은 타일의
 왼쪽 위 모서리에 있고 y축은 아래쪽을 향합니다. 이는 Mapbox Vector
 Tile 포맷의 좌표 규약이므로 결과를 `MVTEncode`에 바로 전달할 수 있습니다. 좌표는 정수 픽셀로 반올림되므로
-`MVTEncodeGeom`으로 그룹화하면 동일한 그리드에 놓인 도형이 하나의 클러스터로 합쳐집니다.
+`MVTEncodeGeom`으로 그룹화하면 동일한 그리드에 놓인 지오메트리가 하나의 클러스터로 합쳐집니다.
 
-`clip`이 활성화되면(기본값) 도형은 `buffer` 픽셀만큼 확장된 타일 범위(각 축에서
-`[-buffer, extent + buffer]`)로 잘려 나가며, 완전히 바깥에 있는 도형은 `NULL`이 됩니다. 이는
+`clip`이 활성화되면(기본값) 지오메트리는 `buffer` 픽셀만큼 확장된 타일 범위(각 축에서
+`[-buffer, extent + buffer]`)로 잘려 나가며, 완전히 바깥에 있는 지오메트리는 `NULL`이 됩니다. 이는
 PostGIS `ST_AsMVTGeom`에 대응합니다.
 
-출력 도형 유형은 입력에 따라 달라집니다. `Point`는 `Point`를 반환하고, `LineString` 또는 `MultiLineString`은
+Polygon 좌표는 검증 전에 `2^30` 윈도우로 제한됩니다. 이는 `zoom` 18과 `extent` 4096에서 전 세계 전체의 픽셀 범위와
+정확히 같으므로, 일반적인 타일에서는 지오메트리가 검증되지만 클리핑되지는 않으며, 이 제한은 극단적인 `zoom` 또는 `extent`
+값에 배치된 지오메트리에만 영향을 줍니다.
+
+출력 지오메트리 유형은 입력에 따라 달라집니다. `Point`는 `Point`를 반환하고, `LineString` 또는 `MultiLineString`은
 `MultiLineString`을 반환하며, `Ring`, `Polygon`, `MultiPolygon`은 `MultiPolygon`을 반환합니다
-(클리핑 과정에서 하나의 도형이 여러 파트로 분할될 수 있습니다).
+(클리핑 과정에서 하나의 지오메트리가 여러 파트로 분할될 수 있습니다).
 
 **구문**
 
@@ -64,8 +68,8 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 * `tile_x` — `[0, 2^zoom - 1]` 범위의 타일 컬럼 인덱스입니다. [`UInt32`](/ko/reference/data-types/int-uint).
 * `tile_y` — `[0, 2^zoom - 1]` 범위의 타일 행 인덱스입니다. [`UInt32`](/ko/reference/data-types/int-uint).
 * `extent` — 타일 한 변의 픽셀 수를 나타내는 선택적 extent이며, 범위는 `[1, 2147483647]`입니다. 기본값은 Mapbox Vector Tile의 기본값인 `4096`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
-* `buffer` — 픽셀 단위의 선택적 클립 buffer이며, 범위는 `[0, 2147483647]`입니다. 기본값은 `1`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
-* `clip` — 선택적 flag입니다. 0이 아니면(기본값) 지오메트리가 타일과 buffer를 포함한 범위로 클리핑됩니다. [`UInt8`](/ko/reference/data-types/int-uint).
+* `buffer` — 픽셀 단위의 선택적 클립 버퍼이며, 범위는 `[0, 2147483647]`입니다. 기본값은 `1`입니다. [`UInt32`](/ko/reference/data-types/int-uint).
+* `clip` — 선택적 flag입니다. 0이 아니면(기본값) 지오메트리가 타일과 버퍼를 포함한 범위로 클리핑됩니다. [`UInt8`](/ko/reference/data-types/int-uint).
 
 **반환 값**
 
@@ -320,21 +324,3 @@ ClickHouse는 기본적으로 타일 endpoint를 노출하지 않습니다. HTTP
 </div>
 
 * Web Mercator 투영은 위도를 `±85.05112878°`로 제한하며, 180도 자오선을 가로지르는 입력은 처리하지 않습니다.
-
-* **Polygon 클리핑은 MVT에서 유효한 출력을 보장하지 않습니다.** 클리핑은 링의 방향과 닫힘 여부는 바로잡지만, 자기 교차는 해결하지 않습니다. 따라서 자기 교차하는(&quot;나비넥타이형&quot;) 링은 복구되지 않습니다. 타일과 만나는 방식에 따라 변경 없이 그대로 출력되거나(여전히 유효하지 않음) `NULL`로 처리됩니다. 예를 들어, 타일 내부에 완전히 포함된 나비넥타이형은 제거되지만, 동일한 네 모서리를 단순한 링으로 감은 경우에는 유지됩니다:
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-* **지오메트리는 정수 픽셀 그리드로 반올림되기 전에 잘립니다.** PostGIS는 먼저 지오메트리를 정수 픽셀 그리드에 스냅한 다음 자르지만, `MVTEncodeGeom`은 먼저 자르고(부동소수점 투영 좌표에서) 그다음 반올림합니다. 타일 경계 근처에서는 이 때문에 원래라면 경계 픽셀로 반올림되었을 좌표가 누락될 수 있습니다. 예를 들어 `buffer = 0`이면 타일 경계 바로 동쪽에 있는 Point는 먼저 잘려 버리므로, 반올림 우선 방식에서는 유지되었을 경계 픽셀 `4096`으로 반올림되는 경우에도 제외됩니다:
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```

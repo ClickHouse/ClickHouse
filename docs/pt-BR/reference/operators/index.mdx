@@ -263,16 +263,18 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` pode ser uma expressão de array (um literal de array, uma coluna do tipo array ou qualquer expressão que retorne um array). Esta é a sintaxe de quantificador de array no estilo do PostgreSQL. Ela é reconhecida durante o parse e reescrita como funções de array, portanto não é necessária nenhuma reescrita manual:
 
-| Sintaxe                                                     | Reescrito como                     |
-| ----------------------------------------------------------- | ---------------------------------- |
-| `expr = SOME(arr)`                                          | `has(arr, expr)`                   |
-| `expr <> ALL(arr)`                                          | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (qualquer outro operador de comparação) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (qualquer outro operador de comparação)  | `arrayAll(x -> expr OP x, arr)`    |
+| Sintaxe                                                  | Reescrito como                     |
+| -------------------------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                                       | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                                       | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (qualquer outro operador compatível) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (qualquer outro operador compatível)  | `arrayAll(x -> expr OP x, arr)`    |
 
 `SOME` é o quantificador existencial (o sinônimo em SQL de `ANY`). `=` e `<>` recebem tratamento especial e são reescritos como `has` / `NOT has` porque têm uma implementação otimizada; a forma geral recorre às funções de ordem superior `arrayExists` / `arrayAll`.
 
-A forma com array é reconhecida apenas para os operadores de comparação `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, e `>=`. Outros operadores que aceitam um array à direita — por exemplo, `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP` e `IN` — **não** são reescritos como quantificadores de array e mantêm seu significado normal. Por exemplo, `'abc' LIKE SOME(['a%', 'b%'])` não é a sintaxe de quantificador de array; use `arrayExists` / `arrayAll` diretamente nesses casos.
+A forma com array é reconhecida para os operadores de comparação `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, os predicados de comparação com palavras-chave `IS DISTINCT FROM` e `IS NOT DISTINCT FROM`, e os predicados de busca em string `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` e `REGEXP`. Os predicados de comparação com palavras-chave e os predicados de busca em string são reconhecidos apenas para a forma com array, não para a forma com subconsulta (que é reduzida a `IN`/`NOT IN`). Operadores que não têm significado de quantificador de array — por exemplo, o próprio `IN` — **não** são reescritos e mantêm seu significado normal.
+
+Os predicados de busca em string funcionam porque `MatchImpl` (a implementação por trás de `LIKE` / `ILIKE` / `REGEXP`) oferece suporte a um haystack constante com uma needle não constante. Por exemplo, `'abc' LIKE SOME(['a%', 'b%'])` é reescrito como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, e `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Isso compara uma string com vários patterns; para fazer a correspondência em uma única passagem combinada, você ainda pode usar uma função de busca multipadrão, como `multiMatchAny` (expressões regulares) ou `multiSearchAny` (substrings).
 
 <Info>
   **`ANY` não tem suporte na forma com array**
@@ -282,21 +284,22 @@ A forma com array é reconhecida apenas para os operadores de comparação `=`, 
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
   **O tratamento de `NULL` difere da forma com subconsulta**
 
-  Como a forma de array é reescrita no parser (onde configurações de consulta como `transform_null_in` não estão disponíveis, e uma coluna de array por linha não pode usar o caminho `IN` null-safe do analyzer), ela usa a semântica de dois valores de `has` (para `=` / `<>`) e `arrayExists` / `arrayAll` (que convertem um resultado desconhecido de comparação com `NULL` em `0`). Isso pode diferir da forma com subconsulta, cujo tratamento de `NULL` é reduzido por meio de `IN` / `NOT IN` e depende de `transform_null_in`:
+  Como a forma com array é reescrita no parser (onde configurações de consulta como `transform_null_in` não estão disponíveis, e uma coluna de array por linha não pode usar o caminho `IN` null-safe do analyzer), ela usa a semântica de dois valores de `has` (para `=` / `<>`) e `arrayExists` / `arrayAll` (que convertem um resultado desconhecido de comparação com `NULL` em `0`). Isso pode diferir da forma com subconsulta, cujo tratamento de `NULL` é reduzido por meio de `IN` / `NOT IN` e depende de `transform_null_in`:
 
   ```sql
   SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE e AT LOCAL
+</div>
+
+Os operadores pós-fixados `AT TIME ZONE` e `AT LOCAL` convertem um valor `DateTime` ou `DateTime64` para outro fuso horário. Eles são açúcar sintático para a função [`toTimeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#toTimezone) já existente:
+
+| Sintaxe                  | Equivalente                    |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+`zone` pode ser qualquer expressão constante do tipo string que resulte em um nome de fuso horário válido (por exemplo, `'America/Denver'`, `'UTC'` ou `concat('America', '/', 'Denver')`). Como `AT TIME ZONE` é convertido em `toTimeZone`, aplicam-se as mesmas regras para argumentos de fuso horário: expressões não constantes, como uma referência de coluna, exigem [`allow_nonconst_timezone_arguments = 1`](/pt-BR/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+
+`AT LOCAL` usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings#session_timezone) atual (ou o padrão do servidor, se nenhum fuso horário da sessão estiver definido). Em tabelas `Distributed`, `session_timezone` deve ser definido explicitamente; quando está vazio, `timeZone()` é local ao shard e não pode ser usado como argumento constante de `toTimeZone`, causando uma exceção `ILLEGAL_COLUMN`.
+
+<Note>
+  Diferentemente do PostgreSQL, em que `timestamp without time zone AT TIME ZONE zone` reinterpreta o horário como pertencente ao fuso fornecido antes da conversão, o ClickHouse sempre mantém o mesmo ponto absoluto no tempo e apenas altera o rótulo de fuso horário usado na exibição. Ambas as formas são equivalentes a `toTimeZone` e não alteram o timestamp subjacente.
+</Note>
+
+`AT TIME ZONE` tem precedência de operador 13 (acima de `*`/`/`/`%`, que têm 12, e de `+`/`-`, que têm 11), em linha com o PostgreSQL. Isso significa que `a * ts AT TIME ZONE 'tz'` é interpretado como `a * (ts AT TIME ZONE 'tz')`, e `ts + interval AT TIME ZONE 'tz'` é interpretado como `ts + (interval AT TIME ZONE 'tz')`. Para aplicar a conversão de fuso horário após a aritmética, use parênteses explícitos:
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+Exemplos:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Veja também**
+
+* [`toTimeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## Operador lógico AND

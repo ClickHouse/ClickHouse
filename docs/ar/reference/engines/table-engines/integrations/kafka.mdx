@@ -69,7 +69,8 @@ SETTINGS
 المعلمات الاختيارية:
 
 * `kafka_security_protocol` - البروتوكول المستخدم للتواصل مع الوسطاء. القيم الممكنة: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - آلية SASL المستخدمة للمصادقة. القيم الممكنة: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - آلية SASL المستخدمة للمصادقة. القيم الممكنة: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - منطقة AWS لمصادقة MSK IAM. تُكتشَف تلقائيًا من عنوان الـ broker إذا لم يتم تحديدها. حدِّدها صراحةً عند استخدام الأسماء المستعارة لـ PrivateLink أو أسماء مضيفات DNS مخصّصة لا تتضمن معلومات المنطقة. القيمة الافتراضية: فارغة (اكتشاف تلقائي).
 * `kafka_sasl_username` - اسم مستخدم SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
 * `kafka_sasl_password` - كلمة مرور SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
 * `kafka_schema` — معلمة يجب استخدامها إذا كانت الصيغة تتطلب تعريف مخطط. على سبيل المثال، يتطلب [Cap&#39;n Proto](https://capnproto.org/) مسار ملف المخطط واسم الكائن الجذر `schema.capnp:Message`.
@@ -248,6 +249,116 @@ SETTINGS
 ```
 
 للاطلاع على قائمة بخيارات التهيئة المتاحة، راجع [مرجع تكوين librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). استخدم الشرطة السفلية (`_`) بدلًا من النقطة في تكوين ClickHouse. على سبيل المثال، ستُكتب `check.crcs=true` على النحو التالي: `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-aws-msk-iam">
+  ### مصادقة AWS MSK IAM
+</div>
+
+<Note>
+  تتطلب مصادقة AWS MSK IAM أن يكون ClickHouse مبنيًا مع تفعيل دعم AWS S3.
+</Note>
+
+يدعم AWS MSK المصادقة المستندة إلى IAM، مما يتيح الاتصال بعناقيد Kafka باستخدام بيانات اعتماد AWS بدلًا من إدارة أسماء مستخدمين وكلمات مرور منفصلة.
+
+**الإعداد الأساسي:**
+
+عيّن `kafka_sasl_mechanism = 'AWS_MSK_IAM'` في إعدادات الجدول:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+تُستخرج منطقة AWS تلقائيًا من نقطة نهاية الوسيط باستخدام مطابقة الأنماط:
+
+* MSK المُوفَّر: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* MSK Serverless: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**بيانات اعتماد AWS:**
+
+تُحمَّل بيانات الاعتماد دائمًا من `~/.aws/credentials` و`~/.aws/config` (ملفات التعريف الخاصة بـ AWS) عند توفّرها. ولتمكين ملفات تعريف مثيلات EC2 أيضًا، ومتغيرات البيئة (`AWS_ACCESS_KEY_ID`، وغيرها)، وأدوار مهام ECS، وغيرها من مصادر بيانات الاعتماد التلقائية، أضِف ما يلي إلى تهيئة الخادم لديك:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+لا يمكن تهيئة هذا الإعداد إلا من قِبل مسؤولي الخادم. القيمة الافتراضية: `false`.
+
+**PrivateLink وDNS المخصّص:**
+
+عند استخدام الأسماء المستعارة لـ PrivateLink أو أسماء مضيف DNS مخصّصة لا تتضمّن معلومات المنطقة، حدِّد منطقة AWS صراحةً:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**أذونات IAM:**
+
+أذونات المستهلك (لقراءة الرسائل):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+أذونات المُنتِج (لكتابة الرسائل):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### دعم Kerberos

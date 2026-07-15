@@ -76,34 +76,34 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 下表列出了高级仪表板中各个图表对应的 ClickHouse 指标、系统表来源和聚合类型：
 
-| 图表                          | 对应的 ClickHouse 指标名称                                                                                                                                                     | 系统表                       | 聚合类型                    |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
-| 查询数/秒                       | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| 运行中的查询                      | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
-| 运行中的合并                      | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
-| 已选取字节数/秒                    | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
-| IO 等待                       | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
-| S3 读取等待                     | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
-| S3 读取错误数/秒                  | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
-| CPU 等待                      | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| OS CPU 使用率 (userspace，归一化)  | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
-| OS CPU 使用率 (kernel，归一化)     | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
-| 从磁盘读取                       | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
-| 从文件系统读取                     | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
-| 内存 (已跟踪，字节)                 | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
-| MergeTree parts 总数          | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
-| 单个分区的最大 parts 数             | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
-| 从 S3 读取                     | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
-| 文件系统缓存大小                    | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
-| Disk S3 写请求数/秒              | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
-| Disk S3 读请求数/秒              | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
-| FS 缓存命中率                    | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
-| 页缓存命中率                      | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
-| 网络接收字节数/秒                   | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
-| 网络发送字节数/秒                   | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
-| 并发 TCP 连接数                  | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
-| 并发 MySQL 连接数                | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
-| 并发 HTTP 连接数                 | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
+| 图表                         | 对应的 ClickHouse 指标名称                                                                                                                                                     | 系统表                       | 聚合类型                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| 查询数/秒                      | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| 运行中的查询                     | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 运行中的合并                     | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
+| 已选取字节数/秒                   | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
+| IO 等待                      | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 读取等待                    | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
+| S3 读取错误数/秒                 | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
+| CPU 等待                     | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| OS CPU 使用率 (userspace，归一化) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| OS CPU 使用率 (kernel，归一化)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| 从磁盘读取                      | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| 从文件系统读取                    | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| 内存 (已跟踪，字节)                | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
+| MergeTree parts 总数         | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
+| 单个分区的最大 parts 数            | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
+| 从 S3 读取                    | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| 文件系统缓存大小                   | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
+| Disk S3 写请求数/秒             | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
+| Disk S3 读请求数/秒             | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| FS 缓存命中率                   | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
+| 页缓存命中率                     | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
+| 网络接收字节数/秒                  | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| 网络发送字节数/秒                  | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| 并发 TCP 连接数                 | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
+| 并发 MySQL 连接数               | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
+| 并发 HTTP 连接数                | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
 
 如需了解各项可视化的详细信息以及如何用它们进行故障排查，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
 
@@ -137,7 +137,7 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
   ### 查询下钻
 </div>
 
-在 Recent queries 表中选择某个查询后，会打开一个弹出面板，其中包含该查询的相关指标和信息：
+在 最近查询 表中选择某个查询后，会打开一个弹出面板，其中包含该查询的相关指标和信息：
 
 <Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Query Insights UI 查询下钻" border />
 
@@ -151,7 +151,7 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
   ## 相关页面
 </div>
 
-* [通知](/zh/products/cloud/features/monitoring/notifications) — 配置扩缩容事件、错误和计费相关告警
-* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 各仪表板可视化项的详细参考
-* [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 对系统表运行自定义 SQL 查询，深入查看内部信息
+* [通知](/zh/products/cloud/features/monitoring/notifications) — 为扩缩容事件、错误和计费配置告警
+* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 各仪表板可视化的详细参考
+* [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 对系统表运行自定义 SQL 查询，以深入了解内部信息
 * [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus) — 将指标导出到 Grafana、Datadog 或其他兼容 Prometheus 的工具

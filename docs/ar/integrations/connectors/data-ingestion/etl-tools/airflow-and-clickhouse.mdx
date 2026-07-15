@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'Apache Airflow'
+slug: /integrations/airflow
+description: 'نسّق استعلامات ClickHouse وعمليات تحميل البيانات من Apache Airflow باستخدام موفّر ClickHouse'
+title: 'ربط Apache Airflow بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://airflow.apache.org/'
+keywords: ['Apache Airflow', 'تنسيق المهام', 'DAG', 'clickhouse-connect', 'SQLExecuteQueryOperator', 'ClickHouseHook', 'سير عمل', 'المجدول']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+تُعد [Apache Airflow](https://airflow.apache.org/) منصة مفتوحة المصدر لتأليف سير العمل وجدولته ومراقبته على شكل شيفرة. ويُعرَّف سير العمل على هيئة رسوم بيانية موجهة لا دورية (DAGs) تتكوّن من مهام مكتوبة بلغة بايثون.
+
+يربط موفّر `apache-airflow-providers-clickhousedb` بين Airflow وClickHouse، مما يتيح لك تشغيل الاستعلامات وإنشاء الجداول وتحميل البيانات كجزء من DAG. ويتصل عبر [واجهة HTTP](/ar/concepts/features/interfaces/http) باستخدام عميل [`clickhouse-connect`](/ar/integrations/language-clients/python/index)، كما يوفّر ClickHouse من خلال إطار SQL الشائع في Airflow، بحيث يتولى `SQLExecuteQueryOperator` القياسي تنفيذ استعلامات DDL وDML والاستعلامات التحليلية من دون الحاجة إلى مشغّل خاص بـ ClickHouse.
+
+<div id="install-the-provider">
+  ## ثبّت الموفّر
+</div>
+
+ثبّت الموفّر في البيئة التي يعمل فيها مجدول Airflow والعمّال لديك:
+
+```bash
+pip install apache-airflow-providers-clickhousedb
+```
+
+يعتمد هذا الموفّر على `apache-airflow-providers-common-sql` و`clickhouse-connect`، ويُثبَّتان معه. لتمرير نتائج الاستعلام إلى كائنات DataFrame في pandas أو polars، ثبّت الإضافات الاختيارية التالية:
+
+```bash
+pip install 'apache-airflow-providers-common-sql[pandas,polars]'
+```
+
+<div id="create-a-clickhouse-connection">
+  ## إنشاء اتصال ClickHouse
+</div>
+
+يسجّل الموفّر نوع اتصال باسم `clickhouse`. أنشئ اتصالًا من واجهة Airflow ضمن **Admin &gt; Connections**، أو عرّفه عبر CLI أو من خلال متغير بيئة.
+
+في واجهة المستخدم، اختر **ClickHouse** كنوع الاتصال واملأ الحقول التالية:
+
+| الحقل        | الوصف                                                                                                                                          | القيمة الافتراضية           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **Host**     | اسم مضيف خادم ClickHouse، على سبيل المثال `abc123.clickhouse.cloud`                                                                            | `localhost`                 |
+| **Port**     | منفذ HTTP(S)                                                                                                                                   | `8123` (عادي)، `8443` (TLS) |
+| **Login**    | اسم مستخدم ClickHouse                                                                                                                          | `default`                   |
+| **Password** | كلمة مرور مستخدم ClickHouse                                                                                                                    | (فارغة)                     |
+| **Database** | قاعدة البيانات الافتراضية للاتصال. تعرض واجهة المستخدم هذا الحقل باسم **Database**؛ وهو الحقل `schema` عند تعريف الاتصال باستخدام URI أو JSON. | `default`                   |
+
+بالنسبة إلى [ClickHouse Cloud](/ar/products/cloud/getting-started/intro) أو أي عنقود مستضاف ذاتيًا مع تمكين TLS، اضبط `secure` على `true` في حقل **Extra** واستخدم منفذ TLS (`8443`).
+
+<div id="extra-connection-options">
+  ### خيارات الاتصال الإضافية
+</div>
+
+يوفّر الموفّر خيارات إضافية كحقول مخصّصة في نموذج الاتصال. وإذا عرّفت الاتصال باستخدام URI أو JSON أو متغيّر بيئة بدلًا من ذلك، فأرسلها كمفاتيح ضمن كائن JSON ‏`extra`. جميعها اختيارية:
+
+| `extra` key            | UI field                  | Default | Description                                                                                                                                                     |
+| ---------------------- | ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secure`               | استخدام TLS ‏(HTTPS)      | `false` | يفعّل HTTPS/TLS.                                                                                                                                                |
+| `verify`               | التحقق من SSL certificate | `true`  | يتحقق من certificate الخاصة بـ TLS على server عندما تكون قيمة `secure` هي `true`. اضبطه على `false` عند استخدام شهادات موقّعة ذاتيًا.                           |
+| `connect_timeout`      | مهلة الاتصال (بالثواني)   | `10`    | مهلة HTTP اتصال بالثواني.                                                                                                                                       |
+| `send_receive_timeout` | مهلة الاستعلام (seconds)  | `300`   | مهلة القراءة/الكتابة الخاصة بالاستعلام بالثواني. زِد هذه القيمة للاستعلامات التحليلية طويلة التشغيل.                                                              |
+| `compress`             | تفعيل ضغط LZ4             | `true`  | يفعّل ضغط نتائج LZ4.                                                                                                                                            |
+| `client_name`          | اسم Client                | (empty) | تسمية تُلحَق بمعرّف إصدار Airflow في `User-Agent` الخاص بـ ClickHouse وفي العمود `client_name` من [`system.query_log`](/ar/reference/system-tables/query_log).     |
+| `session_settings`     | إعدادات الجلسة (JSON)     | (empty) | [إعدادات الجلسة في ClickHouse](/ar/reference/settings/session-settings) التي تُطبَّق على كل استعلام في الاتصال، مثل `{"max_execution_time": 300, "max_threads": 8}`. |
+| `client_kwargs`        | Client kwargs (JSON)      | (empty) | keyword arguments إضافية تُمرَّر إلى `clickhouse_connect.get_client()`، مثل `http_proxy`.                                                                       |
+
+<div id="define-a-connection-without-the-ui">
+  ### حدِّد اتصالًا من دون واجهة المستخدم
+</div>
+
+اضبط الاتصال عبر متغيّر بيئة. ويشمل تنسيق URI كلًا من المضيف وبيانات الاعتماد وقاعدة البيانات:
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='clickhouse://default:password@localhost:8123/my_database'
+```
+
+يجب ترميز جميع مكوّنات URI باستخدام ترميز URL. بالنسبة إلى TLS ومهلات الانتظار وإعدادات الجلسة، استخدم صيغة JSON التي تُظهر حقول **Extra**:
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
+    "conn_type": "clickhouse",
+    "host": "abc123.clickhouse.cloud",
+    "port": 8443,
+    "login": "default",
+    "password": "secret",
+    "schema": "my_database",
+    "extra": {
+        "secure": true,
+        "session_settings": {
+            "max_execution_time": 300,
+            "max_memory_usage": 10000000000
+        }
+    }
+}'
+```
+
+تستخدم جميع الـ hooks والـ operators معرّف الاتصال `clickhouse_default` ما لم تحدد معرّفًا آخر.
+
+<div id="run-queries">
+  ## تشغيل الاستعلامات باستخدام SQLExecuteQueryOperator
+</div>
+
+اضبط قيمة `conn_id` للمشغّل بحيث تشير إلى اتصال ClickHouse لديك. ينشئ DAG التالي جدولًا، ويدرج صفوفًا، ثم يقرؤها مرة أخرى، ثم يحذف الجدول:
+
+```python
+from datetime import datetime
+
+from airflow import DAG
+from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+
+CLICKHOUSE_CONN_ID = "clickhouse_default"
+CLICKHOUSE_TABLE = "airflow_example"
+
+with DAG(
+    dag_id="example_clickhouse",
+    start_date=datetime(2021, 1, 1),
+    default_args={"conn_id": CLICKHOUSE_CONN_ID},
+    schedule="@once",
+    catchup=False,
+) as dag:
+    create_table = SQLExecuteQueryOperator(
+        task_id="create_table",
+        sql=f"""
+            CREATE TABLE IF NOT EXISTS {CLICKHOUSE_TABLE} (
+                id   UInt32,
+                name String,
+                ts   DateTime DEFAULT now()
+            ) ENGINE = MergeTree()
+            ORDER BY id
+        """,
+    )
+
+    insert_rows = SQLExecuteQueryOperator(
+        task_id="insert_rows",
+        sql=f"""
+            INSERT INTO {CLICKHOUSE_TABLE} (id, name) VALUES
+                (1, 'Alice'),
+                (2, 'Bob'),
+                (3, 'Charlie')
+        """,
+    )
+
+    read_rows = SQLExecuteQueryOperator(
+        task_id="read_rows",
+        sql=f"SELECT id, name FROM {CLICKHOUSE_TABLE} ORDER BY id",
+        handler=fetch_all_handler,
+    )
+
+    drop_table = SQLExecuteQueryOperator(
+        task_id="drop_table",
+        sql=f"DROP TABLE IF EXISTS {CLICKHOUSE_TABLE}",
+    )
+
+    create_table >> insert_rows >> read_rows >> drop_table
+```
+
+تُسترجَع نتائج الاستعلام باستخدام `handler` الافتراضي (`fetch_all_handler`). ولإرجاع شيء آخر غير مجموعة النتائج الكاملة، مرِّر معالجًا مختلفًا، مثل `fetch_one_handler` لإرجاع الصف الأول فقط.
+
+<div id="target-a-different-database">
+  ### استهدف قاعدة بيانات مختلفة لكل مهمة
+</div>
+
+عندما يكون اتصال واحد موجّهًا إلى عنقود وتنفّذ المهام الفردية استعلامات على قواعد بيانات مختلفة، فعيّن قاعدة البيانات عبر `hook_params` بدلًا من إنشاء اتصال منفصل:
+
+```python
+read_rows = SQLExecuteQueryOperator(
+    task_id="read_rows",
+    conn_id=CLICKHOUSE_CONN_ID,
+    sql="SELECT count() FROM events",
+    hook_params={"database": "analytics"},
+)
+```
+
+<div id="use-the-hook-directly">
+  ## استخدم الخطاف مباشرة
+</div>
+
+بالنسبة إلى الأعمال التي لا تناسب مُعامل SQL — مثل الإدراجات المجمّعة، أو التدفق، أو استدعاءات العميل الخاصة بـ ClickHouse — استخدم `ClickHouseHook` داخل مهمة في بايثون.
+
+تستخدم الطريقة `bulk_insert_rows` الخاصة بالخطاف مسار الإدراج العمودي الأصلي في `clickhouse-connect`، وهو أسرع بكثير من الإدراج صفًا بصف عند التعامل مع مجموعات بيانات كبيرة. اضبط `batch_size` للحد من ذروة الذاكرة عند التعامل مع مدخلات كبيرة جدًا:
+
+```python
+from airflow.providers.clickhousedb.hooks.clickhouse import ClickHouseHook
+
+hook = ClickHouseHook(clickhouse_conn_id="clickhouse_default")
+
+hook.bulk_insert_rows(
+    table="events",
+    rows=[("user1", "click"), ("user2", "view")],
+    column_names=["user_id", "action"],
+    batch_size=1000,
+)
+```
+
+استدعِ `get_client()` للوصول إلى عميل `clickhouse-connect` الداخلي لأي شيء لا يتيحه الخطاف مباشرةً:
+
+```python
+client = hook.get_client()
+total = client.query("SELECT count() FROM events").result_rows[0][0]
+```
+
+<div id="apply-session-settings">
+  ### تطبيق إعدادات الجلسة
+</div>
+
+مرِّر [إعدادات الجلسة](/ar/reference/settings/session-settings) عند إنشاء الـ خطاف، إما مباشرةً أو عبر `hook_params` الخاص بالمشغّل. وتُدمَج الإعدادات المُمرَّرة إلى المُنشئ مع أي `session_settings` مُعرَّفة في حقل **Extra** الخاص بالاتصال، وتكون لقيم المُنشئ الأولوية عند تعارض المفاتيح:
+
+```python
+hook = ClickHouseHook(
+    clickhouse_conn_id="clickhouse_default",
+    session_settings={"max_execution_time": 60, "max_threads": 4},
+)
+```
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* [`clickhouse-connect` عميل بايثون](/ar/integrations/language-clients/python/index)
+* [واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http)
+* [مرجع إعدادات جلسة ClickHouse](/ar/reference/settings/session-settings)
+* [الوثائق المرجعية لـ `apache-airflow-providers-clickhousedb`](https://airflow.apache.org/docs/apache-airflow-providers-clickhousedb/)
+* [حزمة الموفّر على PyPI](https://pypi.org/project/apache-airflow-providers-clickhousedb/)

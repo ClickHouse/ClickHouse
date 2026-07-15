@@ -12,7 +12,9 @@ As inserções assíncronas transferem a responsabilidade pelo batching do clien
 
 O comportamento principal é controlado pela configuração [`async_insert`](/pt-BR/reference/settings/session-settings#async_insert).
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="Inserções assíncronas" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="Inserções assíncronas" />
+</Frame>
 
 As inserções assíncronas têm suporte nas interfaces HTTP e TCP nativo.
 
@@ -20,11 +22,11 @@ Quando habilitadas (`async_insert = 1`), as inserções são mantidas em buffer 
 
 * O buffer atinge um tamanho de dados especificado ([`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size), padrão de 100 MiB).
 * Um limite de tempo é atingido ([`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud).
-* Um número máximo de consultas de insert é acumulado ([`async_insert_max_query_number`](/pt-BR/reference/settings/session-settings#async_insert_max_query_number), padrão de 450).
+* Um número máximo de consultas de inserção é acumulado ([`async_insert_max_query_number`](/pt-BR/reference/settings/session-settings#async_insert_max_query_number), padrão de 450).
 
 O primeiro limite atingido aciona o flush.
 
-Esse processo de batching é invisível para os clientes e ajuda o ClickHouse a mesclar com eficiência o tráfego de inserções de várias fontes. No entanto, até que ocorra um flush, os dados não podem ser consultados. É importante destacar que há vários buffers para cada combinação de formato de insert e configurações e, em clusters, os buffers são mantidos por nó, o que possibilita um controle granular em ambientes multilocatários. Fora isso, a mecânica de inserção é idêntica à descrita para [inserções síncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
+Esse processo de batching é invisível para os clientes e ajuda o ClickHouse a mesclar com eficiência o tráfego de inserções de várias fontes. No entanto, até que ocorra um flush, os dados não podem ser consultados. É importante destacar que há vários buffers para cada combinação de formato de inserção e configurações e, em clusters, os buffers são mantidos por nó, o que possibilita um controle granular em ambientes multilocatários. Fora isso, a mecânica de inserção é idêntica à descrita para [inserções síncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
 <div id="choosing-a-return-mode">
   ### Escolhendo um modo de retorno

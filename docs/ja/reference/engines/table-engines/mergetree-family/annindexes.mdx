@@ -661,13 +661,14 @@ ClickHouse は、こうした制約に対処する Quantized Bit (`QBit`) デー
 `QBit` 型のカラムを宣言するには、次の構文を使用します。
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 ここで:
 
-* `element_type` – 各ベクトル要素の型。サポートされている型は `BFloat16`、`Float32`、`Float64` です
+* `element_type` – 各ベクトル要素の型。サポートされている型は `Int8`、`BFloat16`、`Float32`、`Float64` です
 * `dimension` – 各ベクトルの要素数
+* `stride` – 任意。`dimension` の約数で、次元を `dimension / stride` 個の連続したグループに分割し、それぞれを別々のストリームに格納します。これにより、先頭側の次元だけを対象とする検索では、読み取るストリーム数を減らせます (Matryoshka 埋め込みで有用です)。既定値は `dimension` で、この場合、この型はストライドなしの `QBit` とバイト単位で同一です。詳細は [`QBit` data type page](/ja/reference/data-types/qbit) を参照してください。
 
 <div id="qbit-create">
   #### `QBit` テーブルの作成とデータの追加
