@@ -2098,7 +2098,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         /// -inf for a descending (reverse) key, whose last granule holds the smallest
                         /// values. Using +inf unconditionally inverts the key range (left > right)
                         /// for a reverse key. index_bounds tightens this bound per call.
-                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        ///
+                        /// Exception: a nullable reverse key sorts NULLs at the +inf side
+                        /// (create_field_ref maps NULL to +inf for NULL_LAST). When the value at
+                        /// range.begin is NULL, `left` is that +inf sentinel and the open side still
+                        /// reaches the +inf side, so it must stay +inf; forcing -inf would drop the
+                        /// NULL rows and mis-prune the range (false negatives for has([NULL]) / IS NULL).
+                        right = (reverse_flags[key_col] && !left.isPositiveInfinity()) ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2155,7 +2161,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     /// Using index_bounds[i].right unconditionally would produce an inverted key
                     /// range (left > right) for a reverse key, which mis-prunes granules (wrong
                     /// results) and trips the MergeTreeSetIndex binary-search assertion.
-                    right = reverse_flags[i] ? index_bounds[i].left : index_bounds[i].right;
+                    ///
+                    /// Exception: a nullable reverse key sorts NULLs at the +inf side
+                    /// (create_field_ref maps NULL to +inf for NULL_LAST). When the value at
+                    /// range.begin is NULL, `left` is that +inf sentinel and the open side still
+                    /// reaches the +inf side, so it must stay the upper bound; forcing the lower
+                    /// bound would drop the NULL rows and mis-prune the range (false negatives for
+                    /// has([NULL]) / IS NULL).
+                    right = (reverse_flags[i] && !left.isPositiveInfinity()) ? index_bounds[i].left : index_bounds[i].right;
                 }
             }
             else

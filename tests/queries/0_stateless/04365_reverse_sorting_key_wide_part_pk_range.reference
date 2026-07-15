@@ -7,3 +7,8 @@ eq_max	1
 in_set	50
 multi_range	43
 multi_in	30
+null_part_type	Wide
+null_is_null	200
+null_has_null	200
+null_ge0	300
+null_lt_neg400	100
