@@ -20,7 +20,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # The same uid/gid (101) is used both for alpine and ubuntu.
-RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+RUN printf 'Acquire::Retries "5";\nAPT::Update::Error-Mode "any";\n' > /etc/apt/apt.conf.d/80-retries \
     && sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
