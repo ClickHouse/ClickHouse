@@ -1949,6 +1949,24 @@ EOF""",
             )
             == "0\n"
         )
+        # A non-interval ALTER (RENAME / TO) on a legacy-invalid quota must not strip the last
+        # non-positive interval down to an empty (and therefore non-inert) quota that would start
+        # caching one empty key per query hash. The quota stays inert with 0 usage rows.
+        instance.query("ALTER QUOTA q_legacy_neg_hash TO ALL")
+        assert (
+            instance.query(
+                "SELECT durations FROM system.quotas WHERE name = 'q_legacy_neg_hash'"
+            )
+            == "[0]\n"
+        )
+        for i in range(5):
+            instance.query(f"SELECT count() FROM numbers({i + 10})")
+        assert (
+            instance.query(
+                "SELECT count() FROM system.quotas_usage WHERE quota_name = 'q_legacy_neg_hash'"
+            )
+            == "0\n"
+        )
     finally:
         instance.query("DROP QUOTA IF EXISTS q_legacy_neg")
         instance.query("DROP QUOTA IF EXISTS q_legacy_neg_hash")

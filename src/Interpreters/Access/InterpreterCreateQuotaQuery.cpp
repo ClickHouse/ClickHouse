@@ -10,6 +10,7 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <base/range.h>
+#include <algorithm>
 #include <boost/range/algorithm/find_if.hpp>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/upper_bound.hpp>
@@ -114,20 +115,21 @@ namespace
             }
         }
 
-        /// CREATE/ALTER drops every non-positive interval. The deserialize path keeps a persisted
-        /// non-positive interval, but normalizes negatives to 0 so they share the inert zero carve-out
-        /// (QuotaCache marks the quota inert) instead of surfacing as 4294967295 via the UInt32 cast in
-        /// system.quotas / system.quota_limits.
-        if (validate)
-        {
-            std::erase_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration.count() <= 0; });
-        }
+        /// Reconcile residual non-positive intervals (a legacy quota carried through ALTER, or a
+        /// persisted one on the deserialize path). If any enforceable positive interval remains,
+        /// drop the non-positive ones. Otherwise normalize the residual to a single 0 so the quota
+        /// keeps a non-positive limit and QuotaCache marks it inert: collapsing it to empty here
+        /// would turn a legacy-invalid quota into a normal no-limits quota and defeat that carve-out.
+        /// A genuine no-limits quota (all_limits already empty) stays empty and non-inert. This keeps
+        /// -1 from surfacing as 4294967295 via the UInt32 cast in system.quotas / system.quota_limits.
+        bool has_positive = std::any_of(
+            quota_all_limits.begin(), quota_all_limits.end(), [](const Quota::Limits & x) { return x.duration.count() > 0; });
+        if (has_positive)
+            std::erase_if(quota_all_limits, [](const Quota::Limits & x) { return x.duration.count() <= 0; });
         else
-        {
             for (auto & x : quota_all_limits)
                 if (x.duration.count() < 0)
                     x.duration = std::chrono::seconds::zero();
-        }
 
         if (override_to_roles)
             quota.to_roles = *override_to_roles;
