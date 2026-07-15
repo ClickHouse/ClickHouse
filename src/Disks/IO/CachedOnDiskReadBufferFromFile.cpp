@@ -1871,13 +1871,14 @@ std::string CachedOnDiskReadBufferFromFile::getInfoForLog(
     {
         wb << "read_type: " << toString(state ? state->read_type : ReadType::NONE) << ", ";
         wb << "bytes_to_predownload: " << state->bytes_to_predownload << ", ";
-        if (state->buf)
-        {
-            wb << "buf.available: " << state->buf->available() << ", ";
-            wb << "buf.offset: " << state->buf->offset() << ", ";
-            wb << "buf.size: " << state->buf->buffer().size() << ", ";
-            wb << "buf.buffer_end_offset: " << state->buf->getFileOffsetOfBufferEnd() << ", ";
-        }
+        /// Deliberately do not log the internal state of `state->buf` (its buffer pointers and
+        /// offsets). For the download read type the implementation buffer is a remote file reader
+        /// shared via `FileSegment::getRemoteFileReader` (handed out without being extracted, so an
+        /// intersecting read on another thread can reuse it). `getInfoForLog` is also called from
+        /// the `nextImplStep` scope guard after the reader has been handed off - i.e. from a thread
+        /// that no longer owns the read - so reading those fields would race with the current
+        /// downloader mutating them in `BufferBase::set`.
+        wb << "has_buf: " << (state->buf ? "true" : "false") << ", ";
     }
 
     wb << "file segments: " << info.file_segments->size();
