@@ -30,7 +30,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection = true,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    bool strict_override_validation = false);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.

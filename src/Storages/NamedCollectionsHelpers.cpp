@@ -13,6 +13,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -105,7 +107,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    bool strict_override_validation)
 {
     if (asts.empty())
         return nullptr;
@@ -137,6 +140,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     }
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
+    std::unordered_set<String> overridden_keys;
 
     for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
@@ -144,6 +148,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
         if (!value_override)
         {
+            if (strict_override_validation)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument");
             if (!(*it)->as<ASTFunction>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
             if (allow_override_by_default)
@@ -151,6 +157,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
+        if (strict_override_validation && !overridden_keys.emplace(value_override->first).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicated key '{}' in params", value_override->first);
         if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 

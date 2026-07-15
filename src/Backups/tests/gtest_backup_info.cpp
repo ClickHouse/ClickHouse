@@ -9,6 +9,8 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/scope_guard.h>
 
 #include <Poco/Util/MapConfiguration.h>
@@ -20,6 +22,11 @@
 
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
+}
 
 namespace
 {
@@ -685,9 +692,32 @@ TEST(BackupInfo, NormalizedStringRejectsDuplicateNamedCollectionOverrides)
         "S3(" + collection_name + ", url='s3://bucket/a', url='s3://bucket/b')");
     auto second = BackupInfo::fromString(
         "S3(" + collection_name + ", url='s3://bucket/b', url='s3://bucket/a')");
+    auto malformed = BackupInfo::fromString("S3(" + collection_name + ", equals(url))");
 
+    ASTs default_args{make_intrusive<ASTIdentifier>(collection_name)};
+    default_args.insert(default_args.end(), first.kv_args.begin(), first.kv_args.end());
+    auto default_collection = tryGetNamedCollectionWithOverrides(default_args, context);
+
+    EXPECT_EQ(default_collection->get<String>("url"), "s3://bucket/b");
     EXPECT_THROW((void)first.toNormalizedString(), Exception);
     EXPECT_THROW((void)second.toNormalizedString(context), Exception);
+    EXPECT_THROW((void)malformed.toNormalizedString(context), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringChecksNamedCollectionBeforeOverrides)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(backup_info_missing_collection, url=throwIf(1))");
+
+    try
+    {
+        (void)info.toNormalizedString(context);
+        FAIL() << "Expected a missing named collection exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST);
+    }
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonStringKeyValueArg)

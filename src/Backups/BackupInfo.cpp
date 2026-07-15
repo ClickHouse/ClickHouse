@@ -980,14 +980,18 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     if (!context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", id_arg);
 
-    UNUSED(getParamsMapFromAST(kv_args, context));
-
     ASTs collection_args;
     collection_args.reserve(1 + kv_args.size());
     collection_args.push_back(make_intrusive<ASTIdentifier>(id_arg));
     collection_args.insert(collection_args.end(), kv_args.begin(), kv_args.end());
 
-    return tryGetNamedCollectionWithOverrides(collection_args, context, /* throw_unknown_collection = */ true);
+    return tryGetNamedCollectionWithOverrides(
+        collection_args,
+        context,
+        /* throw_unknown_collection = */ true,
+        /* complex_args = */ nullptr,
+        /* dependent_table_id = */ nullptr,
+        /* strict_override_validation = */ true);
 }
 
 BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
