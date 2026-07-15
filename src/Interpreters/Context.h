@@ -1694,7 +1694,7 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the new analyzer in mutations.
+    /// Server-wide override for the analyzer in mutations.
     /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
     /// Set from the main config reload callback.
     void setMutationsUseAnalyzerOverride(std::optional<bool> value);
