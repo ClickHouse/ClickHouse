@@ -698,7 +698,11 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_lldb(child))
+                    # trim_for_log: with keep_output_on_error the lldb call
+                    # returns its full output even on a non-zero exit (e.g. a
+                    # later detach/quit fails after many frames were printed),
+                    # so bound it here to keep it from flooding job.log.
+                    print(trim_for_log(get_stacktraces_from_lldb(child)))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
