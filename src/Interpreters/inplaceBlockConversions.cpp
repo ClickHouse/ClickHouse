@@ -454,6 +454,14 @@ void fillMissingColumns(
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
             continue;
 
+        /// Subcolumn whose parent column is present in the part but whose subcolumn is absent
+        /// (metadata-only `ALTER MODIFY COLUMN T -> Nullable(T)`). Leave it null for
+        /// evaluateMissingDefaults to extract from the converted parent, instead of filling it
+        /// from the storage-type default (which gives a wrong all-NULL `.null` map here).
+        if (requested_column->isSubcolumn()
+            && available_columns.contains(requested_column->getNameInStorage()))
+            continue;
+
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
