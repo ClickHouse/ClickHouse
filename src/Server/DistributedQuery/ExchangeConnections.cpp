@@ -1,4 +1,5 @@
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
 #include <mutex>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/FutureConnection.h>
@@ -185,4 +186,5 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
 }
 
 }
+
 #endif
