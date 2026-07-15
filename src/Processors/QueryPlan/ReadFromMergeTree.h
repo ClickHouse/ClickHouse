@@ -577,8 +577,6 @@ private:
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool doNotMergePartsAcrossPartitionsFinal() const;
-
     bool isRowPolicyDeferredAfterFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
