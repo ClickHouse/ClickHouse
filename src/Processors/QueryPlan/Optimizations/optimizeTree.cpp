@@ -185,6 +185,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -254,6 +255,14 @@ void optimizeTreeSecondPass(
         });
     }
 
+    /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
+    /// in the traversal below. A join runtime filter injects a per-execution-random constant into the
+    /// probe-side Filter (see `joinRuntimeFilter.cpp`); hashing a plan that contains it would make an
+    /// aggregation's key differ across executions of the same query and defeat the size-stats cache.
+    /// Join steps avoid this for exactly the same reason by computing their key before the filter is
+    /// added. The plan here is already deterministic (post first pass and subplan materialization).
+    setAggregationHashTableCacheKeys(optimization_settings, root);
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -319,6 +328,10 @@ void optimizeTreeSecondPass(
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
+    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    if (optimization_settings.make_distributed_plan)
+        validateDistributedPlanBucketCounts(optimization_settings);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,

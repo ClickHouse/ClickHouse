@@ -1,0 +1,110 @@
+---
+slug: /sql-reference/table-functions/generate_series
+sidebarTitle: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: 'Возвращает таблицу с единственным столбцом `generate_series` (UInt64), содержащим целые числа в диапазоне от start до stop включительно.'
+doc_type: 'справочник'
+---
+
+Псевдоним: `generateSeries`
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+Возвращает таблицу с единственным столбцом &#39;generate&#95;series&#39; (`UInt64`), содержащим целые числа от start до stop включительно:
+
+```sql
+generate_series(START, STOP)
+```
+
+Возвращает таблицу с единственным столбцом &#39;generate&#95;series&#39; (`UInt64`), содержащим целые числа от start до stop включительно с шагом, заданным `STEP`:
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+`STEP` может быть отрицательным; в этом случае последовательность генерируется в порядке убывания — от `START` к `STOP`. Если `STEP` отрицательный и `START < STOP`, результат будет пустым.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Следующие запросы возвращают таблицы с одинаковым содержимым, но с разными названиями столбцов:
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+Следующие запросы возвращают таблицы с одинаковым содержимым, но разными именами столбцов (при этом второй вариант более эффективен):
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+Сгенерируйте последовательность по убыванию:
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```

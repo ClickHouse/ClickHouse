@@ -1,0 +1,182 @@
+---
+description: 'Configuration de la clé et des attributs du dictionnaire'
+sidebarTitle: 'Attributs'
+slug: /sql-reference/statements/create/dictionary/attributes
+title: 'Attributs du dictionnaire'
+doc_type: 'référence'
+---
+
+import CloudDetails from '/snippets/fr/_snippet_dictionary_in_cloud.mdx';
+
+<CloudDetails />
+
+La clause `structure` décrit la clé du dictionnaire et les champs disponibles pour les requêtes.
+
+Description XML :
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>Id</name>
+        </id>
+
+        <attribute>
+            <!-- Attribute parameters -->
+        </attribute>
+
+        ...
+
+    </structure>
+</dictionary>
+```
+
+Les attributs sont décrits dans les éléments :
+
+* `<id>` — colonne clé
+* `<attribute>` — colonne de données : il peut y avoir plusieurs attributs.
+
+Requête DDL :
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- attributes
+)
+PRIMARY KEY Id
+...
+```
+
+Les attributs sont décrits dans le corps de la requête :
+
+* `PRIMARY KEY` — Colonne clé
+* `AttrName AttrType` — Colonne de données. Il peut y avoir plusieurs attributs.
+
+<div id="key">
+  ## Clé
+</div>
+
+ClickHouse prend en charge les types de clés suivants :
+
+* Clé numérique. `UInt64`. Définie dans la balise `<id>` ou à l’aide du mot-clé `PRIMARY KEY`.
+* Clé composite. Ensemble de valeurs de types différents. Définie dans la balise `<key>` ou à l’aide du mot-clé `PRIMARY KEY`.
+
+Une structure XML peut contenir soit `<id>`, soit `<key>`. La requête DDL ne doit contenir qu’une seule `PRIMARY KEY`.
+
+<Note>
+  Vous ne devez pas décrire une clé comme un attribut.
+</Note>
+
+<div id="numeric-key">
+  ### Clé numérique
+</div>
+
+Type : `UInt64`.
+
+Exemple de configuration :
+
+```xml
+<id>
+    <name>Id</name>
+</id>
+```
+
+Champs de configuration :
+
+* `name` – Le nom de la colonne contenant les clés.
+
+Pour la requête DDL :
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+* `PRIMARY KEY` – Le nom de la colonne contenant les clés.
+
+<div id="composite-key">
+  ### Clé composite
+</div>
+
+La clé peut être un `tuple` composé de champs de n’importe quel type. Le [layout](/fr/reference/statements/create/dictionary/layouts/overview) doit alors être `complex_key_hashed` ou `complex_key_cache`.
+
+<Tip>
+  Une clé composite peut être constituée d’un seul élément. Cela permet par exemple d’utiliser une chaîne comme clé.
+</Tip>
+
+La structure de la clé est définie dans l’élément `<key>`. Les champs de la clé sont spécifiés dans le même format que les [attributs](#attributes) du dictionnaire. Exemple :
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>field1</name>
+            <type>String</type>
+        </attribute>
+        <attribute>
+            <name>field2</name>
+            <type>UInt32</type>
+        </attribute>
+        ...
+    </key>
+...
+```
+
+ou
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 UInt32
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
+Pour une requête adressée à la fonction `dictGet*`, un tuple est utilisé comme clé. Exemple : `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+<div id="attributes">
+  ## Attributs
+</div>
+
+Exemple de configuration :
+
+```xml
+<structure>
+    ...
+    <attribute>
+        <name>Name</name>
+        <type>ClickHouseDataType</type>
+        <null_value></null_value>
+        <expression>rand64()</expression>
+        <hierarchical>true</hierarchical>
+        <injective>true</injective>
+        <is_object_id>true</is_object_id>
+    </attribute>
+</structure>
+```
+
+ou
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
+Champs de configuration :
+
+| Balise                                             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Obligatoire |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `name`                                             | Nom de la colonne.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Oui         |
+| `type`                                             | Type de données ClickHouse : [UInt8](/fr/reference/data-types/int-uint), [UInt16](/fr/reference/data-types/int-uint), [UInt32](/fr/reference/data-types/int-uint), [UInt64](/fr/reference/data-types/int-uint), [Int8](/fr/reference/data-types/int-uint), [Int16](/fr/reference/data-types/int-uint), [Int32](/fr/reference/data-types/int-uint), [Int64](/fr/reference/data-types/int-uint), [Float32](/fr/reference/data-types/float), [Float64](/fr/reference/data-types/float), [UUID](/fr/reference/data-types/uuid), [Decimal32](/fr/reference/data-types/decimal), [Decimal64](/fr/reference/data-types/decimal), [Decimal128](/fr/reference/data-types/decimal), [Decimal256](/fr/reference/data-types/decimal),[Date](/fr/reference/data-types/date), [Date32](/fr/reference/data-types/date32), [DateTime](/fr/reference/data-types/datetime), [DateTime64](/fr/reference/data-types/datetime64), [String](/fr/reference/data-types/string), [Array](/fr/reference/data-types/array).<br />ClickHouse essaie de convertir la valeur du dictionnaire dans le type de données spécifié. Par exemple, avec MySQL, le champ peut être de type `TEXT`, `VARCHAR` ou `BLOB` dans la table source MySQL, mais être importé en tant que `String` dans ClickHouse.<br />[Nullable](/fr/reference/data-types/nullable) est actuellement pris en charge pour les dictionnaires [Flat](/fr/reference/statements/create/dictionary/layouts/flat), [Hashed](/fr/reference/statements/create/dictionary/layouts/hashed), [ComplexKeyHashed](/fr/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed), [Direct](/fr/reference/statements/create/dictionary/layouts/direct), [ComplexKeyDirect](/fr/reference/statements/create/dictionary/layouts/direct#complex_key_direct), [RangeHashed](/fr/reference/statements/create/dictionary/layouts/range-hashed), Polygon, [Cache](/fr/reference/statements/create/dictionary/layouts/cache), [ComplexKeyCache](/fr/reference/statements/create/dictionary/layouts/cache), [SSDCache](/fr/reference/statements/create/dictionary/layouts/ssd-cache), [SSDComplexKeyCache](/fr/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache). Dans les dictionnaires [IPTrie](/fr/reference/statements/create/dictionary/layouts/ip-trie), les types `Nullable` ne sont pas pris en charge. | Oui         |
+| `null_value`                                       | Valeur par défaut pour un élément inexistant.<br />Dans l&#39;exemple, il s&#39;agit d&#39;une chaîne vide. La valeur [NULL](/fr/reference/syntax#null) ne peut être utilisée que pour les types `Nullable` (voir la ligne précédente décrivant les types).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Oui         |
+| `expression`                                       | [Expression](/fr/reference/syntax#expressions) que ClickHouse exécute sur la valeur.<br />L&#39;expression peut être un nom de colonne dans la base de données SQL distante. Vous pouvez donc l&#39;utiliser pour créer un alias pour la colonne distante.<br /><br />Valeur par défaut : aucune expression.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Non         |
+| <a name="hierarchical-dict-attr" /> `hierarchical` | Si `true`, l&#39;attribut contient la valeur d&#39;une clé parente pour la clé actuelle. Voir [Dictionnaires hiérarchiques](/fr/reference/statements/create/dictionary/layouts/hierarchical).<br /><br />Valeur par défaut : `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Non         |
+| `injective`                                        | Indicateur signalant si l&#39;application `id -> attribute` est [injective](https://en.wikipedia.org/wiki/Injective_function).<br />Si `true`, ClickHouse peut automatiquement placer, après la clause `GROUP BY`, les requêtes adressées aux dictionnaires dont l&#39;application est injective. Cela réduit généralement de manière significative le nombre de ces requêtes.<br /><br />Valeur par défaut : `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Non         |
+| `is_object_id`                                     | Indicateur signalant si la requête est exécutée sur un document MongoDB via `ObjectID`.<br /><br />Valeur par défaut : `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |             |

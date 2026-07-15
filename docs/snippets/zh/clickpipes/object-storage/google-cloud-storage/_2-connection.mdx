@@ -1,0 +1,13 @@
+---
+title: 2 连接
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/cp_step2.webp" alt="填写连接信息" size="lg" border />
+
+* **GCS 文件路径**：GCS ClickPipe 使用 Cloud Storage 的 [XML API](https://docs.cloud.google.com/storage/docs/interoperability) 以实现互操作，因此需要使用 `storage.googleapis.com` 端点：
+
+  ```bash
+  https://storage.googleapis.com/bucket-name/key-name
+  ```
+
+  您可以使用 POSIX 通配符来匹配多个文件或前缀。有关支持的模式，请参阅[参考文档](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching)。

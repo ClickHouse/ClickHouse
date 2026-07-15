@@ -1,0 +1,348 @@
+---
+slug: /use-cases/observability/clickstack/dashboards
+title: 'Visualizações e dashboards com ClickStack'
+sidebarTitle: 'Dashboards'
+description: 'Visualizações e dashboards com ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'visualização', 'monitoramento', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import Tagging from '/snippets/pt-BR/_clickstack_tagging.mdx';
+
+O ClickStack permite visualizar eventos, com suporte nativo a gráficos na UI do ClickStack (HyperDX). Esses gráficos podem ser adicionados a dashboards para compartilhar com outros usuários.
+
+As visualizações podem ser criadas a partir de traces, métricas, logs ou quaisquer schemas de eventos wide definidos pelo usuário.
+
+<div id="creating-visualizations">
+  ## Criando visualizações
+</div>
+
+A interface **Chart Explorer** no HyperDX permite visualizar métricas, traces e logs ao longo do tempo, facilitando a criação de visualizações rápidas para análise de dados. Essa interface também é reutilizada na criação de dashboards. A seção a seguir mostra o processo de criação de uma visualização usando o Chart Explorer.
+
+Cada visualização começa com a seleção de uma **fonte de dados**, seguida de uma **métrica**, com **expressões de filtro** e campos de **group by** opcionais. Conceitualmente, as visualizações no HyperDX correspondem, nos bastidores, a uma consulta SQL `GROUP BY` — você define métricas para agregar nas dimensões selecionadas.
+
+<Tip>
+  **Geração de gráficos com IA**
+
+  O ClickStack também oferece suporte à criação de gráficos a partir de prompts em linguagem natural usando o recurso [text-to-chart](/pt-BR/clickstack/text-to-chart). Descreva o que você quer ver, e o ClickStack gera a visualização automaticamente.
+</Tip>
+
+Por exemplo, você pode criar um gráfico do número de erros (`count()`) agrupados por nome do serviço.
+
+Nos exemplos abaixo, usamos o dataset remoto disponível em [sql.clickhouse.com](https://sql.clickhouse.com), descrito no guia [&quot;Dataset de demonstração remoto&quot;](/pt-BR/clickstack/example-datasets/remote-demo-data). **Você também pode reproduzir esses exemplos acessando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
+
+<Steps>
+  <Step>
+    ### Acesse o Chart Explorer
+
+    Selecione `Chart Explorer` no menu à esquerda.
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+  </Step>
+
+  <Step>
+    ### Criar visualização
+
+    No exemplo abaixo, criamos um gráfico da duração média das requisições ao longo do tempo por nome do serviço. Para isso, o usuário precisa especificar uma métrica, uma coluna (que pode ser uma expressão SQL) e um campo de agregação.
+
+    Selecione o tipo de visualização `Line/Bar` no menu superior, seguido do dataset `Traces` (ou `Demo Traces` se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os seguintes valores:
+
+    * Metric: `Average`
+    * Column: `Duration/1000`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Average Time`
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Visualização simples" size="lg" />
+
+    Observe que você pode filtrar eventos usando uma cláusula SQL `WHERE` ou a sintaxe Lucene e definir o intervalo de tempo em que os eventos devem ser visualizados. Também há suporte para múltiplas séries.
+
+    Por exemplo, filtre pelo serviço `frontend` adicionando o filtro `ServiceName:\"frontend\"`. Adicione uma segunda série para a contagem de eventos ao longo do tempo com o alias `Count` clicando em `Add Series`.
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualização simples 2" size="lg" />
+
+    Para criar uma série semelhante a uma já existente, você pode duplicá-la em vez de começar do zero. Clique no ícone de cópia (`Duplicate series`) em uma linha de série para inserir uma cópia diretamente abaixo. A cópia mantém as configurações da série de origem, como a métrica, a coluna e o filtro. Depois, você altera apenas os campos que forem diferentes (por exemplo, a agregação) e dá à cópia seu próprio alias. A duplicação está disponível em todos os contextos em que há suporte para múltiplas séries. Ela fica oculta para tipos de visualização que permitem apenas uma série, como `Number`, `Pie` e `Heatmap`.
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="O ícone de cópia Duplicate series e sua dica de ferramenta em uma linha de série de gráfico" size="lg" />
+
+    Para criar uma série semelhante a uma já existente, você pode duplicá-la em vez de começar do zero. Clique no ícone de cópia (`Duplicate series`) em uma linha de série para inserir uma cópia diretamente abaixo. A cópia mantém as configurações da série de origem, como a métrica, a coluna e o filtro. Depois, você altera apenas os campos que forem diferentes (por exemplo, a agregação) e dá à cópia seu próprio alias. A duplicação está disponível em todos os contextos em que há suporte para múltiplas séries. Ela fica oculta para tipos de visualização que permitem apenas uma série, como `Number`, `Pie` e `Heatmap`.
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="O ícone de cópia Duplicate series e sua dica de ferramenta em uma linha de série de gráfico" size="lg" />
+
+    <Note>
+      As visualizações podem ser criadas a partir de qualquer fonte de dados — métricas, traces ou logs. O ClickStack trata todos eles como eventos do tipo wide. Qualquer **coluna numérica** pode ser representada em gráfico ao longo do tempo, e colunas **string**, **date** ou **numéricas** podem ser usadas em agrupamentos.
+
+      Essa abordagem unificada permite criar dashboards com diferentes tipos de telemetria usando um modelo consistente e flexível.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="creating-dashboards">
+  ## Criando dashboards
+</div>
+
+Dashboards oferecem uma forma de agrupar visualizações relacionadas, permitindo comparar métricas e explorar padrões lado a lado para identificar possíveis causas-raiz nos seus sistemas. Esses dashboards podem ser usados para investigações ad hoc ou salvos para monitoramento contínuo.
+
+Filtros globais podem ser aplicados no nível do dashboard, propagando-se automaticamente para todas as visualizações dentro dele. Isso permite um drill-down consistente entre os gráficos e simplifica a correlação de eventos entre serviços e tipos de telemetria.
+
+Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados de log e trace. Estas etapas podem ser reproduzidas em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) ou localmente, conectando-se ao dataset hospedado em [sql.clickhouse.com](https://sql.clickhouse.com), conforme descrito no guia [&quot;Dataset de demonstração remoto&quot;](/pt-BR/clickstack/example-datasets/remote-demo-data).
+
+<Steps>
+  <Step>
+    ### Acesse `Dashboards`
+
+    Selecione `Dashboards` no menu à esquerda. Em seguida, clique em `New Dashboard` para criar um dashboard temporário ou salvo.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Criar dashboard" size="lg" />
+  </Step>
+
+  <Step>
+    ### Criar uma visualização – tempo médio de requisição por serviço
+
+    Selecione `Add New Tile` para abrir o painel de criação de visualizações.
+
+    Selecione o tipo de visualização `Line/Bar` no menu superior, seguido do conjunto de dados `Traces` (ou `Demo Traces` se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os valores a seguir para criar um gráfico que mostre a duração média das requisições ao longo do tempo para cada nome de serviço:
+
+    * Nome do gráfico: `Average duration by service`
+    * Métrica: `Average`
+    * Coluna: `Duration/1000`
+    * Where: `<empty>`
+    * Agrupar por: `ServiceName`
+    * Alias: `Average Time`
+
+    Clique no botão **play** antes de clicar em `Save`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="Criar visualização do dashboard" size="lg" />
+
+    Redimensione a visualização para ocupar toda a largura do dashboard.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Dashboard com visualizações" size="lg" />
+  </Step>
+
+  <Step>
+    ### Crie uma visualização – eventos ao longo do tempo por serviço
+
+    Selecione `Add New Tile` para abrir o painel de criação de visualizações.
+
+    Selecione o tipo de visualização `Line/Bar` no menu superior e, em seguida, o dataset `Logs` (ou `Demo Logs`, se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os valores a seguir para criar um gráfico que mostre a contagem de eventos ao longo do tempo por nome de serviço:
+
+    * Chart Name: `Event count by service`
+    * Metric: `Count of Events`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Count of events`
+
+    Clique no botão **play** antes de clicar em `Save`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="Visualização do dashboard 2" size="lg" />
+
+    Redimensione a visualização para ocupar toda a largura do dashboard.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Dashboard com visualizações 2" size="lg" />
+  </Step>
+
+  <Step>
+    ### Adicione um tile de mapa de calor para a duração do span
+
+    Tiles de mapa de calor mostram a contagem de eventos que caem em cada bucket de (tempo, valor) como uma grade colorida. Use um mapa de calor quando quiser ver a **forma** de uma distribuição ao longo do tempo, e não apenas a média ou um único percentil. Um mapa de calor de latência revela padrões bimodais de duração, agrupamentos na cauda lenta ou dispersões repentinas que um gráfico de linhas acabaria diluindo na média.
+
+    Para adicionar um tile de mapa de calor:
+
+    1. Selecione `Add New Tile`.
+    2. Escolha o tipo de visualização `Heatmap` no menu superior. O menu suspenso de fonte de dados mostra apenas fontes cujo [tipo de source é `Traces`](/pt-BR/clickstack/managing/config#traces). Fontes de logs, métricas e sessão são filtradas, pois mapas de calor precisam de uma coluna de duração de span que apenas fontes de traces fornecem.
+    3. Escolha qualquer uma das suas fontes de traces pelo nome. O nome em si é arbitrário; apenas o tipo importa.
+
+    Depois que uma fonte é selecionada, o mapa de calor é preenchido automaticamente com:
+
+    * **Value**: a `Duration Expression` da fonte, escalonada para a unidade de exibição atual (por exemplo, `(Duration)/1e6` para converter a duração do span de cada evento de nanossegundos para milissegundos)
+    * **Count**: `count()`
+
+    4. Defina um nome para o gráfico e use `Where` para limitar o mapa de calor a um serviço específico ou a um conjunto de operações cujo desempenho você deseja observar.
+    5. Ajuste o intervalo de tempo para corresponder ao período de interesse. Intervalos mais amplos revelam mudanças na distribuição e padrões bimodais de latência que janelas mais curtas podem ocultar.
+
+    O exemplo abaixo mostra um único serviço em uma janela de 24 horas, com os caminhos rápido e lento da duração do span claramente separados em duas faixas horizontais.
+
+    Para personalizar ainda mais o mapa de calor, clique em **Display Settings** para abrir um painel com a expressão de **Scale** (Log ou Linear), **Value** e **Count**. A lista completa de opções está documentada em [Customize the heatmap](/pt-BR/clickstack/features/event-deltas#customize) na página Event Deltas. O mesmo painel é reutilizado.
+
+    Clique em `Run` para visualizar o gráfico e, em seguida, em `Save`.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="Editor de tile de mapa de calor com padrões de duração de span pré-preenchidos, filtro ServiceName payment e botão Display Settings" size="lg" />
+
+    O tile salvo é exibido como um mapa de calor no dashboard. Passe o cursor sobre qualquer célula para ver os limites do bucket e a contagem de eventos.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="Tile de dashboard de mapa de calor mostrando a distribuição da duração de span do serviço payment ao longo de 24 horas" size="lg" />
+
+    <Tip>
+      **Duas consultas ClickHouse por mapa de calor**
+
+      O mapa de calor é executado como duas consultas sequenciais: uma pequena **consulta de limites** que determina o intervalo de valores e, em seguida, uma **consulta de mapa de calor** que conta eventos por bucket. Ambas as consultas ficam visíveis no editor em **Generated SQL** se você quiser inspecioná-las ou copiá-las.
+    </Tip>
+
+    #### Ir para Event Deltas
+
+    Clique em qualquer célula de um tile de mapa de calor exibido para abrir a ação **View in Event Deltas**.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="Clique em uma célula do mapa de calor revelando a ação View in Event Deltas" size="lg" />
+
+    Ao selecioná-la, a visualização [Event Deltas](/pt-BR/clickstack/features/event-deltas) é aberta com a fonte de dados do tile, a cláusula `Where` e o intervalo de tempo mantidos. A partir daí, você pode examinar interativamente a mesma distribuição, segmentar por atributo para ver o que diferencia os spans lentos dos rápidos e inspecionar os spans individuais por trás de qualquer célula, sem precisar reconstruir a consulta manualmente.
+  </Step>
+
+  <Step>
+    ### Filtro do painel
+
+    Filtros Lucene ou SQL, juntamente com o intervalo de tempo, podem ser aplicados ao painel e serão propagados automaticamente para todas as visualizações.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="Painel com filtro" size="lg" />
+
+    Para demonstrar, aplique o filtro Lucene `ServiceName:"frontend"` ao painel e altere o intervalo de tempo para abranger as `Last 3 hours`. Observe como as visualizações agora refletem apenas os dados do serviço `frontend`.
+
+    O painel será salvo automaticamente. Para definir o nome do painel, selecione o título e altere-o antes de clicar em `Save Name`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="Salvamento do painel" size="lg" />
+  </Step>
+</Steps>
+
+<div id="dashboards-editing-visualizations">
+  ## Dashboards - edição de visualizações
+</div>
+
+Para remover, editar ou duplicar uma visualização, passe o cursor sobre ela e use os respectivos botões de ação.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Editar dashboard" size="lg" />
+
+<div id="dashboard-listing-search">
+  ## Dashboard - listagem e busca
+</div>
+
+Os dashboards podem ser acessados na página de dashboards. Eles são organizados por tag, com busca e filtros integrados para localizar rapidamente dashboards específicos.
+
+Os dashboards podem ser marcados como favoritos para facilitar o acesso na barra lateral e no topo da página de listagem. Os favoritos são individuais para cada usuário.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="Busca de dashboards" size="lg" />
+
+<div id="tagging">
+  ## Dashboards - tags
+</div>
+
+<Tagging />
+
+<div id="custom-filters">
+  ## Filtros personalizados
+</div>
+
+Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os dashboards, os dashboards salvos oferecem suporte a filtros personalizados em listas suspensas preenchidas com dados consultados no ClickHouse. Esses filtros fornecem controles reutilizáveis de apontar e clicar, para que quem visualiza o dashboard possa filtrar sem precisar escrever expressões manualmente.
+
+<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Filtro suspenso de serviços mostrando os nomes de serviço disponíveis" size="lg" />
+
+As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
+
+<Steps>
+  <Step>
+    ### Abra a caixa de diálogo Editar filtros
+
+    Abra um dashboard salvo e selecione **Editar filtros** na barra de ferramentas.
+
+    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Botão Editar filtros na barra de ferramentas do dashboard" size="lg" />
+  </Step>
+
+  <Step>
+    ### Adicione um novo filtro
+
+    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
+
+    Por exemplo, para adicionar um filtro de serviço a dados de traces, use `ServiceName` como expressão de filtro com a fonte de dados `Traces`. O &quot;Filtro de valores da lista suspensa&quot; é opcional e permite restringir quais valores aparecem na lista suspensa.
+
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Caixa de diálogo Adicionar filtro com os campos Nome, Fonte de dados e Expressão de filtro" size="md" />
+
+    O modal Filtros mostra todos os filtros configurados para o dashboard. Nele, você pode editar ou excluir filtros existentes, ou adicionar outros.
+
+    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Modal Filtros mostrando um filtro de Serviços configurado" size="md" />
+  </Step>
+
+  <Step>
+    ### Use o filtro
+
+    Feche o modal Filtros. O novo filtro suspenso aparece abaixo da barra de pesquisa. Clique nele para ver os valores disponíveis e selecione um deles para filtrar todas as visualizações do dashboard.
+
+    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Dashboard filtrado para o serviço frontend" size="lg" />
+  </Step>
+
+  <Step>
+    ### (Opcional) Salve os valores do filtro como padrão
+
+    Para manter uma seleção de filtro como padrão do dashboard, escolha **Salvar consulta e filtros como padrão** no menu do dashboard. O dashboard sempre será aberto com os filtros selecionados aplicados. Para redefinir, selecione **Remover consulta e filtros padrão** no mesmo menu.
+
+    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Menu do dashboard mostrando a opção Salvar consulta e filtros como padrão" size="lg" />
+  </Step>
+</Steps>
+
+<Note>
+  Filtros personalizados em listas suspensas estão disponíveis em dashboards salvos. Para ver esse padrão em ação, consulte o [dashboard do Kubernetes](#kubernetes-dashboard), que fornece filtros suspensos integrados para pod do Kubernetes, Implantação, nome do nó, Espaço de nomes e Cluster.
+</Note>
+
+<div id="drilldown-to-search">
+  ## Drilldown para a Search
+</div>
+
+Os tiles do dashboard permitem drilldown para a página Search. Clique em um ponto de dados em uma visualização para abrir um menu de contexto com as seguintes opções:
+
+* **Ver todos os eventos** — navega até a página Search, mostrando todos os eventos da janela de tempo selecionada.
+* **Filtrar por grupo** — navega até a página Search, filtrada por uma série específica.
+
+<Image img="/images/clickstack/dashboards/drilldown.webp" alt="Menu de contexto de drilldown mostrando as opções Ver todos os eventos e Filtrar por grupo" size="lg" />
+
+Isso é útil para investigar picos ou anomalias específicas identificadas em um dashboard — você pode passar rapidamente de uma visualização agregada para os eventos individuais correspondentes.
+
+<div id="presets">
+  ## Predefinições
+</div>
+
+O HyperDX vem com dashboards prontos para uso.
+
+<div id="clickhouse-dashboard">
+  ### Dashboard do ClickHouse
+</div>
+
+Este dashboard fornece visualizações para monitorar o ClickHouse. Para acessá-lo, selecione-o no menu à esquerda.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="Dashboard do ClickHouse" size="lg" />
+
+Este dashboard usa abas para separar o monitoramento de **Selects**, **Inserts** e da **Infraestrutura do ClickHouse**.
+
+<Info>
+  **Acesso obrigatório às tabelas de sistema**
+
+  Este dashboard consulta as [tabelas de sistema](/pt-BR/reference/system-tables/index) do ClickHouse para expor as principais métricas. Os seguintes grants são necessários:
+
+  `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
+
+  `GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
+</Info>
+
+<div id="services-dashboard">
+  ### Dashboard de serviços
+</div>
+
+O dashboard de serviços exibe os serviços ativos no momento com base em dados de traces. Para isso, é necessário ter coletado traces e configurado uma fonte de dados de Traces válida.
+
+Os nomes dos serviços são detectados automaticamente a partir dos dados de traces, com uma série de visualizações pré-criadas organizadas em três abas: Serviços HTTP, Banco de dados e Erros.
+
+As visualizações podem ser filtradas usando sintaxe Lucene ou SQL, e a janela de tempo pode ser ajustada para uma análise mais focada.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="Serviços ClickHouse" size="lg" />
+
+<div id="kubernetes-dashboard">
+  ### Dashboard do Kubernetes
+</div>
+
+Este dashboard permite explorar eventos do Kubernetes coletados via OpenTelemetry. Ele inclui opções avançadas de filtro, permitindo filtrar por pod do Kubernetes, implantação, nome do nó, espaço de nomes e cluster, além de realizar buscas por texto livre.
+
+Os dados do Kubernetes são organizados em três abas para facilitar a navegação: Pods, Nós e Espaços de nomes.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />
