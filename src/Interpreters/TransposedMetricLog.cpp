@@ -86,7 +86,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const ProfileEvents::Count new_value = ProfileEvents::global_counters[i];
         auto & old_value = previous_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.

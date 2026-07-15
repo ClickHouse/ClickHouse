@@ -9,9 +9,12 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+#include <map>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include <Poco/Util/Application.h>
@@ -55,6 +58,135 @@ namespace ProfileEvents
 
 namespace
 {
+    /// Diagnostic registry of `ThreadPoolImpl<ThreadFromGlobalPool*>` instances that
+    /// currently own at least one worker thread. Used by `GlobalThreadPool::shutdown` to
+    /// identify the subsystem responsible for a "Hung check failed, possible deadlock
+    /// found" caused by a leaked local pool: a leaker's workers stay parked on the local
+    /// pool's `new_job_or_shutdown` condition variable, so they block
+    /// `GlobalThreadPool::finalize` when it tries to join the underlying `std::thread`.
+    ///
+    /// A pool is registered when its worker count transitions from 0 to 1 and
+    /// unregistered when it transitions back from 1 to 0. Long-lived shared pools
+    /// (`getIOThreadPool`, `getBackupsIOThreadPool`, ...) that are idle at shutdown
+    /// therefore do not appear in the snapshot, so the line in `GlobalThreadPool::shutdown`
+    /// is not noisy on healthy shutdowns. Only pools whose workers are still alive when
+    /// `GlobalThreadPool::shutdown` runs - i.e. the actual leakers - show up.
+    struct LocalThreadPoolRegistry
+    {
+        struct Entry
+        {
+            /// `std::string_view` pointing into `CurrentMetrics::names`, which is a
+            /// program-lifetime static `std::array<std::string_view, END>` of string
+            /// literals (see `src/Common/CurrentMetrics.cpp`). Storing the view rather
+            /// than copying into a `std::string` removes the only allocation from the
+            /// `add`/`remove` paths (apart from `unordered_map` bucket growth, which is
+            /// handled by the `try/catch` in `addLocalThreadPoolWorker`).
+            std::string_view metric_name;
+            size_t live_workers = 0;
+        };
+        std::mutex mutex;
+        std::unordered_map<const void *, Entry> pools;
+    };
+
+    LocalThreadPoolRegistry & getLocalThreadPoolRegistry()
+    {
+        /// Intentionally leak the registry: function-local statics inside this translation
+        /// unit (e.g. `getIOThreadPool` in `SharedThreadPools.cpp`) wrap `ThreadPool` instances
+        /// whose workers call `removeLocalThreadPoolWorker` from `~ThreadFromThreadPool`.
+        /// Those statics are initialized before this registry, so they are destroyed after
+        /// it would otherwise be gone. A leaked singleton avoids the use-after-destruction
+        /// with no observable cost (one mutex plus an empty map at program exit).
+        static LocalThreadPoolRegistry & registry = *new LocalThreadPoolRegistry();
+        return registry;
+    }
+
+    /// MUST NOT throw: this runs from `ThreadFromThreadPool::ThreadFromThreadPool` AFTER
+    /// `thread = Thread(...)` has started a joinable `ThreadFromGlobalPoolImpl`. An exception
+    /// escaping here would unwind through `~ThreadFromGlobalPoolImpl`, which calls `abort()`
+    /// when the thread is still initialized (`src/Common/ThreadPool.h`), terminating the
+    /// process. The only operations that could throw are `std::mutex::lock` (effectively
+    /// never under normal conditions) and `unordered_map::operator[]` on bucket growth -
+    /// both are caught and swallowed. The cost of a missed registration is a single pool
+    /// not appearing in the diagnostic snapshot at `GlobalThreadPool::shutdown`; the pool
+    /// itself continues to function normally.
+    void addLocalThreadPoolWorker(const void * pool, std::string_view metric_name) noexcept
+    {
+        try
+        {
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            auto & entry = r.pools[pool];
+            entry.metric_name = metric_name;
+            ++entry.live_workers;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; swallow allocation failures, see comment above
+        {
+        }
+    }
+
+    /// MUST NOT throw, for the same reason as `addLocalThreadPoolWorker`: this runs from
+    /// `~ThreadFromThreadPool`, which is itself reached via stack unwinding when a
+    /// `ThreadPoolImpl` is destroyed. The only operation that could throw is
+    /// `std::mutex::lock`; lookup and erase on `unordered_map` are noexcept for pointer
+    /// keys.
+    void removeLocalThreadPoolWorker(const void * pool) noexcept
+    {
+        try
+        {
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            auto it = r.pools.find(pool);
+            if (it == r.pools.end())
+                return;
+            chassert(it->second.live_workers > 0);
+            if (--it->second.live_workers == 0)
+                r.pools.erase(it);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; swallow lock failures, see comment above
+        {
+        }
+    }
+
+    /// Returns "<metric_name>x<live_worker_count>, ..." aggregated across pool
+    /// instances with the same metric name, sorted by metric name. The count is the
+    /// total number of worker threads currently alive across all pool instances with
+    /// that metric. "(none)" if no pool currently owns any workers. Safe to call
+    /// concurrently with `addLocalThreadPoolWorker` and `removeLocalThreadPoolWorker`.
+    ///
+    /// MUST NOT throw: this is called from `GlobalThreadPool::shutdown` BEFORE
+    /// `the_instance->finalize()`. An exception escaping the snapshot path (e.g.
+    /// `MEMORY_LIMIT_EXCEEDED` during `std::map`/`std::string` allocation or
+    /// `fmt::format_to`) would skip `finalize`, leaving background threads un-joined.
+    /// Returns "(unavailable)" if any operation throws; callers see a benign fallback
+    /// string and `finalize` always runs.
+    std::string snapshotLocalThreadPools() noexcept
+    {
+        try
+        {
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            if (r.pools.empty())
+                return "(none)";
+            /// Keys are `string_view`s into program-lifetime static storage, so no allocation
+            /// for the keys themselves.
+            std::map<std::string_view, size_t> workers_per_metric;
+            for (const auto & [_, entry] : r.pools)
+                workers_per_metric[entry.metric_name] += entry.live_workers;
+            std::string result;
+            for (const auto & [name, cnt] : workers_per_metric)
+            {
+                if (!result.empty())
+                    result += ", ";
+                fmt::format_to(std::back_inserter(result), "{}x{}", name, cnt);
+            }
+            return result;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; fall back so `finalize` always runs
+        {
+            return "(unavailable)";
+        }
+    }
+
     struct ScopedDecrement
     {
         std::optional<std::reference_wrapper<std::atomic<int64_t>>> atomic_var;
@@ -735,6 +867,16 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
     parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
+
+    /// Diagnostic only: count this worker against its pool so the pool appears in
+    /// `snapshotLocalThreadPools()` while it owns live workers. Skip if `metric_threads`
+    /// is the placeholder `CurrentMetrics::end()` (used by some unit-test pools), because
+    /// `CurrentMetrics::getName(end())` would index out of bounds.
+    if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
+    {
+        if (parent_pool.metric_threads < CurrentMetrics::end())
+            addLocalThreadPoolWorker(&parent_pool, CurrentMetrics::getName(parent_pool.metric_threads));
+    }
 }
 
 
@@ -778,6 +920,18 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
     thread_state.store(ThreadState::Destructing, std::memory_order_relaxed);
 
     join();
+
+    /// Diagnostic only: matched with `addLocalThreadPoolWorker` in the constructor.
+    /// Placed after `join()` so that a hung join (the actual leaker symptom we care
+    /// about) keeps the worker counted in `snapshotLocalThreadPools()`. For a leaked
+    /// pool, `~ThreadFromThreadPool` is never called at all because `threads.clear()`
+    /// in `finalize()` is never reached, and the entry stays in the registry by
+    /// construction.
+    if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
+    {
+        if (parent_pool.metric_threads < CurrentMetrics::end())
+            removeLocalThreadPoolWorker(&parent_pool);
+    }
 
     ProfileEvents::increment(
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
@@ -1066,6 +1220,37 @@ void GlobalThreadPool::shutdown()
 {
     if (the_instance)
     {
+        /// Diagnostic for the chronic "Hung check failed, possible deadlock found" family:
+        /// if any local `ThreadPoolImpl<ThreadFromGlobalPool*>` instance was leaked by its
+        /// owner, its workers are still parked on the local pool's `new_job_or_shutdown`
+        /// condition variable and the `finalize` call below will block forever joining the
+        /// underlying `std::thread`. Log the live local pool workers first so the leaker
+        /// subsystem is identifiable in CI artifacts even when the join hangs. Pools whose
+        /// workers have all exited (e.g. idle long-lived shared pools) do not appear here.
+        ///
+        /// Only emit the line when something is actually still alive. On a healthy shutdown
+        /// the snapshot is "(none)" and we stay silent: this code also runs in short-lived
+        /// client tools (clickhouse-benchmark/-local/-client), and an unconditional line on
+        /// their stderr breaks tests that capture and diff tool output (03636_benchmark_error_messages).
+        ///
+        /// Wrapped in `try/catch` so that an exception from `LOG_INFO` (Poco channel I/O,
+        /// formatter allocation under `MEMORY_LIMIT_EXCEEDED`, etc.) cannot skip the
+        /// `finalize` call. `snapshotLocalThreadPools` is itself `noexcept` and falls back
+        /// to `"(unavailable)"` (also logged, since it signals a leaker we could not enumerate).
+        const std::string live_local_pools = snapshotLocalThreadPools();
+        if (live_local_pools != "(none)")
+        {
+            try
+            {
+                LOG_INFO(
+                    &Poco::Logger::get("GlobalThreadPool"),
+                    "shutdown(): live local ThreadPoolImpl worker threads at shutdown: [{}]",
+                    live_local_pools);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic must not skip `finalize`
+            {
+            }
+        }
         the_instance->finalize();
     }
 }

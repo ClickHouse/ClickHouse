@@ -1,0 +1,196 @@
+---
+slug: /merges
+title: 'دمج الأجزاء'
+description: 'ما المقصود بعمليات دمج الأجزاء في ClickHouse'
+keywords: ['دمج الأجزاء']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="what-are-part-merges-in-clickhouse">
+  ## ما هي عمليات دمج الأجزاء في ClickHouse؟
+</div>
+
+<br />
+
+يتميّز ClickHouse [بالسرعة](/ar/get-started/about/why-clickhouse-is-so-fast) ليس فقط في الاستعلامات، بل أيضًا في عمليات الإدراج، وذلك بفضل [طبقة التخزين](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) التي تعمل بأسلوب مشابه لـ [LSM trees](https://en.wikipedia.org/wiki/Log-structured_merge-tree):
+
+① تؤدي عمليات الإدراج (في الجداول من عائلة [MergeTree engine](/ar/reference/engines/table-engines/mergetree-family/index)) إلى إنشاء [أجزاء بيانات](/ar/concepts/core-concepts/parts) مرتبة وغير قابلة للتغيير.
+
+② تُنقَل كل معالجة البيانات إلى **عمليات دمج الأجزاء في الخلفية**.
+
+وهذا يجعل عمليات كتابة البيانات خفيفة و[عالية الكفاءة](/ar/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
+
+وللتحكم في عدد الأجزاء لكل جدول وتنفيذ ② أعلاه، يدمج ClickHouse باستمرار الأجزاء الأصغر في أجزاء أكبر في الخلفية ([ضمن كل partition](/ar/concepts/core-concepts/partitions#per-partition-merges)) إلى أن تصل إلى حجم مضغوط يقارب [~150 GB](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+
+يوضح المخطط التالي بإيجاز عملية الدمج في الخلفية:
+
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تزداد قيمة `merge level` للجزء بمقدار واحد مع كل عملية دمج إضافية. ويعني المستوى `0` أن الجزء جديد ولم يُدمج بعد. أما الأجزاء التي دُمجت في أجزاء أكبر فتُعلَّم على أنها [غير نشطة](/ar/reference/system-tables/parts) ثم تُحذف نهائيًا بعد مدة [قابلة للتهيئة](/ar/reference/settings/merge-tree-settings#old_parts_lifetime) (8 دقائق افتراضيًا). ومع مرور الوقت، يؤدي ذلك إلى تكوين **شجرة** من الأجزاء المدمجة. ومن هنا جاءت تسمية جدول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/index).
+
+<div id="monitoring-merges">
+  ## مراقبة عمليات الدمج
+</div>
+
+في مثال [ما هي أجزاء الجدول](/ar/concepts/core-concepts/parts)، [بيّنا](/ar/concepts/core-concepts/parts#monitoring-table-parts) أن ClickHouse يتتبع جميع أجزاء الجدول في جدول النظام [parts](/ar/reference/system-tables/parts). واستخدمنا الاستعلام التالي لاسترجاع مستوى الدمج وعدد الصفوف المخزنة لكل جزء نشط في جدول المثال:
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+تُظهر نتيجة [الاستعلام الموثَّق سابقًا](/ar/concepts/core-concepts/parts#monitoring-table-parts) أن جدول المثال كان يحتوي على أربعة أجزاء نشطة، تكوَّن كلٌّ منها من عملية دمج واحدة للأجزاء التي أُدخلت في البداية:
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+[عند تشغيل](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results) الاستعلام، يتضح الآن أن الأجزاء الأربعة قد اندمجت في جزء نهائي واحد (ما لم تجرِ عمليات insert إضافية إلى الجدول):
+
+```response
+   ┌─name───────┬─level─┬─────rows─┐
+1. │ all_0_23_2 │     2 │ 25248433 │
+   └────────────┴───────┴──────────┘
+```
+
+في ClickHouse 24.10، أُضيفت [لوحة معلومات لعمليات الدمج](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) جديدة إلى [لوحات معلومات المراقبة](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) المضمنة. وهي متاحة في كلٍّ من OSS وCloud عبر معالج HTTP ‏`/merges`، ويمكن استخدامها لتصوير جميع عمليات دمج الأجزاء لجدولنا التجريبي:
+
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تُظهر لوحة المعلومات المسجَّلة أعلاه العملية كاملة، بدءًا من عمليات إدراج البيانات الأولية وصولًا إلى الدمج النهائي في جزء واحد:
+
+① عدد الأجزاء النشطة.
+
+② عمليات دمج الأجزاء، ممثَّلة بصريًا بمربعات (يعكس الحجم حجم الجزء).
+
+③ [تضخيم الكتابة](https://en.wikipedia.org/wiki/Write_amplification).
+
+<div id="concurrent-merges">
+  ## عمليات دمج متزامنة
+</div>
+
+يستخدم خادم ClickHouse عدة [خيوط دمج](/ar/reference/settings/server-settings/settings#background_pool_size) في الخلفية لتنفيذ عمليات دمج الأجزاء بشكل متزامن:
+
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+ينفّذ كل خيط دمج حلقةً على النحو التالي:
+
+① يحدّد الأجزاء التي ستُدمج بعد ذلك، ويحمّلها إلى الذاكرة.
+
+② يدمج الأجزاء الموجودة في الذاكرة في جزء أكبر.
+
+③ يكتب الجزء المدمج إلى القرص.
+
+ثم ارجع إلى ①
+
+لاحظ أن زيادة عدد أنوية CPU وحجم RAM تتيح زيادة إنتاجية عمليات الدمج في الخلفية.
+
+<div id="memory-optimized-merges">
+  ## عمليات الدمج الموفّرة للذاكرة
+</div>
+
+لا يحمّل ClickHouse بالضرورة جميع الأجزاء المطلوب دمجها إلى الذاكرة دفعةً واحدة، كما هو موضّح في [المثال السابق](/ar/concepts/core-concepts/merges#concurrent-merges). واستنادًا إلى عدة [عوامل](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L210)، ولتقليل استهلاك الذاكرة (على حساب سرعة الدمج)، فإن ما يُسمّى [الدمج العمودي](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L209) يحمّل الأجزاء ويُجري دمجها على دفعات من الكتل بدلًا من تنفيذ ذلك دفعةً واحدة.
+
+<div id="merge-mechanics">
+  ## آليات الدمج
+</div>
+
+يوضح المخطط أدناه كيف يقوم [خيط دمج](/ar/concepts/core-concepts/merges#concurrent-merges) واحد يعمل في الخلفية في ClickHouse بدمج الأجزاء (افتراضيًا، من دون [الدمج العمودي](/ar/concepts/core-concepts/merges#memory-optimized-merges)):
+
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تُنفَّذ عملية دمج الأجزاء على عدة خطوات:
+
+**① فك الضغط والتحميل**: تُفك ضغط [ملفات الأعمدة الثنائية المضغوطة](/ar/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) الخاصة بالأجزاء المراد دمجها وتُحمَّل إلى الذاكرة.
+
+**② الدمج**: تُدمَج البيانات في ملفات أعمدة أكبر.
+
+**③ الفهرسة**: يُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) جديد لملفات الأعمدة المدمجة.
+
+**④ الضغط والتخزين**: [تُضغط](/ar/reference/statements/create/table#column_compression_codec) ملفات الأعمدة والفهرس الجديدان ويُحفَظان في [دليل](/ar/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) جديد يمثل جزء البيانات المدمج.
+
+كما يُعاد أيضًا إنشاء [البيانات الوصفية الإضافية في أجزاء البيانات](/ar/concepts/core-concepts/parts)، مثل فهارس تخطي البيانات الثانوية، وإحصاءات الأعمدة، والمجاميع الاختبارية، وفهارس الحدين الأدنى والأقصى، استنادًا إلى ملفات الأعمدة المدمجة. وقد أغفلنا هذه التفاصيل للتبسيط.
+
+تعتمد آلية الخطوة ② على [محرك MergeTree](/ar/reference/engines/table-engines/mergetree-family/index) المستخدم، إذ تتعامل المحركات المختلفة مع الدمج بطرق مختلفة. فعلى سبيل المثال، قد تُجمَّع الصفوف أو تُستبدل إذا كانت قديمة. وكما ذكرنا سابقًا، فإن هذا النهج **يُسنِد جميع عمليات معالجة البيانات إلى عمليات الدمج في الخلفية**، مما يتيح **عمليات إدراج فائقة السرعة** عبر إبقاء عمليات الكتابة خفيفة وفعّالة.
+
+بعد ذلك، سنعرض بإيجاز آليات الدمج في محركات محددة ضمن عائلة MergeTree.
+
+<div id="standard-merges">
+  ### عمليات الدمج القياسية
+</div>
+
+يوضح المخطط أدناه كيفية دمج الأجزاء في جدول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) من النوع القياسي:
+
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تنشئ عبارة DDL في المخطط أعلاه جدول `MergeTree` بمفتاح فرز `(town, street)`، [ما يعني](/ar/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) أن البيانات على القرص تُرتَّب وفقًا لهذه الأعمدة، ويُنشأ تبعًا لذلك فهرس أساسي متناثر.
+
+تُدمَج ② أعمدة الجدول ① المفكوكة الضغط والمرتبة مسبقًا مع الحفاظ على الترتيب العام للفرز في الجدول كما يحدده مفتاح الفرز، ويُنشأ ③ فهرس أساسي متناثر جديد، ثم تُضغط ④ ملفات الأعمدة المدمجة والفهرس وتُخزَّن كجزء بيانات جديد على القرص.
+
+<div id="replacing-merges">
+  ### عمليات دمج ReplacingMergeTree
+</div>
+
+تعمل عمليات دمج الأجزاء في جدول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) بصورة مشابهة لـ [عمليات الدمج القياسية](/ar/concepts/core-concepts/merges#standard-merges)، لكن لا يُحتفَظ إلا بأحدث إصدار من كل صف، بينما تُهمَل الإصدارات الأقدم:
+
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تنشئ عبارة DDL في المخطط أعلاه جدول `ReplacingMergeTree` بمفتاح فرز `(town, street, id)`، ما يعني أن البيانات على القرص تُرتَّب بحسب هذه الأعمدة، ويُنشأ تبعًا لذلك فهرس أساسي متناثر.
+
+وتعمل عملية الدمج ② بطريقة مشابهة لما يحدث في جدول `MergeTree` قياسي، إذ تجمع الأعمدة المفكوك ضغطها والمفروزة مسبقًا مع الحفاظ على ترتيب الفرز العام.
+
+ومع ذلك، يزيل `ReplacingMergeTree` الصفوف المكررة التي لها مفتاح الفرز نفسه، ولا يُبقي إلا على أحدث صف استنادًا إلى الطابع الزمني لإنشاء الجزء الذي يحتويه.
+
+<br />
+
+<div id="summing-merges">
+  ### عمليات الدمج بالتجميع
+</div>
+
+تُلخَّص البيانات الرقمية تلقائيًا أثناء دمج الأجزاء في جدول [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree):
+
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تُعرِّف عبارة DDL في المخطط أعلاه جدول `SummingMergeTree` بحيث يكون `town` مفتاح الفرز، ما يعني أن البيانات على القرص تُرتَّب وفقًا لهذا العمود، ويُنشأ تبعًا لذلك فهرس أساسي متناثر.
+
+في خطوة الدمج ②، يستبدل ClickHouse جميع الصفوف التي لها مفتاح الفرز نفسه بصف واحد، مع جمع قيم الأعمدة الرقمية.
+
+<div id="aggregating-merges">
+  ### عمليات الدمج التجميعية
+</div>
+
+يُعد مثال جدول `SummingMergeTree` الوارد أعلاه صيغة متخصصة من جدول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، ويتيح [التحويل التلقائي التزايدي للبيانات](https://www.youtube.com/watch?v=QDAJTKZT8y4) من خلال تطبيق أيٍ من دوال [التجميع](/ar/reference/functions/aggregate-functions/reference-index) البالغ عددها [90+] أثناء عمليات دمج الأجزاء:
+
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="عمليات دمج الأجزاء" />
+
+<br />
+
+تُنشئ عبارة DDL في المخطط أعلاه جدول `AggregatingMergeTree` مع `town` بوصفه مفتاح الفرز، مما يضمن ترتيب البيانات حسب هذا العمود على القرص وإنشاء فهرس أساسي متناثر مطابق.
+
+أثناء ② الدمج، يستبدل ClickHouse جميع الصفوف التي لها مفتاح الفرز نفسه بصف واحد يخزّن [حالات التجميع الجزئية](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) (مثل `sum` و`count` من أجل `avg()`). وتضمن هذه الحالات نتائج دقيقة من خلال عمليات الدمج التزايدية في الخلفية.

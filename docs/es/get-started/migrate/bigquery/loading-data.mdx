@@ -1,0 +1,143 @@
+---
+sidebarTitle: 'Carga de datos'
+title: 'Carga de datos desde BigQuery a ClickHouse'
+slug: /migrations/bigquery/loading-data
+description: 'Cómo cargar datos de BigQuery en ClickHouse'
+keywords: ['migrate', 'migration', 'migrating', 'data', 'etl', 'elt', 'BigQuery']
+doc_type: 'guide'
+---
+
+*Esta guía es compatible con ClickHouse Cloud y con ClickHouse autogestionado v23.5+.*
+
+Esta guía muestra cómo migrar datos de [BigQuery](https://cloud.google.com/bigquery) a ClickHouse.
+
+Primero exportamos una tabla al [almacenamiento de objetos de Google (GCS)](https://cloud.google.com/storage) y luego importamos esos datos en [ClickHouse Cloud](https://clickhouse.com/cloud). Estos pasos deben repetirse para cada tabla que desee exportar de BigQuery a ClickHouse.
+
+<div id="how-long-will-exporting-data-to-clickhouse-take">
+  ## ¿Cuánto tarda exportar datos a ClickHouse?
+</div>
+
+El tiempo necesario para exportar datos de BigQuery a ClickHouse depende del tamaño del conjunto de datos. Como referencia, exportar el [conjunto de datos público de Ethereum de 4 TB](https://cloud.google.com/blog/products/data-analytics/ethereum-bigquery-public-dataset-smart-contract-analytics) de BigQuery a ClickHouse con esta guía lleva aproximadamente una hora.
+
+| Tabla                                                                                             | Filas             | Archivos exportados | Tamaño de los datos | Exportación desde BigQuery | Tiempo de slot  | Importación a ClickHouse |
+| ------------------------------------------------------------------------------------------------- | ----------------- | ------------------- | ------------------- | -------------------------- | --------------- | ------------------------ |
+| [blocks](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/blocks.md)             | 16,569,489        | 73                  | 14.53GB             | 23 s                       | 37 min          | 15.4 s                   |
+| [transactions](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/transactions.md) | 1,864,514,414     | 5169                | 957GB               | 1 min 38 s                 | 1 día 8 h       | 18 min 5 s               |
+| [traces](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/traces.md)             | 6,325,819,306     | 17,985              | 2.896TB             | 5 min 46 s                 | 5 días 19 h     | 34 min 55 s              |
+| [contracts](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/contracts.md)       | 57,225,837        | 350                 | 45.35GB             | 16 s                       | 1 h 51 min      | 39.4 s                   |
+| Total                                                                                             | 8.26 mil millones | 23,577              | 3.982TB             | 8 min 3 s                  | &gt; 6 días 5 h | 53 min 45 s              |
+
+<Steps>
+  <Step>
+    ## Exportar datos de una tabla a GCS
+
+    En este paso, utilizamos el [workspace de SQL de BigQuery](https://cloud.google.com/bigquery/docs/bigquery-web-ui) para ejecutar nuestros comandos SQL. A continuación, exportamos una tabla de BigQuery llamada `mytable` a un bucket de GCS mediante la sentencia [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
+
+    ```sql
+    DECLARE export_path STRING;
+    DECLARE n INT64;
+    DECLARE i INT64;
+    SET i = 0;
+
+    -- We recommend setting n to correspond to x billion rows. So 5 billion rows, n = 5
+    SET n = 100;
+
+    WHILE i < n DO
+      SET export_path = CONCAT('gs://mybucket/mytable/', i,'-*.parquet');
+      EXPORT DATA
+        OPTIONS (
+          uri = export_path,
+          format = 'PARQUET',
+          overwrite = true
+        )
+      AS (
+        SELECT * FROM mytable WHERE export_id = i
+      );
+      SET i = i + 1;
+    END WHILE;
+    ```
+
+    En la consulta anterior, exportamos nuestra tabla de BigQuery al [formato de datos Parquet](https://parquet.apache.org/). También tenemos un carácter `*` en nuestro parámetro `uri`. Esto garantiza que la salida se divida en varios archivos, con un sufijo numérico ascendente, si la exportación supera 1 GB de datos.
+
+    Este enfoque tiene varias ventajas:
+
+    * Google permite exportar hasta 50 TB al día a GCS de forma gratuita. Los usuarios solo pagan por el almacenamiento en GCS.
+    * Las exportaciones generan varios archivos automáticamente y limitan cada uno a un máximo de 1 GB de datos de la tabla. Esto es beneficioso para ClickHouse, ya que permite paralelizar las importaciones.
+    * Parquet, como formato orientado a columnas, es un mejor formato de intercambio, ya que está comprimido de forma inherente y BigQuery lo exporta más rápido, además de que ClickHouse lo consulta con mayor rapidez
+  </Step>
+
+  <Step>
+    ## Importación de datos en ClickHouse desde GCS
+
+    Una vez completada la exportación, podemos importar estos datos a una tabla de ClickHouse. Puede usar la [consola SQL de ClickHouse](/es/integrations/connectors/sql-clients/sql-console) o [`clickhouse-client`](/es/concepts/features/interfaces/cli) para ejecutar los siguientes comandos.
+
+    Primero debe [crear la tabla](/es/reference/statements/create/table) en ClickHouse:
+
+    ```sql
+    -- If your BigQuery table contains a column of type STRUCT, you must enable this setting
+    -- to map that column to a ClickHouse column of type Nested
+    SET input_format_parquet_import_nested = 1;
+
+    CREATE TABLE default.mytable
+    (
+            `timestamp` DateTime64(6),
+            `some_text` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp);
+    ```
+
+    Después de crear la tabla, habilita el ajuste `parallel_distributed_insert_select` si tienes varias réplicas de ClickHouse en tu clúster para acelerar la exportación. Si solo tienes un nodo de ClickHouse, puedes omitir este paso:
+
+    ```sql
+    SET parallel_distributed_insert_select = 1;
+    ```
+
+    Por último, podemos insertar los datos de GCS en nuestra tabla de ClickHouse usando el [comando `INSERT INTO SELECT`](/es/reference/statements/insert-into#inserting-the-results-of-select), que inserta datos en una tabla a partir de los resultados de una consulta `SELECT`.
+
+    Para obtener los datos para `INSERT`, podemos usar la [función s3Cluster](/es/reference/functions/table-functions/s3Cluster) para recuperar datos de nuestro bucket de GCS, ya que GCS es interoperable con [Amazon S3](https://aws.amazon.com/s3/). Si solo tiene un nodo de ClickHouse, puede usar la [función de tabla s3](/es/reference/functions/table-functions/s3) en lugar de la función `s3Cluster`.
+
+    ```sql
+    INSERT INTO mytable
+    SELECT
+        timestamp,
+        ifNull(some_text, '') AS some_text
+    FROM s3Cluster(
+        'default',
+        'https://storage.googleapis.com/mybucket/mytable/*.parquet.gz',
+        '<ACCESS_ID>',
+        '<SECRET>'
+    );
+    ```
+
+    El `ACCESS_ID` y el `SECRET` usados en la consulta anterior corresponden a su [clave HMAC](https://cloud.google.com/storage/docs/authentication/hmackeys) asociada con su bucket de GCS.
+
+    <Info>
+      **Use `ifNull` al exportar columnas anulables**
+
+      En la consulta anterior, usamos la [función `ifNull`](/es/reference/functions/regular-functions/functions-for-nulls#ifNull) con la columna `some_text` para insertar datos en nuestra tabla de ClickHouse asignando un valor predeterminado. También puede hacer que sus columnas en ClickHouse sean [`Nullable`](/es/reference/data-types/nullable), pero no se recomienda, ya que puede afectar negativamente al rendimiento.
+
+      Como alternativa, puede `SET input_format_null_as_default=1`, y cualquier valor ausente o NULL se reemplazará por el valor predeterminado de su columna correspondiente, si se ha definido.
+    </Info>
+  </Step>
+
+  <Step>
+    ## Comprobar que la exportación de datos se realizó correctamente
+
+    Para comprobar si tus datos se insertaron correctamente, simplemente ejecuta una consulta `SELECT` en tu nueva tabla:
+
+    ```sql
+    SELECT * FROM mytable LIMIT 10;
+    ```
+
+    Para exportar más tablas de BigQuery, simplemente vuelve a seguir los pasos anteriores para cada tabla adicional.
+  </Step>
+</Steps>
+
+<div id="further-reading-and-support">
+  ## Lecturas complementarias y soporte
+</div>
+
+Además de esta guía, también te recomendamos leer nuestra entrada del blog, donde mostramos [cómo usar ClickHouse para acelerar BigQuery y gestionar importaciones incrementales](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries).
+
+Si tienes problemas para transferir datos de BigQuery a ClickHouse, no dudes en ponerte en contacto con nosotros en support@clickhouse.com.

@@ -1,0 +1,19 @@
+---
+description: 'ODBCDriver2フォーマットに関するドキュメント'
+keywords: ['ODBCDriver2']
+slug: /interfaces/formats/ODBCDriver2
+title: 'ODBCDriver2'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

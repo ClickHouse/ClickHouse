@@ -836,6 +836,12 @@ void DiskObjectStorage::prepareRead(
     /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential
+    /// windows; independent of the cache / prefetch stages below. A null limit (feature off
+    /// or 0 slots) keeps the stateless one-shot path.
+    if (read_settings.reader_executor.enabled && read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
+
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 

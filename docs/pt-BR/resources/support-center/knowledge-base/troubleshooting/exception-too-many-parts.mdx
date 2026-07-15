@@ -1,0 +1,45 @@
+---
+title: Como resolver o erro "Too many parts" no ClickHouse
+description: Saiba como resolver o erro "Too many parts" no ClickHouse otimizando as taxas de insert, ajustando as configurações do MergeTree e gerenciando as partições de forma eficaz.
+date: 2023-03-20
+tags: ['Erros e Exceções']
+keywords: ['Too many parts']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: Too many parts (Erro: 252). As mesclagens estão ocorrendo significativamente mais lentamente do que as inserções
+</div>
+
+Você atingiu o limite da configuração `parts_to_throw_insert` em uma tabela MergeTree.
+
+Você pode monitorar o número de partes ativas de uma determinada tabela com:
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+O principal requisito ao inserir dados no ClickHouse: você nunca deve enviar instruções `INSERT` demais por segundo. O ideal é uma inserção por segundo / a cada poucos segundos.
+
+Assim, você pode inserir 100K linhas por segundo, mas apenas com uma única instrução `INSERT` grande em lote. Quando você envia centenas / milhares de instruções `INSERT` por segundo para uma tabela *MergeTree, sempre terá alguns erros, e isso não pode ser resolvido ajustando algumas configurações.
+
+Se você não consegue combinar muitos inserts em uma única instrução `INSERT` grande em lote fora do ClickHouse, então deve criar uma tabela Buffer antes da tabela *MergeTree.
+
+1. Cada insert cria uma pasta em `/var/lib/clickhouse/.../table_name/`. Dentro dessa pasta, há 2 arquivos para cada coluna - um com os dados (comprimidos), o segundo com o índice. Os dados são ordenados fisicamente pela chave primária dentro desses arquivos. Essas pastas são chamadas de &#39;**partes**&#39;.
+
+2. O ClickHouse faz o merge dessas partes menores em partes maiores em segundo plano. Ele escolhe quais partes mesclar de acordo com algumas regras. Após o merge de duas (ou mais) partes, uma parte maior é criada e as partes antigas entram na fila para remoção. As configurações que você listou permitem ajustar com mais precisão as regras de merge das partes. O objetivo do processo de merge é deixar uma parte grande para cada partição (ou algumas partes grandes por partição que não valem a pena mesclar porque já são grandes demais). Verifique também este [comentário](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726).
+
+3. Se você criar novas partes rápido demais (por exemplo, fazendo muitos inserts pequenos) e o ClickHouse não conseguir fazer o merge delas na velocidade adequada (ou seja, novas partes chegam mais rápido do que o ClickHouse consegue mesclá-las) - então você recebe a exceção &#39;Merges are processing significantly slower than inserts&#39;. Você pode tentar aumentar o limite, mas pode acabar em uma situação em que terá problemas de filesystem causados pelo número excessivo de arquivos / diretórios (como o limite de inodes).
+
+4. Se você inserir em muitas partições ao mesmo tempo, o problema se multiplica pelo número de partições afetadas pelo insert.
+
+5. Você pode tentar ajustar o comportamento do ClickHouse com uma das configurações listadas, ou com max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth. Mas: a melhor solução é simplesmente inserir os dados no ritmo esperado. O ritmo esperado é: **um insert a cada 1-2 s, cada insert contendo 10K-500K linhas de dados**.
+
+6. Portanto, a solução correta para resolver &quot;Merges are processing significantly slower than inserts&quot; é ajustar o número de inserts por segundo e o número de linhas em cada insert. Use inserção em lote para combinar inserts pequenos em um maior se os dados chegarem linha por linha. Reduza a taxa de inserts muito grandes se você tiver dados demais para inserir de uma só vez. Não altere os internals do ClickHouse, a menos que você realmente entenda bem o que isso significa.
+
+7. Se seus dados chegarem mais rápido que 500K linhas por segundo - muito provavelmente você precisa de mais servidores no cluster para atender esse tráfego, e não de ajuste de configurações.
+
+8. A velocidade dos merges em segundo plano geralmente depende da velocidade do armazenamento, das configurações de compressão usadas, da opção de MergeTree (o algoritmo de merge - merge simples/agregação/soma/collapsing etc.) e da chave de ordenação usada.

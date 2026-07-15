@@ -1,0 +1,235 @@
+---
+slug: /guides/developer/merge-table-function
+sidebarTitle: 'Función de tabla Merge'
+title: 'Función de tabla Merge'
+description: 'Consultar varias tablas al mismo tiempo.'
+doc_type: 'reference'
+keywords: ['merge', 'función de tabla', 'patrones de consulta', 'motor de tabla', 'acceso a datos']
+---
+
+La [función de tabla Merge](/es/reference/functions/table-functions/merge) nos permite consultar varias tablas en paralelo.
+Para ello, crea una tabla temporal [Merge](/es/reference/engines/table-engines/special/merge) y deriva la estructura de esta tabla a partir de la unión de sus columnas y de la deducción de tipos comunes.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="setup-tables">
+  ## Preparar las tablas
+</div>
+
+Vamos a aprender a usar esta función con la ayuda del [conjunto de datos de tenis de Jeff Sackmann](https://github.com/JeffSackmann/tennis_atp).
+Vamos a procesar archivos CSV que contienen partidos desde la década de 1960, pero crearemos un esquema ligeramente distinto para cada década.
+También añadiremos un par de columnas adicionales para la década de 1990.
+
+A continuación se muestran las sentencias de importación:
+
+```sql
+CREATE OR REPLACE TABLE atp_matches_1960s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1968..1969}.csv')
+SETTINGS schema_inference_make_columns_nullable=0, 
+         schema_inference_hints='winner_seed Nullable(String), loser_seed Nullable(UInt8)';
+
+CREATE OR REPLACE TABLE atp_matches_1970s ORDER BY tourney_id AS 
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1970..1979}.csv')
+SETTINGS schema_inference_make_columns_nullable=0, 
+         schema_inference_hints='winner_seed Nullable(UInt8), loser_seed Nullable(UInt8)';
+
+CREATE OR REPLACE TABLE atp_matches_1980s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1980..1989}.csv')
+SETTINGS schema_inference_make_columns_nullable=0,
+         schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16)';
+
+CREATE OR REPLACE TABLE atp_matches_1990s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score,
+       toBool(arrayExists(x -> position(x, 'W/O') > 0, score))::Nullable(bool) AS walkover,
+       toBool(arrayExists(x -> position(x, 'RET') > 0, score))::Nullable(bool) AS retirement
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1990..1999}.csv')
+SETTINGS schema_inference_make_columns_nullable=0,
+         schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
+```
+
+<div id="schema-multiple-tables">
+  ## Esquema de varias tablas
+</div>
+
+Podemos ejecutar la siguiente consulta para listar, una junto a otra, las columnas de cada tabla con sus tipos, de modo que sea más fácil ver las diferencias.
+
+```sql
+SELECT * EXCEPT(position) FROM (
+    SELECT position, name,
+       any(if(table = 'atp_matches_1960s', type, null)) AS 1960s,
+       any(if(table = 'atp_matches_1970s', type, null)) AS 1970s,
+       any(if(table = 'atp_matches_1980s', type, null)) AS 1980s,
+       any(if(table = 'atp_matches_1990s', type, null)) AS 1990s
+    FROM system.columns
+    WHERE database = currentDatabase() AND table LIKE 'atp_matches%'
+    GROUP BY ALL
+    ORDER BY position ASC
+)
+SETTINGS output_format_pretty_max_value_width=25;
+```
+
+```text
+┌─name────────┬─1960s────────────┬─1970s───────────┬─1980s────────────┬─1990s─────────────────────┐
+│ tourney_id  │ String           │ String          │ String           │ String                    │
+│ surface     │ String           │ String          │ String           │ Enum8('Hard' = 1, 'Grass'⋯│
+│ winner_name │ String           │ String          │ String           │ String                    │
+│ loser_name  │ String           │ String          │ String           │ String                    │
+│ winner_seed │ Nullable(String) │ Nullable(UInt8) │ Nullable(UInt16) │ Nullable(UInt16)          │
+│ loser_seed  │ Nullable(UInt8)  │ Nullable(UInt8) │ Nullable(UInt16) │ Nullable(UInt16)          │
+│ score       │ String           │ Array(String)   │ Array(String)    │ Array(String)             │
+│ walkover    │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ            │ ᴺᵁᴸᴸ             │ Nullable(Bool)            │
+│ retirement  │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ            │ ᴺᵁᴸᴸ             │ Nullable(Bool)            │
+└─────────────┴──────────────────┴─────────────────┴──────────────────┴───────────────────────────┘
+```
+
+Veamos las diferencias:
+
+* En los años 70, el tipo de `winner_seed` cambia de `Nullable(String)` a `Nullable(UInt8)`, y `score` de `String` a `Array(String)`.
+* En los años 80, `winner_seed` y `loser_seed` cambian de `Nullable(UInt8)` a `Nullable(UInt16)`.
+* En los años 90, `surface` cambia de `String` a `Enum('Hard', 'Grass', 'Clay', 'Carpet')` y se añaden las columnas `walkover` y `retirement`.
+
+<div id="querying-multiple-tables">
+  ## Consultar varias tablas con merge
+</div>
+
+Escribamos una consulta para encontrar los partidos que John McEnroe ganó contra alguien que era cabeza de serie n.º 1:
+
+```sql
+SELECT loser_name, score
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1;
+```
+
+```text
+┌─loser_name────┬─score───────────────────────────┐
+│ Bjorn Borg    │ ['6-3','6-4']                   │
+│ Bjorn Borg    │ ['7-6','6-1','6-7','5-7','6-4'] │
+│ Bjorn Borg    │ ['7-6','6-4']                   │
+│ Bjorn Borg    │ ['4-6','7-6','7-6','6-4']       │
+│ Jimmy Connors │ ['6-1','6-3']                   │
+│ Ivan Lendl    │ ['6-2','4-6','6-3','6-7','7-6'] │
+│ Ivan Lendl    │ ['6-3','3-6','6-3','7-6']       │
+│ Ivan Lendl    │ ['6-1','6-3']                   │
+│ Stefan Edberg │ ['6-2','6-3']                   │
+│ Stefan Edberg │ ['7-6','6-2']                   │
+│ Stefan Edberg │ ['6-2','6-2']                   │
+│ Jakob Hlasek  │ ['6-3','7-6']                   │
+└───────────────┴─────────────────────────────────┘
+```
+
+A continuación, supongamos que queremos filtrar esas coincidencias para encontrar aquellas en las que McEnroe era cabeza de serie n.º 3 o menos.
+Esto es un poco más complicado porque `winner_seed` usa distintos tipos en las distintas tablas:
+
+```sql
+SELECT loser_name, score, winner_seed
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1
+AND multiIf(
+  variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
+  variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
+  variantElement(winner_seed, 'String')::UInt16 >= 3
+);
+```
+
+Usamos la función [`variantType`](/es/reference/functions/regular-functions/other-functions#variantType) para comprobar el tipo de `winner_seed` en cada fila y luego [`variantElement`](/es/reference/functions/regular-functions/other-functions#variantElement) para extraer el valor subyacente.
+Cuando el tipo es `String`, lo convertimos en un número y luego hacemos la comparación.
+A continuación se muestra el resultado de ejecutar la consulta:
+
+```text
+┌─loser_name────┬─score─────────┬─winner_seed─┐
+│ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────┴───────────────┴─────────────┘
+```
+
+<div id="which-table-merge">
+  ## ¿De qué tabla proceden las filas al usar merge?
+</div>
+
+¿Y si queremos saber de qué tabla proceden las filas?
+Podemos usar la columna virtual `_table` para hacerlo, como se muestra en la siguiente consulta:
+
+```sql
+SELECT _table, loser_name, score, winner_seed
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1
+AND multiIf(
+  variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
+  variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
+  variantElement(winner_seed, 'String')::UInt16 >= 3
+);
+```
+
+```text
+┌─_table────────────┬─loser_name────┬─score─────────┬─winner_seed─┐
+│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────────┴───────────────┴───────────────┴─────────────┘
+```
+
+También podríamos usar esta columna virtual como parte de una consulta para contar los valores de la columna `walkover`:
+
+```sql
+SELECT _table, walkover, count()
+FROM merge('atp_matches*')
+GROUP BY ALL
+ORDER BY _table;
+```
+
+```text
+┌─_table────────────┬─walkover─┬─count()─┐
+│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7542 │
+│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39165 │
+│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36233 │
+│ atp_matches_1990s │ true     │     128 │
+│ atp_matches_1990s │ false    │   37022 │
+└───────────────────┴──────────┴─────────┘
+```
+
+Podemos ver que la columna `walkover` es `NULL` en todos los casos excepto en `atp_matches_1990s`.
+Tendremos que actualizar nuestra consulta para comprobar si la columna `score` contiene la cadena `W/O` cuando la columna `walkover` es `NULL`:
+
+```sql
+SELECT _table,
+   multiIf(
+     walkover IS NOT NULL,
+     walkover,
+     variantType(score) = 'Array(String)',
+     toBool(arrayExists(
+        x -> position(x, 'W/O') > 0,
+        variantElement(score, 'Array(String)')
+     )),
+     variantElement(score, 'String') LIKE '%W/O%'
+   ),
+   count()
+FROM merge('atp_matches*')
+GROUP BY ALL
+ORDER BY _table;
+```
+
+Si el tipo subyacente de `score` es `Array(String)`, tenemos que recorrer el array y buscar `W/O`, mientras que, si es de tipo `String`, podemos simplemente buscar `W/O` en el texto.
+
+```text
+┌─_table────────────┬─multiIf(isNo⋯, '%W/O%'))─┬─count()─┐
+│ atp_matches_1960s │ true                     │     242 │
+│ atp_matches_1960s │ false                    │    7300 │
+│ atp_matches_1970s │ true                     │     422 │
+│ atp_matches_1970s │ false                    │   38743 │
+│ atp_matches_1980s │ true                     │      92 │
+│ atp_matches_1980s │ false                    │   36141 │
+│ atp_matches_1990s │ true                     │     128 │
+│ atp_matches_1990s │ false                    │   37022 │
+└───────────────────┴──────────────────────────┴─────────┘
+```

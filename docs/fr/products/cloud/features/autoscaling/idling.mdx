@@ -1,0 +1,44 @@
+---
+sidebarTitle: 'mise en veille automatique'
+slug: /cloud/features/autoscaling/idling
+description: 'mise en veille automatique et mise en veille adaptative dans ClickHouse Cloud'
+keywords: ['idling', 'mise en veille automatique', 'mise en veille adaptative', 'économies', 'pause']
+title: 'mise en veille automatique'
+doc_type: 'guide'
+---
+
+<div id="automatic-idling">
+  ## Mise en veille automatique
+</div>
+
+Dans la page **Paramètres**, vous pouvez également choisir d’autoriser ou non la mise en veille automatique de votre service lorsqu’il reste inactif pendant un certain temps (c’est-à-dire lorsqu’il n’exécute aucune requête soumise par l’utilisateur). La mise en veille automatique réduit le coût de votre service, car les ressources de calcul ne vous sont pas facturées lorsque le service est en pause.
+
+<Warning>
+  **Configurez la liste d’accès IP de votre service**
+
+  Lorsque vous créez un service ClickHouse Cloud, le paramètre par défaut de la liste d’autorisation IP est « Allow from anywhere ». Nous vous recommandons vivement de restreindre l’accès à des adresses IP ou à des plages d’adresses spécifiques dès que possible. Les services configurés sur `Allow from anywhere` peuvent régulièrement passer de l’état inactif à l’état actif sous l’effet de robots d’exploration et de scanners sur Internet à la recherche d’IP publiques, ce qui peut entraîner des coûts imprévus.
+</Warning>
+
+<div id="adaptive-idling">
+  ### Mise en veille adaptative
+</div>
+
+ClickHouse Cloud met en œuvre la mise en veille adaptative pour éviter les interruptions tout en optimisant les coûts. Le système évalue plusieurs conditions avant de mettre un service en veille. La mise en veille adaptative remplace le paramètre de durée de mise en veille lorsque l’une des conditions ci-dessous est remplie :
+
+* Lorsque le nombre de parts dépasse le seuil maximal de parts pour la mise en veille (par défaut : 10 000), le service n’est pas mis en veille afin que la maintenance en arrière-plan puisse se poursuivre
+* Lorsqu’il y a des opérations de fusion en cours, le service n’est pas mis en veille tant qu’elles ne sont pas terminées, afin d’éviter d’interrompre une consolidation critique des données
+* En outre, le service adapte également les délais d’inactivité en fonction du temps d’initialisation du serveur :
+  * Si le temps d’initialisation du serveur est inférieur à 15 minutes, aucun délai adaptatif n’est appliqué et le délai d’inactivité par défaut configuré par le client est utilisé
+  * Si le temps d’initialisation du serveur est compris entre 15 et 30 minutes, le délai d’inactivité est défini sur 15 minutes
+  * Si le temps d’initialisation du serveur est compris entre 30 et 60 minutes, le délai d’inactivité est défini sur 30 minutes.
+  * Si le temps d’initialisation du serveur est supérieur à 60 minutes, le délai d’inactivité est défini sur 1 heure
+
+<Note>
+  Le service peut entrer dans un état de veille dans lequel il suspend l’actualisation des [vues matérialisées actualisables](/fr/concepts/features/materialized-views/refreshable-materialized-view), la consommation depuis [S3Queue](/fr/reference/engines/table-engines/integrations/s3queue) et la planification de nouvelles fusions. Les opérations de fusion en cours se termineront avant que le service ne passe à l’état de veille. Pour garantir le fonctionnement continu des vues matérialisées actualisables et de la consommation via S3Queue, désactivez la fonctionnalité de mise en veille.
+</Note>
+
+<Danger>
+  **Quand ne pas utiliser la mise en veille automatique**
+
+  Utilisez la mise en veille automatique uniquement si votre cas d’usage peut tolérer un délai avant de répondre aux requêtes, car lorsqu’un service est en pause, les connexions au service expirent. La mise en veille automatique est idéale pour les services utilisés peu fréquemment et pour lesquels un délai est acceptable. Elle n’est pas recommandée pour les services qui alimentent des fonctionnalités destinées aux clients et utilisées fréquemment.
+</Danger>

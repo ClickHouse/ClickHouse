@@ -1,0 +1,28 @@
+---
+title: How do I resolve ingest failures after ClickHouse 23.9 release?
+description: "Learn how to resolve ingest failures caused by stricter grant checking introduced in ClickHouse 23.9 for tables using `async_inserts`. Update grants to fix errors."
+date: 2022-11-17
+tags: ['Errors and Exceptions']
+keywords: ['GRANT', 'Permission Errors']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## Resolving Ingest Failures After ClickHouse 23.9 Release {#resolving-ingest-failures-after-clickhouse-239-release}
+The root cause of these permissions errors has been identified and is due to more strict checking of grants in the new release for [`async_inserts`](/concepts/features/operations/insert/asyncinserts).
+
+To fix this issue, grants must be updated for your service to work. Check the error message indicating the missing grants and add those needed grants manually. The required additional grants for the tables using `async_inserts` will either be the `SELECT` or `dictGet` grant.
+
+## Add necessary GRANTs to affected tables and dictionaries {#add-necessary-grants-to-affected-tables-and-dictionaries}
+```
+-- Add SELECT grant permissions
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- Add dictGet grant permissions
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+To learn more about the `GRANT` command, please see [this page](/reference/statements/grant).
+
+If you are unable to perform this change, then please contact [ClickHouse Support](https://clickhouse.com/support/program) for assistance.
