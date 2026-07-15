@@ -6510,6 +6510,7 @@ SELECT region, count(user_id) FROM (SELECT region, user_id FROM t GROUP BY regio
 ```
 
 The rewrite pays off when the group keys have a low cardinality while the counted argument has many distinct values per key — for example, unique users per region. It is applied only when the hash-table statistics collected by a previous run of the same query confirm such a shape, so the first run of a query is never rewritten.
+Note that the rewritten query may use several times more memory, because the deduplicating aggregation stores whole (group key, argument value) pairs — for string arguments the full strings, while `uniqExact` keeps only their 128-bit hashes.
 Only takes effect if both of the settings [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) and [`collect_hash_table_stats_during_aggregation`](#collect_hash_table_stats_during_aggregation) are enabled.
 
 Possible values:
