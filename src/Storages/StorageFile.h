@@ -82,6 +82,10 @@ public:
 
     std::string getName() const override { return "File"; }
 
+    /// The concrete data format resolved for this table (after schema/format inference).
+    /// Used by the unified `URL` engine to persist the delegate's inferred format.
+    const String & getFormatName() const { return format_name; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -307,7 +311,7 @@ private:
     /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
     /// for in-place rewrites within the same wall-clock second.
     std::optional<String> current_file_cache_version;
-    struct stat current_archive_stat;
+    struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;

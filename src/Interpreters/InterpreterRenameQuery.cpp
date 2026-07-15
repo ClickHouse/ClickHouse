@@ -84,20 +84,20 @@ BlockIO InterpreterRenameQuery::execute()
 
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
-    assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
-    assert(!(rename.rename_if_cannot_exchange && rename.exchange));
+    chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
+    chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)
     {
         if (elem.if_exists)
         {
-            assert(!rename.exchange);
+            chassert(!rename.exchange);
             if (!database_catalog.isTableExist(StorageID(elem.from_database_name, elem.from_table_name), getContext()))
                 continue;
         }
 
-        bool exchange_tables;
+        bool exchange_tables = false;
         if (rename.exchange)
         {
             exchange_tables = true;
@@ -112,6 +112,13 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             exchange_tables = false;
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
+
+        /// Run the caller's pre-swap check while still holding `ddl_guards`. If it
+        /// throws, the guards release via RAII, no rename happens, and the caller's
+        /// catch path runs. Skip when the destination doesn't exist — there is no
+        /// storage to check (this is a plain `RENAME TO new_name`, not an exchange).
+        if (pre_swap_check && exchange_tables)
+            pre_swap_check(StorageID(elem.to_database_name, elem.to_table_name));
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -212,9 +219,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
 BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
 {
-    assert(descriptions.size() == 1);
-    assert(descriptions.front().from_table_name.empty());
-    assert(descriptions.front().to_table_name.empty());
+    chassert(descriptions.size() == 1);
+    chassert(descriptions.front().from_table_name.empty());
+    chassert(descriptions.front().to_table_name.empty());
 
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
@@ -278,6 +285,7 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     }
 }
 
+void registerInterpreterRenameQuery(InterpreterFactory & factory);
 void registerInterpreterRenameQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

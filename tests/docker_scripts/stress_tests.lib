@@ -144,6 +144,9 @@ EOL
 
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+
             <constraints>
                 <max_execution_time>
                     <max>60</max>
@@ -183,19 +186,6 @@ EOL
     </profiles>
 </clickhouse>
 EOL
-
-    if [[ -n "${ENABLE_SERVER_FUZZER:-}" ]]; then
-        cat > /etc/clickhouse-server/users.d/stress_test_serverfuzz.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-    fi
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
@@ -276,17 +266,32 @@ function wait_server_port_free()
     fi
 }
 
+function wait_server_ports_free()
+{
+    # Wait for all ClickHouse listen ports to become available.
+    # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
+    # may still hold sockets from the previous server instance.
+    #   8123  HTTP               9010  TCP with proxy protocol
+    #   8443  HTTPS              9022  SSH
+    #   9000  Native TCP         9100  gRPC
+    #   9004  MySQL compat       9181  Keeper
+    #   9005  PostgreSQL compat  9234  Keeper Raft
+    #   9009  Interserver HTTP   9440  Native TCP TLS
+    #                            9988  Prometheus
+    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
+        wait_server_port_free "$port"
+    done
+}
+
 function start_server()
 {
     # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
     # especially under sanitizer builds. Wait for the server ports to become available.
-    wait_server_port_free 9000
-    wait_server_port_free 9009
-    wait_server_port_free 9181
+    wait_server_ports_free
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --query "SELECT 1"
+    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
         then
@@ -298,16 +303,21 @@ function start_server()
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
             return 1
         fi
-        # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        sleep 20
+        # Only wait for ports and restart if the previous daemon actually exited.
+        # If the process is still alive, the ports are bound by a healthy but
+        # slow-starting server — just retry the readiness check.
+        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1; then
+            [ "$counter" -gt 0 ] && wait_server_ports_free
+            clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+        fi
+        sleep 10
         counter=$((counter + 1))
     done
 }
 
 function check_server_start()
 {
-    clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)
@@ -324,7 +334,9 @@ function check_logs_for_critical_errors()
     #  - "ReadBuffer is canceled by the exception" -- this is a normal situation when the buffer is canceled, the message neded for debug purposes
     #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer", "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage"
     #    exceptions printed internally by a buffer, exception will be rethrown and handled correctly
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
+    #  - "Error during background download" printed by the filesystem cache background download worker (CacheMetadata):
+    #    the prefetched object may be concurrently removed (DROP/mutation/part removal), the download is just marked failed and the data is re-read directly
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "Error during background download" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 

@@ -1,7 +1,11 @@
 #include <Client.h>
+#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -13,6 +17,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -119,7 +125,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
+    chassert(have_error == (client_exception || server_exception));
 }
 
 
@@ -512,6 +518,13 @@ void Client::connect()
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
+
+    /// Capture the client local time zone before the branch below may switch the process default
+    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
+    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
+    if (client_local_timezone.empty())
+        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
 
     if (hosts_and_ports.empty())
     {
@@ -1066,13 +1079,14 @@ void Client::processConfig()
     }
     else
     {
-        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1357,8 +1371,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

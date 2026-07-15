@@ -82,7 +82,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     if (!current_info.creation_csn)
     {
         current_creation_csn = TransactionLog::getCSN(current_info.creation_tid);
-        LOG_DEBUG(log, "Object {}, current_creation_csn {}", getObjectName(), current_creation_csn);
+        LOG_TEST(log, "Object {}, current_creation_csn {}", getObjectName(), current_creation_csn);
         if (!current_creation_csn)
             return false; /// Part creation is not committed yet
     }
@@ -96,7 +96,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     if (!current_info.removal_tid.isEmpty())
         current_removal_csn = TransactionLog::getCSN(current_info.removal_tid);
 
-    LOG_DEBUG(log, "Object {}, current_removal_csn {}", getObjectName(), current_removal_csn);
+    LOG_TEST(log, "Object {}, current_removal_csn {}", getObjectName(), current_removal_csn);
     return current_creation_csn <= snapshot_version && (!current_removal_csn || snapshot_version < current_removal_csn);
 }
 

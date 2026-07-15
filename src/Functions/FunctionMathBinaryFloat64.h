@@ -8,7 +8,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include "config.h"
 
 namespace DB
 {
@@ -40,7 +39,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!isNativeNumber(arg) && !isDecimal(arg))
+            if (!isNativeNumber(arg) && !isDecimal(arg) && !WhichDataType(arg).isBFloat16())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                     arg->getName(), getName());
         };

@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: 'Langages de requête alternatifs'
+title: 'Langages de requête alternatifs'
+description: 'Utilisez des langages de requête alternatifs avec ClickHouse'
+keywords: ['langages de requête alternatifs', 'dialectes de requête', 'dialecte MySQL', 'dialecte PostgreSQL', 'guide du développeur']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Outre le SQL standard, ClickHouse prend en charge plusieurs langages de requête alternatifs pour interroger les données.
+
+Les dialectes actuellement pris en charge sont :
+
+* `clickhouse` : le [dialecte SQL](/fr/products/chdb/reference/sql-reference) par défaut de ClickHouse
+* `prql` : [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
+* `kusto` : [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+Le langage de requête utilisé est déterminé par le paramètre `dialect`.
+
+<div id="standard-sql">
+  ## SQL standard
+</div>
+
+Le SQL standard est le langage de requêtes par défaut de ClickHouse.
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## Langage de requêtes relationnelles en pipeline (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+Pour activer PRQL :
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- this SET statement is required only for ClickHouse versions >= v25.1
+SET dialect = 'prql'
+```
+
+Exemple de requête PRQL :
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+En coulisses, ClickHouse s’appuie sur une transpilation de PRQL en SQL pour exécuter les requêtes PRQL.
+
+<div id="kusto-query-language-kql">
+  ## Langage de requête Kusto (KQL)
+</div>
+
+<ExperimentalBadge />
+
+Pour activer le KQL :
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Notez que les requêtes KQL peuvent ne pas avoir accès à toutes les fonctions définies dans ClickHouse.

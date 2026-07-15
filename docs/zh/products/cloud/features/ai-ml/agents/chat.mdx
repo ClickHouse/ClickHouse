@@ -1,0 +1,83 @@
+---
+sidebarTitle: '聊天'
+slug: /cloud/features/ai-ml/agents/chat
+title: '聊天'
+description: 'ClickHouse agent中的对话、书签、分支、多对话和聊天共享'
+keywords: ['AI', 'ClickHouse Cloud', 'agent', '聊天', '对话', '书签', '分支', '共享', '多对话']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse agent中的聊天界面支持对话、分支、并排比较和共享。
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="显示左侧导航、agent身份标头和消息输入框的 ClickHouse agent聊天界面" size="lg" />
+
+<div id="conversations">
+  ## 对话
+</div>
+
+点击左侧导航中的撰写图标，即可开始新对话。
+在对话窗口左上角的 Agent 选择对话框中，选择要使用的 agent——默认选中的是 **ClickHouse Agent**。
+现在，你可以在输入框中输入消息，然后点击发送。每个对话都会保存到侧边栏的历史记录中，之后可重新打开、重命名或删除。
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="聊天界面中，左侧导航里的撰写图标已高亮显示；侧边栏显示 Chats 历史记录，其中保存了一个 Top 10 Tables Ranked 对话；输入框中还输入了一个示例问题" size="lg" />
+
+你可以直接编辑任意一条消息，agent 将从对话历史中的该位置重新生成回复。
+你也可以仅重新生成 agent 的上一条回复，而无需重新发送消息。
+
+<div id="bookmarks">
+  ## 书签
+</div>
+
+为消息或整个对话添加书签，方便快速找回。书签仅自己可见，即使对话重命名后也会保留。
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="聊天标题栏中高亮显示的书签图标，以及可见的“添加书签”提示" size="lg" />
+
+<div id="forking">
+  ## 分支
+</div>
+
+创建分支会从某条特定消息派生出一个新对话。你可以用它探索另一种走向，而不影响原始对话。
+共有三种分支模式可用：
+
+* **仅可见消息** - 允许你复制通往分支消息的直接路径。
+* **包含相关分支** - 允许你复制主路径以及现有的所有相关分支。
+* **包含到此处的全部内容** - 允许你复制直到分支消息为止的全部内容。
+
+分支后的对话彼此独立，因此所做的更改不会同步回原始对话。
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="分支选项对话框，显示三个分支模式图标、“Start fork here”和“Remember”复选框，以及下方的消息操作工具栏" size="lg" />
+
+<div id="multi-conversation">
+  ## 多对话
+</div>
+
+多对话会将两个对话并排显示，并把相同的提示发送给两者。你可以用它比较不同模型的响应，或对不同的 agent 配置进行 A/B 测试。
+
+点击聊天标题栏中的 **+** 按钮，即可在当前对话旁创建一个并行对话。
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="聊天标题栏中高亮显示“添加多对话”按钮，输入框上方有一个 + ClickHouse Agent 指示器" size="lg" />
+
+随后，这两个对话会并排显示，并接收相同的提示：
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="多对话视图中，两个 ClickHouse Agent 对话并排运行，二者都在执行相同的 run_select_query 工具调用" size="lg" />
+
+<div id="sharing-chats">
+  ## 共享聊天
+</div>
+
+为任意对话生成可分享链接，以便发送给队友或保存为参考。接收者看到的是只读视图，其中包括制品和可见分支。你可以随时在共享页面中撤销链接。
+
+对现有消息的编辑会显示在共享视图中；但在生成链接后添加的消息不会显示。
+
+要共享对话，请打开侧边栏中的对话菜单，然后选择 **共享**：
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="侧边栏中的对话菜单，显示“共享”“重命名”“复制”“归档”和“删除”选项" size="lg" />
+
+然后在共享对话框中点击 **创建链接**：
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="聊天共享链接对话框，其中包含“创建链接”按钮，以及一条说明：你的姓名和共享后添加的任何消息都将保持私密" size="md" />

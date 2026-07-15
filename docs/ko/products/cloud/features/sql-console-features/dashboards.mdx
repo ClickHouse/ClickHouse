@@ -1,0 +1,111 @@
+---
+sidebarTitle: '대시보드'
+slug: /cloud/manage/dashboards
+title: '대시보드'
+description: 'SQL 콘솔의 대시보드 기능을 사용하면 저장된 쿼리에서 만든 시각화를 모아 공유할 수 있습니다.'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', '대시보드', '데이터 시각화', 'SQL 콘솔 대시보드', '클라우드 분석']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+SQL 콘솔의 대시보드 기능을 사용하면 저장된 쿼리의 시각화를 모아 공유할 수 있습니다. 먼저 쿼리를 저장하고 시각화한 다음, 해당 시각화를 대시보드에 추가하고 쿼리 매개변수를 사용해 대시보드를 상호작용형으로 구성하십시오.
+
+<div id="core-concepts">
+  ## 핵심 개념
+</div>
+
+<div id="query-sharing">
+  ### 쿼리 공유
+</div>
+
+대시보드를 동료와 공유하려면 기반이 되는 저장된 쿼리도 반드시 공유해야 합니다. 시각화를 보려면 최소한 해당 저장된 쿼리에 대한 읽기 전용 액세스 권한이 있어야 합니다.
+
+<div id="interactivity">
+  ### 상호작용
+</div>
+
+대시보드를 대화형으로 만들려면 [쿼리 매개변수](/ko/reference/syntax#defining-and-using-query-parameters)를 사용하십시오. 예를 들어 `WHERE` 절에 쿼리 매개변수를 추가해 필터처럼 작동하도록 할 수 있습니다.
+
+시각화 설정에서 &quot;필터&quot; 유형을 선택하면 **Global Filters** 사이드 패널에서 쿼리 매개변수 입력을 표시하거나 숨길 수 있습니다. 또한 대시보드의 다른 객체(예: 테이블)에 연결해 쿼리 매개변수 입력을 표시하거나 숨길 수도 있습니다. 자세한 내용은 아래 빠른 시작 가이드의 &quot;[필터 구성](/ko/products/cloud/features/sql-console-features/dashboards#configure-a-filter)&quot; 섹션을 참조하십시오.
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+[query&#95;log](/ko/reference/system-tables/query_log) 시스템 테이블(system table)을 사용해 ClickHouse 서비스를 모니터링할 대시보드를 만들어 보겠습니다.
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+<div id="create-a-saved-query">
+  ### 저장된 쿼리 만들기
+</div>
+
+이미 시각화할 저장된 쿼리가 있다면 이 단계는 건너뛰어도 됩니다.
+
+새 쿼리 탭을 여세요. ClickHouse 시스템 테이블(system tables)을 사용해 서비스의 일별 쿼리 볼륨을 집계하는 쿼리를 작성해 보겠습니다:
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="저장된 쿼리 만들기" border />
+
+쿼리 결과는 테이블 포맷으로 볼 수 있고, 차트 보기에서 바로 시각화 작성을 시작할 수도 있습니다. 다음 단계로 진행하기 위해 이 쿼리를 `queries over time`으로 저장하겠습니다:
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="쿼리 저장" border />
+
+저장된 쿼리에 관한 자세한 내용은 [쿼리 저장 섹션](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query)에서 확인할 수 있습니다.
+
+쿼리 종류별 쿼리 수를 집계하는 또 다른 쿼리인 `query count by query kind`도 만들고 저장할 수 있습니다. 다음은 SQL 콘솔에서 확인한 데이터의 막대 차트 시각화입니다.
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="쿼리 결과의 막대 차트 시각화" border />
+
+이제 쿼리가 2개 준비되었으니, 이 쿼리들을 시각화하고 모아둘 대시보드를 만들어 보겠습니다.
+
+<div id="create-a-dashboard">
+  ### 대시보드 만들기
+</div>
+
+대시보드 패널로 이동한 뒤 &quot;New Dashboard&quot;를 클릭하십시오. 이름을 지정하면 첫 번째 대시보드가 생성됩니다!
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="새 대시보드 만들기" border />
+
+<div id="add-a-visualization">
+  ### 시각화 추가
+</div>
+
+저장된 쿼리 `queries over time`와 `query count by query kind`가 있습니다. 먼저 첫 번째 쿼리를 선 차트로 시각화해 보겠습니다. 시각화의 제목과 부제목을 입력하고, 시각화할 쿼리를 선택합니다. 다음으로 “Line” 차트 유형을 선택한 뒤 x축과 y축을 지정합니다.
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="시각화 추가" border />
+
+여기에서는 숫자 포맷, 범례 레이아웃, 축 레이블 등 추가적인 스타일 변경도 적용할 수 있습니다.
+
+다음으로 두 번째 쿼리를 테이블로 시각화하고, 선 차트 아래에 배치합니다.
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="쿼리 결과를 테이블로 시각화" border />
+
+이제 저장된 쿼리 두 개를 시각화해 첫 번째 대시보드를 만들었습니다!
+
+<div id="configure-a-filter">
+  ### 필터 구성하기
+</div>
+
+쿼리 종류에 대한 필터를 추가해 이 대시보드를 대화형으로 만들어 보겠습니다. 그러면 Insert 쿼리와 관련된 추세만 표시할 수 있습니다. 이 작업은 [쿼리 매개변수](/ko/reference/syntax#defining-and-using-query-parameters)를 사용해 수행합니다.
+
+선 차트 옆의 점 3개를 클릭한 다음, 쿼리 옆의 연필 버튼을 클릭해 인라인 쿼리 편집기를 엽니다. 여기서는 대시보드에서 직접 기반 저장된 쿼리를 편집할 수 있습니다.
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="기반 쿼리 편집" border />
+
+이제 노란색 쿼리 실행 버튼을 누르면, 앞서 본 것과 동일한 쿼리에서 Insert 쿼리만 필터링된 결과가 표시됩니다. 저장 버튼을 클릭해 쿼리를 업데이트합니다. 차트 설정으로 돌아가면 선 차트를 필터링할 수 있습니다.
+
+이제 상단 리본의 Global Filters를 사용해 입력값을 변경하여 필터를 전환할 수 있습니다.
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="전역 필터 조정" border />
+
+선 차트의 필터를 테이블에 연결하려는 경우, 시각화 설정으로 돌아가 query&#95;kind 쿼리 매개변수의 값 소스를 테이블로 변경하고 연결할 필드로 query&#95;kind 컬럼을 선택하면 됩니다.
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="쿼리 매개변수 변경" border />
+
+이제 queries by kind 테이블에서 직접 선 차트의 필터를 제어해 대시보드를 대화형으로 만들 수 있습니다.
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="선 차트의 필터 제어" border />

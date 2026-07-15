@@ -270,7 +270,7 @@ private:
 
         ChunkExt chunk_ext;
         Memory<> segment;
-        size_t original_segment_size;
+        size_t original_segment_size{};
         std::atomic<ProcessingUnitStatus> status;
         /// Needed for better exception message.
         size_t offset = 0;

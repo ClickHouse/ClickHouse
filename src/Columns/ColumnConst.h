@@ -200,7 +200,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -241,6 +241,11 @@ public:
 #endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+    }
+
+    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
+    {
+        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -310,7 +315,8 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    bool onlyNull() const override { return data->isNullAt(0); }
+    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
+    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }

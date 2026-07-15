@@ -384,10 +384,10 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func;
-        const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt64> * container1;
-        const PaddedPODArray<UInt64> * container2;
+        const ColumnAggregateFunction * col_agg_func = nullptr;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
+        const PaddedPODArray<UInt64> * container1 = nullptr;
+        const PaddedPODArray<UInt64> * container2 = nullptr;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -571,11 +571,11 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func;
-        const PaddedPODArray<AggregateDataPtr> * container0;
+        const ColumnAggregateFunction * col_agg_func = nullptr;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
 
-        const ColumnArray * array1;
-        const ColumnArray * array2;
+        const ColumnArray * array1 = nullptr;
+        const ColumnArray * array2 = nullptr;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -621,10 +621,10 @@ private:
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
 
-        size_t from_start;
-        size_t from_end;
-        size_t to_start;
-        size_t to_end;
+        size_t from_start = 0;
+        size_t from_end = 0;
+        size_t to_start = 0;
+        size_t to_end = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
@@ -920,8 +920,8 @@ private:
         const IColumn * column_ptrs[2];
         bool is_column_const[2];
 
-        const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt64> * container1;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
+        const PaddedPODArray<UInt64> * container1 = nullptr;
 
         column_ptrs[0] = arguments[0].column.get();
         is_column_const[0] = isColumnConst(*column_ptrs[0]);

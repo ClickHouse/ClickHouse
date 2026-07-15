@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'استخدم Fivetran لنقل البيانات من أي مصدر إلى ClickHouse Cloud مع إنشاء المخططات تلقائيًا، وإزالة التكرار، ووضع السجل التاريخي (SCD Type 2).'
+title: 'Fivetran and ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', 'نقل البيانات', 'etl', 'وجهة ClickHouse', 'منصة بيانات مؤتمتة', 'وضع السجل التاريخي', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تُعد [Fivetran](https://www.fivetran.com) منصة مؤتمتة لنقل البيانات، تتيح نقل البيانات من منصات البيانات السحابية لديك وإليها وعبرها.
+
+تتوافق [ClickHouse Cloud](https://clickhouse.com/cloud) مع [وجهة Fivetran](https://fivetran.com/docs/destinations/clickhouse)، ما يتيح لك تحميل البيانات من مصادر متنوعة إلى ClickHouse. أما إصدار ClickHouse مفتوح المصدر فلا يدعم استخدامه كوجهة.
+
+يُطوَّر موصل الوجهة ويُصان بشكل مشترك من قِبل ClickHouse وFivetran. الشيفرة المصدرية متاحة على [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination).
+
+<Note>
+  [وجهة ClickHouse Cloud](https://fivetran.com/docs/destinations/clickhouse) متاحة حاليًا في مرحلة **Beta**، لكننا نعمل على إتاحتها للاستخدام العام قريبًا.
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## الميزات الرئيسية
+</div>
+
+* **متوافق مع ClickHouse Cloud**: استخدم قاعدة بيانات ClickHouse Cloud الخاصة بك كوجهة في Fivetran.
+* **نموذج نشر SaaS**: مُدار بالكامل من قِبل Fivetran، من دون الحاجة إلى إدارة البنية التحتية الخاصة بك.
+* **وضع السجل التاريخي (SCD Type 2)**: يحافظ على السجل الكامل لجميع إصدارات السجلات لإجراء تحليل عند نقطة زمنية محددة والاحتفاظ بسجلات التدقيق.
+* **أحجام دُفعات قابلة للتهيئة**: يمكنك تكييف Fivetran مع حالة الاستخدام الخاصة بك من خلال ضبط أحجام دُفعات write وselect وmutation وhard delete عبر ملف تهيئة بتنسيق JSON.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* ترحيلات المخطط غير مدعومة بعد، لكننا نعمل على ذلك.
+* لا يُدعم إضافة أعمدة المفتاح الأساسي أو إزالتها أو تعديلها.
+* إعدادات ClickHouse المخصّصة في عبارات `CREATE TABLE` غير مدعومة.
+* الامتيازات المستندة إلى الأدوار غير مدعومة بالكامل. يتحقق فحص الامتيازات في الموصل من امتيازات المستخدم المباشرة فقط. استخدم [الامتيازات المباشرة](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants) بدلًا من ذلك.
+
+<div id="related-pages">
+  ## الصفحات ذات الصلة
+</div>
+
+* [المرجع التقني](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): ربط الأنواع، ومحركات الجداول، وأعمدة البيانات الوصفية، والإعدادات المتقدمة
+* [استكشاف الأخطاء وإصلاحها وأفضل الممارسات](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): الأخطاء الشائعة، ونصائح التحسين، والاستعلامات الخاصة بتصحيح الأخطاء
+* [وجهة ClickHouse Fivetran على GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## دليل الإعداد
+</div>
+
+* إذا كنت تبحث عن التكوينات والتفاصيل التقنية العامة، فيُرجى الرجوع إلى [المرجع التقني](/ar/integrations/connectors/data-ingestion/etl-tools/fivetran/reference).
+* للحصول على دليل شامل، راجع [دليل الإعداد](https://fivetran.com/docs/destinations/clickhouse/setup-guide) في وثائق Fivetran.
+
+<div id="contact-us">
+  ## التواصل والدعم
+</div>
+
+تعتمد وجهة ClickHouse في Fivetran على نموذج ملكية مقسّم:
+
+* **ClickHouse** تطوّر وتحافظ على شيفرة موصل الوجهة.
+* **Fivetran** تستضيف الموصّل، وهي المسؤولة عن نقل البيانات، وجدولة pipeline، وموصلات المصادر.
+
+يقدّم كلٌّ من Fivetran وClickHouse الدعم لوجهة Fivetran ClickHouse. بالنسبة إلى الاستفسارات العامة، نوصي بالتواصل مع Fivetran، لأنهم الخبراء في منصة Fivetran. أمّا إذا كانت لديك أسئلة أو مشكلات خاصة بـ ClickHouse، ففريق الدعم لدينا يسعده تقديم المساعدة. أنشئ [تذكرة دعم](/ar/resources/about/support) لطرح سؤال أو الإبلاغ عن مشكلة.

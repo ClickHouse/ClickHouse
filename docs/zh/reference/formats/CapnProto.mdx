@@ -1,0 +1,131 @@
+---
+alias: []
+description: 'CapnProto 的文档'
+input_format: true
+keywords: ['CapnProto']
+output_format: true
+slug: /interfaces/formats/CapnProto
+title: 'CapnProto'
+doc_type: '参考'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+`CapnProto` 格式是一种二进制消息格式，类似于 [`Protocol Buffers`](https://developers.google.com/protocol-buffers/) 和 [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift)，但不同于 [JSON](/zh/reference/formats/JSON/JSON) 或 [MessagePack](https://msgpack.org/)。
+CapnProto 消息具有严格的类型约束，且不是自描述的，这意味着它们需要外部 schema 描述。schema 会在运行时应用，并按每个查询缓存。
+
+另请参见 [Format Schema](/zh/reference/formats/index#formatschema)。
+
+<div id="data_types-matching-capnproto">
+  ## 数据类型匹配
+</div>
+
+下表展示了支持的数据类型，以及它们在 `INSERT` 和 `SELECT` 查询中与 ClickHouse [数据类型](/zh/reference/data-types/index) 的对应关系。
+
+| CapnProto 数据类型 (`INSERT`)                            | ClickHouse 数据类型                                                                                                                   | CapnProto 数据类型 (`SELECT`)                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `UINT8`, `BOOL`                                      | [UInt8](/zh/reference/data-types/int-uint)                                                                                           | `UINT8`                                              |
+| `INT8`                                               | [Int8](/zh/reference/data-types/int-uint)                                                                                            | `INT8`                                               |
+| `UINT16`                                             | [UInt16](/zh/reference/data-types/int-uint), [Date](/zh/reference/data-types/date)                                                      | `UINT16`                                             |
+| `INT16`                                              | [Int16](/zh/reference/data-types/int-uint)                                                                                           | `INT16`                                              |
+| `UINT32`                                             | [UInt32](/zh/reference/data-types/int-uint), [DateTime](/zh/reference/data-types/datetime)                                              | `UINT32`                                             |
+| `INT32`                                              | [Int32](/zh/reference/data-types/int-uint), [Decimal32](/zh/reference/data-types/decimal)                                               | `INT32`                                              |
+| `UINT64`                                             | [UInt64](/zh/reference/data-types/int-uint)                                                                                          | `UINT64`                                             |
+| `INT64`                                              | [Int64](/zh/reference/data-types/int-uint), [DateTime64](/zh/reference/data-types/datetime), [Decimal64](/zh/reference/data-types/decimal) | `INT64`                                              |
+| `FLOAT32`                                            | [Float32](/zh/reference/data-types/float)                                                                                            | `FLOAT32`                                            |
+| `FLOAT64`                                            | [Float64](/zh/reference/data-types/float)                                                                                            | `FLOAT64`                                            |
+| `TEXT, DATA`                                         | [String](/zh/reference/data-types/string), [FixedString](/zh/reference/data-types/fixedstring)                                          | `TEXT, DATA`                                         |
+| `union(T, Void), union(Void, T)`                     | [Nullable(T)](/zh/reference/data-types/date)                                                                                         | `union(T, Void), union(Void, T)`                     |
+| `ENUM`                                               | [Enum(8/16)](/zh/reference/data-types/enum)                                                                                          | `ENUM`                                               |
+| `LIST`                                               | [Array](/zh/reference/data-types/array)                                                                                              | `LIST`                                               |
+| `STRUCT`                                             | [Tuple](/zh/reference/data-types/tuple)                                                                                              | `STRUCT`                                             |
+| `UINT32`                                             | [IPv4](/zh/reference/data-types/ipv4)                                                                                                | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/zh/reference/data-types/ipv6)                                                                                                | `DATA`                                               |
+| `DATA`                                               | [Int128/UInt128/Int256/UInt256](/zh/reference/data-types/int-uint)                                                                   | `DATA`                                               |
+| `DATA`                                               | [Decimal128/Decimal256](/zh/reference/data-types/decimal)                                                                            | `DATA`                                               |
+| `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/zh/reference/data-types/map)                                                                                                  | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
+
+* 整数类型在输入和输出时可以相互转换。
+* 如需在 CapnProto 格式中使用 `Enum`，请使用 [format&#95;capn&#95;proto&#95;enum&#95;comparising&#95;mode](/zh/reference/settings/formats#format_capn_proto_enum_comparising_mode) 设置。
+* 数组可以嵌套，其参数也可以是 `Nullable` 类型。`Tuple` 和 `Map` 类型同样也可以嵌套。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+<div id="inserting-and-selecting-data-capnproto">
+  ### 插入和查询数据
+</div>
+
+你可以使用以下命令，将文件中的 CapnProto 数据插入到 ClickHouse 表中：
+
+```bash
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
+```
+
+其中，`schema.capnp` 的内容如下：
+
+```capnp
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+您可以使用以下命令从 ClickHouse 表中查询数据，并将其以 `CapnProto` 格式保存到文件中：
+
+```bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
+
+<div id="using-autogenerated-capn-proto-schema">
+  ### 使用自动生成的 schema
+</div>
+
+如果你的数据没有外部 `CapnProto` schema，仍然可以借助自动生成的 schema，以 CapnProto 格式 输出或输入数据。
+
+例如：
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS format_capn_proto_use_autogenerated_schema=1
+```
+
+在这种情况下，ClickHouse 将使用函数 [structureToCapnProtoSchema](/zh/reference/functions/regular-functions/other-functions#structureToCapnProtoSchema) 根据表结构自动生成 CapnProto schema，并使用该 schema 以 CapnProto 格式序列化数据。
+
+你也可以使用自动生成的 schema 读取 CapnProto 文件 (在这种情况下，文件必须使用相同的 schema 创建) ：
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_capn_proto_use_autogenerated_schema=1 FORMAT CapnProto"
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+设置 [`format_capn_proto_use_autogenerated_schema`](/zh/reference/settings/formats#format_capn_proto_use_autogenerated_schema) 默认已启用，并且在未设置 [`format_schema`](/zh/reference/formats/index#formatschema) 时生效。
+
+你也可以在输入/输出时，使用设置 [`output_format_schema`](/zh/reference/settings/formats#output_format_schema) 将自动生成的 schema 保存到文件中。
+
+例如：
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS 
+    format_capn_proto_use_autogenerated_schema=1,
+    output_format_schema='path/to/schema/schema.capnp'
+```
+
+在这种情况下，自动生成的 `CapnProto` schema 将保存到文件 `path/to/schema/schema.capnp` 中。

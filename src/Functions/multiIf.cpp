@@ -1,3 +1,4 @@
+#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -116,7 +117,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type;
+            const IDataType * nested_type = nullptr;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())
@@ -490,7 +491,10 @@ private:
         {
             auto & cond_column = arguments[i - 1].column;
             /// If condition is const or null and value is false, we can skip execution of expression after this condition.
-            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
+            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as false: their dummy nested column would
+            /// throw from `getBool`, and per the loop preamble `multiIf` already treats NULL conditions as 0.
+            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty()
+                && (cond_column->onlyNull() || !cond_column->getBool(0)))
             {
                 condition_mask_info.has_ones = false;
                 condition_mask_info.has_zeros = true;

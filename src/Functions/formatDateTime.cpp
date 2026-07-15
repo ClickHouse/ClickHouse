@@ -197,7 +197,7 @@ private:
         static size_t writeNumber2(char * p, T v)
         {
             static_assert(std::is_integral_v<T>);
-            assert(v >= 0 && v <= 99);
+            chassert(v >= 0 && v <= 99);
 
             memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
             return 2;
@@ -2233,8 +2233,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
         )",
         R"(
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};

@@ -22,12 +22,12 @@ constexpr size_t VALUE_COLUMN_INDEX = 5;
 
 struct ProfileEventsSnapshot
 {
-    UInt64 thread_id;
+    UInt64 thread_id{};
     CountersIncrement counters;
-    Int64 memory_usage;
-    Int64 peak_memory_usage;
-    Int64 temp_data_on_disk_usage;
-    time_t current_time;
+    Int64 memory_usage{};
+    Int64 peak_memory_usage{};
+    Int64 temp_data_on_disk_usage{};
+    time_t current_time{};
 };
 
 using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot>;

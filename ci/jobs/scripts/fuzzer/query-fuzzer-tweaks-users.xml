@@ -32,14 +32,17 @@
                     <min>1</min>
                 </enable_analyzer>
 
-                <!-- Prevent stack overflow -->
-                <max_ast_depth>
-                    <readonly/>
-                </max_ast_depth>
+                <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
+                     max_parser_backtracks) and the max_threads cap live in
+                     limit-recursion-settings.xml, installed alongside this file and
+                     shared with the stress test. -->
 
             </constraints>
 
             <!-- Allow all experimental features by default -->
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+
             <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
@@ -48,6 +51,7 @@
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
             <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
             <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
+            <allow_experimental_cleanup_old_data_files_compaction>1</allow_experimental_cleanup_old_data_files_compaction>
             <allow_experimental_codecs>1</allow_experimental_codecs>
             <allow_experimental_correlated_subqueries>1</allow_experimental_correlated_subqueries>
             <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
@@ -70,7 +74,6 @@
             <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
-            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>
             <allow_experimental_polyglot_dialect>1</allow_experimental_polyglot_dialect>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
@@ -78,6 +81,7 @@
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_unique_key>1</allow_experimental_unique_key>
+            <allow_experimental_url_wildcard_from_index_pages>1</allow_experimental_url_wildcard_from_index_pages>
             <allow_experimental_window_view>1</allow_experimental_window_view>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
@@ -110,8 +114,10 @@
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
+            <enable_nullable_tuple_type>1</enable_nullable_tuple_type>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
+            <enable_streaming_queries>1</enable_streaming_queries>
             <enable_time_time64_type>1</enable_time_time64_type>
             <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>

@@ -17,6 +17,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -61,7 +62,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      */
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
-    std::vector<std::pair<std::string, ASTPtr>> complex_args;
+    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> complex_args;
     if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
@@ -74,7 +75,17 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             for (const auto & [arg_name, arg_ast] : complex_args)
             {
                 if (arg_name == "database" || arg_name == "db")
-                    remote_table_function_ptr = arg_ast;
+                {
+                    /// A table function is allowed here (remote(nc, database = mysql(...))), mirroring the
+                    /// positional signature remote('addr', table_function()). Any other expression is a
+                    /// database name, so a non-function node never reaches TableFunctionFactory::get().
+                    const auto * function = arg_ast->as<ASTFunction>();
+                    if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
+                        remote_table_function_ptr = arg_ast;
+                    else
+                        database = checkAndGetLiteralArgument<String>(
+                            evaluateConstantExpressionForDatabaseName(arg_ast, context), "database");
+                }
                 else if (arg_name == "sharding_key")
                     sharding_key = arg_ast;
                 else
@@ -279,7 +290,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-        std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+        Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         HostsByShard names;
         names.reserve(shards.size());
@@ -342,7 +353,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     if (cached_columns.empty())
         cached_columns = getActualTableStructure(context, is_insert_query);
 
-    assert(cluster);
+    chassert(cluster);
 
     bool has_local_shard = false;
     for (const auto & shard_info : cluster->getShardsInfo())
@@ -383,7 +394,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    assert(cluster);
+    chassert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 

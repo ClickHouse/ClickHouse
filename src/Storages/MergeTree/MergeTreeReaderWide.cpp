@@ -117,8 +117,8 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     bool deserialize_prefixes)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
-        ? settings.read_settings.remote_fs_prefetch
-        : settings.read_settings.local_fs_prefetch;
+        ? settings.read_settings.remote_fs_settings.prefetch
+        : settings.read_settings.local_fs_settings.prefetch;
 
     if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
         return;
@@ -307,7 +307,8 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1);
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
 
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
@@ -414,6 +415,22 @@ void MergeTreeReaderWide::deserializePrefix(
 
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
+        deserialize_settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return;
+
+            if (from_mark != 0)
+                prefetched_streams.erase(*stream_name);
+
+            auto it = streams.find(*stream_name);
+            if (it == streams.end())
+                it = addStream(substream_path, *stream_name);
+
+            it->second->adjustRightMark(current_task_last_mark);
+            it->second->seekToStart();
+        };
         /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
         deserialize_settings.dynamic_subcolumns_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -443,6 +460,9 @@ void MergeTreeReaderWide::deserializePrefix(
             /// single-dictionary part has only one distinct position, while a part
             /// with one dictionary in the main stream and another in the suffix can
             /// still look like "2 positions".
+            /// This is only a necessary condition; `SerializationLowCardinality`
+            /// still checks the `DictionaryKeys` stream reaches EOF after the
+            /// first dictionary.
             const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
             const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
                 ? max_transitions

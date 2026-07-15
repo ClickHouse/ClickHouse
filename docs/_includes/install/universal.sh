@@ -9,10 +9,10 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        # Require at least x86-64 + SSE4.2 (introduced in 2006). On older hardware fall back to plain x86-64 (introduced in 1999) which
-        # guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than SSE 4.2 builds.
-        HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
-        if [ "${HAS_SSE42}" ]
+        # The default build targets x86-64-v3 which requires AVX2, BMI1, BMI2, FMA, etc.
+        # On older hardware, fall back to the compat build (plain x86-64, SSE2 baseline).
+        # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
+        if grep -q avx2 /proc/cpuinfo
         then
             if ldd --version 2>&1 | grep -q musl
             then
@@ -71,21 +71,18 @@ fi
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-if [ -f "$clickhouse" ]
-then
-    read -p "ClickHouse binary ${clickhouse} already exists. Overwrite? [y/N] " answer
-    if [ "$answer" = "y" -o "$answer" = "Y" ]
-    then
-        rm -f "$clickhouse"
-    else
-        i=0
-        while [ -f "$clickhouse" ]
-        do
-            clickhouse="${clickhouse_download_filename_prefix}.${i}"
-            i=$(($i+1))
-        done
-    fi
-fi
+# If something already exists at this path, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
+# Do not prompt interactively here: this script is commonly run as `curl https://clickhouse.com/ | sh`,
+# where the script itself is delivered on stdin. A `read` would consume bytes from that same pipe,
+# desyncing the shell parser and producing spurious syntax errors.
+# Use `-e` together with `-L` so that directories and broken symlinks are also treated as occupied
+# (a dangling symlink is invisible to `-e` alone, and `curl -o` would then fail on it).
+i=0
+while [ -e "$clickhouse" ] || [ -L "$clickhouse" ]
+do
+    clickhouse="${clickhouse_download_filename_prefix}.${i}"
+    i=$(($i+1))
+done
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo

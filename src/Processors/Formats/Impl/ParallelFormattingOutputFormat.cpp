@@ -76,7 +76,7 @@ namespace DB
         if (emergency_stop)
             return;
 
-        assert(unit.status == READY_TO_INSERT);
+        chassert(unit.status == READY_TO_INSERT);
         unit.chunk = std::move(chunk);
         /// Resize memory without deallocation.
         unit.segment.resize(0);
@@ -158,7 +158,7 @@ namespace DB
                 if (emergency_stop)
                     break;
 
-                assert(unit.status == READY_TO_READ);
+                chassert(unit.status == READY_TO_READ);
 
                 /// Use this copy to after notification to stop the execution.
                 auto copy_of_unit_type = unit.type;
@@ -210,7 +210,7 @@ namespace DB
         try
         {
             auto & unit = processing_units[current_unit_number];
-            assert(unit.status == READY_TO_FORMAT);
+            chassert(unit.status == READY_TO_FORMAT);
 
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer

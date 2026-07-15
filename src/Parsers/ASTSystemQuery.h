@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -40,11 +41,13 @@ public:
         CLEAR_TEXT_INDEX_CACHES,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
+        CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
         CLEAR_AGGREGATE_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
+        CLEAR_POINT_IN_POLYGON_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -60,6 +63,7 @@ public:
         RESTORE_REPLICA,
         RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
+        WAIT_QUERY_RUNNER,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
@@ -224,12 +228,12 @@ public:
 
 #if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
-    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    Instrumentation::EntryType instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type{};
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
-    std::vector<InstrumentParameter> instrumentation_parameters;
+    std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;
 #endif
 
@@ -268,3 +272,12 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more than 128 values, which is outside the default magic_enum range
+/// [-128, 127]. ParserSystemQuery matches SYSTEM keywords via magic_enum::enum_values, so any
+/// out-of-range value silently drops from the keyword list and stops parsing.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};

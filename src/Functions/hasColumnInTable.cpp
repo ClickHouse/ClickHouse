@@ -114,8 +114,8 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     if (table_name.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
-    bool has_column;
-    bool has_alias_column;
+    bool has_column = false;
+    bool has_alias_column = false;
     if (host_name.empty())
     {
         // FIXME this (probably) needs a non-constant access to query context,

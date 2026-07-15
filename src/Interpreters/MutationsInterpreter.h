@@ -12,6 +12,7 @@
 namespace DB
 {
 
+class ASTAlterCommand;
 class ActionsChain;
 class Context;
 class QueryPlan;
@@ -40,8 +41,11 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
+/// Build the WHERE-style filter for a mutation command. The parsed
+/// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
+/// other accesses; the function does not call `MutationCommand::ast` itself.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
+    const ASTAlterCommand * alter,
     const StoragePtr & storage,
     ContextPtr context
 );
@@ -206,7 +210,7 @@ private:
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
@@ -262,7 +266,7 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
 
-        /// --- New analyzer path (populated when analyzer is enabled) ---
+        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 

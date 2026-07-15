@@ -98,7 +98,7 @@ UInt64 TransactionLog::deserializeCSN(const String & csn_node_name)
 {
     ReadBufferFromString buf{csn_node_name};
     assertString("csn-", buf);
-    UInt64 res;
+    UInt64 res = 0;
     readText(res, buf);
     assertEOF(buf);
     return res;

@@ -23,7 +23,7 @@ SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_,
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
-    assert(names.size() == elems.size());
+    chassert(names.size() == elems.size());
     for (size_t i = 0; i < names.size(); ++i)
         name_to_elem[names[i]] = elems[i];
 }
@@ -52,7 +52,7 @@ void SerializationInfoTuple::add(const IColumn & column)
 
     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
     const auto & right_elems = column_tuple.getColumns();
-    assert(elems.size() == right_elems.size());
+    chassert(elems.size() == right_elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->add(*right_elems[i]);

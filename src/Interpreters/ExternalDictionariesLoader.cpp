@@ -11,6 +11,8 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
+#include <Core/UUID.h>
 
 #include "config.h"
 
@@ -44,7 +46,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
 
 ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
-        const std::string & key_in_config, const std::string & repository_name) const
+        const std::string & key_in_config, const std::string & repository_name, const std::string & /* config_file_path */) const
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
@@ -66,6 +68,13 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
     }
 
     return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+}
+
+std::optional<bool> ExternalDictionariesLoader::isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    SettingFieldBoolAuto lazy_load;
+    lazy_load.parseFromString(config.getString(key_in_config + ".settings.dictionary_lazy_load", SettingFieldBoolAuto::keyword));
+    return lazy_load.valueOrNullopt();
 }
 
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
@@ -234,7 +243,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 
     if (!db)
         return res;
-    assert(table);
+    chassert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
         return res;
