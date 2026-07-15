@@ -2488,7 +2488,7 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
     /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
     /// `LineAsString`) that write the column bytes verbatim.
-    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
+    bool binary_payload = false;
 
     /// Whether the output format may emit raw carriage returns: from the data itself (for example the
     /// `CSV` quoting, `XML` text elements, and the unescaped values of `Pretty` / `Vertical` pass `\r`
@@ -2496,8 +2496,18 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// `output_format_tsv_crlf_end_of_line`, or `CustomSeparated` with a `CSV` escaping rule or
     /// delimiters containing `\r`). Those cannot be carried losslessly by the text `EventStream`
     /// framing and are base64-encoded there instead.
-    const bool payload_has_carriage_returns
-        = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
+    bool payload_has_carriage_returns = false;
+
+    /// When the stream carries no output payload (`carries_no_payload`), the output format contributes
+    /// no bytes, so its properties are irrelevant: the payloads are plain text (the framing's own JSON),
+    /// and the format probes are skipped - the format name may not even refer to an existing format
+    /// (for example a mistyped `default_format` on an `INSERT`, which formats no output).
+    if (!carries_no_payload)
+    {
+        binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
+        payload_has_carriage_returns
+            = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
+    }
 
     auto framing = createFramingFormat(
         framing_name,
@@ -2891,6 +2901,11 @@ void executeQuery(
         output_format->setFraming(framing);
         setFramingQueues(*framing, context, framing_queues);
 
+        /// The carrier is not part of the pipeline, so it is finalized explicitly (below, after the
+        /// query-finish logging) to flush the pending throttled progress update; the framing format
+        /// itself is finalized separately after that, so it must not be finalized by the carrier.
+        output_format->deferFramingFinalize();
+
         /// Route progress to the framing format so `progress` packets are emitted during execution
         /// (relevant for a long-running `INSERT`); the logs and profile events accumulated in the
         /// queues are drained when the framing format is finalized after the query-finish logging.
@@ -3067,7 +3082,23 @@ void executeQuery(
         ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
         finishExecutedQuery(streams, [&]()
         {
-            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+            auto progress_callback = context->getProgressCallback();
+
+            /// On the no-result path the `Null` payload carrier is not part of the pipeline, so the
+            /// pipeline's progress callback is not called anymore: forward the final progress flush
+            /// (`result_rows` / `result_bytes`) to the carrier as well, so the framed stream ends with
+            /// a `progress` packet carrying the final counters, like the native protocol does.
+            if (!pulling_pipeline)
+            {
+                progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    captured_output_format->onProgress(progress);
+                };
+            }
+
+            flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
         });
 
         /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
@@ -3076,6 +3107,14 @@ void executeQuery(
         /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
         if (auto thread_group = CurrentThread::getGroup())
             thread_group->memory_tracker.logPeakMemoryUsage();
+
+        /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
+        /// pipeline), and the last progress update - including the final one flushed above - may still
+        /// be pending because of throttling (see `onProgress`): finalize the carrier now, which writes
+        /// it as the final `progress` packet. The framing finalization itself is deferred (see
+        /// `deferFramingFinalize` above), and for a pulling query the output format was already
+        /// finalized by the pipeline, so this is a no-op.
+        output_format->finalize();
 
         framing->finalize();
 

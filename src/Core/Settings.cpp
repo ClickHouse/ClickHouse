@@ -2492,6 +2492,8 @@ Allows to multiplex different parts of the query response in a single stream: ch
 
 Framing formats are independent of output formats: they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals` and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
 
+One deliberate exception: an output format that drops totals and extremes in its plain output because it cannot represent them (the `JSONCompactEachRow` family) does emit them under framing, into the `totals` and `extremes` packets. For such formats the concatenation of the `data` packets alone is exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that the unframed output does not contain.
+
 Server logs are included if the `send_logs_level` setting is set, and profile events are included if the `send_profile_events` setting is enabled (they are sent at most once in `interactive_delay` microseconds, and progress packets are also throttled by `interactive_delay`).
 
 The setting currently applies to the HTTP protocol and is ignored for other interfaces.

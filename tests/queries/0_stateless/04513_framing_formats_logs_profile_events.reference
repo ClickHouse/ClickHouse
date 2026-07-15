@@ -38,3 +38,11 @@ no-result query SETTINGS framing None rows written: OK
 --- a failing INSERT is delivered as a framed exception
 failing INSERT exception packet: OK
 failing INSERT no data packets: OK
+--- a framed INSERT ends with a final progress packet carrying the final counters
+INSERT progress packets: OK
+INSERT final progress result_rows: OK
+--- a framed no-result query does not depend on the output format
+INSERT with unknown default_format no exception: OK
+INSERT with unknown default_format rows written: OK
+DDL EventStream content type with binary default_format: OK
+DDL EventStream no payload=base64 with binary default_format: OK
