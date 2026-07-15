@@ -842,6 +842,13 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     The pause failpoint mt_start_mutation_pause_before_register holds the ALTER
     exactly inside the race window, and SYSTEM WAIT FAILPOINT ... PAUSE gives a
     deterministic handshake, so no timing assumptions are needed.
+
+    The ALTER runs inside an explicit transaction (the original report used an
+    implicit one, but the race window is identical), so the test captures the
+    transaction's identity with transactionID() before the ALTER even starts and
+    kills exactly that transaction.  Identifying the transaction by diffing the
+    server-global system.transactions would be racy: background merge/mutation
+    scheduling starts its own transactions at any moment.
     """
     node.query("DROP TABLE IF EXISTS mt_kill_txn_race SYNC")
     node.query(
@@ -852,34 +859,27 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
 
-    # system.transactions is global to the server and may list unrelated background
-    # transactions, so snapshot the transactions that already exist before starting the
-    # ALTER. The ALTER's own transaction is the one that appears afterwards; we identify
-    # and act on exactly that one, instead of assuming the table contains only our ALTER.
-    tids_before = [
-        line
-        for line in node.query("SELECT tid_hash FROM system.transactions")
-        .strip()
-        .splitlines()
-        if line
-    ]
-    not_in_before = (
-        " AND tid_hash NOT IN (" + ", ".join(tids_before) + ")" if tids_before else ""
-    )
+    # Begin the transaction in its own HTTP session and capture its identity
+    # before the ALTER starts, so every later step is bound to exactly this
+    # transaction, no matter what unrelated transactions the server runs.
+    session = 42
+    tx(session, "BEGIN TRANSACTION")
+    tid = tx(session, "SELECT transactionID()").strip()
+    assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
 
     alter_thread = None
     try:
-        # The ALTER runs in an implicit transaction (as in the original report)
-        # and pauses between the transaction-side and the storage-side mutation
-        # registration.  It is expected to fail: its transaction gets killed.
-        # max_execution_time bounds the wait on an unfixed server (the time
-        # limit is checked every second while waiting for the mutation, which
-        # never completes there).
+        # The ALTER runs inside the transaction begun above and pauses between
+        # the transaction-side and the storage-side mutation registration.  It
+        # is expected to fail: its transaction gets killed.  max_execution_time
+        # bounds the wait on an unfixed server (the time limit is checked every
+        # second while waiting for the mutation, which never completes there).
         def run_alter():
             try:
-                node.query(
-                    "ALTER TABLE mt_kill_txn_race UPDATE value = 1 WHERE 1",
-                    settings={"implicit_transaction": 1, "max_execution_time": 60},
+                tx(
+                    session,
+                    "ALTER TABLE mt_kill_txn_race UPDATE value = 1 WHERE 1"
+                    " SETTINGS max_execution_time = 60",
                 )
             except Exception:
                 pass
@@ -893,27 +893,14 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
             "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
         )
 
-        # Identify the ALTER's own transaction: exactly one transaction must have
-        # appeared since the snapshot above (SYSTEM WAIT FAILPOINT ... PAUSE guarantees
-        # it is already registered when the handshake returns).
-        assert_eq_with_retry(
-            node,
-            "SELECT count() FROM system.transactions WHERE 1" + not_in_before,
-            "1",
-        )
-        tid_hash = node.query(
-            "SELECT tid_hash FROM system.transactions WHERE 1" + not_in_before
-        ).strip()
-        assert tid_hash, "The implicit transaction is not in system.transactions"
-
         # Kill the transaction while the ALTER is paused.  The rollback's
         # killMutation sweep runs now and finds nothing to remove.
-        node.query(f"KILL TRANSACTION WHERE tid_hash = {tid_hash}")
+        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
         # Assert that our specific transaction disappears, not that the whole
         # (server-global) system.transactions table becomes empty.
         assert_eq_with_retry(
             node,
-            f"SELECT count() FROM system.transactions WHERE tid_hash = {tid_hash}",
+            f"SELECT count() FROM system.transactions WHERE tid = {tid}",
             "0",
         )
     finally:
