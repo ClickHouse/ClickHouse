@@ -61,6 +61,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/Utils.h>
 
 
 namespace ProfileEvents
@@ -802,7 +803,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
-       query_tree = interpreter.getQueryTree();
+        query_tree = interpreter.getQueryTree();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -819,6 +820,10 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
+
+    if (query_tree)
+        rejectStreamingForExplainAnalyze(query_tree);
+
     result->planning_ns = watch.elapsed();
 
     analyzed_inner_query = std::move(result);

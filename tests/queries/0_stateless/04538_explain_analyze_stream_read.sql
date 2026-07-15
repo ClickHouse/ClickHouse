@@ -20,7 +20,7 @@ INSERT INTO t_explain_analyze_stream SELECT toString(number % 100), number FROM 
 -- Rejected: streaming read directly.
 EXPLAIN ANALYZE SELECT * FROM t_explain_analyze_stream STREAM LIMIT 50; -- { serverError NOT_IMPLEMENTED }
 
--- Rejected: streaming read nested in a subquery (confirms extractAllTableReferences recursion).
+-- Rejected: streaming read nested in a subquery (confirms extractTableExpressions recursion).
 EXPLAIN ANALYZE SELECT * FROM (SELECT * FROM t_explain_analyze_stream STREAM) LIMIT 50; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_explain_analyze_stream;
