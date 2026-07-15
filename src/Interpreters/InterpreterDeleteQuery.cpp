@@ -74,6 +74,19 @@ BlockIO InterpreterDeleteQuery::execute()
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
 
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+    /// The reject must run before the `getTable` below: `resolveStorageID` does not verify
+    /// existence for a qualified name, so a lookup-first order would answer `UNKNOWN_TABLE` for a
+    /// missing name and `TABLE_IS_PERMANENTLY_READ_ONLY` for an existing one, turning the facade
+    /// into a source-table existence oracle (the same ordering rule as in `InterpreterDropQuery`).
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run DELETE FROM in an underlying database",
+            backQuote(table_id.database_name));
+
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
@@ -83,15 +96,6 @@ BlockIO InterpreterDeleteQuery::execute()
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
-
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-
-    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). "
-            "Run DELETE FROM in an underlying database",
-            backQuote(table_id.database_name));
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {

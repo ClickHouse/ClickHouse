@@ -42,8 +42,11 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
+    /// The reject must run before the `getTable` below: `resolveStorageID` does not verify
+    /// existence for a qualified name, so a lookup-first order would answer `UNKNOWN_TABLE` for a
+    /// missing name and `TABLE_IS_PERMANENTLY_READ_ONLY` for an existing one, turning the facade
+    /// into a source-table existence oracle (the same ordering rule as in `InterpreterDropQuery`).
     if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
         database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get()))
         throw Exception(
@@ -51,6 +54,8 @@ BlockIO InterpreterOptimizeQuery::execute()
             "Database {} is an Overlay facade (read-only). "
             "Run OPTIMIZE TABLE in the underlying database that owns the table",
             backQuote(table_id.getDatabaseName()));
+
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

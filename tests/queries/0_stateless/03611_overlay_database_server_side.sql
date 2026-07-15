@@ -92,6 +92,14 @@ TRUNCATE TABLE IF EXISTS db_overlay.no_such_table; -- { serverError TABLE_IS_PER
 DELETE FROM db_overlay.t_a WHERE id = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 UPDATE db_overlay.t_a SET s = 'nope' WHERE id = 1 SETTINGS enable_lightweight_update = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
+-- `DELETE FROM` and `OPTIMIZE TABLE` are rejected up front by the facade database name, before the
+-- table is resolved, so a name missing from every source rejects the same way as an existing one
+-- instead of answering `UNKNOWN_TABLE` (no source-table existence oracle).
+DELETE FROM db_overlay.no_such_table WHERE 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+OPTIMIZE TABLE db_overlay.no_such_table; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+UPDATE db_overlay.no_such_table SET s = 'nope' WHERE 1 SETTINGS enable_lightweight_update = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+ALTER TABLE db_overlay.no_such_table DELETE WHERE 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+
 -- SYSTEM commands targeting a table are rejected on the facade, so the underlying table is not
 -- stopped/restarted behind the user's back. They must be run against the underlying database.
 SYSTEM STOP MERGES db_overlay.t_a; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
