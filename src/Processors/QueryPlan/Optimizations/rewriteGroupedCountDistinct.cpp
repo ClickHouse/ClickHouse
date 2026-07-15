@@ -97,6 +97,8 @@ Aggregator::Params cloneParamsWith(const Aggregator::Params & params, const Name
         params.enable_producing_buckets_out_of_order_in_aggregation,
         params.serialize_string_with_zero_byte);
 
+    /// The original step's key does not describe the rewritten steps; the pass stamps fresh
+    /// plan-level keys onto them after the splice.
     result.stats_collecting_params.setKey(0);
     return result;
 }
@@ -142,10 +144,13 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     if (hint->merged_result_rows == 0 || hint->distinct_key_value_pairs < hint->merged_result_rows * min_avg_distinct_values_per_key)
         return false;
 
-    const auto min_overlap
-        = std::clamp<UInt64>(hint->merged_hash_tables / 2, min_required_group_key_thread_overlap, max_required_group_key_thread_overlap);
-
-    if (hint->sum_of_hash_table_sizes < hint->merged_result_rows * min_overlap)
+    const auto current_width = params.max_threads;
+    const auto observed_overlap = std::min<UInt64>(hint->sum_of_hash_table_sizes / hint->merged_result_rows, current_width);
+    const auto min_overlap = std::clamp<UInt64>(
+        std::min<UInt64>(hint->merged_hash_tables, current_width) / 2,
+        min_required_group_key_thread_overlap,
+        max_required_group_key_thread_overlap);
+    if (observed_overlap < min_overlap)
         return false;
 
     const auto & input_header = node.children.front()->step->getOutputHeader();
@@ -204,8 +209,57 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     auto & dedup_node = nodes.emplace_back();
     dedup_node.step = std::move(dedup_step);
     dedup_node.children = {node.children.front()};
-    node.children = {&dedup_node};
+    auto original_step = std::move(node.step);
     node.step = std::move(count_step);
+    node.children = {&dedup_node};
+
+    UInt64 dedup_key = 0;
+    UInt64 count_key = 0;
+    try
+    {
+        const auto cache_keys = calculateHashTableCacheKeys(node);
+        if (auto it = cache_keys.find(&dedup_node); it != cache_keys.end())
+            dedup_key = it->second;
+        if (auto it = cache_keys.find(&node); it != cache_keys.end())
+            count_key = it->second;
+    }
+    catch (...)
+    {
+        /// Hashing serializes the plan steps and throws on unserializable ones (e.g. `ORDER BY ...
+        /// WITH FILL` inside the input subtree). Under the new analyzer that cannot happen here —
+        /// the original step's non-zero key proves the same subtree hashed successfully in
+        /// `setAggregationHashTableCacheKeys` — but under the old analyzer the key may be the
+        /// AST-level seed with the plan hash having failed, and then it fails here too. Same policy
+        /// as there: an unserializable subtree only costs the statistics, never the query. The
+        /// created steps then keep key 0 and record nothing.
+    }
+
+    if (dedup_key != 0 && count_key != 0)
+    {
+        const auto & stats = params.stats_collecting_params;
+        const auto count_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
+            StatsCollectingParams(count_key, true, stats.max_entries_for_hash_table_stats, stats.max_size_to_preallocate));
+        const auto dedup_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
+            StatsCollectingParams(dedup_key, true, stats.max_entries_for_hash_table_stats, stats.max_size_to_preallocate));
+        if (count_entry && dedup_entry && count_entry->merged_result_rows != 0 && dedup_entry->merged_result_rows != 0)
+        {
+            const auto groups = count_entry->merged_result_rows;
+            const auto pairs = dedup_entry->merged_result_rows;
+            const auto pair_overlap = std::min<UInt64>(dedup_entry->sum_of_hash_table_sizes / pairs, current_width);
+            if (groups > max_observed_group_keys || pairs < groups * min_avg_distinct_values_per_key
+                || pair_overlap < min_overlap)
+            {
+                node.step = std::move(original_step);
+                node.children = {dedup_node.children.front()};
+                return false;
+            }
+        }
+    }
+
+    if (dedup_key != 0)
+        typeid_cast<AggregatingStep *>(dedup_node.step.get())->setStatsCacheKey(dedup_key);
+    if (count_key != 0)
+        typeid_cast<AggregatingStep *>(node.step.get())->setStatsCacheKey(count_key);
 
     LOG_DEBUG(
         getLogger("QueryPlanOptimizations"),

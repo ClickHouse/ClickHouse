@@ -263,8 +263,9 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    if (rewriteGroupedCountDistinct(optimization_settings, root, nodes))
-        setAggregationHashTableCacheKeys(optimization_settings, root);
+    /// May split an aggregation in two based on the just-stamped statistics keys; the pass stamps
+    /// the steps it creates itself.
+    rewriteGroupedCountDistinct(optimization_settings, root, nodes);
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
