@@ -6496,6 +6496,27 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_rewrite_grouped_count_distinct, true, R"(
+Toggles a query-plan-level optimization which rewrites a grouped `uniqExact` (`count(DISTINCT ...)`) into a `count` over a deduplicating aggregation. For example, a query of the shape
+
+```sql
+SELECT region, uniqExact(user_id) FROM t GROUP BY region
+```
+
+is executed as
+
+```sql
+SELECT region, count(user_id) FROM (SELECT region, user_id FROM t GROUP BY region, user_id) GROUP BY region
+```
+
+The rewrite pays off when the group keys have a low cardinality while the counted argument has many distinct values per key — for example, unique users per region. It is applied only when the hash-table statistics collected by a previous run of the same query confirm such a shape, so the first run of a query is never rewritten.
+Only takes effect if both of the settings [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) and [`collect_hash_table_stats_during_aggregation`](#collect_hash_table_stats_during_aggregation) are enabled.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_try_use_vector_search, true, R"(
 Toggles a query-plan-level optimization which tries to use the vector similarity index.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
