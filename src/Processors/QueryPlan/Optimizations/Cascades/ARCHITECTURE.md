@@ -220,6 +220,20 @@ a lower bound, so a budget derived from it can prune plans that would become che
 fails closed: if optimization does not finish within the budget, the query is rejected
 with a clear error (naming the remaining task) rather than built from a partial memo.
 
+The four stages are driven by six concrete task types on the stack: `OptimizeGroupTask`
+and `ExploreGroupTask` drive a whole group; `ExploreExpressionTask` and
+`OptimizeExpressionTask` collect the transformation resp. implementation rules that match
+one expression; `ApplyRuleTask` runs a chosen rule; and `OptimizeInputsTask` walks an
+expression's inputs and costs it once they are all optimized.
+
+Each rule carries a static **promise** (a priority). The rules applicable to an
+expression are sorted by promise and pushed on the LIFO stack, so the highest-promise
+rule runs first. Promise does not change which plans are considered — every applicable
+rule is eventually applied — but it orders their generation, which breaks ties among
+equal-cost alternatives (the first-found best is kept and a later equal-cost candidate is
+pruned). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
+is not consulted.
+
 **Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`
 
 ### Enforcer Scheduling
@@ -237,6 +251,36 @@ unsorted source expressions.
 **Pruning** at the top of `OptimizeGroupTask` returns early when the group is explored,
 optimized, and enforced for the requested properties and already has a satisfying best
 implementation, preventing re-entry loops from self-referential enforcers.
+
+### Implementation Strategies
+
+A physical expression is a query plan step paired with an **implementation strategy**
+(`ImplementationStrategyPtr` on `GroupExpression`). The strategy names the physical
+algorithm chosen for that step and owns its per-operator cost. Logical expressions and
+`DefaultImplementation` passthroughs carry no strategy (`strategy == nullptr`).
+
+Strategies are grouped by operator family — `IJoinStrategy`, `IAggregationStrategy`,
+`IReadStrategy` — and each concrete strategy implements `estimateOperatorCost` in
+`Cost.cpp` (kept there so every cost formula lives in one file):
+
+- Joins: `LocalJoinStrategy`, `BroadcastJoinStrategy`, `ShuffleJoinStrategy`
+- Aggregation: `LocalAggregationStrategy`, `ShuffleAggregationStrategy`, `PartialAggregationStrategy`
+- Reads: `ParallelReadStrategy`, `ReplicatedReadStrategy`
+
+`estimateOperatorCost` dispatches on the family with `dynamic_cast`; a logical operator
+still without a strategy is priced as its cheapest reasonable default (a non-broadcast
+hash join, or local aggregation) so a partially implemented plan still gets a finite cost.
+
+Two strategies are markers with no cost function of their own:
+
+- `PartialTopNStrategy` tags the per-shard bounded sort that `TwoStageTopN` creates, so
+  the transformation does not split it again.
+- `ReplicatedSubplanStrategy` marks a step run identically on every node over replicated
+  inputs; it satisfies `{node_count=N, is_replicated=true}` without a `BroadcastExchange`.
+  Replicated expressions get parallelism 1.0, so the default per-step formulas already
+  charge the full work each node repeats.
+
+**Key files**: `ImplementationStrategy.h`, `Cost.cpp`
 
 ### Cost Model
 
@@ -282,6 +326,9 @@ caps the host list used for execution):
 ```sql
 SET param__internal_cascades_cluster_node_count = 20;
 ```
+When the node count cannot be determined (no worker configuration and no parameter) the
+query is rejected rather than planned for a single node, which would silently skip every
+distributed alternative.
 
 The optimizer explores only two parallelism levels: `{1 node}` (local) and `{N nodes}`
 (full cluster).  Intermediate counts are not explored because they were never chosen
@@ -296,9 +343,9 @@ rules honor) is fixed before the search starts and lives on the memo
 (`OptimizationEnvironment`). The rules honor `distributed_aggregation_memory_efficient`
 and `distributed_plan_force_shuffle_aggregation` for aggregation, and
 `exact_rows_before_limit` disables the two-stage top-N (its internal per-shard cap would
-break the exact `rows_before_limit_at_least` accounting). The sort settings of the
-query's own `SortingStep` (size limits, spill thresholds) are captured while the memo is
-built and reused when `SortingEnforcer` creates a new sort.
+break the exact `rows_before_limit_at_least` accounting). The query's sort settings (size
+limits, spill thresholds) are taken from the query context when the search starts and
+reused when `SortingEnforcer` creates a new sort.
 
 Every costed expression is traced at test log level with its `work`/`network`/`sequential`
 breakdown, and several rules log the reason for non-obvious refusals (an unsplittable read,
