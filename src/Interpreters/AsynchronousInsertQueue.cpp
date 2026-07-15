@@ -29,6 +29,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -155,6 +156,23 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
+    }
+
+    /// The protocol version changes only how raw insert bytes are reparsed on flush, and that
+    /// reparse happens only for Parsed entries in a revision-sensitive format (Native/Buffers).
+    /// Preprocessed entries are already-materialized Blocks (for example the native TCP path), and
+    /// other parsers (CSV, JSONEachRow, ...) ignore the version, so keying on it there would split
+    /// otherwise-identical batches for no reason (e.g. two TCP clients on revisions 54486 and 54487).
+    /// Drop it from the key in those cases. The flush restores this same value, but 0 is harmless
+    /// where the payload is not reparsed or the parser ignores the version.
+    if (data_kind != AsynchronousInsertQueueDataKind::Parsed)
+    {
+        client_protocol_version = 0;
+    }
+    else if (const auto * insert_ast = query->as<ASTInsertQuery>())
+    {
+        if (!boost::iequals(insert_ast->format, "Native") && !boost::iequals(insert_ast->format, "Buffers"))
+            client_protocol_version = 0;
     }
 
     siphash.update(client_protocol_version);

@@ -96,29 +96,49 @@ TEST(AsyncInsertKey, IdentityHashIsNotAmbiguous)
 
 TEST(AsyncInsertKey, ClientProtocolVersion)
 {
-    String query_str = "INSERT INTO test (a, b, c) VALUES (1, 2, 3)";
-    ParserInsertQuery parser(query_str.data() + query_str.size(), false);
-    ASTPtr query = parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto parse = [](const String & query_str)
+    {
+        ParserInsertQuery parser(query_str.data() + query_str.size(), false);
+        return parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    };
 
     Settings settings;
     settings.set("async_insert", 1);
 
-    auto kind = AsynchronousInsertQueueDataKind::Preprocessed;
-
-    auto make_key = [&](UInt64 client_protocol_version)
+    using Kind = AsynchronousInsertQueueDataKind;
+    auto make_key = [&](const ASTPtr & query, UInt64 version, Kind kind)
     {
-        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, {}, {}, client_protocol_version, settings, kind);
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, {}, {}, version, settings, kind);
     };
 
-    /// Entries written at different protocol revisions use revision-dependent data formats
-    /// (the Native format), so they must never be parsed as one batch.
-    auto key_old = make_key(0);
-    auto key_new = make_key(54487);
-    EXPECT_NE(key_old.hash, key_new.hash);
-    EXPECT_NE(key_old, key_new);
+    ASTPtr native = parse("INSERT INTO test FORMAT Native");
+    ASTPtr values = parse("INSERT INTO test (a, b, c) VALUES (1, 2, 3)");
 
-    /// The same revision still batches.
-    auto key_new2 = make_key(54487);
-    EXPECT_EQ(key_new.hash, key_new2.hash);
-    EXPECT_EQ(key_new, key_new2);
+    /// Parsed + revision-sensitive format (Native): the buffered bytes are reparsed at the request's
+    /// protocol version on flush, so the version is part of the key and different revisions do not batch.
+    {
+        auto old_rev = make_key(native, 0, Kind::Parsed);
+        auto new_rev = make_key(native, 54487, Kind::Parsed);
+        EXPECT_NE(old_rev.hash, new_rev.hash);
+        EXPECT_NE(old_rev, new_rev);
+        EXPECT_EQ(new_rev, make_key(native, 54487, Kind::Parsed));
+    }
+
+    /// Preprocessed entries are already-materialized Blocks (for example the native TCP path) and are
+    /// never reparsed, so the version must not fragment the batch even for a Native query.
+    {
+        auto old_rev = make_key(native, 0, Kind::Preprocessed);
+        auto new_rev = make_key(native, 54487, Kind::Preprocessed);
+        EXPECT_EQ(old_rev.hash, new_rev.hash);
+        EXPECT_EQ(old_rev, new_rev);
+    }
+
+    /// Parsed but revision-insensitive format (VALUES): the parser ignores the version, so different
+    /// revisions must still batch together.
+    {
+        auto old_rev = make_key(values, 0, Kind::Parsed);
+        auto new_rev = make_key(values, 54487, Kind::Parsed);
+        EXPECT_EQ(old_rev.hash, new_rev.hash);
+        EXPECT_EQ(old_rev, new_rev);
+    }
 }
