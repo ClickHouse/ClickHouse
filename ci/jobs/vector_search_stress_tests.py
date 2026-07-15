@@ -291,10 +291,13 @@ class RunTest:
             if configured_select_list is not None:
                 select_list = configured_select_list
 
-            source = f"s3('{url}')"
+            # Public clickhouse-datasets bucket: read with NOSIGN so the query
+            # does not fall back to server-managed credentials (rejected in user
+            # queries by default). NOSIGN is the 2nd positional s3() argument.
+            source = f"s3('{url}', NOSIGN)"
             source_format = self._dataset.get(SOURCE_FORMAT)
             if source_format is not None:
-                source = f"s3('{url}', '{source_format}'"
+                source = f"s3('{url}', NOSIGN, '{source_format}'"
                 source_structure = self._dataset.get(SOURCE_STRUCTURE)
                 if source_structure is not None:
                     source = source + f", '{source_structure}'"

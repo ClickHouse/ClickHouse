@@ -1,0 +1,50 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-file
+title: 'Fuente de diccionario de archivo ejecutable'
+sidebarTitle: 'Archivo ejecutable'
+description: 'Configura un archivo ejecutable como fuente de diccionario en ClickHouse.'
+doc_type: 'reference'
+---
+
+El trabajo con archivos ejecutables depende de [cómo se almacena el diccionario en memoria](/es/reference/statements/create/dictionary/layouts/overview). Si el diccionario se almacena usando `cache` y `complex_key_cache`, ClickHouse solicita las claves necesarias enviando una solicitud al STDIN del archivo ejecutable. En caso contrario, ClickHouse inicia el archivo ejecutable y trata su salida como datos del diccionario.
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE(
+        command 'cat /opt/dictionaries/os.tsv'
+        format 'TabSeparated'
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+        <executable>
+            <command>cat /opt/dictionaries/os.tsv</command>
+            <format>TabSeparated</format>
+            <implicit_key>false</implicit_key>
+        </executable>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+Campos de configuración:
+
+| Configuración                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                     | La ruta absoluta al archivo ejecutable, o el nombre del archivo (si el directorio del comando está en `PATH`).                                                                                                                                                                                                                                                                                                                                       |
+| `format`                      | El formato del archivo. Se admiten todos los formatos descritos en [Formats](/es/reference/formats/index).                                                                                                                                                                                                                                                                                                                                              |
+| `command_termination_timeout` | El script ejecutable debe contener un bucle principal de lectura y escritura. Una vez destruido el diccionario, se cierra la tubería y el archivo ejecutable tendrá `command_termination_timeout` segundos para detenerse antes de que ClickHouse envíe una señal SIGTERM al proceso hijo. Se especifica en segundos. El valor predeterminado es `10`. Opcional.                                                                                     |
+| `command_read_timeout`        | Tiempo de espera para leer datos de stdout del comando, en milisegundos. Valor predeterminado: `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                    |
+| `command_write_timeout`       | Tiempo de espera para escribir datos en stdin del comando, en milisegundos. Valor predeterminado: `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                 |
+| `implicit_key`                | El archivo fuente ejecutable puede devolver solo valores, y la correspondencia con las claves solicitadas se determina implícitamente por el orden de las filas en el resultado. El valor predeterminado es `false`.                                                                                                                                                                                                                                 |
+| `execute_direct`              | Si `execute_direct` = `1`, `command` se buscará dentro de la carpeta user&#95;scripts especificada por [user&#95;scripts&#95;path](/es/reference/settings/server-settings/settings#user_scripts_path). Se pueden especificar argumentos adicionales del script separados por espacios en blanco. Ejemplo: `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` se pasa como argumento a `bin/sh -c`. El valor predeterminado es `0`. Opcional. |
+| `send_chunk_header`           | Controla si se debe enviar el recuento de filas antes de enviar un fragmento de datos al proceso. El valor predeterminado es `false`. Opcional.                                                                                                                                                                                                                                                                                                      |
+
+Esa fuente de diccionario solo puede configurarse mediante configuración XML. La creación de diccionarios con fuente ejecutable mediante DDL está deshabilitada; de lo contrario, el usuario de la BD podría ejecutar binarios arbitrarios en el nodo de ClickHouse.

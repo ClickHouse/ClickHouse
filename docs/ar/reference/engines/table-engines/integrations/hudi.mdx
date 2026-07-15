@@ -1,0 +1,58 @@
+---
+description: 'يوفّر هذا المحرك تكاملًا للقراءة فقط مع جداول [Hudi](https://hudi.apache.org/) الحالية في Amazon S3.'
+sidebarTitle: 'Hudi'
+slug: /engines/table-engines/integrations/hudi
+title: 'محرك جدول Hudi'
+doc_type: 'مرجع'
+---
+
+يوفّر هذا المحرك تكاملًا للقراءة فقط مع جداول [Hudi](https://hudi.apache.org/) الحالية في Amazon S3.
+
+<div id="create-table">
+  ## إنشاء جدول
+</div>
+
+لاحظ أن جدول Hudi يجب أن يكون موجودًا مسبقًا في S3، فهذا الأمر لا يدعم معلمات DDL لإنشاء جدول جديد.
+
+```sql
+CREATE TABLE hudi_table
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+```
+
+**معلمات المحرك**
+
+* `url` — عنوان الـ bucket مع المسار إلى جدول Hudi موجود.
+* `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأمد لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذا المَعلَم اختياري. إذا لم تُحدَّد بيانات الاعتماد، فستُستخدَم من ملف التكوين.
+* `extra_credentials` - اختياري. يُستخدم لتمرير `role_arn` من أجل الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطّلاع على خطوات التكوين.
+
+يمكن تحديد معلمات المحرك باستخدام [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections).
+
+**مثال**
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+```
+
+باستخدام المجموعات المُسمّاة:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <hudi_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </hudi_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [دالة الجدول Hudi](/ar/reference/functions/table-functions/hudi)

@@ -1,0 +1,70 @@
+---
+sidebarTitle: '概览'
+title: 'Agentic Data Stack'
+description: 'ClickHouse 上的智能体分析：可在 ClickHouse Cloud 中完全托管运行，或以 ClickHouse、MCP Server、LibreChat 和 Langfuse 组成的开源技术栈进行自托管。'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在 ClickHouse 上运行智能体分析，最简单的方式是使用 ClickHouse Cloud 中的 [ClickHouse agent](/zh/products/cloud/features/ai-ml/agents)：完全托管，无需自行运维基础设施。用户只需用自然语言提问，AI agent 就会通过直接查询数据库给出答案。
+
+如果要自托管，**Agentic Data Stack** 是一个可组合的开源技术栈。你可以自行运行它，接入自己的模型，并将聊天记录和数据保留在自己的环境中。它由 [ClickHouse](/zh/get-started/setup/install)、[ClickHouse MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)、[LibreChat](/zh/products/agentic-data-stack/components/librechat) 和 [Langfuse](/zh/products/agentic-data-stack/components/langfuse) 组成。
+
+<div id="what-is-agentic-analytics">
+  ## 什么是智能体分析？
+</div>
+
+在智能体分析中，模型会通过针对您的数据运行查询来为其答案提供依据。收到一个问题后，agent 会检查可用的数据库和表，判断需要运行哪些查询，在 ClickHouse 中执行这些查询，并根据结果组织出答案。它可以优化查询、执行后续查询，或将多个步骤串联起来。当查询失败或返回异常结果时，它会进行调整并再次尝试，而不是直接停止。
+
+<div id="what-you-can-do">
+  ## 你可以做什么
+</div>
+
+* **用自然语言提问**，并获得基于你自身数据的答案。
+* 通过为智能体配置指令和工具并重复使用它，**无需编写代码即可构建智能体**。
+* 将**智能体和对话共享**为只读链接，以便其他人追踪答案背后的查询。
+* 在对话中根据查询结果**生成交互式图表和可视化**。
+* 通过在 Langfuse 中借助人工审核或 LLM 评审为响应打分，并优化你的提示词和智能体，来**评估并改进答案**。
+
+<div id="architecture">
+  ## 技术栈如何协同工作
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Agentic Data Stack 架构：用户与 LibreChat 交互，LibreChat 连接到 LLM，并通过 MCP 服务器连接到 ClickHouse，还连接到 Langfuse 进行追踪" size="md" />
+
+用户在 LibreChat 中提出问题。模型会规划如何回答，并通过 MCP 服务器调用工具来浏览和查询 ClickHouse。结果返回后，智能体会组织生成最终答案。Langfuse 基于 OpenTelemetry 构建，可记录每次运行从提示词到工具调用再到响应的全过程，支持自动或人工审核对输出进行评分，并跟踪质量、成本和延迟。
+
+ClickHouse MCP 服务器基于开放标准 [Model Context Protocol](https://modelcontextprotocol.io/) 构建，因此它可与任何兼容 MCP 的客户端或智能体框架配合使用，而不仅限于 LibreChat。有关客户端和智能体库，请参阅 [MCP 指南](/zh/guides/use-cases/ai-ml/MCP)。
+
+<div id="components">
+  ## 组件
+</div>
+
+| 组件                 | 作用                                | 了解更多                                                           |
+| ------------------ | --------------------------------- | -------------------------------------------------------------- |
+| ClickHouse         | agent 查询使用的分析引擎                   | [开始使用 ClickHouse](/zh/get-started/setup/install)             |
+| ClickHouse MCP 服务器 | 将 ClickHouse 以工具形式提供给 agent 的开放标准 | [MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)  |
+| LibreChat          | 用户与之交互的聊天和智能体前端                   | [LibreChat](/zh/products/agentic-data-stack/components/librechat) |
+| Langfuse           | 为每个 提示词、工具调用和响应提供可观测性          | [Langfuse](/zh/products/agentic-data-stack/components/langfuse)   |
+
+<div id="get-started">
+  ## 开始使用
+</div>
+
+有两种方式可在 ClickHouse 上运行智能体分析：
+
+* **托管 (ClickHouse Cloud) ：** 最快捷的方式，无需任何设置。[ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents) 可在您的数据之上提供托管的聊天和智能体功能。各个独立组件也提供托管版本：[Remote MCP server](/zh/products/cloud/features/ai-ml/remote-mcp) 和 [Langfuse Cloud](https://cloud.langfuse.com)。
+* **自托管 (开源) ：** 使用 [Docker Compose](/zh/products/agentic-data-stack/docker-setup) 自行运行完整技术栈，连接您自己的模型，并将数据保留在您自己的环境中。
+
+如果您想在无需安装任何内容的情况下，基于公开数据集试用这套技术栈，可使用托管演示版 [AgentHouse](https://llm.clickhouse.com)。
+
+<div id="related">
+  ## 相关
+</div>
+
+ClickHouse 上的其他开源 AI 功能：
+
+* [AI 驱动的 SQL 生成](/zh/guides/use-cases/ai-ml/ai-powered-sql-generation)：在 ClickHouse Client 和 clickhouse-local 中将自然语言转换为 SQL
+* [结合 QBit 的向量搜索](/zh/guides/use-cases/ai-ml/vector-search)：支持运行时调优的向量搜索

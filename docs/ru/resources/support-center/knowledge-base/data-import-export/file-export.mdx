@@ -1,0 +1,92 @@
+---
+title: Как экспортировать данные из ClickHouse в файл
+description: Узнайте о различных способах экспорта данных из ClickHouse, включая `INTO OUTFILE`, движок таблицы File и перенаправление в командной строке.
+date: 2023-03-22
+tags: ['Экспорт данных']
+keywords: ['Экспорт данных', 'INTO OUTFILE', 'движок таблицы File']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-into-outfile-clause">
+  ## Использование предложения INTO OUTFILE
+</div>
+
+Добавьте [предложение INTO OUTFILE](/ru/reference/statements/select/into-outfile) к своему запросу.
+
+Например:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+По умолчанию ClickHouse определяет выходной формат и сжатие по расширению имени файла. Например, все строки из `nyc_taxi` будут экспортированы в файл `nyc_taxi.parquet` в формате Parquet:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.parquet'
+```
+
+А следующий файл будет сжатым файлом с полями, разделёнными табуляцией:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.tsv.gz'
+```
+
+Если ClickHouse не может определить формат по расширению файла, для выходных данных по умолчанию используется формат [TabSeparated](/ru/reference/formats/index). Чтобы указать [выходной формат](/ru/reference/formats/index), используйте [предложение FORMAT](/ru/reference/statements/select/format).
+
+Например:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.txt'
+FORMAT CSV
+```
+
+<div id="using-a-file-engine-table">
+  ## Использование движка таблицы File
+</div>
+
+Ещё один вариант — использовать движок таблицы [File](/ru/reference/engines/table-engines/special/file), в котором ClickHouse хранит данные в файле. Вы можете выполнять запросы и вставку данных напрямую в файл.
+
+Например:
+
+```sql
+CREATE TABLE my_table (
+   x UInt32,
+   y String,
+   z DateTime
+)
+ENGINE = File(Parquet)
+```
+
+Вставьте несколько строк:
+
+```sql
+INSERT INTO my_table VALUES
+   (1, 'Hello', now()),
+   (2, 'World', now()),
+   (3, 'Goodbye', now())
+```
+
+Файл хранится в папке `data` на вашем сервере ClickHouse — а именно по пути `/data/default/my_table` в файле с именем `data.Parquet`.
+
+<Note>
+  Движок таблицы `File` очень удобен для создания файлов в вашей файловой системе и выполнения запросов к ним, но имейте в виду, что таблицы `File` — это не таблицы `MergeTree`, поэтому они не дают всех преимуществ `MergeTree`. Используйте `File` для удобного экспорта данных из ClickHouse в различные форматы.
+</Note>
+
+<div id="using-command-line-redirection">
+  ## Использование перенаправления в командной строке
+</div>
+
+```bash
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
+```
+
+См. [clickhouse-client](/ru/concepts/features/interfaces/cli).
