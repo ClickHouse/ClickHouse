@@ -390,7 +390,7 @@ ColumnPtr FunctionContentDefinedChunkOffsetsUTF8::executeImpl(const ColumnsWithT
 
 REGISTER_FUNCTION(RollingHash)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category_cdc = FunctionDocumentation::Category::StringSplitting;
 
     /// Fields map to generated reference (docs website, `system.functions`): description, syntax line, args, notes, return type, examples, version, category.
