@@ -103,9 +103,12 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
 {
-    /// Text index is always built for the whole part and granularity is ignored.
+    /// Text and bloom_sliced indexes are always built for the whole part and granularity is ignored.
     if (type && type->name == "text")
         return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+
+    if (type && type->name == "bloom_sliced")
+        return ASTIndexDeclaration::DEFAULT_BLOOM_SLICED_INDEX_GRANULARITY;
 
     if (granularity)
         return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();

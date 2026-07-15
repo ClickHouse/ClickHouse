@@ -29,6 +29,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomSliced.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
@@ -665,4 +666,5 @@ template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;
 template class RPNBuilder<MergeTreeConditionBloomFilterText::RPNElement>;
 template class RPNBuilder<MergeTreeIndexConditionBloomFilter::RPNElement>;
 template class RPNBuilder<MergeTreeIndexConditionText::RPNElement>;
+template class RPNBuilder<MergeTreeIndexConditionBloomSliced::RPNElement>;
 }

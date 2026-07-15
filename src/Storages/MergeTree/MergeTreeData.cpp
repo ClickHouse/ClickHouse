@@ -218,6 +218,7 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_bloom_sliced_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool allow_minmax_index_for_json;
@@ -4691,6 +4692,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
 
+    if (AlterCommands::hasBloomSlicedIndex(new_metadata) && !settings[Setting::allow_experimental_bloom_sliced_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Bloom-sliced index feature is experimental (turn on setting 'allow_experimental_bloom_sliced_index')");
+
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
@@ -5179,6 +5184,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+static bool hasBloomSlicedIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)
+{
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return false;
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::MATERIALIZE_INDEX)
+            continue;
+
+        auto it = std::ranges::find_if(secondary_indices, [&](const IndexDescription & index) { return index.name == command.index_name; });
+        if (it == secondary_indices.end())
+            continue;
+
+        if (it->type == BLOOM_SLICED_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
 static bool hasTextIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)
 {
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
@@ -5200,7 +5226,7 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
@@ -5282,18 +5308,29 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    const auto text_index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    if (hasTextIndexMaterialization(commands, text_index_metadata_snapshot))
+    const auto materialization_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const bool materializes_bloom_sliced_index = hasBloomSlicedIndexMaterialization(commands, materialization_metadata_snapshot);
+    if (materializes_bloom_sliced_index && !settings[Setting::allow_experimental_bloom_sliced_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Bloom-sliced index feature is experimental (turn on setting 'allow_experimental_bloom_sliced_index')");
+
+    const bool materializes_text_index = hasTextIndexMaterialization(commands, materialization_metadata_snapshot);
+
+    /// Text, vector similarity, and bloom_sliced indexes store row ids as UInt32, so they cannot
+    /// be built for parts with more than UInt32 max rows. Reject the mutation upfront instead of
+    /// letting the index build throw in the middle of the background mutation.
+    if (materializes_text_index || materializes_bloom_sliced_index)
     {
         auto data_parts = getDataPartsVectorForInternalUsage();
+        const char * index_kind = materializes_text_index ? "text" : "bloom_sliced";
 
         for (const auto & part : data_parts)
         {
             if (part->rows_count > std::numeric_limits<UInt32>::max())
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
-                    part->name, part->rows_count, std::numeric_limits<UInt32>::max());
+                    "Cannot materialize {} index in part {} with {} rows. Materialization of {} index is not supported for parts with more than {} rows",
+                    index_kind, part->name, part->rows_count, index_kind, std::numeric_limits<UInt32>::max());
             }
         }
     }

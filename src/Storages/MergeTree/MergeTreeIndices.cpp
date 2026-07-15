@@ -241,6 +241,13 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"tokenbf_v1"}});
     registerValidator("text", textIndexValidator);
 
+    registerCreator("bloom_sliced", bloomSlicedIndexCreator, Documentation{
+        .description = "An experimental hint-only bit-sliced Bloom signature index over tokenized string rows, for pruning marks for token predicates.",
+        /// No `GRANULARITY` clause: bloom_sliced indexes are always built for the whole part and the granularity is ignored.
+        .syntax = "INDEX name expr TYPE bloom_sliced(tokenizer = ngrams(3), false_positive_rate = 0.05, rows_per_signature = 16)",
+        .related = {"text", "tokenbf_v1"}});
+    registerValidator("bloom_sliced", bloomSlicedIndexValidator);
+
     /// Index type 'hypothesis' is no longer supported.
     /// To allow loading tables with old indexes, register a dummy index which allows attach but
     /// throws an exception when the user attempts to create or use it.

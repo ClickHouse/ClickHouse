@@ -1,0 +1,15 @@
+-- correctness across chunks
+1048576
+1
+2
+0
+0
+-- chunk pruning
+1
+1
+-- direct read hint with primary-key range
+1
+1
+-- dense first chunk / absent second chunk
+1024
+0

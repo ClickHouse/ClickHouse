@@ -3145,6 +3145,18 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             if (index_ptr->isInert())
                 continue;
 
+            /// `bloom_sliced` stores row ids in 32-bit roaring bitmaps and cannot be built for
+            /// parts with more than UInt32 max rows. Reject the rebuild here, before any data is
+            /// written (mirroring the check for text indexes in `createBuildTextIndexesTask`);
+            /// otherwise the index aggregator would throw in the middle of writing the new part.
+            if (index_ptr->isBloomSlicedIndex() && source_part->rows_count > std::numeric_limits<UInt32>::max())
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize bloom_sliced index in part {} with {} rows. Materialization of bloom_sliced index "
+                    "is not supported for parts with more than {} rows",
+                    source_part->name, source_part->rows_count, std::numeric_limits<UInt32>::max());
+            }
+
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
             else

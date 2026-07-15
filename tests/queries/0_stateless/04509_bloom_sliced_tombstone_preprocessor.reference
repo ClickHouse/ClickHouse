@@ -1,0 +1,30 @@
+-- lost tokens fail open and stay correct, hint on and off (ground truth: no skip indexes)
+1048576
+1048576
+1048576
+1024
+1024
+1024
+-- LIKE with a lost interior token, hint on and off
+1048576
+1048576
+1048576
+-- hasAllTokens mixing a lost and a never-lost token, hint on and off
+100
+100
+100
+-- NOT and OR shapes stay correct
+1024
+1048676
+1048676
+-- a token lost only in the first chunk prunes the second chunk (granule counts)
+Granules: 128/129
+-- a token lost only in the second chunk prunes the first chunk (granule counts)
+Granules: 1/129
+-- never-lost tokens keep pruning (granule counts)
+100
+Granules: 1/129
+100
+Granules: 1/129
+-- the mixed hasAllTokens keeps pruning from the never-lost token inside the failed-open chunk
+Granules: 1/129

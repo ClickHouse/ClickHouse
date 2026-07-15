@@ -151,6 +151,8 @@ struct QueryPlanOptimizationSettings
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
+    /// If bloom_sliced staged PREWHERE hints using virtual index columns are enabled.
+    bool direct_read_from_bloom_sliced_index;
     bool enable_full_text_index;
 
     bool use_skip_indexes_for_top_k;

@@ -1,0 +1,15 @@
+-- counts before merge
+3
+2
+1
+0
+-- counts after merge
+1
+2
+1
+0
+5
+105
+-- pruning after merge
+1
+1

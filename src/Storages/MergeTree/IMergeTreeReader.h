@@ -163,6 +163,7 @@ protected:
     bool isColumnDroppedByPendingMutation(size_t pos) const;
 
 private:
+    friend class MergeTreeReaderBloomSlicedIndex;
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
 

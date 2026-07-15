@@ -300,6 +300,7 @@ struct IMergeTreeIndex
 
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
+    virtual bool isBloomSlicedIndex() const { return false; }
 
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
     /// tables that still reference a removed index type stay attachable. Merge and mutation must
@@ -386,6 +387,9 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+MergeTreeIndexPtr bloomSlicedIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void bloomSlicedIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
