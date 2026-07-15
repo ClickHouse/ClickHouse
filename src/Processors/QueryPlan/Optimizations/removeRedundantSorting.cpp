@@ -10,6 +10,9 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
@@ -64,9 +67,12 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<NegativeLimitStep *>(current_step) /// negative LIMIT depends on order, so the ORDER BY is non-removable
+            || typeid_cast<NegativeLimitByStep *>(current_step) /// negative LIMIT BY depends on order, so the ORDER BY is non-removable
             || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
             || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
             || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<NegativeOffsetStep *>(current_step) /// negative OFFSET depends on order, so the ORDER BY is non-removable
             || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
             || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
             || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
@@ -108,8 +114,17 @@ private:
 
         /// sorting removed, so need to update sorting traits for upstream steps
         const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
-        chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
-        for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
+
+        /// Find parent_node position in stack (skip element on top since it's the sorting which was just removed)
+        /// In some cases (e.g., parallel replicas), parent_node might not be exactly at stack.rbegin() + 1
+        auto it = stack.rbegin() + 1;
+        while (it != stack.rend() && it->node != parent_node)
+            ++it;
+
+        /// parent_node is an ancestor of the just removed sorting, so it must be present in the stack
+        chassert(it != stack.rend());
+
+        for (; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
             /// skip removed sorting steps

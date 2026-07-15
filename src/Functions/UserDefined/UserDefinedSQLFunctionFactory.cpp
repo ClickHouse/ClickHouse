@@ -1,29 +1,42 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverUtils.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+
+#include <filesystem>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 
+#include <optional>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool log_queries;
 }
@@ -68,7 +81,7 @@ namespace
         if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
-        std::unordered_set<String> arguments;
+        UnorderedSetWithMemoryTracking<String> arguments;
 
         for (const auto & argument : tuple_function_arguments->arguments->children)
         {
@@ -101,14 +114,27 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
         query->or_replace = false;
         FunctionNameNormalizer::visit(query->function_core.get());
 
-        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-        NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        {
+            SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(query->function_core);
+        }
+        {
+            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        }
     }
 
     if (auto * query = typeid_cast<ASTCreateWasmFunctionQuery *>(ptr.get()))
     {
         query->if_not_exists = false;
         query->or_replace = false;
+    }
+
+    if (auto * query = typeid_cast<ASTCreateFunctionWithDriverQuery *>(ptr.get()))
+    {
+        query->if_not_exists = false;
+        query->or_replace = false;
+        query->is_attach = true;
     }
 
     return ptr;
@@ -121,7 +147,7 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
 }
 
 UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
-    : global_context(Context::getGlobalContextInstance())
+    : WithContext(Context::getGlobalContextInstance())
 {}
 
 /// Checks that a specified function can be registered, throws an exception if not.
@@ -153,29 +179,34 @@ static void checkCanBeUnregistered(const ContextPtr & context, const String & fu
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
-bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
+bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
-    checkCanBeRegistered(context, function_name, *create_function_query, throw_if_exists);
-    create_function_query = normalizeCreateFunctionQuery(*create_function_query, context);
+    checkCanBeRegistered(current_context, function_name, *create_function_query, throw_if_exists);
+    create_function_query = normalizeCreateFunctionQuery(*create_function_query, current_context);
 
     try
     {
+        auto & wasm_factory = UserDefinedWebAssemblyFunctionFactory::instance();
+        std::optional<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> wasm_function;
         if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, context->getWasmModuleManager());
-        else if (replace_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
-            UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
+            wasm_function = wasm_factory.prepareFunction(create_function_query, current_context->getWasmModuleManager());
 
-        auto & loader = context->getUserDefinedSQLObjectsStorage();
+        auto & loader = current_context->getUserDefinedSQLObjectsStorage();
         bool stored = loader.storeObject(
-            context,
+            current_context,
             UserDefinedSQLObjectType::Function,
             function_name,
             create_function_query,
             throw_if_exists,
             replace_if_exists,
-            context->getSettingsRef());
+            current_context->getSettingsRef());
         if (!stored)
             return false;
+
+        if (wasm_function)
+            wasm_factory.addOrReplace(std::move(*wasm_function));
+        else if (replace_if_exists && wasm_factory.has(function_name))
+            wasm_factory.dropIfExists(function_name);
     }
     catch (Exception & exception)
     {
@@ -186,15 +217,15 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
     return true;
 }
 
-bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists)
+bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists)
 {
-    checkCanBeUnregistered(context, function_name);
+    checkCanBeUnregistered(current_context, function_name);
 
     try
     {
-        auto & storage = context->getUserDefinedSQLObjectsStorage();
+        auto & storage = current_context->getUserDefinedSQLObjectsStorage();
         bool removed = storage.removeObject(
-            context,
+            current_context,
             UserDefinedSQLObjectType::Function,
             function_name,
             throw_if_not_exists);
@@ -214,47 +245,46 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
     return true;
 }
 
+/// Records the use of a SQL user-defined function in system.query_log. Driver-created executable
+/// functions are persisted in the same SQL-object storage, but they are executable UDFs (recorded
+/// separately as ExecutableUserDefinedFunction), so they must not be reported as SQL UDFs here.
+static void recordSQLUserDefinedFunctionUse(const ASTPtr & ast, const String & function_name)
+{
+    if (!ast || ast->as<ASTCreateFunctionWithDriverQuery>() || !CurrentThread::isInitialized())
+        return;
+
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+}
+
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
-    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().get(function_name);
-
-    if (ast && CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
-    }
-
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().get(function_name);
+    recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
-    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name);
-
-    if (ast && CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
-    }
-
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+    recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }
 
 bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().has(function_name);
+    return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
-std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().getAllObjectNames();
+    return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }
 
 bool UserDefinedSQLFunctionFactory::empty() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().empty();
+    return getContext()->getUserDefinedSQLObjectsStorage().empty();
 }
 
 void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const
@@ -263,7 +293,7 @@ void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entri
         backup_entries_collector,
         data_path_in_backup,
         UserDefinedSQLObjectType::Function,
-        global_context->getUserDefinedSQLObjectsStorage().getAllObjects());
+        getContext()->getUserDefinedSQLObjectsStorage().getAllObjects());
 }
 
 void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
@@ -272,9 +302,9 @@ void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const
     const auto & restore_settings = restorer.getRestoreSettings();
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
-    auto context = restorer.getContext();
+    auto restore_context = restorer.getContext();
     for (const auto & [function_name, create_function_query] : restored_functions)
-        registerFunction(context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+        registerFunction(restore_context, function_name, create_function_query, throw_if_exists, replace_if_exists);
 }
 
 void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager)
@@ -290,6 +320,74 @@ void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage 
         {
             exception.addMessage(fmt::format("while loading user defined function {}", backQuote(name)));
             throw;
+        }
+    }
+}
+
+void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
+    const ContextMutablePtr & current_context, IUserDefinedSQLObjectsStorage & function_storage)
+{
+    auto log = getLogger("UserDefinedSQLFunctionFactory");
+
+    String dynamic_dir = current_context->getDynamicUserDefinedExecutableFunctionsPath();
+    if (!dynamic_dir.empty() && !dynamic_dir.ends_with('/'))
+        dynamic_dir.push_back('/');
+
+    for (const auto & [name, create_function_query] : function_storage.getAllObjects())
+    {
+        const auto * driver_ast = create_function_query->as<ASTCreateFunctionWithDriverQuery>();
+        if (!driver_ast)
+            continue;
+
+        if (dynamic_dir.empty())
+        {
+            LOG_WARNING(log, "Cannot recreate driver-based function '{}' - dynamic_user_defined_executable_functions_path is not configured", name);
+            continue;
+        }
+
+        /// Both XML and YAML are valid generated configuration formats - either is fine.
+        const String escaped_name = escapeForFileName(name);
+        const bool config_present = std::filesystem::exists(dynamic_dir + escaped_name + ".xml")
+            || std::filesystem::exists(dynamic_dir + escaped_name + ".yaml");
+
+        /// The generated config alone is not enough: it references the function's working
+        /// directory, so a missing or invalid `.workdir` sidecar (or a missing directory it
+        /// points to) also means the dynamic state has to be recreated.
+        bool working_dir_present = false;
+        if (config_present)
+        {
+            try
+            {
+                const String working_dir = UserDefinedExecutableFunctionDriverUtils::readDriverWorkingDirectory(current_context, name);
+                working_dir_present = !working_dir.empty() && std::filesystem::is_directory(working_dir);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("while reading the working directory of driver-based function {}", backQuote(name)));
+            }
+        }
+
+        if (config_present && working_dir_present)
+            continue;
+
+        LOG_INFO(log, "Recreating driver-based function '{}' - dynamic {} is missing", name, config_present ? "working directory" : "configuration");
+
+        try
+        {
+            /// Re-run the create flow via the interpreter, replacing the existing function.
+            auto recreate_ast = create_function_query->clone();
+            auto & recreate_driver_ast = recreate_ast->as<ASTCreateFunctionWithDriverQuery &>();
+            recreate_driver_ast.is_attach = false;
+            recreate_driver_ast.or_replace = true;
+            recreate_driver_ast.if_not_exists = false;
+
+            ASTPtr query = recreate_ast;
+            auto interpreter = InterpreterFactory::instance().get(query, current_context);
+            interpreter->execute();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while recreating driver-based function {}", backQuote(name)));
         }
     }
 }

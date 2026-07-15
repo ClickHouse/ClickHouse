@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Looker Studio'
+slug: /integrations/lookerstudio
+keywords: ['clickhouse', 'looker', 'studio', 'connect', 'mysql', 'integrate', 'ui']
+description: 'Looker Studio는 이전에 Google Data Studio로 불렸으며, 데이터를 맞춤형의 유익한 보고서와 대시보드로 변환하는 온라인 도구입니다.'
+title: 'Looker Studio'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import MySQLCloudSetup from '/snippets/ko/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/ko/_clickhouse_mysql_on_premise_setup.mdx';
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker Studio는 공식 Google MySQL 데이터 소스를 사용해 MySQL 인터페이스를 통해 ClickHouse에 연결할 수 있습니다.
+
+<div id="clickhouse-cloud-setup">
+  ## ClickHouse Cloud 설정
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## 온프레미스 ClickHouse 서버 설정
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-looker-studio-to-clickhouse">
+  ## Looker Studio를 ClickHouse에 연결하기
+</div>
+
+먼저 Google 계정으로 https://lookerstudio.google.com에 로그인한 다음 새 데이터 소스를 생성합니다:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="Looker Studio 인터페이스에서 새 데이터 소스 만들기" border />
+
+<br />
+
+Google에서 제공하는 공식 MySQL 커넥터(이름은 **MySQL**)를 검색합니다:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="Looker Studio 커넥터 목록에서 MySQL 커넥터 검색" border />
+
+<br />
+
+연결 정보를 입력합니다. MySQL 인터페이스 포트는 기본적으로 9004이며,
+서버 구성에 따라 달라질 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="Looker Studio에서 ClickHouse MySQL 연결 정보 입력하기" border />
+
+<br />
+
+이제 ClickHouse에서 데이터를 가져오는 방법은 두 가지입니다. 첫 번째는 Table Browser 기능을 사용하는 것입니다:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="Looker Studio에서 Table Browser를 사용해 ClickHouse 테이블 선택하기" border />
+
+<br />
+
+또는 데이터를 가져오기 위해 사용자 지정 쿼리를 지정할 수 있습니다:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Looker Studio에서 사용자 지정 SQL 쿼리를 사용해 ClickHouse에서 데이터 가져오기" border />
+
+<br />
+
+마지막으로, 검사된 테이블 구조를 확인하고 필요한 경우 데이터 타입을 조정할 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Looker Studio에서 검사된 ClickHouse 테이블 구조 보기" border />
+
+<br />
+
+이제 데이터를 탐색하거나 새 보고서를 만들 수 있습니다!
+
+<div id="using-looker-studio-with-clickhouse-cloud">
+  ## ClickHouse Cloud에서 Looker Studio 사용
+</div>
+
+ClickHouse Cloud를 사용하는 경우 먼저 MySQL 인터페이스를 활성화해야 합니다. 연결 대화상자의 &quot;MySQL&quot; 탭에서 활성화할 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="ClickHouse Cloud 설정에서 MySQL 인터페이스 활성화" border />
+
+<br />
+
+Looker Studio UI에서 &quot;Enable SSL&quot; 옵션을 선택합니다. ClickHouse Cloud의 SSL 인증서는 [Let&#39;s Encrypt](https://letsencrypt.org/certificates/)가 서명한 인증서입니다. 이 루트 인증서는 [여기](https://letsencrypt.org/certs/isrgrootx1.pem)에서 다운로드할 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="ClickHouse Cloud SSL 설정이 적용된 Looker Studio 연결 구성" border />
+
+<br />
+
+나머지 단계는 이전 섹션에 설명된 내용과 동일합니다.

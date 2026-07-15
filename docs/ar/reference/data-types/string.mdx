@@ -1,0 +1,25 @@
+---
+description: 'توثيق نوع البيانات String في ClickHouse'
+sidebarTitle: 'String'
+slug: /sql-reference/data-types/string
+title: 'String'
+doc_type: 'reference'
+---
+
+سلاسل نصية بأي طول. الطول غير محدود. يمكن أن تحتوي القيمة على أي مجموعة من البايتات، بما في ذلك بايتات NULL.
+يحل النوع String محل الأنواع VARCHAR وBLOB وCLOB وغيرها من الأنواع في أنظمة إدارة قواعد البيانات الأخرى.
+
+عند إنشاء الجداول، يمكن تعيين معلمات رقمية للحقول النصية (مثل `VARCHAR(255)`)، لكن ClickHouse يتجاهلها.
+
+الأسماء البديلة:
+
+* `String` — `LONGTEXT`, `MEDIUMTEXT`, `TINYTEXT`, `TEXT`, `LONGBLOB`, `MEDIUMBLOB`, `TINYBLOB`, `BLOB`, `VARCHAR`, `CHAR`, `CHAR LARGE OBJECT`, `CHAR VARYING`, `CHARACTER LARGE OBJECT`, `CHARACTER VARYING`, `NCHAR LARGE OBJECT`, `NCHAR VARYING`, `NATIONAL CHARACTER LARGE OBJECT`, `NATIONAL CHARACTER VARYING`, `NATIONAL CHAR VARYING`, `NATIONAL CHARACTER`, `NATIONAL CHAR`, `BINARY LARGE OBJECT`, `BINARY VARYING`,
+
+<div id="encodings">
+  ## الترميزات
+</div>
+
+لا يتبنّى ClickHouse مفهوم الترميزات. ويمكن أن تحتوي السلاسل النصية على أي مجموعة من البايتات، وتُخزَّن وتُخرَج كما هي.
+إذا كنت بحاجة إلى تخزين نصوص، فنوصي باستخدام ترميز UTF-8. وعلى أقل تقدير، إذا كانت الطرفية لديك تستخدم UTF-8 (كما هو موصى به)، فستتمكن من قراءة قيمك وكتابتها دون الحاجة إلى إجراء أي تحويلات.
+وبالمثل، تتوفر لبعض الدوال الخاصة بالتعامل مع السلاسل النصية صيغ منفصلة تعمل على افتراض أن السلسلة النصية تحتوي على مجموعة من البايتات التي تمثل نصًا مرمّزًا بترميز UTF-8.
+على سبيل المثال، تحسب الدالة [length](/ar/reference/functions/regular-functions/array-functions#length) طول السلسلة النصية بالبايتات، بينما تحسب الدالة [lengthUTF8](/ar/reference/functions/regular-functions/string-functions#lengthUTF8) طول السلسلة النصية بنقاط الرمز في Unicode، بافتراض أن القيمة مرمّزة بترميز UTF-8.

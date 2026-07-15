@@ -53,8 +53,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
-    KeyDescription custom_key_description
-        = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
+    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 

@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVariant.h>
@@ -72,6 +73,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -350,13 +352,21 @@ struct ToDate32TransformFromSecondsOrDays
             }
         }
 
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+        /// Date32 spans [1900, 2299] (unlike DateTime64, which now goes up to 9999), so it keeps its own upper bound.
+        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
+            if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+            {
+                /// Casting a huge floating-point value directly to Int64 is undefined behaviour and yields
+                /// different results across architectures (e.g. INT64_MIN on x86 vs saturation on AArch64),
+                /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
+                if constexpr (is_floating_point<FromType>)
+                    return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
+                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
+            }
 
         return static_cast<Int32>(from);
     }
@@ -525,15 +535,23 @@ struct ToDateTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// The upper bound is scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+        {
+            /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
+            /// `Int64::max` (e.g. `18446744073709551615`) is first converted to a negative `time_t` by `std::min<time_t>`
+            /// and the clamp returns a pre-epoch value instead of saturating to `max_whole`.
+            const time_t clamped = static_cast<UInt64>(from) > static_cast<UInt64>(max_whole) ? max_whole : static_cast<time_t>(from);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+        }
     }
 };
 
@@ -550,13 +568,16 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < min_whole || from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        from = static_cast<FromType>(std::max<time_t>(from, MIN_DATETIME64_TIMESTAMP));
-        from = static_cast<FromType>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP));
+        from = static_cast<FromType>(std::max<time_t>(from, min_whole));
+        from = static_cast<FromType>(std::min<time_t>(from, max_whole));
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
@@ -575,14 +596,21 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        /// Clamping to the calendar-wide [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] window would still let
+        /// precision 8/9 inputs overflow the Int64 in convertToDecimal and surface DECIMAL_OVERFLOW instead of
+        /// saturating, so use the same scale-dependent bounds as the integer transforms.
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < min_whole || from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(min_whole));
+        from = std::min(from, static_cast<FromType>(max_whole));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -615,6 +643,13 @@ struct ToDateTime64Transform
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
+        /// Date32 reaches 2299-12-31, whose whole-seconds value (10413705600) overflows the Int64 DateTime64 ticks
+        /// at high precision (e.g. * 10^9 at scale 9 exceeds Int64::max). Clamp to the scale-dependent bounds before
+        /// multiplying, matching the numeric ToDateTime64Transform* transforms; otherwise decimalFromComponents throws
+        /// DECIMAL_OVERFLOW. The Date (UInt16, up to 2149) and DateTime (UInt32, up to 2106) source overloads stay
+        /// below these bounds at every scale, so only the Date32 overload needs the clamp.
+        dt = std::max<time_t>(dt, minWholeSecondsForDateTime64(scale_multiplier));
+        dt = std::min<time_t>(dt, maxWholeSecondsForDateTime64(scale_multiplier));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -671,7 +706,11 @@ struct ToTime64TransformSigned
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
+        /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
+        /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
+        /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
+        const auto clamped = std::max<Int64>(std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP), -static_cast<Int64>(MAX_TIME_TIMESTAMP));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
     }
 };
 
@@ -692,10 +731,14 @@ struct ToTime64TransformFloat
         {
             if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        } // need to reconsider this
+        }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
+        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
+        /// decimal, producing Time64 values that display correctly but compare as different from the
+        /// saturated maximum.
+        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
+        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -929,7 +972,7 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
         else
-            readFloatTextFast(x, rb);
+            readFloatImpreciseForCompatibility(x, rb);
     }
     else
         readText(x, rb);
@@ -1001,7 +1044,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
         else
-            return tryReadFloatTextFast(x, rb);
+            return tryReadFloatImpreciseForCompatibility(x, rb);
     }
     else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
@@ -1290,13 +1333,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1317,13 +1360,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1384,7 +1427,7 @@ struct ConvertThroughParsing
             }
             else
             {
-                bool parsed;
+                bool parsed = false;
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
@@ -1402,13 +1445,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1429,13 +1472,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1770,6 +1813,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
+    /// Same-width integer conversions are bit-reinterprets; `memcpy` is faster than the compiler-unrolled
+    /// per-element copy at x86-64-v3.
+    if constexpr (std::is_integral_v<FromFieldType> && std::is_integral_v<ToFieldType>
+        && sizeof(FromFieldType) == sizeof(ToFieldType)
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+        && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+    {
+        if (input_rows_count > 0)
+            std::memcpy(vec_to.data(), vec_from.data(), input_rows_count * sizeof(ToFieldType));
+        return std::move(col_to);
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
@@ -1833,30 +1888,40 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
             i += remaining - 1;
         }
-        /// ARM64 optimized conversion: UInt64 -> Float32
+#endif
         else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
         {
             const UInt64* __restrict s = &vec_from[i];
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN)
+#if defined(__aarch64__) && !defined(OS_DARWIN)
             _Pragma("clang diagnostic push")
             _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-#endif
             for (size_t j = 0; j < remaining; ++j)
             {
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
-#if !defined(OS_DARWIN)
             _Pragma("clang diagnostic pop")
+#elif defined(__x86_64__)
+            /// Prevent auto-vectorization on x86: the compiler's attempt to semi-vectorize
+            /// UInt64->Float32 with AVX2 is slower than scalar code, because there is no
+            /// vector instruction for this conversion before AVX-512.
+            /// Also disable unrolling: with LTO on v3, the compiler unrolls this scalar
+            /// loop 2-4x, bloating the function by ~2KB with no throughput benefit
+            /// (vcvtsi2ss is inherently serial).
+            _Pragma("clang loop vectorize(disable) unroll(disable)")
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
+#else
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
 #endif
 
             i += remaining - 1;
         }
-#endif
         /// Default: simple static_cast conversion
         else
         {
@@ -2102,7 +2167,7 @@ struct ConvertImpl
 
             const DateLUTImpl * time_zone = nullptr;
 
-            UInt32 scale;
+            UInt32 scale = 0;
 
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2184,7 +2249,7 @@ struct ConvertImpl
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
 
-            UInt32 scale;
+            UInt32 scale = 0;
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 scale = additions.scale;
@@ -2297,38 +2362,54 @@ struct ConvertImpl
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
-                if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
+                if (arguments.size() > 1 && arguments[1].type->isNullable())
+                {
+                    if (auto tz_null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst()))
+                    {
+                        if (null_map)
+                        {
+                            auto & dst = null_map->getData();
+                            const auto & src = tz_null_map->getData();
+                            for (size_t i = 0; i < dst.size(); ++i)
+                                dst[i] |= src[i];
+                        }
+                        else
+                        {
+                            null_map = std::move(tz_null_map);
+                        }
+                    }
+                }
 
                 if (null_map)
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (!time_zone_column && arguments.size() > 1)
+                        if (!null_map->getData()[i] && !time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).empty())
                                 time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
+                        const DateLUTImpl * effective_tz = time_zone ? time_zone : &DateLUT::instance("UTC");
                         bool is_ok = true;
                         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
-                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *effective_tz);
                             else
-                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
                                 writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
                             else
-                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         else
                         {
-                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         null_map->getData()[i] |= !is_ok;
                         offsets_to[i] = write_buffer.count();
@@ -2547,9 +2628,11 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
+            /// interval_conversions[i] holds the factor between kind i and kind i-1,
+            /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
             {
-                for (int i = from_position; i < to_position; ++i)
+                for (int i = from_position + 1; i <= to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
                     res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
@@ -2591,7 +2674,7 @@ struct ConvertImpl
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale;
+                UInt32 scale = 0;
 
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2799,12 +2882,25 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
-    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
-    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
-    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
-    /// cannot represent NULL — so we must exclude them from the throw check.
-    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+    /// Returns true when a NULL in Dynamic/Variant must cause an exception
+    /// rather than being silently replaced with a default value.
+    /// This only fires when cast_keep_nullable is on AND the result type
+    /// is neither nullable-like nor wrappable in Nullable (e.g. Array).
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
+    {
+        return keep_nullable && !canContainNull(*result_type) && !result_type->canBeInsideNullable();
+    }
 
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false);
+};
+
+struct ConvertImplFromVariantToColumn
+{
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -2912,7 +3008,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert : public IFunction
+class FunctionConvert final : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -2958,6 +3054,20 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
+
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    break;
+                }
+            }
+        }
 
         if (null_presence.has_null_constant)
         {
@@ -3094,7 +3204,23 @@ public:
         /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
         /// For now, here's a workaround.
         DataTypePtr result_type = weird_result_type;
-        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+        auto null_presence = getNullPresense(arguments);
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        bool has_dynamic_or_variant = false;
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    has_dynamic_or_variant = true;
+                    break;
+                }
+            }
+        }
+        if (null_presence.has_nullable && !isNullableOrLowCardinalityNullable(result_type))
             result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
 
         try
@@ -3102,7 +3228,10 @@ public:
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            /// For DataTypeString we normally skip this branch (toString handles nullable
+            /// arguments itself, e.g. nullable timezone), but for Dynamic/Variant we must
+            /// enter it to extract their null map.
+            if (result_type->isNullable() && (!std::is_same_v<ToDataType, DataTypeString> || has_dynamic_or_variant))
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -3110,27 +3239,78 @@ public:
                 ColumnPtr result_null_map;
                 for (const auto & arg : arguments)
                 {
-                    if (!arg.type->isNullable())
-                        continue;
-                    if (isColumnConst(*arg.column))
+                    if (arg.type->isNullable())
                     {
-                        if (arg.column->onlyNull())
-                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                        else
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
                             continue;
+                        }
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        }
                     }
-                    if (result_null_map)
+                    else if (isDynamic(*arg.type))
                     {
-                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
-                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                            result_null_map_data[i] |= null_map[i];
-                        result_null_map = std::move(mut);
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arg.column);
+                        auto dynamic_null_map = column_dynamic.getVariantColumn().createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*dynamic_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(dynamic_null_map);
+                        }
                     }
-                    else
+                    else if (isVariant(*arg.type))
                     {
-                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_variant = assert_cast<const ColumnVariant &>(*arg.column);
+                        auto variant_null_map = column_variant.createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*variant_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(variant_null_map);
+                        }
                     }
                 }
 
@@ -3219,6 +3399,18 @@ private:
             };
 
             return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
+        }
+
+        if (isVariant(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
+            };
+
+            return ConvertImplFromVariantToColumn::execute(
                 arguments, result_type, input_rows_count, nested_convert,
                 ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
@@ -3426,7 +3618,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString : public IFunction
+class FunctionConvertFromString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -3893,23 +4085,22 @@ struct ToDateMonotonicity
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
-        else if (
-            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
+        constexpr UInt64 max_day_num = std::is_same_v<T, DataTypeDate32> ? DATE_LUT_MAX_EXTEND_DAY_NUM - 1 : DATE_LUT_MAX_DAY_NUM;
+
+        if (((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+             && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
+                && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
+                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
             || !isNativeNumber(type))
         {
             return {};
         }
-        else
-        {
-            return {.is_monotonic = true, .is_always_monotonic = true};
-        }
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 
@@ -4401,7 +4592,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast : public IExecutableFunction
+class ExecutableFunctionCast final : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4543,7 +4734,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;
@@ -4556,7 +4747,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = std::vector<WrapperType>;
+    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
@@ -4566,10 +4757,29 @@ private:
 
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size);
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        const ColumnNullable * nullable_source,
+        size_t n,
+        size_t size,
+        size_t stride);
 
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
+
+    template <typename FloatType>
+    static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension, size_t stride);
+
+    template <typename T>
+    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
+
+    /// CAST between two QBit types. Keeps the dimension; may change the element type and/or the stride.
+    WrapperType createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const;
+
+    /// Repack a QBit into a different stride and/or between the Float32/BFloat16 pair as a pure byte operation on the
+    /// bit-plane FixedStrings, without reconstructing the vector through floats (see the definition).
+    static ColumnPtr repackQBit(
+        const ColumnQBit & src, size_t from_element_size, size_t to_element_size, size_t dimension, size_t from_stride, size_t to_stride);
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;
@@ -4664,5 +4874,14 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

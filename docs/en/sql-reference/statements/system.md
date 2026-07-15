@@ -97,23 +97,108 @@ For more convenient (automatic) cache management, see `disable_internal_dns_cach
 
 Clears the mark cache.
 
+## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
+
+Clears the primary index cache, which holds the primary keys of [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) tables in memory.
+Its size is configured with the server-level setting [`primary_index_cache_size`](../../operations/server-configuration-parameters/settings.md#primary_index_cache_size).
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
+
+## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
+
+Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
 
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+
+Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index's header, dictionary and postings caches.
+Clears the text index's tokens, header and postings caches.
 
 If you like to drop one of these caches individually, you can run
 
-- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-- `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, or
 - `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
+
+Clears the cache of marks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
+
+Clears the cache of uncompressed blocks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
+
+Clears the cache of memory-mapped files.
+
+## SYSTEM CLEAR|DROP PAGE CACHE {#drop-page-cache}
+
+Clears the userspace page cache, ClickHouse's own in-memory cache of data read from the underlying storage.
+
+## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
+
+Clears the vector similarity index cache.
+
+## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
+
+Clears the cache of HTTP connection pools used for outgoing connections.
+
+## SYSTEM CLEAR|DROP S3 CLIENT CACHE {#drop-s3-client-cache}
+
+Clears the cache of S3 clients.
+
+## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
+
+Loads the marks of a table into the [mark cache](#drop-mark-cache). Secondary-index marks are also loaded into the [index mark cache](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM PREWARM PRIMARY INDEX CACHE {#prewarm-primary-index-cache}
+
+Loads the primary indexes of a `MergeTree` table into the [primary index cache](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM CLEAR|DROP DISK METADATA CACHE {#drop-disk-metadata-cache}
+
+Clears the metadata cache of the specified disk.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
+
+Reconciles ClickHouse's in-memory state of the filesystem cache with the cache files actually present on disk, and returns the `cache_name`, `path` and downloaded `size` of each cached file segment. An optional cache name limits the operation to a single cache.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
+
+:::note
+`SYSTEM CLEAR|DROP DISTRIBUTED CACHE` is available only in ClickHouse Cloud.
+:::
+
+Drops the distributed cache. Use `CONNECTIONS` to drop only the cached connections to the distributed cache servers, or pass a server identifier to target a single server.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -159,6 +244,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
@@ -240,7 +329,7 @@ There are three different kind of handlers to add to functions:
 
 **Syntax**
 ```sql
-SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
 ```
 
 where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
@@ -286,7 +375,7 @@ Removes either a single instrumentation point with:
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-all of them using the `ALL` parameter:
+all of them using the `ALL` keyword:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL
@@ -399,6 +488,8 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -407,6 +498,8 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
@@ -433,7 +526,7 @@ Returns `Ok.` even if table does not exist. Returns error when database does not
 SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM SYSTEM UNFREEZE {#query_language-system-unfreeze}
+### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
 Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
@@ -712,13 +805,32 @@ SYSTEM STOP VIEWS
 
 Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
-If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`.
+If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
 ```sql
 SYSTEM START VIEW [db.]name
 ```
 ```sql
 SYSTEM START VIEWS
+```
+
+### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+
+Disable periodic refreshing of the given view or all refreshable views.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+
+Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
+
+:::note
+The paused state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM PAUSE VIEW` only affects the current replica.
+:::
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+```sql
+SYSTEM PAUSE VIEWS
 ```
 
 ### SYSTEM REFRESH VIEW {#refresh-view}

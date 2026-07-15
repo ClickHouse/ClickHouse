@@ -74,3 +74,30 @@ Header: sum(number) UInt64: sum(number) UInt64 UInt64(size = 0)
                           NumbersRange 0 → 1
                           Header: number UInt64: number UInt64 UInt64(size = 0)
 ----------
+----------
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 2 → 1
+    BufferChunks × 2
+      (Union)
+        (Sorting)
+        MergingSortedTransform 3 → 1
+          BufferChunks × 3
+            (Expression)
+            ExpressionTransform × 3
+              (ReadFromMergeTree)
+              MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) × 3 0 → 1
+        (ReadFromRemoteParallelReplicas)
+            (BlocksMarshalling)
+            SortChunksBySequenceNumber 2 → 1
+              MarshallBlocks × 2
+                Resize 1 → 2
+                  AddSequenceNumber
+                    (Sorting)
+                    MergingSortedTransform 3 → 1
+                      BufferChunks × 3
+                        (Expression)
+                        ExpressionTransform × 3
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) × 3 0 → 1

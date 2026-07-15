@@ -6,12 +6,13 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include "config.h"
+#include <Examples/clickhouse_examples.h>
 #if USE_SSL
 #   include <openssl/md5.h>
 #endif
 
 
-int main(int, char **)
+int mainEntryExampleHashesTest(int, char **)
 {
     using Strings = std::vector<std::string>;
     using Hashes = std::vector<char>;

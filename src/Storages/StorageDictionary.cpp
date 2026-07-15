@@ -13,10 +13,14 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Dictionaries/SystemDictionaryUUIDs.h>
+#endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/ServerSettings.h>
@@ -156,6 +160,10 @@ StorageDictionary::StorageDictionary(
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
+#if CLICKHOUSE_CLOUD
+    if (table_id.database_name == "system")
+        SystemDictionaryUUIDs::instance().add(table_id.uuid);
+#endif
     configuration = dictionary_configuration;
 
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
@@ -164,6 +172,10 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
+#if CLICKHOUSE_CLOUD
+    if (getStorageID().database_name == "system")
+        SystemDictionaryUUIDs::instance().remove(getStorageID().uuid);
+#endif
     removeDictionaryConfigurationFromRepository();
 }
 
@@ -253,7 +265,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    chassert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
     if (location != Location::SameDatabaseAndNameAsDictionary)
         return;
 
@@ -261,7 +273,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
-    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+    chassert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -323,7 +335,8 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     if (location == Location::Custom)
         return;
 
-    auto new_comment = getInMemoryMetadataPtr(alter_context, false)->comment;
+    auto metadata_snapshot = getInMemoryMetadataPtr(alter_context, false);
+    auto new_comment = metadata_snapshot->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -340,6 +353,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 }
 
+void registerStorageDictionary(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
@@ -362,7 +376,8 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -391,7 +406,104 @@ void registerStorageDictionary(StorageFactory & factory)
 
         return std::make_shared<StorageDictionary>(
             args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/overview.md) data as a ClickHouse table.
+
+## Example {#example}
+
+As an example, consider a dictionary of `products` with the following configuration:
+
+```xml
+<dictionaries>
+    <dictionary>
+        <name>products</name>
+        <source>
+            <odbc>
+                <table>products</table>
+                <connection_string>DSN=some-db-server</connection_string>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>product_id</name>
+            </id>
+            <attribute>
+                <name>title</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
+```
+
+Query the dictionary data:
+
+```sql
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
+    source
+FROM system.dictionaries
+WHERE name = 'products'
+```
+
+```text
+┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
+│ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
+└──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
+```
+
+You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions) functions to get the dictionary data in this format.
+
+This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
+
+Syntax:
+
+```sql
+CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+```
+
+Usage example:
+
+```sql
+CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
+```
+
+Ok
+
+Take a look at what's in the table.
+
+```sql
+SELECT * FROM products LIMIT 1;
+```
+
+```text
+┌────product_id─┬─title───────────┐
+│        152689 │ Some item       │
+└───────────────┴─────────────────┘
+```
+
+**See Also**
+
+- [Dictionary function](/sql-reference/table-functions/dictionary)
+)DOCS_MD",
+        .syntax = "ENGINE = Dictionary(dictionary_name)"});
 }
 
 }

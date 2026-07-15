@@ -89,6 +89,11 @@ Determines the sentiment of the provided text data.
 :::note Limitation
 This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
 :::
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
 )";
     FunctionDocumentation::Syntax syntax = "detectTonality(s)";
     FunctionDocumentation::Arguments arguments = {

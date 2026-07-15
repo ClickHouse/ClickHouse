@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -364,6 +365,8 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
+    checkStackSize();
+
     /// Trivial cases
 
     if (types.empty())
@@ -767,7 +770,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// Time/Time64 mixed with only Date/Date32 (no DateTime): also promote to DateTime/DateTime64.
             /// From here on, the result is always DateTime or DateTime64.
 
-            if (!have_datetime64 && !have_date32 && !have_time64)
+            if (!have_datetime64 && !have_date32 && !have_time64 && !have_time)
             {
                 for (const auto & type : types)
                 {

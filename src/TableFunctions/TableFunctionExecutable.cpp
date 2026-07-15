@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <boost/program_options/parsers.hpp>
+#include <boost/token_functions.hpp>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -56,7 +57,7 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -64,12 +65,12 @@ private:
     VectorWithMemoryTracking<String> arguments;
     String format;
     String structure;
-    std::vector<ASTPtr> input_queries;
+    VectorWithMemoryTracking<ASTPtr> input_queries;
     ASTPtr settings_query = nullptr;
 };
 
 
-std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
@@ -78,7 +79,7 @@ std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const Quer
     if (table_function_node_arguments_size <= 3)
         return {};
 
-    std::vector<size_t> result_indexes;
+    VectorWithMemoryTracking<size_t> result_indexes;
     result_indexes.reserve(table_function_node_arguments_size - 3);
     for (size_t i = 3; i < table_function_node_arguments_size; ++i)
         result_indexes.push_back(i);
@@ -122,7 +123,19 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
-    auto script_name_with_arguments = boost::program_options::split_unix(script_name_with_arguments_value);
+
+    auto script_name_with_arguments = [&]()
+    {
+        try
+        {
+            return boost::program_options::split_unix(script_name_with_arguments_value);
+        }
+        catch (const boost::escaped_list_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse script name and arguments: {}", e.what());
+        }
+    }();
+
     if (script_name_with_arguments.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 

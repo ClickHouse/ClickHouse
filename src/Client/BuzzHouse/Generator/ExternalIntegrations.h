@@ -8,31 +8,31 @@
 #include <Client/BuzzHouse/Utils/BackgroundWorker.h>
 
 #if USE_MYSQL
-#    if __has_include(<mysql.h>)
-#        include <mysql.h>
-#    else
-#        include <mysql/mysql.h>
-#    endif
+#if __has_include(<mysql.h>)
+#include <mysql.h>
+#else
+#include <mysql/mysql.h>
+#endif
 #endif
 
 #if USE_MONGODB
-#    include <bsoncxx/builder/stream/array.hpp>
-#    include <bsoncxx/builder/stream/document.hpp>
-#    include <bsoncxx/json.hpp>
-#    include <bsoncxx/types.hpp>
-#    include <mongocxx/client.hpp>
-#    include <mongocxx/collection.hpp>
-#    include <mongocxx/database.hpp>
-#    include <mongocxx/exception/exception.hpp>
-#    include <mongocxx/instance.hpp>
+#include <bsoncxx/builder/stream/array.hpp>
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
+#include <mongocxx/client.hpp>
+#include <mongocxx/collection.hpp>
+#include <mongocxx/database.hpp>
+#include <mongocxx/exception/exception.hpp>
+#include <mongocxx/instance.hpp>
 #endif
 
 #if USE_LIBPQXX
-#    include <pqxx/pqxx>
+#include <pqxx/pqxx>
 #endif
 
 #if USE_SQLITE
-#    include <sqlite3.h>
+#include <sqlite3.h>
 #endif
 #include <Poco/Net/HTTPClientSession.h>
 
@@ -96,6 +96,10 @@ public:
 
     virtual String truncateStatement() { return String(); }
 
+    /// Trailing keywords after the table name. `SYNC` is ClickHouse-only syntax, so it is
+    /// appended only by the ClickHouse peer; MySQL/PostgreSQL/SQLite leave this empty.
+    virtual String truncateSuffix() { return String(); }
+
     bool truncatePeerTableOnRemote(const SQLTable &);
 
     bool performQueryOnServerOrRemote(PeerTableDatabase, const String &);
@@ -132,6 +136,8 @@ public:
     String getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String &) override;
 
     String truncateStatement() override;
+
+    String truncateSuffix() override;
 
     bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 

@@ -10,6 +10,10 @@
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
 #endif
 
+#if USE_AVRO
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableStateSnapshot.h>
+#endif
+
 namespace DB
 {
 
@@ -17,14 +21,23 @@ enum DataLakeTableStateSnapshotType
 {
     ICEBERG_TABLE_STATE_SNAPSHOT = 1,
     DELTA_LAKE_TABLE_STATE_SNAPSHOT = 2,
-    LANCE_TABLE_STATE_SNAPSHOT = 3,
+    PAIMON_TABLE_STATE_SNAPSHOT = 3,
+    LANCE_TABLE_STATE_SNAPSHOT = 4,
 };
 
 // This state should be preserved as simple as possible to allow serialization/deserialization.
-#if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_LANCE
+#if USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AVRO && USE_LANCE
+using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, DeltaLake::TableStateSnapshot, Paimon::TableStateSnapshot, Lance::TableStateSnapshot>;
+#elif USE_PARQUET && USE_DELTA_KERNEL_RS && USE_AVRO
+using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, DeltaLake::TableStateSnapshot, Paimon::TableStateSnapshot>;
+#elif USE_PARQUET && USE_DELTA_KERNEL_RS && USE_LANCE
 using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, DeltaLake::TableStateSnapshot, Lance::TableStateSnapshot>;
 #elif USE_PARQUET && USE_DELTA_KERNEL_RS
 using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, DeltaLake::TableStateSnapshot>;
+#elif USE_AVRO && USE_LANCE
+using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, Paimon::TableStateSnapshot, Lance::TableStateSnapshot>;
+#elif USE_AVRO
+using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, Paimon::TableStateSnapshot>;
 #elif USE_LANCE
 using DataLakeTableStateSnapshot = std::variant<Iceberg::TableStateSnapshot, Lance::TableStateSnapshot>;
 #else

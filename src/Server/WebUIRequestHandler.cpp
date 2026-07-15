@@ -30,6 +30,26 @@ constexpr unsigned char resource_lz_string_js[] =
 {
 #embed "../../programs/server/js/lz-string.js"
 };
+constexpr unsigned char resource_xterm_js[] =
+{
+#embed "../../programs/server/js/xterm.min.js"
+};
+constexpr unsigned char resource_xterm_css[] =
+{
+#embed "../../programs/server/js/xterm.min.css"
+};
+constexpr unsigned char resource_addon_fit_js[] =
+{
+#embed "../../programs/server/js/addon-fit.min.js"
+};
+constexpr unsigned char resource_addon_web_links_js[] =
+{
+#embed "../../programs/server/js/addon-web-links.min.js"
+};
+constexpr unsigned char resource_viz_standalone_js[] =
+{
+#embed "../../programs/server/js/viz-standalone.js"
+};
 constexpr unsigned char resource_binary_html[] =
 {
 #embed "../../programs/server/binary.html"
@@ -41,6 +61,30 @@ constexpr unsigned char resource_merges_html[] =
 constexpr unsigned char resource_jemalloc_html[] =
 {
 #embed "../../programs/server/jemalloc.html"
+};
+constexpr unsigned char resource_schema_html[] =
+{
+#embed "../../programs/server/schema.html"
+};
+constexpr unsigned char resource_processors_profile_html[] =
+{
+#embed "../../programs/server/processors_profile.html"
+};
+constexpr unsigned char resource_docs_html[] =
+{
+#embed "../../programs/server/docs.html"
+};
+constexpr unsigned char resource_marked_js[] =
+{
+#embed "../../programs/server/js/marked.min.js"
+};
+constexpr unsigned char resource_katex_js[] =
+{
+#embed "../../programs/server/js/katex.min.js"
+};
+constexpr unsigned char resource_katex_css[] =
+{
+#embed "../../programs/server/js/katex.min.css"
 };
 
 
@@ -98,24 +142,72 @@ void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    if (request.getURI() == "/js/uplot.js")
+    struct Resource { const char * path; const unsigned char * data; size_t size; const char * content_type; };
+    const Resource resources[] = {
+        {"/js/uplot.js", resource_uplot_js, std::size(resource_uplot_js), "application/javascript; charset=UTF-8"},
+        {"/js/lz-string.js", resource_lz_string_js, std::size(resource_lz_string_js), "application/javascript; charset=UTF-8"},
+        {"/js/xterm.min.js", resource_xterm_js, std::size(resource_xterm_js), "application/javascript; charset=UTF-8"},
+        {"/js/xterm.min.css", resource_xterm_css, std::size(resource_xterm_css), "text/css; charset=UTF-8"},
+        {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), "application/javascript; charset=UTF-8"},
+        {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), "application/javascript; charset=UTF-8"},
+        {"/js/viz-standalone.js", resource_viz_standalone_js, std::size(resource_viz_standalone_js), "application/javascript; charset=UTF-8"},
+        {"/js/marked.min.js", resource_marked_js, std::size(resource_marked_js), "application/javascript; charset=UTF-8"},
+        {"/js/katex.min.js", resource_katex_js, std::size(resource_katex_js), "application/javascript; charset=UTF-8"},
+        {"/js/katex.min.css", resource_katex_css, std::size(resource_katex_css), "text/css; charset=UTF-8"},
+    };
+
+    for (const auto & resource : resources)
     {
-        handle(request, response, {reinterpret_cast<const char *>(resource_uplot_js), std::size(resource_uplot_js)}, http_response_headers_override);
+        if (request.getURI() == resource.path)
+        {
+            auto headers = http_response_headers_override;
+            if (resource.content_type)
+                headers["Content-Type"] = resource.content_type;
+            handle(request, response, {reinterpret_cast<const char *>(resource.data), resource.size}, headers);
+            return;
+        }
     }
-    else if (request.getURI() == "/js/lz-string.js")
-    {
-        handle(request, response, {reinterpret_cast<const char *>(resource_lz_string_js), std::size(resource_lz_string_js)}, http_response_headers_override);
-    }
-    else
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
-    }
+
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    *response.send() << "Not found.\n";
 }
 
 void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
+}
+
+void SchemaWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_schema_html), std::size(resource_schema_html)}, http_response_headers_override);
+}
+
+void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_processors_profile_html), std::size(resource_processors_profile_html)}, http_response_headers_override);
+}
+
+void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    std::string html(reinterpret_cast<const char *>(resource_docs_html), std::size(resource_docs_html));
+
+    /// Replace links to external JavaScript/CSS files (the Marked Markdown renderer and the
+    /// KaTeX math renderer) with embedded files served from the same origin.
+    /// This keeps the page self-contained and, more importantly, avoids executing third-party
+    /// network code in the ClickHouse HTTP origin, which handles user credentials.
+    /// The original CDN links are kept in the source so the page also works when opened as a
+    /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
+
+    static re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js)";
+    RE2::Replace(&html, marked_url, "/js/marked.min.js");
+
+    static re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js)";
+    RE2::Replace(&html, katex_js_url, "/js/katex.min.js");
+
+    static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
+    RE2::Replace(&html, katex_css_url, "/js/katex.min.css");
+
+    handle(request, response, html, http_response_headers_override);
 }
 
 std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const

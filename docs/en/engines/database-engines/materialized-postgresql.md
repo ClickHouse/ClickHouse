@@ -56,7 +56,7 @@ SHOW TABLES FROM postgres_db;
 │ table1 │
 └────────┘
 
-SELECT * FROM postgresql_db.postgres_table;
+SELECT * FROM postgres_db.postgres_table;
 ```
 
 ## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
@@ -220,6 +220,13 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
 
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
+
+Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
+If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
+
+This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
+
 ## Notes {#notes}
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
@@ -278,13 +285,13 @@ Please note that this should be used only if it is actually needed. If there is 
 
 ### Required permissions {#required-permissions}
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2. [CREATE_REPLICATION_SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
 
-3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
+3. [pg_drop_replication_slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- replication privilege or superuser.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
 
 It is possible to avoid executing `2` and `3` commands and having those permissions. Use settings `materialized_postgresql_replication_slot` and `materialized_postgresql_snapshot`. But with much care.
 
@@ -295,3 +302,29 @@ Access to tables:
 2. pg_replication_slots
 
 3. pg_publication_tables
+
+### Backup and restore {#backup-and-restore}
+
+A `MaterializedPostgreSQL` database can be backed up. The data of every replicated table lives in a nested `ReplacingMergeTree` table, so `BACKUP DATABASE` captures that data by delegating to the nested table.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
+
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+
+    ```sql
+    RESTORE TABLE postgres_db.table1 AS restored_db.table1
+    FROM Disk('backups', 'postgres_db.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
+
+- For a standalone `MaterializedPostgreSQL` table backup, the stored definition is the `MaterializedPostgreSQL` engine itself. Create a `ReplacingMergeTree` table beforehand with the same structure as the nested table (including the `_sign` and `_version` columns) and restore into it:
+
+    ```sql
+    RESTORE TABLE src AS existing_replacing_mergetree
+    FROM Disk('backups', 'table.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```

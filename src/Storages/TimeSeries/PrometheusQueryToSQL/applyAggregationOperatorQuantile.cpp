@@ -69,7 +69,10 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             {
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(phi_arg.select_query), SQLSubqueryType::SCALAR});
-                return make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                return makeASTFunction("assumeNotNull", std::move(subquery_id));
             }
             case StoreMethod::SCALAR_GRID:
             {
@@ -126,6 +129,12 @@ SQLQueryPiece applyAggregationOperatorQuantile(
 
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+        /// Drop empty-values rows.
+        /// If the input has no rows then quantileExactInclusiveForEach(...)([]) returns [], but the number of values
+        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
+        /// so we just drop such rows.
+        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         aggregation_query = builder.getSelectQuery();
     }

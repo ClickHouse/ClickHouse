@@ -2,6 +2,10 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/StorageID.h>
+#include <Formats/FormatFilterInfo.h>
+#include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
@@ -42,12 +46,15 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
+    virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
 
-    String getIdentifier() const;
+    String getIdentifier(bool include_file_bucket_info = true) const;
+    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -81,7 +88,8 @@ public:
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
         const std::string & object_namespace_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
@@ -99,6 +107,7 @@ private:
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
+    const std::function<void(FileProgress)> file_progress_callback;
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
@@ -109,7 +118,9 @@ public:
         ObjectIterator iterator_,
         const String & format_,
         ObjectStoragePtr object_storage_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        const StorageID & storage_id_ = StorageID::createEmpty(),
+        FormatFilterInfoPtr format_filter_info_ = nullptr);
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
@@ -120,6 +131,9 @@ private:
     String format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
+    StorageID storage_id;
+    FormatFilterInfoPtr format_filter_info;
+    QueryConditionCachePtr query_condition_cache;
 
     std::queue<ObjectInfoPtr> pending_objects_info;
     const LoggerPtr log = getLogger("GlobIterator");

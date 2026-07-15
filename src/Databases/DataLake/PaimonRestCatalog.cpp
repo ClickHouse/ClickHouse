@@ -54,14 +54,14 @@ namespace DataLake
 {
 using namespace DataLake::Paimon;
 
-String md5(const String & input)
+static String md5(const String & input)
 {
     Poco::MD5Engine md5;
     md5.update(input);
     return DB::base64Encode(String(reinterpret_cast<const char *>(md5.digest().data()), md5.digestLength()));
 }
 
-String bytesToHex(const String & bytes)
+static String bytesToHex(const String & bytes)
 {
     const char hex_digits[] = "0123456789abcdef";
     DB::WriteBufferFromOwnString hex_str;
@@ -446,6 +446,21 @@ DB::Names PaimonRestCatalog::getTables() const
     DB::Names tables;
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
+    return tables;
+}
+
+DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
+{
+    /// Paimon REST databases are flat — they cannot contain nested namespaces.
+    DB::Strings databases;
+    forEachDatabase(databases, {}, {});
+    return databases;
+}
+
+DB::Names PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    DB::Names tables;
+    forEachTables(namespace_name, tables, {});
     return tables;
 }
 

@@ -1,0 +1,629 @@
+---
+title: 'DataStore 쿼리 작성'
+sidebarTitle: '쿼리 작성'
+slug: /chdb/datastore/query-building
+description: '메서드 체이닝으로 DataStore에서 SQL 스타일 쿼리를 작성합니다'
+keywords: ['chdb', 'datastore', '쿼리', 'select', 'filter', 'where', 'join', 'groupby']
+doc_type: 'reference'
+---
+
+DataStore는 최적화된 SQL 쿼리로 컴파일되는 SQL 스타일의 쿼리 작성 메서드를 제공합니다. 결과가 필요해질 때까지 모든 작업은 지연 실행됩니다.
+
+<div id="overview">
+  ## 쿼리 메서드 개요
+</div>
+
+| 메서드                | SQL 대응 구문       | 설명           |
+| ------------------ | --------------- | ------------ |
+| `select(*cols)`    | `SELECT cols`   | 컬럼 선택        |
+| `filter(cond)`     | `WHERE cond`    | 행 필터링        |
+| `where(cond)`      | `WHERE cond`    | `filter`의 별칭 |
+| `sort(*cols)`      | `ORDER BY cols` | 행 정렬         |
+| `orderby(*cols)`   | `ORDER BY cols` | `sort`의 별칭   |
+| `limit(n)`         | `LIMIT n`       | 행 수 제한       |
+| `offset(n)`        | `OFFSET n`      | 행 건너뛰기       |
+| `distinct()`       | `DISTINCT`      | 중복 제거        |
+| `groupby(*cols)`   | `GROUP BY cols` | 행 그룹화        |
+| `having(cond)`     | `HAVING cond`   | 그룹 필터링       |
+| `join(right, ...)` | `JOIN`          | DataStore 조인 |
+| `union(other)`     | `UNION`         | 결과 결합        |
+
+***
+
+<div id="selection">
+  ## 선택
+</div>
+
+<div id="select">
+  ### `select`
+</div>
+
+DataStore에서 특정 컬럼만 선택합니다.
+
+```python
+select(*fields: Union[str, Expression]) -> DataStore
+```
+
+**예시:**
+
+```python
+from chdb.datastore import DataStore
+from pathlib import Path
+Path("employees.csv").write_text("""\
+name,age,city,salary,department,dept_id,status,email,manager_id,bonus
+Alice,28,NYC,75000,Engineering,1,active,alice@company.com,3,5000
+Bob,35,LA,85000,Engineering,1,active,bob@company.com,3,
+Charlie,52,NYC,95000,Product,2,active,charlie@company.com,,10000
+Diana,32,SF,70000,Design,3,active,diana@company.com,3,3000
+Eve,23,LA,48000,Product,2,inactive,eve@company.com,2,
+""")
+
+ds = DataStore.from_file("employees.csv")
+
+# 컬럼 이름으로 선택
+result = ds.select('name', 'age', 'salary')
+
+# 모든 컬럼 선택
+result = ds.select('*')
+
+# 표현식으로 선택
+result = ds.select(
+    'name',
+    (ds['salary'] * 12).as_('annual_salary'),
+    ds['age'].as_('employee_age')
+)
+
+# pandas 스타일과 동일
+result = ds[['name', 'age', 'salary']]
+```
+
+***
+
+<div id="filtering">
+  ## 필터링
+</div>
+
+<div id="filter">
+  ### `filter` / `where`
+</div>
+
+조건에 따라 행을 필터링합니다. 두 메서드는 동일한 기능을 합니다.
+
+```python
+filter(condition) -> DataStore
+where(condition) -> DataStore  # alias
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 단일 조건
+result = ds.filter(ds['age'] > 30)
+result = ds.where(ds['salary'] >= 50000)
+
+# 복수 조건 (AND)
+result = ds.filter((ds['age'] > 30) & (ds['department'] == 'Engineering'))
+
+# 복수 조건 (OR)
+result = ds.filter((ds['city'] == 'NYC') | (ds['city'] == 'LA'))
+
+# NOT 조건
+result = ds.filter(~(ds['status'] == 'inactive'))
+
+# 문자열 조건
+result = ds.filter(ds['name'].str.contains('John'))
+result = ds.filter(ds['email'].str.endswith('@company.com'))
+
+# NULL 검사
+result = ds.filter(ds['manager_id'].notnull())
+result = ds.filter(ds['bonus'].isnull())
+
+# IN 조건
+result = ds.filter(ds['department'].isin(['Engineering', 'Product', 'Design']))
+
+# BETWEEN 조건
+result = ds.filter(ds['salary'].between(50000, 100000))
+
+# 연결된 필터 (AND)
+result = (ds
+    .filter(ds['age'] > 25)
+    .filter(ds['salary'] > 50000)
+    .filter(ds['city'] == 'NYC')
+)
+```
+
+<div id="pandas-filtering">
+  ### Pandas 스타일 필터링
+</div>
+
+```python
+# 불리언 인덱싱 (filter와 동일)
+result = ds[ds['age'] > 30]
+result = ds[(ds['age'] > 30) & (ds['salary'] > 50000)]
+
+# 쿼리 메서드
+result = ds.query('age > 30 and salary > 50000')
+```
+
+***
+
+<div id="sorting">
+  ## 정렬
+</div>
+
+<div id="sort">
+  ### `sort` / `orderby`
+</div>
+
+하나 이상의 컬럼을 기준으로 행을 정렬합니다.
+
+```python
+sort(*fields, ascending=True) -> DataStore
+orderby(*fields, ascending=True) -> DataStore  # alias
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 단일 컬럼 오름차순
+result = ds.sort('name')
+
+# 단일 컬럼 내림차순
+result = ds.sort('salary', ascending=False)
+
+# 여러 컬럼
+result = ds.sort('department', 'salary')
+
+# 혼합 정렬 순서 (ascending 매개변수에 리스트 사용)
+result = ds.sort('department', 'salary', ascending=[True, False])
+
+# Pandas 스타일
+result = ds.sort_values('salary', ascending=False)
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+```
+
+***
+
+<div id="limiting">
+  ## 제한 및 페이지네이션
+</div>
+
+<div id="limit">
+  ### `limit`
+</div>
+
+반환할 행 수를 제한합니다.
+
+```python
+limit(n: int) -> DataStore
+```
+
+<div id="offset">
+  ### `offset`
+</div>
+
+처음 n개 행은 건너뜁니다.
+
+```python
+offset(n: int) -> DataStore
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 처음 10개 행
+result = ds.limit(10)
+
+# 처음 100개 행을 건너뛰고 다음 50개 행을 가져옴
+result = ds.offset(100).limit(50)
+
+# Pandas 스타일
+result = ds.head(10)
+result = ds.tail(10)
+result = ds.iloc[100:150]
+```
+
+***
+
+<div id="distinct">
+  ## Distinct
+</div>
+
+<div id="distinct-method">
+  ### `distinct`
+</div>
+
+중복 행을 제거합니다.
+
+```python
+distinct(subset=None, keep='first') -> DataStore
+```
+
+**예시:**
+
+```python
+from pathlib import Path
+Path("events.csv").write_text("""\
+user_id,event_type,timestamp
+1,click,2024-01-15 10:30:00
+2,view,2024-01-15 11:00:00
+1,purchase,2024-01-15 11:30:00
+3,click,2024-01-16 09:00:00
+2,click,2024-01-16 10:00:00
+""")
+
+ds = DataStore.from_file("events.csv")
+
+# 모든 중복 행 제거
+result = ds.distinct()
+
+# 특정 컬럼 기준으로 중복 제거
+result = ds.distinct(subset=['user_id', 'event_type'])
+
+# Pandas 스타일
+result = ds.drop_duplicates()
+result = ds.drop_duplicates(subset=['user_id'])
+```
+
+***
+
+<div id="grouping">
+  ## 그룹화
+</div>
+
+<div id="groupby">
+  ### `groupby`
+</div>
+
+하나 이상의 컬럼을 기준으로 행을 그룹으로 묶습니다. `LazyGroupBy` 객체를 반환합니다.
+
+```python
+groupby(*fields, sort=True, as_index=True, dropna=True) -> LazyGroupBy
+```
+
+**예시:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+ds = DataStore.from_file("sales.csv")
+
+# 단일 컬럼으로 그룹화
+by_region = ds.groupby('region')
+
+# 여러 컬럼으로 그룹화
+by_region_product = ds.groupby('region', 'product')
+
+# groupby 후 집계
+result = ds.groupby('region')['amount'].sum()
+result = ds.groupby('region').agg({'amount': 'sum', 'quantity': 'mean'})
+
+# 다중 집계
+result = ds.groupby('category').agg({
+    'price': ['min', 'max', 'mean'],
+    'quantity': 'sum'
+})
+
+# 이름 지정 집계
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count')
+)
+```
+
+<div id="having">
+  ### `having`
+</div>
+
+집계가 끝난 후 그룹을 필터링합니다.
+
+```python
+having(condition: Union[Condition, str]) -> DataStore
+```
+
+**예시:**
+
+```python
+# total > 10000인 그룹 필터링
+result = (ds
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .having(ds['sum'] > 10000)
+)
+
+# SQL 스타일 having 사용
+result = (ds
+    .select('region', 'SUM(amount) as total')
+    .groupby('region')
+    .having('total > 10000')
+)
+```
+
+***
+
+<div id="joining">
+  ## 조인
+</div>
+
+<div id="join">
+  ### `join`
+</div>
+
+두 DataStore를 조인합니다.
+
+```python
+join(right, on=None, how='inner', left_on=None, right_on=None) -> DataStore
+```
+
+**매개변수:**
+
+| 매개변수       | 유형        | 기본값       | 설명                                                                       |
+| ---------- | --------- | --------- | ------------------------------------------------------------------------ |
+| `right`    | DataStore | *필수*      | 조인할 대상인 오른쪽 DataStore                                                    |
+| `on`       | str/list  | `None`    | 조인 기준으로 사용할 컬럼                                                           |
+| `how`      | str       | `'inner'` | 조인 유형: &#39;inner&#39;, &#39;left&#39;, &#39;right&#39;, &#39;outer&#39; |
+| `left_on`  | str/list  | `None`    | 왼쪽 조인에 사용할 컬럼                                                            |
+| `right_on` | str/list  | `None`    | 오른쪽 조인에 사용할 컬럼                                                           |
+
+**예시:**
+
+```python
+from pathlib import Path
+Path("departments.csv").write_text("""\
+dept_id,department_name
+1,Engineering
+2,Product
+3,Design
+""")
+
+employees = DataStore.from_file("employees.csv")
+departments = DataStore.from_file("departments.csv")
+
+# 단일 컬럼에 대한 내부 조인
+result = employees.join(departments, on='dept_id')
+
+# 왼쪽 조인
+result = employees.join(departments, on='dept_id', how='left')
+
+# 서로 다른 컬럼 이름으로 조인
+result = employees.join(
+    departments,
+    left_on='department_id',
+    right_on='id',
+    how='inner'
+)
+
+# Pandas 스타일 머지
+from chdb import datastore as pd
+result = pd.merge(employees, departments, on='dept_id')
+result = pd.merge(employees, departments, left_on='department_id', right_on='id')
+```
+
+<div id="union">
+  ### `union`
+</div>
+
+두 DataStore의 결과를 합칩니다.
+
+```python
+union(other, all=False) -> DataStore
+```
+
+**예시:**
+
+```python
+from pathlib import Path
+Path("sales_2023.csv").write_text("""\
+region,product,amount,date
+East,Widget,1200,2023-06-15
+West,Gadget,800,2023-09-20
+North,Gizmo,600,2023-11-10
+""")
+Path("sales_2024.csv").write_text("""\
+region,product,amount,date
+East,Widget,1500,2024-03-10
+North,Gizmo,900,2024-07-22
+West,Gadget,1100,2024-05-05
+""")
+
+ds1 = DataStore.from_file("sales_2023.csv")
+ds2 = DataStore.from_file("sales_2024.csv")
+
+# UNION (중복 제거)
+result = ds1.union(ds2)
+
+# UNION ALL (중복 유지)
+result = ds1.union(ds2, all=True)
+
+# Pandas 스타일
+from chdb import datastore as pd
+result = pd.concat([ds1, ds2])
+```
+
+***
+
+<div id="conditional">
+  ## 조건 표현식
+</div>
+
+<div id="when">
+  ### `when`
+</div>
+
+CASE WHEN 표현식을 만듭니다.
+
+```python
+when(condition, value) -> CaseWhenBuilder
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 단순 case-when
+result = ds.select(
+    'name',
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+      .as_('salary_tier')
+)
+
+# 컬럼 할당 사용
+ds['salary_tier'] = (
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+)
+```
+
+***
+
+<div id="raw-sql">
+  ## Raw SQL
+</div>
+
+<div id="run-sql">
+  ### `run_sql` / `sql`
+</div>
+
+직접 작성한 SQL 쿼리를 실행합니다.
+
+```python
+run_sql(query: str) -> DataStore
+sql(query: str) -> DataStore  # alias
+```
+
+**예시:**
+
+```python
+from chdb.datastore import DataStore
+
+# Raw SQL 실행
+result = DataStore().sql("""
+    SELECT 
+        department,
+        COUNT(*) as count,
+        AVG(salary) as avg_salary
+    FROM file('employees.csv', 'CSVWithNames')
+    WHERE status = 'active'
+    GROUP BY department
+    HAVING count > 5
+    ORDER BY avg_salary DESC
+    LIMIT 10
+""")
+
+# 기존 DataStore에서 SQL 실행
+ds = DataStore.from_file("employees.csv")
+result = ds.sql("SELECT * FROM __table__ WHERE age > 30")
+```
+
+<div id="to-sql">
+  ### `to_sql`
+</div>
+
+실행하지 않고 생성된 SQL을 확인합니다.
+
+```python
+to_sql(**kwargs) -> str
+```
+
+**예시:**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+query = (ds
+    .filter(ds['age'] > 30)
+    .groupby('department')
+    .agg({'salary': 'mean'})
+    .sort('mean', ascending=False)
+)
+
+print(query.to_sql())
+# 출력:
+# SELECT department, AVG(salary) AS mean
+# FROM file('employees.csv', 'CSVWithNames')
+# WHERE age > 30
+# GROUP BY department
+# ORDER BY mean DESC
+```
+
+***
+
+<div id="chaining">
+  ## 메서드 체이닝
+</div>
+
+모든 쿼리 메서드는 체이닝을 지원합니다:
+
+```python
+from chdb.datastore import DataStore
+
+ds = DataStore.from_file("sales.csv")
+
+result = (ds
+    .select('region', 'product', 'amount', 'date')
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'product')
+    .agg({
+        'amount': ['sum', 'mean'],
+        'date': 'count'
+    })
+    .having(ds['sum'] > 10000)
+    .sort('sum', ascending=False)
+    .limit(20)
+)
+
+# SQL 보기
+print(result.to_sql())
+
+# 실행
+df = result.to_df()
+```
+
+***
+
+<div id="aliasing">
+  ## 별칭
+</div>
+
+<div id="as">
+  ### `as_`
+</div>
+
+컬럼 또는 서브쿼리의 별칭을 지정합니다.
+
+```python
+as_(alias: str) -> DataStore
+```
+
+**예시:**
+
+```python
+# 컬럼 별칭
+result = ds.select(
+    ds['name'].as_('employee_name'),
+    (ds['salary'] * 12).as_('annual_salary')
+)
+
+# 서브쿼리 별칭
+subquery = ds.filter(ds['age'] > 30).as_('senior_employees')
+```

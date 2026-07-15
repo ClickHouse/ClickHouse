@@ -1,0 +1,694 @@
+---
+description: 'Guia para testar o ClickHouse e executar a suíte de testes'
+sidebarTitle: 'Testes'
+slug: /development/tests
+title: 'Testes do ClickHouse'
+doc_type: 'guide'
+---
+
+<div id="test-types">
+  ## Tipos de teste
+</div>
+
+Há os seguintes testes no ClickHouse:
+
+* [Testes funcionais](#functional-tests) - um conjunto de consultas e scripts que inclui os seguintes subconjuntos sobrepostos
+  * [Teste rápido](#running-fast-tests) - o subconjunto mínimo
+  * [Testes sem estado](#running-stateless-tests) que não exigem o preenchimento de bancos de dados com dados
+  * Testes sequenciais que não podem ser executados em paralelo
+* [Testes de integração](#integration-tests), executados pelo `pytest` em um cluster
+* [Testes unitários](#unit-tests)
+* [Testes de desempenho](#performance-tests)
+* [Testes de build](#build-tests)
+* [Sanitizers](#sanitizers)
+* [Fuzzers](#fuzzing)
+  e alguns outros; veja as seções abaixo.
+
+<div id="functional-tests">
+  ## Testes funcionais
+</div>
+
+Os testes funcionais são os mais simples e convenientes de usar.
+A maior parte dos recursos do ClickHouse pode ser testada com testes funcionais, e eles são obrigatórios para toda alteração no código do ClickHouse que possa ser testada dessa forma.
+
+Cada teste funcional envia uma ou mais consultas ao servidor ClickHouse em execução e compara o resultado com a referência.
+
+Os testes ficam no diretório `./tests/queries`.
+
+Cada teste pode ser de um destes dois tipos: `.sql` e `.sh`.
+
+* Um teste `.sql` é um script SQL simples enviado por pipe para o `clickhouse-client`.
+* Um teste `.sh` é um script executado por conta própria.
+
+Em geral, testes SQL são preferíveis a testes `.sh`.
+Você deve usar testes `.sh` apenas quando precisar testar algum recurso que não possa ser exercitado com SQL puro, como enviar dados de entrada por pipe para o `clickhouse-client` ou testar o `clickhouse-local`.
+
+<Note>
+  Um erro comum ao testar os tipos de dados `DateTime` e `DateTime64` é presumir que o servidor usa um fuso horário específico (por exemplo, &quot;UTC&quot;). Não é o caso; os fusos horários nas execuções de teste em CI
+  são deliberadamente aleatorizados. A solução alternativa mais simples é especificar explicitamente o fuso horário dos valores de teste, por exemplo, `toDateTime64(val, 3, 'Europe/Amsterdam')`.
+</Note>
+
+<div id="running-a-test-locally">
+  ### Executando um teste localmente
+</div>
+
+Inicie o servidor ClickHouse localmente, escutando na porta padrão (9000).
+Para executar, por exemplo, o teste `01428_hash_set_nan_key`, vá para a pasta do repositório e execute o seguinte comando:
+
+```sh
+PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_key
+```
+
+Os resultados dos testes (`stderr` e `stdout`) são gravados nos arquivos `01428_hash_set_nan_key.[stderr|stdout]`, que ficam ao lado do próprio teste (para `queries/0_stateless/foo.sql`, a saída ficará em `queries/0_stateless/foo.stdout`).
+
+Consulte `tests/clickhouse-test --help` para ver todas as opções de `clickhouse-test`.
+Você pode executar todos os testes ou apenas um subconjunto, fornecendo um filter para os nomes dos testes: `./clickhouse-test substring`.
+Também há opções para executar os testes em paralelo ou em ordem aleatória.
+
+<div id="running-fast-tests">
+  ### Executando testes rápidos
+</div>
+
+Talvez você precise de uma máquina razoavelmente potente para executar um subconjunto de testes (chamado &quot;teste rápido&quot;). O procedimento a seguir funciona em uma instância AWS Ubuntu amd64 `t3.2xlarge` com 100 GB de armazenamento.
+
+1. Instale os pré-requisitos e faça login novamente.
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+```
+
+2. Baixe o código-fonte.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Compile o código e execute os &quot;testes rápidos&quot;.
+
+```sh
+python -m ci.praktika run fast
+```
+
+O resultado deve ser
+
+```sh
+Failed: 0, Passed: 7394, Skipped: 1795
+```
+
+Se você deixar a execução sem supervisão, poderá usar `nohup` ou `disown` para mantê-la em execução mesmo após a perda da conexão `ssh`.
+
+<div id="running-stateless-tests">
+  ### Executando testes sem estado
+</div>
+
+Você pode precisar de uma máquina razoavelmente potente para executar testes sem estado. A configuração a seguir funciona em uma instância AWS Ubuntu amd64 `m7i.8xlarge`, com 200 GB de armazenamento.
+
+1. Instale os pré-requisitos e faça login novamente.
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+2. Baixe o código-fonte.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Compile o código.
+
+```sh
+python -m ci.praktika run build_debug
+cp ci/tmp/build/programs/clickhouse ci/tmp
+```
+
+4. Execute testes sem estado, que podem ser executados em paralelo.
+
+```sh
+python -m ci.praktika run functional
+```
+
+O resultado deve ser
+
+```sh
+Failed: 0, Passed: 8497, Skipped: 103
+```
+
+Observação: os comandos `python -m ci.praktika run` executam um job específico de integração contínua; você pode ler mais sobre a integração contínua do ClickHouse [aqui](/pt-BR/resources/develop-contribute/contribute/continuous-integration#running-stateless-tests).
+
+<div id="adding-a-new-test">
+  ### Adicionando um novo teste
+</div>
+
+Para adicionar um novo teste, primeiro crie um arquivo `.sql` ou `.sh` no diretório `queries/0_stateless`.
+Em seguida, gere o arquivo `.reference` correspondente usando `clickhouse-client < 12345_test.sql > 12345_test.reference` ou `./12345_test.sh > ./12345_test.reference`.
+
+Os testes devem apenas criar, remover, fazer SELECT em etc. tabelas no banco de dados `test`, que é criado automaticamente com antecedência.
+É permitido usar tabelas temporárias.
+
+Para configurar localmente o mesmo ambiente da CI, instale as configurações de teste (elas usarão uma implementação simulada do ZooKeeper e ajustarão algumas configurações)
+
+```sh
+cd <repository>/tests/config
+sudo ./install.sh
+```
+
+<Note>
+  Os testes devem ser
+
+  * mínimos: criar apenas as tabelas, colunas e a complexidade estritamente necessárias,
+  * rápidos: não levar mais do que alguns segundos (melhor ainda: menos de um segundo),
+  * corretos e determinísticos: falhar se, e somente se, a funcionalidade em teste não estiver funcionando,
+  * isolados/sem estado: não depender do ambiente nem do tempo
+  * exaustivos: cobrir casos de borda como zeros, nulos, conjuntos vazios e exceções (testes negativos; use a sintaxe `-- { serverError xyz }` e `-- { clientError xyz }` para isso),
+  * limpar as tabelas ao final do teste (caso reste algo),
+  * garantir que os outros testes não estejam testando a mesma coisa (ou seja, faça um grep primeiro).
+</Note>
+
+<div id="templated-tests-with-jinja">
+  ### Testes com Template usando Jinja
+</div>
+
+Um teste `.sql` pode ser escrito como um Template [Jinja2](https://jinja.palletsprojects.com/) adicionando o sufixo `.j2` ao nome do arquivo, de modo que `foo.sql` passe a ser `foo.sql.j2`. Antes de executar o teste, o `clickhouse-test` renderiza o Template como um script `.sql` comum e executa o resultado.
+
+Isso é útil quando um teste repete a mesma consulta com pequenas variações: um loop gera as consultas a partir de um Template compacto, em vez de escrever cada uma manualmente. As construções mais usadas são:
+
+* `{% for ... %} ... {% endfor %}` para repetir um bloco,
+* `{{ expression }}` para inserir um valor na saída,
+* `-%}` e `{%-` para remover espaços em branco adjacentes, para que o script gerado permaneça limpo.
+
+Por exemplo, este Template:
+
+```sql
+{% for type in ['UInt8', 'UInt16', 'UInt32'] -%}
+SELECT toTypeName(0::{{ type }});
+{% endfor -%}
+```
+
+resulta em:
+
+```sql
+SELECT toTypeName(0::UInt8);
+SELECT toTypeName(0::UInt16);
+SELECT toTypeName(0::UInt32);
+```
+
+A saída esperada pode ser fornecida tanto como um arquivo `<name>.reference` simples, contendo os resultados totalmente expandidos, quanto como um Template `<name>.reference.j2`, que o `clickhouse-test` renderiza da mesma maneira antes de comparar. Use a forma com Template quando a saída esperada também seguir um padrão repetitivo. Para mais exemplos, consulte os arquivos `*.sql.j2` existentes em `tests/queries/0_stateless/`.
+
+<div id="restricting-test-runs">
+  ### Restringindo execuções de teste
+</div>
+
+Um teste pode ter zero ou mais *tags* que especificam restrições sobre em quais contextos ele é executado no CI.
+
+Em testes `.sql`, as tags são colocadas na primeira linha como um comentário SQL:
+
+```sql
+-- Tags: no-fasttest, no-replicated-database
+-- no-fasttest: <provide_a_reason_for_the_tag_here>
+-- no-replicated-database: <provide_a_reason_here>
+
+SELECT 1
+```
+
+Nos testes `.sh`, as tags são escritas como comentário na segunda linha:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database
+# - no-fasttest: <provide_a_reason_for_the_tag_here>
+# - no-replicated-database: <provide_a_reason_here>
+```
+
+Lista de tags disponíveis:
+
+| Tag name                       | What it does                                                                     | Usage example                                                                                            |
+| ------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `disabled`                     | O teste não é executado                                                          |                                                                                                          |
+| `long`                         | O tempo de execução do teste é estendido de 1 para 10 minutos                    |                                                                                                          |
+| `deadlock`                     | O teste é executado em loop por um longo período                                 |                                                                                                          |
+| `race`                         | Igual a `deadlock`. Prefira `deadlock`                                           |                                                                                                          |
+| `shard`                        | O servidor precisa escutar em `127.0.0.*`                                        |                                                                                                          |
+| `distributed`                  | Igual a `shard`. Prefira `shard`                                                 |                                                                                                          |
+| `global`                       | Igual a `shard`. Prefira `shard`                                                 |                                                                                                          |
+| `zookeeper`                    | O teste requer Zookeeper ou ClickHouse Keeper para ser executado                 | O teste usa `ReplicatedMergeTree`                                                                        |
+| `replica`                      | Igual a `zookeeper`. Prefira `zookeeper`                                         |                                                                                                          |
+| `no-fasttest`                  | O teste não é executado no [teste rápido](#test-types)                           | O teste usa o table engine `MySQL`, que é desabilitado no teste rápido                                   |
+| `fasttest-only`                | O teste é executado apenas no [teste rápido](#test-types)                        |                                                                                                          |
+| `no-[asan, tsan, msan, ubsan]` | Desabilita testes em builds com [sanitizers](#sanitizers)                        | O teste é executado no QEMU, que não funciona com sanitizers                                             |
+| `no-replicated-database`       | Desabilita o teste quando o banco de dados padrão usa `ReplicatedDatabaseEngine` |                                                                                                          |
+| `no-ordinary-database`         | Desabilita o teste quando o database engine padrão é `Ordinary`                  |                                                                                                          |
+| `no-parallel`                  | Desabilita a execução de outros testes em paralelo com este                      | O teste lê tabelas `system`, e os invariantes podem ser violados                                         |
+| `no-parallel-replicas`         | Desabilita o teste quando parallel replicas estão habilitadas                    |                                                                                                          |
+| `no-debug`                     | Desabilita testes em builds Debug                                                |                                                                                                          |
+| `no-release`                   | Desabilita testes em builds Release                                              |                                                                                                          |
+| `no-darwin`                    | Desabilita o teste no macOS (Darwin)                                             | O teste depende de recursos específicos do Linux, como consultas distribuídas, `procfs` ou servidor HTTP |
+
+As opções a seguir também são compatíveis: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+
+Além das configurações acima, você pode usar flags `USE_*` de `system.build_options` para definir o uso de recursos específicos do ClickHouse.
+Por exemplo, se seu teste usa uma tabela MySQL, você deve adicionar a tag `use-mysql`.
+
+<div id="specifying-limits-for-random-settings">
+  ### Especificando limites para configurações aleatórias
+</div>
+
+Um teste pode especificar os valores mínimo e máximo permitidos para configurações que podem ser randomizadas durante a execução do teste.
+
+Para testes `.sh`, os limites são escritos como um comentário na linha ao lado das tags ou na segunda linha, caso nenhuma tag seja especificada:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Limites de configurações aleatórias: max_block_size=(1000, 10000); index_granularity=(100, None)
+```
+
+Para testes `.sql`, as tags são colocadas como comentário SQL na linha ao lado delas ou na primeira linha:
+
+```sql
+-- Tags: no-fasttest
+-- Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
+SELECT 1
+```
+
+Se você precisar especificar apenas um limite, pode usar `None` para o outro.
+
+<div id="choosing-the-test-name">
+  ### Escolhendo o nome do teste
+</div>
+
+O nome do teste começa com um prefixo de cinco dígitos, seguido de um nome descritivo, como `00422_hash_function_constexpr.sql`.
+Para escolher o prefixo, encontre o maior prefixo já presente no diretório e acrescente um a ele.
+
+```sh
+ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
+```
+
+Enquanto isso, alguns outros testes podem ser adicionados com o mesmo prefixo numérico, mas isso não tem problema e não causa nenhum inconveniente; não é preciso alterá-lo depois.
+
+<div id="checking-for-an-error-that-must-occur">
+  ### Verificando se ocorre um erro esperado
+</div>
+
+Às vezes, você quer testar se ocorre um erro do servidor ao executar uma consulta incorreta. Oferecemos suporte a anotações especiais para isso em testes SQL, no seguinte formato:
+
+```sql
+SELECT x; -- { serverError 49 }
+```
+
+Este teste garante que o servidor retorne um erro com o código 49 informando que a coluna `x` é desconhecida.
+Se não houver erro, ou se o erro for diferente, o teste falhará.
+Se você quiser garantir que um erro ocorra no lado do cliente, use a anotação `clientError`.
+
+Não verifique uma redação específica da mensagem de erro, pois ela pode mudar no futuro, e o teste pode falhar desnecessariamente.
+Verifique apenas o código do erro.
+Se o código de erro existente não for preciso o suficiente para o que você precisa, considere adicionar um novo.
+
+<div id="testing-a-distributed-query">
+  ### Testando uma consulta distribuída
+</div>
+
+Se você quiser usar consultas distribuídas em testes funcionais, pode usar a table function `remote` com endereços `127.0.0.{1..2}` para que o servidor consulte a si próprio; ou usar clusters de teste predefinidos no arquivo de configuração do servidor, como `test_shard_localhost`.
+Lembre-se de adicionar as palavras `shard` ou `distributed` ao nome do teste, para que ele seja executado no CI com as configurações corretas, nas quais o servidor esteja configurado para oferecer suporte a consultas distribuídas.
+
+<div id="working-with-temporary-files">
+  ### Trabalhando com arquivos temporários
+</div>
+
+Às vezes, em um teste de shell, você pode precisar criar um arquivo na hora para usar.
+Tenha em mente que algumas verificações de CI executam testes em paralelo; portanto, se você criar ou remover um arquivo temporário no script sem usar um nome exclusivo, isso pode fazer com que algumas dessas verificações, como o Flaky, falhem.
+Para contornar isso, use a variável de ambiente `$CLICKHOUSE_TEST_UNIQUE_NAME` para dar aos arquivos temporários um nome exclusivo para o teste em execução.
+Assim, você garante que o arquivo criado durante a configuração ou removido durante a limpeza está sendo usado apenas por aquele teste, e não por outro teste em execução em paralelo.
+
+<div id="known-bugs">
+  ## Bugs conhecidos
+</div>
+
+Se conhecemos bugs que podem ser facilmente reproduzidos por testes funcionais, colocamos testes funcionais preparados no diretório `tests/queries/bugs`.
+Esses testes serão movidos para `tests/queries/0_stateless` quando os bugs forem corrigidos.
+
+<div id="integration-tests">
+  ## Testes de integração
+</div>
+
+Os testes de integração permitem testar o ClickHouse em uma configuração de cluster e a interação do ClickHouse com outros servidores, como MySQL, Postgres e MongoDB.
+Eles são úteis para simular partições de rede, perda de pacotes etc.
+Esses testes são executados com Docker e criam vários contêineres com diferentes softwares.
+
+Consulte `tests/integration/README.md` para saber como executar esses testes.
+
+Observe que a integração do ClickHouse com drivers de terceiros não é testada.
+Além disso, no momento, não temos testes de integração com nossos drivers JDBC e ODBC.
+
+<div id="unit-tests">
+  ## Testes unitários
+</div>
+
+Os testes unitários são úteis quando você quer testar não o ClickHouse como um todo, mas uma única biblioteca ou classe isolada.
+Você pode habilitar ou desabilitar a compilação dos testes com a opção `ENABLE_TESTS` do CMake.
+Os testes unitários (e outros programas de teste) ficam nos subdiretórios `tests` espalhados pelo código.
+Para executar os testes unitários, digite `ninja test`.
+Alguns testes usam `gtest`, mas outros são apenas programas que retornam um código de saída diferente de zero em caso de falha.
+
+Não é necessário ter testes unitários se o código já estiver coberto por testes funcionais (e os testes funcionais geralmente são muito mais simples de usar).
+
+Você pode executar verificações individuais do gtest chamando o executável diretamente, por exemplo:
+
+```bash
+$ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
+```
+
+<div id="performance-tests">
+  ## Testes de desempenho
+</div>
+
+Os testes de desempenho permitem medir e comparar o desempenho de partes isoladas do ClickHouse com consultas sintéticas.
+Os testes de desempenho ficam em `tests/performance/`.
+Cada teste é representado por um arquivo `.xml` com a descrição do caso de teste.
+Os testes são executados com a ferramenta `docker/test/performance-comparison`. Consulte o arquivo readme para ver como executá-la.
+
+Cada teste executa uma ou mais consultas (possivelmente com combinações de parâmetros) em loop.
+
+Se você quiser melhorar o desempenho do ClickHouse em algum cenário, e se as melhorias puderem ser observadas em consultas simples, é altamente recomendável escrever um teste de desempenho.
+Além disso, também é recomendável escrever testes de desempenho ao adicionar ou modificar funções SQL relativamente isoladas e não muito obscuras.
+Sempre vale a pena usar `perf top` ou outras ferramentas `perf` durante os testes.
+
+<div id="test-tools-and-scripts">
+  ## Ferramentas e scripts de teste
+</div>
+
+Alguns programas no diretório `tests` não são testes prontos, e sim ferramentas de teste.
+Por exemplo, para `Lexer` existe a ferramenta `src/Parsers/tests/lexer`, que apenas faz a tokenização da entrada padrão e grava o resultado colorido na saída padrão.
+Você pode usar ferramentas desse tipo como exemplos de código e para exploração e testes manuais.
+
+<div id="miscellaneous-tests">
+  ## Testes diversos
+</div>
+
+Há testes para modelos de aprendizado de máquina em `tests/external_models`.
+Esses testes não são mantidos atualizados e devem ser transferidos para os testes de integração.
+
+Há um teste separado para inserts com quórum.
+Esse teste executa um cluster do ClickHouse em servidores separados e emula vários casos de falha: partição de rede, perda de pacotes (entre nós do ClickHouse, entre o ClickHouse e o ZooKeeper, entre o servidor ClickHouse e o cliente etc.), `kill -9`, `kill -STOP` e `kill -CONT`, como o [Jepsen](https://aphyr.com/tags/Jepsen). Em seguida, o teste verifica se todos os inserts confirmados foram gravados e se todos os inserts rejeitados não foram.
+
+<div id="manual-testing">
+  ## Teste manual
+</div>
+
+Ao desenvolver um novo recurso, também faz sentido testá-lo manualmente.
+Você pode fazer isso seguindo estas etapas:
+
+Compile o ClickHouse. Execute o ClickHouse no terminal: mude para o diretório `programs/clickhouse-server` e execute-o com `./clickhouse-server`. Por padrão, ele usará a configuração (`config.xml`, `users.xml` e os arquivos nos diretórios `config.d` e `users.d`) do diretório atual. Para se conectar ao servidor ClickHouse, execute `programs/clickhouse-client/clickhouse-client`.
+
+Observe que todas as ferramentas do ClickHouse (servidor, cliente etc.) são apenas links simbólicos para um único binário chamado `clickhouse`.
+Você pode encontrar esse binário em `programs/clickhouse`.
+Todas as ferramentas também podem ser invocadas como `clickhouse tool` em vez de `clickhouse-tool`.
+
+Como alternativa, você pode instalar o pacote do ClickHouse: seja a versão estável do repositório do ClickHouse, seja compilando o pacote por conta própria com `./release` na raiz do código-fonte do ClickHouse.
+Em seguida, inicie o servidor com `sudo clickhouse start` (ou `stop` para parar o servidor).
+Verifique os logs em `/etc/clickhouse-server/clickhouse-server.log`.
+
+Quando o ClickHouse já estiver instalado no seu sistema, você pode compilar um novo binário `clickhouse` e substituir o binário existente:
+
+```bash
+$ sudo clickhouse stop
+$ sudo cp ./clickhouse /usr/bin/
+$ sudo clickhouse start
+```
+
+Você também pode parar o clickhouse-server do sistema e executar sua própria instância com a mesma configuração, mas com logging no terminal:
+
+```bash
+$ sudo clickhouse stop
+$ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+Exemplo com gdb:
+
+```bash
+$ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+Se o clickhouse-server do sistema já estiver em execução e você não quiser pará-lo, pode alterar os números de porta no seu `config.xml` (ou sobrescrevê-los em um arquivo no diretório `config.d`), definir o caminho de dados adequado e executá-lo.
+
+O binário `clickhouse` quase não tem dependências e funciona em uma ampla variedade de distribuições Linux.
+Para testar suas alterações de forma rápida e prática em um servidor, você pode simplesmente usar `scp` para copiar seu binário `clickhouse` recém-compilado para o servidor e então executá-lo como nos exemplos acima.
+
+<div id="build-tests">
+  ## Testes de build
+</div>
+
+Os testes de build permitem verificar se a build não está com problemas em várias configurações alternativas e em alguns outros sistemas.
+Esses testes também são automatizados.
+
+Exemplos:
+
+* compilação cruzada para Darwin x86&#95;64 (macOS)
+* compilação cruzada para FreeBSD x86&#95;64
+* compilação cruzada para Linux AArch64
+* build no Ubuntu com bibliotecas de pacotes do sistema (desaconselhado)
+* build com vinculação dinâmica de bibliotecas (desaconselhado)
+
+Por exemplo, fazer build com pacotes do sistema é uma prática ruim, porque não podemos garantir qual versão exata dos pacotes um sistema terá.
+Mas isso é realmente necessário para os mantenedores do Debian.
+Por esse motivo, pelo menos temos que oferecer suporte a essa variante de build.
+Outro exemplo: a vinculação dinâmica é uma fonte comum de problemas, mas é necessária para alguns entusiastas.
+
+Embora não possamos executar todos os testes em todas as variantes de build, queremos verificar pelo menos que as várias variantes de build não estejam com problemas.
+Para isso, usamos testes de build.
+
+Também testamos se não há unidades de tradução longas demais para compilar ou que exijam RAM demais.
+
+Também testamos se não há frames de pilha grandes demais.
+
+<div id="testing-for-protocol-compatibility">
+  ## Testando a compatibilidade do protocolo
+</div>
+
+Quando estendemos o protocolo de rede do ClickHouse, testamos manualmente se o clickhouse-client antigo funciona com o clickhouse-server novo e se o clickhouse-client novo funciona com o clickhouse-server antigo (simplesmente executando os binários dos pacotes correspondentes).
+
+Também testamos alguns casos automaticamente com testes de integração:
+
+* se os dados gravados por uma versão antiga do ClickHouse podem ser lidos com sucesso pela nova versão;
+* se as consultas distribuídas funcionam em um cluster com diferentes versões do ClickHouse.
+
+<div id="help-from-the-compiler">
+  ## Ajuda do compilador
+</div>
+
+O código principal do ClickHouse (ou seja, o que fica no diretório `src`) é compilado com `-Wall -Wextra -Werror` e com alguns avisos adicionais habilitados.
+No entanto, essas opções não são habilitadas para bibliotecas de terceiros.
+
+O Clang tem ainda mais avisos úteis — você pode procurá-los com `-Weverything` e escolher alguns para incluir na compilação padrão.
+
+Sempre usamos clang para compilar o ClickHouse, tanto em desenvolvimento quanto em produção.
+Você pode compilar na sua própria máquina no modo de depuração (para economizar a bateria do seu laptop), mas observe que o compilador é capaz de gerar mais avisos com `-O3` devido ao melhor controle de fluxo e à análise interprocedural.
+Ao compilar com clang no modo de depuração, é usada a versão de depuração do `libc++`, o que permite detectar mais erros em tempo de execução.
+
+<div id="sanitizers">
+  ## Sanitizers
+</div>
+
+<Note>
+  Se o processo (servidor ClickHouse ou cliente) travar ao iniciar quando executado localmente, talvez seja necessário desativar a randomização do layout do espaço de endereçamento: `sudo sysctl kernel.randomize_va_space=0`
+</Note>
+
+<div id="address-sanitizer">
+  ### Sanitizador de endereços
+</div>
+
+Executamos testes funcionais, de integração, de estresse e unitários sob ASan a cada commit.
+
+<div id="thread-sanitizer">
+  ### Sanitizador de threads
+</div>
+
+Executamos testes funcionais, de integração, de estresse e unitários com o TSan a cada commit.
+
+<div id="memory-sanitizer">
+  ### Sanitizador de memória
+</div>
+
+Executamos testes funcionais, de integração, de estresse e unitários com o MSan a cada commit.
+
+<div id="undefined-behaviour-sanitizer">
+  ### Sanitizador de comportamento indefinido
+</div>
+
+Executamos testes funcionais, de integração, de estresse e unitários com o UBSan a cada commit.
+O código de algumas bibliotecas de terceiros não é instrumentado para detectar UB.
+
+<div id="valgrind-memcheck">
+  ### Valgrind (memcheck)
+</div>
+
+Costumávamos executar os testes funcionais no Valgrind durante a noite, mas isso não é mais feito.
+Isso leva várias horas.
+Atualmente, há um falso positivo conhecido na biblioteca `re2`; veja [este artigo](https://research.swtch.com/sparse).
+
+<div id="fuzzing">
+  ## Fuzzing
+</div>
+
+O fuzzing do ClickHouse é implementado tanto com [libFuzzer](https://llvm.org/docs/LibFuzzer.html) quanto com consultas SQL aleatórias.
+Todos os testes de fuzzing devem ser executados com sanitizers (Address e Undefined).
+
+O LibFuzzer é usado para testes de fuzzing isolados de código de biblioteca.
+Os fuzzers são implementados como parte do código de teste e têm o sufixo &quot;&#95;fuzzer&quot; no nome.
+Um exemplo de fuzzer pode ser encontrado em `src/Parsers/fuzzers/lexer_fuzzer.cpp`.
+As configurações, os dicionários e o corpus específicos do LibFuzzer são armazenados em `tests/fuzz`.
+Incentivamos você a escrever testes de fuzzing para toda funcionalidade que lide com entrada do usuário.
+
+Os fuzzers não são compilados por padrão.
+Para compilar os fuzzers, as opções `-DENABLE_FUZZING=1` e `-DENABLE_TESTS=1` devem ser definidas.
+Recomendamos desabilitar o Jemalloc ao compilar os fuzzers.
+A configuração usada para integrar o fuzzing do ClickHouse ao
+Google OSS-Fuzz pode ser encontrada em `docker/fuzz`.
+
+Também usamos um teste de fuzzing simples para gerar consultas SQL aleatórias e verificar se o servidor não falha ao executá-las.
+Você pode encontrá-lo em `00746_sql_fuzzy.pl`.
+Esse teste deve ser executado continuamente (durante a noite e por mais tempo).
+
+Também usamos um fuzzer de consultas sofisticado baseado em AST, capaz de encontrar uma enorme quantidade de casos extremos.
+Ele faz permutações e substituições aleatórias na AST das consultas.
+Ele reutiliza nós da AST de testes anteriores no fuzzing de testes subsequentes, processando-os em ordem aleatória.
+Você pode saber mais sobre esse fuzzer [neste artigo do blog](https://clickhouse.com/blog/fuzzing-click-house).
+
+<div id="stress-test">
+  ## Teste de estresse
+</div>
+
+Testes de estresse são outro caso de fuzzing.
+Executa todos os testes funcionais em paralelo, em ordem aleatória, com um único servidor.
+Os resultados dos testes não são verificados.
+
+Verifica-se que:
+
+* o servidor não trava, e nenhum trap de depuração ou do sanitizer é acionado;
+* não há deadlocks;
+* a estrutura do banco de dados é consistente;
+* o servidor pode ser encerrado com sucesso após o teste e iniciado novamente sem exceções.
+
+Há cinco variantes (Debug, ASan, TSan, MSan, UBSan).
+
+<div id="thread-fuzzer">
+  ## Thread fuzzer
+</div>
+
+Thread Fuzzer (por favor, não confunda com o sanitizador de thread) é outro tipo de fuzzing que permite randomizar a ordem de execução das threads.
+Ele ajuda a encontrar ainda mais casos de borda.
+
+<div id="security-audit">
+  ## Auditoria de segurança
+</div>
+
+Nossa Equipe de Segurança fez uma análise geral básica dos recursos do ClickHouse sob a ótica da segurança.
+
+<div id="static-analyzers">
+  ## Analisadores estáticos
+</div>
+
+Executamos o `clang-tidy` a cada commit.
+As verificações do `clang-static-analyzer` também estão ativadas.
+O `clang-tidy` também é usado para algumas verificações de estilo.
+
+Avaliamos `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`.
+Você encontrará instruções de uso no diretório `tests/instructions/`.
+
+Se você usa o `CLion` como IDE, pode aproveitar algumas verificações do `clang-tidy` prontas para uso.
+
+Também usamos `shellcheck` para a análise estática de scripts shell.
+
+<div id="hardening">
+  ## Endurecimento
+</div>
+
+Na compilação de depuração, usamos um allocator personalizado que aplica ASLR às alocações em nível de usuário.
+
+Também protegemos manualmente regiões de memória que devem permanecer somente leitura após a alocação.
+
+Na compilação de depuração, também incluímos uma customização da libc que garante que nenhuma função &quot;prejudicial&quot; (obsoleta, insegura, não segura para threads) seja chamada.
+
+Asserções de depuração são amplamente usadas.
+
+Na compilação de depuração, se for lançada uma exceção com o código &quot;logical error&quot; (o que implica um bug), o programa é encerrado imediatamente.
+Isso permite usar exceções na compilação de release, mas tratá-las como uma asserção na compilação de depuração.
+
+A versão de depuração do jemalloc é usada nas compilações de depuração.
+A versão de depuração do libc++ é usada nas compilações de depuração.
+
+<div id="runtime-integrity-checks">
+  ## Verificações de integridade em tempo de execução
+</div>
+
+Os dados armazenados em disco têm checksum.
+Os dados em tabelas MergeTree têm checksum de três formas simultaneamente* (blocos de dados comprimidos, blocos de dados descomprimidos, checksum total dos blocos).
+Os dados transferidos pela rede entre cliente e servidor ou entre servidores também têm checksum.
+A replicação garante que os dados nas réplicas sejam idênticos bit a bit.
+
+Isso é necessário para proteger contra falhas de hardware (bit rot em mídias de armazenamento, inversões de bits na RAM do servidor, inversões de bits na RAM do controlador de rede, inversões de bits na RAM do switch de rede, inversões de bits na RAM do cliente, inversões de bits no wire).
+Observe que inversões de bits são comuns e podem ocorrer até mesmo com RAM ECC e na presença de checksums TCP (se você consegue executar milhares de servidores processando petabytes de dados todos os dias).
+[Veja o vídeo (russo)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+
+O ClickHouse fornece diagnósticos que ajudam engenheiros de operações a identificar hardware defeituoso.
+
+* e isso não é lento.
+
+<div id="code-style">
+  ## Estilo de código
+</div>
+
+As regras de estilo de código estão descritas [aqui](/pt-BR/resources/develop-contribute/contribute/style).
+
+Para verificar algumas violações comuns de estilo, você pode usar o script `utils/check-style`.
+
+Para garantir o estilo adequado do seu código, você pode usar `clang-format`.
+O arquivo `.clang-format` fica na raiz do código-fonte.
+Ele corresponde, em grande parte, ao nosso estilo de código atual.
+Mas não é recomendado aplicar `clang-format` a arquivos existentes, porque isso piora a formatação.
+Você pode usar a ferramenta `clang-format-diff`, que pode ser encontrada no repositório do código-fonte do clang.
+
+Como alternativa, você pode tentar usar a ferramenta `uncrustify` para reformatar seu código.
+A configuração está em `uncrustify.cfg`, na raiz do código-fonte.
+Ela é menos testada do que `clang-format`.
+
+O `CLion` tem seu próprio formatador de código, que precisa ser ajustado ao nosso estilo de código.
+
+<div id="test-coverage">
+  ## Cobertura de testes
+</div>
+
+Também monitoramos a cobertura de testes, mas apenas dos testes funcionais e apenas do clickhouse-server.
+Ela é realizada diariamente.
+
+<div id="tests-for-tests">
+  ## Testes dos testes
+</div>
+
+Há uma verificação automatizada para detectar testes instáveis.
+Ela executa todos os novos testes 100 vezes (nos testes funcionais) ou 10 vezes (nos testes de integração).
+Se o teste falhar ao menos uma vez, ele é considerado instável.
+
+<div id="test-automation">
+  ## Automação de testes
+</div>
+
+Executamos os testes com [GitHub Actions](https://github.com/features/actions).
+
+Os jobs de build e os testes são executados no Sandbox a cada commit.
+Os pacotes gerados e os resultados dos testes são publicados no GitHub e podem ser baixados por links diretos.
+Os artefatos ficam armazenados por vários meses.
+Ao enviar um pull request no GitHub, nós o marcamos como &quot;can be tested&quot;, e nosso sistema de CI compila pacotes do ClickHouse (release, debug, com address sanitizer etc.) para você.

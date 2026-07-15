@@ -26,7 +26,7 @@ namespace
         std::string buffer;
         buffer.reserve(buffer_size);
 
-        struct passwd passwd_entry;
+        struct passwd passwd_entry{};
         struct passwd * result = nullptr;
         const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
 
@@ -43,7 +43,7 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
 {
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
-    struct stat statbuf;
+    struct stat statbuf{};
     if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         auto effective_user = getUserName(effective_user_id);
