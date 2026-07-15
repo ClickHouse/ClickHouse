@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -4121,10 +4122,22 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+    try
     {
-        hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
-        hash.update(static_cast<UInt8>(is_array_join_left));
+        if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+        {
+            hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+            hash.update(static_cast<UInt8>(is_array_join_left));
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        /// `arrayJoinExpressionList` uses the legacy single-`ARRAY JOIN` AST accessor, which throws
+        /// `NOT_IMPLEMENTED` for queries with more than one `ARRAY JOIN` (valid under the analyzer).
+        /// Conservative for cache eligibility: disable the cache fail-close rather than fail the query.
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
+            return 0;
+        throw;
     }
     if (const auto prewhere = select.prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
