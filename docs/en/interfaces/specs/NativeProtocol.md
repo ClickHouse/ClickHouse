@@ -151,7 +151,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | On an **asynchronous** INSERT (`async_insert = 1`), once the insert is flushed the server sends an extra [`Progress`](#progress) packet, then the insert's `ProfileEvents`, before `EndOfStream`. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing Progress. The Progress wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time; the written-row counters are reported via the accompanying ProfileEvents. A client that already drains interleaved Progress needs no format change, only to tolerate one more packet. |
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
-| RAW_QUERY_PARAMETERS            | 54487   | Query                  | Changes the encoding of the Query [`parameters`](#query) list (field 8). Below this version parameters are a `Parameter[]`: Setting-style `(key, flags, value)` triples terminated by an empty key. At v54487+ they are a `VarUInt count` followed by `count` repeated `(String name, String value)` pairs, with no flags and no empty-key terminator. The old encoding routed each parameter through a `Settings` object on the client, which normalized the value (for example `max_threads=0` became `auto(N)`) and alias-resolved the name whenever a parameter name collided with a builtin setting name or alias, corrupting or losing such parameters (issue #85768). The raw name/value encoding transports the parameter text verbatim. Required once negotiated version ≥ 54487: omitting it, or using the old framing, desynchronizes the rest of the connection. See [Parameter](#parameter). |
+| RAW_QUERY_PARAMETERS            | 54488   | Query                  | Changes the encoding of the Query [`parameters`](#query) list (field 8). Below this version parameters are a `Parameter[]`: Setting-style `(key, flags, value)` triples terminated by an empty key. At v54488+ they are a `VarUInt count` followed by `count` repeated `(String name, String value)` pairs, with no flags and no empty-key terminator. The old encoding routed each parameter through a `Settings` object on the client, which normalized the value (for example `max_threads=0` became `auto(N)`) and alias-resolved the name whenever a parameter name collided with a builtin setting name or alias, corrupting or losing such parameters (issue #85768). The raw name/value encoding transports the parameter text verbatim. Required once negotiated version ≥ 54488: omitting it, or using the old framing, desynchronizes the rest of the connection. See [Parameter](#parameter). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -518,7 +518,7 @@ Client → Server.
 | 5 | stage          | VarUInt     | universal    | always                                   | Query processing stage. `0` = FetchColumns, `1` = WithMergeableState, `2` = Complete, `3` = WithMergeableStateAfterAggregation, `4` = WithMergeableStateAfterAggregationAndLimit, `7` = QueryPlan. Values `3`/`4` appear in distributed queries; `7` accompanies a serialized query plan. External clients normally send `2`. |
 | 6 | compression    | VarUInt     | universal    | always                                   | 0 = disabled, 1 = enabled |
 | 7 | query_body     | String      | universal    | always                                   | SQL text |
-| 8 | parameters     | Parameter[] | client       | PARAMETERS (v54459)                      | See [Parameter](#parameter). Two encodings: below v54487 a `Parameter[]` terminated by an empty key; at v54487+ (`RAW_QUERY_PARAMETERS`) a `VarUInt count` followed by `count` `(String name, String value)` pairs. |
+| 8 | parameters     | Parameter[] | client       | PARAMETERS (v54459)                      | See [Parameter](#parameter). Two encodings: below v54488 a `Parameter[]` terminated by an empty key; at v54488+ (`RAW_QUERY_PARAMETERS`) a `VarUInt count` followed by `count` `(String name, String value)` pairs. |
 
 ### ClientInfo (embedded in Query) {#clientinfo}
 
@@ -612,7 +612,7 @@ The `flags` field packs:
 
 Query parameters, for parameterized queries like `SELECT {x:UInt64}`. The encoding depends on the negotiated version.
 
-**Below v54487.** Each parameter is encoded identically to a [Setting](#setting) with the `Custom` flag (`0x02`) set, and the list is terminated by an empty key in the same way.
+**Below v54488.** Each parameter is encoded identically to a [Setting](#setting) with the `Custom` flag (`0x02`) set, and the list is terminated by an empty key in the same way.
 
 | # | Field | Type    | Role   | Description |
 |---|-------|---------|--------|-------------|
@@ -620,7 +620,7 @@ Query parameters, for parameterized queries like `SELECT {x:UInt64}`. The encodi
 | 2 | flags | VarUInt | client | Always `0x02` (Custom) |
 | 3 | value | String  | client | Parameter value as string. See the note below on quoting. |
 
-**At v54487+ (`RAW_QUERY_PARAMETERS`).** The list is a `VarUInt count` followed by `count` `(name, value)` pairs. There are no flags and no empty-key terminator.
+**At v54488+ (`RAW_QUERY_PARAMETERS`).** The list is a `VarUInt count` followed by `count` `(name, value)` pairs. There are no flags and no empty-key terminator.
 
 | # | Field | Type    | Role   | Description |
 |---|-------|---------|--------|-------------|
@@ -633,11 +633,11 @@ The old Setting-based encoding routed each parameter through a `Settings` object
 :::note
 The on-wire value encoding differs between the two framings, so a client must send the right form for the negotiated version.
 
-**Below v54487.** The value is a `SettingFieldCustom` dump (`Field::dump()`), i.e. the quoted SQL representation. A `String`-typed parameter is sent single-quoted: the value for `{name:String}` is `'Alice'`.
+**Below v54488.** The value is a `SettingFieldCustom` dump (`Field::dump()`), i.e. the quoted SQL representation. A `String`-typed parameter is sent single-quoted: the value for `{name:String}` is `'Alice'`.
 
-**At v54487+ (`RAW_QUERY_PARAMETERS`).** The client sends the parameter value bytes verbatim. It does not re-escape them: `SET param_name = 'Alice'` reaches the wire as the raw bytes `Alice` (the client parser strips the surrounding SQL quotes), so a client must send `Alice`, not `'Alice'` (sending `'Alice'` substitutes the quotes into the `String`).
+**At v54488+ (`RAW_QUERY_PARAMETERS`).** The client sends the parameter value bytes verbatim. It does not re-escape them: `SET param_name = 'Alice'` reaches the wire as the raw bytes `Alice` (the client parser strips the surrounding SQL quotes), so a client must send `Alice`, not `'Alice'` (sending `'Alice'` substitutes the quotes into the `String`).
 
-The server then reads each value with `deserializeTextEscaped` (`_request_body` uses `deserializeWholeText`). Because the sender does not escape but the reader un-escapes, values containing escape-sensitive bytes are not represented portably on this path: a raw backslash begins an escape sequence (`a\b` is read as `a` + backspace), and a raw tab or newline terminates the value (`a\tb` and `a\nb` fail with `BAD_QUERY_PARAMETER`). This is not specific to `RAW_QUERY_PARAMETERS`: the below-v54487 encoding un-quotes the `SettingFieldCustom` dump back to the same raw bytes before the same `deserializeTextEscaped` step, so both framings share this behavior. A client that needs such bytes in a `String` value must avoid raw tab/newline/backslash in the parameter text.
+The server then reads each value with `deserializeTextEscaped` (`_request_body` uses `deserializeWholeText`). Because the sender does not escape but the reader un-escapes, values containing escape-sensitive bytes are not represented portably on this path: a raw backslash begins an escape sequence (`a\b` is read as `a` + backspace), and a raw tab or newline terminates the value (`a\tb` and `a\nb` fail with `BAD_QUERY_PARAMETER`). This is not specific to `RAW_QUERY_PARAMETERS`: the below-v54488 encoding un-quotes the `SettingFieldCustom` dump back to the same raw bytes before the same `deserializeTextEscaped` step, so both framings share this behavior. A client that needs such bytes in a `String` value must avoid raw tab/newline/backslash in the parameter text.
 :::
 
 ### Data (packet type 1 server→client, packet type 2 client→server) {#data}
