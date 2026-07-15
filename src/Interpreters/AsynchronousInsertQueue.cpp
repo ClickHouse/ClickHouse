@@ -29,7 +29,6 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -158,25 +157,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field);
     }
 
-    /// The protocol version only enters the batching key when it changes how the buffered bytes
-    /// are reparsed on flush: Parsed entries in a revision-sensitive format (Native/Buffers).
-    /// Preprocessed entries are already-materialized Blocks (for example the native TCP path), and
-    /// other parsers (CSV, JSONEachRow, ...) ignore the version, so keying on it there would split
-    /// otherwise-identical batches for no reason (e.g. two TCP clients on revisions 54486 and 54487).
-    /// The stored client_protocol_version is left untouched: it is restored verbatim on the flush
-    /// context so server-side outputs match the synchronous path; only the key value is normalized.
-    key_client_protocol_version = client_protocol_version;
-    if (data_kind != AsynchronousInsertQueueDataKind::Parsed)
-    {
-        key_client_protocol_version = 0;
-    }
-    else if (const auto * insert_ast = query->as<ASTInsertQuery>())
-    {
-        if (!boost::iequals(insert_ast->format, "Native") && !boost::iequals(insert_ast->format, "Buffers"))
-            key_client_protocol_version = 0;
-    }
-
-    siphash.update(key_client_protocol_version);
+    /// The protocol version is part of the batching key. It governs how a revision-sensitive
+    /// input body is reparsed and the revision of any revision-sensitive server-side output the
+    /// flush produces, and the flush restores a single version onto the shared context, so entries
+    /// written at different revisions must not be coalesced into one batch (regardless of the input
+    /// format or data kind).
+    siphash.update(client_protocol_version);
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -206,7 +192,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
     client_protocol_version = other.client_protocol_version;
-    key_client_protocol_version = other.key_client_protocol_version;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -226,7 +211,6 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
         client_protocol_version = other.client_protocol_version;
-        key_client_protocol_version = other.key_client_protocol_version;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;

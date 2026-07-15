@@ -114,37 +114,20 @@ TEST(AsyncInsertKey, ClientProtocolVersion)
     ASTPtr native = parse("INSERT INTO test FORMAT Native");
     ASTPtr values = parse("INSERT INTO test (a, b, c) VALUES (1, 2, 3)");
 
-    /// Parsed + revision-sensitive format (Native): the buffered bytes are reparsed at the request's
-    /// protocol version on flush, so the version is part of the key and different revisions do not batch.
+    /// The protocol version is part of the batching key for every input format and data kind:
+    /// the flush restores one version onto the shared context, governing both the reparse of a
+    /// revision-sensitive input body and the revision of any revision-sensitive server-side output
+    /// (e.g. INSERT INTO FUNCTION file(..., 'Native')). Entries written at different revisions must
+    /// never be coalesced, and identical entries at the same revision still batch.
+    for (const auto & [query, kind] : std::vector<std::pair<ASTPtr, Kind>>{
+             {native, Kind::Parsed}, {values, Kind::Parsed}, {native, Kind::Preprocessed}, {values, Kind::Preprocessed}})
     {
-        auto old_rev = make_key(native, 0, Kind::Parsed);
-        auto new_rev = make_key(native, 54488, Kind::Parsed);
+        auto old_rev = make_key(query, 0, kind);
+        auto new_rev = make_key(query, 54488, kind);
         EXPECT_NE(old_rev.hash, new_rev.hash);
         EXPECT_NE(old_rev, new_rev);
-        EXPECT_EQ(new_rev, make_key(native, 54488, Kind::Parsed));
+        EXPECT_EQ(new_rev, make_key(query, 54488, kind));
+        /// The real version is stored on the key and restored on the flush context.
+        EXPECT_EQ(new_rev.client_protocol_version, 54488u);
     }
-
-    /// Preprocessed entries are already-materialized Blocks (for example the native TCP path) and are
-    /// never reparsed, so the version must not fragment the batch even for a Native query.
-    {
-        auto old_rev = make_key(native, 0, Kind::Preprocessed);
-        auto new_rev = make_key(native, 54488, Kind::Preprocessed);
-        EXPECT_EQ(old_rev.hash, new_rev.hash);
-        EXPECT_EQ(old_rev, new_rev);
-    }
-
-    /// Parsed but revision-insensitive format (VALUES): the parser ignores the version, so different
-    /// revisions must still batch together.
-    {
-        auto old_rev = make_key(values, 0, Kind::Parsed);
-        auto new_rev = make_key(values, 54488, Kind::Parsed);
-        EXPECT_EQ(old_rev.hash, new_rev.hash);
-        EXPECT_EQ(old_rev, new_rev);
-    }
-
-    /// The real protocol version is still stored on the key even when it is normalized away for
-    /// batching: processData restores it on the flush context, so server-side outputs (e.g.
-    /// INSERT INTO FUNCTION file(..., 'Native')) match the synchronous path.
-    EXPECT_EQ(make_key(values, 54488, Kind::Parsed).client_protocol_version, 54488u);
-    EXPECT_EQ(make_key(native, 54488, Kind::Preprocessed).client_protocol_version, 54488u);
 }
