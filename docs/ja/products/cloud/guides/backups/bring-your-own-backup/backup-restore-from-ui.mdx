@@ -1,0 +1,473 @@
+---
+sidebarTitle: 'UI を使用したバックアップまたは復元'
+slug: /cloud/manage/backups/backup-restore-via-ui
+title: ユーザーインターフェイス経由でのバックアップ / 復元
+description: '独自のバケットを使用して、UI からバックアップを取得する、またはバックアップを復元する方法を説明するページ'
+doc_type: 'guide'
+keywords: ['バックアップ', '災害復旧', 'データ保護', '復元', 'Cloud の機能']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Note>
+  外部バケットへの自動バックアップは、24 時間ごとに「フル」バックアップが実行されるよう設定されており、頻度は変更できません。
+</Note>
+
+<div id="AWS">
+  ## AWS
+</div>
+
+<div id="taking-backups-to-aws">
+  ### AWS へのバックアップの作成
+</div>
+
+<div id="aws-steps">
+  #### 1. AWS で実施する手順
+</div>
+
+<Note>
+  これらの手順は、[&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) で説明されているセキュアな S3 の設定と似ていますが、ロールの権限には追加で必要なアクションがあります
+</Note>
+
+以下の手順を AWS アカウントで実施してください。
+
+<Steps>
+  <Step>
+    ##### AWS S3 バケットを作成する
+
+    バックアップのエクスポート先となる AWS S3 バケットを、アカウント内に作成します。
+  </Step>
+
+  <Step>
+    ##### IAM ロールを作成する
+
+    AWS はロールベースの認証を使用するため、ClickHouse Cloud サービスが引き受けてこのバケットに書き込める IAM ロールを作成します。
+
+    * a. ClickHouse Cloud サービスの設定ページにある Network security information から ARN を取得します。次のような形式です。
+
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
+
+    * b. このロールに対して、次のような信頼ポリシーを作成します。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "backup service",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS":  "arn:aws:iam::463754717262:role/CH-S3-bordeaux-ar-90-ue2-29-Role"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ##### ロールの権限を更新する
+
+    この ClickHouse Cloud サービスが S3 バケットに書き込めるように、このロールの権限も設定する必要があります。
+    これを行うには、このような JSON の権限ポリシーをロール用に作成します。両方の resource には、自身のバケット ARN を指定してください。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:DeleteObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*/.lock"
+          ],
+          "Effect": "Allow"
+        }
+      ]
+    }
+    ```
+  </Step>
+</Steps>
+
+<div id="cloud-steps">
+  #### 2. ClickHouse Cloud で行う手順
+</div>
+
+外部バケットを設定するには、ClickHouse Cloud コンソールで以下の手順に従ってください。
+
+<Steps>
+  <Step>
+    ##### 外部バックアップを変更する
+
+    Settings ページで、Set up external backup をクリックします。
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="外部バックアップを変更する" size="lg" />
+  </Step>
+
+  <Step>
+    ##### AWS IAM Role ARN と S3 バケットの詳細を設定する
+
+    次の画面で、先ほど作成した AWS IAM Role ARN と、以下の形式の S3 バケット URL を入力します。
+
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="AWS IAM Role ARN と S3 バケットの詳細を設定する" size="lg" />
+  </Step>
+
+  <Step>
+    ##### 変更を保存する
+
+    設定を保存するには、“Save External Bucket” をクリックします。
+  </Step>
+
+  <Step>
+    ##### デフォルトのスケジュールからバックアップスケジュールを変更する
+
+    以降、外部バックアップはデフォルトのスケジュールでお使いのバケットに対して実行されます。
+    また、“Settings” ページからバックアップスケジュールを設定することもできます。
+    別のスケジュールを設定した場合は、そのカスタムスケジュールに従ってお使いの
+    バケットにバックアップが書き込まれ、デフォルトのスケジュール (24 時間ごとのバックアップ) は
+    ClickHouse Cloud が所有するバケット内のバックアップに使用されます。
+  </Step>
+
+  <Step>
+    ##### お使いのバケットに保存されているバックアップを表示する
+
+    バックアップページには、以下のように、お使いのバケット内のこれらのバックアップが
+    別のテーブルに表示されます。
+
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="お使いのバケットに保存されているバックアップを表示する" size="lg" />
+  </Step>
+</Steps>
+
+<div id="restoring-backups-from-aws">
+  ### AWS からバックアップを復元する
+</div>
+
+以下の手順に従って、AWS からバックアップを復元します。
+
+<Steps>
+  <Step>
+    ##### 復元先の新しいサービスを作成する
+
+    バックアップの復元先となる新しいサービスを作成します。
+  </Step>
+
+  <Step>
+    ##### サービス ARN を追加する
+
+    新しく作成したサービスの ARN (ClickHouse
+    Cloud Console のサービス設定ページにあります) を IAM ロールの信頼ポリシーに追加します。これは、上記の AWS の手順セクションにある[2 番目の手順](#create-iam-role)と同じです。これにより、新しいサービスが S3 バケットにアクセスできるようになります。
+  </Step>
+
+  <Step>
+    ##### バックアップの復元に使用する SQL コマンドを取得する
+
+    UI のバックアップ一覧の上にある「バックアップにアクセスまたは復元」リンクをクリックすると、バックアップの復元に使用する SQL コマンドを取得できます。コマンドは次のようになります。
+
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="バックアップの復元に使用する SQL コマンドを取得する" size="md" />
+
+    <Warning>
+      **バックアップを別の場所に移動する場合**
+
+      バックアップを別の場所に移動した場合は、新しい場所を参照するように復元コマンドを調整する必要があります。
+    </Warning>
+
+    <Tip>
+      **ASYNC コマンド**
+
+      復元コマンドでは、大規模な復元向けに末尾へ `ASYNC` コマンドを追加することもできます。
+      これにより復元は非同期で実行されるため、接続が失われても処理は継続します。
+      重要なのは、ASYNC コマンドは即座に成功ステータスを返すという点です。
+      ただし、これは復元が成功したことを意味するわけではありません。
+      復元が完了したかどうか、また成功したか失敗したかを確認するには、`system.backups` テーブルを監視する必要があります。
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### 復元コマンドを実行する
+
+    新しく作成したサービスの SQL コンソール で復元コマンドを実行し、バックアップを復元します。
+  </Step>
+</Steps>
+
+<div id="gcp">
+  ## GCP
+</div>
+
+<div id="taking-backups-to-gcp">
+  ### GCP へのバックアップの作成
+</div>
+
+GCP にバックアップを作成するには、以下の手順に従ってください。
+
+<div id="gcp-steps-to-follow">
+  #### GCP で実施する手順
+</div>
+
+<Steps>
+  <Step>
+    ##### GCP のストレージ バケットを作成する
+
+    バックアップのエクスポート先として、GCP アカウントにストレージ バケットを作成します。
+  </Step>
+
+  <Step>
+    ##### HMACキーとシークレット を生成する
+
+    パスワードベースの認証に必要な HMACキーとシークレット を生成します。キーを生成するには、以下の手順に従ってください。
+
+    * a. サービス アカウントを作成する
+      * I.  Google Cloud Console の IAM &amp; Admin セクションに移動し、`Service Accounts` を選択します。
+      * II. `Create Service Account` をクリックし、名前と ID を入力します。`Create and Continue` をクリックします。
+      * III. このサービス アカウントに Storage Object User ロールを付与します。
+      * IV. `Done` をクリックして、サービス アカウントの作成を完了します。
+
+    * b. HMAC key を生成する
+      * I. Google Cloud Console の Cloud ストレージに移動し、`Settings` を選択します
+      * II. Interoperability タブに移動します。
+      * III. `Service account HMAC` セクションで、`Create a key for a service account` をクリックします。
+      * IV. ドロップダウンメニューから、前の手順で作成したサービス アカウントを選択します。
+      * V. `Create key` をクリックします。
+
+    * c. 認証情報を安全に保存する:
+      * I. システムに Access ID (HMAC key) と Secret (HMAC secret) が表示されます。これらの値を保存してください。
+        このウィンドウを閉じると、secret は再表示されません。
+  </Step>
+</Steps>
+
+<div id="gcp-cloud-steps">
+  #### ClickHouse Cloud での手順
+</div>
+
+外部バケットを設定するには、ClickHouse Cloudコンソールで以下の手順を実行してください。
+
+<Steps>
+  <Step>
+    ##### 外部バックアップを変更する
+
+    `Settings` ページで、`Change external backup` をクリックします。
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="外部バックアップを変更する" size="lg" />
+  </Step>
+
+  <Step>
+    ##### GCP HMACキーとシークレットを設定する
+
+    ポップアップダイアログで、前のセクションで作成した GCP バケットのパス、HMACキー、シークレットを入力します。
+
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="GCP HMACキーとシークレットを設定する" size="md" />
+  </Step>
+
+  <Step>
+    ##### 外部バケットを保存する
+
+    `Save External Bucket` をクリックして設定を保存します。
+  </Step>
+
+  <Step>
+    ##### デフォルトのスケジュールからバックアップスケジュールを変更する
+
+    以降、外部バックアップはデフォルトのスケジュールに従ってお使いのバケットに保存されます。
+    また、`Settings` ページからバックアップスケジュールを設定することもできます。
+    別のスケジュールを設定した場合、バケットにバックアップを書き込む際にはカスタムスケジュールが使用され、
+    デフォルトのスケジュール (24時間ごとのバックアップ) は
+    ClickHouse Cloud が管理するバケット内のバックアップに使用されます。
+  </Step>
+
+  <Step>
+    ##### バケットに保存されているバックアップを表示する
+
+    以下のように、バックアップページにはお使いのバケット内のバックアップが別のテーブルに表示されます。
+
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="バケットに保存されているバックアップを表示する" size="lg" />
+  </Step>
+</Steps>
+
+<div id="gcp-restoring-backups-from-gcp">
+  ### GCP からバックアップを復元する
+</div>
+
+以下の手順に従って、GCP からバックアップを復元します。
+
+<Steps>
+  <Step>
+    ##### 復元先となる新しいサービスを作成する
+
+    バックアップの復元先となる新しいサービスを作成します。
+  </Step>
+
+  <Step>
+    ##### バックアップの復元に使用する SQL コマンドを取得する
+
+    UI のバックアップ一覧の上にある `バックアップにアクセスまたは復元` リンクをクリックして、バックアップを復元するための SQL コマンドを取得します。コマンドは次のように表示され、ドロップダウンから適切なバックアップを選択すると、そのバックアップ用の復元コマンドを取得できます。コマンドにはシークレットアクセスキーを追加する必要があります。
+
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="バックアップの復元に使用する SQL コマンドを取得する" size="md" />
+
+    <Warning>
+      **バックアップを別の場所に移動する**
+
+      バックアップを別の場所に移動した場合は、新しい場所を参照するように復元コマンドを調整する必要があります。
+    </Warning>
+
+    <Tip>
+      **ASYNC コマンド**
+
+      大規模な復元では、必要に応じて復元コマンドの末尾に `ASYNC` コマンドを追加できます。
+      これにより復元は非同期で実行されるため、接続が失われても処理は継続されます。
+      重要なのは、ASYNC コマンドは直ちに成功ステータスを返すという点です。
+      これは、復元が成功したことを意味するわけではありません。
+      復元が完了したかどうか、および成功したか失敗したかを確認するには、`system.backups` テーブルを監視する必要があります。
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### バックアップを復元する SQL コマンドを実行する
+
+    新しく作成したサービスの SQL コンソールで復元コマンドを実行し、バックアップを復元します。
+  </Step>
+</Steps>
+
+<div id="azure">
+  ## Azure
+</div>
+
+<div id="taking-backups-to-azure">
+  ### Azure へのバックアップの作成
+</div>
+
+Azure にバックアップを作成するには、以下の手順に従ってください。
+
+<div id="steps-to-follow-in-azure">
+  #### Azure での手順
+</div>
+
+<Steps>
+  <Step>
+    ##### ストレージ アカウントを作成する
+
+    Azure portal でストレージ アカウントを作成するか、バックアップの保存先として既存のストレージ アカウントを選択します。
+  </Step>
+
+  <Step>
+    ##### 接続文字列を取得する
+
+    * a. ストレージ アカウントの概要で、`Security + networking` セクションを探し、`Access keys` をクリックします。
+    * b. ここに `key1` と `key2` が表示されます。各キーの下に `Connection string` フィールドがあります。
+    * c. `Show` をクリックして接続文字列を表示します。ClickHouse Cloud での設定に使用するため、この接続文字列をコピーします。
+  </Step>
+</Steps>
+
+<div id="azure-cloud-steps">
+  #### ClickHouse Cloud で行う手順
+</div>
+
+外部バケットを設定するには、ClickHouse Cloud コンソールで以下の手順に従ってください。
+
+<Steps>
+  <Step>
+    ##### 外部バックアップを変更する
+
+    `Settings` ページで、`Change external backup` をクリックします。
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="外部バックアップを変更する" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Azure ストレージアカウントの接続文字列とコンテナー名を指定する
+
+    次の画面で、前のセクションで作成した
+    Azure ストレージアカウントの接続文字列とコンテナー名を入力します。
+
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Azure ストレージアカウントの接続文字列とコンテナー名を指定する" size="md" />
+  </Step>
+
+  <Step>
+    ##### 外部バケットを保存する
+
+    `Save External Bucket` をクリックして設定を保存します。
+  </Step>
+
+  <Step>
+    ##### デフォルトのスケジュールからバックアップスケジュールを変更する
+
+    これで、外部バックアップはデフォルトのスケジュールに従ってお使いのバケットに作成されます。必要に応じて、
+    `Settings` ページからバックアップスケジュールを設定することもできます。別のスケジュールを設定した場合は、
+    カスタムスケジュールに従ってバケットにバックアップが書き込まれ、デフォルトのスケジュール
+    (24 時間ごとのバックアップ) は ClickHouse Cloud 所有のバケット内のバックアップに使用されます。
+  </Step>
+
+  <Step>
+    ##### バケットに保存されているバックアップを表示する
+
+    バックアップページには、以下のように、バケット内のバックアップが
+    別のテーブルに表示されます。
+
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="バケットに保存されているバックアップを表示する" size="md" />
+  </Step>
+</Steps>
+
+<div id="azure-restore-steps">
+  ### Azure からバックアップを復元する
+</div>
+
+Azure からバックアップを復元するには、以下の手順に従ってください。
+
+<Steps>
+  <Step>
+    ##### 復元先となる新しいサービスを作成する
+
+    バックアップの復元先となる新しいサービスを作成します。現在、バックアップの復元先としてサポートされているのは新しいサービスのみです。
+  </Step>
+
+  <Step>
+    ##### バックアップの復元に使用する SQL コマンドを取得する
+
+    UI のバックアップ一覧の上にある `バックアップにアクセスまたは復元` リンクをクリックすると、バックアップを復元するための SQL コマンドを取得できます。コマンドは次のような形式です。ドロップダウンから適切なバックアップを選択すると、そのバックアップ専用の復元コマンドを取得できます。このコマンドには、Azure ストレージアカウントの接続文字列を追加する必要があります。
+
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Azure でバックアップを復元" size="md" />
+
+    <Warning>
+      **バックアップを別の場所に移動する場合**
+
+      バックアップを別の場所に移動した場合は、新しい場所を参照するように復元コマンドを調整する必要があります。
+    </Warning>
+
+    <Tip>
+      **ASYNC コマンド**
+
+      大規模な復元では、復元コマンドの末尾に `ASYNC` コマンドを任意で追加することもできます。
+      これにより復元は非同期で実行されるため、接続が失われても復元処理は継続されます。
+      重要なのは、ASYNC コマンドは即座に成功ステータスを返すという点です。
+      これは、復元が成功したことを意味するわけではありません。
+      復元が完了したかどうか、および成功したか失敗したかを確認するには、`system.backups` テーブルを監視する必要があります。
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### バックアップを復元する SQL コマンドを実行する
+
+    新しく作成したサービスの SQL コンソールで復元コマンドを実行し、バックアップを復元します。
+  </Step>
+</Steps>

@@ -1,0 +1,295 @@
+---
+title: 'Inserção de dados no ClickHouse'
+description: 'Como inserir dados no ClickHouse'
+keywords: ['INSERT', 'Inserção em lote']
+sidebarTitle: 'Inserção de dados no ClickHouse'
+slug: /guides/inserting-data
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="inserting-into-clickhouse-vs-oltp-databases">
+  ## Inserindo no ClickHouse vs. bancos de dados OLTP
+</div>
+
+Como banco de dados OLAP (Online Analytical Processing), o ClickHouse é otimizado para alto desempenho e escalabilidade, permitindo potencialmente a inserção de milhões de linhas por segundo.
+Isso é possível graças à combinação de uma arquitetura altamente paralelizada com compressão orientada a colunas eficiente, mas com concessões em termos de consistência imediata.
+Mais especificamente, o ClickHouse é otimizado para operações somente de acréscimo e oferece apenas garantias de consistência eventual.
+
+Em contraste, bancos de dados OLTP, como o Postgres, são especificamente otimizados para inserts transacionais com conformidade total com ACID, garantindo fortes garantias de consistência e confiabilidade.
+O PostgreSQL usa MVCC (Multi-Version Concurrency Control) para lidar com transações concorrentes, o que envolve manter várias versões dos dados.
+Essas transações podem envolver um pequeno número de linhas por vez, com uma sobrecarga considerável decorrente das garantias de confiabilidade, o que limita o desempenho de inserção.
+
+Para obter alto desempenho de inserção e, ao mesmo tempo, manter fortes garantias de consistência, você deve seguir as regras simples descritas abaixo ao inserir dados no ClickHouse.
+Seguir essas regras ajudará a evitar problemas que os usuários costumam encontrar ao usar o ClickHouse pela primeira vez e tentar replicar uma estratégia de inserção que funciona em bancos de dados OLTP.
+
+<div id="best-practices-for-inserts">
+  ## Boas práticas para inserções
+</div>
+
+<div id="insert-in-large-batch-sizes">
+  ### Faça inserções em lotes grandes
+</div>
+
+Por padrão, cada insert enviado ao ClickHouse faz com que o ClickHouse crie imediatamente uma part de armazenamento contendo os dados do insert, junto com outros metadados que precisam ser armazenados.
+Portanto, enviar uma quantidade menor de inserts, cada um contendo mais dados, em vez de enviar uma quantidade maior de inserts, cada um contendo menos dados, reduz o número de gravações necessárias.
+Em geral, recomendamos inserir dados em lotes relativamente grandes, de pelo menos 1.000 linhas por vez e, idealmente, entre 10.000 e 100.000 linhas.
+(Mais detalhes [aqui](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)).
+
+Se não for possível usar lotes grandes, use inserções assíncronas, descritas abaixo.
+
+<div id="ensure-consistent-batches-for-idempotent-retries">
+  ### Mantenha lotes consistentes para novas tentativas idempotentes
+</div>
+
+Por padrão, as inserções no ClickHouse são síncronas e idempotentes (ou seja, executar a mesma operação de inserção várias vezes tem o mesmo efeito que executá-la uma única vez).
+Para tabelas da família de engines MergeTree, o ClickHouse, por padrão, [faz a desduplicação automática das inserções](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time).
+
+Isso significa que as inserções continuam resilientes nos seguintes casos:
+
+* 1. Se o nó que recebe os dados apresentar problemas, a consulta de inserção expirará (ou retornará um erro mais específico) e não receberá confirmação.
+* 2. Se os dados forem gravados pelo nó, mas a confirmação não puder ser enviada de volta ao remetente da consulta por causa de interrupções de rede, o remetente receberá um timeout ou um erro de rede.
+
+Da perspectiva do cliente, (i) e (ii) podem ser difíceis de distinguir. No entanto, em ambos os casos, a inserção não confirmada pode simplesmente ser tentada novamente de imediato.
+Desde que a consulta de inserção repetida contenha os mesmos dados na mesma ordem, o ClickHouse ignorará automaticamente a inserção repetida se a inserção original (não confirmada) tiver sido bem-sucedida.
+
+<div id="insert-to-a-mergetree-table-or-a-distributed-table">
+  ### Inserção em uma tabela MergeTree ou em uma tabela distribuída
+</div>
+
+Recomendamos inserir diretamente em uma tabela MergeTree (ou Replicated), balanceando as requisições entre um conjunto de nós se os dados estiverem em shards e definindo `internal_replication=true`.
+Isso fará com que o ClickHouse replique os dados para qualquer shard de réplica disponível e garantirá que os dados sejam eventualmente consistentes.
+
+Se esse balanceamento de carga no lado do cliente for inconveniente, você pode inserir por meio de uma [tabela distribuída](/pt-BR/reference/engines/table-engines/special/distributed), que então distribuirá as escritas entre os nós. Novamente, é recomendável definir `internal_replication=true`.
+No entanto, é importante observar que essa abordagem é um pouco menos eficiente, pois as escritas precisam ser feitas localmente no nó com a tabela distribuída e depois enviadas aos shards.
+
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### Use inserções assíncronas para pequenos lotes
+</div>
+
+Há cenários em que o agrupamento em lotes no lado do cliente não é viável, por exemplo, em um caso de uso de observabilidade com centenas ou milhares de agentes dedicados enviando logs, métricas, traces etc.
+Nesse cenário, o transporte desses dados em tempo real é fundamental para detectar problemas e anomalias o mais rápido possível.
+Além disso, há o risco de picos de eventos nos sistemas observados, o que pode causar grandes picos de memória e problemas relacionados ao tentar manter dados de observabilidade em buffer no lado do cliente.
+Se não for possível inserir lotes grandes, você pode delegar esse agrupamento ao ClickHouse usando [inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
+
+Com inserções assíncronas, os dados são inseridos primeiro em um buffer e depois gravados no armazenamento do banco de dados em 3 etapas, como ilustrado no diagrama abaixo:
+
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Inserções do Postgres" />
+
+Com inserções assíncronas habilitadas, o ClickHouse:
+
+(1) recebe uma consulta INSERT de forma assíncrona.
+(2) grava primeiro os dados da consulta em um buffer na memória.
+(3) ordena e grava os dados como uma part no armazenamento do banco de dados, somente quando ocorre o próximo flush do buffer.
+
+Antes que ocorra o flush do buffer, os dados de outras consultas INSERT assíncronas do mesmo cliente ou de outros clientes podem ser coletados no buffer.
+A part criada a partir do flush do buffer pode conter dados de várias consultas INSERT assíncronas.
+Em geral, essa mecânica transfere o agrupamento dos dados do lado do cliente para o lado do servidor (instância do ClickHouse).
+
+<Note>
+  Observe que os dados não ficam disponíveis para consulta antes de serem gravados no armazenamento do banco de dados e que o flush do buffer é configurável.
+
+  Os detalhes completos sobre como configurar inserções assíncronas podem ser encontrados [aqui](/pt-BR/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), com uma análise aprofundada [aqui](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
+</Note>
+
+<div id="use-official-clickhouse-clients">
+  ### Use os clientes oficiais do ClickHouse
+</div>
+
+O ClickHouse tem clientes nas linguagens de programação mais populares.
+Eles são otimizados para garantir que as inserções sejam realizadas corretamente e oferecem suporte nativo a inserções assíncronas, seja diretamente, como por exemplo no [Go client](/pt-BR/integrations/language-clients/go/clickhouse-api#async-insert), seja indiretamente, quando habilitadas nas configurações em nível de consulta, usuário ou conexão.
+
+Consulte [Clientes e drivers](/pt-BR/concepts/features/interfaces/cli) para ver a lista completa de clientes e drivers do ClickHouse disponíveis.
+
+<div id="prefer-the-native-format">
+  ### Prefira o formato Native
+</div>
+
+O ClickHouse oferece suporte a muitos [formatos de entrada](/pt-BR/reference/formats/index) no momento da inserção (e da consulta).
+Essa é uma diferença importante em relação aos bancos de dados OLTP e facilita muito o carregamento de dados de fontes externas, especialmente quando combinada com [funções de tabela](/pt-BR/reference/functions/table-functions/index) e com a capacidade de carregar dados de arquivos em disco.
+Esses formatos são ideais para carregamentos ad hoc de dados e tarefas de engenharia de dados.
+
+Para aplicações que buscam o melhor desempenho de inserção, você deve inserir usando o formato [Native](/pt-BR/reference/formats/Native).
+Ele é compatível com a maioria dos clientes (como Go e Python) e garante que o servidor precise fazer o mínimo de trabalho possível, já que esse formato já é orientado a colunas.
+Com isso, a responsabilidade de converter os dados para um formato orientado a colunas fica do lado do cliente. Isso é importante para escalar inserções com eficiência.
+
+Como alternativa, você pode usar o [formato RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary) (como no cliente Java) se preferir um formato em linhas — ele normalmente é mais fácil de escrever do que o formato Native.
+Ele é mais eficiente, em termos de compressão, overhead de rede e processamento no servidor, do que formatos em linhas alternativos, como [JSON](/pt-BR/reference/formats/JSON/JSON).
+O formato [JSONEachRow](/pt-BR/reference/formats/JSON/JSONEachRow) pode ser considerado se você tiver menor throughput de gravação e quiser integrar rapidamente. Você deve estar ciente de que esse formato gera overhead de CPU no ClickHouse para parsing.
+
+<div id="use-the-http-interface">
+  ### Use a interface HTTP
+</div>
+
+Ao contrário de muitos bancos de dados tradicionais, o ClickHouse oferece suporte a uma interface HTTP.
+Você pode usá-la tanto para inserir quanto para consultar dados, usando qualquer um dos formatos acima.
+Isso geralmente é preferível ao protocolo nativo do ClickHouse, pois permite que o tráfego seja facilmente redirecionado por balanceadores de carga.
+Esperamos pequenas diferenças no desempenho de inserção com o protocolo nativo, que tem um pouco menos de sobrecarga.
+Os clientes existentes usam um ou outro desses protocolos (em alguns casos, ambos; por exemplo, o Go client).
+O protocolo nativo também permite acompanhar facilmente o progresso da consulta.
+
+Veja [Interface HTTP](/pt-BR/concepts/features/interfaces/http) para mais detalhes.
+
+<div id="basic-example">
+  ## Exemplo básico
+</div>
+
+Você pode usar o conhecido comando `INSERT INTO TABLE` no ClickHouse. Vamos inserir alguns dados na tabela que criamos no guia de início [&quot;Criando tabelas no ClickHouse&quot;](/pt-BR/get-started/quickstarts/creating-tables).
+
+```sql
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
+    (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
+    (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
+    (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
+```
+
+Para verificar se isso funcionou, vamos executar a seguinte consulta `SELECT`:
+
+```sql
+SELECT * FROM helloworld.my_first_table
+```
+
+O resultado é:
+
+```response
+user_id message                                             timestamp           metric
+101         Hello, ClickHouse!                                  2024-11-13 20:01:22     -1
+101         Granules are the smallest chunks of data read           2024-11-13 20:01:27 3.14159
+102         Insert a lot of rows per batch                          2024-11-12 00:00:00 1.41421
+102         Sort your data based on your commonly-used queries  2024-11-13 00:00:00     2.718
+```
+
+<div id="loading-data-from-postgres">
+  ## Carregando dados do Postgres
+</div>
+
+Para carregar dados do Postgres, você pode usar:
+
+* `ClickPipes`, uma ferramenta de ETL projetada especificamente para replicação de bancos de dados PostgreSQL. Ela está disponível em ambas as opções:
+  * ClickHouse Cloud - disponível por meio do nosso [serviço gerenciado de ingestão](/pt-BR/integrations/clickpipes/postgres/index) no ClickPipes.
+  * Autogerenciado - por meio do [projeto open-source PeerDB](https://github.com/PeerDB-io/peerdb).
+* O [mecanismo de tabela PostgreSQL](/pt-BR/integrations/connectors/data-sources/postgres#using-the-postgresql-table-engine) para ler dados diretamente, como mostrado nos exemplos anteriores. Em geral, isso é apropriado se a replicação em lote com base em um watermark conhecido, por exemplo, um timestamp, for suficiente, ou se for uma migração pontual. Essa abordagem pode escalar para dezenas de milhões de linhas. Usuários que desejam migrar conjuntos de dados maiores devem considerar várias requisições, cada uma tratando de um fragmento dos dados. Tabelas de staging podem ser usadas para cada fragmento antes que suas partições sejam movidas para uma tabela final. Isso permite repetir requisições que falharem. Para mais detalhes sobre essa estratégia de carregamento em massa, veja aqui.
+* Os dados podem ser exportados do PostgreSQL no formato CSV. Depois, podem ser inseridos no ClickHouse a partir de arquivos locais ou por meio de armazenamento de objetos usando funções de tabela.
+
+<Info>
+  **Precisa de ajuda para inserir grandes volumes de dados?**
+
+  Se você precisar de ajuda para inserir grandes volumes de dados ou encontrar algum erro ao importar dados para o ClickHouse Cloud, entre em contato conosco pelo e-mail support@clickhouse.com, e poderemos ajudar.
+</Info>
+
+<div id="inserting-data-from-command-line">
+  ## Inserção de dados pela linha de comando
+</div>
+
+**Pré-requisitos**
+
+* Você [instalou](/pt-BR/get-started/setup/install) o ClickHouse
+* O `clickhouse-server` está em execução
+* Você tem acesso a um terminal com `wget`, `zcat` e `curl`
+
+Neste exemplo, você verá como inserir um arquivo CSV no ClickHouse pela linha de comando usando o `clickhouse-client` em batch mode. Para mais informações e exemplos de inserção de dados pela linha de comando com `clickhouse-client` em batch mode, consulte [&quot;Batch mode&quot;](/pt-BR/concepts/features/interfaces/client#batch-mode).
+
+Usaremos o [Hacker News dataset](/pt-BR/get-started/sample-datasets/hacker-news) neste exemplo, que contém 28 milhões de linhas de dados do Hacker News.
+
+<Steps>
+  <Step>
+    ### Baixe o CSV
+
+    Execute o comando a seguir para baixar uma versão CSV do dataset do nosso bucket público do S3:
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    Com 4,6 GB e 28 milhões de linhas, esse arquivo compactado deve levar de 5 a 10 minutos para ser baixado.
+  </Step>
+
+  <Step>
+    ### Crie a tabela
+
+    Com o `clickhouse-server` em execução, você pode criar uma tabela vazia com o esquema a seguir diretamente pela linha de comando usando o `clickhouse-client` em batch mode:
+
+    ```bash
+    clickhouse-client <<'_EOF'
+    CREATE TABLE hackernews(
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    _EOF
+    ```
+
+    Se não houver erros, a tabela foi criada com sucesso. No comando acima, aspas simples são usadas ao redor do delimitador heredoc (`_EOF`) para evitar qualquer interpolação. Sem as aspas simples, seria necessário escapar os backticks ao redor dos nomes das colunas.
+  </Step>
+
+  <Step>
+    ### Insira os dados pela linha de comando
+
+    Em seguida, execute o comando abaixo para inserir na tabela os dados do arquivo que você baixou anteriormente:
+
+    ```bash
+    zcat < hacknernews.csv.gz | ./clickhouse client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    Como os dados estão compactados, primeiro precisamos descompactar o arquivo usando uma ferramenta como `gzip`, `zcat` ou similar e, em seguida, direcionar os dados descompactados para o `clickhouse-client` com a instrução `INSERT` e o `FORMAT` apropriados.
+
+    <Note>
+      Ao inserir dados com o `clickhouse-client` no modo interativo, é possível deixar que o ClickHouse faça a descompactação na inserção usando a cláusula `COMPRESSION`. O ClickHouse pode detectar automaticamente o tipo de compressão pela extensão do arquivo, mas você também pode especificá-lo explicitamente.
+
+      A consulta de inserção ficaria assim:
+
+      ```bash
+      clickhouse-client --query "INSERT INTO hackernews FROM INFILE 'hacknernews.csv.gz' COMPRESSION 'gzip' FORMAT CSV;"
+      ```
+    </Note>
+
+    Quando a inserção terminar, você poderá executar o comando a seguir para ver o número de linhas na tabela `hackernews`:
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+
+  <Step>
+    ### inserindo dados pela linha de comando com curl
+
+    Nas etapas anteriores, você primeiro baixou o arquivo CSV para sua máquina local usando `wget`. Também é possível inserir os dados diretamente da URL remota com um único comando.
+
+    Execute o comando a seguir para truncar os dados da tabela `hackernews`, para que você possa inseri-los novamente sem a etapa intermediária de baixar o arquivo para sua máquina local:
+
+    ```bash
+    clickhouse-client --query "TRUNCATE hackernews"
+    ```
+
+    Agora execute:
+
+    ```bash
+    curl https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz | zcat | clickhouse-client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    Agora você pode executar o mesmo comando de antes para verificar que os dados foram inseridos novamente:
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+</Steps>

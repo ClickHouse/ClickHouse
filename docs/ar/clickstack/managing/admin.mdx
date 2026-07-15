@@ -1,0 +1,26 @@
+---
+slug: /use-cases/observability/clickstack/admin
+title: 'ClickStack - الإدارة'
+sidebarTitle: 'الإدارة'
+description: 'كيفية تنفيذ مهام الإدارة الأساسية في ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'admin']
+---
+
+تُنفَّذ معظم المهام الإدارية في ClickStack مباشرةً على قاعدة بيانات ClickHouse الأساسية. ويجب أن يكون المستخدمون الذين ينشرون ClickStack على دراية بمفاهيم ClickHouse وأساسيات الإدارة.
+
+وتتضمن العمليات الإدارية عادةً تنفيذ عبارات DDL. وتعتمد الخيارات المتاحة على ما إذا كنت تستخدم Managed ClickStack أو ClickStack Open Source.
+
+<div id="clickstack-oss">
+  ## ClickStack Open Source
+</div>
+
+في عمليات نشر ClickStack Open Source، ينفّذ المستخدمون المهام الإدارية باستخدام [عميل ClickHouse](/ar/concepts/features/interfaces/cli). يتصل العميل بقاعدة البيانات عبر بروتوكول ClickHouse الأصلي، ويدعم عمليات DDL الكاملة والعمليات الإدارية، كما يوفّر استجابة تفاعلية للاستعلامات.
+
+<div id="clickstack-managed">
+  ## Managed ClickStack
+</div>
+
+في Managed ClickStack، يمكن للمستخدمين أيضًا استخدام كلٍّ من عميل ClickHouse و[SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). وللاتصال عبر العميل، سيحتاج المستخدمون إلى الحصول على [بيانات اعتماد الخدمة](/ar/products/cloud/guides/sql-console/connection-details).
+
+تُعد [SQL Console](/ar/products/cloud/features/sql-console-features/sql-console) واجهةً ويب توفّر مزيدًا من السهولة، بما في ذلك الإكمال التلقائي لـ SQL، وسجلّ الاستعلامات، وإنشاء الرسوم البيانية المدمج لتصوّر النتائج.

@@ -1,0 +1,56 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: 'ダッシュボード'
+title: Managed Postgres 監視ダッシュボード
+description: 'Managed Postgres サービス向けの Cloud Console 内蔵ダッシュボード'
+keywords: ['managed postgres', '監視', 'ダッシュボード', 'Cloud Console', 'cpu', 'メモリ', 'iops']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+インスタンスの左側のサイドバーにある**監視**タブには、
+選択した時間範囲におけるリソース使用状況とデータベースアクティビティの
+リアルタイムグラフが表示されます。
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS、CPU 使用率、メモリ、ディスク、ネットワークトラフィック、データベースサイズ、接続数、スループット、トランザクション数、キャッシュヒット率、デッドロックを表示する監視ダッシュボード" size="lg" border />
+
+<div id="panels">
+  ## パネル
+</div>
+
+ダッシュボードでは、メトリクスを次のパネルに分類しています。
+
+* **IOPS** — 1秒あたりのディスクの読み取りおよび書き込み操作数
+* **CPU usage** — `user`、`system`、`iowait`、`softirq`、
+  `steal` ごとの内訳
+* **Memory usage** — 使用メモリ、キャッシュ、およびバッファが全体
+  に占める割合
+* **Disk usage** — サービスに割り当てられたストレージ容量に対する、
+  使用済みファイルシステム領域の割合
+* **Network traffic** — 送受信されたバイト数
+* **Database size** — データベースごとのバイト数 (デフォルトの `postgres`
+  およびユーザーが作成したすべてのデータベースを含む)
+* **Connection count** — アクティブおよびアイドル状態の接続数
+* **Operation throughput** — 1秒あたりのフェッチ、挿入、更新、
+  削除の件数
+* **Transactions** — 1秒あたりのコミット数およびロールバック数
+* **キャッシュヒット率** — ディスクではなくバッファキャッシュから
+  提供されたブロック読み取りの割合
+* **Deadlocks** — サーバーによって検出されたデッドロック
+
+<div id="time-period">
+  ## 時間範囲
+</div>
+
+**時間範囲** セレクターを使うと、過去1時間、1日、1週間、またはカスタム範囲に切り替えられます。
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — 同じメトリクスを独自のオブザーバビリティ スタックにもスクレイプできます
+* [メトリクス リファレンス](/ja/products/managed-postgres/monitoring/metrics) — メトリクスの完全な一覧 (型とラベルを含む)
