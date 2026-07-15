@@ -73,7 +73,7 @@ public:
             if (const auto * col_length_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
             {
                 const Int64 length_value = col_length_const->getInt(0);
-                Int64 abs_length;
+                Int64 abs_length = 0;
                 if (length_value < 0 && common::subOverflow(Int64(0), length_value, abs_length))
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "Argument of function {} is out of bound: {}", getName(), length_value);
