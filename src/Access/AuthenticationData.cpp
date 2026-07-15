@@ -482,7 +482,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
     time_t valid_until = 0;
 
@@ -540,13 +540,19 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             }
         }
 
-        /// If every key was filtered out above (all keys unusable in FIPS mode), do not materialize an
-        /// SSH_KEY method with an empty key list: such an entity is not round-trippable (toAST would emit
-        /// "ssh_key BY" with no keys, which ParserCreateUserQuery rejects). Reject the whole method instead.
-        /// On reload/ATTACH the per-entity error handling drops the user cleanly rather than persisting
-        /// an unparsable definition.
+        /// An SSH_KEY method with an empty key list is not round-trippable: toAST would emit "ssh_key BY"
+        /// with no keys, which ParserCreateUserQuery rejects. This state arises when all keys are filtered
+        /// out under FIPS mode (reload/ATTACH path) or from a malformed zero-key AST.
         if (keys.empty())
-            throw Exception(ErrorCodes::LIBSSH_ERROR, "No SSH key usable in FIPS mode is left for this authentication method");
+        {
+            /// Interactive path (CREATE/ALTER USER): fail loudly so we never materialize an unusable method.
+            if (validate)
+                throw Exception(ErrorCodes::LIBSSH_ERROR, "No SSH key usable in FIPS mode is left for this authentication method");
+            /// Reload/ATTACH path: drop the whole method (return nullopt) so the caller keeps the user's
+            /// other authentication methods, instead of throwing and losing the entire user during
+            /// config/disk/ZooKeeper reload.
+            return std::nullopt;
+        }
 
         auth_data.setSSHKeys(std::move(keys));
         auth_data.setValidUntil(valid_until);

@@ -10,6 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <optional>
 #include <vector>
 #include <base/types.h>
 
@@ -85,7 +86,12 @@ public:
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
+    /// Returns std::nullopt when the authentication method must be skipped rather than materialized:
+    /// on the reload/ATTACH path (validate == false) an SSH_KEY method whose keys are all filtered out
+    /// under FIPS mode leaves an empty, non-round-trippable method, so it is dropped and the caller
+    /// keeps the user's remaining authentication methods. The interactive path (validate == true)
+    /// throws instead of returning nullopt.
+    static std::optional<AuthenticationData> fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
     boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util

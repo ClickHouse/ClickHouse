@@ -223,8 +223,18 @@ BlockIO InterpreterCreateUserQuery::execute()
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+            /// fromAST returns nullopt to signal "skip this method" on the reload/ATTACH path
+            /// (an SSH_KEY method whose keys are all filtered out under FIPS mode). Dropping only the
+            /// offending method keeps the user's other authentication methods intact.
+            if (auto authentication_method = AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach))
+                authentication_methods.push_back(std::move(*authentication_method));
         }
+
+        /// If methods were declared but all were dropped (e.g. an ATTACH USER whose only method was an
+        /// all-Ed25519 ssh_key under FIPS), do not fall through to an implicit NO_PASSWORD downgrade.
+        if (authentication_methods.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "All authentication methods of the user are unusable (e.g. Ed25519 SSH keys in FIPS mode)");
     }
 
     std::optional<time_t> global_valid_until;
@@ -358,8 +368,19 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.emplace_back(AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach));
+            /// fromAST returns nullopt to signal "skip this method" on the reload/ATTACH path
+            /// (an SSH_KEY method whose keys are all filtered out under FIPS mode). Dropping only the
+            /// offending method keeps the user's other authentication methods intact.
+            if (auto authentication_method = AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach))
+                authentication_methods.emplace_back(std::move(*authentication_method));
         }
+
+        /// If methods were declared but all were dropped, do not fall through to an implicit
+        /// NO_PASSWORD downgrade. Throwing here lets the per-entity error handling in
+        /// deserializeAccessEntity drop just this user during config/disk/ZooKeeper reload.
+        if (authentication_methods.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "All authentication methods of the user are unusable (e.g. Ed25519 SSH keys in FIPS mode)");
     }
 
     std::optional<time_t> global_valid_until;

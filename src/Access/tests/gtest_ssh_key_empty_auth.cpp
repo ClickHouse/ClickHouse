@@ -13,8 +13,10 @@ using namespace DB;
 /// An SSH_KEY authentication method with an empty key list is not round-trippable:
 /// AuthenticationData::toAST emits "ssh_key BY" with zero keys, which ParserCreateUserQuery
 /// rejects. Under FIPS mode every unsupported key can be filtered out, which would otherwise
-/// leave exactly this state. fromAST must never materialize such a method; it rejects it on
-/// both the interactive (validate == true) and reload/ATTACH (validate == false) paths.
+/// leave exactly this state. fromAST must never materialize such a method:
+///  - on the interactive path (validate == true) it throws;
+///  - on the reload/ATTACH path (validate == false) it returns std::nullopt so the caller drops
+///    only this method and keeps the user's remaining authentication methods.
 TEST(SSHKeyEmptyAuth, FromASTRejectsEmptyKeyList)
 {
     ASTAuthenticationData ast;
@@ -22,7 +24,7 @@ TEST(SSHKeyEmptyAuth, FromASTRejectsEmptyKeyList)
     /// No ASTPublicSSHKey children: the resulting key list is empty.
 
     EXPECT_THROW(AuthenticationData::fromAST(ast, nullptr, /* validate= */ true), Exception);
-    EXPECT_THROW(AuthenticationData::fromAST(ast, nullptr, /* validate= */ false), Exception);
+    EXPECT_EQ(AuthenticationData::fromAST(ast, nullptr, /* validate= */ false), std::nullopt);
 }
 
 /// A non-empty SSH_KEY method still parses and stores its keys as before.
@@ -40,8 +42,9 @@ TEST(SSHKeyEmptyAuth, FromASTAcceptsNonEmptyKeyList)
         "ssh-rsa"));
 
     auto auth_data = AuthenticationData::fromAST(ast, nullptr, /* validate= */ false);
-    EXPECT_EQ(auth_data.getType(), AuthenticationType::SSH_KEY);
-    EXPECT_EQ(auth_data.getSSHKeys().size(), 1u);
+    ASSERT_TRUE(auth_data.has_value());
+    EXPECT_EQ(auth_data->getType(), AuthenticationType::SSH_KEY);
+    EXPECT_EQ(auth_data->getSSHKeys().size(), 1u);
 }
 
 #endif

@@ -9,6 +9,7 @@
 #    include <IO/ReadBufferFromFile.h>
 #    include <IO/ReadHelpers.h>
 
+#    include <array>
 #    include <string_view>
 
 #    pragma clang diagnostic push
@@ -79,11 +80,57 @@ String readFileContents(const String & filename)
     return contents;
 }
 
+/// Decode the base64 body between a "-----BEGIN <label>-----" / "-----END <label>-----" PEM pair.
+/// Returns false when the markers are absent or the body is not valid base64.
+bool decodePEMBody(const String & contents, std::string_view label, String & out)
+{
+    const String begin_marker = "-----BEGIN " + String(label) + "-----";
+    const String end_marker = "-----END " + String(label) + "-----";
+    auto begin_pos = contents.find(begin_marker);
+    if (begin_pos == String::npos)
+        return false;
+    begin_pos += begin_marker.size();
+    auto end_pos = contents.find(end_marker, begin_pos);
+    if (end_pos == String::npos)
+        return false;
+
+    String base64_body;
+    for (char c : std::string_view(contents).substr(begin_pos, end_pos - begin_pos))
+        if (!isspace(static_cast<unsigned char>(c)))
+            base64_body += c;
+
+    try
+    {
+        out = base64Decode(base64_body);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: best-effort detection. A malformed base64 body is reported as "no match" and the
+        /// key is handed to libssh, which surfaces the real error at import time.
+        return false;
+    }
+    return true;
+}
+
+/// A PKCS#8 PrivateKeyInfo / X.509 SubjectPublicKeyInfo DER blob carries the algorithm as an OID in
+/// its AlgorithmIdentifier. id-Ed25519 is 1.3.101.112, DER-encoded as the OBJECT IDENTIFIER
+/// 06 03 2B 65 70. The OID sits near the front of the blob (inside the first inner SEQUENCE), so a
+/// bounded substring search for that exact byte sequence reliably distinguishes Ed25519 from
+/// RSA/EC/DSA without a full ASN.1 parse or a libssh/OpenSSL import.
+bool derContainsEd25519OID(std::string_view der)
+{
+    static constexpr std::array<char, 5> ed25519_oid = {0x06, 0x03, 0x2b, 0x65, 0x70};
+    return std::string_view(der).find(std::string_view(ed25519_oid.data(), ed25519_oid.size())) != std::string_view::npos;
+}
+
 /// Determine the key type of a private key file WITHOUT importing it into libssh (importing an
-/// Ed25519 key under FIPS mode crashes). Only the OpenSSH container ("openssh-key-v1") can hold an
-/// Ed25519 key; the unencrypted header always exposes the public key type, so this works even for
-/// passphrase-protected keys. Anything else (legacy PEM RSA/EC/DSA) is reported as UNKNOWN, which
-/// callers treat as "not Ed25519, safe to import".
+/// Ed25519 key under FIPS mode crashes). Two carriers can hold an Ed25519 key:
+///   - the OpenSSH container ("openssh-key-v1"): its unencrypted header always exposes the public
+///     key type, so this works even for passphrase-protected keys;
+///   - a PKCS#8 file ("-----BEGIN PRIVATE KEY-----", e.g. `openssl genpkey -algorithm ED25519`):
+///     detected via the id-Ed25519 OID in its AlgorithmIdentifier.
+/// Anything else (legacy PEM RSA/EC/DSA) is reported as UNKNOWN, which callers treat as
+/// "not Ed25519, safe to import".
 enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
 {
     String contents;
@@ -98,32 +145,16 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
         return SSH_KEYTYPE_UNKNOWN;
     }
 
-    static constexpr std::string_view begin_marker = "-----BEGIN OPENSSH PRIVATE KEY-----";
-    static constexpr std::string_view end_marker = "-----END OPENSSH PRIVATE KEY-----";
-    auto begin_pos = contents.find(begin_marker);
-    if (begin_pos == String::npos)
-        return SSH_KEYTYPE_UNKNOWN;
-    begin_pos += begin_marker.size();
-    auto end_pos = contents.find(end_marker, begin_pos);
-    if (end_pos == String::npos)
-        return SSH_KEYTYPE_UNKNOWN;
+    /// PKCS#8 carrier: "-----BEGIN PRIVATE KEY-----" (also "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    /// whose encrypted body hides the OID, so it falls through to UNKNOWN as before).
+    String pkcs8_der;
+    if (decodePEMBody(contents, "PRIVATE KEY", pkcs8_der) && derContainsEd25519OID(pkcs8_der))
+        return SSH_KEYTYPE_ED25519;
 
-    String base64_body;
-    for (char c : std::string_view(contents).substr(begin_pos, end_pos - begin_pos))
-        if (!isspace(static_cast<unsigned char>(c)))
-            base64_body += c;
-
+    /// OpenSSH container.
     String blob;
-    try
-    {
-        blob = base64Decode(base64_body);
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-        /// Ok: best-effort detection. A malformed base64 body is reported as UNKNOWN and handed to
-        /// libssh, which surfaces the real error at import time.
+    if (!decodePEMBody(contents, "OPENSSH PRIVATE KEY", blob))
         return SSH_KEYTYPE_UNKNOWN;
-    }
 
     static constexpr std::string_view magic = "openssh-key-v1";
     if (blob.size() < magic.size() + 1 || !std::string_view(blob).starts_with(magic))
@@ -150,8 +181,10 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
     return ssh_key_type_from_name(String(type_name).c_str());
 }
 
-/// Determine the key type of a public key file ("<type> <base64> [comment]") from its first token,
-/// without importing it into libssh.
+/// Determine the key type of a public key file without importing it into libssh. Two carriers:
+///   - OpenSSH one-line format ("<type> <base64> [comment]"): key type is the first token;
+///   - X.509 SubjectPublicKeyInfo PEM ("-----BEGIN PUBLIC KEY-----", e.g. `openssl pkey -pubout`):
+///     detected via the id-Ed25519 OID in its AlgorithmIdentifier.
 enum ssh_keytypes_e detectPublicKeyType(const String & filename)
 {
     String contents;
@@ -166,6 +199,12 @@ enum ssh_keytypes_e detectPublicKeyType(const String & filename)
         return SSH_KEYTYPE_UNKNOWN;
     }
 
+    /// SPKI carrier: "-----BEGIN PUBLIC KEY-----".
+    String spki_der;
+    if (decodePEMBody(contents, "PUBLIC KEY", spki_der) && derContainsEd25519OID(spki_der))
+        return SSH_KEYTYPE_ED25519;
+
+    /// OpenSSH one-line public key: key type is the first whitespace-delimited token.
     auto start = contents.find_first_not_of(" \t\r\n");
     if (start == String::npos)
         return SSH_KEYTYPE_UNKNOWN;
