@@ -5,7 +5,9 @@ Each insert creates a new part containing sorted, compressed column files, along
 
 Over time, background processes merge smaller parts into larger ones to reduce fragmentation and improve query performance.
 
-<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Simple merges" />
+<Frame>
+  <img src="/images/bestpractices/simple_merges.webp" alt="Simple merges" />
+</Frame>
 
 While it's tempting to manually trigger this merge using:
 
