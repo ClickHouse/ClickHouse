@@ -66,7 +66,7 @@ struct HashMapCell
     using value_type = Pair;
     using mapped_type = Mapped;
     using key_type = Key;
-    using ExternalKey = std::conditional_t<std::is_same_v<std::decay_t<Key>, PackedStringRef>, std::string_view, Key>;
+    using external_key_type = std::conditional_t<std::is_same_v<std::decay_t<Key>, PackedStringRef>, std::string_view, Key>;
 
     value_type value;
 
@@ -75,7 +75,7 @@ struct HashMapCell
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
     /// Get the key (externally).
-    ExternalKey getKey() const { return static_cast<ExternalKey>(value.first); }
+    external_key_type getKey() const { return static_cast<external_key_type>(value.first); }
     Mapped & getMapped() { return value.second; }
     const Mapped & getMapped() const { return value.second; }
     const value_type & getValue() const { return value; }

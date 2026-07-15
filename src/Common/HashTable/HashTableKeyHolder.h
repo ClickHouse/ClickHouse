@@ -154,9 +154,7 @@ inline PackedStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaPackedStringHold
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & holder)
 {
-    size_t len = holder.key.heapSize();
-
-    if (len == 0)
+    if (holder.key.heapSize() == 0)
         return;
 
     if (holder.key.isMedium())

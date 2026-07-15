@@ -8,17 +8,17 @@
 /// PackedStringRef is a compact, 16-byte string representation that encodes
 /// payload and tag bits inside two 64-bit words.
 ///
-/// The encoding uses a byte-stable layout: every field lives at a fixed byte
-/// offset inside the struct, independent of host endianness. Writes use
-/// `memcpy` at those byte offsets (and explicit little-endian shift helpers
-/// for the 56-bit packed pointer / 64-bit length), and reads mirror that.
-///
-/// Because `operator==` compares `low`/`high` as `uint64_t`, equality still
-/// holds across two values built by the same code: identical byte sequences
-/// yield identical `uint64_t` values regardless of endianness.
+/// Every field lives at a fixed byte offset inside the struct. The packed
+/// pointer and the 64-bit large length are stored in little-endian byte order
+/// via `storeLE`/`loadLE`; the multi-byte integer fields (hash32, length32)
+/// are stored in native byte order, so the byte image is stable within a host
+/// but not identical across hosts of different endianness. That is sufficient:
+/// the value never crosses processes, reads mirror writes, and `operator==`
+/// compares `low`/`high` as `uint64_t`, so equality holds between any two
+/// values built by the same code on the same host.
 ///
 /// ------------------------------------------------------------
-/// Byte layout (16 bytes total, identical on little-endian and big-endian):
+/// Byte layout (16 bytes total):
 ///
 ///   bytes  0..3  : hash32         (small / medium)
 ///                  low 32 bits of length (large)
@@ -47,6 +47,8 @@ struct PackedStringRef
 
     // --- Layout Constants ---
     static constexpr size_t HASH_SIZE_BYTES = 4;
+    static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
+    static constexpr size_t MEDIUM_LENGTH_OFFSET = HASH_SIZE_BYTES;
     static constexpr size_t TAG_BYTE_OFFSET = 15;
     static constexpr size_t PACKED_POINTER_BYTES = 7;
     static constexpr uint64_t MAX_SMALL_LEN = 11;
@@ -129,7 +131,7 @@ public:
 
     ALWAYS_INLINE const char * getSmallPtr() const
     {
-        return reinterpret_cast<const char *>(rawBytes() + HASH_SIZE_BYTES);
+        return reinterpret_cast<const char *>(rawBytes() + SMALL_PAYLOAD_OFFSET);
     }
 
     /// ---------- Medium string ----------
@@ -137,7 +139,7 @@ public:
     ALWAYS_INLINE uint32_t getMediumSize() const
     {
         uint32_t size = 0;
-        std::memcpy(&size, rawBytes() + HASH_SIZE_BYTES, sizeof(size));
+        std::memcpy(&size, rawBytes() + MEDIUM_LENGTH_OFFSET, sizeof(size));
         return size;
     }
 
@@ -252,7 +254,7 @@ public:
             else
             {
                 std::memcpy(r.rawBytes(), &hash, sizeof(hash));
-                std::memcpy(r.rawBytes() + HASH_SIZE_BYTES, ptr, len);
+                std::memcpy(r.rawBytes() + SMALL_PAYLOAD_OFFSET, ptr, len);
                 r.rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
             }
             return r;
@@ -271,7 +273,7 @@ public:
             {
                 uint32_t len32 = static_cast<uint32_t>(len);
                 std::memcpy(r.rawBytes(), &hash, sizeof(hash));
-                std::memcpy(r.rawBytes() + HASH_SIZE_BYTES, &len32, sizeof(len32));
+                std::memcpy(r.rawBytes() + MEDIUM_LENGTH_OFFSET, &len32, sizeof(len32));
                 storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
             }
             return r;
