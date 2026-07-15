@@ -321,20 +321,13 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     "Argument p of function {} was not provided",
                     getName());
 
-    if (!arguments[1].column->isNumeric())
-        throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument p of function {} must be numeric constant",
-                    getName());
-
     if (!isColumnConst(*arguments[1].column))
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be either constant Float64 or constant UInt",
+                    "Argument p of function {} must be constant",
                     getName());
 
-    Float64 p = arguments[1].column->getFloat64(0);
-    checkLpNormPArgument(p, getName());
+    Float64 p = extractLpNormPArgument(*arguments[1].column, getName());
 
     return LpNorm::ConstParams{p, 1 / p};
 }
@@ -507,14 +500,10 @@ LpNorm::ConstParams FunctionArrayNormalize<LpNorm>::initConstParams(const Column
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument p of function {} was not provided", getName());
 
-    if (!arguments[1].column->isNumeric())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument p of function {} must be numeric constant", getName());
-
     if (!isColumnConst(*arguments[1].column))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument p of function {} must be constant", getName());
 
-    Float64 p = arguments[1].column->getFloat64(0);
-    checkLpNormPArgument(p, getName());
+    Float64 p = extractLpNormPArgument(*arguments[1].column, getName());
 
     return LpNorm::ConstParams{p, 1 / p};
 }

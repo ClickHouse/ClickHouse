@@ -991,20 +991,13 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
                     "Argument p of function {} was not provided",
                     getName());
 
-    if (!arguments[2].column->isNumeric())
-        throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument p of function {} must be numeric constant",
-                    getName());
-
     if (!isColumnConst(*arguments[2].column) && arguments[2].column->size() != 1)
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be either constant Float64 or constant UInt",
+                    "Argument p of function {} must be constant",
                     getName());
 
-    Float64 p = arguments[2].column->getFloat64(0);
-    checkLpNormPArgument(p, getName());
+    Float64 p = extractLpNormPArgument(*arguments[2].column, getName());
 
     return LpDistance::ConstParams{p, 1 / p};
 }

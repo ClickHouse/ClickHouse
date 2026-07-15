@@ -64,3 +64,15 @@ SELECT LpNorm((1, 2), nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- `LpDistance` goes through the same `p` validation for tuples and arrays alike.
 SELECT LpDistance((1, 2), (3, 4), nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpDistance([1, 2], [3, 4], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- Integer `p` (including signed integer types) is accepted consistently by the tuple and array carriers
+-- and behaves like the equivalent floating-point `p`.
+SELECT LpNormalize([1, 2], toInt8(2)) = LpNormalize([1, 2], 2.);
+SELECT LpNormalize((1, 2), toInt8(2)) = LpNormalize((1, 2), 2.);
+SELECT LpNorm([1, 2], toInt8(3)) = LpNorm([1, 2], 3.);
+SELECT LpNorm((1, 2), toInt8(3)) = LpNorm((1, 2), 3.);
+SELECT LpDistance([1, 2], [3, 4], toInt8(3)) = LpDistance([1, 2], [3, 4], 3.);
+SELECT LpDistance((1, 2), (3, 4), toInt8(3)) = LpDistance((1, 2), (3, 4), 3.);
+-- A negative integer `p` is out of the valid range `[1, inf)`.
+SELECT LpNormalize([1, 2], toInt8(-2)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNormalize((1, 2), toInt8(-2)); -- { serverError ARGUMENT_OUT_OF_BOUND }

@@ -1154,17 +1154,9 @@ public:
         const auto & p_column = arguments[1];
 
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument p of function {} must be constant", getName());
 
-        double p = 0;
-        if (isFloat(p_column.column->getDataType()))
-            p = p_column.column->getFloat64(0);
-        else if (isUInt(p_column.column->getDataType()))
-            p = static_cast<double>(p_column.column->getUInt(0));
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
-
-        checkLpNormPArgument(p, getName());
+        Float64 p = extractLpNormPArgument(*p_column.column, getName());
 
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
@@ -2290,7 +2282,7 @@ Special cases:
     FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
     FunctionDocumentation::Arguments arguments_lp_norm = {
         {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}},
-        {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
+        {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_norm = {"Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).",{"Float64"}};
     FunctionDocumentation::Examples examples_lp_norm = {
@@ -2438,7 +2430,7 @@ Calculates the distance between two points (the elements of the vectors are the 
     FunctionDocumentation::Arguments arguments_lp_distance = {
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}},
-        {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Float*"}}
+        {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance. For `Array` inputs, returns `Float32` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Float64`. For `Tuple` inputs, always returns `Float64`.", {"Float*"}};
     FunctionDocumentation::Examples examples_lp_distance = {
@@ -2859,7 +2851,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
         FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(vector, p)";
         FunctionDocumentation::Arguments arguments_lp_normalize = {
             {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}},
-            {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
+            {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Int*", "Float*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
