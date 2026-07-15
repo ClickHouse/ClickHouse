@@ -125,7 +125,7 @@ public:
         this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).update(this->data(rhs).value);
     }
@@ -232,7 +232,6 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
 
 }
 
-void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_or = R"(

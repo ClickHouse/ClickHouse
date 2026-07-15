@@ -1,4 +1,8 @@
 import logging
+import os
+import re
+import shutil
+import threading
 import time
 
 import pytest
@@ -131,9 +135,9 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"
@@ -143,13 +147,13 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     with_tables_clause = " WITH TABLES" if with_tables else ""
     assert "SYNTAX_ERROR" in node1.query_and_get_error(
-        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM TABLE t"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM TABLE t"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        "SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM DATABASE db"
+        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM DATABASE db"
     )
     assert "There is a local database" in node1.query_and_get_error(
         f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}' {with_tables_clause}"
@@ -173,16 +177,16 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         + r", '{shard}', '{replica}')"
     )
 
-    node2.query("SYSTEM SYNC DATABASE REPLICA db")
-    node3.query("SYSTEM SYNC DATABASE REPLICA db")
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA db")
+    node3.query(f"SYSTEM SYNC DATABASE REPLICA db")
 
     assert "is active, cannot drop it" in node2.query_and_get_error(
-        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
+        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
     )
 
-    node1.query("CREATE TABLE db.t2 (x INT) ENGINE=Log")
-    node1.query("CREATE TABLE db.t3 (x INT) ENGINE=Log")
-    node1.query("CREATE TABLE db.t4 (x INT) ENGINE=Log")
+    node1.query(f"CREATE TABLE db.t2 (x INT) ENGINE=Log")
+    node1.query(f"CREATE TABLE db.t3 (x INT) ENGINE=Log")
+    node1.query(f"CREATE TABLE db.t4 (x INT) ENGINE=Log")
 
     node4_uuid = node4.query("SELECT serverUUID()").strip()
     node4.query(
@@ -253,7 +257,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         },
     )
 
-    node1.query("SYSTEM DROP DATABASE REPLICA 'dummy' FROM SHARD 'dummy'")
+    node1.query(f"SYSTEM DROP DATABASE REPLICA 'dummy' FROM SHARD 'dummy'")
 
     node1.query("DROP DATABASE db SYNC")
     node2.query("DROP DATABASE db SYNC")
@@ -270,8 +274,8 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
             "distributed_ddl_output_mode": "none",
         },
     )
-    node4.query("SYSTEM DROP REPLICA 'dummy' FROM DATABASE db")
-    node4.query("SYSTEM DROP REPLICA 'dummy'")
+    node4.query(f"SYSTEM DROP REPLICA 'dummy' FROM DATABASE db")
+    node4.query(f"SYSTEM DROP REPLICA 'dummy'")
 
     node4.query("DROP DATABASE db SYNC")
 
@@ -296,9 +300,9 @@ def test_drop_database_replica_with_tables_for_dropped_db(
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"
@@ -324,9 +328,9 @@ def test_drop_database_replica_with_tables_for_detached_db(
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"

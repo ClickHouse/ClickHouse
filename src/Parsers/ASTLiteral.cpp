@@ -87,8 +87,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -124,8 +124,8 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);

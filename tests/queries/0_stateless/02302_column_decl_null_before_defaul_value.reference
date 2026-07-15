@@ -18,6 +18,5 @@ create table, column -type +DEFAULT +NULL
 id	Nullable(UInt8)	DEFAULT	1			
 create table, column -type +DEFAULT +NOT NULL
 id	UInt8	DEFAULT	1			
-alter column, type + NULL modifier
-id	Nullable(Int32)					
-modify column, type-less NULL modifier is not allowed
+alter column, NULL modifier is not allowed
+modify column, NULL modifier is not allowed

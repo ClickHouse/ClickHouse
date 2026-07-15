@@ -9,8 +9,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Block.h>
 
@@ -50,7 +50,6 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     return res;
 }
 
-void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

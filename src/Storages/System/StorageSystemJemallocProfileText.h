@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
 /// System table that reads and displays the latest jemalloc heap profile
-class StorageSystemJemallocProfileText final : public StorageWithCommonVirtualColumns
+class StorageSystemJemallocProfileText final : public IStorage
 {
 public:
     explicit StorageSystemJemallocProfileText(const StorageID & table_id_);
@@ -14,9 +14,6 @@ public:
     std::string getName() const override { return "SystemJemallocProfileText"; }
 
     static ColumnsDescription getColumnsDescription();
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

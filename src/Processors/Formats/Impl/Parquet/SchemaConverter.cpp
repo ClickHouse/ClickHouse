@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -420,10 +419,6 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     primitive.name = node.name;
     primitive.levels = levels;
     primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
-    /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map is
-    /// the group null map. Keep that null map (don't throw on the group-null rows) and fill defaults
-    /// there; the group null map wraps the ColumnTuple in Reader::formOutputColumn.
-    primitive.group_nullable = nullable_tuple_group_depth > 0;
     primitive.decoder = std::move(decoder);
     primitive.decoded_type = decoded_type;
     for (const auto & level : levels)
@@ -587,18 +582,6 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
-
-    if (column_mapper && schema_idx < file_metadata.schema.size())
-    {
-        const auto & elem_schema = file_metadata.schema.at(schema_idx);
-        if (elem_schema.__isset.field_id)
-        {
-            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
-            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
-        }
-    }
-
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -609,41 +592,6 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     return true;
 }
 
-/// Whether the subtree rooted at `schema[root_idx]` (a group) contains only REQUIRED, non-repeated
-/// elements below the root. If so, none of its descendants add a definition level, so every leaf's
-/// definition-level null map is exactly the root group's null map. This lets us reconstruct the
-/// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
-/// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
-static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
-{
-    /// schema is a flattened pre-order tree; num_children counts direct children, laid out
-    /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
-    /// remaining-children counters for the groups we descended into.
-    if (root_idx >= schema.size())
-        return false;
-    std::vector<size_t> stack;
-    stack.push_back(size_t(schema.at(root_idx).num_children));
-    size_t idx = root_idx + 1;
-    while (!stack.empty())
-    {
-        if (stack.back() == 0)
-        {
-            stack.pop_back();
-            continue;
-        }
-        if (idx >= schema.size())
-            return false; // malformed schema; caller handles elsewhere
-        stack.back() -= 1;
-        const parq::SchemaElement & elem = schema.at(idx);
-        if (elem.repetition_type != parq::FieldRepetitionType::REQUIRED)
-            return false;
-        idx += 1;
-        if (elem.__isset.num_children && elem.num_children > 0)
-            stack.push_back(size_t(elem.num_children));
-    }
-    return true;
-}
-
 void SchemaConverter::processSubtreeTuple(TraversalNode & node)
 {
     /// Tuple (possibly a Map key_value tuple):
@@ -651,47 +599,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name1`
     ///     <recurse> `name2`
     ///     ...
-
-    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
-    /// type). Unwrap it, match elements against the inner Tuple, and restore the wrapper below.
-    ///
-    /// Two eligible cases, both requiring no optional/nullable STRUCT-group ancestor. Only Nullable
-    /// levels nested below the innermost array count: a Nullable level at or before it is the
-    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
-    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
-    ///  1. REQUIRED group: always defined, so the outer Nullable is always-non-null. Restored via
-    ///     outer_type_hint (needs_cast) as an all-non-null wrapper.
-    ///  2. OPTIONAL group with an all-REQUIRED, non-array subtree: physically nullable struct. No
-    ///     descendant adds a definition level, so every leaf's def-level null map equals the group
-    ///     null map. We mark the leaves and the output so the assembled ColumnTuple is wrapped in
-    ///     ColumnNullable using that reconstructed null map (see OutputColumnInfo::nullable_group).
-    /// Otherwise keep the hint wrapped and let the check below reject it with TYPE_MISMATCH rather
-    /// than lose nulls. For an OPTIONAL group, processSubtree has already pushed this group's own
-    /// (non-array) level as levels.back(); exclude it when scanning for an ancestor.
-    size_t innermost_array_idx = 0;
-    for (size_t i = 0; i < levels.size(); ++i)
-        if (levels[i].is_array)
-            innermost_array_idx = i;
-    const bool group_is_optional = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
-    const size_t ancestor_end = levels.size() - (group_is_optional ? 1 : 0);
-    bool has_optional_ancestor = false;
-    for (size_t i = innermost_array_idx + 1; i < ancestor_end; ++i)
-        has_optional_ancestor |= !levels[i].is_array;
-    bool nullable_group = false;
-    if (node.type_hint && node.type_hint->isNullable() && !has_optional_ancestor)
-    {
-        if (node.element->repetition_type == parq::FieldRepetitionType::REQUIRED)
-            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
-        else if (group_is_optional && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1))
-        {
-            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
-            nullable_group = true;
-        }
-    }
-
-    /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
-    nullable_tuple_group_depth += nullable_group ? 1 : 0;
-    SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
 
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
@@ -835,22 +742,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         output_type = std::make_shared<DataTypeTuple>(types, names);
     }
 
-    /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
-    /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
-    /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
-    /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
-    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
-    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
-    /// than fabricate an all-non-null map that silently drops the struct nulls.
-    if (nullable_group && primitive_start == primitive_columns.size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
-            "physical elements to read (all requested elements are missing), so its null map cannot be "
-            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
-    if (nullable_group)
-        output_type = makeNullable(output_type);
-
     node.output_idx = output_columns.size();
     OutputColumnInfo & output = output_columns.emplace_back();
     output.name = node.name;
@@ -859,7 +750,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.input_type = std::move(output_type);
     output.output_type = output.input_type;
     output.nested_columns = elements;
-    output.nullable_group = nullable_group;
 }
 
 void SchemaConverter::processPrimitiveColumn(
@@ -1007,15 +897,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
-        return;
-    }
-
-    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
-    {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
-        out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
         return;
     }
 
@@ -1048,7 +930,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits = 0;
+        size_t physical_bits;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -1105,7 +987,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale = 0;
+        UInt32 scale;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
@@ -1288,10 +1170,8 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        out_inferred_type = std::make_shared<DataTypeUUID>();
-        out_decoder.allow_stats = true; // UUIDs support min/max stats
-        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-        return;
+        /// TODO [parquet]: Support UUIDs. Make sure to get the byte order right, it seems tricky.
+        /// For now, fall through to reading as FixedString(16).
     }
     else if (logical.__isset.FLOAT16)
     {
@@ -1388,19 +1268,12 @@ void SchemaConverter::processPrimitiveColumn(
         {
             if (type_hint)
             {
+                /// If parquet type is FIXED_LEN_BYTE_ARRAY(16), and type hint is [U]Int128, assume
+                /// it's binary little-endian [U]Int128. That's how clickhouse parquet writer writes
+                /// [U]Int128 (btw, we should probably change that to Decimal).
+                /// Same for FIXED_LEN_BYTE_ARRAY(32) and [U]Int256.
+                /// We can't leave this conversion to castColumn because it would parse as text.
                 WhichDataType which(type_hint->getTypeId());
-
-                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
-                if (which.isUUID() && element.type_length == 16)
-                {
-                    out_inferred_type = type_hint;
-                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    out_decoder.allow_stats = true;
-                    return;
-                }
-
-                /// Legacy ClickHouse binary formats for [U]Int128 and [U]Int256.
-                /// These are written as FIXED_LEN_BYTE_ARRAY(16/32) but without logical types.
                 if (which.isInteger() && !which.isNativeInteger() &&
                     type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
                 {
@@ -1408,26 +1281,14 @@ void SchemaConverter::processPrimitiveColumn(
                 }
             }
 
-            /// Automatic Inference: If no hint is provided, but the Parquet
-            /// file metadata explicitly flags this column as a UUID.
-            if (logical.__isset.UUID && element.type_length == 16)
-            {
-                out_inferred_type = std::make_shared<DataTypeUUID>();
-                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                out_decoder.allow_stats = true;
-                return;
-            }
-
-            /// Default Fallback: If it's not a UUID or a BigInt hint, treat it as FixedString.
             if (!out_inferred_type)
                 out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
-
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
             out_decoder.fixed_size_converter = std::move(converter);
 
-            /// Stats are only allowed for FixedString if the output is actually a string.
-            out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
+            /// (The case where type_hint is FixedString is handled above, no need to check for it here.)
+            out_decoder.allow_stats = !logical.__isset.UUID && WhichDataType(get_output_type_index()).isString();
             return;
         }
     }
