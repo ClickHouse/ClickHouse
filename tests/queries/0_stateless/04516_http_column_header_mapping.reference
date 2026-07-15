@@ -10,16 +10,16 @@ release	sha256=def456	row2
 release	sha256=def456	row3
 --- sync: case-insensitive header name
 issues	case-test
---- sync: missing header produces empty string
-	no-header
+--- sync: missing header is rejected
+BAD_QUERY_PARAMETER
 --- sync: positional format (TSV) - body-only columns, header injected separately
 tsv-push	hello-tsv
---- sync: filtered header (Authorization) produces empty string
-	filtered
---- sync: empty header name is ignored (no mapping applied)
-body-value	empty-hdr
---- sync: empty column name is ignored (no mapping applied)
-body-value2	empty-col
+--- sync: filtered header (Authorization) is rejected
+BAD_QUERY_PARAMETER
+--- sync: empty header name is rejected
+BAD_QUERY_PARAMETER
+--- sync: empty column name is rejected
+BAD_QUERY_PARAMETER
 --- sync: duplicate http_column_* to same column, first wins
 first	dup
 --- sync: type parse error surfaces immediately
@@ -38,16 +38,16 @@ release	sha256=def456	row2
 release	sha256=def456	row3
 --- async: case-insensitive header name
 issues	case-test
---- async: missing header produces empty string
-	no-header
+--- async: missing header is rejected
+BAD_QUERY_PARAMETER
 --- async: positional format (TSV) - body-only columns, header injected separately
 tsv-push	hello-tsv
---- async: filtered header (Authorization) produces empty string
-	filtered
---- async: empty header name is ignored (no mapping applied)
-body-value	empty-hdr
---- async: empty column name is ignored (no mapping applied)
-body-value2	empty-col
+--- async: filtered header (Authorization) is rejected
+BAD_QUERY_PARAMETER
+--- async: empty header name is rejected
+BAD_QUERY_PARAMETER
+--- async: empty column name is rejected
+BAD_QUERY_PARAMETER
 --- async: duplicate http_column_* to same column, first wins
 first	dup
 --- async: type parse error surfaces immediately
@@ -106,11 +106,5 @@ TYPE_MISMATCH
 --- sync: FORMAT Native body-column conflict is rejected
 INCORRECT_DATA
 --- sync: absent mapped header is rejected
-BAD_QUERY_PARAMETER
-0
---- sync: empty header name is rejected
-BAD_QUERY_PARAMETER
-0
---- sync: empty column name is rejected
 BAD_QUERY_PARAMETER
 0

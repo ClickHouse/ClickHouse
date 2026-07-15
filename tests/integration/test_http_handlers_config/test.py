@@ -965,19 +965,14 @@ def test_predefined_handler_header_column_mappings():
         )
         assert result == "push\tsha256=abc\thello\n"
 
-        # A missing header produces an empty string.
-        cluster.instance.query("TRUNCATE TABLE http_column_test")
+        # A missing mapped header is rejected with BAD_QUERY_PARAMETER.
         response = cluster.instance.http_request(
             "ingest_events",
             method="POST",
             data=b'{"payload":"no-headers"}',
         )
-        assert response.status_code == 200, response.content
-
-        result = cluster.instance.query(
-            "SELECT event_type, signature, payload FROM http_column_test"
-        )
-        assert result == "\t\tno-headers\n"
+        assert response.status_code == 500, response.content
+        assert b"BAD_QUERY_PARAMETER" in response.content, response.content
 
 
 def test_predefined_handler_header_column_mappings_async():

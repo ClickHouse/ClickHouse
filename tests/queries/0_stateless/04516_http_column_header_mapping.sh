@@ -105,13 +105,10 @@ do_basic_tests() {
     ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 
-    echo "--- ${mode}: missing header produces empty string"
+    echo "--- ${mode}: missing header is rejected"
     ${CLICKHOUSE_CURL} -sS \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
-        -d '{"payload":"no-header"}'
-    flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
-    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+        -d '{"payload":"no-header"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
     echo "--- ${mode}: positional format (TSV) - body-only columns, header injected separately"
     ${CLICKHOUSE_CURL} -sS \
@@ -122,32 +119,23 @@ do_basic_tests() {
     ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 
-    echo "--- ${mode}: filtered header (Authorization) produces empty string"
+    echo "--- ${mode}: filtered header (Authorization) is rejected"
     ${CLICKHOUSE_CURL} -sS \
         -H 'Authorization: Bearer secret-token' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_Authorization=event_type" \
-        -d '{"payload":"filtered"}'
-    flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
-    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+        -d '{"payload":"filtered"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
-    echo "--- ${mode}: empty header name is ignored (no mapping applied)"
+    echo "--- ${mode}: empty header name is rejected"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: ignored' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(event_type,payload)+FORMAT+JSONEachRow&http_column_=event_type" \
-        -d '{"event_type":"body-value","payload":"empty-hdr"}'
-    flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
-    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+        -d '{"event_type":"body-value","payload":"empty-hdr"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
-    echo "--- ${mode}: empty column name is ignored (no mapping applied)"
+    echo "--- ${mode}: empty column name is rejected"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: ignored' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(event_type,payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=" \
-        -d '{"event_type":"body-value2","payload":"empty-col"}'
-    flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
-    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+        -d '{"event_type":"body-value2","payload":"empty-col"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
     echo "--- ${mode}: duplicate http_column_* to same column, first wins"
     ${CLICKHOUSE_CURL} -sS \
@@ -521,29 +509,3 @@ curl -sS \
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_absent"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.t_absent"
 
-# --- empty http_column_ names are rejected ---
-# http_column_=col  (empty header name) and
-# http_column_X-Foo=  (empty column name) are both malformed parameters;
-# ClickHouse rejects them with BAD_QUERY_PARAMETER, consistent with the
-# general rule that every http_column_ field must be non-empty.
-echo "--- sync: empty header name is rejected"
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_empty;
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_empty (payload String)
-        ENGINE = MergeTree ORDER BY tuple();
-"
-curl -sS \
-    -H 'X-Event-Type: push' \
-    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_empty+FORMAT+JSONEachRow"\
-"&http_column_=event_type" \
-    -d '{"payload":"p"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_empty"
-
-echo "--- sync: empty column name is rejected"
-curl -sS \
-    -H 'X-Event-Type: push' \
-    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_empty+FORMAT+JSONEachRow"\
-"&http_column_X-Event-Type=" \
-    -d '{"payload":"p"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_empty"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.t_empty"

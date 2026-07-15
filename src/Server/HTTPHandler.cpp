@@ -49,6 +49,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
@@ -1099,15 +1100,29 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Each child tag is treated as <HeaderName>column_name</HeaderName>.
     /// Stored as a vector to preserve declaration order; first occurrence wins
     /// when two entries target the same column.
+    ///
+    /// config.keys() returns Poco-escaped names: dots become `\.` and repeated
+    /// siblings become `Name[N]`. We use the escaped key for value lookup, but
+    /// unescape it before storing as the runtime header name so that a tag like
+    /// <X.Trace-Id> correctly looks up "X.Trace-Id" in the request headers.
     std::vector<std::pair<String, String>> header_column_mappings;
     const std::string mappings_key = config_prefix + ".handler.header_column_mappings";
     if (config.has(mappings_key))
     {
-        Poco::Util::AbstractConfiguration::Keys header_names;
-        config.keys(mappings_key, header_names);
-        for (const auto & header_name : header_names)
+        Poco::Util::AbstractConfiguration::Keys escaped_names;
+        config.keys(mappings_key, escaped_names);
+        for (const auto & escaped_name : escaped_names)
         {
-            const String column_name = config.getString(mappings_key + "." + header_name);
+            const String column_name = config.getString(mappings_key + "." + escaped_name);
+
+            /// Unescape the Poco-encoded tag name to recover the real XML element
+            /// name: strip any trailing `[N]` index (repeated siblings), then
+            /// replace `\.` escape sequences with literal dots.
+            String header_name = escaped_name;
+            if (auto bracket = header_name.rfind('['); bracket != String::npos)
+                header_name.resize(bracket);
+            boost::replace_all(header_name, "\\.", ".");
+
             if (!header_name.empty() && !column_name.empty())
                 header_column_mappings.emplace_back(header_name, column_name);
         }
