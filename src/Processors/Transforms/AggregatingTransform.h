@@ -158,6 +158,23 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
+    /// Rows this transform pushed after the merge, i.e. the number of groups. Recorded into the
+    /// hash-table statistics entry when the merge completes; recorded nowhere when the output is
+    /// cut short (e.g. by a LIMIT), since a truncated count would understate the group count.
+    UInt64 generated_rows = 0;
+
+    /// When the aggregation's single aggregate is `uniqExact` (which fixes the output layout to
+    /// the key columns followed by one UInt64 column), the values it produces are summed up while
+    /// the output flows through, giving the total number of distinct (group key, argument value)
+    /// pairs — recorded into the statistics entry alongside the group count.
+    const bool track_distinct_key_value_pairs;
+    UInt64 generated_distinct_key_value_pairs = 0;
+
+    /// Whether this transform's completed output may be recorded as the aggregation's result
+    /// statistics.
+    bool record_result_statistics = false;
+    bool is_result_statistics_updated = false;
+
     std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
@@ -174,6 +191,7 @@ private:
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
+    void updateResultStatistics();
 };
 
 Chunk convertToChunk(const Block & block);

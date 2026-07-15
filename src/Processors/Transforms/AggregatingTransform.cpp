@@ -1,6 +1,9 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/assert_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -838,6 +841,9 @@ AggregatingTransform::AggregatingTransform(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
+    , track_distinct_key_value_pairs(
+          !skip_merging_ && params->final && params->params.aggregates_size == 1
+          && params->params.aggregates.front().function->getName() == "uniqExact")
     , updater(std::move(updater_))
 {
 }
@@ -887,6 +893,11 @@ IProcessor::Status AggregatingTransform::prepare()
     {
         if (is_consume_finished)
         {
+            /// The merge ran to completion, so the counted output describes the whole result.
+            if (record_result_statistics && !is_result_statistics_updated && params->final
+                && params->params.stats_collecting_params.isCollectionAndUseEnabled())
+                return Status::Ready;
+
             output.finish();
             /// input.isFinished() means that merging is done. Now we can release our reference to aggregation states.
             /// TODO: there is another case, when output port is getting closed first.
@@ -916,6 +927,15 @@ IProcessor::Status AggregatingTransform::prepare()
 
     if (is_consume_finished)
     {
+        generated_rows += current_chunk.getNumRows();
+        if (track_distinct_key_value_pairs)
+        {
+            /// In a finalized output block the single `uniqExact` column follows the key columns.
+            const auto & counts
+                = assert_cast<const ColumnUInt64 &>(*current_chunk.getColumns()[params->params.keys_size]);
+            for (auto value : counts.getData())
+                generated_distinct_key_value_pairs += value;
+        }
         output.push(std::move(current_chunk));
         read_current_chunk = false;
         return Status::PortFull;
@@ -926,14 +946,31 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    if (is_consume_finished)
+    if (!is_consume_finished)
+    {
+        consume(std::move(current_chunk));
+        read_current_chunk = false;
+    }
+    else if (!is_generate_initialized.test())
     {
         initGenerate();
     }
     else
     {
-        consume(std::move(current_chunk));
-        read_current_chunk = false;
+        updateResultStatistics();
+    }
+}
+
+void AggregatingTransform::updateResultStatistics()
+{
+    is_result_statistics_updated = true;
+
+    const auto & stats_params = params->params.stats_collecting_params;
+    if (auto entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(stats_params))
+    {
+        entry->merged_result_rows = generated_rows;
+        entry->distinct_key_value_pairs = generated_distinct_key_value_pairs;
+        getHashTablesStatistics<AggregationEntry>().update(*entry, stats_params);
     }
 }
 
@@ -1033,6 +1070,8 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
+            record_result_statistics = true;
+
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
