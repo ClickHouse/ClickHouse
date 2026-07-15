@@ -50,7 +50,8 @@ BlockIO InterpreterUseQuery::execute()
 
     /// the current database stores the logical name ("db.ns"); setCurrentDatabase
     /// validates that the namespace exists and resolution folds it into table names
-    getContext()->getSessionContext()->setCurrentDatabase(logical_name);
+    getContext()->getSessionContext()->setCurrentDatabase(
+        logical_name, getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces]);
     return {};
 }
 

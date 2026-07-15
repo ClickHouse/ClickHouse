@@ -2099,13 +2099,13 @@ namespace
 {
 
 /// A dotted current database selects a namespace ("db.ns") unless a database with that exact name exists
-void validateCurrentDatabaseName(const String & name, const Settings & settings, ContextPtr context)
+void validateCurrentDatabaseName(const String & name, bool allow_table_namespaces, ContextPtr context)
 {
     const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
     if (info.table_prefix.empty())
         return;
     /// with the feature off a dotted name is only ever an exact database name (master behavior)
-    if (!settings[Setting::allow_experimental_table_namespaces])
+    if (!allow_table_namespaces)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
     Names parts;
     splitInto<'.'>(parts, info.table_prefix);
@@ -2130,7 +2130,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// a dotted DEFAULT DATABASE may select a namespace; validate before taking the mutex
     if (!database.empty())
-        validateCurrentDatabaseName(database, getSettingsRef(), shared_from_this());
+        validateCurrentDatabaseName(database, getSettingsRef()[Setting::allow_experimental_table_namespaces], shared_from_this());
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -3559,7 +3559,12 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
 void Context::setCurrentDatabase(const String & name)
 {
-    validateCurrentDatabaseName(name, getSettingsRef(), shared_from_this());
+    setCurrentDatabase(name, getSettingsRef()[Setting::allow_experimental_table_namespaces]);
+}
+
+void Context::setCurrentDatabase(const String & name, bool allow_table_namespaces)
+{
+    validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
 
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(name, lock);
