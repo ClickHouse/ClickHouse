@@ -86,6 +86,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -2253,6 +2254,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         insert_format_max_block_size_bytes,
         insert_format_min_block_size_rows,
         insert_format_min_block_size_bytes);
+
+    /// If parsing of the data fails, explain a possible structure mismatch between the data and the
+    /// destination (for diagnostics only).
+    setInsertSchemaMismatchDiagnostic(*source, parsed_query, sample, client_context);
+
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())

@@ -12,7 +12,13 @@
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/CompressionMethod.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB
@@ -31,6 +37,85 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+}
+
+String getInsertDataSchemaMismatchDescription(
+    std::string_view data, const String & format_name, const Block & expected_header, const ContextPtr & context)
+{
+    if (data.empty())
+        return {};
+
+    if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
+        return {};
+
+    ColumnsDescription inferred_columns;
+    try
+    {
+        auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+        SingleReadBufferIterator read_buffer_iterator(std::move(buffer));
+        inferred_columns = readSchemaFromFormat(format_name, getFormatSettings(context), read_buffer_iterator, context);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// If we cannot even infer the schema of the data, there is nothing useful to report.
+        return {};
+    }
+
+    auto inferred = inferred_columns.getAll();
+    auto expected = expected_header.getNamesAndTypesList();
+
+    /// Compare structurally, ignoring the artificial Nullable wrapper that schema inference adds by
+    /// default, so that inserting valid data into non-nullable columns is not flagged as a mismatch.
+    auto core_type_name = [](const DataTypePtr & type) { return removeNullable(type)->getName(); };
+
+    bool corresponds = inferred.size() == expected.size();
+    if (corresponds)
+    {
+        auto it_inferred = inferred.begin();
+        auto it_expected = expected.begin();
+        for (; it_inferred != inferred.end(); ++it_inferred, ++it_expected)
+        {
+            if (core_type_name(it_inferred->type) != core_type_name(it_expected->type))
+            {
+                corresponds = false;
+                break;
+            }
+        }
+    }
+
+    if (corresponds)
+        return {};
+
+    auto format_structure = [](const NamesAndTypesList & columns)
+    {
+        WriteBufferFromOwnString out;
+        for (const auto & column : columns)
+            out << "    " << backQuoteIfNeed(column.name) << ' ' << column.type->getName() << '\n';
+        return out.str();
+    };
+
+    return fmt::format(
+        "\nThe structure of the data being inserted does not match the structure expected by the query, "
+        "which is likely the cause of the parsing error.\n"
+        "Inferred structure of the input data (in format `{}`):\n{}"
+        "Expected structure:\n{}",
+        format_name, format_structure(inferred), format_structure(expected));
+}
+
+void setInsertSchemaMismatchDiagnostic(
+    IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context)
+{
+    format.setParseErrorDiagnosticProvider(
+        [ast, expected_header, context]() -> String
+        {
+            /// Only the inline part of the query can be re-read here. The streamed tail (network /
+            /// HTTP body) is consumed while parsing and cannot be inspected a second time.
+            const auto * insert = ast->as<ASTInsertQuery>();
+            if (!insert || !insert->data)
+                return {};
+            return getInsertDataSchemaMismatchDescription(
+                std::string_view(insert->data, insert->end - insert->data), insert->format, expected_header, context);
+        });
 }
 
 InputFormatPtr getInputFormatFromASTInsertQuery(
@@ -69,6 +154,12 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                                           settings[Setting::min_insert_block_size_rows],
                                           settings[Setting::min_insert_block_size_bytes]);
     format->addBuffer(std::move(input_buffer));
+
+    /// Attach a lazy diagnostic used only if parsing the inserted data fails. Skipped for the
+    /// input() table function, whose data comes from a separate source.
+    if (with_buffers && !input_function)
+        setInsertSchemaMismatchDiagnostic(*format, ast, header, context);
+
     return format;
 }
 

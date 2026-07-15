@@ -8,6 +8,8 @@
 #include <base/types.h>
 #include <Processors/ISource.h>
 
+#include <functional>
+
 
 namespace DB
 {
@@ -131,6 +133,12 @@ public:
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
+    /// Set a callback that produces an additional explanation to attach to the message of a
+    /// parse-error exception thrown while reading. It is used for INSERT queries to compare the
+    /// structure of the data being inserted with the expected structure and report a mismatch.
+    /// The callback must return an empty string when there is nothing to report.
+    void setParseErrorDiagnosticProvider(std::function<String()> provider) { parse_error_diagnostic_provider = std::move(provider); }
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
@@ -146,6 +154,9 @@ private:
     void resetOwnedBuffers();
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    /// See setParseErrorDiagnosticProvider.
+    std::function<String()> parse_error_diagnostic_provider;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

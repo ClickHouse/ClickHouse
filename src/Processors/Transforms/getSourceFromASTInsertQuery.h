@@ -5,6 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <cstddef>
 #include <memory>
+#include <string_view>
 
 
 namespace DB
@@ -41,5 +42,19 @@ class ReadBuffer;
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast);
+
+/// For diagnostics only. Infers the structure of `data` in the given format (if the format supports
+/// schema inference) and compares it with `expected_header`. Returns a human-readable explanation of
+/// the mismatch, or an empty string when the structures correspond or nothing can be inferred. A
+/// structure mismatch between the inserted data and the destination is a common and confusing cause
+/// of parse errors (see https://github.com/ClickHouse/ClickHouse/issues/110622).
+String getInsertDataSchemaMismatchDescription(
+    std::string_view data, const String & format_name, const Block & expected_header, const ContextPtr & context);
+
+/// Attaches getInsertDataSchemaMismatchDescription as a lazy diagnostic to the input format that
+/// reads the inline data of an INSERT query: if parsing fails with a parse error, the resulting
+/// explanation (if any) is appended to the exception message.
+void setInsertSchemaMismatchDiagnostic(
+    IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context);
 
 }

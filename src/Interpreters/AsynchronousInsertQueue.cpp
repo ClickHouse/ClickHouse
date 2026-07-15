@@ -1302,6 +1302,17 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
+    /// For diagnostics only: if parsing an entry fails, explain a possible structure mismatch between
+    /// the data being inserted and the destination. The data is fed per entry below, so the provider
+    /// looks at the entry currently being parsed.
+    const String & insert_format = key.query->as<const ASTInsertQuery &>().format;
+    std::string_view current_entry_data;
+    format->setParseErrorDiagnosticProvider(
+        [&current_entry_data, insert_format, &header, insert_context]() -> String
+        {
+            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, insert_context);
+        });
+
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
@@ -1343,6 +1354,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
+
+        current_entry_data = *bytes;
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);
