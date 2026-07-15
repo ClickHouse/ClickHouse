@@ -617,7 +617,21 @@ profiles:
                 return False
 
         if not with_webhook:
-            return True
+            # `setup_minio.sh` reuses ./minio_data and _force_restart_minio
+            # re-reads its persisted config, so a logger_webhook/audit_webhook
+            # inherited from a prior run on a reused worker (or a local rerun)
+            # would stay live and keep streaming S3 traffic into system.minio_*
+            # - exactly the background-pool interference this path removes.
+            # Reset both hooks so "no webhook" is actually enforced; reset is a
+            # no-op on a fresh worker. The restart below makes it live.
+            Shell.check(
+                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
+                verbose=True,
+            )
+            Shell.check(
+                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
+                verbose=True,
+            )
 
         return self._restart_minio_to_apply_config()
 
