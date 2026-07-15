@@ -1407,7 +1407,23 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     if (format_header.columns() == 0 && injected_column_infos.empty())
         format_header = header;  /// No injection: use the full header as-is.
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, format_header, insert_context, nullptr);
+    /// The flush-time insert_context does not carry the http_column_* mapping, so the
+    /// FormatSettings guard that rejects a body field duplicating a mapped column would
+    /// be lost for async inserts. Populate it on a copy used only for format creation
+    /// (not for the pipeline, which already expanded the column list at push time and
+    /// would otherwise re-expand and fail with DUPLICATE_COLUMN).
+    ContextPtr format_context = insert_context;
+    if (!injected_column_infos.empty())
+    {
+        auto ctx = Context::createCopy(insert_context);
+        NameToNameMap http_cols;
+        for (const auto & info : injected_column_infos)
+            http_cols.emplace(header.getByPosition(info.header_col_idx).name, String{});
+        ctx->setHTTPHeaderColumns(std::move(http_cols));
+        format_context = ctx;
+    }
+
+    auto format = getInputFormatFromASTInsertQuery(key.query, false, format_header, format_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())

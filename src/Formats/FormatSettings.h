@@ -648,15 +648,22 @@ struct FormatSettings
             return false;
         if (http_column_names.contains(String(name)))
             return true;
-        /// AUTO and IGNORE_CASE modes match columns case-insensitively, so also
-        /// check the lowercase spelling to catch body fields like EVENT_TYPE when
-        /// the mapped column is event_type.
+        /// AUTO and IGNORE_CASE modes match columns case-insensitively. The stored
+        /// set keeps the original spellings, so compare lowercase on both sides to
+        /// catch e.g. body field EVENT_TYPE against mapped column event_type.
         if (input_format_column_matching_case_sensitivity != InputFormatColumnMatchingCaseSensitivity::MATCH_CASE)
         {
-            String lower(name);
-            std::transform(lower.begin(), lower.end(), lower.begin(),
-                           [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-            return http_column_names.contains(lower);
+            auto to_lower = [](std::string_view s)
+            {
+                String r(s);
+                std::transform(r.begin(), r.end(), r.begin(),
+                               [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                return r;
+            };
+            const String lname = to_lower(name);
+            for (const auto & col : http_column_names)
+                if (to_lower(col) == lname)
+                    return true;
         }
         return false;
     }

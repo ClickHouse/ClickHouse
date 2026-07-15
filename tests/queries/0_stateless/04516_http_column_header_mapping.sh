@@ -48,9 +48,12 @@ do_basic_tests() {
     # Body provides event_type='from-body' but http_column also maps event_type from header.
     # Even with input_format_skip_unknown_fields=1, the body field is never silently dropped:
     # http_column_* mapped columns are forbidden unknown fields and always raise an error.
+    # Use wait_for_async_insert=1 in async mode so the flush-time rejection reaches the client.
+    CONFLICT_EXTRA=""
+    [ "$mode" = "async" ] && CONFLICT_EXTRA="&async_insert=1&wait_for_async_insert=1"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: from-header' \
-        "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
+        "${CLICKHOUSE_URL}${CONFLICT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
         -d '{"event_type":"from-body","payload":"conflict-test","signature":"s"}' \
         | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
 
@@ -195,19 +198,27 @@ ${CLICKHOUSE_CLIENT} -q "
     ) ENGINE = MergeTree ORDER BY tuple();
 "
 
+# A dedicated table that actually has the mapped column, so these cases reach the
+# format's unknown-field guard instead of failing earlier with NO_SUCH_COLUMN.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_conflict;
+    CREATE TABLE t_conflict (event_type String, payload String) ENGINE = MergeTree ORDER BY tuple();
+"
+
 echo "--- error: CSVWithNames body header contains http_column_* target (skip_unknown_fields=1 must not bypass)"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
-    "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+CSVWithNames&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+CSVWithNames&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
     --data-binary $'event_type,payload\nfrom-body,conflict' \
     | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
 
 echo "--- error: case-insensitive body field matches http_column_* target"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
-    "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1&input_format_column_name_matching_mode=ignore_case" \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1&input_format_column_name_matching_mode=ignore_case" \
     -d '{"EVENT_TYPE":"from-body","payload":"conflict"}' \
     | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_conflict"
 
 echo "--- error: column listed in both INSERT list and http_column_*"
 ${CLICKHOUSE_CURL} -sS \
