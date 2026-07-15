@@ -87,11 +87,12 @@ remote-event	remote
 7	8	default-no-list
 --- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives
 ab	short-valid
---- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse
-['a','b']	text-compat
 --- async: failed dedup token remains retryable after schema drift
 ab	dedup-valid
 ab	dedup-retry
+ab	dedup-valid
+--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse
+['a','b']	text-compat
 --- async: schema drift with wait_for_async_insert=1, waiter receives error
 TYPE_MISMATCH
 0

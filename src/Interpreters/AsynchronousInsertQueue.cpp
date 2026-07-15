@@ -17,7 +17,6 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
@@ -105,7 +104,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
-    extern const int TYPE_MISMATCH;
 }
 
 static const NameSet settings_to_skip
@@ -608,14 +606,16 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             /// here we just retrieve the type for parsing.
             const auto & col_type = metadata->getColumns().get(col_name).type;
 
-            /// Parse the header value once at push time so that type errors
+            /// Validate the header value at push time so that type errors
             /// (e.g. "not-a-number" for UInt64) surface immediately to the client.
-            /// The resulting 1-row column is stored directly; flush time reuses it
-            /// without re-parsing.
-            auto parsed = col_type->createColumn();
-            ReadBufferFromString buf(str_value);
-            col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
-            entry->http_header_column_values.push_back({col_name, std::move(parsed), col_type});
+            /// We store only the raw string; flush time re-parses against the
+            /// then-current column type, which handles schema drift naturally.
+            {
+                auto validate = col_type->createColumn();
+                ReadBufferFromString buf(str_value);
+                col_type->getDefaultSerialization()->deserializeWholeText(*validate, buf, format_settings);
+            }
+            entry->http_header_column_values.push_back({col_name, str_value});
         }
     }
 
@@ -1415,25 +1415,10 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
         {
-            /// Pass the injected columns directly to AddingDefaultsTransform so it
-            /// appends them internally (same as the sync path in getSourceFromInputFormat).
-            /// This keeps num_body_columns = format_header.columns() correct inside
-            /// transform(), preventing out-of-bounds BlockMissingValues access when
-            /// injected columns have DEFAULT/MATERIALIZED expressions.
-            ColumnsWithTypeAndName injected_for_defaults;
-            injected_for_defaults.reserve(injected_column_infos.size());
-            /// Use the first entry's stored 1-row columns; updated per-entry below.
-            if (!data->entries.empty())
-            {
-                for (const auto & info : injected_column_infos)
-                {
-                    const auto & stored = data->entries.front()->http_header_column_values[info.entry_parsed_idx];
-                    injected_for_defaults.push_back({stored.col, info.type, header.getByPosition(info.header_col_idx).name});
-                }
-            }
+            /// Injected columns are set per-entry via setInjectedColumns() before
+            /// each executor.execute() call, so we start with an empty list here.
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
-                std::make_shared<const Block>(format_header), columns, *format, insert_context,
-                std::move(injected_for_defaults));
+                std::make_shared<const Block>(format_header), columns, *format, insert_context);
         }
     }
 
@@ -1450,6 +1435,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
+    /// Keep a raw pointer before moving the shared_ptr into the executor so we can
+    /// call setInjectedColumns() per entry without a use-after-move.
+    /// The executor holds the shared_ptr and keeps the object alive.
+    AddingDefaultsTransform * defaults_transform_ptr =
+        adding_defaults_transform
+            ? static_cast<AddingDefaultsTransform *>(adding_defaults_transform.get())
+            : nullptr;
+
     StreamingFormatExecutor executor(
         format_header,
         format,
@@ -1460,25 +1453,52 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
-    /// Track per-entry row counts for column replication after the loop.
+    /// Track per-entry row counts for result assembly.
     std::vector<size_t> entry_num_rows;
+    entry_num_rows.reserve(data->entries.size());
 
-    /// Re-parses a stored 1-row column through text serialization to adapt it to a
-    /// new flush-time type after schema drift (ALTER TABLE ... MODIFY COLUMN).
-    /// This mirrors how body columns are re-parsed by the format at flush time,
-    /// so text-compatible changes (e.g. String -> Array(String)) succeed where
-    /// Field-based conversion would fail.
-    const FormatSettings fmt_settings_for_drift = getFormatSettings(insert_context);
-    auto reparse_for_drift = [&](const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type) -> ColumnPtr
+    /// Pre-parse all injected column raw values against flush-time types before the
+    /// executor loop. Parsing at flush time handles schema drift naturally: if the
+    /// column type changed (ALTER TABLE during buffering), the raw string is parsed
+    /// against the new type directly — no explicit drift detection or re-serialization
+    /// needed. Failed entries are skipped from the executor entirely, so no
+    /// post-loop compaction of body columns is ever needed.
+    struct EntryParsed
     {
-        WriteBufferFromOwnString str_buf;
-        from_type->getDefaultSerialization()->serializeText(*col, 0, str_buf, fmt_settings_for_drift);
-        auto new_col = to_type->createColumn();
-        ReadBufferFromString read_buf(str_buf.str());
-        to_type->getDefaultSerialization()->deserializeWholeText(*new_col, read_buf, fmt_settings_for_drift);
-        return new_col;
+        ColumnsWithTypeAndName injected; /// one element per injected_column_infos, 1 row each
+        std::exception_ptr exc;          /// set when any injected column fails to parse
     };
+    std::vector<EntryParsed> entry_parsed;
+    const FormatSettings fmt_settings = getFormatSettings(insert_context);
+    if (!injected_column_infos.empty())
+    {
+        entry_parsed.reserve(data->entries.size());
+        for (const auto & entry : data->entries)
+        {
+            EntryParsed ep;
+            ep.injected.reserve(injected_column_infos.size());
+            for (const auto & info : injected_column_infos)
+            {
+                const auto & raw = entry->http_header_column_values[info.entry_parsed_idx].raw_value;
+                try
+                {
+                    auto col = info.type->createColumn();
+                    ReadBufferFromString buf(raw);
+                    info.type->getDefaultSerialization()->deserializeWholeText(*col, buf, fmt_settings);
+                    ep.injected.push_back({std::move(col), info.type, header.getByPosition(info.header_col_idx).name});
+                }
+                catch (...)
+                {
+                    ep.exc = std::current_exception();
+                    ep.injected.clear();
+                    break;
+                }
+            }
+            entry_parsed.push_back(std::move(ep));
+        }
+    }
 
+    size_t ei = 0;
     for (const auto & entry : data->entries)
     {
         current_entry = entry;
@@ -1488,44 +1508,28 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
-        auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
-        executor.setQueryParameters(entry->query_parameters);
-
-        /// Update AddingDefaultsTransform with this entry's per-entry injected column
-        /// values so DEFAULT expressions (e.g. `b DEFAULT a + 1`) use the correct value.
-        /// The transform now handles injection internally (format_header only, injected
-        /// appended inside transform()), so we only need to update the per-entry values.
-        if (!injected_column_infos.empty() && adding_defaults_transform)
+        /// Skip entries whose injected column values failed to parse against the
+        /// current flush-time type (e.g. incompatible ALTER TABLE during buffering).
+        if (!entry_parsed.empty() && entry_parsed[ei].exc)
         {
-            std::exception_ptr defaults_conversion_exception;
-            ColumnsWithTypeAndName per_entry_injected;
-            per_entry_injected.reserve(injected_column_infos.size());
-            for (const auto & info : injected_column_infos)
-            {
-                const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
-                ColumnPtr col_to_use = stored.col;
-                if (!stored.push_time_type->equals(*info.type))
-                {
-                    try { col_to_use = reparse_for_drift(stored.col, stored.push_time_type, info.type); }
-                    catch (...) { defaults_conversion_exception = std::current_exception(); break; }
-                }
-                per_entry_injected.push_back({col_to_use, info.type, header.getByPosition(info.header_col_idx).name});
-            }
-
-            if (defaults_conversion_exception)
-            {
-                LOG_ERROR(logger, "Failed http_column schema-drift conversion for defaults in entry {}, skipping.",
-                    entry->query_id);
-                entry->finish(defaults_conversion_exception);
-                entry_num_rows.push_back(0);
-                add_to_async_insert_log(entry, "schema drift in defaults conversion", 0, bytes->size());
-                entry->resetChunk();
-                continue;
-            }
-            static_cast<AddingDefaultsTransform &>(*adding_defaults_transform)
-                .setInjectedColumns(std::move(per_entry_injected));
+            LOG_ERROR(logger, "Failed http_column parsing for entry {}, skipping.", entry->query_id);
+            entry->finish(entry_parsed[ei].exc);
+            entry_num_rows.push_back(0);
+            add_to_async_insert_log(entry, "http_column parse error at flush time", 0, bytes->size());
+            entry->resetChunk();
+            ++ei;
+            continue;
         }
 
+        executor.setQueryParameters(entry->query_parameters);
+
+        /// Supply this entry's injected column values to AddingDefaultsTransform so
+        /// DEFAULT expressions that reference them (e.g. `b DEFAULT a + 1`) evaluate
+        /// with the correct per-entry value.
+        if (!entry_parsed.empty() && defaults_transform_ptr)
+            defaults_transform_ptr->setInjectedColumns(entry_parsed[ei].injected);
+
+        auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);
 
@@ -1535,19 +1539,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
         current_exception.clear();
         entry->resetChunk();
+        ++ei;
     }
 
     LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries", total_rows, data->entries.size());
 
     auto body_columns = executor.getResultColumns();  /// Matches format_header.
 
-    /// Track which entries are still valid after injected-column schema-drift conversion.
-    /// Entries that fail to convert are finished with an exception and excluded from the result.
-    /// Initialized to true; the injected-column loop below may set entries to false.
-    std::vector<bool> entry_valid(data->entries.size(), true);
-
     /// Build the full result matching the pipeline header by interleaving body columns
-    /// (from the executor) and injected columns (pre-parsed per-entry at push time).
+    /// (from the executor) and injected columns (parsed per-entry above).
     MutableColumns result_columns;
     if (injected_column_infos.empty())
     {
@@ -1557,104 +1557,38 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     {
         result_columns.reserve(header.columns());
         size_t body_idx = 0;
-        size_t inj_idx = 0;
+        size_t inj_counter = 0;
         for (size_t col_idx = 0; col_idx < header.columns(); ++col_idx)
         {
-            if (inj_idx < injected_column_infos.size() && injected_column_infos[inj_idx].header_col_idx == col_idx)
+            if (inj_counter < injected_column_infos.size()
+                && injected_column_infos[inj_counter].header_col_idx == col_idx)
             {
-                /// Injected column: use the pre-parsed 1-row column stored at push
-                /// time — no re-parsing. For schema drift (ALTER TABLE during buffering)
-                /// attempt Field-based conversion. Uses IDataType::equals() so parametric
-                /// changes within the same TypeIndex family (e.g. FixedString(4) -> FixedString(2))
-                /// are detected and handled; TypeIndex alone would miss such differences.
-                const auto & info = injected_column_infos[inj_idx++];
-                auto new_col = info.type->createColumn();
+                const size_t local_inj = inj_counter++;
+                auto new_col = injected_column_infos[local_inj].type->createColumn();
                 new_col->reserve(total_rows);
-                size_t ei = 0;
-                for (const auto & entry : data->entries)
+                for (size_t ep_idx = 0; ep_idx < entry_parsed.size(); ++ep_idx)
                 {
-                    if (!entry_valid[ei]) { ++ei; continue; }
-                    const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
-                    ColumnPtr col_to_use = stored.col;
-                    if (!stored.push_time_type->equals(*info.type))
-                    {
-                        try
-                        {
-                            col_to_use = reparse_for_drift(stored.col, stored.push_time_type, info.type);
-                        }
-                        catch (...) // Ok: mark entry invalid; handled below after the loop
-                        {
-                            entry_valid[ei] = false;
-                        }
-                    }
-                    if (entry_valid[ei])
-                        new_col->insertManyFrom(*col_to_use, 0, entry_num_rows[ei]);
-                    ++ei;
+                    if (entry_num_rows[ep_idx] > 0)
+                        new_col->insertManyFrom(*entry_parsed[ep_idx].injected[local_inj].column, 0, entry_num_rows[ep_idx]);
                 }
                 result_columns.push_back(std::move(new_col));
             }
             else
             {
-                /// Body column: take directly from the executor result.
                 result_columns.push_back(std::move(body_columns[body_idx++]));
             }
         }
     }
 
-    /// Finish entries that failed schema-drift conversion and compact result columns
-    /// to exclude their rows, preserving per-entry failure isolation.
-    bool any_failed = false;
-    for (size_t ei = 0; ei < data->entries.size(); ++ei)
-        if (!entry_valid[ei]) { any_failed = true; break; }
-
-    if (any_failed)
+    /// Register dedup tokens only for entries that actually contributed rows.
+    /// Entries that failed parsing are skipped so their tokens remain retryable.
     {
-        size_t valid_rows = 0;
-        for (size_t ei = 0; ei < data->entries.size(); ++ei)
-            if (entry_valid[ei]) valid_rows += entry_num_rows[ei];
-
-        /// Rebuild every result column keeping only rows from valid entries.
-        for (auto & col : result_columns)
-        {
-            auto new_col = col->cloneEmpty();
-            new_col->reserve(valid_rows);
-            size_t row_offset = 0;
-            for (size_t ei = 0; ei < data->entries.size(); ++ei)
-            {
-                if (entry_valid[ei])
-                    new_col->insertRangeFrom(*col, row_offset, entry_num_rows[ei]);
-                row_offset += entry_num_rows[ei];
-            }
-            col = std::move(new_col);
-        }
-
-        /// Finish entries whose schema-drift conversion failed.
-        size_t ei2 = 0;
+        size_t dedup_ei = 0;
         for (const auto & entry : data->entries)
         {
-            if (!entry_valid[ei2] && !entry->isFinished())
-            {
-                LOG_ERROR(logger,
-                    "http_column schema drift for entry {}: type changed while buffered, entry dropped.",
-                    entry->query_id);
-                entry->finish(std::make_exception_ptr(
-                    Exception(ErrorCodes::TYPE_MISMATCH,
-                        "http_column value type changed (ALTER TABLE during async buffering)")));
-            }
-            ++ei2;
-        }
-        total_rows = valid_rows;
-    }
-
-    /// Register dedup tokens only for entries whose rows actually reached the result.
-    /// Failed entries (schema drift) are excluded so their tokens remain retryable.
-    {
-        size_t ei = 0;
-        for (const auto & entry : data->entries)
-        {
-            if (entry_valid[ei])
-                deduplication_info->setUserToken(entry->async_dedup_token, entry_num_rows[ei]);
-            ++ei;
+            if (entry_num_rows[dedup_ei] > 0)
+                deduplication_info->setUserToken(entry->async_dedup_token, entry_num_rows[dedup_ei]);
+            ++dedup_ei;
         }
     }
 

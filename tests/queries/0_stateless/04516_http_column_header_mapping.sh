@@ -304,20 +304,17 @@ run_modes do_default_tests
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
 # ── Async schema drift and per-entry failure isolation ────────────────────────
-# Tests two async-specific behaviours:
-# 1. Same-TypeIndex parametric change (FixedString(4) -> FixedString(2)): the current
-#    TypeIndex comparison treats both as the same type; the value must be converted or
-#    the entry must fail gracefully rather than silently corrupting data.
-# 2. Per-entry failure isolation: an entry whose header value becomes invalid after the
-#    schema change must fail on its own without aborting the valid entries in the same batch.
+# Entries are buffered with a large busy timeout so they stay in the queue until
+# we ALTER the column type and call SYSTEM FLUSH ASYNC INSERT QUEUE manually.
+
+# Test 1: FixedString(4) -> FixedString(2) shrink.
+# Both entries are enqueued before the ALTER; the one with the 4-byte value must
+# fail in isolation while the 2-byte entry survives.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t;
-    CREATE TABLE t (code FixedString(4), payload String)
-    ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE t (code FixedString(4), payload String) ENGINE = MergeTree ORDER BY tuple();
 "
 
-# Use a large busy timeout so entries stay buffered until we explicitly flush.
-# Enqueue two entries before the schema change.
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: ab' \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
@@ -328,17 +325,20 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"exact-valid"}'
 
-# Shrink the column: 'abcd' (4 bytes) no longer fits in FixedString(2).
-# 'ab' (2 bytes) is still valid.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 
 echo "--- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-# 'ab' must be inserted; 'abcd' must fail in isolation (not in result).
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
 
-# Dedup regression: failed entry's token must remain retryable.
-# Queue two entries with distinct dedup tokens before the schema change.
+# Test 2: Dedup — a failed entry's token must remain retryable.
+# Recreate the table with FixedString(4) so push-time validation passes for 'abcd'.
+# Both entries are enqueued BEFORE the ALTER that invalidates 'abcd'.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t;
+    CREATE TABLE t (code FixedString(4), payload String) ENGINE = MergeTree ORDER BY tuple();
+"
+
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: ab' \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&insert_deduplication_token=token-valid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
@@ -352,30 +352,10 @@ ${CLICKHOUSE_CURL} -sS \
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 
-# Schema drift regression: text-compatible but Field-incompatible type change.
-# String -> Array(String): Field conversion would fail, but text re-parsing succeeds.
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS t;
-    CREATE TABLE t (tags String, payload String) ENGINE = MergeTree ORDER BY tuple();
-"
-
-${CLICKHOUSE_CURL} -sS \
-    -H "X-Tags: ['a','b']" \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Tags=tags" \
-    -d '{"payload":"text-compat"}'
-
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN tags Array(String)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-
-echo "--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse"
-${CLICKHOUSE_CLIENT} -q "SELECT tags, payload FROM t"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
-
 echo "--- async: failed dedup token remains retryable after schema drift"
-# Only the valid entry ('ab') must be in the table.
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
 
-# Retry the previously-failed entry with the same token — must succeed now.
+# Retry the previously-failed entry with the same token and a value that fits — must succeed.
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: ab' \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
@@ -383,11 +363,27 @@ ${CLICKHOUSE_CURL} -sS \
 
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
 
-# Regression: waiter with wait_for_async_insert=1 must receive an exception, not silent
-# 0-row success, when schema drift invalidates the buffered header value during defaults
-# evaluation (input_format_defaults_for_omitted_fields=1 path).
-# HTTP enqueue is synchronous: by the time the curl process is backgrounded, the entry
-# is already queued, so there is no race between enqueue and the ALTER below.
+# Test 3: String -> Array(String) (text-compatible, Field-incompatible) drift.
+# Uses a separate table dropped at the end.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_tags;
+    CREATE TABLE t_tags (tags String, payload String) ENGINE = MergeTree ORDER BY tuple();
+"
+
+${CLICKHOUSE_CURL} -sS \
+    -H "X-Tags: ['a','b']" \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t_tags+(payload)+FORMAT+JSONEachRow&http_column_X-Tags=tags" \
+    -d '{"payload":"text-compat"}'
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_tags MODIFY COLUMN tags Array(String)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+
+echo "--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse"
+${CLICKHOUSE_CLIENT} -q "SELECT tags, payload FROM t_tags"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_tags"
+
+# Test 4: waiter with wait_for_async_insert=1 must receive an error, not silent success,
+# when schema drift makes the buffered value unparseable at flush time.
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 
 drift_response=$(
