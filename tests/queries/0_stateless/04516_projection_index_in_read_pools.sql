@@ -23,8 +23,11 @@ ORDER BY id
 SETTINGS index_granularity = 16, min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 
+-- Two 'rare' clusters: rows 1600-1610 live in mark 100 and rows 1700-1710 in mark 106.
+-- The 100-mark common prefix and the second cluster matter for the parallel replicas
+-- in-order warmup check below.
 INSERT INTO t_proj_pools
-SELECT number, if(number BETWEEN 100 AND 110, 'rare', 'common'), number * 10
+SELECT number, if(number BETWEEN 1600 AND 1610 OR number BETWEEN 1700 AND 1710, 'rare', 'common'), number * 10
 FROM numbers(4096);
 
 OPTIMIZE TABLE t_proj_pools FINAL;
@@ -49,8 +52,9 @@ SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, optimiz
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Parallel replicas reading in order: MergeTreeReadPoolParallelReplicasInOrder (WithOrder mode).
+-- Single thread makes the sequence of tasks deterministic (no reading ahead of the LIMIT).
 SELECT /* refiner_query_parallel_replicas_in_order */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY id LIMIT 5
-SETTINGS max_threads = 4, optimize_read_in_order = 1,
+SETTINGS max_threads = 1, optimize_read_in_order = 1,
     enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
     -- projection support under parallel replicas requires a local plan and no aggregation-in-order
     parallel_replicas_local_plan = 1, optimize_aggregation_in_order = 0,
@@ -69,7 +73,7 @@ SELECT count() FROM t_proj_pools WHERE region = 'nonexistent';
 
 SYSTEM FLUSH LOGS query_log;
 
--- The part has 256 marks and all matching rows live in a single one,
+-- The part has 256 marks and all matching rows live in two of them,
 -- so the full scan must drop almost all marks at task-cut time.
 -- Do not assert on ReadPoolRangeRefinerDroppedCuts: whether a cut is dropped as a whole
 -- depends on the task sizing regime (storage type, stream count, read method), which is
@@ -103,8 +107,11 @@ WHERE current_database = currentDatabase()
     AND query NOT LIKE '%query_log%';
 
 -- Under parallel replicas the marks are spread over the participants, so sum the events
--- over all queries initiated by the marked one.
-SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 200 AS dropped_marks
+-- over all queries initiated by the marked one. ParallelReplicasReadMarks counts marks
+-- after refinement (only the ones which reach a reader): 2 surviving marks, not 256.
+SELECT
+    sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 200 AS dropped_marks,
+    sum(ProfileEvents['ParallelReplicasReadMarks']) < 10 AS read_marks_counted_after_refinement
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND initial_query_id IN (
@@ -116,8 +123,13 @@ WHERE type = 'QueryFinish'
             AND query NOT LIKE '%query_log%');
 
 -- In-order parallel replicas terminate early because of the LIMIT: reading forward only the
--- marks before the matching one are guaranteed to be cut and dropped, so assert just > 0.
-SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 0 AS dropped_marks
+-- marks before the first matching one are guaranteed to be cut and dropped, so assert > 0.
+-- The 100 fully pruned prefix cuts must not inflate the warmup task size: the first surviving
+-- task covers only mark 100, so exactly 1 mark is read; an inflated task would also pick up
+-- the second cluster in mark 106 and read 2.
+SELECT
+    sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 0 AS dropped_marks,
+    sum(ProfileEvents['ParallelReplicasReadMarks']) <= 1 AS warmup_not_inflated_by_dropped_cuts
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND initial_query_id IN (
@@ -128,8 +140,8 @@ WHERE type = 'QueryFinish'
             AND query LIKE '%refiner_query_parallel_replicas_in_order%'
             AND query NOT LIKE '%query_log%');
 
--- Reading in reverse order has to pass almost the whole part before the matching mark.
-SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 200 AS dropped_marks
+-- Reading in reverse order has to pass ~150 marks before the last matching mark.
+SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 100 AS dropped_marks
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND initial_query_id IN (
