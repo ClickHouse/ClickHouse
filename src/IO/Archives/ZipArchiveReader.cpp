@@ -556,6 +556,11 @@ public:
         int err = unzSeek64(raw_handle, off, whence);
         handle.rethrowStreamException();
         checkResult(err);
+
+        /// Discard buffered bytes from the previous position. Without this, the next read would
+        /// return stale data while getPosition() (= unzTell64() - available()) would also be wrong.
+        resetWorkingBuffer();
+
         return unzTell64(raw_handle);
     }
 
