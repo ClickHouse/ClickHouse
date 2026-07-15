@@ -103,6 +103,7 @@ Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- exclusive - With exclusive mode, nothing is tracked in Zookeeper. Your S3 url (first parameter in `S3Queue()`) *must* resolve to a unique host or path. This mode is only useful for high-throughput and/or self-hosted scenarios.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
@@ -245,7 +246,7 @@ Default value: `10`.
 
 ### `processing_threads_num` {#processing_threads_num}
 
-Number of threads to perform processing. Applies only for `Unordered` mode.
+Number of threads to perform processing. Applies only for `Unordered` or `Exclusive` mode.
 
 Default value: Number of CPUs or 16.
 
@@ -298,7 +299,7 @@ Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
-Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
+Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
 
 Possible values:
@@ -309,7 +310,7 @@ Default value: `1000`.
 
 ### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' or 'exclusive' mode.
 After the specified number of seconds, the file will be re-imported.
 
 Possible values:
