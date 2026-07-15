@@ -58,9 +58,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             /// query can refer to a dictionary. For such a dictionary `SHOW DICTIONARIES` is sufficient, which
             /// matches the behaviour of `EXISTS DICTIONARY <name>` and what the documentation promises.
             const auto access = getContext()->getAccess();
+            const StorageID dictionary_id{database, table};
             bool allowed_as_dictionary = !access->isGranted(AccessType::SHOW_TABLES, database, table)
                 && access->isGranted(AccessType::SHOW_DICTIONARIES, database, table)
-                && DatabaseCatalog::instance().isDictionaryExist({database, table});
+                && DatabaseCatalog::instance().isDictionaryExist(dictionary_id);
             if (allowed_as_dictionary)
             {
                 /// The privilege decision was made by observing a dictionary via `isDictionaryExist`.
@@ -69,6 +70,15 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 /// same name could let a user with only `SHOW DICTIONARIES` see the regular table without
                 /// the `SHOW TABLES` privilege, widening visibility for regular tables.
                 result = true;
+
+                /// Same rule as for tables: through a read-only `Overlay` facade a dictionary is visible
+                /// only when `SHOW_DICTIONARIES` is also granted on the underlying source dictionary, so
+                /// the facade cannot widen visibility. Report "does not exist" rather than throwing — the
+                /// source-side check can only run when the dictionary exists, so a denial would itself leak
+                /// existence.
+                if (auto storage = DatabaseCatalog::instance().tryGetTable(dictionary_id, getContext()))
+                    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(dictionary_id, storage))
+                        result = access->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
             }
             else
             {
@@ -132,8 +142,16 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
-        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
-        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
+        const auto & dictionary = exists_query->getTable();
+        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, dictionary);
+        auto storage = DatabaseCatalog::instance().tryGetTable({database, dictionary}, getContext());
+        result = storage && storage->isDictionary();
+
+        /// Same rule as for `EXISTS TABLE`: through a read-only `Overlay` facade a dictionary is
+        /// visible only when `SHOW_DICTIONARIES` is also granted on the underlying source dictionary.
+        if (result)
+            if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, dictionary}, storage))
+                result = getContext()->getAccess()->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{
