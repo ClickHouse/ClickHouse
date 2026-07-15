@@ -1,0 +1,400 @@
+---
+slug: /guides/replacing-merge-tree
+title: 'Travailler avec le moteur ReplacingMergeTree'
+description: 'Guide d’utilisation du moteur ReplacingMergeTree dans ClickHouse'
+keywords: ['replacingmergetree', 'inserts', 'deduplication']
+doc_type: 'guide'
+sidebarTitle: 'Travailler avec le moteur ReplacingMergeTree'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Alors que les bases de données transactionnelles sont optimisées pour les charges de travail transactionnelles de mise à jour et de suppression, les bases de données OLAP offrent des garanties plus limitées pour ce type d’opérations. Elles privilégient plutôt des données immuables, insérées par lots, afin de permettre des requêtes analytiques nettement plus rapides. Bien que ClickHouse propose des opérations de mise à jour via des mutations, ainsi qu’un mécanisme léger pour supprimer des lignes, sa structure orientée colonnes implique que ces opérations doivent être planifiées avec soin, comme décrit ci-dessus. Ces opérations sont gérées de manière asynchrone, traitées par un seul thread et nécessitent (dans le cas des mises à jour) que les données soient réécrites sur disque. Elles ne doivent donc pas être utilisées pour un grand nombre de petites modifications.
+Afin de traiter un flux de lignes de mise à jour et de suppression tout en évitant les schémas d’utilisation ci-dessus, nous pouvons utiliser le moteur de table ReplacingMergeTree de ClickHouse.
+
+<div id="automatic-upserts-of-inserted-rows">
+  ## Upserts automatiques des lignes insérées
+</div>
+
+Le [moteur de table ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) permet d’appliquer des opérations de mise à jour aux lignes sans avoir à recourir à des instructions `ALTER` ou `DELETE` peu efficaces, en vous permettant d’insérer plusieurs copies d’une même ligne et d’en désigner une comme version la plus récente. Un processus d’arrière-plan supprime ensuite de manière asynchrone les anciennes versions de cette ligne, reproduisant ainsi efficacement une opération de mise à jour à l’aide d’insertions immuables.
+Cela repose sur la capacité du moteur de table à identifier les lignes en double. Pour cela, la clause `ORDER BY` est utilisée pour déterminer l’unicité : si deux lignes ont les mêmes valeurs pour les colonnes spécifiées dans `ORDER BY`, elles sont considérées comme des doublons. Une colonne `version`, spécifiée lors de la définition de la table, permet de conserver la version la plus récente d’une ligne lorsque deux lignes sont identifiées comme des doublons, c’est-à-dire que la ligne ayant la valeur de version la plus élevée est conservée.
+Nous illustrons ce processus dans l’exemple ci-dessous. Ici, les lignes sont identifiées de manière unique par la colonne A (le `ORDER BY` de la table). Nous supposons que ces lignes ont été insérées en deux lots, ce qui entraîne la création de deux data parts sur disque. Plus tard, lors d’un processus d’arrière-plan asynchrone, ces parts sont fusionnées.
+
+ReplacingMergeTree permet également de spécifier une colonne deleted. Celle-ci peut contenir 0 ou 1, où une valeur de 1 indique que la ligne (et ses doublons) a été supprimée, tandis que 0 est utilisé dans le cas contraire. **Remarque : les lignes supprimées ne seront pas retirées au moment de la fusion.**
+
+Pendant ce processus, voici ce qui se produit lors de la fusion des parts :
+
+* La ligne identifiée par la valeur 1 pour la colonne A possède à la fois une ligne de mise à jour avec la version 2 et une ligne de suppression avec la version 3 (et une valeur de 1 dans la colonne deleted). La ligne la plus récente, marquée comme supprimée, est donc conservée.
+* La ligne identifiée par la valeur 2 pour la colonne A possède deux lignes de mise à jour. La plus récente est conservée avec une valeur de 6 pour la colonne price.
+* La ligne identifiée par la valeur 3 pour la colonne A possède une ligne avec la version 1 et une ligne de suppression avec la version 2. Cette ligne de suppression est conservée.
+
+À l’issue de ce processus de fusion, nous obtenons quatre lignes représentant l’état final :
+
+<br />
+
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Processus ReplacingMergeTree" />
+
+<br />
+
+Notez que les lignes supprimées ne sont jamais retirées. Elles peuvent être supprimées de manière forcée avec un `OPTIMIZE table FINAL CLEANUP`. Cela nécessite le paramètre expérimental `allow_experimental_replacing_merge_with_cleanup=1`. Cette opération ne doit être lancée que dans les conditions suivantes :
+
+1. Vous devez être certain qu’aucune ligne avec d’anciennes versions (pour celles qui sont supprimées avec le nettoyage) ne sera insérée après l’exécution de l’opération. Si de telles lignes sont insérées, elles seront conservées à tort, car les lignes supprimées ne seront plus présentes.
+2. Assurez-vous que toutes les répliques sont synchronisées avant d’exécuter le nettoyage. Cela peut être réalisé avec la commande :
+
+<br />
+
+```sql
+SYSTEM SYNC REPLICA table
+```
+
+Nous recommandons de mettre en pause les insertions une fois que (1) est garanti, et de les laisser en pause jusqu’à ce que cette commande et le nettoyage qui s’ensuit soient terminés.
+
+> La gestion des suppressions avec ReplacingMergeTree n’est recommandée que pour les tables avec un volume faible à modéré de suppressions (moins de 10 %), à moins de pouvoir planifier des périodes de nettoyage dans les conditions ci-dessus.
+
+> Conseil : vous pourrez peut-être aussi exécuter `OPTIMIZE FINAL CLEANUP` sur certaines partitions qui ne sont plus modifiées.
+
+<div id="choosing-a-primarydeduplication-key">
+  ## Choix d’une clé primaire/de déduplication
+</div>
+
+Ci-dessus, nous avons mis en évidence une contrainte supplémentaire importante qui doit également être respectée dans le cas de ReplacingMergeTree : les valeurs des colonnes de `ORDER BY` identifient de manière unique une ligne au fil des modifications. En cas de migration depuis une base de données transactionnelle comme Postgres, la clé primaire d’origine de Postgres doit donc être incluse dans la clause `ORDER BY` de ClickHouse.
+
+Les utilisateurs de ClickHouse savent qu’il faut choisir les colonnes de la clause `ORDER BY` de leurs tables pour [optimiser les performances des requêtes](/fr/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key). En règle générale, ces colonnes doivent être sélectionnées en fonction de vos [requêtes fréquentes et listées par ordre croissant de cardinalité](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales). Point important, ReplacingMergeTree impose une contrainte supplémentaire : ces colonnes doivent être immuables, c.-à-d. que, si vous répliquez depuis Postgres, vous ne devez ajouter des colonnes à cette clause que si elles ne changent pas dans les données Postgres sous-jacentes. Même si d’autres colonnes peuvent changer, celles-ci doivent rester cohérentes afin de garantir l’identification unique des lignes.
+Pour les workloads analytiques, la clé primaire de Postgres est généralement peu utile, car vous effectuerez rarement des recherches ponctuelles de lignes. Étant donné que nous recommandons d’ordonner les colonnes par cardinalité croissante, et que les correspondances sur les [colonnes listées plus tôt dans ORDER BY seront généralement plus rapides](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently), la clé primaire de Postgres doit être ajoutée à la fin de `ORDER BY` (sauf si elle présente une valeur analytique). Si plusieurs colonnes forment une clé primaire dans Postgres, elles doivent être ajoutées à `ORDER BY`, en respectant la cardinalité et leur utilité probable pour les requêtes. Vous pouvez également générer une clé primaire unique à l’aide d’une concaténation de valeurs via une colonne `MATERIALIZED`.
+
+Considérons la table posts du jeu de données Stack Overflow.
+
+```sql
+CREATE TABLE stackoverflow.posts_updateable
+(
+       `Version` UInt32,
+       `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(Version, Deleted)
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+```
+
+Nous utilisons une clé `ORDER BY` de `(PostTypeId, toDate(CreationDate), CreationDate, Id)`. La colonne `Id`, unique pour chaque post, garantit que les lignes peuvent être dédupliquées. Les colonnes `Version` et `Deleted` sont ajoutées au schéma, comme requis.
+
+<div id="querying-replacingmergetree">
+  ## Interrogation de ReplacingMergeTree
+</div>
+
+Au moment de la fusion, ReplacingMergeTree identifie les lignes dupliquées en utilisant les valeurs des colonnes `ORDER BY` comme identifiant unique, et conserve soit uniquement la version la plus élevée, soit supprime tous les doublons si la version la plus récente indique une suppression. Ce mécanisme n’assure toutefois une exactitude qu’à terme : il ne garantit pas que les lignes seront dédupliquées, et vous ne devez pas vous y fier.
+
+<Info>
+  **Utilisez FINAL pour lire des données dédupliquées**
+
+  Comme la déduplication ne se produit que lors des fusions en arrière-plan, un simple `SELECT` peut toujours renvoyer des lignes dupliquées ou supprimées. Pour obtenir des résultats corrects au moment de la requête, utilisez le modificateur `FINAL`, qui finalise la déduplication et la suppression des lignes supprimées pendant l’exécution de la requête.
+</Info>
+
+Prenons la table Posts ci-dessus. Nous pouvons utiliser la méthode habituelle pour charger ce jeu de données, mais en spécifiant une colonne deleted et une colonne version, en plus de la valeur 0. À titre d’exemple, nous ne chargeons que 10000 lignes.
+
+```sql
+INSERT INTO stackoverflow.posts_updateable SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet') WHERE AnswerCount > 0 LIMIT 10000
+```
+
+```response
+0 rows in set. Elapsed: 1.980 sec. Processed 8.19 thousand rows, 3.52 MB (4.14 thousand rows/s., 1.78 MB/s.)
+```
+
+Vérifions le nombre de lignes :
+
+```sql
+SELECT count() FROM stackoverflow.posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Nous mettons maintenant à jour nos statistiques après la réponse. Au lieu de mettre à jour ces valeurs, nous insérons de nouvelles copies de 5 000 lignes et ajoutons 1 à leur numéro de version (cela signifie que 150 lignes existeront dans la table). Nous pouvons simuler cela avec un simple `INSERT INTO SELECT` :
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0
+LIMIT 5000
+```
+
+```response
+0 rows in set. Elapsed: 4.056 sec. Processed 1.42 million rows, 2.20 GB (349.63 thousand rows/s., 543.39 MB/s.)
+```
+
+De plus, nous supprimons 1 000 posts aléatoires en réinsérant les lignes, mais avec la colonne deleted définie à 1. Là encore, on peut reproduire cette simulation avec un simple `INSERT INTO SELECT`.
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        1 AS Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount + 1 AS AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0 AND AnswerCount > 0
+LIMIT 1000
+```
+
+```response
+0 rows in set. Elapsed: 0.166 sec. Processed 135.53 thousand rows, 212.65 MB (816.30 thousand rows/s., 1.28 GB/s.)
+```
+
+Le résultat des opérations ci-dessus sera de 16 000 lignes, c’est-à-dire 10 000 + 5 000 + 1 000. En réalité, nous ne devrions avoir que 1 000 lignes de moins que notre total initial, c’est-à-dire 10 000 - 1 000 = 9 000.
+
+```sql
+SELECT count()
+FROM posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Vos résultats varieront selon les fusions déjà effectuées. On constate que le total diffère en raison de lignes en double. L’application de `FINAL` sur la table donne le résultat correct.
+
+```sql
+SELECT count()
+FROM posts_updateable
+FINAL
+```
+
+```response
+┌─count()─┐
+│    9000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 11.81 thousand rows, 212.54 KB (2.14 million rows/s., 38.61 MB/s.)
+Peak memory usage: 8.14 MiB.
+```
+
+<div id="final-performance">
+  ## Performances de `FINAL`
+</div>
+
+L’opérateur `FINAL` entraîne effectivement un léger surcoût de performance sur les requêtes.
+Cela sera surtout perceptible lorsque les requêtes ne filtrent pas sur les colonnes de clé primaire,
+ce qui oblige à lire davantage de données et augmente le surcoût de déduplication. Si vous
+filtrez sur des colonnes de clé à l’aide d’une condition `WHERE`, la quantité de données chargées et soumises à la
+déduplication sera réduite.
+
+Si la condition `WHERE` n’utilise pas de colonne de clé, ClickHouse n’exploite actuellement pas l’optimisation `PREWHERE` lors de l’utilisation de `FINAL`. Cette optimisation vise à réduire le nombre de lignes lues pour les colonnes non filtrées. Des exemples montrant comment reproduire ce `PREWHERE`, et ainsi potentiellement améliorer les performances, sont disponibles [ici](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance).
+
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## Exploiter les partitions avec ReplacingMergeTree
+</div>
+
+Dans ClickHouse, la fusion des données s’effectue au niveau des partitions. Lors de l’utilisation de ReplacingMergeTree, nous recommandons de partitionner la table conformément aux bonnes pratiques, à condition de pouvoir garantir que cette **clé de partitionnement ne change pas pour une même ligne**. Ainsi, les mises à jour concernant une même ligne seront envoyées vers la même partition ClickHouse. Vous pouvez réutiliser la même clé de partitionnement que dans Postgres, à condition de respecter les bonnes pratiques décrites ici.
+
+Si c’est bien le cas, vous pouvez utiliser le paramètre `do_not_merge_across_partitions_select_final=1` pour améliorer les performances des requêtes `FINAL`. Ce paramètre permet de fusionner et de traiter les partitions indépendamment lors de l’utilisation de FINAL.
+
+Prenons la table posts suivante, dans laquelle nous n’utilisons aucun partitionnement :
+
+```sql
+CREATE TABLE stackoverflow.posts_no_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+INSERT INTO stackoverflow.posts_no_part SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
+```
+
+Pour faire en sorte que `FINAL` ait effectivement du travail à faire, nous mettons à jour 1 M de lignes - en incrémentant leur `AnswerCount` par insertion de lignes en doublon.
+
+```sql
+INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
+FROM posts_no_part
+LIMIT 1000000
+```
+
+Calcul de la somme des réponses par année avec `FINAL` :
+
+```sql
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_no_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │        371480 │
+...
+│ 2024 │        127765 │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 2.338 sec. Processed 122.94 million rows, 1.84 GB (52.57 million rows/s., 788.58 MB/s.)
+Peak memory usage: 2.09 GiB.
+```
+
+Répétez ces mêmes étapes pour une table partitionnée par année, puis répétez la requête ci-dessus avec `do_not_merge_across_partitions_select_final=1`.
+
+```sql
+CREATE TABLE stackoverflow.posts_with_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+// populate & update omitted
+
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_with_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │       387832  │
+│ 2009 │       1165506 │
+│ 2010 │       1755437 │
+...
+│ 2023 │       787032  │
+│ 2024 │       127765  │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
+```
+
+Comme on le voit, le partitionnement a considérablement amélioré les performances des requêtes dans ce cas, en permettant au processus de déduplication de s’effectuer en parallèle au niveau des partitions.
+
+<div id="merge-behavior-considerations">
+  ## Considérations sur le comportement de fusion
+</div>
+
+Le mécanisme de sélection des fusions de ClickHouse va au-delà de la simple fusion de parts. Ci-dessous, nous examinons ce comportement dans le contexte de ReplacingMergeTree, notamment les options de configuration permettant d&#39;activer une fusion plus agressive des données anciennes, ainsi que les points à prendre en compte pour les parts plus volumineuses.
+
+<div id="merge-selection-logic">
+  ### Logique de sélection des fusions
+</div>
+
+Si les fusions visent à réduire le nombre de parts, elles tiennent aussi compte du coût de l’amplification des écritures. Par conséquent, certaines plages de parts sont exclues de la fusion si, d’après des calculs internes, elles entraînent une amplification des écritures excessive. Ce comportement permet d’éviter une consommation inutile de ressources et de prolonger la durée de vie des composants de stockage.
+
+<div id="merging-behavior-on-large-parts">
+  ### Comportement de fusion sur les grandes parts de données
+</div>
+
+Le moteur ReplacingMergeTree de ClickHouse est optimisé pour gérer les lignes en double en fusionnant les parts de données, de façon à ne conserver que la version la plus récente de chaque ligne selon une clé unique spécifiée. Cependant, lorsqu’une part fusionnée atteint le seuil `max_bytes_to_merge_at_max_space_in_pool`, elle n’est plus retenue pour de nouvelles fusions, même si `min_age_to_force_merge_seconds` est défini. Par conséquent, les fusions automatiques ne suffisent plus pour supprimer les doublons susceptibles de s’accumuler au fil des insertions de données.
+
+Pour y remédier, vous pouvez exécuter `OPTIMIZE FINAL` afin de fusionner manuellement les parts et de supprimer les doublons. Contrairement aux fusions automatiques, `OPTIMIZE FINAL` contourne le seuil `max_bytes_to_merge_at_max_space_in_pool` et fusionne les parts uniquement en fonction des ressources disponibles, en particulier l’espace disque, jusqu’à ce qu’il ne reste plus qu’une seule part dans chaque partition. Cependant, cette approche peut être gourmande en mémoire sur les grandes tables et peut nécessiter d’être relancée à mesure que de nouvelles données sont ajoutées.
+
+Pour une solution plus durable qui préserve les performances, il est recommandé de partitionner la table. Cela peut aider à éviter que les parts de données n’atteignent la taille maximale de fusion et à réduire le recours à des optimisations manuelles répétées.
+
+<div id="partitioning-and-merging-across-partitions">
+  ### Partitionnement et fusion entre partitions
+</div>
+
+Comme indiqué dans « Exploiter les partitions avec ReplacingMergeTree », nous recommandons, comme bonne pratique, de partitionner les tables. Le partitionnement isole les données pour rendre les fusions plus efficaces et évite les fusions entre partitions, en particulier lors de l’exécution des requêtes. Ce comportement a été amélioré à partir de la version 23.12 : si la clé de partition est un préfixe de la clé de tri, aucune fusion entre partitions n’est effectuée au moment de l’exécution de la requête, ce qui améliore les performances des requêtes.
+
+<div id="tuning-merges-for-better-query-performance">
+  ### Ajuster les fusions pour améliorer les performances des requêtes
+</div>
+
+Par défaut, `min_age_to_force_merge_seconds` et `min_age_to_force_merge_on_partition_only` sont définis respectivement sur 0 et false, ce qui désactive ces fonctionnalités. Dans cette configuration, ClickHouse applique le comportement de fusion standard, sans forcer de fusions en fonction de l’ancienneté de la partition.
+
+Si une valeur est spécifiée pour `min_age_to_force_merge_seconds`, ClickHouse ignorera les heuristiques de fusion habituelles pour les parts plus anciennes que la période indiquée. Bien que cela ne soit généralement utile que si l’objectif est de minimiser le nombre total de parts, cela peut améliorer les performances des requêtes dans ReplacingMergeTree en réduisant le nombre de parts à fusionner au moment de l’exécution de la requête.
+
+Ce comportement peut être affiné davantage en définissant `min_age_to_force_merge_on_partition_only=true`, ce qui impose que toutes les parts de la partition soient plus anciennes que `min_age_to_force_merge_seconds` pour déclencher une fusion agressive. Cette configuration permet aux partitions les plus anciennes de fusionner progressivement en une seule part, ce qui consolide les données et maintient de bonnes performances des requêtes.
+
+<div id="recommended-settings">
+  ### Paramètres recommandés
+</div>
+
+<Warning>
+  Le réglage du comportement de fusion est une opération avancée. Nous vous recommandons de consulter le support ClickHouse avant d’activer ces paramètres en production.
+</Warning>
+
+Dans la plupart des cas, il est préférable de définir `min_age_to_force_merge_seconds` sur une valeur faible — nettement inférieure à la période de partition. Cela réduit au minimum le nombre de parts et évite des fusions inutiles au moment de la requête avec l’opérateur `FINAL`.
+
+Prenons par exemple une partition mensuelle déjà fusionnée en une seule part. Si un petit insert isolé crée une nouvelle part dans cette partition, les performances des requêtes peuvent s’en ressentir, car ClickHouse doit lire plusieurs parts jusqu’à ce que la fusion soit terminée. Définir `min_age_to_force_merge_seconds` permet de garantir une fusion agressive de ces parts, évitant ainsi une dégradation des performances des requêtes.

@@ -1,0 +1,117 @@
+---
+description: 'Memory 엔진은 데이터를 RAM에 압축되지 않은 형태로 저장합니다. 데이터는
+  읽을 때 입력된 그대로의 형태로 저장됩니다. 즉, 이 테이블에서 읽기는
+  사실상 비용이 전혀 들지 않습니다.'
+sidebarTitle: 'Memory'
+slug: /engines/table-engines/special/memory
+title: 'Memory 테이블 엔진'
+doc_type: '참고'
+---
+
+<Note>
+  ClickHouse Cloud에서 Memory 테이블 엔진을 사용할 때 데이터는 설계상 모든 노드에 복제되지 않습니다. 모든 쿼리가 동일한 노드로 라우팅되고 Memory 테이블 엔진이 예상대로 동작하도록 보장하려면 다음 중 하나를 수행할 수 있습니다:
+
+  * 모든 작업을 동일한 세션에서 실행하세요
+  * TCP 또는 네이티브 인터페이스(고정 연결 지원 활성화)를 사용하는 클라이언트를 사용하세요. 예: [clickhouse-client](/ko/concepts/features/interfaces/client)
+</Note>
+
+Memory 엔진은 데이터를 RAM에 압축되지 않은 형태로 저장합니다. 데이터는 읽을 때 입력된 그대로의 형태로 저장됩니다. 즉, 이 테이블에서 읽기는 사실상 비용이 전혀 들지 않습니다.
+동시 데이터 접근은 동기화됩니다. 잠금 시간은 짧으며, 읽기 및 쓰기 작업이 서로를 차단하지 않습니다.
+인덱스는 지원되지 않습니다. 읽기는 병렬로 수행됩니다.
+
+최대 성능(초당 10GB 초과)은 단순한 쿼리에서 달성됩니다. 이는 디스크에서 읽거나, 데이터를 압축 해제하거나 역직렬화할 필요가 없기 때문입니다. (다만 많은 경우 MergeTree 엔진의 성능도 거의 그에 가깝게 높습니다.)
+서버를 다시 시작하면 테이블의 데이터는 사라지고 테이블은 비게 됩니다.
+일반적으로 이 테이블 엔진을 사용할 타당성은 크지 않습니다. 그러나 테스트용으로는 사용할 수 있으며, 비교적 적은 수의 행(대략 최대 100,000,000개)에서 최대 속도가 필요한 작업에도 사용할 수 있습니다.
+
+Memory 엔진은 시스템에서 외부 쿼리 데이터용 임시 테이블(「쿼리 처리를 위한 외부 데이터」 섹션 참조)과 `GLOBAL IN` 구현(「IN 연산자」 섹션 참조)에 사용됩니다.
+
+Memory 엔진 테이블 크기를 제한하기 위해 상한과 하한을 지정할 수 있으며, 이를 통해 사실상 순환 버퍼처럼 동작하게 할 수 있습니다([엔진 매개변수](#engine-parameters) 참조).
+
+<div id="engine-parameters">
+  ## 엔진 매개변수
+</div>
+
+* `min_bytes_to_keep` — 메모리 테이블에 크기 제한이 설정된 경우 유지할 최소 바이트 수입니다.
+  * 기본값: `0`
+  * `max_bytes_to_keep`와 함께 사용해야 합니다
+* `max_bytes_to_keep` — 메모리 테이블에서 유지할 최대 바이트 수입니다. 각 삽입 시 가장 오래된 행이 삭제되며(즉, 순환 버퍼), 큰 블록을 추가할 때 제거 대상인 가장 오래된 행 배치가 `min_bytes_to_keep` 제한 아래로 내려가면 실제 최대 바이트 수가 명시된 제한을 초과할 수 있습니다.
+  * 기본값: `0`
+* `min_rows_to_keep` — 메모리 테이블에 크기 제한이 설정된 경우 유지할 최소 행 수입니다.
+  * 기본값: `0`
+  * `max_rows_to_keep`와 함께 사용해야 합니다
+* `max_rows_to_keep` — 메모리 테이블에서 유지할 최대 행 수입니다. 각 삽입 시 가장 오래된 행이 삭제되며(즉, 순환 버퍼), 큰 블록을 추가할 때 제거 대상인 가장 오래된 행 배치가 `min_rows_to_keep` 제한 아래로 내려가면 실제 최대 행 수가 명시된 제한을 초과할 수 있습니다.
+  * 기본값: `0`
+* `compress` - 메모리에서 데이터를 압축할지 여부입니다.
+  * 기본값: `false`
+
+<div id="usage">
+  ## 사용법
+</div>
+
+**설정 초기화**
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**설정 변경**
+
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**참고:** `bytes` 및 `rows` 제한 매개변수는 동시에 설정할 수 있지만, 이 경우 `max`와 `min` 중 더 낮은 한도가 적용됩니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. 최소 임계값으로 인해 가장 오래된 블록이 삭제되지 않는지 테스트 - 3000 행 */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 8'192 bytes
+
+/* 2. 삭제되지 않는 블록 추가 */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 1'024 bytes
+
+/* 3. 가장 오래된 블록이 삭제되는지 테스트 - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
+
+/* 4. 매우 큰 블록이 모든 항목을 재정의하는지 확인 */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+
+행도 마찬가지입니다:
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
+
+/* 1. 최소 임계값으로 인해 가장 오래된 블록이 삭제되지 않는지 테스트 - 3000 행 */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 1'600 행
+
+/* 2. 삭제되지 않는 블록 추가 */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 100 행
+
+/* 3. 가장 오래된 블록이 삭제되는지 테스트 - 9216 바이트 - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 행
+
+/* 4. 매우 큰 블록이 모든 항목을 재정의하는지 확인 */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 행
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```

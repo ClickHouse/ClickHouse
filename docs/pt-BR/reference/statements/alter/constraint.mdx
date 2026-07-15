@@ -1,0 +1,24 @@
+---
+description: 'Documentação sobre manipulação de restrições'
+sidebarTitle: 'CONSTRAINT'
+slug: /sql-reference/statements/alter/constraint
+title: 'Manipulação de restrições'
+doc_type: 'reference'
+---
+
+As restrições podem ser adicionadas ou excluídas usando a seguinte sintaxe:
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+```
+
+Veja mais sobre [restrições](/pt-BR/reference/statements/create/table#constraints).
+
+As consultas adicionam ou removem metadados sobre restrições da tabela e, por isso, são processadas imediatamente.
+
+<Tip>
+  A verificação da restrição **não será executada** nos dados existentes caso ela tenha sido adicionada.
+</Tip>
+
+Todas as alterações em tabelas replicadas são propagadas para o ZooKeeper e também serão aplicadas às outras réplicas.

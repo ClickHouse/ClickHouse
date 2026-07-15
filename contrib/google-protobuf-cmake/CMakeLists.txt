@@ -109,8 +109,10 @@ set(libprotobuf_lite_files
 )
 
 add_library(_libprotobuf-lite ${libprotobuf_lite_files})
+if (NOT USE_MUSL)
+    target_link_libraries(_libprotobuf-lite pthread)
+endif()
 target_link_libraries(_libprotobuf-lite
-    pthread
     utf8_validity)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf-lite log)
@@ -203,8 +205,10 @@ add_library(_libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
 if (ENABLE_FUZZING)
     target_compile_options(_libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
+if (NOT USE_MUSL)
+    target_link_libraries(_libprotobuf pthread)
+endif()
 target_link_libraries(_libprotobuf
-    pthread
     ch_contrib::zlib
     utf8_validity
     ${protobuf_absl_used_targets})
@@ -414,9 +418,11 @@ add_library(protobuf::libprotoc ALIAS _libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 add_executable(protoc ${protoc_files})
-target_link_libraries(protoc _libprotoc
-    _libprotobuf
-    pthread
+target_link_libraries(protoc _libprotoc _libprotobuf)
+if (NOT USE_MUSL)
+    target_link_libraries(protoc pthread)
+endif()
+target_link_libraries(protoc
     utf8_validity
     ${protobuf_absl_used_targets})
 target_include_directories(protoc PRIVATE
@@ -436,7 +442,7 @@ if (ENABLE_FUZZING)
 endif()
 
 add_native_target (protoc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 endif()
 

@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'jdbc', '连接', '集成']
+slug: /integrations/jdbc/jdbc-with-clickhouse
+description: 'ClickHouse JDBC Bridge 使 ClickHouse 能够访问任何提供 JDBC 驱动的外部数据源中的数据'
+title: '使用 JDBC 将 ClickHouse 连接到外部数据源'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Warning>
+  clickhouse-jdbc-bridge 包含实验性代码，且已不再受支持。它可能存在可靠性和安全漏洞。使用风险请自行承担。
+</Warning>
+
+<Note>
+  使用 JDBC 需要借助 ClickHouse JDBC Bridge，因此你需要在本地机器上使用 `clickhouse-local` 将数据从你的数据库流式传输到 ClickHouse Cloud。详情请参阅文档 **Migrate** 部分中的 [**Using clickhouse-local**](/zh/get-started/migrate/other-methods/clickhouse-local-etl) 页面。
+</Note>
+
+**概述：** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> 配合 [jdbc 表函数](/zh/reference/functions/table-functions/jdbc) 或 [JDBC 表引擎](/zh/reference/engines/table-engines/integrations/jdbc)，可让 ClickHouse 访问任何提供了 <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC 驱动</a> 的外部数据源中的数据：
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="ClickHouse JDBC Bridge 架构图" background="white" />
+
+当某个外部数据源没有可用的原生内置[集成引擎](/zh/reference/engines/table-engines/integrations/index)、表函数或外部字典，但该数据源有 JDBC 驱动时，这种方式就很方便。
+
+你既可以使用 ClickHouse JDBC Bridge 进行读取，也可以进行写入。它还可以同时用于多个外部数据源；例如，你可以让 ClickHouse 对多个外部和内部数据源实时运行分布式查询。
+
+在本教程中，我们将向你演示如何轻松安装、配置并运行 ClickHouse JDBC Bridge，以便将 ClickHouse 连接到外部数据源。本教程将使用 MySQL 作为外部数据源。
+
+让我们开始吧！
+
+<Info>
+  **前置条件**
+
+  你需要能访问一台满足以下条件的机器：
+
+  1. 具备 Unix shell 和互联网访问能力
+  2. 已安装 <a href="https://www.gnu.org/software/wget/" target="_blank">wget</a>
+  3. 已安装当前版本的 **Java** (例如 <a href="https://openjdk.java.net" target="_blank">OpenJDK</a> Version &gt;= 17)
+  4. 已安装并运行当前版本的 **MySQL** (例如 <a href="https://www.mysql.com" target="_blank">MySQL</a> Version &gt;=8)
+  5. 已[安装](/zh/get-started/setup/install)并运行当前版本的 **ClickHouse**
+</Info>
+
+<div id="install-the-clickhouse-jdbc-bridge-locally">
+  ## 在本地安装 ClickHouse JDBC Bridge
+</div>
+
+使用 ClickHouse JDBC Bridge 最简单的方式，就是将其安装并运行在与 ClickHouse 相同的主机上：<Image img="/images/integrations/data-ingestion/dbms/jdbc-02.webp" size="lg" alt="ClickHouse JDBC Bridge 本地部署示意图" background="white" />
+
+首先，连接到运行 ClickHouse 的机器上的 Unix shell，并创建一个本地文件夹，稍后我们会将 ClickHouse JDBC Bridge 安装到该文件夹中 (文件夹名称和存放位置都可以自行决定) ：
+
+```bash
+mkdir ~/clickhouse-jdbc-bridge
+```
+
+现在将 ClickHouse JDBC Bridge 的<a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/" target="_blank">当前版本</a>下载到该文件夹中：
+
+```bash
+cd ~/clickhouse-jdbc-bridge
+wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0.7/clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+为了连接到 MySQL，我们将创建一个命名数据源：
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ mkdir -p config/datasources
+ touch config/datasources/mysql8.json
+```
+
+现在，您可以将以下配置复制并粘贴到 `~/clickhouse-jdbc-bridge/config/datasources/mysql8.json` 文件中：
+
+```json
+ {
+   "mysql8": {
+   "driverUrls": [
+     "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
+   ],
+   "jdbcUrl": "jdbc:mysql://<host>:<port>",
+   "username": "<username>",
+   "password": "<password>"
+   }
+ }
+```
+
+<Note>
+  在上面的配置文件中
+
+  * 你可以为数据源自由指定任意名称，这里我们使用的是 `mysql8`
+  * 在 `jdbcUrl` 的值中，你需要将 `<host>` 和 `<port>` 替换为与你当前运行的 MySQL instance 对应的值，例如 `"jdbc:mysql://localhost:3306"`
+  * 你需要将 `<username>` 和 `<password>` 替换为你的 MySQL credentials；如果你不使用密码，可以删除上面配置文件中的 `"password": "<password>"` 这一行
+  * 在 `driverUrls` 的值中，我们只是指定了一个用于下载 MySQL JDBC 驱动<a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">当前版本</a>的 URL。这样就可以了，ClickHouse JDBC Bridge 会自动下载该 JDBC 驱动 (到操作系统相关的目录中) 。
+</Note>
+
+<br />
+
+现在，我们已准备好启动 ClickHouse JDBC Bridge：
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+<Note>
+  我们以前台模式启动了 ClickHouse JDBC Bridge。要停止该 Bridge，可将上方的 Unix shell 窗口切回前台，然后按 `CTRL+C`。
+</Note>
+
+<div id="use-the-jdbc-connection-from-within-clickhouse">
+  ## 在 ClickHouse 中使用 JDBC 连接
+</div>
+
+ClickHouse 现在既可以通过 [jdbc 表函数](/zh/reference/functions/table-functions/jdbc)，也可以通过 [JDBC 表引擎](/zh/reference/engines/table-engines/integrations/jdbc) 访问 MySQL 数据。
+
+执行以下示例最简单的方式，是将其复制并粘贴到 [`clickhouse-client`](/zh/concepts/features/interfaces/cli) 或 [Play UI](/zh/concepts/features/interfaces/http) 中。
+
+* jdbc 表函数：
+
+```sql
+ SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
+```
+
+<Note>
+  这里将上面配置的命名数据源名称作为 `jdbc` 表函数的第一个参数。
+</Note>
+
+* JDBC 表引擎：
+
+```sql
+ CREATE TABLE mytable (
+      <column> <column_type>,
+      ...
+ )
+ ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
+
+ SELECT * FROM mytable;
+```
+
+<Note>
+  作为 jdbc engine 子句的第一个参数，我们使用了上面配置的命名数据源的名称
+
+  ClickHouse JDBC engine 表的 schema 必须与所连接的 MySQL 表的 schema 保持一致，例如列名和顺序必须相同，列的数据类型也必须兼容
+</Note>
+
+<div id="install-the-clickhouse-jdbc-bridge-externally">
+  ## 在外部安装 ClickHouse JDBC Bridge
+</div>
+
+对于分布式 ClickHouse 集群 (即包含多个 ClickHouse 主机的集群) ，将 ClickHouse JDBC Bridge 安装并运行在独立主机上是更合理的做法：
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="ClickHouse JDBC Bridge 外部部署示意图" background="white" />
+
+这样做的好处是，每个 ClickHouse 主机都可以访问 JDBC Bridge。否则，每个需要通过 Bridge 访问外部数据源的 ClickHouse 实例都必须在本地安装 JDBC Bridge。
+
+要在外部安装 ClickHouse JDBC Bridge，请执行以下步骤：
+
+1. 按照本指南第 1 节所述步骤，在专用主机上安装、配置并运行 ClickHouse JDBC Bridge。
+
+2. 在每个 ClickHouse 主机上，将以下配置块添加到 <a href="/zh/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">ClickHouse 服务器配置</a>中 (根据你选择的配置格式，使用 XML 或 YAML 版本之一) ：
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <jdbc_bridge>
+       <host>JDBC-Bridge-Host</host>
+       <port>9019</port>
+    </jdbc_bridge>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    jdbc_bridge:
+        host: JDBC-Bridge-Host
+        port: 9019
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  * 你需要将 `JDBC-Bridge-Host` 替换为专用 ClickHouse JDBC Bridge 主机的主机名或 IP 地址
+  * 这里指定的是默认的 ClickHouse JDBC Bridge 端口 `9019`；如果你为 JDBC Bridge 使用的是其他端口，则必须相应调整上述配置
+</Note>
+
+[//]: # "## 4. 其他信息"
+
+[//]: #
+
+[//]: # "TODO: "
+
+[//]: # "- 提到对于 jdbc table function，如果也将 schema 指定为参数，性能会更好 (每次不会发起两个查询)"
+
+[//]: #
+
+[//]: # "- 提到临时查询与表查询、saved query、named query 的区别"
+
+[//]: #
+
+[//]: # "- 提到 insert into "

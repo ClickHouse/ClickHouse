@@ -1,0 +1,70 @@
+---
+sidebarTitle: '개요'
+title: '에이전트형 데이터 스택'
+description: 'ClickHouse 기반 에이전트형 분석: ClickHouse Cloud에서는 완전 관리형으로, 또는 ClickHouse, MCP 서버, LibreChat, Langfuse로 구성된 오픈소스 스택을 자체 호스팅하여 사용할 수 있습니다.'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse에서 에이전트형 분석을 실행하는 가장 쉬운 방법은 ClickHouse Cloud의 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents)를 사용하는 것입니다. 완전 관리형이므로 직접 운영할 인프라가 필요 없습니다. 사용자는 자연어로 질문하면 되고, AI 에이전트가 데이터베이스를 직접 쿼리하여 답변합니다.
+
+자체 호스팅하려면 **에이전트형 데이터 스택**을 사용할 수 있습니다. 이 스택은 조합 가능한 오픈소스 스택입니다. 직접 실행하고, 자체 모델을 연결하며, 채팅과 데이터를 자체 환경에 유지할 수 있습니다. 이 스택은 [ClickHouse](/ko/get-started/setup/install), [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server), [LibreChat](/ko/products/agentic-data-stack/components/librechat), [Langfuse](/ko/products/agentic-data-stack/components/langfuse)로 구성됩니다.
+
+<div id="what-is-agentic-analytics">
+  ## 에이전트형 분석이란 무엇입니까?
+</div>
+
+에이전트형 분석에서는 모델이 데이터에 쿼리(query)를 실행해 답변의 근거를 확보합니다. 질문이 주어지면 에이전트는 사용 가능한 데이터베이스(database)와 테이블(table)을 확인하고, 어떤 쿼리를 실행할지 판단한 다음, 이를 ClickHouse에서 실행해 결과를 바탕으로 답변을 구성합니다. 또한 쿼리를 수정하거나 후속 쿼리를 실행하고, 여러 단계를 이어서 처리할 수도 있습니다. 쿼리가 실패하거나 예상과 다른 결과가 반환되면, 중단하는 대신 조정한 뒤 다시 시도합니다.
+
+<div id="what-you-can-do">
+  ## 할 수 있는 작업
+</div>
+
+* **자연어로 질문하고** 자체 데이터에서 도출된 답변을 받을 수 있습니다.
+* **코드 없이 에이전트를 구축**할 수 있습니다. 에이전트에 에이전트 지침과 도구를 제공한 뒤 재사용하면 됩니다.
+* **에이전트와 대화를 공유**할 수 있습니다. 읽기 전용 링크로 공유하면 다른 사용자가 답변의 근거가 된 쿼리를 추적할 수 있습니다.
+* **대화 내에서 쿼리 결과를 바탕으로 대화형 차트와 시각화를 생성**할 수 있습니다.
+* **답변을 평가하고 개선**할 수 있습니다. Langfuse에서 사람의 검토 또는 LLM 판정으로 응답을 점수화하고, 프롬프트와 에이전트를 개선하면 됩니다.
+
+<div id="architecture">
+  ## 에이전트형 데이터 스택이 어떻게 맞물려 작동하는지
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="에이전트형 데이터 스택 아키텍처: 사용자는 LibreChat와 상호작용하고, LibreChat은 LLM, MCP 서버를 통해 ClickHouse, 그리고 tracing을 위한 Langfuse에 연결됩니다" size="md" />
+
+사용자가 LibreChat에서 질문하면 모델이 응답 계획을 세우고, MCP 서버를 통해 도구를 호출해 ClickHouse를 탐색하고 쿼리합니다. 결과가 다시 전달되면 에이전트가 답변을 구성합니다. OpenTelemetry를 기반으로 하는 Langfuse는 prompt부터 도구 호출, 응답에 이르기까지 각 실행을 기록하고, 자동 또는 사람의 검토를 통해 출력을 평가할 수 있게 하며, 품질, 비용, 지연 시간을 추적합니다.
+
+ClickHouse MCP 서버는 개방형 표준인 [Model Context Protocol](https://modelcontextprotocol.io/)을 기반으로 하므로 LibreChat뿐 아니라 MCP와 호환되는 모든 클라이언트 또는 에이전트 프레임워크와 함께 사용할 수 있습니다. 클라이언트와 에이전트 라이브러리에 대한 내용은 [MCP 가이드](/ko/guides/use-cases/ai-ml/MCP)를 참조하십시오.
+
+<div id="components">
+  ## 구성 요소
+</div>
+
+| 구성 요소             | 역할                                          | 자세히 알아보기                                                       |
+| ----------------- | ------------------------------------------- | -------------------------------------------------------------- |
+| ClickHouse        | 에이전트가 쿼리하는 분석 엔진                            | [ClickHouse 시작하기](/ko/get-started/setup/install)             |
+| ClickHouse MCP 서버 | 에이전트가 도구로 사용할 수 있도록 ClickHouse를 노출하는 개방형 표준 | [MCP 서버](/ko/products/agentic-data-stack/components/mcp-server)   |
+| LibreChat         | 사용자가 상호작용하는 채팅 및 에이전트 프런트엔드                 | [LibreChat](/ko/products/agentic-data-stack/components/librechat) |
+| Langfuse          | 모든 프롬프트, 도구 호출, 응답에 대한 관측성                  | [Langfuse](/ko/products/agentic-data-stack/components/langfuse)   |
+
+<div id="get-started">
+  ## 시작하기
+</div>
+
+ClickHouse에서 에이전트형 분석을 실행하는 방법은 두 가지입니다:
+
+* **관리형(ClickHouse Cloud):** 별도 설정 없이 가장 빠르게 시작할 수 있는 방식입니다. [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents)는 데이터를 기반으로 호스팅형 채팅 및 에이전트를 제공합니다. 각 구성 요소도 관리형으로 제공됩니다: [원격 MCP 서버](/ko/products/cloud/features/ai-ml/remote-mcp) 및 [Langfuse Cloud](https://cloud.langfuse.com).
+* **자체 호스팅(오픈 소스):** [Docker Compose](/ko/products/agentic-data-stack/docker-setup)를 사용해 전체 스택을 직접 실행하고, 자체 모델을 연결하며, 데이터를 자체 환경에 유지할 수 있습니다.
+
+아무것도 설치하지 않고 공개 데이터셋으로 스택을 체험하려면 호스팅된 데모인 [AgentHouse](https://llm.clickhouse.com)를 사용하십시오.
+
+<div id="related">
+  ## 관련
+</div>
+
+ClickHouse의 다른 오픈소스 AI 기능:
+
+* [AI 기반 SQL 생성](/ko/guides/use-cases/ai-ml/ai-powered-sql-generation): ClickHouse Client 및 clickhouse-local에서 자연어를 SQL로 변환
+* [QBit을 사용한 벡터 검색](/ko/guides/use-cases/ai-ml/vector-search): 런타임에서 조정할 수 있는 벡터 검색

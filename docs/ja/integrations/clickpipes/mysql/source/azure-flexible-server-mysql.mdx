@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'Azure Flexible Server for MySQL'
+description: 'ClickPipes のソースとして Azure Flexible Server for MySQL を設定する'
+slug: /integrations/clickpipes/mysql/source/azure-flexible-server-mysql
+title: 'Azure Flexible Server for MySQL ソース設定ガイド'
+keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このステップバイステップガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Azure Flexible Server for MySQL から ClickHouse Cloud へデータをレプリケートするための設定方法を説明します。このサービスでサポートされているのは **一回限りのインジェスト** のみです。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
+
+<Warning>
+  **CDC による継続的インジェストはサポートされていません**。Azure Flexible Server for MySQL では、[`binlog_row_metadata`](https://dev.mysql.com/doc/refman/en/replication-options-binary-log.html#sysvar_binlog_row_metadata) システム変数を `FULL` に設定できません。これは、ClickPipes で完全な機能を備えた MySQL CDC (変更データキャプチャ) を利用するために必要です。
+
+  この機能をリクエストするには、[Azure フィードバック フォーラム](https://feedback.azure.com/d365community/forum/47b1e71d-ee24-ec11-b6e6-000d3a4f0da0) に機能要望を投稿するか、[この質問](https://learn.microsoft.com/en-us/answers/questions/766047/setting-binlog-row-metadata-to-full-in-azure-db-fo) に賛成票を投じるか、[Azure サポート](https://azure.microsoft.com/en-us/support/create-ticket/) にお問い合わせください。
+</Warning>
+
+<div id="configure-database-user">
+  ## データベースユーザーを設定する
+</div>
+
+管理者ユーザーとして Azure Flexible Server for MySQL インスタンスに接続し、次のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します。
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
+   ```
+
+2. スキーマに対する権限を付与します。次の例は `mysql` データベースに対する権限を示しています。レプリケートする各データベースとホストについて、これらのコマンドを繰り返し実行してください。
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. 権限の変更を適用します。
+
+   ```sql
+   FLUSH PRIVILEGES;
+   ```
+
+<div id="configure-network-access">
+  ## ネットワークアクセスを設定する
+</div>
+
+<Note>
+  ClickPipes は Azure プライベートリンク接続をサポートしていません。Azure Flexible Server for MySQL インスタンスへのパブリックアクセスを許可しない場合は、[SSH トンネルを使用して](/ja/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access) 安全に接続できます。Azure プライベートリンクは今後サポートされる予定です。
+</Note>
+
+次に、ClickPipes から Azure Flexible Server for MySQL インスタンスへの接続を許可する必要があります。
+
+<Tabs>
+  <Tab title="ClickPipes の IP を許可する">
+    1. Azure Portal で **すべてのリソース** に移動します。Azure Flexible Server for MySQL インスタンスを選択して、**概要** ページを開きます。
+
+    2. **設定** で **ネットワーク** を選択します。**パブリック アクセス** が有効になっていることを確認します。
+
+    3. **ファイアウォール ルール** セクションで、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/home#list-of-static-ips) を入力します。
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="IP 許可リストによるパブリックアクセス用のネットワーク設定" size="lg" border />
+
+    4. **保存** をクリックして、ネットワークセキュリティ設定の変更を保存します。
+  </Tab>
+
+  <Tab title="SSH トンネルを使用する">
+    Azure Flexible Server for MySQL インスタンスへのパブリックアクセスを許可しない場合は、まず接続を安全にトンネリングするための SSH 踏み台サーバーを設定する必要があります。Azure で SSH 踏み台サーバーを設定するには、次の手順に従います。
+
+    1. [公式ドキュメント](https://learn.microsoft.com/en-us/azure/virtual-machines/linux/quick-create-portal?tabs=ubuntu) に従って Azure Virtual Machine (VM) を作成し、起動します。
+       * VM が Azure Flexible Server for MySQL インスタンスと同じ Virtual Network (VNet) 内、または接続可能なピアリング済み VNet 内にあることを確認します。
+       * VM に [静的パブリック IP アドレス](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address) が割り当てられていることを確認します。この IP アドレスは、ClickPipes を SSH 踏み台サーバーに接続する際に使用します。
+
+    2. SSH 踏み台サーバーの Network Security Group (NSG) ルールを更新し、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/home#list-of-static-ips) からのトラフィックを許可します。
+
+    3. Azure Flexible Server for MySQL インスタンスのファイアウォール ルールを更新し、SSH 踏み台サーバーの [プライベート IP アドレス](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) からのトラフィックを許可します。
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## 次のステップ
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mysql/index)して、Azure Flexible Server for MySQL インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。インスタンスのセットアップ時に使用した接続情報は、ClickPipe の作成時に必要になるため、必ず控えておいてください。

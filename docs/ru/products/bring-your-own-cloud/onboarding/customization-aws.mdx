@@ -1,0 +1,109 @@
+---
+title: 'Пользовательская настройка AWS'
+slug: /cloud/reference/byoc/onboarding/customization-aws
+sidebarTitle: 'Пользовательская настройка AWS'
+keywords: ['BYOC', 'облако', 'собственное облако', 'онбординг', 'AWS', 'VPC']
+description: 'Разверните ClickHouse BYOC в существующей VPC AWS'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="customer-managed-vpc-aws">
+  ## Управляемая клиентом VPC (BYO-VPC) для AWS
+</div>
+
+Если вы хотите использовать существующую VPC для развертывания ClickHouse BYOC, а не поручать ClickHouse Cloud создание новой VPC, выполните приведенные ниже шаги. Такой подход дает больше контроля над конфигурацией сети и позволяет интегрировать ClickHouse BYOC в вашу существующую сетевую инфраструктуру.
+
+<Steps>
+  <Step>
+    ### Настройте существующую VPC
+
+    1. Пометьте VPC тегом `clickhouse-byoc="true"`.
+    2. Выделите как минимум 3 приватные подсети в 3 разных зонах доступности, которые будет использовать ClickHouse Cloud.
+    3. Убедитесь, что каждая подсеть имеет минимальный CIDR-диапазон `/23` (например, 10.0.0.0/23), чтобы обеспечить достаточное количество IP-адресов для развертывания ClickHouse.
+    4. Добавьте в каждую подсеть теги `kubernetes.io/role/internal-elb=1` и `clickhouse-byoc="true"`, чтобы обеспечить корректную настройку балансировщика нагрузки.
+
+    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="Подсеть BYOC VPC" />
+
+    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="Теги подсети BYOC VPC" />
+  </Step>
+
+  <Step>
+    ### Настройте конечную точку шлюза S3
+
+    Если в вашей VPC еще не настроена конечная точка шлюза S3, ее нужно создать, чтобы обеспечить безопасное приватное взаимодействие между вашей VPC и Amazon S3. Эта конечная точка позволяет сервисам ClickHouse обращаться к S3 без выхода в публичный интернет. Пример конфигурации приведен на снимке экрана ниже.
+
+    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="Конечная точка S3 BYOC" />
+  </Step>
+
+  <Step>
+    ### Убедитесь в наличии сетевой связности
+
+    **Исходящий доступ в интернет**
+    Ваша VPC должна как минимум разрешать исходящий доступ в интернет, чтобы компоненты ClickHouse BYOC могли взаимодействовать с control plane Tailscale. Tailscale используется для обеспечения безопасной zero-trust-сети для приватных операций управления. Для первоначальной регистрации и настройки Tailscale требуется доступ к публичному интернету — напрямую или через NAT gateway. Это подключение необходимо для сохранения как конфиденциальности, так и безопасности вашего развертывания BYOC.
+
+    **Разрешение DNS**
+    Убедитесь, что в вашей VPC работает разрешение DNS и что стандартные DNS-имена не блокируются, не перехватываются и не переопределяются. ClickHouse BYOC использует DNS для разрешения адресов серверов управления Tailscale и конечных точек сервисов ClickHouse. Если DNS недоступен или настроен неправильно, сервисы BYOC могут не подключаться или работать некорректно.
+  </Step>
+
+  <Step>
+    ### Настройте учетную запись AWS
+
+    При первоначальной настройке BYOC создается привилегированная роль IAM (`ClickHouseManagementRole`), которая позволяет контроллерам BYOC из ClickHouse Cloud управлять вашей инфраструктурой. Это можно сделать с помощью [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) или [модуля Terraform](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+
+    При развертывании в конфигурации `BYO-VPC` установите параметр `IncludeVPCWritePermissions` в значение `false`, чтобы ClickHouse Cloud не получил разрешения на изменение вашей VPC, которой вы управляете самостоятельно.
+
+    <Note>
+      Бакеты хранилища, Kubernetes-кластер и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в эту первоначальную настройку. Они будут подготовлены на следующем шаге. Хотя вы управляете своей VPC, ClickHouse Cloud по-прежнему нужны разрешения IAM для создания и управления Kubernetes-кластером, ролями IAM для service accounts, S3 бакетами и другими важными ресурсами в вашей учетной записи AWS.
+    </Note>
+
+    #### Альтернативный модуль Terraform
+
+    Если вы предпочитаете использовать Terraform вместо CloudFormation, используйте следующий модуль:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env                   = "production"
+      include_vpc_write_permissions = false
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### Настройте инфраструктуру BYOC
+
+    В консоли ClickHouse Cloud при настройке новой инфраструктуры укажите следующее:
+
+    1. В разделе **VPC configuration** выберите **Use existing VPC**.
+    2. Введите свой **VPC ID** (например, `vpc-0bb751a5b888ad123`).
+    3. Введите **Private subnet IDs** для 3 подсетей, которые вы настроили ранее.
+    4. При необходимости введите **Public subnet IDs**, если в вашей конфигурации требуются общедоступные балансировщики нагрузки.
+    5. Нажмите **Set up Infrastructure**, чтобы начать подготовку инфраструктуры.
+
+    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="Интерфейс настройки BYOC в ClickHouse Cloud с выбранным пунктом Use existing VPC" />
+
+    <Note>
+      Настройка нового региона может занять до 40 минут.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="customer-managed-iam-roles">
+  ## Роли IAM, управляемые клиентом
+</div>
+
+Для организаций с повышенными требованиями к безопасности или строгими политиками соответствия вы можете предоставить собственные роли IAM вместо того, чтобы их создавал ClickHouse Cloud. Такой подход дает вам полный контроль над разрешениями IAM и позволяет применять политики безопасности вашей организации.
+
+<Info>
+  Роли IAM, управляемые клиентом, находятся в стадии закрытой предварительной версии. Если вам нужна эта возможность, свяжитесь с ClickHouse Support, чтобы обсудить ваши конкретные требования и сроки.
+
+  Когда эта возможность станет доступна, вы сможете:
+
+  * Предоставлять предварительно настроенные роли IAM, которые ClickHouse Cloud сможет использовать
+  * Удалять разрешения на запись из IAM-разрешений, связанных с `ClickHouseManagementRole`, которая используется для межаккаунтного доступа
+  * Сохранять полный контроль над разрешениями ролей и отношениями доверия
+</Info>
+
+Сведения о ролях IAM, которые ClickHouse Cloud создает по умолчанию, см. в [справочнике по привилегиям BYOC](/ru/products/bring-your-own-cloud/reference/privilege).

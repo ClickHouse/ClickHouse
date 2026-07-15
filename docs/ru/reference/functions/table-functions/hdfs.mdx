@@ -1,0 +1,151 @@
+---
+description: 'Создаёт таблицу на основе файлов в HDFS. Эта табличная функция похожа
+  на табличные функции url и file.'
+sidebarTitle: 'hdfs'
+slug: /sql-reference/table-functions/hdfs
+title: 'hdfs'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="hdfs-table-function">
+  # Табличная функция hdfs
+</div>
+
+Создаёт таблицу на основе файлов в HDFS. Эта табличная функция похожа на табличные функции [url](/ru/reference/functions/table-functions/url) и [file](/ru/reference/functions/table-functions/file).
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+hdfs(URI, format, structure)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+| Аргумент    | Описание                                                                                                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URI`       | Относительный URI файла в HDFS. Путь к файлу в режиме только для чтения поддерживает следующие глоб-шаблоны: `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc', 'def'` — строки. |
+| `format`    | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                     |
+| `structure` | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                     |
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения данных из указанного файла или записи в него.
+
+**пример**
+
+Таблица из `hdfs://hdfs1:9000/test` и выборка первых двух строк из неё:
+
+```sql
+SELECT *
+FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="globs_in_path">
+  ## Глоб-шаблоны в пути
+</div>
+
+В путях можно использовать глоб-шаблоны. Файлы должны соответствовать всему шаблону пути, а не только суффиксу или префиксу.
+
+* `*` — Обозначает произвольное количество символов, кроме `/`, включая пустую строку.
+* `**` — Обозначает все файлы в папке рекурсивно.
+* `?` — Обозначает один произвольный символ.
+* `{some_string,another_string,yet_another_one}` — Подставляет любую из строк `'some_string', 'another_string', 'yet_another_one'`. Строки могут содержать символ `/`.
+* `{N..M}` — Обозначает любое число `>= N` и `<= M`.
+
+Конструкции с `{}` аналогичны табличным функциям [remote](/ru/reference/functions/table-functions/remote) и [file](/ru/reference/functions/table-functions/file).
+
+**Пример**
+
+1. Предположим, что у нас есть несколько файлов со следующими URI-адресами в HDFS:
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. Выполните запрос, чтобы подсчитать количество строк в этих файлах:
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. Запросите количество строк во всех файлах в этих двух каталогах:
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  Если в вашем списке файлов есть числовые диапазоны с ведущими нулями, используйте конструкцию с фигурными скобками для каждой цифры по отдельности или символ `?`.
+</Note>
+
+**Пример**
+
+Выполните запрос к данным из файлов с именами `file000`, `file001`, ... , `file999`:
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
+```
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+
+<div id="hive-style-partitioning">
+  ## настройка use_hive_partitioning
+</div>
+
+Если для настройки `use_hive_partitioning` установлено значение 1, ClickHouse распознаёт партиционирование в стиле Hive в пути (`/name=value/`) и позволяет использовать столбцы партиции в запросе как виртуальные столбцы. Эти виртуальные столбцы будут иметь те же имена, что и в пути с партициями.
+
+**Пример**
+
+Использование виртуального столбца, созданного при партиционировании в стиле Hive
+
+```sql
+SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="storage-settings">
+  ## Настройки хранилища
+</div>
+
+* [hdfs&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings#hdfs_truncate_on_insert) - позволяет обрезать файл перед вставкой в него. По умолчанию отключено.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ru/reference/settings/session-settings#hdfs_create_new_file_on_insert) - позволяет создавать новый файл при каждой вставке, если у формата есть суффикс. По умолчанию отключено.
+* [hdfs&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings#hdfs_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию отключено.
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
