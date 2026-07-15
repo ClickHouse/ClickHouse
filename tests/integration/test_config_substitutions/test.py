@@ -151,6 +151,15 @@ node19 = cluster.add_instance(
     user_configs=["configs/config_zk_leaf_entity_encoded.xml"],
     with_zookeeper=True,
 )
+# from_zk plain scalar carrying YAML syntax ("abc # rotated"), referenced via a structural
+# <include>: <include from_zk=...> is also the generic "replace this element with the node
+# contents" form, so it can carry a leaf value. A plain scalar must be kept as literal text;
+# only a YAML mapping or sequence is expanded as a subtree.
+node20 = cluster.add_instance(
+    "node20",
+    user_configs=["configs/config_zk_include_scalar.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -561,6 +570,21 @@ def test_config_zk_scalar_keeps_literal_text(start_cluster):
     """
     assert (
         node11.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "abc # rotated\n"
+    )
+
+
+def test_config_zk_include_scalar_keeps_literal_text(start_cluster):
+    """A plain scalar referenced via a structural <include from_zk=...> must stay literal text.
+
+    <include from_zk=...> is not only the subtree-splicing form: it is also the generic
+    "replace this element with the node contents" form, so it can sit under a leaf setting
+    such as <log_comment>. A plain scalar carrying YAML syntax ("abc # rotated") must not be
+    routed through the YAML parser (which would drop the "# rotated" suffix, taken as a YAML
+    comment); only a value that actually is a YAML mapping or sequence is expanded as a subtree.
+    """
+    assert (
+        node20.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
         == "abc # rotated\n"
     )
 
