@@ -177,6 +177,12 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     return result;
 }
 
+void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+{
+    if (!blob_obj->has(field_name) || blob_obj->isNull(field_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field '{}'", blob_index, field_name);
+}
+
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
 {
     Poco::JSON::Parser parser;
@@ -190,8 +196,13 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         auto blob_obj = blobs_arr->getObject(static_cast<unsigned>(i));
         PuffinBlob blob;
         blob.type = blob_obj->getValue<String>("type");
-        blob.snapshot_id = blob_obj->optValue<Int64>("snapshot-id", 0);
-        blob.sequence_number = blob_obj->optValue<Int64>("sequence-number", 0);
+
+        requireBlobMetadataField(blob_obj, "snapshot-id", i);
+        blob.snapshot_id = blob_obj->getValue<Int64>("snapshot-id");
+
+        requireBlobMetadataField(blob_obj, "sequence-number", i);
+        blob.sequence_number = blob_obj->getValue<Int64>("sequence-number");
+
         blob.offset = blob_obj->getValue<Int64>("offset");
         blob.length = blob_obj->getValue<Int64>("length");
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
@@ -200,11 +211,13 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
             for (const auto & [key, val] : *props_obj)
                 blob.properties.emplace(key, val.extract<String>());
 
-        if (auto fields_arr = blob_obj->getArray("fields"))
-        {
-            for (size_t j = 0; j < fields_arr->size(); ++j)
-                blob.fields.push_back(fields_arr->getElement<Int32>(static_cast<unsigned>(j)));
-        }
+        requireBlobMetadataField(blob_obj, "fields", i);
+        auto fields_arr = blob_obj->getArray("fields");
+        if (!fields_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'fields' must be an array", i);
+
+        for (size_t j = 0; j < fields_arr->size(); ++j)
+            blob.fields.push_back(fields_arr->getElement<Int32>(static_cast<unsigned>(j)));
 
         validatePuffinBlobBounds(blob.offset, blob.length, data_size, i);
 

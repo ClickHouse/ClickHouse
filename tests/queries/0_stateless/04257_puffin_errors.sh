@@ -24,3 +24,12 @@ $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/invalid_bitmap_key.pu
 
 echo "--- inflated_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 content size'
+
+for PUFFIN in \
+    "$DATA/missing_snapshot_id.puffin" \
+    "$DATA/missing_sequence_number.puffin" \
+    "$DATA/missing_fields.puffin"
+do
+    echo "--- $(basename "$PUFFIN") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN', PuffinMetadata)" 2>&1 | grep -oF 'missing required field'
+done
