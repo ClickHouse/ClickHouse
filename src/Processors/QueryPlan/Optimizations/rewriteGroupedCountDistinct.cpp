@@ -130,14 +130,15 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
         return false;
 
     /// A key as the argument means one distinct value per group; nothing to rewrite.
-    const auto & argument_name = distinct_aggregate.argument_names.front();
+    const String argument_name = distinct_aggregate.argument_names.front();
     if (std::find(params.keys.begin(), params.keys.end(), argument_name) != params.keys.end())
         return false;
 
-    if (!params.stats_collecting_params.isCollectionAndUseEnabled())
+    const auto stats = params.stats_collecting_params;
+    if (!stats.isCollectionAndUseEnabled())
         return false;
 
-    const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+    const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(stats);
     if (!hint || hint->sum_of_hash_table_sizes == 0 || hint->sum_of_hash_table_sizes > max_observed_group_keys)
         return false;
 
@@ -236,7 +237,6 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
 
     if (dedup_key != 0 && count_key != 0)
     {
-        const auto & stats = params.stats_collecting_params;
         const auto count_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
             StatsCollectingParams(count_key, true, stats.max_entries_for_hash_table_stats, stats.max_size_to_preallocate));
         const auto dedup_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
