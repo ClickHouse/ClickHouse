@@ -108,7 +108,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Returns whether the new analyzer should be used for mutations.
+/// Returns whether the analyzer should be used for mutations.
 /// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
 /// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
 /// so this is a cheap atomic load.
@@ -1690,7 +1690,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         if (use_analyzer)
         {
-            /// --- New analyzer path ---
+            /// --- Analyzer path ---
             /// 1. Build query tree from AST expression list and resolve against storage.
             auto execution_context = Context::createCopy(context);
             auto expression = buildQueryTree(all_asts, execution_context);
@@ -2068,7 +2068,7 @@ MutationsInterpreter::Stage::~Stage() = default;
 MutationsInterpreter::Stage::Stage(Stage &&) noexcept = default;
 MutationsInterpreter::Stage & MutationsInterpreter::Stage::operator=(Stage &&) noexcept = default;
 
-/// Build QueryPlans for subquery sets (IN subqueries) on the new analyzer path,
+/// Build QueryPlans for subquery sets (IN subqueries) on the analyzer path,
 /// then add a DelayedCreatingSetsStep to the plan. This mirrors
 /// addBuildSubqueriesForSetsStepIfNeeded from the Planner.
 static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const PreparedSetsPtr & prepared_sets, ContextPtr context_)
