@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 /// Rewrites a grouped exact distinct count into a count over a deduplicating aggregation: a query
@@ -227,12 +228,16 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     catch (...)
     {
         /// Hashing serializes the plan steps and throws on unserializable ones (e.g. `ORDER BY ...
-        /// WITH FILL` inside the input subtree). Under the new analyzer that cannot happen here —
-        /// the original step's non-zero key proves the same subtree hashed successfully in
+        /// WITH FILL` inside the input subtree). Under the analyzer that cannot happen here — the
+        /// original step's non-zero key proves the same subtree hashed successfully in
         /// `setAggregationHashTableCacheKeys` — but under the old analyzer the key may be the
         /// AST-level seed with the plan hash having failed, and then it fails here too. Same policy
         /// as there: an unserializable subtree only costs the statistics, never the query. The
         /// created steps then keep key 0 and record nothing.
+        LOG_TRACE(
+            getLogger("QueryPlanOptimizations"),
+            "Keeping the rewritten grouped count-distinct steps without statistics keys: {}",
+            getCurrentExceptionMessage(/*with_stacktrace=*/false));
     }
 
     if (dedup_key != 0 && count_key != 0)
