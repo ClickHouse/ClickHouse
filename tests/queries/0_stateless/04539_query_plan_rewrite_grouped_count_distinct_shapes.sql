@@ -4,6 +4,8 @@
 SET query_plan_rewrite_grouped_count_distinct = 1;
 
 SET max_threads = 4;
+-- The rewrite does not apply under a group-by row limit, which a server profile may set.
+SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_cd_shapes;
 CREATE TABLE t_cd_shapes (k UInt32, k2 UInt32, s String, lc LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY tuple()

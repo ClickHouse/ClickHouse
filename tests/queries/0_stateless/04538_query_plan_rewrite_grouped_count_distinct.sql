@@ -5,6 +5,8 @@
 SET query_plan_rewrite_grouped_count_distinct = 1;
 
 SET max_threads = 4;
+-- The rewrite does not apply under a group-by row limit, which a server profile may set.
+SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_grouped_uniq_exact;
 CREATE TABLE t_grouped_uniq_exact (k UInt32, v UInt64, n Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple()
