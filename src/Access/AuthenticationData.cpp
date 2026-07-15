@@ -3,6 +3,7 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
@@ -20,6 +21,7 @@
 #if USE_SSL
 #    include <openssl/rand.h>
 #    include <openssl/err.h>
+#    include <Common/Crypto/OpenSSLInitializer.h>
 #    include <Common/Crypto/X509Certificate.h>
 #    include <Common/OpenSSLHelpers.h>
 #endif
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int OPENSSL_ERROR;
+    extern const int LIBSSH_ERROR;
 }
 
 
@@ -514,6 +517,18 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
             const auto & key_base64 = ssh_key.key_base64;
             const auto & type = ssh_key.type;
+
+            if (OpenSSLInitializer::instance().isFIPSEnabled() && !SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
+            {
+                /// On the interactive SQL path (CREATE/ALTER USER, validate == true) fail loudly: silently dropping
+                /// the key would create a user that can never authenticate and lose the key from SHOW CREATE USER.
+                /// Only reload/ATTACH USER (validate == false) may skip and continue.
+                if (validate)
+                    throw Exception(ErrorCodes::LIBSSH_ERROR, "SSH key of type {} is not usable in FIPS mode", type);
+
+                LOG_WARNING(getLogger("AuthenticationData"), "Skipping SSH key of type {}: not usable in FIPS mode", type);
+                continue;
+            }
 
             try
             {
