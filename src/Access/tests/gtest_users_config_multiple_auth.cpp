@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 #include <sstream>
 
+#include "config.h"
+
 using namespace DB;
 
 namespace
@@ -815,3 +817,65 @@ TEST_F(UsersConfigMultipleAuthTest, OTPWithMixedAuthIncludingPassword)
     EXPECT_EQ(user->authentication_methods[0].getType(), AuthenticationType::LDAP);
     EXPECT_EQ(user->authentication_methods[1].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
 }
+
+#if USE_SSH
+/// An ssh_keys method whose every key was filtered out (empty key list, the exact state FIPS
+/// filtering produces for an all-Ed25519 method) must be DROPPED, not throw. An empty <ssh_keys/>
+/// block reaches the same "no keys left" path without depending on a FIPS build. Dropping the only
+/// method leaves the user with no authentication, so the user is skipped, but the rest of the
+/// users.xml load must still succeed - it must not abort the whole config.
+TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysUserSkippedRestOfConfigLoads)
+{
+    const std::string xml_config = R"(
+        <clickhouse>
+            <users>
+                <ssh_only_user>
+                    <ssh_keys></ssh_keys>
+                </ssh_only_user>
+                <password_user>
+                    <password>plaintext_pass</password>
+                </password_user>
+            </users>
+        </clickhouse>
+    )";
+
+    auto config = createConfigFromXML(xml_config);
+    /// Must NOT throw: the offending user is skipped, not the whole load.
+    EXPECT_NO_THROW(storage->setConfig(*config));
+
+    /// The all-empty-ssh_keys user was skipped.
+    EXPECT_FALSE(storage->tryRead<User>("ssh_only_user"));
+
+    /// The unrelated user still loaded fine.
+    auto password_user = storage->tryRead<User>("password_user");
+    ASSERT_TRUE(password_user);
+    ASSERT_EQ(password_user->authentication_methods.size(), 1);
+    EXPECT_EQ(password_user->authentication_methods[0].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
+}
+
+/// A user with a dropped (empty) ssh_keys method AND a valid password method keeps the password
+/// method - dropping one unusable method must not discard the user's other valid methods.
+TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysMethodDroppedOtherMethodKept)
+{
+    const std::string xml_config = R"(
+        <clickhouse>
+            <users>
+                <test_user>
+                    <auth_methods>
+                        <a1><ssh_keys></ssh_keys></a1>
+                        <a2><password>plaintext_pass</password></a2>
+                    </auth_methods>
+                </test_user>
+            </users>
+        </clickhouse>
+    )";
+
+    auto config = createConfigFromXML(xml_config);
+    EXPECT_NO_THROW(storage->setConfig(*config));
+
+    auto user = storage->tryRead<User>("test_user");
+    ASSERT_TRUE(user);
+    ASSERT_EQ(user->authentication_methods.size(), 1);
+    EXPECT_EQ(user->authentication_methods[0].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
+}
+#endif

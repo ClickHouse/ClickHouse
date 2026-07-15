@@ -149,7 +149,11 @@ namespace
         return auth_data;
     }
 
-    AuthenticationData parseUserAuthMethod(
+    /// Returns std::nullopt when the authentication method must be dropped (skipped) rather than
+    /// materialized, e.g. an ssh_keys method whose every key was filtered out in FIPS mode.
+    /// The config-file path is tolerant: the caller drops such a method and, if the user is left
+    /// with no methods at all, skips that single user without aborting the whole users.xml load.
+    std::optional<AuthenticationData> parseUserAuthMethod(
         const Poco::Util::AbstractConfiguration & config,
         const String & user_name,
         const String & auth_method_path,
@@ -325,10 +329,15 @@ namespace
 
             /// If every configured key was filtered out above (all unusable in FIPS mode), do not
             /// materialize an SSH_KEY method with an empty key list: it is not round-trippable
-            /// (toAST would emit "ssh_key BY" with no keys). Reject the user; parseUsers adds context.
+            /// (toAST would emit "ssh_key BY" with no keys). Drop this method instead of throwing,
+            /// so a single all-Ed25519 method under FIPS does not abort the whole users.xml load or
+            /// discard a user's other valid authentication methods.
             if (keys.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "No SSH key usable in FIPS mode is configured for user {}", user_name);
+            {
+                LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
+                    "Dropping ssh_keys authentication method for user {}: no key usable in FIPS mode", user_name);
+                return std::nullopt;
+            }
 
             auth_data.setSSHKeys(std::move(keys));
 #else
@@ -457,6 +466,11 @@ namespace
             otp_secret.emplace(otp_secret_key, OneTimePasswordParams(num_digits, period, algorithm_name));
         }
 
+        /// True if the config explicitly declared at least one auth method (whether or not it
+        /// survived FIPS filtering). Distinguishes "misconfigured: no method at all" (throw) from
+        /// "every declared method was dropped by FIPS filtering" (skip the user, keep loading).
+        bool declared_any_auth_method = false;
+
         if (has_auth_methods)
         {
             validateNoFlatAuthFields(config, user_config, user_name);
@@ -470,10 +484,12 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "'time_based_one_time_password' cannot be specified inside an individual authentication method for user {}. "
                         "It must be configured at the user level, outside of 'auth_methods'.", user_name);
-                user->authentication_methods.emplace_back(parseUserAuthMethod(config, user_name, auth_method_path, otp_secret));
+                declared_any_auth_method = true;
+                if (auto auth_method_data = parseUserAuthMethod(config, user_name, auth_method_path, otp_secret))
+                    user->authentication_methods.emplace_back(std::move(*auth_method_data));
             }
 
-            if (user->authentication_methods.empty())
+            if (!declared_any_auth_method)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'auth_methods' must contain at least one authentication method for user {}.", user_name);
@@ -481,7 +497,18 @@ namespace
         }
         else
         {
-            user->authentication_methods.emplace_back(parseUserAuthMethod(config, user_name, user_config, otp_secret));
+            declared_any_auth_method = true;
+            if (auto auth_method_data = parseUserAuthMethod(config, user_name, user_config, otp_secret))
+                user->authentication_methods.emplace_back(std::move(*auth_method_data));
+        }
+
+        /// The user declared auth method(s), but every one was dropped by FIPS filtering (e.g. an
+        /// all-Ed25519 ssh_keys user on a FIPS build). Skip this single user instead of aborting the
+        /// whole load; parseUsers continues with the remaining users.
+        if (declared_any_auth_method && user->authentication_methods.empty())
+        {
+            LOG_WARNING(log, "Skipping user {}: no authentication method usable in FIPS mode is left", user_name);
+            return nullptr;
         }
 
         chassert(!user->authentication_methods.empty());
@@ -887,7 +914,10 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     {
         try
         {
-            users.push_back(parseUser(config, user_name, allowed_profile_ids, role_ids_from_users_config, access_control, no_password_allowed, plaintext_password_allowed, log));
+            /// parseUser returns nullptr when the user is skipped (e.g. all its auth methods were
+            /// dropped by FIPS filtering); keep loading the remaining users.
+            if (auto user = parseUser(config, user_name, allowed_profile_ids, role_ids_from_users_config, access_control, no_password_allowed, plaintext_password_allowed, log))
+                users.push_back(std::move(user));
         }
         catch (Exception & e)
         {
