@@ -1,0 +1,26 @@
+---
+sidebarTitle: 'Java 运行器'
+slug: /integrations/google-dataflow/java-runner
+description: '您可以使用 Google Dataflow Java 运行器将数据摄取到 ClickHouse'
+title: 'Dataflow Java 运行器'
+doc_type: 'guide'
+keywords: ['Dataflow Java 运行器', 'Google Dataflow ClickHouse', 'Apache Beam Java ClickHouse', 'ClickHouseIO connector']
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Dataflow Java 运行器 可让您在 Google Cloud 的 Dataflow 服务上执行自定义 Apache Beam 管道。该方式具有最高的灵活性，非常适合高级 ETL 工作流。
+
+<div id="how-it-works">
+  ## 工作方式
+</div>
+
+1. **管道实现**
+   要使用 Java 运行器，您需要借助 `ClickHouseIO` (我们的官方 Apache Beam 连接器) 实现 Beam 管道。有关代码示例以及 `ClickHouseIO` 的使用说明，请访问 [ClickHouse Apache Beam](/zh/integrations/connectors/data-ingestion/etl-tools/apache-beam)。
+
+2. **部署**
+   在管道实现并完成配置后，您可以使用 Google Cloud 的部署工具将其部署到 Dataflow。有关完整的部署说明，请参阅 [Google Cloud Dataflow 文档 - Java 管道](https://cloud.google.com/dataflow/docs/quickstarts/create-pipeline-java)。
+
+**注意**：这种方式默认您已熟悉 Beam 框架并具备相应的编码能力。如果您更倾向于无代码方案，可以考虑使用 [ClickHouse 的预定义模板](/zh/integrations/connectors/data-ingestion/GCP/google-dataflow/templates)。

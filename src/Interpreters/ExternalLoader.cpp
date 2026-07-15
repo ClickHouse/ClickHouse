@@ -490,9 +490,9 @@ public:
             if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                if (always_load_everything)
+                if (!isObjectLazy(*config))
                 {
-                    LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);
+                    LOG_TRACE(log, "Will load '{}' because it is not loaded lazily.", name);
                     startLoading(info);
                 }
             }
@@ -527,9 +527,9 @@ public:
 
         if (enable)
         {
-            /// Start loading all the objects which were not loaded yet.
+            /// Start loading all the objects which were not loaded yet and are not configured to load lazily.
             for (auto & [name, info] : infos)
-                if (!info.triedToLoad())
+                if (!info.triedToLoad() && !isObjectLazy(*info.config))
                     startLoading(info);
         }
     }
@@ -627,6 +627,19 @@ public:
         std::unique_lock lock{mutex};
         loadImpl(filter, timeout, false, lock);
         return collectLoadResults<ReturnType>(filter);
+    }
+
+    template <typename ReturnType>
+    ReturnType tryLoadAllExceptLazy(Duration timeout)
+    {
+        std::unique_lock lock{mutex};
+        auto should_load = [this](const String & name)
+        {
+            const Info * info = getInfo(name);
+            return info && (info->triedToLoad() || !isObjectLazy(*info->config));
+        };
+        loadImpl(should_load, timeout, false, lock);
+        return collectLoadResults<ReturnType>(FilterByNameFunction{});
     }
 
     /// Tries to load or reload a specified object.
@@ -730,6 +743,12 @@ public:
     }
 
 private:
+
+    bool isObjectLazy(const ObjectConfig & config) const
+    {
+        return external_loader.isObjectLazy(*config.config, config.key_in_config).value_or(!always_load_everything);
+    }
+
     struct Info
     {
         Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
@@ -1450,6 +1469,12 @@ ReturnType ExternalLoader::tryLoad(const FilterByNameFunction & filter, Duration
 }
 
 template <typename ReturnType, typename>
+ReturnType ExternalLoader::tryLoadAllExceptLazy(Duration timeout) const
+{
+    return loading_dispatcher->tryLoadAllExceptLazy<ReturnType>(timeout);
+}
+
+template <typename ReturnType, typename>
 ReturnType ExternalLoader::load(const String & name) const
 {
     auto result = tryLoad<LoadResult>(name);
@@ -1596,6 +1621,8 @@ template ExternalLoader::LoadablePtr ExternalLoader::tryLoad<ExternalLoader::Loa
 template ExternalLoader::LoadResult ExternalLoader::tryLoad<ExternalLoader::LoadResult>(const String &, Duration) const;
 template ExternalLoader::Loadables ExternalLoader::tryLoad<ExternalLoader::Loadables>(const FilterByNameFunction &, Duration) const;
 template ExternalLoader::LoadResults ExternalLoader::tryLoad<ExternalLoader::LoadResults>(const FilterByNameFunction &, Duration) const;
+template ExternalLoader::Loadables ExternalLoader::tryLoadAllExceptLazy<ExternalLoader::Loadables>(Duration) const;
+template ExternalLoader::LoadResults ExternalLoader::tryLoadAllExceptLazy<ExternalLoader::LoadResults>(Duration) const;
 
 template ExternalLoader::LoadablePtr ExternalLoader::load<ExternalLoader::LoadablePtr>(const String &) const;
 template ExternalLoader::LoadResult ExternalLoader::load<ExternalLoader::LoadResult>(const String &) const;

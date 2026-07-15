@@ -1,0 +1,58 @@
+---
+alias: []
+description: 'Документация о формате Vertical'
+input_format: false
+keywords: ['Vertical']
+output_format: true
+slug: /interfaces/formats/Vertical
+title: 'Vertical'
+doc_type: 'справочник'
+---
+
+| Ввод | Вывод | Алиас |
+| ---- | ----- | ----- |
+| ✗    | ✔     |       |
+
+<div id="description">
+  ## Описание
+</div>
+
+Выводит каждое значение на отдельной строке с указанием имени столбца. Этот формат удобен для вывода одной или нескольких строк, если каждая строка содержит большое количество столбцов.
+
+Обратите внимание, что [`NULL`](/ru/reference/syntax) выводится как `ᴺᵁᴸᴸ`, чтобы его было проще отличить от строкового значения `NULL` и отсутствующего значения. JSON-столбцы форматируются в удобочитаемом виде, а `NULL` выводится как `null`, поскольку это допустимое значение JSON и его легко отличить от `"null"`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Пример:
+
+```sql
+SELECT * FROM t_null FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+x: 1
+y: ᴺᵁᴸᴸ
+```
+
+В формате Vertical строки не экранируются:
+
+```sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with 'quotes' and      with some special
+ characters
+```
+
+Этот формат подходит только для вывода результата запроса, но не для парсинга (получения данных для вставки в таблицу).
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

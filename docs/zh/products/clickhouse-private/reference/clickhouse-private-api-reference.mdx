@@ -1,0 +1,380 @@
+---
+noindex: true
+title: "ClickHouse Private API 参考文档"
+sidebarTitle: "API 参考文档"
+description: "ClickHouse Private API 是用于管理 ClickHouse Private 集群的独立可选组件。"
+---
+
+ClickHouse Private API 是用于管理 ClickHouse Private 集群的独立可选组件。它提供用于执行备份、垂直扩缩容、密码重置和监控集群状态的 REST 端点。
+
+***
+
+<div id="configuration-options">
+  ## 配置选项
+</div>
+
+该 API 通过 Helm 图表 (`helm/airgap-management`) 安装。
+
+| Helm 值                       | 类型      | 默认值          | 描述                    |
+| ---------------------------- | ------- | ------------ | --------------------- |
+| `image.repository`           | string  | --           | Private API 镜像的 ECR/GAR 仓库 |
+| `image.tag`                  | string  | --           | 要部署的镜像标签              |
+| `api.port`                   | integer | `8080`       | API 监听的端口             |
+| `api.basicAuth.enabled`      | boolean | `false`      | 启用 HTTP 基本身份验证        |
+| `api.basicAuth.username`     | string  | `"admin"`    | 用于基本身份验证的用户名          |
+| `api.basicAuth.password`     | string  | `"password"` | 用于基本身份验证的密码           |
+| `serviceAccount.enabled`     | boolean | `true`       | 为 API 创建服务账号          |
+| `serviceAccount.annotations` | map     | `{}`         | 服务账号的注解 (例如用于 IRSA)   |
+
+***
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+默认情况下，基本身份验证处于禁用状态。对于生产环境，请通过 Helm 启用：
+
+```text
+--set-json='api.basicAuth.enabled=true'
+--set-json='api.basicAuth.username="admin"'
+--set-json='api.basicAuth.password="YOUR_SECURE_PASSWORD"'
+```
+
+启用后，请求中将包含凭证：
+
+```bash
+curl -u admin:YOUR_SECURE_PASSWORD http://localhost:8080/api/v1/...
+```
+
+***
+
+<div id="resource-quantity-format">
+  ## 资源数量格式
+</div>
+
+该 API 的 CPU 和内存字段接受 Kubernetes 资源数量格式。
+
+<div id="cpu-quantities">
+  ### CPU 数量
+</div>
+
+| 格式 | 示例       | 含义           |
+| -- | -------- | ------------ |
+| 整数 | `"4"`    | 4 个 CPU 核心   |
+| 小数 | `"2.5"`  | 2.5 个 CPU 核心 |
+| 毫核 | `"500m"` | 0.5 个 CPU 核心 |
+
+<div id="memory-quantities">
+  ### 内存容量
+</div>
+
+| 格式        | 示例         | 含义        |
+| --------- | ---------- | --------- |
+| 二进制 (推荐)  | `"16Gi"`   | 16 吉比字节   |
+| 二进制       | `"4096Mi"` | 4096 兆比字节 |
+| 十进制       | `"16G"`    | 16 GB     |
+| 十进制       | `"16000M"` | 16000 MB  |
+
+对于内存，建议使用二进制单位 (Ki、Mi、Gi) ，以符合 Kubernetes 的惯例。
+
+***
+
+<div id="endpoints">
+  ## 端点
+</div>
+
+<div id="health-check">
+  ### 健康检查
+</div>
+
+<div id="get-readiness">
+  #### `GET /readiness`
+</div>
+
+返回 API 的健康状态/就绪状态。
+
+**响应：** `200 OK`
+
+***
+
+<div id="backups">
+  ### 备份
+</div>
+
+<div id="create-backup">
+  #### 创建备份
+</div>
+
+`POST /api/v1/backups?instance_id={instance_id}`
+
+为指定的 ClickHouse 集群创建一个新备份。
+
+**查询参数：**
+
+| 参数            | 类型     | 必填 | 描述                                    |
+| ------------- | ------ | -- | ------------------------------------- |
+| `instance_id` | string | 是  | ClickHouse 集群名称 (例如：`default-xx-01`)  |
+
+**请求体：**
+
+```json
+{
+    "incremental": false,
+    "baseBackupUuid": "uuid-of-previous-backup",
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+| 字段               | 类型               | 必填 | 描述                                            |
+| ---------------- | ---------------- | -- | --------------------------------------------- |
+| `incremental`    | boolean          | 否  | `false` 表示全量备份，`true` 表示增量备份。默认值为 `false`。    |
+| `baseBackupUuid` | string           | 否  | 上一次备份的 UUID (当 `incremental` 为 `true` 时为必填项)  |
+| `databases`      | array of strings | 否  | 要备份的特定数据库。省略则表示备份所有数据库。                       |
+| `tables`         | array of strings | 否  | 要备份的特定表。必须使用完全限定名称 (`db.table`) 。省略则表示备份所有表。  |
+
+**响应：** `201 Created` -- 返回已创建的备份对象，其中包含 UUID。
+
+**行为：** 在 ClickHouse 集群命名空间中创建一个 `Backup` 自定义资源。operator 会监听新的 `Backup` 对象，并执行相应的备份 SQL 语句，同时通过系统表监控状态。
+
+***
+
+<div id="get-backup">
+  #### 获取备份
+</div>
+
+`GET /api/v1/backups/{backup_id}?instance_id={instance_id}`
+
+返回指定备份的状态和详细信息。
+
+**路径参数：**
+
+| 参数          | 类型     | 必填 | 说明       |
+| ----------- | ------ | -- | -------- |
+| `backup_id` | string | 是  | 备份的 UUID |
+
+**查询参数：**
+
+| 参数            | 类型     | 必填 | 说明              |
+| ------------- | ------ | -- | --------------- |
+| `instance_id` | string | 是  | ClickHouse 集群名称 |
+
+**响应：** `200 OK` -- 返回备份对象。`status.state` 字段表示完成状态 (例如，完成时为 `Ready`) 。
+
+***
+
+<div id="list-backups">
+  #### 列出备份
+</div>
+
+`GET /api/v1/backups?instance_id={instance_id}`
+
+列出指定集群的所有备份。
+
+**查询参数：**
+
+| 参数                  | 类型      | 必填 | 说明                              |
+| ------------------- | ------- | -- | ------------------------------- |
+| `instance_id`       | string  | 是  | ClickHouse 集群名称                 |
+| `status__state__eq` | string  | 否  | 按备份状态筛选 (例如 `Ready`)            |
+| `sort`              | string  | 否  | 排序字段 (例如 `status__finishTime`)  |
+| `limit`             | integer | 否  | 返回结果的最大数量                       |
+
+**响应：** `200 OK` -- 返回备份对象数组。
+
+**示例：** 查找最近一次成功备份的 UUID：
+
+```text
+GET /api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1
+```
+
+***
+
+<div id="restore-backup">
+  #### 恢复备份
+</div>
+
+`POST /api/v1/backups/{backup_id}/restore?instance_id={instance_id}&target_instance_id={target_instance_id}`
+
+将备份恢复到目标 ClickHouse 集群上。执行该备份的 `RESTORE ALL`。
+
+**路径参数：**
+
+| 参数          | 类型     | 必填 | 说明          |
+| ----------- | ------ | -- | ----------- |
+| `backup_id` | string | 是  | 要恢复的备份 UUID |
+
+**查询参数：**
+
+| 参数                   | 类型     | 必填 | 说明                             |
+| -------------------- | ------ | -- | ------------------------------ |
+| `instance_id`        | string | 是  | 源 ClickHouse 集群名称 (即创建该备份的集群)  |
+| `target_instance_id` | string | 是  | 目标 ClickHouse 集群名称 (即要恢复到的集群)  |
+
+**约束：** - 出于安全考虑，不允许恢复到同一实例 (`instance_id == target_instance_id`) 。 - 建议恢复到新的集群，以避免原始集群过载。
+
+**响应：** `202 Accepted` -- 返回恢复操作 ID。
+
+***
+
+<div id="vertical-scaling">
+  ### 垂直扩缩容
+</div>
+
+<div id="scale-cluster">
+  #### 扩缩容集群
+</div>
+
+`POST /api/v1/instances/{instance_id}/scale`
+
+通过调整 CPU 和内存资源，对 ClickHouse 集群进行垂直扩缩容。
+
+**路径参数：**
+
+| Parameter     | Type   | Required | Description     |
+| ------------- | ------ | -------- | --------------- |
+| `instance_id` | string | Yes      | ClickHouse 集群名称 |
+
+**请求体：**
+
+```json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+| 字段                          | 类型     | 必需 | 描述                         |
+| --------------------------- | ------ | -- | -------------------------- |
+| `vertical.resources.cpu`    | string | 否* | Kubernetes 资源数量格式的 CPU 分配量 |
+| `vertical.resources.memory` | string | 否* | Kubernetes 资源数量格式的内存分配量    |
+
+*必须至少提供 `cpu` 或 `memory` 其中之一。
+
+**CPU 与内存比例：** API 会强制采用 **1:4 的比例** (每 4 GiB 内存对应 1 个 CPU 核心) ，并允许 5% 的浮动。如果只提供其中一种资源，系统会自动推算另一种资源，以维持该比例。
+
+**行为：** 更新 `ClickhouseCluster` 自定义资源中的 `ServerPodPolicy`。Operator 会使用新的资源分配触发 StatefulSets 的**滚动重启**。
+
+**重要：** 与 ClickHouse Cloud 不同，ClickHouse Private **不**使用 Make Before Break (MBB) 扩缩容。垂直扩缩容会导致滚动重启，可能会暂时中断服务。
+
+**响应：** `201 Created`
+
+***
+
+<div id="password-reset">
+  ### 重置密码
+</div>
+
+<div id="reset-user-password">
+  #### 重置用户密码
+</div>
+
+`POST /api/v1/instances/{instance_id}/reset-user-password`
+
+重置 ClickHouse 集群中用户的密码。
+
+**路径参数：**
+
+| 参数            | 类型     | 必填 | 描述              |
+| ------------- | ------ | -- | --------------- |
+| `instance_id` | string | 是  | ClickHouse 集群名称 |
+
+**请求体：**
+
+```json
+{
+  "user_hashed_password": "<base64-encoded-sha256-hash>",
+  "hashing_function": "sha256",
+  "username": "default"
+}
+```
+
+| 字段                     | 类型     | 必填 | 默认值         | 描述                |
+| ---------------------- | ------ | -- | ----------- | ----------------- |
+| `user_hashed_password` | string | 是  | --          | 新密码的 Base64 编码哈希值 |
+| `hashing_function`     | string | 否  | `"sha256"`  | 所使用的哈希算法          |
+| `username`             | string | 否  | `"default"` | 要重置密码对应的用户名       |
+
+**密码哈希生成：**
+
+```ini
+PASSWORD='My super secret p@$$w0rd'
+HASHED_PASSWORD=$(echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64)
+```
+
+**约束：** - 无法在 Hydra 子实例上重置密码。请改为在父实例上进行重置。
+
+**响应：**
+
+```json
+{
+  "message": "User password reset successfully"
+}
+```
+
+**行为：**更新 `ClickhouseCluster` 自定义资源中的 `CustomerAccount` 字段。operator 会将凭据变更应用到集群。密码会在 operator 处理完该变更后生效。
+
+***
+
+<div id="cluster-status">
+  ### 集群状态
+</div>
+
+<div id="get-cluster-status">
+  #### 获取集群状态
+</div>
+
+`GET /api/v1/instances/{instance_id}/status`
+
+返回指定 ClickHouse 集群的当前状态。
+
+**路径参数：**
+
+| 参数            | 类型     | 必填 | 描述              |
+| ------------- | ------ | -- | --------------- |
+| `instance_id` | string | 是  | ClickHouse 集群名称 |
+
+**响应：**
+
+```json
+{
+  "state": "Running",
+  "previousState": "Provisioning",
+  "message": "Cluster is healthy",
+  "stateProvidedBy": "operator"
+}
+```
+
+| 字段                | 类型     | 描述                 |
+| ----------------- | ------ | ------------------ |
+| `state`           | string | ClickHouse 集群的当前状态 |
+| `previousState`   | string | 集群变更前的状态           |
+| `message`         | string | 集群发生状态变更的原因详情      |
+| `stateProvidedBy` | string | 触发状态变更的相关进程        |
+
+**用例：** - 验证垂直扩缩容操作是否已完成。 - 确认密码重置已在整个集群中生效。 - 监控集群预配进度。
+
+***
+
+<div id="endpoint-summary">
+  ## 端点概览
+</div>
+
+| 方法     | 路径                                                                             | 描述       |
+| ------ | ------------------------------------------------------------------------------ | -------- |
+| `GET`  | `/readiness`                                                                   | 健康/就绪检查  |
+| `GET`  | `/liveness`                                                                    | 存活检查     |
+| `POST` | `/api/v1/backups?instance_id={id}`                                             | 创建备份     |
+| `GET`  | `/api/v1/backups/{backup_id}?instance_id={id}`                                 | 获取备份状态   |
+| `GET`  | `/api/v1/backups?instance_id={id}`                                             | 列出备份     |
+| `POST` | `/api/v1/backups/{backup_id}/restore?instance_id={id}&target_instance_id={id}` | 恢复备份     |
+| `POST` | `/api/v1/instances/{id}/scale`                                                 | 垂直扩展集群   |
+| `POST` | `/api/v1/instances/{id}/reset-user-password`                                   | 重置用户密码   |
+| `GET`  | `/api/v1/instances/{id}/status`                                                | 获取集群状态   |
+| `GET`  | `/api/v1/license`                                                              | 获取许可证信息  |
+| `PUT`  | `/api/v1/license`                                                              | 创建或更新许可证 |
+| `POST` | `/api/v1/license/fingerprint`                                                  | 获取许可证指纹  |

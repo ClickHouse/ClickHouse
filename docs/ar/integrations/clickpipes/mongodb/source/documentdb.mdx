@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Amazon DocumentDB'
+description: 'دليل تفصيلي حول كيفية إعداد Amazon DocumentDB كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/documentdb
+title: 'دليل إعداد Amazon DocumentDB كمصدر'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'إدخال البيانات', 'المزامنة في الوقت الفعلي']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="supported-documentdb-versions">
+  ## إصدارات DocumentDB المتوافقة
+</div>
+
+يدعم ClickPipes ‏DocumentDB الإصدار 5.0.
+
+<div id="configure-change-stream-log-retention">
+  ## إعداد مدة الاحتفاظ بسجلات change stream
+</div>
+
+افتراضيًا، تبلغ مدة الاحتفاظ بسجلات change stream في Amazon DocumentDB ثلاث ساعات، بينما قد يستغرق التحميل الأولي وقتًا أطول بكثير حسب حجم البيانات الموجودة في DocumentDB لديك. نوصي بضبط مدة الاحتفاظ بسجلات change stream على 72 ساعة أو أكثر لضمان عدم حذفها قبل اكتمال اللقطة الأولية.
+
+<div id="update-change-stream-log-retention-via-aws-console">
+  ### حدِّث مدة الاحتفاظ بسجل change stream عبر AWS Console
+</div>
+
+1. انقر على `Parameter groups` في اللوحة اليمنى، ثم اعثر على مجموعة المعلمات المستخدمة بواسطة عنقود DocumentDB لديك (إذا كنت تستخدم مجموعة المعلمات الافتراضية، فستحتاج أولًا إلى إنشاء مجموعة معلمات جديدة حتى تتمكن من تعديلها).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="اختر مجموعة المعلمات" size="lg" border />
+
+2. ابحث عن `change_stream_log_retention_duration`، ثم حدده وعدّله إلى `259200` (72 ساعة)
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="عدّل مجموعة المعلمات" size="lg" border />
+
+3. انقر على `Apply Changes` لتطبيق مجموعة المعلمات المعدّلة على عنقود DocumentDB لديك فورًا. ينبغي أن ترى حالة مجموعة المعلمات تنتقل إلى `applying`، ثم إلى `in-sync` عند تطبيق التغيير.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="طبّق مجموعة المعلمات" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="حالة مجموعة المعلمات" size="lg" border />
+
+<div id="update-change-stream-log-retention-via-aws-cli">
+  ### حدِّث مدة الاحتفاظ بسجلات change stream عبر AWS CLI
+</div>
+
+بدلًا من ذلك، يمكنك ضبط هذا عبر AWS CLI.
+
+للتحقق من مدة الاحتفاظ الحالية بسجلات change stream:
+
+```shell
+aws docdb describe-db-cluster-parameters --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --query "Parameters[?ParameterName=='change_stream_log_retention_duration'].{Name:ParameterName,Value:ParameterValue}"
+```
+
+لضبط مدة الاحتفاظ بسجلات change stream على 72 ساعة:
+
+```shell
+aws docdb modify-db-cluster-parameter-group --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --parameters "ParameterName=change_stream_log_retention_duration,ParameterValue=259200,ApplyMethod=immediate"
+```
+
+<div id="configure-database-user">
+  ## تكوين مستخدم قاعدة بيانات
+</div>
+
+اتصل بعنقود DocumentDB الخاص بك باستخدام مستخدم مسؤول، ثم نفّذ الأمر التالي لإنشاء مستخدم قاعدة بيانات لـ ClickPipes الخاصة بـ MongoDB CDC:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  تأكد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور اللذين ترغب في استخدامهما.
+</Note>
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mongodb/index) وبدء إدخال البيانات من مثيل DocumentDB الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد عنقود DocumentDB الخاص بك، إذ ستحتاج إليها أثناء عملية إنشاء ClickPipe.

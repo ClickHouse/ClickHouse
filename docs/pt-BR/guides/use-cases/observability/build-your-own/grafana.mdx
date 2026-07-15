@@ -1,0 +1,220 @@
+---
+title: 'Usando Grafana e ClickHouse para observabilidade'
+description: 'Usando Grafana e ClickHouse para observabilidade'
+slug: /observability/grafana
+keywords: ['Observabilidade', 'logs', 'traces', 'métricas', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O Grafana é a ferramenta de visualização preferida para dados de observabilidade no ClickHouse. Isso é feito por meio do plugin oficial do ClickHouse para Grafana. Você pode seguir as instruções de instalação disponíveis [aqui](/pt-BR/integrations/connectors/data-visualization/grafana/index).
+
+A V4 do plugin torna logs e traces recursos de primeira classe na nova experiência do construtor de consultas. Isso reduz a necessidade de SREs escreverem consultas SQL e simplifica a observabilidade baseada em SQL, fazendo esse paradigma emergente avançar.
+Parte disso envolveu colocar o OpenTelemetry (OTel) no centro do plugin, pois acreditamos que essa será a base da observabilidade baseada em SQL nos próximos anos e da forma como os dados serão coletados.
+
+<div id="open-telemetry-integration">
+  ## Integração com OpenTelemetry
+</div>
+
+Ao configurar uma fonte de dados ClickHouse no Grafana, o plugin permite que o usuário especifique um banco de dados e uma tabela padrão para logs e traces, além de informar se essas tabelas seguem o esquema do OTel. Isso permite que o plugin retorne as colunas necessárias para a renderização correta de logs e traces no Grafana. Se você tiver feito alterações no esquema padrão do OTel e preferir usar seus próprios nomes de coluna, eles poderão ser especificados. Usar os nomes de coluna padrão do OTel para colunas como tempo (`Timestamp`), nível de log (`SeverityText`) ou corpo da mensagem (`Body`) significa que nenhuma alteração precisa ser feita.
+
+<Info>
+  **HTTP ou Native**
+
+  Você pode conectar o Grafana ao ClickHouse por HTTP ou pelo protocolo Native. Este último oferece vantagens marginais de desempenho, que provavelmente não serão perceptíveis nas consultas de agregação emitidas pelos usuários do Grafana. Por outro lado, o protocolo HTTP costuma ser mais simples de colocar atrás de um proxy e inspecionar.
+</Info>
+
+A configuração de Logs exige uma coluna de tempo, uma de nível de log e uma de mensagem para que os logs sejam renderizados corretamente.
+
+A configuração de Traces é um pouco mais complexa (lista completa [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). As colunas obrigatórias aqui são necessárias para que consultas subsequentes, que montam um perfil completo de trace, possam ser abstraídas. Essas consultas pressupõem que os dados estejam estruturados de forma semelhante ao OTel; portanto, usuários que se afastem significativamente do esquema padrão precisarão usar views para aproveitar esse recurso.
+
+<Image img="/images/use-cases/observability/observability-15.webp" alt="Configuração do conector" size="sm" />
+
+Depois de configurar, você pode ir para o [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) e começar a pesquisar logs e traces.
+
+<div id="logs">
+  ## Logs
+</div>
+
+Se você estiver seguindo os requisitos do Grafana para logs, poderá selecionar `Query Type: Log` no construtor de consultas e clicar em `Run Query`. O construtor de consultas montará uma consulta para listar os logs e garantir que eles sejam exibidos, por exemplo.
+
+```sql
+SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-16.webp" alt="Configuração dos logs do conector" size="lg" border />
+
+O construtor de consultas oferece uma forma simples de modificar a consulta, sem precisar escrever SQL. Também é possível fazer filtragens no construtor de consultas, inclusive para encontrar logs que contenham palavras-chave. Os usuários que quiserem escrever consultas mais complexas podem alternar para o Editor SQL. Desde que as colunas apropriadas sejam retornadas e `logs` seja selecionado como o Tipo de consulta, os resultados serão exibidos como logs. As colunas necessárias para a exibição de logs estão listadas [aqui](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
+
+<div id="logs-to-traces">
+  ### Logs para traces
+</div>
+
+Se os logs contiverem IDs de trace, você poderá navegar até o trace correspondente a uma linha de log específica.
+
+<Image img="/images/use-cases/observability/observability-17.webp" alt="Logs para traces" size="lg" border />
+
+<div id="traces">
+  ## Traces
+</div>
+
+Assim como na experiência de logging descrita acima, se as colunas exigidas pelo Grafana para renderizar traces estiverem presentes (por exemplo, ao usar o esquema OTel), o construtor de consultas conseguirá formular automaticamente as consultas necessárias. Ao selecionar `Query Type: Traces` e clicar em `Run Query`, uma consulta semelhante à seguinte será gerada e executada (dependendo das colunas configuradas — o exemplo a seguir pressupõe o uso de OTel):
+
+```sql
+SELECT "TraceId" as traceID,
+  "ServiceName" as serviceName,
+  "SpanName" as operationName,
+  "Timestamp" as startTime,
+  multiply("Duration", 0.000001) as duration
+FROM "default"."otel_traces"
+WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
+  AND ( ParentSpanId = '' )
+  AND ( Duration > 0 )
+  ORDER BY Timestamp DESC, Duration DESC LIMIT 1000
+```
+
+Esta consulta retorna os nomes das colunas esperados pelo Grafana, exibindo uma tabela de traces, como mostrado abaixo. É possível filtrar por duração ou outras colunas sem precisar escrever SQL.
+
+<Image img="/images/use-cases/observability/observability-18.webp" alt="Traces" size="lg" border />
+
+Os usuários que quiserem escrever consultas mais complexas podem alternar para o `SQL Editor`.
+
+<div id="view-trace-details">
+  ### Ver detalhes do trace
+</div>
+
+Como mostrado acima, os IDs de trace são exibidos como links clicáveis. Ao clicar em um ID de trace, o usuário pode optar por visualizar os spans associados por meio do link `View Trace`. Isso executa a seguinte consulta (assumindo colunas OTel) para recuperar os spans na estrutura necessária e exibir os resultados em cascata.
+
+```sql
+WITH '<trace_id>' AS trace_id,
+  (SELECT min(Start) FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_start,
+  (SELECT max(End) + 1 FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_end
+SELECT "TraceId" AS traceID,
+  "SpanId" AS spanID,
+  "ParentSpanId" AS parentSpanID,
+  "ServiceName" AS serviceName,
+  "SpanName" AS operationName,
+  "Timestamp" AS startTime,
+  multiply("Duration", 0.000001) AS duration,
+  arrayMap(key -> map('key', key, 'value',"SpanAttributes"[key]),
+  mapKeys("SpanAttributes")) AS tags,
+  arrayMap(key -> map('key', key, 'value',"ResourceAttributes"[key]),
+  mapKeys("ResourceAttributes")) AS serviceTags
+FROM "default"."otel_traces"
+WHERE traceID = trace_id
+  AND startTime >= trace_start
+  AND startTime <= trace_end
+LIMIT 1000
+```
+
+<Note>
+  Observe como a consulta acima usa a visão materializada `otel_traces_trace_id_ts` para fazer a busca pelo trace ID. Consulte [Acelerando consultas - usando visões materializadas para buscas](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) para mais detalhes.
+</Note>
+
+<Image img="/images/use-cases/observability/observability-19.webp" alt="Detalhes do trace" size="lg" border />
+
+<div id="traces-to-logs">
+  ### De traces para logs
+</div>
+
+Se os logs contiverem IDs de trace, você poderá navegar de um trace até os logs associados. Para visualizar os logs, clique em um ID de trace e selecione `View Logs`. Isso executa a seguinte consulta, considerando as colunas OTel padrão.
+
+```sql
+SELECT Timestamp AS "timestamp",
+  Body AS "body", SeverityText AS "level",
+  TraceId AS "traceID" FROM "default"."otel_logs"
+WHERE ( traceID = '<trace_id>' )
+ORDER BY timestamp ASC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-20.webp" alt="De traces para logs" size="lg" border />
+
+<div id="dashboards">
+  ## Dashboards
+</div>
+
+Você pode criar dashboards no Grafana usando a fonte de dados do ClickHouse. Recomendamos a documentação do Grafana e da [fonte de dados do ClickHouse](https://github.com/grafana/clickhouse-datasource) para mais detalhes, especialmente sobre o [conceito de macros](https://github.com/grafana/clickhouse-datasource?tab=readme-ov-file#macros) e [variáveis](https://grafana.com/docs/grafana/latest/dashboards/variables/).
+
+O plugin fornece vários dashboards prontos para uso, incluindo um dashboard de exemplo, &quot;Simple ClickHouse OTel dashboarding&quot;, para dados de logs e rastreamento em conformidade com a especificação OTel. Isso exige que os usuários usem os nomes de coluna padrão do OTel e pode ser instalado pela configuração da fonte de dados.
+
+<Image img="/images/use-cases/observability/observability-21.webp" alt="Dashboards" size="lg" border />
+
+Abaixo, fornecemos algumas dicas simples para criar visualizações.
+
+<div id="time-series">
+  ### Séries temporais
+</div>
+
+Junto com as estatísticas, os gráficos de linhas são a forma de visualização mais comum em casos de uso de observabilidade. O plugin do ClickHouse exibirá automaticamente um gráfico de linhas se uma consulta retornar um `datetime` chamado `time` e uma coluna numérica. Por exemplo:
+
+```sql
+SELECT
+ $__timeInterval(Timestamp) as time,
+ quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE
+ $__timeFilter(Timestamp)
+ AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-22.webp" alt="Série temporal" size="lg" border />
+
+<div id="multi-line-charts">
+  ### Gráficos com várias linhas
+</div>
+
+Os gráficos com várias linhas serão renderizados automaticamente para uma consulta, desde que as seguintes condições sejam atendidas:
+
+* campo 1: campo de data e hora com um alias time
+* campo 2: valor pelo qual agrupar. Deve ser uma String.
+* campo 3+: os valores das métricas
+
+Por exemplo:
+
+```sql
+SELECT
+  $__timeInterval(Timestamp) as time,
+  ServiceName,
+  quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY ServiceName, time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-23.webp" alt="Gráficos com várias linhas" size="lg" border />
+
+<div id="visualizing-geo-data">
+  ### Visualizando dados geográficos
+</div>
+
+Nas seções anteriores, vimos como enriquecer dados de observabilidade com coordenadas geográficas usando dicionários de IP. Supondo que você tenha as colunas `latitude` e `longitude`, é possível visualizar a observabilidade usando a função `geohashEncode`. Isso gera geohashes compatíveis com o gráfico Geo Map do Grafana. Um exemplo de consulta e visualização é mostrado abaixo:
+
+```sql
+WITH coords AS
+        (
+        SELECT
+                Latitude,
+                Longitude,
+                geohashEncode(Longitude, Latitude, 4) AS hash
+        FROM otel_logs_v2
+        WHERE (Longitude != 0) AND (Latitude != 0)
+        )
+SELECT
+        hash,
+        count() AS heat,
+        round(log10(heat), 2) AS adj_heat
+FROM coords
+GROUP BY hash
+```
+
+<Image img="/images/use-cases/observability/observability-24.webp" alt="Visualizando dados geoespaciais" size="lg" border />

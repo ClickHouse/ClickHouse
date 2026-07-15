@@ -1,0 +1,132 @@
+---
+slug: /use-cases/AI/MCP/anythingllm
+sidebarTitle: 'Integre o AnythingLLM'
+title: Usando o servidor MCP do ClickHouse com o AnythingLLM
+description: 'Este guia explica como configurar o AnythingLLM com o servidor MCP do ClickHouse usando Docker.'
+keywords: ['AI', 'AnythingLLM', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+> Este guia explica como configurar o [AnythingLLM](https://anythingllm.com/) com um servidor MCP do ClickHouse usando Docker
+> e conectá-lo aos datasets de exemplo do ClickHouse.
+
+<Steps>
+  <Step>
+    ## Instale o Docker
+
+    Você precisará do Docker para executar o LibreChat e o servidor MCP. Para obter o Docker:
+
+    1. Acesse [docker.com](https://www.docker.com/products/docker-desktop)
+    2. Baixe o Docker Desktop para o seu sistema operacional
+    3. Instale o Docker seguindo as instruções para o seu sistema operacional
+    4. Abra o Docker Desktop e verifique se ele está em execução
+
+    <br />
+
+    Para mais informações, consulte a [documentação do Docker](https://docs.docker.com/get-docker/).
+  </Step>
+
+  <Step>
+    ## Baixe a imagem Docker do AnythingLLM
+
+    Execute o comando a seguir para baixar a imagem Docker do AnythingLLM para a sua máquina:
+
+    ```bash
+    docker pull anythingllm/anythingllm
+    ```
+  </Step>
+
+  <Step>
+    ## Configure o local de armazenamento
+
+    Crie um diretório para armazenamento e inicialize o arquivo de ambiente:
+
+    ```bash
+    export STORAGE_LOCATION=$PWD/anythingllm && \
+    mkdir -p $STORAGE_LOCATION && \
+    touch "$STORAGE_LOCATION/.env" 
+    ```
+  </Step>
+
+  <Step>
+    ## Configure o arquivo de configuração do servidor MCP
+
+    Crie o diretório `plugins`:
+
+    ```bash
+    mkdir -p "$STORAGE_LOCATION/plugins"
+    ```
+
+    Crie um arquivo chamado `anythingllm_mcp_servers.json` no diretório `plugins` e adicione o conteúdo a seguir:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": ""
+          }
+        }
+      }
+    }
+    ```
+
+    Se você quiser explorar seus próprios dados, pode fazer isso
+    usando o [host, nome de usuário e senha](/pt-BR/get-started/setup/cloud#connect-with-your-app)
+    do seu próprio ClickHouse Cloud service.
+  </Step>
+
+  <Step>
+    ## Inicie o contêiner Docker do AnythingLLM
+
+    Execute o comando a seguir para iniciar o contêiner Docker do AnythingLLM:
+
+    ```bash
+    docker run -p 3001:3001 \
+    --cap-add SYS_ADMIN \
+    -v ${STORAGE_LOCATION}:/app/server/storage \
+    -v ${STORAGE_LOCATION}/.env:/app/server/.env \
+    -e STORAGE_DIR="/app/server/storage" \
+    mintplexlabs/anythingllm
+    ```
+
+    Quando ele iniciar, acesse `http://localhost:3001` no navegador.
+    Selecione o modelo que deseja usar e forneça sua API key.
+  </Step>
+
+  <Step>
+    ## Aguarde a inicialização dos servidores MCP
+
+    Clique no ícone de ferramenta no canto inferior esquerdo da UI:
+
+    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="Ícone de ferramenta" size="md" />
+
+    Clique em `Agent Skills` e procure a seção `MCP servers`.
+    Aguarde até ver `Mcp ClickHouse` definido como `On`
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="Servidores MCP prontos" size="md" />
+  </Step>
+
+  <Step>
+    ## Converse com o servidor MCP do ClickHouse no AnythingLLM
+
+    Agora estamos prontos para iniciar um chat.
+    Para disponibilizar os servidores MCP em um chat, você precisará adicionar o prefixo `@agent` à primeira mensagem da conversa.
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversa" size="md" />
+  </Step>
+</Steps>

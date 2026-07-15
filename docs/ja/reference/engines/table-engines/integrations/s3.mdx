@@ -1,0 +1,499 @@
+---
+description: 'このエンジンは Amazon S3 エコシステムとのインテグレーションを提供します。HDFS エンジン
+  と似ていますが、S3 固有の機能を備えています。'
+sidebarTitle: 'S3'
+slug: /engines/table-engines/integrations/s3
+title: 'S3 テーブルエンジン'
+doc_type: 'reference'
+---
+
+このエンジンは [Amazon S3](https://aws.amazon.com/s3/) エコシステムとのインテグレーションを提供します。[HDFS](/ja/reference/engines/table-engines/integrations/hdfs) エンジンと似ていますが、S3 固有の機能を備えています。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE=S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'gzip')
+    SETTINGS input_format_with_names_use_header = 0;
+
+INSERT INTO s3_engine_table VALUES ('one', 1), ('two', 2), ('three', 3);
+
+SELECT * FROM s3_engine_table LIMIT 2;
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="creating-a-table">
+  ## テーブルを作成する
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE = S3(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression], [partition_strategy], [partition_columns_in_data_file], [extra_credentials])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="parameters">
+  ### エンジンパラメータ
+</div>
+
+* `path` — ファイルへのパスを含むバケット URL。readonly モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}` および `{N..M}`。ここで、`N`, `M` は数値、`'abc'`, `'def'` は文字列です。詳細は[以下](#wildcards-in-path)を参照してください。
+* `NOSIGN` - 認証情報の代わりにこのキーワードを指定すると、すべてのリクエストに署名が行われません。
+* `format` — ファイルの[フォーマット](/ja/reference/formats/index#formats-overview)。
+* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザー向けの長期認証情報です。これらを使用してリクエストを認証できます。このパラメータは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。詳細は [Using S3 for Data Storage](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) を参照してください。
+* `compression` — 圧縮タイプ。サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。このパラメータは任意です。デフォルトでは、ファイル拡張子から圧縮方式を自動検出します。
+* `partition_strategy` – オプション: `WILDCARD` または `HIVE`。`WILDCARD` では、パス内に `{_partition_id}` が必要で、これがパーティションキーに置き換えられます。`HIVE` ではワイルドカードは使用できず、パスがテーブルのルートであるとみなし、ファイル名に Snowflake ID、拡張子にファイルフォーマットを使用した Hive スタイルのパーティションディレクトリを生成します。デフォルトは `file_like_engine_default_partition_strategy` 設定です (`26.6` より古い `compatibility` 設定では `WILDCARD`、それ以外では `HIVE`) 。
+* `partition_columns_in_data_file` - `HIVE` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして ClickHouse が扱うかどうかを指定します。デフォルトは `false` です。
+* `storage_class_name` - オプション: `STANDARD` または `INTELLIGENT_TIERING`。[AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) を指定できます。
+* `extra_credentials` - 任意。ClickHouse Cloud でロールベースアクセス用の `role_arn` を渡すために使用します。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+<div id="data-cache">
+  ### データキャッシュ
+</div>
+
+`S3` テーブルエンジンは、ローカルディスクへのデータキャッシュをサポートしています。
+ファイルシステムキャッシュの設定オプションと使用方法については、この[セクション](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください。
+キャッシュはストレージオブジェクトのパスと ETag に基づいて行われるため、ClickHouse が古いキャッシュを読み込むことはありません。
+
+キャッシュを有効にするには、設定 `filesystem_cache_name = '<name>'` と `enable_filesystem_cache = 1` を使用します。
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
+```
+
+設定ファイルでcacheを定義する方法は2つあります。
+
+1. ClickHouseの設定ファイルに次のセクションを追加します。
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_s3>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_s3>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. ClickHouse の `storage_configuration` セクションにある cache の設定 (つまり cache ストレージ) を再利用します。詳しくは[こちら](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化してもクエリは高速化されません (ORDER BY 式とは対照的です) 。細かすぎるパーティション化は絶対に避けてください。クライアント識別子や名前でデータをパーティション化しないでください (代わりに、クライアント識別子または名前を ORDER BY 式の最初のカラムにしてください) 。
+
+月単位でパーティション化するには、`toYYYYMM(date_column)` 式を使用します。ここで、`date_column` は [Date](/ja/reference/data-types/date) 型の日付カラムです。ここでのパーティション名は `"YYYYMM"` フォーマットになります。
+
+<div id="partition-strategy">
+  #### パーティション方式
+</div>
+
+`WILDCARD`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。デフォルトで選択されるのは、`26.6` より前の `compatibility` 設定の場合のみです。それ以外では、デフォルトは `HIVE` です (`file_like_engine_default_partition_strategy` 設定を参照) 。
+
+`HIVE` は、読み取りと書き込みで Hive スタイルのパーティション化を実装します。読み取りは再帰的な glob パターンを使用して実装されており、`SELECT * FROM s3('table_root/**.parquet')` と同等です。
+書き込みでは、次のフォーマットでファイルが生成されます: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
+
+注: `HIVE` パーティション方式を使用する場合、`use_hive_partitioning` 設定は効果がありません。
+
+`HIVE` パーティション方式の例:
+
+```sql
+arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
+PARTITION BY (year, country);
+
+arthur :) INSERT INTO t_03363_parquet VALUES
+    (2022, 'USA', 1),
+    (2022, 'Canada', 2),
+    (2023, 'USA', 3),
+    (2023, 'Mexico', 4),
+    (2024, 'France', 5),
+    (2024, 'Germany', 6),
+    (2024, 'Germany', 7),
+    (1999, 'Brazil', 8),
+    (2100, 'Japan', 9),
+    (2024, 'CN', 10),
+    (2025, '', 11);
+
+arthur :) select _path, * from t_03363_parquet;
+
+    ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+ 1. │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
+ 2. │ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
+ 3. │ test/t_03363_parquet/year=2022/country=Canada/7329604473314914304.parquet  │ 2022 │ Canada  │       2 │
+ 4. │ test/t_03363_parquet/year=1999/country=Brazil/7329604473289748480.parquet  │ 1999 │ Brazil  │       8 │
+ 5. │ test/t_03363_parquet/year=2023/country=Mexico/7329604473293942784.parquet  │ 2023 │ Mexico  │       4 │
+ 6. │ test/t_03363_parquet/year=2023/country=USA/7329604473319108608.parquet     │ 2023 │ USA     │       3 │
+ 7. │ test/t_03363_parquet/year=2025/country=/7329604473327497216.parquet        │ 2025 │         │      11 │
+ 8. │ test/t_03363_parquet/year=2024/country=CN/7329604473310720000.parquet      │ 2024 │ CN      │      10 │
+ 9. │ test/t_03363_parquet/year=2022/country=USA/7329604473298137088.parquet     │ 2022 │ USA     │       1 │
+10. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       6 │
+11. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       7 │
+    └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="querying-partitioned-data">
+  ### パーティション化されたデータのクエリ
+</div>
+
+この例では、ClickHouse と MinIO を統合する [docker compose recipe](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3) を使用します。エンドポイントと認証の値を置き換えれば、S3 を使って同じクエリを再現できるはずです。
+
+`ENGINE` 設定の S3 エンドポイントでは、S3 オブジェクト (ファイル名) の一部としてパラメータートークン `{_partition_id}` が使われており、SELECT クエリでは生成されたそのオブジェクト名 (例: `test_3.csv`) を対象にしている点に注目してください。
+
+<Note>
+  この例が示すように、パーティション化された S3 テーブルに対するクエリは
+  現時点では直接サポートされていませんが、各パーティションに対して
+  S3 テーブル関数 を使ってクエリすることで実現できます。
+
+  S3 への
+  パーティション化されたデータの書き込みの主な用途は、そのデータを別の
+  ClickHouse システムへ転送できるようにすることです (たとえば、オンプレミス環境から ClickHouse
+  Cloud へ移行する場合など) 。ClickHouse のデータセットは非常に大きくなることが多く、またネットワークの
+  信頼性も常に十分とは限らないため、データセットを
+  一部ずつ転送できるようにしておくのが合理的です。これが、パーティション化書き込みを行う理由です。
+</Note>
+
+<div id="create-the-table">
+  #### テーブルを作成
+</div>
+
+```sql highlight={8}
+CREATE TABLE p
+(
+    `column1` UInt32,
+    `column2` UInt32,
+    `column3` UInt32
+)
+ENGINE = S3(
+           'http://minio:10000/clickhouse//test_{_partition_id}.csv',
+           'minioadmin',
+           'minioadminpassword',
+           'CSV')
+PARTITION BY column3
+```
+
+<div id="insert-data">
+  #### データを挿入する
+</div>
+
+```sql
+INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
+```
+
+<div id="select-from-partition-3">
+  #### パーティション 3 から取得
+</div>
+
+<Tip>
+  このクエリでは S3 テーブル関数を使用します
+</Tip>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  2 │  3 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-1">
+  #### パーティション 1 からの選択
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  3 │  2 │  1 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-45">
+  #### パーティション45から選択する
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│ 78 │ 43 │ 45 │
+└────┴────┴────┘
+```
+
+<div id="limitation">
+  #### 制限
+</div>
+
+つい `Select * from p` を試したくなるかもしれませんが、前述のとおり、このクエリは失敗します。代わりに、前のクエリを使用してください。
+
+```sql
+SELECT * FROM p
+```
+
+```response
+Received exception from server (version 23.4.1):
+Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
+```
+
+<div id="inserting-data">
+  ## データの挿入
+</div>
+
+行は新しいファイルにのみ挿入できる点に注意してください。マージサイクルやファイル分割処理はありません。いったんファイルが書き込まれると、その後の挿入は失敗します。これを回避するには、`s3_truncate_on_insert` と `s3_create_new_file_on_insert` の設定を使用できます。詳細は[こちら](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)を参照してください。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`.
+* `_file` — ファイル名。型: `LowCardinality(String)`.
+* `_size` — ファイルのサイズ (バイト単位) 。型: `Nullable(UInt64)`. サイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの ETag。型: `LowCardinality(String)`. ETag が不明な場合、値は `NULL` です。
+* `_tags` — ファイルのタグ。型: `Map(String, String)`. タグが存在しない場合、値は空のマップ `{}'` です。
+
+仮想カラムの詳細については、[こちら](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)を参照してください。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+* 読み取りと書き込みは並行して実行できます
+* サポートされていません:
+  * `ALTER` および `SELECT...SAMPLE` 操作。
+  * 索引。
+  * [Zero-copy](/ja/concepts/features/configuration/server-config/storing-data#zero-copy) レプリケーションは可能ですが、サポート対象外です。
+
+<Info>
+  **ゼロコピー レプリケーションは本番環境には未対応です**
+
+  ゼロコピー レプリケーションは、ClickHouse バージョン 22.8 以降ではデフォルトで無効になっています。この機能を本番環境で使用することは推奨されません。
+</Info>
+
+<div id="wildcards-in-path">
+  ## path 内のワイルドカード
+</div>
+
+`path` 引数では、bash 形式のワイルドカードを使って複数のファイルを指定できます。処理対象のファイルは実在し、path パターン全体に一致している必要があります。ファイルの一覧は `SELECT` の実行時に決定されます (`CREATE` 時ではありません) 。
+
+* `*` — 空文字列を含む、`/` を除く任意の文字列に置き換えられます。
+* `**` — 空文字列を含む、`/` を含む任意の文字列に置き換えられます。
+* `?` — 任意の 1 文字に置き換えられます。
+* `{some_string,another_string,yet_another_one}` — `'some_string'`、`'another_string'`、`'yet_another_one'` のいずれかの文字列に置き換えられます。
+* `{N..M}` — N から M までの範囲内の任意の数値 (両端を含む) に置き換えられます。N と M には先頭の 0 を付けることもできます (例: `000..078`) 。
+
+`{}` を使う構文は、[remote](/ja/reference/functions/table-functions/remote) table function と似ています。
+
+<Note>
+  ファイル一覧に先頭の 0 を含む数値範囲がある場合は、各桁ごとに波かっこを使った構文を使用するか、`?` を使用してください。
+</Note>
+
+**ワイルドカードの例 1**
+
+`file-000.csv`、`file-001.csv`、...、`file-999.csv` という名前のファイルに対するテーブルを作成します:
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/my_folder/file-{000..999}.csv', 'CSV');
+```
+
+**ワイルドカードを使った例 2**
+
+S3 上に、以下の URI を持つ CSV フォーマットのファイルが複数あるとします。
+
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;3.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;3.csv&#39;
+
+これら 6 つすべてのファイルからなるテーブルを作成する方法はいくつかあります。
+
+1. ファイル名の接尾辞の範囲を指定します。
+
+```sql
+CREATE TABLE table_with_range (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_{1..3}', 'CSV');
+```
+
+2. `some_file_` プレフィックスを持つすべてのファイルを対象にします (どちらのフォルダーにも、このプレフィックスを持つ余分なファイルがあってはいけません) :
+
+```sql
+CREATE TABLE table_with_question_mark (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_?', 'CSV');
+```
+
+3. 両方のフォルダ内にあるすべてのファイルを対象とします (すべてのファイルは、クエリで記述されたフォーマットとスキーマに適合している必要があります) :
+
+```sql
+CREATE TABLE table_with_asterisk (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
+```
+
+<div id="storage-settings">
+  ## ストレージ設定
+</div>
+
+* [s3&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings#s3_truncate_on_insert) - ファイルに insert する前に、そのファイルを切り詰めることを許可します。デフォルトでは無効です。
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings#s3_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
+* [s3&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#s3_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは有効です。
+
+<div id="settings">
+  ## S3 関連の設定
+</div>
+
+以下の設定は、クエリの実行前に指定するか、設定ファイルに記述できます。
+
+* `s3_max_single_part_upload_size` — S3 へのシングルパートアップロードでアップロードするオブジェクトの最大サイズです。デフォルト値は `32Mb` です。
+* `s3_min_upload_part_size` — [S3 Multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/dev/uploadobjusingmpu.html) を使用したマルチパートアップロード時にアップロードするパートの最小サイズです。デフォルト値は `16Mb` です。
+* `s3_max_redirects` — 許可される S3 リダイレクトホップの最大数です。デフォルト値は `10` です。
+* `s3_single_read_retries` — 単一読み取り時の最大再試行回数です。デフォルト値は `4` です。
+* `s3_max_put_rps` — スロットリングが適用されるまでの PUT リクエストの最大毎秒レートです。デフォルト値は `0` (無制限) です。
+* `s3_max_put_burst` — 1 秒あたりのリクエスト制限に達する前に同時に発行できる最大リクエスト数です。デフォルトでは (値が `0` の場合) 、`s3_max_put_rps` と同じです。
+* `s3_max_get_rps` — スロットリングが適用されるまでの GET リクエストの最大毎秒レートです。デフォルト値は `0` (無制限) です。
+* `s3_max_get_burst` — 1 秒あたりのリクエスト制限に達する前に同時に発行できる最大リクエスト数です。デフォルトでは (値が `0` の場合) 、`s3_max_get_rps` と同じです。
+* `s3_upload_part_size_multiply_factor` - S3 への 1 回の書き込みで `s3_multiply_parts_count_threshold` 個のパートがアップロードされるたびに、`s3_min_upload_part_size` にこの係数を掛けます。デフォルト値は `2` です。
+* `s3_upload_part_size_multiply_parts_count_threshold` - この数のパートが S3 にアップロードされるたびに、`s3_min_upload_part_size` は `s3_upload_part_size_multiply_factor` 倍になります。デフォルト値は `500` です。
+* `s3_max_inflight_parts_for_one_file` - 1 つのオブジェクトに対して同時実行できる PUT リクエスト数を制限します。この数は制限する必要があります。値 `0` は無制限を意味します。デフォルト値は `20` です。各進行中のパートには、最初の `s3_upload_part_size_multiply_factor` 個のパートについてはサイズ `s3_min_upload_part_size` のバッファが割り当てられ、ファイルが十分に大きい場合はさらに大きくなります。`upload_part_size_multiply_factor` を参照してください。デフォルト設定では、アップロードされる 1 ファイルあたりの消費量は、`8G` 未満のファイルで `320Mb` を超えません。より大きなファイルでは消費量は増加します。
+
+セキュリティ上の注意: 悪意のあるユーザーが任意の S3 URL を指定できる場合、[SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery) 攻撃を防ぐために `s3_max_redirects` を 0 に設定する必要があります。あるいは、サーバー設定で `remote_host_filter` を指定する必要があります。
+
+<div id="endpoint-settings">
+  ## エンドポイントベースの設定
+</div>
+
+以下の設定は、指定したエンドポイントに対して設定ファイルで指定できます (URL のプレフィックスに完全一致するものが対象です) 。
+
+* `endpoint` — エンドポイントのプレフィックスを指定します。必須です。
+* `access_key_id` and `secret_access_key` — 指定したエンドポイントで使用する認証情報を指定します。任意です。
+* `use_environment_credentials` — `true` に設定すると、S3 クライアントは指定したエンドポイントについて、環境変数および [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) のメタデータから認証情報の取得を試みます。任意で、デフォルト値は `false` です。
+* `region` — S3 のリージョン名を指定します。任意です。
+* `use_insecure_imds_request` — `true` に設定すると、S3 クライアントは Amazon EC2 メタデータから認証情報を取得する際に、安全でない IMDS リクエストを使用します。任意で、デフォルト値は `false` です。
+* `expiration_window_seconds` — 有効期限付き認証情報が期限切れかどうかを確認する際の猶予期間です。任意で、デフォルト値は `120` です。
+* `no_sign_request` - すべての認証情報を無視し、リクエストに署名しないようにします。公開 bucket へのアクセスに便利です。
+* `header` — 指定したエンドポイントへのリクエストに、指定した HTTP ヘッダーを追加します。任意で、複数回指定できます。
+* `access_header` - 他のソースから認証情報が提供されていない場合に、指定したエンドポイントへのリクエストに指定した HTTP ヘッダーを追加します。
+* `server_side_encryption_customer_key_base64` — 指定すると、SSE-C で暗号化された S3 object にアクセスするために必要なヘッダーが設定されます。任意です。
+* `server_side_encryption_kms_key_id` - 指定すると、[SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) で暗号化された S3 object にアクセスするために必要なヘッダーが設定されます。空文字列を指定した場合は、AWS 管理の S3 key が使用されます。任意です。
+* `server_side_encryption_kms_encryption_context` - `server_side_encryption_kms_key_id` とあわせて指定すると、SSE-KMS 用の指定した暗号化コンテキストヘッダーが設定されます。任意です。
+* `server_side_encryption_kms_bucket_key_enabled` - `server_side_encryption_kms_key_id` とあわせて指定すると、SSE-KMS 用の S3 bucket key を有効にするヘッダーが設定されます。任意で、`true` または `false` を指定できます。デフォルトでは何も設定されず、bucket レベルの設定に従います。
+* `max_single_read_retries` — 1 回の読み取りでの最大再試行回数です。デフォルト値は `4` です。任意です。
+* `max_put_rps`, `max_put_burst`, `max_get_rps` and `max_get_burst` - クエリ単位ではなく、特定のエンドポイントに対して使用するスロットリング設定です (説明は上記を参照) 。任意です。
+
+**例:**
+
+```xml
+<s3>
+    <endpoint-name>
+        <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/</endpoint>
+        <!-- <access_key_id>ACCESS_KEY_ID</access_key_id> -->
+        <!-- <secret_access_key>SECRET_ACCESS_KEY</secret_access_key> -->
+        <!-- <region>us-west-1</region> -->
+        <!-- <use_environment_credentials>false</use_environment_credentials> -->
+        <!-- <use_insecure_imds_request>false</use_insecure_imds_request> -->
+        <!-- <expiration_window_seconds>120</expiration_window_seconds> -->
+        <!-- <no_sign_request>false</no_sign_request> -->
+        <!-- <header>Authorization: Bearer SOME-TOKEN</header> -->
+        <!-- <server_side_encryption_customer_key_base64>BASE64-ENCODED-KEY</server_side_encryption_customer_key_base64> -->
+        <!-- <server_side_encryption_kms_key_id>KMS_KEY_ID</server_side_encryption_kms_key_id> -->
+        <!-- <server_side_encryption_kms_encryption_context>KMS_ENCRYPTION_CONTEXT</server_side_encryption_kms_encryption_context> -->
+        <!-- <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled> -->
+        <!-- <max_single_read_retries>4</max_single_read_retries> -->
+    </endpoint-name>
+</s3>
+```
+
+<div id="working-with-archives">
+  ## アーカイブの操作
+</div>
+
+S3 上に次の URI を持つ複数のアーカイブファイルがあるとします。
+
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-10.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-11.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-12.csv.zip&#39;
+
+これらのアーカイブからデータを抽出するには :: を使用できます。グロブは URL 部分と、:: の後の部分 (アーカイブ内のファイル名を指定する部分) の両方で使用できます。
+
+```sql
+SELECT *
+FROM s3(
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+);
+```
+
+<Note>
+  ClickHouse は次の 3 つのアーカイブフォーマットをサポートしています:
+  ZIP
+  TAR
+  7Z
+  ZIP アーカイブと TAR アーカイブには、サポートされている任意のストレージ上の場所からアクセスできますが、7Z アーカイブを読み取れるのは、ClickHouse がインストールされているローカルファイルシステム上からのみです。
+</Note>
+
+<div id="accessing-public-buckets">
+  ## 公開バケットへのアクセス
+</div>
+
+ClickHouse は、さまざまな種類のソースから認証情報を取得しようとします。
+そのため、公開バケットによってはアクセス時に問題が発生し、クライアントが `403` エラーコードを返すことがあります。
+この問題は、`NOSIGN` キーワードを使用してクライアントがすべての認証情報を無視し、リクエストに署名しないようにすることで回避できます。
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
+<div id="optimizing-performance">
+  ## パフォーマンスの最適化
+</div>
+
+s3関数のパフォーマンス最適化の詳細については、[詳しいガイド](/ja/integrations/connectors/data-ingestion/AWS/performance)を参照してください。
+
+<div id="role-based-access">
+  ## ロールベースのアクセス
+</div>
+
+ClickHouse Cloud では、アクセスキーの代わりにロールベースのアクセスを使用して S3 に認証できます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+設定後は、`extra_credentials` パラメーターで `roleARN` を渡せます。
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'), 'CSV')
+```
+
+任意の `external_id` は、`role_arn` とあわせて指定することもできます。これは AWS STS の `AssumeRole` 呼び出しの `ExternalId` パラメーターとして渡され、ロールの信頼ポリシーで共有シークレットを必須にできるため、[confused deputy problem](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html) の軽減に役立ちます。
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [S3 テーブル関数](/ja/reference/functions/table-functions/s3)
+* [S3 と ClickHouse のインテグレーション](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

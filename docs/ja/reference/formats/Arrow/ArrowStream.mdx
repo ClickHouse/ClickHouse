@@ -1,0 +1,144 @@
+---
+alias: []
+description: 'ArrowStream フォーマットに関するドキュメント'
+input_format: true
+keywords: ['ArrowStream']
+output_format: true
+slug: /interfaces/formats/ArrowStream
+title: 'ArrowStream'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | 別名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 説明
+</div>
+
+`ArrowStream` は、Apache Arrow の「ストリームモード」フォーマットです。メモリ内でのストリーム処理向けに設計されています。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+以下の例では、[ClickHouse SQL playground](https://sql.clickhouse.com) で利用できる `forex` データセットを使用します。`clickhouse-client` を使用すると、host に `sql-clickhouse.clickhouse.com`、user に `demo` (password なし) を指定してリモート接続できます。`forex` table は `forex` database にあるため、デフォルトの database としてそれを選択します。
+
+```bash
+clickhouse-client --secure --host sql-clickhouse.clickhouse.com --user demo --database forex
+```
+
+`forex` テーブルには為替レートが保存されています。そのサイズや、
+[`system.columns`](/ja/reference/system-tables/columns) にクエリを実行して、ディスク上でどの程度圧縮効率が高いかを確認できます。
+
+```sql title="Query"
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    sum(data_compressed_bytes) / sum(data_uncompressed_bytes) AS compression_ratio
+FROM system.columns
+WHERE (database = 'forex') AND (table = 'forex')
+GROUP BY table
+ORDER BY table ASC
+```
+
+```response title="Response"
+   ┌─table─┬─compressed_size─┬─uncompressed_size─┬───compression_ratio─┐
+1. │ forex │ 63.69 GiB       │ 280.48 GiB        │ 0.22708227109363446 │
+   └───────┴─────────────────┴───────────────────┴─────────────────────┘
+```
+
+[`Arrow`](/ja/reference/formats/Arrow/Arrow) の &quot;file mode&quot; フォーマットは、読み取る前に結果全体が揃っている必要がありますが、`ArrowStream` は到着した順にコンシューマーが
+順次読み取れるレコードバッチ列として配信されます。これにより、クエリ結果全体を先に
+マテリアライズすることなく、可視化ツールや分析ツールへ直接ストリーミングする用途に
+適しています。
+
+結果をストリーミングするには、ClickHouse の HTTPインターフェイス経由でクエリを
+`POST` リクエストとして送信し、レスポンスを Arrow ストリームとして読み取ります。Arrow 出力の
+圧縮は
+[`output_format_arrow_compression_method`](/ja/reference/settings/formats#output_format_arrow_compression_method)
+設定で無効にしています。これにより、コンシューマーは受信した
+バッチを受信しながらそのままデコードできます。
+
+`ArrowStream` の出力は生のバイナリなので、
+ターミナルに表示する代わりにコンシューマーにパイプします。このストリームは自己記述的で (自身の
+スキーマを持っています) 、ここではそのまま
+[`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) にパイプします。これにより、到着した
+バッチを `--input-format ArrowStream` で読み込み、テーブルとしてクエリできます。
+`forex` テーブルは大きいため、この例を簡潔に保つために、リモートクエリを `WHERE`
+条件と `LIMIT` で絞っています。
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'USD' AND quote = 'CHF'
+        ORDER BY datetime ASC
+        LIMIT 5
+        FORMAT ArrowStream
+        SETTINGS output_format_arrow_compression_method='none'" \
+  | clickhouse-local --input-format ArrowStream \
+      --query "SELECT * FROM table ORDER BY last_update ASC FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬────bid─┬────ask─┬────────────────spread─┐
+1. │ USD.CHF    │ 2000-05-30 17:23:44.000 │  1.688 │ 1.6885 │ 0.0005000829696655273 │
+2. │ USD.CHF    │ 2000-05-30 17:23:46.000 │ 1.6885 │  1.689 │ 0.0004999637603759766 │
+3. │ USD.CHF    │ 2000-05-30 17:23:48.000 │ 1.6886 │ 1.6891 │ 0.0005000829696655273 │
+4. │ USD.CHF    │ 2000-05-30 17:23:49.000 │ 1.6888 │ 1.6893 │ 0.0004999637603759766 │
+5. │ USD.CHF    │ 2000-05-30 17:24:45.000 │  1.689 │ 1.6895 │ 0.0004999637603759766 │
+   └────────────┴─────────────────────────┴────────┴────────┴───────────────────────┘
+```
+
+同じストリームは、Arrow 対応の任意のクライアントで順次処理でき、
+結果全体をバッファリングするのではなく、バッチごとに読み取れます。たとえば、
+[Apache Arrow JavaScript library](https://arrow.apache.org/docs/js/) を使用すると、
+`RecordBatchReader` は各レコードバッチがサーバーからストリーミングされるとすぐに
+返します。
+
+```js
+const reader = await RecordBatchReader.from(response);
+await reader.open();
+for await (const recordBatch of reader) {
+    const batchTable = new Table(recordBatch);
+    const ipcStream = tableToIPC(batchTable, 'stream');
+    const bytes = new Uint8Array(ipcStream);
+    table.update(bytes);
+}
+```
+
+ClickHouse から `ArrowStream` データをストリーミングし、
+[Perspective](https://perspective.finos.org/) でリアルタイム可視化を行う詳しい手順については、
+ブログ記事
+[ClickHouse、Apache Arrow、Perspective を使用したリアルタイム可視化のストリーミング](https://clickhouse.com/blog/streaming-real-time-visualizations-clickhouse-apache-arrow-perpsective)
+を参照してください。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+`ArrowStream` は [`Arrow`](/ja/reference/formats/Arrow/Arrow) フォーマットと同じフォーマット設定を使用します。
+
+| 設定                                                                           | 説明                                                                                                   | デフォルト       |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | Arrow 入力フォーマットの読み取り時に、欠落しているカラムを許可します                                                                | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | Arrow のカラムと CH columns の照合時に、大文字と小文字を区別しません。                                                         | `0`         |
+| `input_format_arrow_import_nested`                                           | 廃止された設定です。何も行いません。                                                                                   | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrow フォーマットのスキーマ推論時に、サポートされていない型のカラムをスキップします                                                        | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow 出力フォーマットの圧縮方式です。サポートされる codecs: lz4&#95;frame, zstd, none (非圧縮)                                | `lz4_frame` |
+| `output_format_arrow_date_as_uint16`                                         | Date の値を 32 ビットの Arrow DATE32 型に変換して書き込む (読み戻すと Date32) のではなく、通常の 16 ビット数値として書き込みます (読み戻すと UInt16) 。 | `0`         |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedString カラムでは、Binary の代わりに Arrow FIXED&#95;SIZE&#95;BINARY 型を使用します。                              | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality 型を Dictionary Arrow 型として出力します                                                         | `0`         |
+| `output_format_arrow_string_as_string`                                       | String カラムでは、Binary の代わりに Arrow String type を使用します                                                   | `1`         |
+| `output_format_arrow_unsupported_types_as_binary`                            | 変換できない型を生のバイナリデータとして出力します。false の場合、そのような型では UNKNOWN&#95;TYPE exception が発生します。                      | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes には常に 64 ビット整数を使用します                                                 | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Arrow フォーマットの dictionary indexes に符号付き整数を使用します                                                       | `1`         |

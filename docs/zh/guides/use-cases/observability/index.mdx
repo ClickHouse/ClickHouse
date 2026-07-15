@@ -1,0 +1,44 @@
+---
+slug: /use-cases/observability
+title: '可观测性'
+description: '可观测性用例指南的落地页'
+keywords: ['可观测性', '日志', '链路追踪', '指标', 'OpenTelemetry', 'Grafana', 'OTel']
+doc_type: 'guide'
+---
+
+ClickHouse 为可观测性场景提供无与伦比的速度、扩展性和成本效益。本指南会根据你的需求提供两种路径：
+
+<div id="clickstack">
+  ## ClickStack - ClickHouse 可观测性技术栈
+</div>
+
+ClickHouse Observability Stack 是我们为大多数用户**推荐的方案**。
+
+**ClickStack** 是一个基于 ClickHouse 和 OpenTelemetry (OTel) 构建的生产级可观测性平台，将日志、链路追踪、指标和会话统一到一个高性能、可扩展的解决方案中，可从单节点部署扩展到 **多 PB 级** 规模。
+
+| Section                                     | Description          |
+| ------------------------------------------- | -------------------- |
+| [概览](/zh/clickstack/overview)                  | 介绍 ClickStack 及其主要特性 |
+| [入门](/zh/clickstack/getting-started/index)     | 快速入门指南和基础设置说明        |
+| [示例数据集](/zh/clickstack/example-datasets/index) | 样本数据集和使用场景           |
+| [架构](/zh/clickstack/architecture)              | 系统架构和组件概览            |
+| [部署](/zh/clickstack/deployment/overview)       | 部署指南和可选方案            |
+| [配置](/zh/clickstack/managing/config)           | 详细的配置选项和设置           |
+| [数据摄取](/zh/clickstack/ingesting-data/index)    | 向 ClickStack 摄取数据的指南 |
+| [搜索](/zh/clickstack/features/search)           | 如何搜索和查询你的可观测性数据      |
+| [生产环境](/zh/clickstack/managing/production)     | 生产环境部署的最佳实践          |
+
+<div id="build-your-own-stack">
+  ## 自建技术栈
+</div>
+
+对于有**自定义需求**的用户——例如高度专用的摄取管道、schema 设计，或极高的扩缩容需求——我们提供相关指导，帮助你构建以 ClickHouse 为核心数据库的自定义可观测性技术栈。
+
+| Page                                                                                         | Description                                                           |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [简介](/zh/guides/use-cases/observability/build-your-own/introduction)                            | 本指南适合希望使用 ClickHouse 自行构建可观测性解决方案的用户，重点关注日志和链路追踪。                     |
+| [Schema 设计](/zh/guides/use-cases/observability/build-your-own/schema-design)                    | 了解为什么建议用户为日志和链路追踪自行设计 schema，以及相关最佳实践。                                |
+| [管理数据](/zh/guides/use-cases/observability/build-your-own/managing-data)                         | 用于可观测性的 ClickHouse 部署通常都会涉及海量数据，因此需要妥善管理。ClickHouse 提供了多项功能来协助进行数据管理。 |
+| [集成 OpenTelemetry](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | 使用 OpenTelemetry 配合 ClickHouse 收集和导出日志与链路追踪。                          |
+| [使用可视化工具](/zh/guides/use-cases/observability/build-your-own/grafana)                            | 了解如何使用适用于 ClickHouse 的可观测性可视化工具，包括 HyperDX 和 Grafana。                 |
+| [演示应用程序](/zh/guides/use-cases/observability/build-your-own/demo-application)                    | 了解已分叉并适配 ClickHouse、用于日志和链路追踪的 OpenTelemetry Demo Application。        |

@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Журнал аудита консоли'
+slug: /cloud/security/audit-logging/console-audit-log
+title: 'Журнал аудита консоли'
+description: 'На этой странице описано, как просматривать журнал аудита в Cloud'
+doc_type: 'guide'
+keywords: ['журнал аудита']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Действия в консоли записываются в журнал аудита. Если у вас есть роль организации Admin или Developer, вы можете просматривать журнал и интегрировать его со своими системами логирования.
+
+<div id="console-audit-log-ui">
+  ## Доступ к журналу консоли через интерфейс
+</div>
+
+<Steps>
+  <Step>
+    ## Выберите организацию
+
+    В ClickHouse Cloud перейдите к сведениям о своей организации.
+
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Вкладка активности ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Выберите аудит
+
+    Выберите вкладку **Audit** в левом меню, чтобы увидеть, какие изменения были внесены в вашей организации ClickHouse Cloud, включая то, кто и когда их внес.
+
+    На странице **Activity** отображается таблица со списком событий, зарегистрированных для вашей организации. По умолчанию этот список отсортирован в обратном хронологическом порядке (самое новое событие сверху). Чтобы изменить порядок сортировки, нажмите на заголовки столбцов. Каждый элемент таблицы содержит следующие поля:
+
+    * **Activity:** Текстовое описание события
+    * **User:** Пользователь, инициировавший событие
+    * **IP Address:** Если применимо, в этом поле указан IP-адрес пользователя, инициировавшего событие
+    * **Time:** Временная метка события
+
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Таблица активности ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Используйте строку поиска
+
+    Вы можете использовать строку поиска, чтобы отфильтровать события по различным критериям, например по имени сервиса или IP-адресу. Эту информацию также можно экспортировать в формате CSV для распространения или анализа во внешнем инструменте.
+  </Step>
+</Steps>
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Экспорт CSV активности ClickHouse Cloud" border />
+</div>
+
+<div id="console-audit-log-api">
+  ## Доступ к журналу аудита консоли через API
+</div>
+
+Вы можете использовать конечную точку `activity` ClickHouse Cloud API, чтобы получить экспорт
+событий аудита. Подробнее см. в [справочнике API](/ru/api-reference/organization/get-list-of-available-organizations).
+
+<div id="log-integrations">
+  ## Интеграции логов
+</div>
+
+Вы можете использовать API для интеграции с любой платформой для сбора логов. Для следующих платформ доступны готовые коннекторы:
+
+* [Дополнение ClickHouse Cloud Audit для Splunk](/ru/integrations/connectors/data-integrations/integrations/splunk)
