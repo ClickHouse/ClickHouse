@@ -1,0 +1,105 @@
+String argument
+0	2503
+1	2503
+2	2503
+3	2503
+4	2503
+2
+0	2503
+1	2503
+2	2503
+3	2503
+4	2503
+LowCardinality argument
+0	1499
+1	1499
+2	1499
+3	1499
+4	1499
+2
+0	1499
+1	1499
+2	1499
+3	1499
+4	1499
+expression argument
+0	1
+1	2003
+2	2003
+3	2003
+4	2003
+2
+0	1
+1	2003
+2	2003
+3	2003
+4	2003
+multiple group keys
+0	0	1
+0	1	1
+0	2	1
+1	0	2003
+1	1	2003
+1	2	2003
+2
+0	0	1
+0	1	1
+0	2	1
+1	0	2003
+1	1	2003
+1	2	2003
+HAVING above the aggregation
+1	2003
+2	2003
+3	2003
+4	2003
+2
+1	2003
+2	2003
+3	2003
+4	2003
+WHERE below the aggregation
+3	2003
+4	2003
+2
+3	2003
+4	2003
+count(DISTINCT ...) resolves to uniqExact and is rewritten
+0	1
+1	2003
+2	2003
+3	2003
+4	2003
+2
+0	1
+1	2003
+2	2003
+3	2003
+4	2003
+a different function (uniq) is not rewritten
+0	1
+1	2003
+2	2003
+3	2003
+4	2003
+1
+a combinator (uniqExactIf) is not rewritten
+0	0
+1	0
+2	0
+3	2003
+4	2003
+1
+multiple arguments are not rewritten
+0	2503
+1	196111
+2	196098
+3	196081
+4	196153
+1
+ROLLUP is not rewritten
+0	2003
+0	2003
+1	2003
+2	2003
+1

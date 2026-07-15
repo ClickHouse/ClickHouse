@@ -1,0 +1,57 @@
+cold run: no statistics yet, a single aggregation
+1
+0	5000
+1	5000
+2	5000
+3	5000
+4	5000
+5	5000
+6	5000
+7	5000
+8	5000
+9	5000
+warm run: rewritten into a count over a deduplicating aggregation, same result
+Keys: k
+Aggregates: count(v)
+Keys: k, v
+0	5000
+1	5000
+2	5000
+3	5000
+4	5000
+5	5000
+6	5000
+7	5000
+8	5000
+9	5000
+a NULL argument value does not count as a distinct value, exactly as in uniqExact
+0	3333
+1	3333
+2	3333
+3	3333
+4	3333
+5	3333
+6	3333
+7	3333
+8	3333
+9	3333
+0	3333
+1	3333
+2	3333
+3	3333
+4	3333
+5	3333
+6	3333
+7	3333
+8	3333
+9	3333
+the disabled setting suppresses the rewrite
+1
+the analyzer setting alone does not rewrite grouped queries
+1
+an argument that is itself a group key is not rewritten
+1
+WITH TOTALS is not rewritten
+1
+an observed group-key cardinality in the millions suppresses the rewrite
+1
