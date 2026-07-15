@@ -2519,6 +2519,27 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
     EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Both soft-limit settings set: the smaller resulting threshold wins.
+    // Effective soft limit = min(max_memory_before_spill = 150, 0.5 * max_memory = 100) = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 150, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(120); // above the smaller threshold (100), below the larger one (150)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 20); // need = allocated(120) - min(150, 100)
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
 {
     ResourceTest t;

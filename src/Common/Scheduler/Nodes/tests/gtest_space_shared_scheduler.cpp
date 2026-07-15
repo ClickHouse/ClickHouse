@@ -970,7 +970,9 @@ static double measureDescent(SpaceSharedTest & t, AllocationLimit * limit, size_
         for (size_t i = 0; i < n; ++i)
             sink = limit->selectAllocationToSpill(1, details);
         double seconds = sw.elapsedSeconds();
-        ASSERT_NE(sink, nullptr); // the tree is populated; keeps the loop from being optimized away
+        // EXPECT (not ASSERT): an early return here would skip set_value and deadlock fut.get() below,
+        // turning a red test into a hung job. The check also keeps the loop from being optimized away.
+        EXPECT_NE(sink, nullptr); // the tree is populated
         pr.set_value(seconds);
     });
     return fut.get();
