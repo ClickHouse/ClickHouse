@@ -63,8 +63,8 @@ ${CLICKHOUSE_CURL} -sS \
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_nested_decimal VALUES ([3.40 + 0.05], {}), (array(1.20 + 0.03), map('k', divide(9, 3))), ('[2.34]', '{\'q\':4.56}')"
 
-# A Variant containing Decimal has no single raw-literal delimiter. Obvious function expressions
-# must use the non-throwing probe while numeric literals retain Decimal overflow handling.
+# Variant probes its alternatives with non-throwing methods, so retrying its outer serialization
+# cannot add Decimal overflow detection. Obvious function expressions must use the non-throwing probe.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_variant_decimal VALUES (toDecimal32(1.23, 2))"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \

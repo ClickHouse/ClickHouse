@@ -109,9 +109,8 @@ private:
     const DataTypes types;
     Serializations serializations;
 
-    /// Whether the column type is a Decimal or contains a nested Decimal. For such columns
-    /// the streaming parser uses the code path with exceptions to distinguish a decimal
-    /// overflow (which must fail the query) from a genuine parse failure.
+    /// Whether the column type is a Decimal or contains a nested Decimal. This identifies
+    /// serializations that may need a throwing retry to distinguish overflow from a parse failure.
     std::vector<UInt8> column_nests_decimal;
 
     BlockMissingValues block_missing_values;
