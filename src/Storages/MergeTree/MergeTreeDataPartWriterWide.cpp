@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnString.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
