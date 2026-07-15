@@ -309,7 +309,7 @@ This inserts a row with `event_type = 'push'`, `signature = 'sha256=abc123'`, an
 Header names are case-insensitive per RFC 9110, so `http_column_x-event-type` and `http_column_X-Event-Type`
 match the same header. Column names must exist in the target table.
 
-If the specified header is absent from the request, the default value for the column type is inserted.
+If the specified header is absent from the request, ClickHouse rejects the query with `BAD_QUERY_PARAMETER`. Every mapped header must be present, mirroring the behaviour of query parameters (`param_*`).
 
 ### Value parsing {#http-column-value-parsing}
 

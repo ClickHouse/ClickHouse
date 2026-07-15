@@ -103,3 +103,14 @@ ab	dedup-valid
 --- async: schema drift with wait_for_async_insert=1, waiter receives error
 TYPE_MISMATCH
 0
+--- sync: FORMAT Native body-column conflict is rejected
+INCORRECT_DATA
+--- sync: absent mapped header is rejected
+BAD_QUERY_PARAMETER
+0
+--- sync: empty header name is rejected
+BAD_QUERY_PARAMETER
+0
+--- sync: empty column name is rejected
+BAD_QUERY_PARAMETER
+0

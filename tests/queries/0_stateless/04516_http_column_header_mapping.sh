@@ -482,3 +482,68 @@ echo "${drift_response}" | expect_match 'TYPE_MISMATCH|type.mismatch'
 # No rows must have been inserted.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
+
+# --- FORMAT Native: body-or-header guard ---
+# A column mapped via http_column_* must not be silently dropped from the Native
+# body even when input_format_skip_unknown_fields=1. The insert must fail with
+# INCORRECT_DATA so the header value cannot win without the caller noticing.
+echo "--- sync: FORMAT Native body-column conflict is rejected"
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_native;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_native
+        (event_type String, payload String)
+        ENGINE = MergeTree ORDER BY tuple();
+"
+native_payload=$(${CLICKHOUSE_CLIENT} -q "SELECT 'body-value' AS event_type, 'p' AS payload FORMAT Native")
+curl -sS \
+    -H 'X-Event-Type: header-value' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_native+(payload)+FORMAT+Native"\
+"&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
+    --data-binary "${native_payload}" 2>&1 | expect_match 'INCORRECT_DATA'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.t_native"
+
+# --- absent header is a hard error ---
+# http_column_* mirrors param_*: if the referenced header is absent from the
+# request, ClickHouse must reject it with BAD_QUERY_PARAMETER rather than
+# silently inserting an empty/default value.
+echo "--- sync: absent mapped header is rejected"
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_absent;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_absent
+        (code UInt64, payload String)
+        ENGINE = MergeTree ORDER BY tuple();
+"
+# No X-Code header sent — must error, not insert with default 0.
+curl -sS \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_absent+(payload)+FORMAT+JSONEachRow"\
+"&http_column_X-Code=code" \
+    -d '{"payload":"p"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_absent"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.t_absent"
+
+# --- empty http_column_ names are rejected ---
+# http_column_=col  (empty header name) and
+# http_column_X-Foo=  (empty column name) are both malformed parameters;
+# ClickHouse rejects them with BAD_QUERY_PARAMETER, consistent with the
+# general rule that every http_column_ field must be non-empty.
+echo "--- sync: empty header name is rejected"
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_empty;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_empty (payload String)
+        ENGINE = MergeTree ORDER BY tuple();
+"
+curl -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_empty+FORMAT+JSONEachRow"\
+"&http_column_=event_type" \
+    -d '{"payload":"p"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_empty"
+
+echo "--- sync: empty column name is rejected"
+curl -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_empty+FORMAT+JSONEachRow"\
+"&http_column_X-Event-Type=" \
+    -d '{"payload":"p"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_empty"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.t_empty"

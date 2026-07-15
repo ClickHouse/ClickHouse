@@ -83,6 +83,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_QUERY_PARAMETER;
 
     extern const int NO_ELEMENTS_IN_CONFIG;
 
@@ -850,16 +851,26 @@ DynamicQueryHandler::DynamicQueryHandler(
 {
 }
 
-/// Resolve one header->column mapping from the request and register it on the
-/// context. Header values come from ClientInfo::http_headers (already filtered
-/// for sensitive headers); a missing header contributes an empty value. Shared by
-/// the dynamic http_column_* handler and the predefined header_column_mappings.
+/// Resolve one http_column_* mapping: validate both names, look up the header
+/// value, and register it on the context. Throws BAD_QUERY_PARAMETER for any
+/// invalid input (empty names, absent header) — mirrors param_* semantics.
+/// Shared by the dynamic handler and the predefined header_column_mappings.
 static void addHTTPHeaderColumnFromRequest(
     const ContextMutablePtr & context, const String & header_name, const String & column_name)
 {
+    if (header_name.empty())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "http_column_ parameter has an empty header name.");
+    if (column_name.empty())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "http_column_ parameter for header '{}' has an empty column name.", header_name);
     const auto & http_headers = context->getClientInfo().http_headers;
     auto it = http_headers.find(header_name);
-    context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
+    if (it == http_headers.end())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "HTTP header '{}' required by http_column parameter for column '{}' is absent from the request.",
+            header_name, column_name);
+    context->addHTTPHeaderColumn(column_name, it->second);
 }
 
 bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
@@ -880,12 +891,9 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     if (startsWith(key, HTTP_COLUMN_PREFIX))
     {
         /// Map an HTTP request header value to an INSERT column.
-        /// Behaviour mirrors param_*: first occurrence wins, empty header/column names are ignored.
-        /// Header values are sourced from ClientInfo::http_headers (already filtered for sensitive headers).
         const String header_name = key.substr(strlen(HTTP_COLUMN_PREFIX));
         const String & column_name = value;
-        if (!header_name.empty() && !column_name.empty())
-            addHTTPHeaderColumnFromRequest(context, header_name, column_name);
+        addHTTPHeaderColumnFromRequest(context, header_name, column_name);
         return true;
     }
 
