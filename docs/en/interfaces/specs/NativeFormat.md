@@ -1432,18 +1432,19 @@ flowchart LR
 
 ### Method byte values {#method-byte-values}
 
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
-| `0x9d` | PCO    | Experimental per-column codec (pcodec) for fixed-width numbers. See [Per-column codec frames](#per-column-codec-frames). |
 
 ### Per-column codec frames {#per-column-codec-frames}
 
-The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHouse transport *emits*: `compress=1` output and the network compression path use one of them. However, the shared `CompressedReadBuffer` that decodes a frame dispatches on the method byte against the full codec registry, so any registered per-column codec byte is *accepted* on input — including on the HTTP `decompress=1` path. An interoperating implementation therefore need not produce these frames, but a fully general reader must recognise them (or reject unknown bytes rather than misparse them).
+The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHouse transport *emits*: `compress=1` output and the network compression path use one of them. However, the shared `CompressedReadBuffer` that decodes a frame dispatches on the method byte against the full codec registry, so any registered per-column codec byte (listed below) is *accepted* on input — including on the HTTP `decompress=1` path. An interoperating implementation therefore need not produce these frames, but a fully general reader must recognise them (or reject unknown bytes rather than misparse them).
 
-`0x9d` (PCO) carries a self-describing body written by the `PCO` codec:
+`0x9e` (PCO) carries a self-describing body written by the `PCO` codec:
 
 ```
 [1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
@@ -1454,6 +1455,25 @@ The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHous
 ```
 
 When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is byte-for-byte compatible with the reference pcodec implementation and self-describes its number type; the stored form (flag set) is used only when compression would not shrink the block, bounding the output to the input size plus the two header bytes. `PCO` needs the column type to compress, but it decodes without one: the element width `W` and the number type carried inside the `.pco` stream are sufficient.
+
+The method byte also encodes the [column-level codecs](/sql-reference/statements/create/table#column_compression_codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
+
+| Byte   | Method            |
+|--------|-------------------|
+| `0x91` | `Multiple` (a composite codec wrapping a sequence of nested codecs) |
+| `0x92` | `Delta`           |
+| `0x93` | `T64`             |
+| `0x94` | `DoubleDelta`     |
+| `0x95` | `Gorilla`         |
+| `0x96` | `AES_128_GCM_SIV` (encryption) |
+| `0x97` | `AES_256_GCM_SIV` (encryption) |
+| `0x98` | `FPC`             |
+| `0x9a` | `GCD`             |
+| `0x9c` | `ALP`             |
+| `0x9d` | `SZ3`             |
+| `0x9e` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
+
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 ### Checksum {#checksum}
 

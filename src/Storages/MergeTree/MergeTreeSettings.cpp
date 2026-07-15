@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Compression/CompressionFactory.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -697,9 +697,9 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -1921,7 +1921,7 @@ not during inserts.
 )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, minmax, uniq, uniq_v2.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
