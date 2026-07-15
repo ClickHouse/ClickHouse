@@ -22,7 +22,8 @@ ClickHouse Cloud includes a built-in import wizard that migrates your external P
 ## Considerations before migrating {#considerations}
 - **DDL propagation**: continuous replication (CDC) captures DML operations and `ADD COLUMN`. Other DDL changes such as `DROP COLUMN` and `ALTER COLUMN` aren't propagated and must be applied manually on the target.
 
-## Step 1: Connect to your source database {#step-1-connect}
+<Steps>
+<Step title="Connect to your source database" id="step-1-connect">
 Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
 
 <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
@@ -49,7 +50,8 @@ Choose an ingestion method:
 
 Click **Next**.
 
-## Step 2: Export your database schema {#step-2-export-schema}
+</Step>
+<Step title="Export your database schema" id="step-2-export-schema">
 The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Step 2: pg_dump command for schema export" size="lg" border />
@@ -69,7 +71,8 @@ This creates `pg.sql` in your current directory.
 
 Click **Next**.
 
-## Step 3: Import the schema into your Managed Postgres service {#step-3-import-schema}
+</Step>
+<Step title="Import the schema into your Managed Postgres service" id="step-3-import-schema">
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
 The wizard displays a `psql` command to apply the schema dump to your Managed Postgres service. Run it in a terminal:
@@ -89,7 +92,8 @@ psql \
 
 Click **Next**.
 
-## Step 4: Configure ingestion settings {#step-4-ingestion-settings}
+</Step>
+<Step title="Configure ingestion settings" id="step-4-ingestion-settings">
 Specify the publication to use for logical replication. If you leave this blank, a publication is created automatically.
 
 Expand **Advanced replication settings** to tune throughput:
@@ -106,12 +110,16 @@ Expand **Advanced replication settings** to tune throughput:
 
 Click **Next**.
 
-## Step 5: Select tables {#step-5-select-tables}
+</Step>
+<Step title="Select tables" id="step-5-select-tables">
 Select the tables you want to replicate. Tables are grouped by schema. Select individual tables or expand a schema to pick all of them.
 
 <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Step 5: table picker grouped by schema with Create migration button" size="lg" border />
 
 Click **Create migration**.
+
+</Step>
+</Steps>
 
 ## Monitor the migration {#monitor}
 After creating the migration, you'll see it listed in **Data sources** with a **Running** status.
