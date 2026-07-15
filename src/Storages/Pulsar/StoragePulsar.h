@@ -34,7 +34,7 @@ public:
 
     std::string getName() const override { return "Pulsar"; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -91,7 +91,7 @@ private:
     void createConsumer(pulsar::Consumer & consumer);
     ProducerPtr createProducer();
 
-    Names parseTopics(String topics) const;
+    Names parseTopics(String topic_list) const;
 
     void streaming();
     bool checkDependencies(const StorageID & table_id);

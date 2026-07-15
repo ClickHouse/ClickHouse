@@ -617,7 +617,7 @@ if (TARGET ch_contrib::rdkafka)
 endif()
 
 if (TARGET ch_contrib::pulsar)
-    dbms_target_link_libraries(PRIVATE ch_contrib::pulsar)
+    target_link_libraries(dbms PRIVATE ch_contrib::pulsar)
 endif()
 
 if (TARGET ch_contrib::nats_io)

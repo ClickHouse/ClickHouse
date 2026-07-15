@@ -1,57 +1,73 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
-#include <Core/Settings.h>
-
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
 class ASTStorage;
+struct PulsarSettingsImpl;
 
 const auto PULSAR_RESCHEDULE_MS = 500;
 const auto PULSAR_MAX_THREAD_WORK_DURATION_MS = 60'000;
 
-#define PULSAR_RELATED_SETTINGS(M, ALIAS) \
-    M(String, pulsar_service_url, "", "A broker url for Pulsar engine.", 0) \
-    M(String, pulsar_topic_list, "", "A list of Pulsar topics.", 0) \
-    M(String, \
-      pulsar_group_name, \
-      "", \
-      "Client group id string. All Pulsar consumers sharing the same group.id belong to the same group.", \
-      0) \
-    M(String, pulsar_format, "", "The message format for Pulsar engine.", 0) \
-    M(String, pulsar_schema, "", "Schema identifier (used by schema-based formats) for Pulsar engine", 0) \
-    M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \
-    M(UInt64, pulsar_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Pulsar.", 0) \
-    M(UInt64, pulsar_skip_broken_messages, 0, "Skip at least this number of broken messages from Pulsar topic per block", 0) \
-    M(Milliseconds, pulsar_poll_timeout_ms, 0, "Timeout for single poll from Pulsar.", 0) \
-    M(UInt64, pulsar_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Pulsar poll.", 0) \
-    M(Milliseconds, pulsar_flush_interval_ms, 0, "Timeout for flushing data from Pulsar.", 0) \
-    M(StreamingHandleErrorMode, \
-      pulsar_handle_error_mode, \
-      StreamingHandleErrorMode::DEFAULT, \
-      "How to handle errors for Pulsar engine. Possible values: default (throw an exception after pulsar_skip_broken_messages broken " \
-      "messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", \
-      0) \
-    M(UInt64, pulsar_max_rows_per_message, 1, "The maximum number of rows produced in one Pulsar message for row-based formats.", 0)
+/// List of available types supported in PulsarSettings object
+#define PULSAR_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, CapnProtoEnumComparingMode) \
+    M(CLASS_NAME, Char) \
+    M(CLASS_NAME, DateTimeInputFormat) \
+    M(CLASS_NAME, DateTimeOutputFormat) \
+    M(CLASS_NAME, DateTimeOverflowBehavior) \
+    M(CLASS_NAME, Double) \
+    M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, Float) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
+    M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
+    M(CLASS_NAME, Int64) \
+    M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, MsgPackUUIDRepresentation) \
+    M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, ORCCompression) \
+    M(CLASS_NAME, ParquetCompression) \
+    M(CLASS_NAME, ParquetVersion) \
+    M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, StreamingHandleErrorMode) \
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
+    M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, URI)
 
-
-#define OBSOLETE_PULSAR_SETTINGS(M, ALIAS) MAKE_OBSOLETE(M, Char, pulsar_row_delimiter, '\0')
-
-#define LIST_OF_PULSAR_SETTINGS(M, ALIAS) \
-    PULSAR_RELATED_SETTINGS(M, ALIAS) \
-    OBSOLETE_PULSAR_SETTINGS(M, ALIAS) \
-    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
-
-DECLARE_SETTINGS_TRAITS(PulsarSettingsTraits, LIST_OF_PULSAR_SETTINGS)
-
+PULSAR_SETTINGS_SUPPORTED_TYPES(PulsarSettings, DECLARE_SETTING_TRAIT)
 
 /** Settings for the Pulsar engine.
   * Could be loaded from a CREATE TABLE query (SETTINGS clause).
   */
-struct PulsarSettings : public BaseSettings<PulsarSettingsTraits>
+struct PulsarSettings
 {
+    PulsarSettings();
+    PulsarSettings(const PulsarSettings & settings);
+    PulsarSettings(PulsarSettings && settings) noexcept;
+    ~PulsarSettings();
+
+    PULSAR_SETTINGS_SUPPORTED_TYPES(PulsarSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+
     void loadFromQuery(ASTStorage & storage_def);
+    void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
+
+    SettingsChanges getFormatSettings() const;
+
+    static bool hasBuiltin(std::string_view name);
+
+private:
+    std::unique_ptr<PulsarSettingsImpl> impl;
 };
 
 }

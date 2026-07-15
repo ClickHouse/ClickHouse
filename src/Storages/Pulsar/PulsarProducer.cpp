@@ -3,7 +3,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-
+#include <Common/Logger.h>
+#include <Common/assert_cast.h>
 
 #include <pulsar/MessageBuilder.h>
 
@@ -33,7 +34,7 @@ void PulsarProducer::produce(const String & message, size_t /* rows_in_message *
     {
         const auto & key_column = assert_cast<const ColumnString &>(*columns[key_column_index.value()]);
         const auto key_data = key_column.getDataAt(last_row);
-        builder.setOrderingKey(key_data.toString());
+        builder.setOrderingKey(std::string(key_data));
     }
 
     auto final_message = builder.build();

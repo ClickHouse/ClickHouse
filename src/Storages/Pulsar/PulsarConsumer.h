@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
+#include <Common/Logger.h>
 #include <pulsar/BatchReceivePolicy.h>
 #include <pulsar/Consumer.h>
 #include <pulsar/MessageBatch.h>

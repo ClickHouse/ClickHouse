@@ -1,8 +1,11 @@
 #include <Storages/Pulsar/PulsarSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/Stopwatch.h>
@@ -11,6 +14,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsMilliseconds pulsar_max_wait_ms;
+}
+
 PulsarSource::PulsarSource(
     StoragePulsar & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -19,16 +28,17 @@ PulsarSource::PulsarSource(
     size_t max_block_size_,
     LoggerPtr log_,
     UInt64 max_execution_time_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns_))
+    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
+    , column_names(columns_)
     , max_block_size(max_block_size_)
     , log(log_)
     , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getVirtualsHeader())
+    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
 }
 
@@ -47,7 +57,7 @@ Chunk PulsarSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().pulsar_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::pulsar_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
     }
 
@@ -63,26 +73,30 @@ Chunk PulsarSource::generateImpl()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         if (put_error_to_stream)
         {
             exception_message = e.message();
-            for (const auto & column : result_columns)
+            for (size_t i = 0; i < result_columns.size(); ++i)
             {
                 // We could already push some rows to result_columns
                 // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+                result_columns[i]->rollback(*checkpoints[i]);
 
                 // all data columns will get default value in case of error
-                column->insertDefault();
+                result_columns[i]->insertDefault();
             }
 
             return 1;
@@ -160,7 +174,8 @@ Chunk PulsarSource::generateImpl()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);

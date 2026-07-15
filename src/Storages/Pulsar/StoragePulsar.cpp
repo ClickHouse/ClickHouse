@@ -1,5 +1,6 @@
 #include <Storages/Pulsar/StoragePulsar.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -10,10 +11,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/Pulsar/PulsarProducer.h>
@@ -24,9 +27,39 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/logger_useful.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsBool use_concurrency_control;
+}
+
+namespace PulsarSetting
+{
+    extern const PulsarSettingsMilliseconds pulsar_flush_interval_ms;
+    extern const PulsarSettingsString pulsar_format;
+    extern const PulsarSettingsString pulsar_group_name;
+    extern const PulsarSettingsStreamingHandleErrorMode pulsar_handle_error_mode;
+    extern const PulsarSettingsUInt64 pulsar_max_block_size;
+    extern const PulsarSettingsUInt64 pulsar_max_rows_per_message;
+    extern const PulsarSettingsUInt64 pulsar_num_consumers;
+    extern const PulsarSettingsUInt64 pulsar_poll_max_batch_size;
+    extern const PulsarSettingsMilliseconds pulsar_poll_timeout_ms;
+    extern const PulsarSettingsString pulsar_schema;
+    extern const PulsarSettingsString pulsar_service_url;
+    extern const PulsarSettingsUInt64 pulsar_skip_broken_messages;
+    extern const PulsarSettingsString pulsar_topic_list;
+}
 
 namespace ErrorCodes
 {
@@ -89,18 +122,18 @@ StoragePulsar::StoragePulsar(
     : IStorage(table_id_)
     , WithContext(context_)
     , pulsar_settings(std::move(pulsar_settings_))
-    , format_name(pulsar_settings->pulsar_format.value)
-    , num_consumers(pulsar_settings->pulsar_num_consumers.value)
-    , max_rows_per_message(pulsar_settings->pulsar_max_rows_per_message.value)
+    , format_name((*pulsar_settings)[PulsarSetting::pulsar_format].value)
+    , num_consumers((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value)
+    , max_rows_per_message((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value)
     , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
-    , pulsar_client(pulsar_settings->pulsar_service_url.value)
-    , topics(parseTopics(pulsar_settings->pulsar_topic_list.value))
+    , pulsar_client((*pulsar_settings)[PulsarSetting::pulsar_service_url].value)
+    , topics(parseTopics((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value))
     , semaphore(0, static_cast<int>(num_consumers))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -108,7 +141,7 @@ StoragePulsar::StoragePulsar(
         createConsumer(consumer->consumer);
         pushConsumer(consumer);
     }
-    streamer = getContext()->getMessageBrokerSchedulePool().createTask("Storage Pulsar", [this]() { streaming(); });
+    streamer = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarStreamingTask", [this]() { streaming(); });
     streamer->deactivate();
 }
 
@@ -120,13 +153,9 @@ void StoragePulsar::startup()
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
-    LOG_TRACE(log, "start shutting down");
     streamer->deactivate();
-    LOG_TRACE(log, "streaming deactiveated");
-    // for (size_t i = 0; i < num_consumers; ++i)
-    //     popConsumer()->consumer.close();
 
-    LOG_TRACE(log, "Start closing pulsar client");
+    LOG_TRACE(log, "Closing Pulsar client");
     pulsar_client.close();
     LOG_TRACE(log, "Pulsar client closed");
 }
@@ -188,9 +217,10 @@ StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
-    return std::make_shared<MessageQueueSink>(header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
+        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
+    return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(header), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
@@ -198,24 +228,19 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    if (pulsar_settings->pulsar_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
-        modified_context->setSetting("input_format_allow_errors_num", pulsar_settings->pulsar_skip_broken_messages.value);
+    if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", (*pulsar_settings)[PulsarSetting::pulsar_skip_broken_messages].value);
     else
-        modified_context->setSetting("input_format_allow_errors_num", Field(0));
+        modified_context->setSetting("input_format_allow_errors_num", Field{0});
 
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
-    if (pulsar_settings->pulsar_schema.changed)
-        modified_context->setSetting("format_schema", pulsar_settings->pulsar_schema.value);
+    if ((*pulsar_settings)[PulsarSetting::pulsar_schema].changed)
+        modified_context->setSetting("format_schema", (*pulsar_settings)[PulsarSetting::pulsar_schema].value);
 
-    for (const auto & setting : *pulsar_settings)
-    {
-        const auto & setting_name = setting.getName();
-
-        if (!setting_name.starts_with("pulsar_"))
-            modified_context->setSetting(setting_name, setting.getValue());
-    }
+    /// Apply all other settings from the table definition (non-pulsar-related, e.g. format settings).
+    modified_context->applySettingsChanges(pulsar_settings->getFormatSettings());
 
     return modified_context;
 }
@@ -224,7 +249,7 @@ ProducerPtr StoragePulsar::createProducer()
 {
     ProducerPtr producer = std::make_shared<pulsar::Producer>();
     pulsar::ProducerConfiguration config;
-    size_t poll_timeout = getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+    size_t poll_timeout = getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
     config.setSendTimeout(static_cast<int>(poll_timeout));
     config.setBlockIfQueueFull(true);
 
@@ -239,32 +264,36 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
 {
     pulsar::ConsumerConfiguration config;
     config.setConsumerType(pulsar::ConsumerType::ConsumerShared);
+    /// NOLINTNEXTLINE(google-runtime-int)
     config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
 
-    pulsar_client.subscribe(topics, pulsar_settings->pulsar_group_name.value, config, consumer);
+    pulsar_client.subscribe(topics, (*pulsar_settings)[PulsarSetting::pulsar_group_name].value, config, consumer);
 }
 
 size_t StoragePulsar::getPollTimeoutMilliseconds() const
 {
-    return pulsar_settings->pulsar_poll_timeout_ms.changed ? pulsar_settings->pulsar_poll_timeout_ms.totalMilliseconds()
-                                                           : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+    return (*pulsar_settings)[PulsarSetting::pulsar_poll_timeout_ms].changed
+        ? (*pulsar_settings)[PulsarSetting::pulsar_poll_timeout_ms].totalMilliseconds()
+        : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 size_t StoragePulsar::getPollMaxBatchSize() const
 {
-    return pulsar_settings->pulsar_poll_max_batch_size.changed ? pulsar_settings->pulsar_poll_max_batch_size.value
-                                                               : getContext()->getSettingsRef().max_block_size.value;
+    return (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
+        ? (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value
+        : getContext()->getSettingsRef()[Setting::max_block_size].value;
 }
 
 size_t StoragePulsar::getMaxBlockSize() const
 {
-    return pulsar_settings->pulsar_max_block_size.changed ? pulsar_settings->pulsar_max_block_size.value
-                                                          : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed
+        ? (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value
+        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 StreamingHandleErrorMode StoragePulsar::getStreamingHandleErrorMode() const
 {
-    return pulsar_settings->pulsar_handle_error_mode;
+    return (*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode];
 }
 
 Names StoragePulsar::parseTopics(String topic_list) const
@@ -280,16 +309,16 @@ VirtualColumnsDescription StoragePulsar::createVirtuals()
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_ordering_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_partition_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_ordering_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_partition_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
 
-    if (pulsar_settings->pulsar_handle_error_mode.value == StreamingHandleErrorMode::STREAM)
+    if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("д", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -353,6 +382,7 @@ void StoragePulsar::streaming()
     }
     catch (...)
     {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
     mv_attached.store(false);
@@ -364,17 +394,16 @@ void StoragePulsar::streaming()
 
 bool StoragePulsar::streamToViews()
 {
-    Stopwatch watch;
-
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     size_t block_size = getMaxBlockSize();
@@ -382,9 +411,14 @@ bool StoragePulsar::streamToViews()
     auto pulsar_context = addSettings(getContext());
     pulsar_context->makeQueryContext();
 
-    // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, pulsar_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        pulsar_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_insert */ false);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -396,9 +430,9 @@ bool StoragePulsar::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        Poco::Timespan max_execution_time = pulsar_settings->pulsar_flush_interval_ms.changed
-            ? pulsar_settings->pulsar_flush_interval_ms
-            : getContext()->getSettingsRef().stream_flush_interval_ms;
+        Poco::Timespan max_execution_time = (*pulsar_settings)[PulsarSetting::pulsar_flush_interval_ms].changed
+            ? (*pulsar_settings)[PulsarSetting::pulsar_flush_interval_ms]
+            : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         auto source = std::make_shared<PulsarSource>(
             *this,
@@ -407,11 +441,9 @@ bool StoragePulsar::streamToViews()
             block_io.pipeline.getHeader().getNames(),
             block_size,
             log,
-            max_execution_time.milliseconds());
+            max_execution_time.totalMilliseconds());
         sources.emplace_back(source);
         pipes.emplace_back(source);
-
-        StreamLocalLimits limits;
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -419,14 +451,14 @@ bool StoragePulsar::streamToViews()
     block_io.pipeline.complete(std::move(pipe));
 
     block_io.pipeline.setNumThreads(stream_count);
-    block_io.pipeline.setConcurrencyControl(pulsar_context->getSettingsRef().use_concurrency_control);
+    block_io.pipeline.setConcurrencyControl(pulsar_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
     CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
 
-    LOG_TRACE(log, "Processed messages: {}", rows);
+    LOG_TRACE(log, "Processed messages: {}", rows.load());
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)
@@ -435,20 +467,16 @@ bool StoragePulsar::streamToViews()
     return some_stream_is_stalled;
 }
 
+void registerStoragePulsar(StorageFactory & factory);
 void registerStoragePulsar(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto pulsar_settings = std::make_unique<PulsarSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
-            for (const auto & setting : pulsar_settings->all())
-            {
-                const auto & setting_name = setting.getName();
-                if (named_collection->has(setting_name))
-                    pulsar_settings->set(setting_name, named_collection->get<String>(setting_name));
-            }
+            pulsar_settings->loadFromNamedCollection(named_collection);
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pulsar engine must have settings");
@@ -456,13 +484,13 @@ void registerStoragePulsar(StorageFactory & factory)
         if (args.storage_def->settings)
             pulsar_settings->loadFromQuery(*args.storage_def);
 
-        if (!pulsar_settings->pulsar_service_url.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` settings");
+        if (!(*pulsar_settings)[PulsarSetting::pulsar_service_url].changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` setting");
 
-        if (!pulsar_settings->pulsar_group_name.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_group_name` settings");
+        if (!(*pulsar_settings)[PulsarSetting::pulsar_group_name].changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_group_name` setting");
 
-        if (!pulsar_settings->pulsar_format.changed)
+        if (!(*pulsar_settings)[PulsarSetting::pulsar_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");
 
         return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, std::move(pulsar_settings));
@@ -473,6 +501,7 @@ void registerStoragePulsar(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .has_builtin_setting_fn = PulsarSettings::hasBuiltin,
         });
 }
 
