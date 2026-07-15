@@ -145,7 +145,10 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
         info.removal_tid = tid;
-        if (tid.isNonTransactional())
+        /// A non-transactional removal can cover a part whose creating transaction has not
+        /// committed yet (it selects covered parts ignoring MVCC visibility). `creation_csn`
+        /// must be persisted before `removal_csn`, so defer the csn until creation resolves.
+        if (tid.isNonTransactional() && info.creation_csn)
             info.removal_csn = Tx::NonTransactionalCSN;
         return true;
     };
@@ -387,8 +390,12 @@ std::optional<bool> VersionMetadata::updateCSNIfNeeded(VersionInfo & current_inf
             }
             else if (csn_of_removal_tid)
             {
-                current_info.removal_csn = csn_of_removal_tid;
-                info_updated = true;
+                /// Never resolve removal_csn before creation_csn (see setAndStoreRemovalTID).
+                if (current_info.creation_csn)
+                {
+                    current_info.removal_csn = csn_of_removal_tid;
+                    info_updated = true;
+                }
             }
             else
             {
@@ -512,7 +519,9 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
                 object_name,
                 info.removal_csn);
 
-        if (info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty())
+        /// A non-transactional removal_tid over an unresolved creation is a valid deferred
+        /// state: the covering DROP could not see that the creating transaction is uncommitted.
+        if (info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty() && !info.removal_tid.isNonTransactional())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Object {}, creation_csn is not set while removal_tid is not {}", object_name, info.removal_tid);
     }
