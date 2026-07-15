@@ -540,20 +540,36 @@ def main():
         # "clickhouse"). Run a copy - the wrapper replaces itself with the
         # decompressed binary on first run, and the original file must stay
         # intact for the artifact upload.
-        smoke_dir = f"{temp_dir}/self_extracting_smoke"
-        results.append(
-            Result.from_commands_run(
-                name="self-extracting binary smoke test",
-                command=[
-                    f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
-                    f"cp {build_dir_normalized}/programs/self-extracting/clickhouse-stripped {smoke_dir}/clickhouse",
-                    f"{smoke_dir}/clickhouse --version",
-                    f'{smoke_dir}/clickhouse local --query "SELECT 1"',
-                    f"rm -rf {smoke_dir}",
-                ],
+        #
+        # Execute only when the host matches the target architecture: amd
+        # builds cross-compile on aarch64 runners, where the wrapper would run
+        # under binfmt qemu emulation - baseline x86-64 (amd_compat) survives
+        # it, but the x86-64-v3 code in amd_release hits unsupported
+        # instructions (SIGILL).
+        target_is_arm = "amd" not in build_type
+        if target_is_arm == Utils.is_arm():
+            smoke_dir = f"{temp_dir}/self_extracting_smoke"
+            results.append(
+                Result.from_commands_run(
+                    name="self-extracting binary smoke test",
+                    command=[
+                        f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
+                        f"cp {build_dir_normalized}/programs/self-extracting/clickhouse-stripped {smoke_dir}/clickhouse",
+                        f"{smoke_dir}/clickhouse --version",
+                        f'{smoke_dir}/clickhouse local --query "SELECT 1"',
+                        f"rm -rf {smoke_dir}",
+                    ],
+                )
             )
-        )
-        res = results[-1].is_ok()
+            res = results[-1].is_ok()
+        else:
+            results.append(
+                Result(
+                    name="self-extracting binary smoke test",
+                    status=Result.Status.SKIPPED,
+                    info="host architecture does not match the target - cannot execute the wrapper",
+                )
+            )
 
     Result.create_from(results=results, files=files).complete_job()
 
