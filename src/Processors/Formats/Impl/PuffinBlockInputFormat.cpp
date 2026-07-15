@@ -183,6 +183,21 @@ void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const ch
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field '{}'", blob_index, field_name);
 }
 
+void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
+{
+    static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
+    for (const char * key : required_properties)
+    {
+        auto it = blob.properties.find(key);
+        if (it == blob.properties.end() || it->second.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 missing required property '{}'",
+                blob_index,
+                key);
+    }
+}
+
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
 {
     Poco::JSON::Parser parser;
@@ -221,9 +236,15 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         blob.length = blob_obj->getValue<Int64>("length");
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
 
+        if (blob.type == "deletion-vector-v1")
+            requireBlobMetadataField(blob_obj, "properties", i);
+
         if (auto props_obj = blob_obj->getObject("properties"))
             for (const auto & [key, val] : *props_obj)
                 blob.properties.emplace(key, val.extract<String>());
+
+        if (blob.type == "deletion-vector-v1")
+            requireDeletionVectorV1Properties(blob, i);
 
         requireBlobMetadataField(blob_obj, "fields", i);
         auto fields_arr = blob_obj->getArray("fields");
@@ -619,12 +640,9 @@ Chunk PuffinInputFormat::read()
         auto blob_buf = readBlobBytes(blob, *in, footer.data);
         auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length));
 
-        if (auto cardinality_it = blob.properties.find("cardinality"); cardinality_it != blob.properties.end())
-        {
-            const UInt64 expected_cardinality = parse<UInt64>(cardinality_it->second);
-            if (expected_cardinality != rows.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
-        }
+        const UInt64 expected_cardinality = parse<UInt64>(blob.properties.at("cardinality"));
+        if (expected_cardinality != rows.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
 
         ColumnArray::Offset rows_offset = 0;
         size_t elem_count = 0;

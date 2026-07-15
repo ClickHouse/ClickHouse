@@ -30,6 +30,12 @@ missing required field 'blobs'
 must be an object
 --- invalid_blob_entry.puffin ---
 must be an object
+--- missing_properties.puffin ---
+missing required field
+--- missing_referenced_data_file.puffin ---
+missing required property
+--- missing_cardinality.puffin ---
+missing required property
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---

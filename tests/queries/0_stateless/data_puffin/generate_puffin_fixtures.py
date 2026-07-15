@@ -32,6 +32,14 @@ INVALID_KEY = 0x7FFFFFFF
 LARGE_KEY = 1_000_000
 SPARSE_SUB_POSITION = 42
 BLOB_PLACEHOLDER = b"\x00" * 58
+DEFAULT_REFERENCED_DATA_FILE = "/data/table/part-00000.parquet"
+
+
+def default_dv_properties(cardinality: str = "0") -> dict[str, str]:
+    return {
+        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+        "cardinality": cardinality,
+    }
 
 
 def wrap_deletion_vector_blob(vector: bytes) -> bytes:
@@ -51,7 +59,7 @@ def footer_json_for_blob(blob: bytes, properties: dict[str, str] | None = None) 
                 "sequence-number": 1,
                 "offset": 4,
                 "length": len(blob),
-                "properties": properties or {},
+                "properties": properties if properties is not None else default_dv_properties(),
             }
         ]
     }
@@ -184,6 +192,25 @@ def generate_missing_required_fields() -> None:
             ),
         )
 
+    dv_property_cases = {
+        "missing_properties.puffin": None,
+        "missing_referenced_data_file.puffin": {"cardinality": "0"},
+        "missing_cardinality.puffin": {"referenced-data-file": DEFAULT_REFERENCED_DATA_FILE},
+    }
+    for name, properties in dv_property_cases.items():
+        case_payload = json.loads(footer_json.decode("utf-8"))
+        if properties is None:
+            del case_payload["blobs"][0]["properties"]
+        else:
+            case_payload["blobs"][0]["properties"] = properties
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
 
 def generate_sparse_large_key() -> None:
     bitmap = pyroaring.BitMap()
@@ -223,7 +250,10 @@ def generate_mixed_blob_types() -> None:
                     "sequence-number": -1,
                     "offset": deletion_vector_offset,
                     "length": len(deletion_vector_blob),
-                    "properties": {"cardinality": "2"},
+                    "properties": {
+                        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+                        "cardinality": "2",
+                    },
                 },
             ]
         },
