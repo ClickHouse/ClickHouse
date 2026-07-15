@@ -14,6 +14,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/DiskCacheProvider.h>
+#include <IO/PageCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
@@ -204,35 +205,23 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor does not implement the page (memory) cache, async prefetch, or the distributed
-    /// cache, so fall back rather than silently drop a configured stage. Decryption and the
-    /// filesystem cache ARE supported (fed below).
-    if (distributed_cache || memory_cache || async_prefetch)
+    /// The executor does not implement async prefetch or the distributed cache, so fall back rather
+    /// than silently drop those stages. Decryption, the filesystem cache and the page cache ARE
+    /// supported (fed below).
+    if (distributed_cache || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(page/distributed cache or async prefetch not yet supported by the executor)");
+            "(distributed cache or async prefetch not yet supported by the executor)");
         return nullptr;
     }
 
-    /// A per-object custom cache key (single-object, etag-keyed flow) is not handled by the
-    /// executor's cache provider yet; fall back when any filesystem-cache stage sets one.
-    for (const auto & fc : filesystem_caches)
-    {
-        if (fc.custom_cache_key)
-        {
-            LOG_DEBUG(log,
-                "use_reader_executor: falling back to the legacy read path "
-                "(custom filesystem-cache key not yet supported by the executor)");
-            return nullptr;
-        }
-    }
+    const std::string query_id(CurrentThread::getQueryId());
 
     /// Only local files and object storage are supported; other sources fall back.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     size_t block_size = 0;
-    /// Read-through cache chain (front = fastest). Built from the configured filesystem caches for
-    /// object-storage reads only; a filesystem cache never applies to local files.
+    /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
     CacheChain cache_chain;
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
@@ -261,15 +250,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
         block_size = settings.remote_fs_settings.buffer_size;
-
-        /// The executor consults and populates these per window, in the foreground.
-        for (const auto & fc : filesystem_caches)
-        {
-            const size_t boundary_alignment
-                = fc.cache_settings.boundary_alignment.value_or(fc.cache->getBoundaryAlignment());
-            cache_chain.push_back(std::make_shared<DiskCacheProvider>(
-                fc.cache, fc.custom_origin.value_or(FileCache::getCommonOrigin()), boundary_alignment));
-        }
     }
 
     if (!source_reader)
@@ -277,6 +257,34 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
         return nullptr;
+    }
+
+    /// Read-through cache chain the executor consults and populates per window, in the foreground.
+    /// Page cache first (fastest, file-level: one `PageCacheFile` for the whole read — object storage
+    /// without a file cache, or local disks via `use_page_cache_for_local_disks`), then the
+    /// filesystem cache(s). `filesystem_caches` is stored inner-to-outer and the executor queries the
+    /// front first, so reverse to give the legacy outer-first order. (`filesystem_caches` is empty for
+    /// local reads.)
+    if (memory_cache && memory_cache->page_cache_settings.cache)
+    {
+        const auto & pcs = memory_cache->page_cache_settings;
+        size_t total_file_size = 0;
+        for (const auto & obj : source->objects)
+            total_file_size += obj.bytes_size;
+        PageCacheFile cache_file;
+        cache_file.path = memory_cache->custom_cache_path.value_or(
+            memory_cache->cache_path_prefix + source->objects.front().remote_path);
+        cache_file.file_version = memory_cache->custom_file_version.value_or("");
+        cache_chain.push_back(std::make_shared<PageCacheProvider>(
+            pcs.cache, std::move(cache_file), pcs.block_size,
+            pcs.random_eviction_for_tests, pcs.read_if_exists_otherwise_bypass, total_file_size));
+    }
+    for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
+    {
+        if (it->cache)
+            cache_chain.push_back(std::make_shared<DiskCacheProvider>(
+                it->cache, it->cache_settings, query_id, settings.local_throttler,
+                it->custom_cache_key, it->custom_origin));
     }
 
     auto executor = std::make_unique<ReaderExecutor>(

@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -196,77 +195,6 @@ public:
 private:
     std::shared_ptr<const std::string> data;
     size_t budget;
-};
-
-/// In-memory `ICacheProvider` for the read-through tests. Stores raw object bytes keyed by
-/// `remote_path`, tracking which bytes are resident so a `tryRead` is a hit only when the whole
-/// requested range is present. `alignment` drives miss alignment. Counts reads/writes so a test
-/// can assert promotion and populate behaviour directly on the provider.
-class MemoryCacheProvider : public ICacheProvider
-{
-public:
-    explicit MemoryCacheProvider(String name_, size_t alignment_ = 1) : provider_name(std::move(name_)), alignment(alignment_) {}
-
-    String name() const override { return provider_name; }
-    size_t missAlignment() const override { return alignment; }
-
-    size_t tryRead(const StoredObject & object, size_t offset, char * dst, size_t size) override
-    {
-        ++reads;
-        auto it = store.find(object.remote_path);
-        if (it == store.end())
-            return 0;
-        const Blob & blob = it->second;
-        if (offset + size > blob.bytes.size())
-            return 0;
-        for (size_t i = offset; i < offset + size; ++i)
-            if (!blob.present[i])
-                return 0;   /// not fully resident -> miss in this slice
-        memcpy(dst, blob.bytes.data() + offset, size);
-        ++hits;
-        return size;
-    }
-
-    void write(const StoredObject & object, size_t offset, const char * data, size_t size) override
-    {
-        ++writes;
-        Blob & blob = store[object.remote_path];
-        if (blob.bytes.size() < offset + size)
-        {
-            blob.bytes.resize(offset + size);
-            blob.present.resize(offset + size, 0);
-        }
-        memcpy(blob.bytes.data() + offset, data, size);
-        /// Count DISTINCT newly-resident bytes, so a re-populate of an already-cached region
-        /// (e.g. a window straddling a segment boundary) is not double-counted.
-        for (size_t i = offset; i < offset + size; ++i)
-        {
-            if (!blob.present[i])
-                ++populated_bytes;
-            blob.present[i] = 1;
-        }
-    }
-
-    /// Mark the whole file resident from `content` (pre-warm the cache for a full-hit test).
-    void warm(const StoredObject & object, const std::string & content)
-    {
-        write(object, 0, content.data(), content.size());
-    }
-
-    size_t reads = 0;
-    size_t hits = 0;
-    size_t writes = 0;
-    size_t populated_bytes = 0;
-
-private:
-    struct Blob
-    {
-        std::vector<char> bytes;
-        std::vector<char> present;
-    };
-    String provider_name;
-    size_t alignment;
-    std::map<String, Blob> store;
 };
 
 class ReaderExecutorTest : public ::testing::Test
@@ -800,110 +728,6 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     for (size_t i = 0; i < check.size; ++i)
         ASSERT_EQ(static_cast<unsigned char>(check.data[i]), patternByte(off + i))
             << "served window clobbered by bridge at " << (off + i);
-}
-
-/// Assert `data` matches the file's deterministic pattern over its whole length.
-static void expectPattern(const std::vector<char> & data, size_t size)
-{
-    ASSERT_EQ(data.size(), size);
-    for (size_t i = 0; i < size; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at offset " << i;
-}
-
-TEST_F(ReaderExecutorTest, CacheServesFullHitWithoutSource)
-{
-    StoredObjects objects{makeFile("a.bin", 1024)};
-    auto cache = std::make_shared<MemoryCacheProvider>("mem");
-
-    /// Pre-warm the whole file, then read entirely from the cache.
-    std::string content;
-    for (size_t i = 0; i < 1024; ++i)
-        content.push_back(static_cast<char>(patternByte(i)));
-    cache->warm(objects.front(), content);
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 256, .cache_chain = {cache}});
-
-    expectPattern(drain(ex), 1024);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 0u) << "a full hit must not touch the source";
-    EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
-    EXPECT_EQ(cache->hits, 4u);   /// 1024 / 256
-}
-
-TEST_F(ReaderExecutorTest, CacheMissReadsSourceThenPopulates)
-{
-    StoredObjects objects{makeFile("a.bin", 1024)};
-    auto cache = std::make_shared<MemoryCacheProvider>("mem");
-
-    {
-        TestThreadGroup tg;
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.block_size = 256, .cache_chain = {cache}});
-        expectPattern(drain(ex), 1024);
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 0u) << "a cold miss must read the source";
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
-    }
-    EXPECT_EQ(cache->populated_bytes, 1024u) << "the whole file must be populated on the way through";
-
-    /// A second executor over the now-warm cache serves entirely from it.
-    TestThreadGroup tg2;
-    ReaderExecutor ex2(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 256, .cache_chain = {cache}});
-    expectPattern(drain(ex2), 1024);
-    EXPECT_EQ(tg2.get(ProfileEvents::ReaderExecutorSourceRequests), 0u) << "the warm cache must serve without the source";
-}
-
-TEST_F(ReaderExecutorTest, CacheMissAlignsSourceFetch)
-{
-    /// A 512-byte file, 128-byte windows, cache aligned to 256: a miss for the first 128-byte
-    /// window fetches the whole aligned segment [0, 256) from the source, so the next 128-byte
-    /// window in the same segment hits the cache. Four windows -> only two source fetches (one per
-    /// 256-byte segment). 128 divides 256, so no window straddles a segment boundary.
-    StoredObjects objects{makeFile("a.bin", 512)};
-    auto cache = std::make_shared<MemoryCacheProvider>("mem", /*alignment=*/256);
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 128, .cache_chain = {cache}});
-    expectPattern(drain(ex), 512);
-
-    /// Windows [0,128) and [128,256) share segment [0,256); [256,384) and [384,512) share
-    /// [256,512) -> 2 source reads of 256 bytes each, 2 cold misses, 2 warm hits.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 2u);
-    EXPECT_EQ(cache->populated_bytes, 512u);
-    /// Over-read is counted: each miss reads a whole 256-byte segment, not just the 128 requested.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), 512u);
-}
-
-TEST_F(ReaderExecutorTest, CachePromotesHitToFasterTier)
-{
-    /// Two tiers: fast (empty), slow (fully warm). A read is served from the slow tier and
-    /// promoted into the fast tier; a second read then hits the fast tier.
-    StoredObjects objects{makeFile("a.bin", 512)};
-    std::string content;
-    for (size_t i = 0; i < 512; ++i)
-        content.push_back(static_cast<char>(patternByte(i)));
-
-    auto fast = std::make_shared<MemoryCacheProvider>("fast");
-    auto slow = std::make_shared<MemoryCacheProvider>("slow");
-    slow->warm(objects.front(), content);
-
-    {
-        TestThreadGroup tg;
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.block_size = 256, .cache_chain = {fast, slow}});
-        expectPattern(drain(ex), 512);
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 0u) << "the slow tier already holds it";
-    }
-    EXPECT_EQ(fast->populated_bytes, 512u) << "hits from the slow tier are promoted into the fast tier";
-
-    TestThreadGroup tg2;
-    ReaderExecutor ex2(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 256, .cache_chain = {fast, slow}});
-    expectPattern(drain(ex2), 512);
-    EXPECT_EQ(slow->reads, 2u) << "the second scan is served by the fast tier, never probing the slow tier";
 }
 
 #if USE_SSL

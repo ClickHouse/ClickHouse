@@ -210,12 +210,14 @@ private:
     size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Serve `want` bytes at object-local `object_offset` through the cache chain: probe
-    /// top-down, serve a full hit, else read the miss range (aligned to the top tier's
-    /// `missAlignment`, clamped to the object) from the source once, populate every tier that
-    /// missed, and copy the requested slice into `dst`. Returns bytes served. No long
-    /// connection is used on this path. Precondition: `!cache_chain.empty()`.
-    size_t serveThroughCaches(const StoredObject & object, size_t object_offset, size_t want, char * dst);
+    /// Serve `want` bytes at object-local `object_offset` through the cache chain, per window: for
+    /// each tier top-down `planResidencyView` the window, serve it if a tier fully covers it (and
+    /// promote up), else keep the tier's aligned miss cells; on a full miss read once from the
+    /// source and populate the kept tiers via `openWriteBuffers`/`claim`/`write`. `object_file_offset`
+    /// is this object's start in the logical file (cache coordinates are file-level). No long
+    /// connection and no cross-window plan are used. Precondition: `!cache_chain.empty()`.
+    size_t serveThroughCaches(
+        const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 

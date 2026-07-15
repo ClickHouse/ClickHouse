@@ -303,57 +303,112 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-size_t ReaderExecutor::serveThroughCaches(const StoredObject & object, size_t object_offset, size_t want, char * dst)
+size_t ReaderExecutor::serveThroughCaches(
+    const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst)
 {
     chassert(!cache_chain.empty());
+    /// Cache coordinates are FILE-LEVEL: `object_file_offset` is this object's start in the logical
+    /// (physical) file, so the per-object disk cache maps back via it while the file-level page
+    /// cache addresses the concatenation directly.
+    const ByteRange window{object_file_offset + object_offset, want};
 
-    /// Probe the chain top-down. A tier that fully covers the window serves it; the faster
-    /// tiers above it that missed are then populated (promotion). A partial cover is treated
-    /// as a miss in this slice — the aligned source read below refills it.
-    for (size_t i = 0; i < cache_chain.size(); ++i)
+    /// Tiers that did not fully serve the window, kept (with their aligned miss cells) so they can
+    /// be populated after the data is in hand. Object-local coordinates (`object_file_offset` 0).
+    VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> populate_views;
+
+    /// Push `data` (covering `filled`) into every kept tier's miss cells: `openWriteBuffers` opens a
+    /// writer per surviving miss, `claim` takes the downloader role over the write range, `write`
+    /// commits it. Used for promotion (serve from a slower tier, write up into the faster ones that
+    /// missed) and after a source read.
+    auto populate = [&](ByteRange filled, const ChainedBuffers & data)
+    {
+        for (auto & [cache, view] : populate_views)
+        {
+            cache->openWriteBuffers(object, object_file_offset, *view);
+            for (const auto & m : view->misses())
+            {
+                if (!m.writer)
+                    continue;
+                const size_t lo = std::max(m.range.offset, filled.offset);
+                const size_t hi = std::min(m.range.end(), filled.end());
+                if (lo >= hi)
+                    continue;
+                const ByteRange write_range{lo, hi - lo};
+                if (!data.covers(write_range))
+                    continue;
+                auto claim = m.writer->claim(write_range);
+                stats.add(Stats::CachePopulateRequests);
+                m.writer->write(data.slice(write_range));
+            }
+        }
+    };
+
+    /// Probe each tier top-down. A tier that fully covers the window serves it right here and the
+    /// faster tiers that missed above are promoted; a tier that does not fully cover is kept for
+    /// populate. Views/writers live only for this window -- no plan is held across windows.
+    for (auto & cache : cache_chain)
     {
         stats.add(Stats::CacheGetRequests);
-        if (cache_chain[i]->tryRead(object, object_offset, dst, want) == want)
+        auto view = cache->planResidencyView(object, object_file_offset, window);
+
+        if (view->allHit())
         {
-            for (size_t j = 0; j < i; ++j)
+            ChainedBuffers chain;
+            for (const auto & hit : view->hits())
             {
-                stats.add(Stats::CachePopulateRequests);
-                cache_chain[j]->write(object, object_offset, dst, want);
+                if (!hit.reader)
+                    continue;
+                const size_t lo = std::max(hit.range.offset, window.offset);
+                const size_t hi = std::min({hit.range.end(), window.end(), hit.reader->readable()});
+                if (lo >= hi)
+                    continue;
+                chain.append(hit.reader->read(ByteRange{lo, hi - lo}));
             }
-            return want;
+            if (chain.covers(window))
+            {
+                chain.copyTo(dst, window);
+                populate(window, chain);
+                return want;
+            }
         }
+
+        if (cache->populatesOnMiss() && !view->misses().empty())
+            populate_views.emplace_back(cache.get(), std::move(view));
     }
 
-    /// Full miss: read the miss range from the source ONCE, aligned to the top tier's segment
-    /// boundary (head down, tail up) so the populated region matches the tier's granularity and
-    /// neighbouring reads hit. The aligned slack is over-read (counted in BytesFromSource, not
-    /// RequestedBytes). Clamp the tail to the object for known sizes.
-    const size_t alignment = std::max<size_t>(1, cache_chain.front()->missAlignment());
-    const size_t fetch_start = object_offset - object_offset % alignment;
-    size_t fetch_end = object_offset + want;
-    if (const size_t rem = fetch_end % alignment)
-        fetch_end += alignment - rem;
+    /// Missed every tier: one source read of the window, expanded to the kept tiers' aligned miss
+    /// cells so each append-only cell is filled from its start (a cell can never fill a hole below
+    /// its write frontier). The alignment slack is over-read, counted in BytesFromSource.
+    size_t fetch_lo = window.offset;
+    size_t fetch_hi = window.end();
+    for (const auto & [cache, view] : populate_views)
+        for (const auto & m : view->misses())
+        {
+            fetch_lo = std::min(fetch_lo, m.range.offset);
+            fetch_hi = std::max(fetch_hi, m.range.end());
+        }
+    /// Clamp the fetch to THIS object: cells that a file-level tier (page cache) aligns across an
+    /// object boundary are filled only for the current object's part here; the neighbouring
+    /// object's window fills the rest. The source read is object-local.
+    fetch_lo = std::max(fetch_lo, object_file_offset);
     if (!offset_map.hasUnknownSize())
-        fetch_end = std::min<size_t>(fetch_end, object.bytes_size);
-    const size_t fetch_len = fetch_end - fetch_start;
+        fetch_hi = std::min<size_t>(fetch_hi, object_file_offset + object.bytes_size);
+    const size_t fetch_len = fetch_hi - fetch_lo;
 
-    OwnedChainedBuffer aligned(fetch_len);
-    const size_t got_aligned = readOneShot(object, fetch_start, fetch_len, aligned.data());
-    stats.add(Stats::BytesFromSource, got_aligned);
+    auto block = std::make_shared<OwnedChainedBuffer>(fetch_len);
+    const size_t got = readOneShot(object, fetch_lo - object_file_offset, fetch_len, block->data());
+    stats.add(Stats::BytesFromSource, got);
 
-    /// Populate every tier (all missed) with the bytes actually read.
-    for (auto & provider : cache_chain)
-    {
-        stats.add(Stats::CachePopulateRequests);
-        provider->write(object, fetch_start, aligned.data(), got_aligned);
-    }
+    ChainedBuffers fetched;
+    fetched.append(ChainedBufferNode{block, 0, got, fetch_lo});
+    populate(ByteRange{fetch_lo, got}, fetched);
 
-    /// Copy the requested window out of the aligned buffer.
-    const size_t slice_start = object_offset - fetch_start;
-    if (slice_start >= got_aligned)
+    /// Deliver the requested window out of the fetched (aligned) buffer.
+    const size_t slice_start = window.offset - fetch_lo;
+    if (slice_start >= got)
         return 0;
-    const size_t slice_len = std::min(want, got_aligned - slice_start);
-    memcpy(dst, aligned.data() + slice_start, slice_len);
+    const size_t slice_len = std::min(want, got - slice_start);
+    std::memcpy(dst, block->data() + slice_start, slice_len);
     return slice_len;
 }
 
@@ -540,7 +595,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// Read-through cache path: probe the chain, serve a hit or read+populate on a miss.
         /// It records its own SourceRequests / BytesFromSource / Cache{Get,Populate}Requests;
         /// long connections are not used on this path.
-        got = serveThroughCaches(*object, object_offset, want, block->data());
+        got = serveThroughCaches(*object, object_physical_start_offset, object_offset, want, block->data());
     }
     else if (long_conn && long_conn->servesObject(object->remote_path)
         && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
