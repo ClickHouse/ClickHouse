@@ -23,9 +23,7 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1332,28 +1330,12 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
 /// query text: the remote replica relies on them (e.g. 'max_block_size'), and - unlike the SELECT path, where
 /// 'rewriteSelectQuery' strips the whole clause - the INSERT SELECT sub-query does not re-ship every setting via
 /// the context, so stripping the whole clause would drop such settings on the remote replica.
-static void removeLeafOverriddenTimeoutSettings(ASTSetQuery & set_query)
-{
-    set_query.changes.removeSetting("max_execution_time");
-    set_query.changes.removeSetting("timeout_overflow_mode");
-    std::erase(set_query.default_settings, "max_execution_time");
-    std::erase(set_query.default_settings, "timeout_overflow_mode");
-}
-
-/// Apply the removal above to the top-level SETTINGS of a SELECT sub-query (recursing through UNION members only),
-/// so the per-subquery SETTINGS are preserved.
+/// 'removeSettingsFromQuery' removes every occurrence (not just the first) and detaches a SETTINGS clause that
+/// becomes empty, so the query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
 static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
 {
-    if (const auto * union_query = ast->as<ASTSelectWithUnionQuery>())
-    {
-        for (const auto & child : union_query->list_of_selects->children)
-            removeLeafOverriddenTimeoutSettings(child);
-    }
-    else if (const auto * select_query = ast->as<ASTSelectQuery>())
-    {
-        if (auto settings_ast = select_query->settings())
-            removeLeafOverriddenTimeoutSettings(settings_ast->as<ASTSetQuery &>());
-    }
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+    removeSettingsFromQuery(ast, leaf_timeout_settings);
 }
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
@@ -1423,8 +1405,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         insert_ast->select = std::move(select_ast);
 
         /// The same for settings placed on the INSERT itself ('INSERT INTO ... SETTINGS ... SELECT ...').
-        if (insert_ast->settings_ast)
-            removeLeafOverriddenTimeoutSettings(insert_ast->settings_ast->as<ASTSetQuery &>());
+        removeLeafOverriddenTimeoutSettings(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

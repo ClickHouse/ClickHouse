@@ -73,5 +73,9 @@ INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) 
 -- The leaf 'timeout_overflow_mode' (default 'throw') must win over the outer 'break', so the INSERT aborts.
 INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 
+-- A repeated outer 'max_execution_time' in the query text (ParserSetQuery keeps one entry per occurrence) must not
+-- leave a second copy behind on the remote replica: every occurrence is stripped, not just the first.
+INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+
 DROP TABLE test_max_execution_time_leaf_insert SYNC;
 DROP TABLE test_max_execution_time_leaf SYNC;
