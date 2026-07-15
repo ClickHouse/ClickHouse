@@ -1,0 +1,664 @@
+---
+description: '包含 2800 万行 Hacker News 数据的数据集。'
+sidebarTitle: 'Hacker News'
+slug: /getting-started/example-datasets/hacker-news
+title: 'Hacker News 数据集'
+doc_type: 'guide'
+keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '向量搜索']
+---
+
+> 在本教程中，你将把 CSV 和 Parquet 格式的 2800 万行 Hacker News 数据插入 ClickHouse
+> 表中，并运行一些简单查询来探索这些数据。
+
+<div id="csv">
+  ## CSV
+</div>
+
+<Steps>
+  <Step>
+    ### 下载 CSV
+
+    可从我们的公开 [S3 存储桶](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) 下载该数据集的 CSV 版本，或运行以下命令：
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    该压缩文件大小为 4.6GB，包含 2800 万行，下载大约需要 5–10 分钟。
+  </Step>
+
+  <Step>
+    ### 对数据进行采样
+
+    [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 可让你快速处理本地文件，而无需
+    部署和配置 ClickHouse 服务器。
+
+    在将任何数据存储到 ClickHouse 之前，先使用 clickhouse-local 对文件进行采样。
+    在终端中运行：
+
+    ```bash
+    clickhouse-local
+    ```
+
+    接下来，运行以下命令以查看数据：
+
+    ```sql title="Query"
+    SELECT *
+    FROM file('hacknernews.csv.gz', CSVWithNames)
+    LIMIT 2
+    SETTINGS input_format_try_infer_datetimes = 0
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:          344065
+    deleted:     0
+    type:        comment
+    by:          callmeed
+    time:        2008-10-26 05:06:58
+    text:        What kind of reports do you need?<p>ActiveMerchant just connects your app to a gateway for cc approval and processing.<p>Braintree has very nice reports on transactions and it's very easy to refund a payment.<p>Beyond that, you are dealing with Rails after all–it's pretty easy to scaffold out some reports from your subscriber base.
+    dead:        0
+    parent:      344038
+    poll:        0
+    kids:        []
+    url:
+    score:       0
+    title:
+    parts:       []
+    descendants: 0
+
+    Row 2:
+    ──────
+    id:          344066
+    deleted:     0
+    type:        story
+    by:          acangiano
+    time:        2008-10-26 05:07:59
+    text:
+    dead:        0
+    parent:      0
+    poll:        0
+    kids:        [344111,344202,344329,344606]
+    url:         http://antoniocangiano.com/2008/10/26/what-arc-should-learn-from-ruby/
+    score:       33
+    title:       What Arc should learn from Ruby
+    parts:       []
+    descendants: 10
+    ```
+
+    这个命令里有很多巧妙的功能。
+    [`file`](/zh/reference/functions/regular-functions/files#file) 操作符允许你从本地磁盘读取文件，只需指定 `CSVWithNames` 格式。
+    最重要的是，系统会根据文件内容自动为你推断 schema。
+    还要注意，`clickhouse-local` 能够读取压缩文件，并根据扩展名推断出 gzip 格式。
+    这里使用 `Vertical` 格式，以便更直观地查看每一列的数据。
+  </Step>
+
+  <Step>
+    ### 通过 schema inference 加载数据
+
+    用于加载数据的最简单且最强大的工具是 `clickhouse-client`：一款功能丰富的原生命令行客户端。
+    要加载数据，你也可以再次利用 schema inference，由 ClickHouse 自动确定各列的类型。
+
+    运行以下命令来创建表，并通过 [`url`](/zh/reference/functions/table-functions/url) 函数直接从远程 CSV 文件插入数据。
+    schema 会自动推断：
+
+    ```sql
+    CREATE TABLE hackernews ENGINE = MergeTree ORDER BY tuple
+    (
+    ) EMPTY AS SELECT * FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames');
+    ```
+
+    这会使用从数据中推断出的 schema 创建一个空表。
+    [`DESCRIBE TABLE`](/zh/reference/statements/describe-table) 命令可帮助我们了解这些已分配的类型。
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews
+    ```
+
+    ```text title="Response"
+    ┌─name────────┬─type─────────────────────┬
+    │ id          │ Nullable(Float64)        │
+    │ deleted     │ Nullable(Float64)        │
+    │ type        │ Nullable(String)         │
+    │ by          │ Nullable(String)         │
+    │ time        │ Nullable(String)         │
+    │ text        │ Nullable(String)         │
+    │ dead        │ Nullable(Float64)        │
+    │ parent      │ Nullable(Float64)        │
+    │ poll        │ Nullable(Float64)        │
+    │ kids        │ Array(Nullable(Float64)) │
+    │ url         │ Nullable(String)         │
+    │ score       │ Nullable(Float64)        │
+    │ title       │ Nullable(String)         │
+    │ parts       │ Array(Nullable(Float64)) │
+    │ descendants │ Nullable(Float64)        │
+    └─────────────┴──────────────────────────┴
+    ```
+
+    要将数据插入此表，请使用 `INSERT INTO ... SELECT` 命令。
+    结合 `url` 函数，数据将直接从该 URL 导入：
+
+    ```sql
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames')
+    ```
+
+    你已成功用一条命令将 2800 万行数据插入 ClickHouse！
+  </Step>
+
+  <Step>
+    ### 查看数据
+
+    运行以下查询，对 Hacker News 的新闻条目和特定列进行采样：
+
+    ```sql title="Query"
+    SELECT
+        id,
+        title,
+        type,
+        by,
+        time,
+        url,
+        score
+    FROM hackernews
+    WHERE type = 'story'
+    LIMIT 3
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:    2596866
+    title:
+    type:  story
+    by:
+    time:  1306685152
+    url:
+    score: 0
+
+    Row 2:
+    ──────
+    id:    2596870
+    title: WordPress capture users last login date and time
+    type:  story
+    by:    wpsnipp
+    time:  1306685252
+    url:   http://wpsnipp.com/index.php/date/capture-users-last-login-date-and-time/
+    score: 1
+
+    Row 3:
+    ──────
+    id:    2596872
+    title: Recent college graduates get some startup wisdom
+    type:  story
+    by:    whenimgone
+    time:  1306685352
+    url:   http://articles.chicagotribune.com/2011-05-27/business/sc-cons-0526-started-20110527_1_business-plan-recession-college-graduates
+    score: 1
+    ```
+
+    虽然 schema inference 是初期数据探索的利器，但它只是一种“尽力而为”的方法，不能作为长期方案来替代为您的数据定义最佳 schema。
+  </Step>
+
+  <Step>
+    ### 定义 schema
+
+    一个显而易见的优化方式，就是为每个字段定义类型。
+    除了将时间字段声明为 `DateTime` 类型之外，在删除现有数据集后，我们还将为下列每个字段定义合适的类型。
+    在 ClickHouse 中，数据的主键 id 是通过 `ORDER BY` 子句定义的。
+
+    选择合适的类型，并确定在 `ORDER BY`
+    子句中包含哪些列，有助于提升查询速度和压缩效果。
+
+    运行以下查询以删除旧 schema 并创建优化后的 schema：
+
+    ```sql title="Query"
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    (
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+        ENGINE = MergeTree
+    ORDER BY id
+    ```
+
+    有了优化后的 schema，现在你可以从本地文件系统中插入数据了。
+    再次使用 `clickhouse-client`，通过带有 `INFILE` 子句的显式 `INSERT INTO` 语句插入该文件。
+
+    ```sql title="Query"
+    INSERT INTO hackernews FROM INFILE '/data/hacknernews.csv.gz' FORMAT CSVWithNames
+    ```
+  </Step>
+
+  <Step>
+    ### 运行示例查询
+
+    以下提供了一些示例查询，希望能为您编写自己的查询提供参考。
+
+    #### &quot;ClickHouse&quot; 在 Hacker News 上是一个多热门的话题？
+
+    score 字段提供了衡量故事热度的指标，而 `id` 字段与 `||` 拼接运算符可用于生成原始帖子的链接。
+
+    ```sql title="Query"
+    SELECT
+        time,
+        score,
+        descendants,
+        title,
+        url,
+        'https://news.ycombinator.com/item?id=' || toString(id) AS hn_url
+    FROM hackernews
+    WHERE (type = 'story') AND (title ILIKE '%ClickHouse%')
+    ORDER BY score DESC
+    LIMIT 5 FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    time:        1632154428
+    score:       519
+    descendants: 159
+    title:       ClickHouse, Inc.
+    url:         https://github.com/ClickHouse/ClickHouse/blob/master/website/blog/en/2021/clickhouse-inc.md
+    hn_url:      https://news.ycombinator.com/item?id=28595419
+
+    Row 2:
+    ──────
+    time:        1614699632
+    score:       383
+    descendants: 134
+    title:       ClickHouse as an alternative to Elasticsearch for log storage and analysis
+    url:         https://pixeljets.com/blog/clickhouse-vs-elasticsearch/
+    hn_url:      https://news.ycombinator.com/item?id=26316401
+
+    Row 3:
+    ──────
+    time:        1465985177
+    score:       243
+    descendants: 70
+    title:       ClickHouse – high-performance open-source distributed column-oriented DBMS
+    url:         https://clickhouse.yandex/reference_en.html
+    hn_url:      https://news.ycombinator.com/item?id=11908254
+
+    Row 4:
+    ──────
+    time:        1578331410
+    score:       216
+    descendants: 86
+    title:       ClickHouse cost-efficiency in action: analyzing 500B rows on an Intel NUC
+    url:         https://www.altinity.com/blog/2020/1/1/clickhouse-cost-efficiency-in-action-analyzing-500-billion-rows-on-an-intel-nuc
+    hn_url:      https://news.ycombinator.com/item?id=21970952
+
+    Row 5:
+    ──────
+    time:        1622160768
+    score:       198
+    descendants: 55
+    title:       ClickHouse: An open-source column-oriented database management system
+    url:         https://github.com/ClickHouse/ClickHouse
+    hn_url:      https://news.ycombinator.com/item?id=27310247
+    ```
+
+    ClickHouse 随时间推移是否产生了更多噪声？这里体现了将 `time` 字段定义为 `DateTime` 的价值所在——使用合适的数据类型，即可调用 `toYYYYMM()` 函数：
+
+    ```sql title="Query"
+    SELECT
+       toYYYYMM(time) AS monthYear,
+       bar(count(), 0, 120, 20)
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY monthYear
+    ORDER BY monthYear ASC
+    ```
+
+    ```response title="Response"
+    ┌─monthYear─┬─bar(count(), 0, 120, 20)─┐
+    │    201606 │ ██▎                      │
+    │    201607 │ ▏                        │
+    │    201610 │ ▎                        │
+    │    201612 │ ▏                        │
+    │    201701 │ ▎                        │
+    │    201702 │ █                        │
+    │    201703 │ ▋                        │
+    │    201704 │ █                        │
+    │    201705 │ ██                       │
+    │    201706 │ ▎                        │
+    │    201707 │ ▎                        │
+    │    201708 │ ▏                        │
+    │    201709 │ ▎                        │
+    │    201710 │ █▌                       │
+    │    201711 │ █▌                       │
+    │    201712 │ ▌                        │
+    │    201801 │ █▌                       │
+    │    201802 │ ▋                        │
+    │    201803 │ ███▏                     │
+    │    201804 │ ██▏                      │
+    │    201805 │ ▋                        │
+    │    201806 │ █▏                       │
+    │    201807 │ █▌                       │
+    │    201808 │ ▋                        │
+    │    201809 │ █▌                       │
+    │    201810 │ ███▌                     │
+    │    201811 │ ████                     │
+    │    201812 │ █▌                       │
+    │    201901 │ ████▋                    │
+    │    201902 │ ███                      │
+    │    201903 │ ▋                        │
+    │    201904 │ █                        │
+    │    201905 │ ███▋                     │
+    │    201906 │ █▏                       │
+    │    201907 │ ██▎                      │
+    │    201908 │ ██▋                      │
+    │    201909 │ █▋                       │
+    │    201910 │ █                        │
+    │    201911 │ ███                      │
+    │    201912 │ █▎                       │
+    │    202001 │ ███████████▋             │
+    │    202002 │ ██████▌                  │
+    │    202003 │ ███████████▋             │
+    │    202004 │ ███████▎                 │
+    │    202005 │ ██████▏                  │
+    │    202006 │ ██████▏                  │
+    │    202007 │ ███████▋                 │
+    │    202008 │ ███▋                     │
+    │    202009 │ ████                     │
+    │    202010 │ ████▌                    │
+    │    202011 │ █████▏                   │
+    │    202012 │ ███▋                     │
+    │    202101 │ ███▏                     │
+    │    202102 │ █████████                │
+    │    202103 │ █████████████▋           │
+    │    202104 │ ███▏                     │
+    │    202105 │ ████████████▋            │
+    │    202106 │ ███                      │
+    │    202107 │ █████▏                   │
+    │    202108 │ ████▎                    │
+    │    202109 │ ██████████████████▎      │
+    │    202110 │ ▏                        │
+    └───────────┴──────────────────────────┘
+    ```
+
+    看来 &quot;ClickHouse&quot; 的热度正随着时间的推移持续上升。
+
+    #### 谁是 ClickHouse 相关文章中评论最多的用户？
+
+    ```sql title="Query"
+    SELECT
+       by,
+       count() AS comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY comments DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by──────────┬─comments─┐
+    │ hodgesrm    │       78 │
+    │ zX41ZdbW    │       45 │
+    │ manigandham │       39 │
+    │ pachico     │       35 │
+    │ valyala     │       27 │
+    └─────────────┴──────────┘
+    ```
+
+    #### 哪些评论最能引发关注？
+
+    ```sql title="Query"
+    SELECT
+      by,
+      sum(score) AS total_score,
+      sum(length(kids)) AS total_sub_comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY total_score DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by───────┬─total_score─┬─total_sub_comments─┐
+    │ zX41ZdbW │        571  │              50    │
+    │ jetter   │        386  │              30    │
+    │ hodgesrm │        312  │              50    │
+    │ mechmind │        243  │              16    │
+    │ tosh     │        198  │              12    │
+    └──────────┴─────────────┴────────────────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="parquet">
+  ## Parquet
+</div>
+
+ClickHouse 的优势之一在于它能够处理多种[格式](/zh/reference/formats/index)。
+CSV 是一种相当理想的使用场景，但并不是数据交换的最高效格式。
+
+接下来，你将从 Parquet 文件加载数据，它是一种高效的列式格式。
+
+Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类型信息就编码在格式本身中。
+对 Parquet 文件进行类型推断，得到的 schema 往往会与 CSV 文件的 schema 略有不同。
+
+<Steps>
+  <Step>
+    ### 插入数据
+
+    运行以下查询，以 Parquet 格式读取相同的数据，并再次使用 url 函数读取远程数据：
+
+    ```sql
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS allow_nullable_key = 1 EMPTY AS
+    SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    ```
+
+    <Info>
+      **Parquet 中的 `NULL` 键**
+
+      受 Parquet 格式特性的影响，我们必须接受键可能为 `NULL`，
+      即使数据中并不存在这些键。
+    </Info>
+
+    运行以下命令以查看推断出的 schema：
+
+    ```response title="Response"
+    ┌─name────────┬─type───────────────────┬
+    │ id          │ Nullable(Int64)        │
+    │ deleted     │ Nullable(UInt8)        │
+    │ type        │ Nullable(String)       │
+    │ time        │ Nullable(Int64)        │
+    │ text        │ Nullable(String)       │
+    │ dead        │ Nullable(UInt8)        │
+    │ parent      │ Nullable(Int64)        │
+    │ poll        │ Nullable(Int64)        │
+    │ kids        │ Array(Nullable(Int64)) │
+    │ url         │ Nullable(String)       │
+    │ score       │ Nullable(Int32)        │
+    │ title       │ Nullable(String)       │
+    │ parts       │ Array(Nullable(Int64)) │
+    │ descendants │ Nullable(Int32)        │
+    └─────────────┴────────────────────────┴
+    ```
+
+    和前面的 CSV 文件一样，你也可以手动指定 schema，以便更好地控制所选类型，并将
+    数据直接从 S3 插入：
+
+    ```sql
+    CREATE TABLE hackernews
+    (
+        `id` UInt64,
+        `deleted` UInt8,
+        `type` String,
+        `author` String,
+        `timestamp` DateTime,
+        `comment` String,
+        `dead` UInt8,
+        `parent` UInt64,
+        `poll` UInt64,
+        `children` Array(UInt32),
+        `url` String,
+        `score` UInt32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` UInt32
+    )
+    ENGINE = MergeTree
+    ORDER BY (type, author);
+
+    INSERT INTO hackernews
+    SELECT * FROM s3(
+            'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            'Parquet',
+            'id UInt64,
+             deleted UInt8,
+             type String,
+             by String,
+             time DateTime,
+             text String,
+             dead UInt8,
+             parent UInt64,
+             poll UInt64,
+             kids Array(UInt32),
+             url String,
+             score UInt32,
+             title String,
+             parts Array(UInt32),
+             descendants UInt32');
+    ```
+  </Step>
+
+  <Step>
+    ### 添加数据跳过索引以加快查询速度
+
+    要查看有多少条评论提到了 &quot;ClickHouse&quot;，请运行以下查询：
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'ClickHouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
+    ┌─count()─┐
+    │     516 │
+    └─────────┘
+    ```
+
+    接下来，您将在 &quot;comment&quot; 列上创建一个倒排[索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)，
+    以加快此查询。
+    请注意，comments 会以小写形式建立索引，以便在查找术语时不区分大小写。
+
+    运行以下命令来创建索引：
+
+    ```sql
+    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
+    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ```
+
+    索引物化需要一些时间 (要检查索引是否已创建，请使用系统表 `system.data_skipping_indices`) 。
+
+    索引创建完成后，再次运行该查询：
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse');
+    ```
+
+    请注意：有了索引后，查询现在仅需 0.248 秒，而此前在没有索引时则需 0.843 秒：
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+    ```
+
+    可以使用 [`EXPLAIN`](/zh/reference/statements/explain) 子句来了解，为什么添加该索引后
+    查询性能提升了约 3.4 倍。
+
+    ```response text="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse')
+    ```
+
+    ```response title="Response"
+    ┌─explain─────────────────────────────────────────┐
+    │ Expression ((Projection + Before ORDER BY))     │
+    │   Aggregating                                   │
+    │     Expression (Before GROUP BY)                │
+    │       Filter (WHERE)                            │
+    │         ReadFromMergeTree (default.hackernews)  │
+    │         Indexes:                                │
+    │           PrimaryKey                            │
+    │             Condition: true                     │
+    │             Parts: 4/4                          │
+    │             Granules: 3528/3528                 │
+    │           Skip                                  │
+    │             Name: comment_idx                   │
+    │             Description: inverted GRANULARITY 1 │
+    │             Parts: 4/4                          │
+    │             Granules: 554/3528                  │
+    └─────────────────────────────────────────────────┘
+    ```
+
+    请注意，索引通过跳过大量粒度来加快了查询速度。
+
+    现在还可以高效地搜索单个词，或多个词中的全部词：
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │    2177 │
+    └─────────┘
+    ```
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │      22 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>

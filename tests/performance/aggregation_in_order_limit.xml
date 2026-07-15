@@ -1,0 +1,32 @@
+<test>
+    <!-- GROUP BY primary key column ORDER BY the same key LIMIT N.
+         Exercises the aggregation-in-order limit push-down optimization:
+         early termination after producing enough groups. -->
+
+    <settings>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+    </settings>
+
+    <!-- GROUP BY first PK column, ORDER BY same, small LIMIT -->
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- Same with larger LIMIT -->
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID ASC LIMIT 100 FORMAT Null</query>
+
+    <!-- GROUP BY two-column PK prefix -->
+    <query>SELECT CounterID, EventDate, count() FROM hits_100m_single GROUP BY CounterID, EventDate ORDER BY CounterID, EventDate LIMIT 10 FORMAT Null</query>
+
+    <!-- ORDER BY is a prefix of GROUP BY (GROUP BY has extra non-PK column) -->
+    <query>SELECT CounterID, EventDate, RegionID, count() FROM hits_100m_single GROUP BY CounterID, EventDate, RegionID ORDER BY CounterID, EventDate LIMIT 10 FORMAT Null</query>
+
+    <!-- ORDER BY is a single-column subset of a multi-column GROUP BY -->
+    <query>SELECT CounterID, EventDate, count() FROM hits_100m_single GROUP BY CounterID, EventDate ORDER BY CounterID LIMIT 10 FORMAT Null</query>
+
+    <!-- GROUP BY columns permuted relative to the sorting key: the group-by keys
+         are matched as a set against the table sorting key, so the push-down
+         still applies -->
+    <query>SELECT CounterID, EventDate, count() FROM hits_100m_single GROUP BY EventDate, CounterID ORDER BY CounterID, EventDate LIMIT 10 FORMAT Null</query>
+
+    <!-- Permuted GROUP BY with an extra non-PK column, ORDER BY a subset -->
+    <query>SELECT CounterID, EventDate, RegionID, count() FROM hits_100m_single GROUP BY RegionID, EventDate, CounterID ORDER BY CounterID, EventDate LIMIT 10 FORMAT Null</query>
+</test>

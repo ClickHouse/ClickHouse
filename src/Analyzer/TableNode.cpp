@@ -21,6 +21,7 @@
 #include <Core/Settings.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -50,7 +51,8 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
     auto * view = storage->as<StorageView>();
     if (!view || !view->isParameterizedView())
         return nullptr;
-    return view->getInMemoryMetadataPtr(nullptr, false)->getSelectQuery().inner_query;
+    auto metadata_snapshot = view->getInMemoryMetadataPtr(nullptr, false);
+    return metadata_snapshot->getSelectQuery().inner_query;
 }
 
 }
@@ -60,20 +62,30 @@ TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder
     , storage(std::move(storage_))
     , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))
+    , storage_metadata(storage_snapshot_->metadata)
     , storage_snapshot(std::move(storage_snapshot_))
     , materialized_cte(extractCTE(storage))
 {}
 
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : TableNode(storage_, storage_->getStorageID(), std::move(storage_lock_), std::move(storage_snapshot_))
+    : IQueryTreeNode(children_size)
+    , storage(std::move(storage_))
+    , storage_id(storage->getStorageID())
+    , storage_lock(std::move(storage_lock_))
+    , storage_metadata(storage_snapshot_->metadata)
+    , storage_snapshot(std::move(storage_snapshot_))
+    , materialized_cte(extractCTE(storage))
 {
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : TableNode(
-          storage_,
-          storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]),
-          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(context, false), context))
+    : IQueryTreeNode(children_size)
+    , storage(std::move(storage_))
+    , storage_id(storage->getStorageID())
+    , storage_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]))
+    , storage_metadata(storage->getInMemoryMetadataPtr(context, false))
+    , storage_snapshot(storage->getStorageSnapshot(storage_metadata, context))
+    , materialized_cte(extractCTE(storage))
 {
 }
 
@@ -101,12 +113,22 @@ void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_hol
     updateStorage(std::move(real_storage), context_);
 }
 
+void TableNode::adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_)
+{
+    chassert(isMaterializedCTE());
+    chassert(materialized_cte_ && materialized_cte_->isStorageInitialized());
+    materialized_cte = std::move(materialized_cte_);
+    setTemporaryTableName(materialized_cte->temporary_table_name);
+    updateStorage(materialized_cte->storage, context_);
+}
+
 void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
 {
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

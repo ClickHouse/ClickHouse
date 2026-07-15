@@ -1,0 +1,56 @@
+---
+title: كيفية التحقق من حالة خدمة ClickHouse Cloud
+description: تعرّف على كيفية استخدام واجهة برمجة تطبيقات ClickHouse Cloud للتحقق مما إذا كانت خدمتك متوقفة أو خاملة أو قيد التشغيل من دون إيقاظها.
+date: 2023-11-16
+tags: ['إدارة Cloud']
+keywords: ['حالة خدمة Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-check-your-clickhouse-cloud-service-state">
+  ## كيفية التحقق من حالة خدمة ClickHouse Cloud الخاصة بك
+</div>
+
+كيف أتحقق من حالة خدمة ClickHouse Cloud الخاصة بي؟ أريد التأكد مما إذا كانت الخدمة متوقفة أو خاملة أو قيد التشغيل، لكنني لا أريد إيقاظها أثناء ذلك.
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+تُعد [ClickHouse Cloud API](/ar/products/cloud/features/admin-features/api/api-overview) وسيلة ممتازة للتحقق من حالة خدمة سحابية. يلزمك إنشاء مفتاح واجهة برمجة تطبيقات في خدمتك قبل أن تتمكن من استخدام Cloud API. يمكنك إجراء ذلك في ClickHouse Cloud على [clickhouse.cloud](https://console.clickhouse.cloud):
+
+* [نظرة عامة على واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/api-overview)
+* [Swagger](/ar/api-reference/organization/get-list-of-available-organizations)
+
+1. للتحقق من حالة خدمة، شغّل الأمر التالي. تأكد من استبدال `Key-ID` و`Key-Secret` ببياناتك المقابلة:
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID]
+   ```
+
+   سيُظهر هذا ناتجًا مشابهًا لما يلي:
+
+   ```json
+   result\":{\"id\":\"[Service-ID]\",\"name\":\"[Service-Name]\",\"provider\":\"aws\",\"region\":\"us-east-1\",\"state\":\"**idle**\",\"endpoints\":[{\"protocol\":\"nativesecure\",\"host\":\"[Connect-URL]\",\"port\":9440},{\"protocol\":\"https\",\"host\":\"[Connect-URL]\",\"port\":8443}],\"tier\":\"development\",\"idleScaling\":true,\"idleTimeoutMinutes\":15,\"ipAccessList\":[{\"source\":\"[my-IP]\",\"description\":\"[my-IP-name]\"}],\"createdAt\":\"2023-04-13T23:47:47Z\"},\"status\":200}
+   ```
+
+2. يمكنك استخدام [أداة JQ](https://jqlang.github.io/jq/) لاستخراج المفتاح `state`:
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID] | jq '.state'
+   ```
+
+   سيُظهر هذا ناتجًا مشابهًا لما يلي:
+
+   ```json
+   **idle**
+   ```
+
+3. سيؤدي تشغيل الأمر نفسه على خدمة تعمل حاليًا إلى إظهار:
+
+   ```json
+   **running**
+   ```

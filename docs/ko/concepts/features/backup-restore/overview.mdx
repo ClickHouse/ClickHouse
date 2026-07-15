@@ -1,0 +1,327 @@
+---
+description: 'ClickHouse 백업 및 복원 개요'
+sidebarTitle: '개요'
+slug: /operations/backup/overview
+title: 'ClickHouse의 백업 및 복원'
+doc_type: 'reference'
+---
+
+import GenericSettings from '/snippets/ko/_generic_settings.mdx';
+import Syntax from '/snippets/ko/_syntax.mdx';
+import AzureSettings from '/snippets/ko/_azure_settings.mdx';
+import S3Settings from '/snippets/ko/_s3_settings.mdx';
+
+> 이 섹션에서는 ClickHouse의 백업과 복원을 전반적으로 설명합니다. 각 백업 방식에 대한 더
+> 자세한 내용은 사이드바의 해당 방식별 페이지를 참조하십시오.
+
+<div id="introduction">
+  ## 소개
+</div>
+
+[복제](/ko/reference/engines/table-engines/mergetree-family/replication)는 하드웨어 장애로부터는 보호해 주지만, 사람의 실수까지
+막아주지는 못합니다. 예를 들어 데이터를 실수로 삭제하거나, 잘못된
+테이블 또는 잘못된 클러스터의 테이블을 삭제하거나, 잘못된
+데이터 처리나 데이터 손상을 초래하는 소프트웨어 버그가 발생할 수 있습니다.
+
+이러한 실수는 많은 경우 모든 레플리카에 영향을 미칩니다. ClickHouse에는 일부 유형의 실수를 방지하기 위한 내장
+보호 장치가 있습니다. 예를 들어 [기본값](/ko/reference/settings/session-settings#max_table_size_to_drop)으로
+50 Gb를 초과하는 데이터를 포함하는 `MergeTree` 계열 엔진의 테이블은
+바로 삭제할 수 없습니다. 하지만 이러한 보호 장치가 모든 경우를 포괄하는 것은 아니며,
+문제는 여전히 발생할 수 있습니다.
+
+발생 가능한 사람의 실수를 효과적으로 완화하려면, 데이터 백업 및 복원
+전략을 **미리** 신중하게 준비해야 합니다.
+
+회사마다 사용할 수 있는 리소스와 비즈니스 요구사항이 다르므로,
+모든 상황에 맞는 ClickHouse 백업 및 복원용 범용 해법은 없습니다.
+1기가바이트의 데이터에 적합한 방식이 수십 페타바이트의 데이터에는 맞지 않을 가능성이 큽니다.
+적용 가능한 접근 방식은 다양하며 각각 장단점이 있고, 이 문서 섹션에서
+이를 소개합니다. 각 방식의 단점을 보완하기 위해 하나의 방식만 사용하는 대신
+여러 접근 방식을 함께 사용하는 것이 좋습니다.
+
+<Note>
+  무언가를 백업해 두고도 한 번도 복원을 시도해 보지 않았다면,
+  실제로 필요할 때 복원이 제대로 동작하지 않을 가능성이 높습니다(또는
+  적어도 비즈니스에서 감당할 수 있는 시간보다 더 오래 걸릴 수 있습니다). 따라서 어떤 백업
+  방식을 선택하든 복원 프로세스도 반드시 자동화하고, 여분의 ClickHouse 클러스터에서 정기적으로
+  연습하십시오.
+</Note>
+
+다음 페이지에서는 ClickHouse에서 사용할 수 있는 다양한 백업 및
+복원 방법을 자세히 설명합니다:
+
+| Page                                                                                | Description                                            |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| [로컬 디스크 또는 S3 디스크를 사용한 백업/복원](/ko/concepts/features/backup-restore/local-disk)         | 로컬 디스크 또는 S3 디스크로 백업하거나 해당 디스크에서 복원하는 방법을 자세히 설명합니다    |
+| [S3 endpoint를 사용한 백업/복원](/ko/concepts/features/backup-restore/s3-endpoint)             | S3 endpoint로 백업하거나 해당 endpoint에서 복원하는 방법을 자세히 설명합니다    |
+| [AzureBlobStorage를 사용한 백업/복원](/ko/concepts/features/backup-restore/azure-blob-storage) | Azure blob storage로 백업하거나 해당 스토리지에서 복원하는 방법을 자세히 설명합니다 |
+| [대체 방법](/ko/concepts/features/backup-restore/alternative-methods)                      | 대체 백업 방법을 설명합니다                                        |
+| [Snapshot backup](/ko/concepts/features/backup-restore/snapshot)                       | Cloud Object Storage를 사용하는 SharedMergeTree 테이블용 경량 스냅샷 |
+
+백업은 다음과 같은 방식으로 수행할 수 있습니다:
+
+* [전체 또는 증분](#backup-types)
+* [동기 또는 비동기](#synchronous-vs-asynchronous)
+* [동시 또는 비동시](#concurrent-vs-non-concurrent)
+* [압축 또는 비압축](#compressed-vs-uncompressed)
+* [이름이 지정된 컬렉션](#using-named-collections) 사용
+* 비밀번호로 보호
+* [시스템 테이블, log tables 또는 액세스 관리 테이블](#system-backups) 백업
+
+<div id="backup-types">
+  ## 백업 유형
+</div>
+
+백업은 전체 백업 또는 증분 백업으로 수행할 수 있습니다. 전체 백업은
+데이터 전체의 복사본이며, 증분 백업은 마지막 전체 백업 이후 변경된 데이터만 포함합니다.
+
+전체 백업의 장점은 단순하고 다른 백업에 의존하지 않는 독립적인 방식이며,
+복구 신뢰성이 높다는 점입니다. 하지만 완료하는 데 시간이 오래 걸릴 수 있고
+많은 저장 공간을 차지할 수 있습니다. 반면 증분 백업은 시간과 공간 측면에서
+더 효율적이지만, 데이터를 복원하려면 관련된 모든 백업이
+모두 있어야 합니다.
+
+요구 사항에 따라 다음과 같은 방식을 사용할 수 있습니다.
+
+* **전체 백업**: 규모가 작은 데이터베이스나 중요한 데이터에 적합합니다.
+* **증분 백업**: 규모가 큰 데이터베이스이거나 백업을 자주, 비용 효율적으로 수행해야 하는 경우에 적합합니다.
+* **둘 다**: 예를 들어, 매주 전체 백업을 수행하고 매일 증분 백업을 수행합니다.
+
+<div id="synchronous-vs-asynchronous">
+  ## 동기식 백업과 비동기식 백업
+</div>
+
+`BACKUP` 및 `RESTORE` 명령은 `ASYNC`로 지정할 수도 있습니다. 이 경우
+백업 명령은 즉시 반환되고, 백업 프로세스는 백그라운드에서 실행됩니다.
+명령에 `ASYNC`가 지정되지 않으면 백업 프로세스는 동기식으로 실행되며
+백업이 완료될 때까지 명령 실행이 차단됩니다.
+
+<div id="concurrent-vs-non-concurrent">
+  ## 동시 백업과 비동시 백업
+</div>
+
+기본적으로 ClickHouse는 백업과 복원 작업의 동시 실행을 허용합니다. 즉,
+여러 개의 백업 또는 복원 작업을 동시에 시작할 수 있습니다. 하지만
+이러한 동작을 허용하지 않도록 제어하는 서버 수준 설정도 있습니다. 이 설정을
+false로 지정하면, 클러스터에서는 한 번에 하나의 백업 또는 복원 작업만
+실행할 수 있습니다. 이렇게 하면 리소스 경합이나 작업 간 잠재적
+충돌을 방지하는 데 도움이 될 수 있습니다.
+
+백업/복원의 동시 실행을 허용하지 않으려면, 각각 다음 설정을 사용할 수 있습니다:
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+두 설정의 기본값은 모두 true이므로, 기본적으로 동시 백업/복원이
+허용됩니다. 클러스터에서 이 설정들이 false이면, 한 번에 클러스터당 하나의 백업/복원만
+실행할 수 있습니다.
+
+<div id="compressed-vs-uncompressed">
+  ## 압축 백업과 비압축 백업
+</div>
+
+ClickHouse 백업은 `compression_method` 및 `compression_level` 설정을 통해 압축을 지원합니다.
+
+백업을 생성할 때 다음 항목을 지정할 수 있습니다:
+
+```sql
+BACKUP TABLE test.table
+  TO Disk('backups', 'filename.zip')
+  SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="using-named-collections">
+  ## 이름이 지정된 컬렉션 사용하기
+</div>
+
+이름이 지정된 컬렉션을 사용하면 백업/복원 작업 전반에 걸쳐 재사용할 수 있는 key-value 쌍(S3 자격 증명, endpoint, 설정 등)을 저장할 수 있습니다.
+다음과 같은 이점이 있습니다:
+
+* 관리자 권한이 없는 사용자가 자격 증명을 볼 수 없도록 할 수 있습니다
+* 복잡한 구성을 중앙에서 저장해 명령을 단순화할 수 있습니다
+* 여러 작업 간 일관성을 유지할 수 있습니다
+* 쿼리 로그에 자격 증명이 노출되는 것을 방지할 수 있습니다
+
+자세한 내용은 [&quot;이름이 지정된 컬렉션&quot;](/ko/concepts/features/configuration/server-config/named-collections)을 참조하십시오.
+
+<div id="system-backups">
+  ## 시스템, 로그 또는 액세스 관리 테이블 백업
+</div>
+
+시스템 테이블도 백업 및 복원 워크플로에 포함할 수 있지만, 포함할지 여부는
+사용 사례에 따라 달라집니다.
+
+`_log` 접미사가 있는 테이블(예:
+`query_log`, `part_log`)처럼 이력 데이터를 저장하는 시스템 테이블은 다른 테이블과 마찬가지로
+백업하고 복원할 수 있습니다.
+예를 들어 `query_log`를 사용해
+쿼리 성능을 추적하거나 문제를 디버깅하는 등, 사용 사례에서 이력 데이터 분석이 필요하다면 이러한
+테이블을 백업 전략에 포함하는 것이 좋습니다. 반면 이러한 테이블의 이력 데이터가
+필요하지 않다면 백업 저장 공간을 절약하기 위해 제외할 수 있습니다.
+
+users, 역할, row&#95;policies,
+settings&#95;profiles, 쿼터와 같이 액세스 관리와 관련된 시스템 테이블은 백업 및 복원 작업 중
+특별히 처리됩니다.
+이러한 테이블이 백업에 포함되면, 해당 내용은 특수한
+`accessXX.txt` 파일로 내보내지며, 이 파일에는 해당 액세스 엔터티를 생성하고
+구성하는 데 필요한 SQL 문이 담깁니다. 복원 시에는 복원 프로세스가
+이 파일을 해석하고 SQL 명령을 다시 적용하여 users,
+역할 및 기타 구성을 다시 생성합니다. 이 기능을 통해 ClickHouse 클러스터의 액세스 제어
+구성을 클러스터 전체 구성의 일부로
+백업하고 복원할 수 있습니다.
+
+이 기능은 SQL 명령으로 관리되는 구성에 대해서만 작동합니다
+([&quot;SQL 기반 액세스 제어 및 계정 관리&quot;](/ko/concepts/features/security/access-rights#enabling-access-control)라고 부름).
+ClickHouse 서버 설정 파일(예: `users.xml`)에 정의된 액세스 구성은
+백업에 포함되지 않으며 이 방법으로는 복원할 수 없습니다.
+
+<div id="syntax">
+  ## 일반 구문
+</div>
+
+<Syntax />
+
+<div id="command-summary">
+  ### 명령 요약
+</div>
+
+위의 각 명령은 아래에서 자세히 설명합니다.
+
+| **명령**                                                                 | **설명**                                                                                            |   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | - |
+| `BACKUP`                                                               | 지정한 객체의 백업을 생성합니다                                                                                 |   |
+| `RESTORE`                                                              | 백업에서 객체를 복원합니다                                                                                    |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | 특정 테이블을 백업하거나 복원합니다(이름 변경 가능)                                                                     |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | 테이블의 특정 파티션만 백업하거나 복원합니다                                                                          |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | 딕셔너리 객체를 백업하거나 복원합니다                                                                              |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | 데이터베이스 전체를 백업하거나 복원합니다(이름 변경 가능)                                                                  |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | 임시 테이블을 백업하거나 복원합니다(이름 변경 가능)                                                                     |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | 뷰를 백업하거나 복원합니다(이름 변경 가능)                                                                          |   |
+| `[EXCEPT TABLES ...]`                                                  | 데이터베이스를 백업할 때 특정 테이블을 제외합니다                                                                       |   |
+| `ALL`                                                                  | 모든 것(모든 데이터베이스, 테이블 등)을 백업하거나 복원합니다. ClickHouse 23.4 이전 버전에서는 `ALL`을 `RESTORE` 명령에서만 사용할 수 있었습니다. |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | `ALL` 사용 시 특정 테이블 또는 데이터베이스를 제외합니다                                                                |   |
+| `[ON CLUSTER 'cluster_name']`                                          | ClickHouse 클러스터 전체에서 백업 또는 복원을 실행합니다                                                              |   |
+| `TO\|FROM`                                                             | 방향: `TO`는 백업 대상, `FROM`은 복원 소스입니다                                                                 |   |
+| `File('<path>/<filename>')`                                            | 로컬 파일 시스템에 저장하거나 로컬 파일 시스템에서 복원합니다                                                                |   |
+| `Disk('<disk_name>', '<path>/')`                                       | 구성된 디스크에 저장하거나 구성된 디스크에서 복원합니다                                                                    |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Amazon S3 또는 S3 호환 스토리지에 저장하거나 해당 스토리지에서 복원합니다                                                    |   |
+| `[SETTINGS ...]`                                                       | 전체 설정 목록은 아래를 참조하십시오                                                                              |   |
+| `[ASYNC]`                                                              | 작업을 비동기로 실행합니다(즉시 반환되며, 모니터링할 수 있는 ID가 제공됩니다)                                                     |   |
+
+<div id="settings">
+  ### 설정
+</div>
+
+**일반 백업/복원 설정**
+
+<GenericSettings />
+
+**S3 관련 설정**
+
+<S3Settings />
+
+**Azure 관련 설정**
+
+<AzureSettings />
+
+<div id="check-the-status-of-backups">
+  ## 관리 및 문제 해결
+</div>
+
+백업 명령은 `id`와 `status`를 반환하며, 이 `id`를 사용해
+백업의 상태를 확인할 수 있습니다. 이는 시간이 오래 걸리는
+`ASYNC` 백업의 진행 상황을 확인할 때 매우 유용합니다. 아래 예시는
+기존 백업 파일을 덮어쓰려고 할 때 발생한 오류를 보여줍니다:
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response highlight={5,9}
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+[`system.backups`](/ko/reference/system-tables/backups) 테이블과 마찬가지로, 모든 백업 및 복원 작업은 시스템 로그 테이블
+[`system.backup_log`](/ko/reference/system-tables/backup_log)에도 기록됩니다:
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response highlight={26}
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```

@@ -143,6 +143,13 @@ public:
     }
 #endif
 
+    /// Forward to the underlying storage so DeltaLake's catalog-vended credentials
+    /// refresh path works through a cache disk too.
+    bool tryRefreshCredentialsViaCallback() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
     {

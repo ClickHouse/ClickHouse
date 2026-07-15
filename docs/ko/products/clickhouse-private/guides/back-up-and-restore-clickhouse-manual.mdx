@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "ClickHouse 백업 및 복원 (수동)"
+sidebarTitle: "백업 및 복원"
+description: "SQL 명령과 S3 스토리지를 사용하여 ClickHouse 데이터를 수동으로 백업하고 복원합니다."
+---
+
+SQL 명령과 S3 스토리지를 사용하여 ClickHouse 데이터를 수동으로 백업하고 복원합니다. 자세한 구문은 [ClickHouse 백업 문서](https://clickhouse.com/docs/operations/backup)를 참조하십시오.
+
+API 기반 백업 작업은 [API를 통해 백업 관리](/ko/products/clickhouse-private/guides/manage-backups-via-the-private-api)를 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 클러스터와 동일한 리전에 있는 S3 버킷
+* Kubernetes 서비스 계정에 연결된 IAM role에는 버킷에 대한 읽기, 쓰기, 목록 조회 권한이 있어야 합니다
+
+<div id="s3-path-format">
+  ## S3 경로 포맷
+</div>
+
+모든 백업 명령은 다음과 같은 S3 경로를 사용합니다.
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | 설명                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| `$REGION`            | S3 리전(예: `us-west-2`)                                                                         |
+| `$S3_BUCKET`         | 백업용 S3 버킷 이름                                                                                  |
+| `$CLUSTER_S3_PREFIX` | 클러스터의 S3 키 접두사로, `clickhousecluster` 리소스의 `spec.s3.keyPrefix`에서 확인할 수 있습니다(예: `ch-s3-{uuid}`) |
+| `$BACKUP_ID`         | 이 백업의 고유 식별자(UUID)                                                                            |
+
+<div id="perform-a-full-backup">
+  ## 전체 백업 수행
+</div>
+
+서버 파드 중 하나에서 다음을 실행합니다:
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+백업은 비동기로 실행됩니다. 진행 상황은 [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups) 테이블에서 확인하십시오:
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## 증분 백업
+</div>
+
+자세한 내용은 상위 문서의 [증분 백업 수행](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup)을 참조하십시오.
+
+<div id="restore-from-a-backup">
+  ## 백업에서 복원
+</div>
+
+복원 대상 클러스터에서 다음을 실행하십시오:
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID`는 복원 작업에 지정하는 임의의 고유 식별자입니다.

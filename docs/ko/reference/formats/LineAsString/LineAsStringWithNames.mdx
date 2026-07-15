@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'LineAsStringWithNames 포맷 문서'
+input_format: false
+keywords: ['LineAsStringWithNames']
+output_format: true
+slug: /interfaces/formats/LineAsStringWithNames
+title: 'LineAsStringWithNames'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`LineAsStringWithNames` 포맷은 [`LineAsString`](/ko/reference/formats/LineAsString/LineAsString) 포맷과 비슷하지만, 컬럼 이름이 포함된 헤더 행을 출력합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+```sql title="Query"
+CREATE TABLE example (
+    name String,
+    value Int32
+)
+ENGINE = Memory;
+
+INSERT INTO example VALUES ('John', 30), ('Jane', 25), ('Peter', 35);
+
+SELECT * FROM example FORMAT LineAsStringWithNames;
+```
+
+```response title="Response"
+name    value
+John    30
+Jane    25
+Peter    35
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

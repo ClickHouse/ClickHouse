@@ -1,0 +1,158 @@
+---
+sidebarTitle: 'NiFi'
+keywords: ['clickhouse', 'NiFi', 'подключение', 'интеграция', 'etl', 'интеграция данных']
+slug: /integrations/nifi
+description: 'Передача потоковых данных в ClickHouse с помощью конвейеров данных NiFi'
+title: 'Подключение Apache NiFi к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> — это ПО с открытым исходным кодом для управления рабочими процессами, предназначенное для автоматизации потоков данных между программными системами. Оно позволяет создавать ETL-конвейеры данных и включает более 300 процессоров данных. В этом пошаговом руководстве показано, как подключить Apache NiFi к ClickHouse в качестве источника и пункта назначения, а также загрузить примерный набор данных.
+
+<Steps>
+  <Step>
+    ## Подготовьте сведения о подключении
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Скачайте и запустите Apache NiFi
+
+    Для новой установки скачайте бинарный файл с https://nifi.apache.org/download.html и выполните команду `./bin/nifi.sh start`
+  </Step>
+
+  <Step>
+    ## Скачайте JDBC-драйвер ClickHouse
+
+    1. Перейдите на <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">страницу релизов JDBC-драйвера ClickHouse</a> на GitHub и найдите последнюю версию JDBC-драйвера
+    2. В выбранном релизе нажмите &quot;Show all xx assets&quot; и найдите JAR-файл, содержащий ключевое слово &quot;shaded&quot; или &quot;all&quot;, например `clickhouse-jdbc-0.5.0-all.jar`
+    3. Поместите JAR-файл в папку, доступную Apache NiFi, и запишите его абсолютный путь
+  </Step>
+
+  <Step>
+    ## Добавьте службу контроллера `DBCPConnectionPool` и настройте её свойства
+
+    1. Чтобы настроить службу контроллера в Apache NiFi, откройте страницу конфигурации потока NiFi, нажав кнопку с шестерёнкой
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="Страница конфигурации потока NiFi с выделенной кнопкой с шестерёнкой" />
+
+    2. Перейдите на вкладку Controller Services и добавьте новую службу контроллера, нажав кнопку `+` в правом верхнем углу
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="Вкладка Controller Services с выделенной кнопкой добавления" />
+
+    3. Найдите `DBCPConnectionPool` и нажмите кнопку &quot;Add&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="Диалог выбора службы контроллера с выделенным DBCPConnectionPool" />
+
+    4. После добавления `DBCPConnectionPool` по умолчанию будет находиться в состоянии Invalid. Нажмите кнопку с шестерёнкой, чтобы перейти к настройке
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="Список Controller Services с недопустимым DBCPConnectionPool и выделенной кнопкой с шестерёнкой" />
+
+    5. В разделе &quot;Properties&quot; введите следующие значения
+
+    | Property                          | Value                                                              | Remark                                                 |
+    | --------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+    | URL подключения к базе данных     | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | Замените HOSTNAME в URL подключения на нужное значение |
+    | Имя класса драйвера базы данных   | com.clickhouse.jdbc.ClickHouseDriver                               |                                                        |
+    | Расположение драйвера базы данных | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | Абсолютный путь к JAR-файлу драйвера ClickHouse JDBC   |
+    | Пользователь базы данных          | default                                                            | Имя пользователя ClickHouse                            |
+    | Пароль                            | password                                                           | Пароль ClickHouse                                      |
+
+    6. В разделе Settings измените имя службы контроллера на &quot;ClickHouse JDBC&quot; для удобства дальнейшей работы
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="Диалог настройки DBCPConnectionPool с заполненными свойствами" />
+
+    7. Активируйте службу контроллера `DBCPConnectionPool`, нажав кнопку с молнией, а затем кнопку &quot;Enable&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="Список Controller Services с выделенной кнопкой с молнией" />
+
+       <br />
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="Диалог подтверждения включения службы контроллера" />
+
+    8. Проверьте вкладку Controller Services и убедитесь, что служба контроллера включена
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="Список Controller Services с включенной службой ClickHouse JDBC" />
+  </Step>
+
+  <Step>
+    ## Чтение из таблицы с помощью процессора `ExecuteSQL`
+
+    1. Добавьте процессор ​`​ExecuteSQL` вместе с соответствующими предшествующими и последующими процессорами
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="Холст NiFi с процессором ExecuteSQL в потоке обработки" />
+
+    2. В разделе &quot;Properties&quot; процессора ​`​ExecuteSQL` введите следующие значения
+
+       | Property                            | Value                        | Remark                                                  |
+       | ----------------------------------- | ---------------------------- | ------------------------------------------------------- |
+       | Database Connection Pooling Service | ClickHouse JDBC              | Выберите Controller Service, настроенный для ClickHouse |
+       | SQL select query                    | SELECT * FROM system.metrics | Введите здесь свой запрос                               |
+
+    3. Запустите процессор `​​ExecuteSQL`
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="Конфигурация процессора ExecuteSQL с заполненными свойствами" />
+
+    4. Чтобы убедиться, что запрос был успешно обработан, проверьте один из `FlowFile` в выходной очереди
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="Диалог со списком очереди, показывающий FlowFile, готовые к проверке" />
+
+    5. Переключитесь в режим &quot;formatted&quot;, чтобы просмотреть результат в выходном `FlowFile`
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="Средство просмотра содержимого FlowFile с результатами запроса в режиме formatted" />
+  </Step>
+
+  <Step>
+    ## Запись в таблицу с помощью процессоров `MergeRecord` и `PutDatabaseRecord`
+
+    1. Чтобы выполнить вставку нескольких строк за одну операцию, сначала нужно объединить несколько записей в одну. Это можно сделать с помощью процессора `MergeRecord`
+
+    2. В разделе &quot;Properties&quot; процессора `MergeRecord` введите следующие значения
+
+       | Свойство                  | Значение            | Примечание                                                                                                           |
+       | ------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+       | Record Reader             | `JSONTreeReader`    | Выберите подходящее средство чтения записей                                                                          |
+       | Record Writer             | `JSONReadSetWriter` | Выберите подходящее средство записи записей                                                                          |
+       | Minimum Number of Records | 1000                | Увеличьте это значение, чтобы в одну запись объединялось минимально необходимое число строк. По умолчанию — 1 строка |
+       | Maximum Number of Records | 10000               | Укажите значение больше, чем &quot;Minimum Number of Records&quot;. По умолчанию — 1 000 строк                       |
+
+    3. Чтобы убедиться, что несколько записей объединяются в одну, проверьте вход и выход процессора `MergeRecord`. Обратите внимание, что на выходе получается массив из нескольких входных записей
+
+       Вход
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="Вход процессора MergeRecord, показывающий отдельные записи" />
+
+       Выход
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="Выход процессора MergeRecord, показывающий объединённый массив записей" />
+
+    4. В разделе &quot;Properties&quot; процессора `PutDatabaseRecord` введите следующие значения
+
+       | Свойство                            | Значение         | Примечание                                                                                                                                                  |
+       | ----------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+       | Record Reader                       | `JSONTreeReader` | Выберите подходящее средство чтения записей                                                                                                                 |
+       | Database Type                       | Generic          | Оставьте значение по умолчанию                                                                                                                              |
+       | Statement Type                      | INSERT           |                                                                                                                                                             |
+       | Database Connection Pooling Service | ClickHouse JDBC  | Выберите сервис-контроллер ClickHouse                                                                                                                       |
+       | Table Name                          | tbl              | Укажите здесь имя таблицы                                                                                                                                   |
+       | Translate Field Names               | false            | Установите значение &quot;false&quot;, чтобы имена полей при вставке совпадали с именами столбцов                                                           |
+       | Maximum Batch Size                  | 1000             | Максимальное количество строк на одну вставку. Это значение не должно быть меньше значения &quot;Minimum Number of Records&quot; в процессоре `MergeRecord` |
+
+    5. Чтобы убедиться, что каждая вставка содержит несколько строк, проверьте, что число строк в таблице увеличивается как минимум на значение &quot;Minimum Number of Records&quot;, заданное в `MergeRecord`.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="Результаты запроса, показывающие количество строк в целевой таблице" />
+
+    6. Поздравляем — вы успешно загрузили данные в ClickHouse с помощью Apache NiFi!
+  </Step>
+</Steps>

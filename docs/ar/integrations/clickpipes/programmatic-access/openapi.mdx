@@ -1,0 +1,457 @@
+---
+sidebarTitle: 'OpenAPI'
+description: 'مرجع لإدارة ClickPipes برمجيًا باستخدام ClickHouse Cloud OpenAPI.'
+slug: /integrations/clickpipes/programmatic-access/openapi
+title: 'مرجع OpenAPI لـ ClickPipes'
+doc_type: 'reference'
+keywords: ['clickpipes', 'openapi', 'واجهة برمجة تطبيقات', 'برمجي', 'rest', 'curl']
+---
+
+يمكن إنشاء جميع أنواع ClickPipes وتحديثها وحذفها برمجيًا باستخدام [ClickHouse Cloud OpenAPI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). تتناول هذه الصفحة المصادقة ونقاط النهاية المتاحة لـ ClickPipes، مع أمثلة على طلبات `curl` لكل نوع من أنواع ClickPipe.
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+تستخدم ClickHouse Cloud واجهة برمجة تطبيقات المصادقة الأساسية عبر HTTP. تحتاج إلى مفتاح واجهة برمجة تطبيقات ‏(معرّف المفتاح + المفتاح السري) مع أذونات على الخدمة المستهدفة. راجع [إدارة مفاتيح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi) للاطلاع على إرشادات إنشاء مفتاح.
+
+أعِدّ متغيرات البيئة التالية قبل تشغيل أي من الأمثلة أدناه:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+export ORG_ID=<your_organization_id>
+export SERVICE_ID=<your_service_id>
+```
+
+<div id="base-url">
+  ## عنوان URL الأساسي
+</div>
+
+```bash
+https://api.clickhouse.cloud/v1
+```
+
+<div id="endpoints">
+  ## نقاط النهاية
+</div>
+
+جميع نقاط النهاية الخاصة بـ ClickPipes تندرج ضمن نطاق خدمة ClickHouse Cloud:
+
+| الطريقة  | المسار                                                                                   | الوصف                            |
+| -------- | ---------------------------------------------------------------------------------------- | -------------------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | عرض جميع ClickPipes              |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | إنشاء ClickPipe                  |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | الحصول على ClickPipe             |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | تحديث ClickPipe                  |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | حذف ClickPipe                    |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | الحصول على إعدادات ClickPipe     |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | تحديث إعدادات ClickPipe          |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | تحديث تحجيم ClickPipe            |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | تحديث حالة ClickPipe (بدء/إيقاف) |
+
+بالنسبة إلى ClickPipes الخاصة بـ CDC ‏(Postgres وMySQL وMongoDB)، توجد نقاط نهاية إضافية على مستوى المؤسسة لتحجيم البنية التحتية المشتركة لـ CDC:
+
+| الطريقة | المسار                                                  | الوصف                                     |
+| ------- | ------------------------------------------------------- | ----------------------------------------- |
+| `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | الحصول على تحجيم ClickPipes الخاصة بـ CDC |
+| `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | تحديث تحجيم ClickPipes الخاصة بـ CDC      |
+
+للاطلاع على مخططات الطلبات والاستجابات الكاملة لكل نقطة نهاية، راجع [Swagger UI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="list-clickpipes">
+  ### عرض ClickPipes
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="get-clickpipe">
+  ### عرض تفاصيل ClickPipe
+</div>
+
+```bash
+CLICKPIPE_ID=<your_clickpipe_id>
+
+curl -u "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
+```
+
+<div id="stop-start-clickpipe">
+  ### إيقاف ClickPipe أو تشغيله
+</div>
+
+```bash
+# Stop
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"action": "stop"}' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
+
+# Start
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"action": "start"}' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
+```
+
+<div id="delete-clickpipe">
+  ### حذف ClickPipe
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
+```
+
+<div id="creating-clickpipes">
+  ## إنشاء ClickPipes
+</div>
+
+يختلف نص طلب `POST /clickpipes` باختلاف نوع المصدر. توضّح الأمثلة أدناه البنية الخاصة بكل نوع ClickPipe مدعوم. للاطلاع على مخططات JSON المعتمدة، راجع [Swagger UI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+
+<div id="create-kafka">
+  ### Kafka
+</div>
+
+مصادر Kafka المتوافقة التالية مدعومة: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Kafka ClickPipe",
+    "source": {
+      "kafka": {
+        "type": "confluent",
+        "format": "JSONEachRow",
+        "brokers": "broker.example.com:9092",
+        "topics": "my_topic",
+        "consumerGroup": "clickpipes-consumer-group",
+        "authentication": "PLAIN",
+        "credentials": {
+          "username": "my_user",
+          "password": "my_password"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" },
+        { "name": "timestamp", "type": "DateTime" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-kinesis">
+  ### Amazon Kinesis
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Kinesis ClickPipe",
+    "source": {
+      "kinesis": {
+        "format": "JSONEachRow",
+        "streamName": "my-stream",
+        "region": "us-east-1",
+        "iteratorType": "TRIM_HORIZON",
+        "authentication": "IAM_USER",
+        "accessKey": {
+          "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+          "secretKey": "<secret_key>"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-s3">
+  ### Amazon S3
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My S3 ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "s3",
+        "url": "https://my-bucket.s3.amazonaws.com/data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "IAM_USER",
+        "accessKey": {
+          "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+          "secretKey": "<secret_key>"
+        }
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-gcs">
+  ### Google Cloud Storage
+</div>
+
+يجب أن يكون `serviceAccountKey` هو المحتوى المُشفَّر بترميز base64 لملف مفتاح JSON خاص بحساب خدمة على GCP.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My GCS ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "gcs",
+        "url": "gs://my-bucket/data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "SERVICE_ACCOUNT",
+        "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-abs">
+  ### Azure Blob Storage
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Azure Blob ClickPipe",
+    "source": {
+      "objectStorage": {
+        "type": "azureblobstorage",
+        "azureContainerName": "my-container",
+        "path": "data/*.json",
+        "format": "JSONEachRow",
+        "authentication": "CONNECTION_STRING",
+        "connectionString": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-postgres">
+  ### CDC في Postgres
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Postgres CDC ClickPipe",
+    "source": {
+      "postgres": {
+        "host": "postgres.example.com",
+        "port": 5432,
+        "database": "mydb",
+        "credentials": {
+          "username": "postgres_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceSchemaName": "public",
+            "sourceTable": "users",
+            "targetTable": "public_users"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-mysql">
+  ### CDC في MySQL
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My MySQL CDC ClickPipe",
+    "source": {
+      "mysql": {
+        "host": "mysql.example.com",
+        "port": 3306,
+        "credentials": {
+          "username": "mysql_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceSchemaName": "mydb",
+            "sourceTable": "orders",
+            "targetTable": "mydb_orders"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-mongodb">
+  ### CDC في MongoDB
+</div>
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My MongoDB CDC ClickPipe",
+    "source": {
+      "mongodb": {
+        "uri": "mongodb+srv://cluster0.example.mongodb.net",
+        "readPreference": "secondaryPreferred",
+        "credentials": {
+          "username": "mongo_user",
+          "password": "<password>"
+        },
+        "settings": {
+          "replicationMode": "cdc"
+        },
+        "tableMappings": [
+          {
+            "sourceDatabaseName": "mydb",
+            "sourceCollection": "users",
+            "targetTable": "mydb_users"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+<div id="create-bigquery">
+  ### BigQuery
+</div>
+
+يجب أن يحتوي `serviceAccountFile` على المحتوى المشفَّر بترميز base64 لملف مفتاح JSON الخاص بحساب خدمة في GCP.
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My BigQuery ClickPipe",
+    "source": {
+      "bigquery": {
+        "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+        "credentials": {
+          "serviceAccountFile": "<base64_encoded_service_account_json>"
+        },
+        "settings": {
+          "replicationMode": "snapshot"
+        },
+        "tableMappings": [
+          {
+            "sourceDatasetName": "my_dataset",
+            "sourceTable": "my_table",
+            "targetTable": "my_bigquery_table"
+          }
+        ]
+      }
+    },
+    "destination": {
+      "database": "default"
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
