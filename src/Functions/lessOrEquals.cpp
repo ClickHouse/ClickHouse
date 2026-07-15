@@ -20,14 +20,18 @@ REGISTER_FUNCTION(LessOrEquals)
 lessOrEquals(a, b)
 -- a <= b
 )";
-    FunctionDocumentation::Arguments arguments
-        = {{"a", "First value.<sup>[*](#comparison-rules)</sup>"}, {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}};
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
+    };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is less than or equal to `b`, otherwise `0`", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT 1 <= 2, 2 <= 2, 3 <= 2;", R"(
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT 1 <= 2, 2 <= 2, 3 <= 2;", R"(
 ┌─lessOrEquals(1, 2)─┬─lessOrEquals(2, 2)─┬─lessOrEquals(3, 2)─┐
 │                  1 │                  1 │                  0 │
 └────────────────────┴────────────────────┴────────────────────┘
-)"}};
+)"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -41,17 +45,25 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
     FunctionOverloadResolverPtr less_or_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLessOrEquals>(params));
 
-    FunctionOverloadResolverPtr less = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
+    FunctionOverloadResolverPtr less
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
 
-    FunctionOverloadResolverPtr func_builder_or = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+    FunctionOverloadResolverPtr func_builder_or
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
 
-    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    FunctionOverloadResolverPtr func_builder_and
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     return executeTupleLessGreaterImpl(
-        less, less_or_equals, func_builder_and, func_builder_or, func_builder_equals, x, y, tuple_size, input_rows_count);
+        less,
+        less_or_equals,
+        func_builder_and,
+        func_builder_or,
+        func_builder_equals,
+        x, y, tuple_size, input_rows_count);
 }
 
 template <>
