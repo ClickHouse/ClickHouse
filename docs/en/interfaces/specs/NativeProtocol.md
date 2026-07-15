@@ -462,7 +462,7 @@ Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_m
 
 `use_query_cache` is also rejected when enabled via session or outer `INSERT` settings (for example `SET use_query_cache = 1`), not only when specified in the `RETURNING` subquery itself.
 
-The same query-global settings class (except `use_concurrency_control`) is also rejected in source-side `SETTINGS` of `INSERT ... SELECT ... RETURNING ... SETTINGS ...`, because those values are bound at query registration and cannot be scoped to source phase only.
+The same query-global settings class (except `use_concurrency_control`) and the query-cache settings family (`use_query_cache`, `enable_reads_from_query_cache`, `enable_writes_to_query_cache`, `query_cache_nondeterministic_function_handling`, `query_cache_system_table_handling`) are also rejected in source-side `SETTINGS` of `INSERT ... SELECT ... RETURNING ... SETTINGS ...`, because those values are bound at query registration or unsupported in the delayed `RETURNING` path and cannot be scoped to source phase only.
 
 Output format settings (e.g. `output_format_json_quote_64bit_integers`) supplied in the `RETURNING` subquery `SETTINGS` are accepted but silently ignored — the result is serialized using the output format established by the outer query context and the client transport.
 
