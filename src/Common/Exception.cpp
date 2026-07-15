@@ -707,15 +707,20 @@ void ExecutionStatus::deserializeText(const std::string & data)
 
 bool ExecutionStatus::tryDeserializeText(const std::string & data)
 {
+    /// Parse into a temporary and commit only on success: deserializeText reads `code` before it can
+    /// fail on the rest of the payload, so parsing in place would leave a partially-overwritten status
+    /// on failure (e.g. "0garbage" sets code=0 then throws). Callers rely on *this being untouched then.
+    ExecutionStatus tmp;
     try
     {
-        deserializeText(data);
+        tmp.deserializeText(data);
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
     {
         return false;
     }
 
+    *this = std::move(tmp);
     return true;
 }
 

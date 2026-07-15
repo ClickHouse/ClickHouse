@@ -20,7 +20,8 @@ import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBa
 
 <Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Connect to ClickHouse" />
 
-## 1. Install marimo with SQL support {#install-marimo-sql}
+<Steps>
+<Step title="Install marimo with SQL support" id="install-marimo-sql">
 
 ```shell
 pip install "marimo[sql]" clickhouse_connect
@@ -28,7 +29,8 @@ marimo edit clickhouse_demo.py
 ```
 This should open up a web browser running on localhost.
 
-## 2. Connecting to ClickHouse. {#connect-to-clickhouse}
+</Step>
+<Step title="Connecting to ClickHouse." id="connect-to-clickhouse">
 
 Navigate to the datasources panel on the left side of the marimo editor and click on 'Add database'.
 
@@ -42,7 +44,8 @@ You will then have a cell that can be run to establish a connection.
 
 <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Run the cell to connect to ClickHouse" />
 
-## 3. Run SQL {#run-sql}
+</Step>
+<Step title="Run SQL" id="run-sql">
 
 Once you have set up a connection, you can create a new SQL cell and choose the clickhouse engine. 
 
@@ -115,3 +118,5 @@ marimo's reactive execution model extends into SQL queries, so changes to your S
 You can also toggle App View to have a clean interface for exploring your data.
 
 <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Run app view" />
+</Step>
+</Steps>
