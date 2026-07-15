@@ -151,6 +151,15 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH kerberos GRANTS
 echo "-- A GRANTS clause on an externally verified authentication method is rejected (ALTER USER, http)"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH http SERVER 'srv' SCHEME 'basic' GRANTS (SELECT ON t1)" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
 
+# An element that the regular GRANT statement rejects as not grantable must fail the DDL up front, exactly like
+# GRANT does. Otherwise the clause would be displayed as written while the actual session limit silently masks
+# the non-grantable flags out.
+echo "-- A non-grantable element in the GRANTS clause is rejected (CREATE USER, global privilege on a table)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_password BY '1' GRANTS (CREATE TEMPORARY TABLE ON t1)" 2>&1 | grep -m1 -o "INVALID_GRANT" | head -n 1
+
+echo "-- A non-grantable element in the GRANTS clause is rejected (ALTER USER, global privilege on a database)"
+${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'bad_token' GRANTS (KILL QUERY ON *)" 2>&1 | grep -m1 -o "INVALID_GRANT" | head -n 1
+
 # The GRANTS clause must be serialized precisely. The backward-compatibility rewrites that widen a grant for the
 # benefit of older replicas must not apply here: they would broaden a narrow token. With the default
 # `enable_read_write_grants = 0`, a plain `GRANT READ ON S3` is dumped as the full `S3` source access, but an
