@@ -1290,9 +1290,11 @@ static void processStatisticsChanges(
     /// time. A MODIFY COLUMN that changed a column's type but did not schedule a recalculation for
     /// that column (it is not in `stats_to_recalc`) leaves a stale-typed collector here, which
     /// `buildIfExists` would then feed a new-type block during the rebuild below. Reconcile against
-    /// the current metadata: replace any type-mismatched collector with a fresh empty one for the
-    /// new type (or drop it if the column no longer declares statistics). This runs after the rename
-    /// loop above so a collector renamed to its current column name is reconciled under that name.
+    /// the current metadata: drop any type-mismatched collector (a rebuilt column is re-added right
+    /// after this call from `stats_to_recalc`; a column only carried forward via hardlinks is never
+    /// fed a block, so a dropped stat is a safe missing stat rather than a wrong zero-row one). This
+    /// runs after the rename loop above so a collector renamed to its current column name is
+    /// reconciled under that name.
     all_statistics.reconcileWithColumns(metadata_snapshot->getColumns());
 
     if (!stats_to_recalc.empty())
