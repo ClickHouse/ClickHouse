@@ -257,6 +257,14 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             if (fuzz_step > 0)
             {
                 fuzzer.fuzzMain(ast_to_process);
+
+                /// The fuzzer can substitute fragments that contain {name:type} query parameters
+                /// (e.g. from the column_like pool) and generates values for them. Register the
+                /// values for client-side parameter substitution, like the server-side fuzzer
+                /// does (see executeASTFuzzerQueries); otherwise every such query fails with
+                /// "Substitution ... is not set" before even reaching the server.
+                for (const auto & [name, value] : fuzzer.getLastQueryParameters())
+                    query_parameters.insert_or_assign(name, value);
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
@@ -380,6 +388,8 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         {
             if (!ast_to_process)
                 fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
+            else
+                fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
@@ -389,6 +399,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // The exception may mean that the connection to the server was lost (e.g. the server
+            // died and the connection attempt throws). processASTFuzzerStep performs this check
+            // for errors received without throwing, but thrown exceptions bypass it. Without the
+            // check every subsequent step fails instantly the same way, so the fuzzer silently
+            // burns through the rest of the corpus in seconds and exits with code 0 as if all
+            // the queries were fuzzed.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
 #if USE_BUZZHOUSE
@@ -474,9 +493,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         }
         catch (...)
         {
+            fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
+
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // See the comment on the same check in the main fuzzing loop above.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
         if (have_error)
