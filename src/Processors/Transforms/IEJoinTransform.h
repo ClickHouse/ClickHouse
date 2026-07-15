@@ -258,6 +258,8 @@ private:
     /// Limits on the accumulated input (both sides), from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
 
+    /// Input chunks per side in arrival order (with `inputs_sorted_by_first_key` that order is
+    /// ascending by the first condition's key); concatenated by `materializeSide`.
     std::array<Chunks, 2> accumulated_chunks;
     std::array<bool, 2> source_finished = {false, false};
 
@@ -268,7 +270,8 @@ private:
 
     /// Populated by the build stages (see `runBuildStage`):
 
-    /// All columns of each side, result rows are gathered from them.
+    /// All columns of each side, rows in the side's input order; every per-side row index in
+    /// this class (`matched`, the row within a union entry, emitted pairs) refers to this order.
     std::array<Columns, 2> side_columns;
 
     /// One byte per row of the side, set by the pair scan; allocated only for sides that need it
@@ -287,12 +290,15 @@ private:
 
     /// Prepared key columns, one entry per condition.
     std::array<ConditionKeyColumns, 2> key_columns;
+    /// Rows per side in `side_columns`, including the NULL/NaN-keyed rows that stay out of the union.
     std::array<size_t, 2> num_side_rows = {0, 0};
     /// Number of union entries: rows of both sides minus the rows with NULL/NaN keys.
     size_t num_union_entries = 0;
 
-    /// Union entry at each L1 position. Entry u is left row u if u < num_side_rows[0],
-    /// otherwise right row u - num_side_rows[0] (see `entryIsLeft`).
+    /// Union entry at each L1 position: this array IS the L1 order - positions ascend in the
+    /// first condition's direction, equal keys split by origin side (the scan-boundary tie
+    /// policy). Entry u is left row u if u < num_side_rows[0], otherwise right row
+    /// u - num_side_rows[0] (see `entryIsLeft`).
     PaddedPODArray<UInt64> l1_entries;
     /// L1 position of each L2 entry (the permutation array P).
     IColumn::Permutation permutation;
@@ -309,6 +315,8 @@ private:
     BuildStage build_stage = BuildStage::MaterializeLeft;
     /// Intermediate build products handed between the stages; freed when the build completes.
     std::array<SideValidity, 2> build_validity;
+    /// Encoded keys per condition, indexed by union entry ([left rows..., right rows...],
+    /// direction folded in - see `encodeKeys`).
     std::array<PaddedPODArray<UInt64>, 2> build_encoded_keys;
 
     /// Pair-scan state; all of it is resumable, so a call may stop at any point (block full,

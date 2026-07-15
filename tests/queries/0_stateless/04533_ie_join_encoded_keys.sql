@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- The fixed-width key fast path: every encodable key type joined against the cross-join oracle
 -- (comma join with the conditions in WHERE; `cross_to_inner_join_rewrite = 0` keeps it out of
 -- IEJoin) on duplicate-heavy data, so tie runs exercise the requirement that the encoding
