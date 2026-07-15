@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
@@ -33,10 +34,9 @@ public:
         AsciiCJK,
     };
 
-    ITokenizer() = default;
+    ITokenizer() = delete;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
-    ITokenizer & operator=(const ITokenizer &) = default;
 
     Type getType() const { return type; }
 
@@ -95,7 +95,7 @@ public:
     virtual bool supportsStringLike() const = 0;
 
 private:
-    Type type{};
+    const Type type;
 };
 
 using TokenizerPtr = const ITokenizer *;
@@ -354,6 +354,20 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    /// Batch token delivery: generate the whole string once and hand tokens straight to the callback,
+    /// bypassing the per-token `nextInString` pull (its `std::tie` data-change check and offset
+    /// arithmetic on every token). Emits the same tokens in the same order as `nextInString`.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        sparse_grams_iterator.set(data, data + length);
+        Pos token_begin = nullptr;
+        Pos token_end = nullptr;
+        while (sparse_grams_iterator.get(token_begin, token_end))
+            if (callback(token_begin, static_cast<size_t>(token_end - token_begin)))
+                return;
+    }
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -493,7 +507,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SparseGrams:
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
+            sparse_grams_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::AsciiCJK:
@@ -506,5 +520,8 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 }
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
+
+/// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
 
 }
