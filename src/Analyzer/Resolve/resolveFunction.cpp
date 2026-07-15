@@ -497,13 +497,25 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         new_unique_subquery->getWhere() = std::move(where_condition);
 
     QueryTreeNodePtr new_unique_argument = new_unique_subquery;
-    resolveExpressionNode(
+    auto unique_subquery_projection_names = resolveExpressionNode(
         new_unique_argument,
         scope,
         true /*allow_lambda_expression*/,
         true /*allow_table_expression*/,
         false /*ignore_alias*/,
         allow_niladic_functions);
+
+    /// The projection name of the whole `UNIQUE` predicate must be stable: it must not depend on the
+    /// boolean result, and it must be identical in `only_analyze` and execution modes. A distributed
+    /// query builds the initiator header via `only_analyze` (the predicate folds to a placeholder
+    /// value below) while the shards build their header by executing the predicate (it folds to the
+    /// real `0`/`1` value). If the projection name were the folded constant's string representation,
+    /// the two headers would differ only in the column name (`0` vs `1`) and the query would fail
+    /// with "Block structure mismatch in ... stream: different columns". Name the predicate like
+    /// every other function, from the rewritten subquery's projection name, so both paths agree —
+    /// this mirrors how a scalar subquery keeps a stable `_subquery_N` name across both paths.
+    auto unique_projection_name = calculateFunctionProjectionName(
+        function_node_ptr, {} /*parameters_projection_names*/, unique_subquery_projection_names);
 
     if (only_analyze)
     {
@@ -524,9 +536,8 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         placeholder_column->getData().push_back(static_cast<UInt8>(0));
         ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
         auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
-        auto placeholder_projection_name = placeholder_const_node->getValueStringRepresentation();
         node = std::move(placeholder_const_node);
-        return {std::move(placeholder_projection_name)};
+        return {unique_projection_name};
     }
 
     evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
@@ -548,9 +559,8 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     /// `uniq(UNIQUE(...), b)` in ORDER BY). The rewritten subquery is the same representation that
     /// scalar subqueries fold to, so the planner treats it as an already-evaluated constant.
     auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), new_unique_subquery);
-    auto res = result_const_node->getValueStringRepresentation();
     node = std::move(result_const_node);
-    return {std::move(res)};
+    return {std::move(unique_projection_name)};
 }
 
 /** Resolve function node in scope.
