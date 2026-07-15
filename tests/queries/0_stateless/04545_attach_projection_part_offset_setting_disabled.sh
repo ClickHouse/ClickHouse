@@ -31,10 +31,16 @@ data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 
 # the flip cases below).
 attach_with_gate_disabled() {
     local table=$1 setting=$2
-    local rel_path
+    local rel_path meta
     rel_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE database = currentDatabase() AND name = '$table'")
+    meta="$data_path$rel_path"
     ${CLICKHOUSE_CLIENT} -q "DETACH TABLE $table"
-    sed -i "s/$setting = 1/$setting = 0/" "$data_path$rel_path"
+    # sed exits 0 even when it rewrites nothing, so assert the enabled spelling exists before the edit
+    # and the disabled spelling exists after it. Otherwise a SHOW CREATE formatting drift away from
+    # "$setting = 1" would leave the metadata untouched and re-attach it -- a false positive.
+    grep -q "$setting = 1" "$meta" || { echo "FAIL: '$setting = 1' not found in $table metadata before rewrite"; return 1; }
+    sed -i "s/$setting = 1/$setting = 0/" "$meta"
+    grep -q "$setting = 0" "$meta" || { echo "FAIL: '$setting = 0' not present in $table metadata after rewrite"; return 1; }
     ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $table"
 }
 
