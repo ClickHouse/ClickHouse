@@ -898,7 +898,7 @@ void SchemaConverter::processPrimitiveColumn(
         return type_hint ? type_hint->getTypeId() : out_inferred_type->getTypeId();
     };
 
-    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
+    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_address, IntConverter & converter) -> bool
     {
         WhichDataType which(get_output_type_index());
         if (which.isNativeInteger())
@@ -906,9 +906,18 @@ void SchemaConverter::processPrimitiveColumn(
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
-                if (allow_datetime_and_ipv4)
+                if (allow_datetime_and_address)
                 {
                     converter.field_ipv4 = true;
+                    converter.field_signed = false;
+                }
+                else
+                    return false;
+                break;
+            case TypeIndex::MacAddress:
+                if (allow_datetime_and_address)
+                {
+                    converter.field_mac_address = true;
                     converter.field_signed = false;
                 }
                 else
@@ -918,7 +927,7 @@ void SchemaConverter::processPrimitiveColumn(
                 converter.field_signed = false;
                 break;
             case TypeIndex::DateTime:
-                if (!allow_datetime_and_ipv4)
+                if (!allow_datetime_and_address)
                     return false;
                 converter.field_signed = false;
                 break;
@@ -1094,7 +1103,7 @@ void SchemaConverter::processPrimitiveColumn(
         else if (bits == 16)
             converter->output_size = 2;
 
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ true, *converter);
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
@@ -1189,7 +1198,7 @@ void SchemaConverter::processPrimitiveColumn(
                 converter->date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
         }
 
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ false, *converter);
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
@@ -1323,7 +1332,7 @@ void SchemaConverter::processPrimitiveColumn(
             converter->input_size = 1;
             converter->input_signed = false;
             converter->field_signed = false;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ false, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1332,7 +1341,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt32>();
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 4;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ true, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1341,7 +1350,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt64>();
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_address=*/ false, *converter);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }

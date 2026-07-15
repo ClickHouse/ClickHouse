@@ -14,6 +14,18 @@ ORC round-trip
 1	00:1a:2b:3c:4d:5e
 2	ff:ff:ff:ff:ff:ff
 3	00:00:00:00:00:00
+Avro round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+MsgPack round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
+BSONEachRow round-trip
+1	00:1a:2b:3c:4d:5e
+2	ff:ff:ff:ff:ff:ff
+3	00:00:00:00:00:00
 JSONExtract
 00:1a:2b:3c:4d:5e
 00:00:00:00:00:00

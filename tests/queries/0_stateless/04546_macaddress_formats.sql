@@ -32,6 +32,18 @@ SELECT 'ORC round-trip';
 INSERT INTO FUNCTION file('04546_mac.orc', 'ORC', 'id UInt32, mac MacAddress') SELECT id, mac FROM t_macaddress_formats ORDER BY id;
 SELECT id, mac FROM file('04546_mac.orc', 'ORC', 'id UInt32, mac MacAddress') ORDER BY id;
 
+SELECT 'Avro round-trip';
+INSERT INTO FUNCTION file('04546_mac.avro', 'Avro', 'id UInt32, mac MacAddress') SELECT id, mac FROM t_macaddress_formats ORDER BY id;
+SELECT id, mac FROM file('04546_mac.avro', 'Avro', 'id UInt32, mac MacAddress') ORDER BY id;
+
+SELECT 'MsgPack round-trip';
+INSERT INTO FUNCTION file('04546_mac.msgpack', 'MsgPack', 'id UInt32, mac MacAddress') SELECT id, mac FROM t_macaddress_formats ORDER BY id;
+SELECT id, mac FROM file('04546_mac.msgpack', 'MsgPack', 'id UInt32, mac MacAddress') ORDER BY id;
+
+SELECT 'BSONEachRow round-trip';
+INSERT INTO FUNCTION file('04546_mac.bson', 'BSONEachRow', 'id UInt32, mac MacAddress') SELECT id, mac FROM t_macaddress_formats ORDER BY id;
+SELECT id, mac FROM file('04546_mac.bson', 'BSONEachRow', 'id UInt32, mac MacAddress') ORDER BY id;
+
 SELECT 'JSONExtract';
 SELECT JSONExtract('{"mac": "00:1a:2b:3c:4d:5e"}', 'mac', 'MacAddress');
 SELECT JSONExtract('{"mac": "not-a-mac"}', 'mac', 'MacAddress');
