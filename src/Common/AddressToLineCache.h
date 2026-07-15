@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <string_view>
 #include <unordered_map>

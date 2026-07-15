@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/SymbolsHelper.h>
 #include <Common/AddressToLineCache.h>
@@ -23,6 +23,10 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
     {
         const void * addr = frame_pointers[i];
 
+        /// The symbol name (from the symbol table) and the source location (from DWARF debug info)
+        /// are looked up independently: DWARF line resolution does not depend on the symbol table.
+        /// So an address with no matching symbol can still have a valid `file:line:column`, and vice
+        /// versa. Each column defaults to an empty string only when its own lookup fails.
         if (const auto * symbol = symbol_index.findSymbol(addr))
         {
             auto demangled = tryDemangle(symbol->name);
@@ -30,14 +34,13 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
                 symbols.emplace_back(demangled.get(), strlen(demangled.get()));
             else
                 symbols.emplace_back(symbol->name, strlen(symbol->name));
-
-            lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
         }
         else
         {
             symbols.emplace_back();
-            lines.emplace_back();
         }
+
+        lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
     }
 
     return {std::move(symbols), std::move(lines)};

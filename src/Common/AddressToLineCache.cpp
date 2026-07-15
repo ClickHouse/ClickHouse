@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/AddressToLineCache.h>
 #include <Common/SymbolIndex.h>
@@ -31,25 +31,42 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
 {
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    /// Convert virtual address to file offset if it falls within a loaded object.
-    /// Callers may pass either absolute runtime addresses or file offsets.
+    /// Locate the loaded object that contains this address and convert the runtime address to the
+    /// address expected by the DWARF lookup. Callers may pass either absolute runtime addresses or
+    /// file offsets; if the address does not fall within any object, fall back to the current object
+    /// and treat the address as an already-converted lookup address.
     const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
-    uintptr_t physical_addr = addr;
+    uintptr_t lookup_addr = addr;
     if (object)
-        physical_addr = addr - reinterpret_cast<uintptr_t>(object->address_begin);
+    {
+#if defined(OS_DARWIN)
+        /// On macOS, subtract the ASLR slide to get the linked (pre-ASLR) address (see StackTrace.cpp).
+        lookup_addr = addr - object->slide;
+#else
+        /// On ELF, subtract the load address to get the file offset within the object.
+        lookup_addr = addr - reinterpret_cast<uintptr_t>(object->address_begin);
+#endif
+    }
     else
         object = symbol_index.thisObject();
 
     if (object)
     {
+#if defined(OS_DARWIN)
+        /// File/line info comes from a dSYM bundle located next to the binary, if present.
+        if (!object->dsym)
+            return object->name;
+        auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
+#else
         auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
         if (!std::filesystem::exists(object->name))
             return {};
+#endif
 
         Dwarf::LocationInfo location;
         VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
         std::string_view result;
-        if (dwarf_it->second.findAddress(physical_addr, location, Dwarf::LocationInfoMode::FAST, frames))
+        if (dwarf_it->second.findAddress(lookup_addr, location, Dwarf::LocationInfoMode::FAST, frames))
         {
             setResult(result, location);
             return result;

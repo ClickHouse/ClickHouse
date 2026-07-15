@@ -78,7 +78,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             const bool need_lines = columns_mask[src_index++];
             if (need_symbols || need_lines)
             {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
                 if (!error.trace.empty())
                 {
                     auto [symbols, lines] = symbolizeTrace(error.trace.data(), error.trace.size());

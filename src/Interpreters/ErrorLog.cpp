@@ -127,7 +127,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (!last_error_trace.empty())
     {
         auto [symbols, lines] = symbolizeTrace(last_error_trace.data(), last_error_trace.size());
