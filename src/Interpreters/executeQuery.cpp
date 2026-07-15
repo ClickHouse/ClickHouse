@@ -1,3 +1,4 @@
+#include <base/sleep.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -155,6 +156,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
@@ -228,6 +230,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -244,6 +247,7 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char execute_query_sleep_before_pending_kill_check[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -1922,12 +1926,31 @@ static BlockIO executeQueryImpl(
             }
         }
 
+        /// Deterministically reproduce the race where the max_execution_time timeout fires while the
+        /// query is still pending (before execution starts): stall the main thread so the
+        /// CancellationChecker kills the query with CancelReason::TIMEOUT before the check below.
+        /// Gated on a set max_execution_time so it only affects the query under test, not the
+        /// `SYSTEM ENABLE FAILPOINT` statement that arms it.
+        if (settings[Setting::max_execution_time].totalMilliseconds() > 0)
+            fiu_do_on(FailPoints::execute_query_sleep_before_pending_kill_check, { sleepForMilliseconds(2000); });
+
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
+            const auto query_status = process_list_entry->getQueryStatus();
+            if (query_status->isKilled())
+            {
+                const auto & query_id = query_status->getClientInfo().current_query_id;
+                /// A max_execution_time timeout can fire while the query is still pending (e.g. during
+                /// planning), before any executor is started. In that case the kill reason is TIMEOUT,
+                /// so report TIMEOUT_EXCEEDED to match the behavior of a timeout that fires during execution
+                /// instead of the generic QUERY_WAS_CANCELLED.
+                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Query '{}' is killed in pending state (timeout exceeded)", query_id);
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+                    "Query '{}' is killed in pending state", query_id);
+            }
         }
 
         /// Hold element of process list till end of query execution.
