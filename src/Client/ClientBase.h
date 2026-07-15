@@ -108,8 +108,6 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-
-    /// Re-select `USE db.namespace` on a fresh connection, or throw
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
@@ -345,9 +343,6 @@ protected:
     String client_local_timezone;
 
     String default_database;
-    /// Namespace selected with `USE db.namespace` (experimental). Tracked separately from
-    /// `default_database`: folded into one string it would be ambiguous with a database
-    /// whose name contains a dot. Restored (or failed loudly) after a reconnect.
     String query_id;
     Int32 suggestion_limit{};
     bool enable_highlight = true;

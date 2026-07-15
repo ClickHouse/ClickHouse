@@ -46,7 +46,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     if (table_id->compound() && table_id->name_parts.size() > 2 && pos.allow_multipart_table_paths)
     {
-        /// a quoted component with a literal dot would alias another path, reject it
+        /// a quoted component with a literal dot would alias another path, reject
         const auto & parts = table_id->name_parts;
         query->database = parts[0];
         for (size_t i = 1; i < parts.size(); ++i)

@@ -2104,7 +2104,6 @@ void validateCurrentDatabaseName(const String & name, bool allow_table_namespace
     const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
     if (info.table_prefix.empty())
         return;
-    /// with the feature off a dotted name is only ever an exact database name (master behavior)
     if (!allow_table_namespaces)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
     Names parts;
@@ -2997,8 +2996,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
     }
 
-    /// an unqualified (parameterized view) name would bind to the parent database,
-    /// ignoring the selected namespace
+    /// an unqualified (param view) name would bind to the parent database, ignoring the selected namespace
     if (!view_name_is_qualified && !getCurrentDatabaseInfo().table_prefix.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Parameterized views and unqualified table functions are not supported while a table "
@@ -3518,7 +3516,7 @@ String Context::getCurrentDatabase() const
 
 CurrentDatabaseInfo Context::getCurrentDatabaseInfo() const
 {
-    /// derived: the current database is stored as the logical name ("db.ns" when scoped)
+    /// the current database is stored as the logical name ("db.ns" when scoped)
     return DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(getCurrentDatabase());
 }
 

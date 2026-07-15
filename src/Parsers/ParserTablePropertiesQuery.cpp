@@ -126,7 +126,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             if (!name_p.parse(pos, table, expected))
                 return false;
 
-            /// hierarchical table path: db.ns1.ns2.table -> (db, `ns1.ns2.table`)
+            /// hierarchical table path db.ns1.ns2.table -> (db, `ns1.ns2.table`)
             /// substituted or quoted dot would alias another path
             if (pos.allow_multipart_table_paths && s_dot.checkWithoutMoving(pos, expected))
             {

@@ -2515,9 +2515,7 @@ void ClientBase::processParsedSingleQuery(
         connection->setFormatSettings(getFormatSettings(client_context));
 
         if (!connection->checkConnected(connection_parameters.timeouts))
-        {
             connect();
-        }
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
@@ -2616,11 +2614,7 @@ void ClientBase::processParsedSingleQuery(
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            /// `USE db.ns` selects a namespace, the logical name travels
-            /// through the ordinary default-database channel and the server re-validates
-            /// it on every (re)connect
-            const String new_database = use_query->getDatabase();
-
+            const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
             /// TODO: Revisit
             default_database = new_database;
@@ -3191,9 +3185,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
-                    {
                         connect();
-                    }
                 }
 
                 // For INSERTs with inline data: use the end of inline data as
@@ -4344,9 +4336,7 @@ void ClientBase::runInteractive()
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
             if (!connection->checkConnected(connection_parameters.timeouts))
-            {
                 connect();
-            }
         }
     }
     while (true);

@@ -214,8 +214,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString rewritten_query;
 
-    /// inside a namespace show names relative to it, and only direct children;
-    /// the projection is a subquery so LIKE and WHERE both see the relative name
+    /// inside a namespace show names relative to it, and only direct children,
+    /// projection is a subquery so LIKE and WHERE both see the relative name
     const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
 
     if (query.full)

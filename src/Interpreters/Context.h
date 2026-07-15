@@ -1122,8 +1122,6 @@ public:
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
-    /// The flag decides whether a dotted name may select a namespace; USE passes its
-    /// query-level setting, protocol entry points default to the session settings.
     void setCurrentDatabase(const String & name);
     void setCurrentDatabase(const String & name, bool allow_table_namespaces);
     /// Set current_database without validating that database exists.

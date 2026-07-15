@@ -549,7 +549,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (parts.size() > 2)
         {
             /// hierarchical table path: fold db.ns1.ns2.table into
-            /// (db, `ns1.ns2.table`). two-part form db.`ns.t` stays as written
+            /// (db, `ns1.ns2.table`), two-part form db.`ns.t` stays as written
             if (!pos.allow_multipart_table_paths)
                 return false;
             /// no query parameters inside a path, and no quoted components with a

@@ -417,8 +417,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     const auto & registered = interpreters.at(interpreter_name);
 
-    /// `SETTINGS allow_experimental_table_namespaces = 0`
-    /// must not retarget names to the parent database while the scope is active
+    /// `SETTINGS allow_experimental_table_namespaces = 0` must not
+    /// retarget names to the parent database while the scope is active
     if (const auto database_info = context->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces]

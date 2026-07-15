@@ -412,8 +412,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    /// the current database may be a logical namespace path filled into the id;
-    /// with the feature off a dotted database is only ever an exact name (master behavior)
+    /// the current database may be a logical namespace path filled into the id,
+    /// with the feature off a dotted database is only ever an exact name
     const StorageID table_id = context_->getSettingsRef()[Setting::allow_experimental_table_namespaces]
         ? foldNamespaceIntoTableName(table_id_, exception)
         : table_id_;
