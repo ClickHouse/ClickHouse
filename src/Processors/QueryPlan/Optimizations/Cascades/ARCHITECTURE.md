@@ -448,8 +448,17 @@ and the join row width comes from the actual output header.
 (Columbia, GPORCA, CockroachDB, StarRocks), join ordering IS the Cascades optimization.
 ClickHouse uses a two-phase architecture: `optimizeJoin.cpp` fixes the join order first,
 then Cascades optimizes only the distribution strategy. This means join order is optimized
-for local cost, not distributed cost. This is an intentional tradeoff — integrating join
-ordering would significantly increase the search space.
+for local cost, not distributed cost.
+
+Gretscher & Dittrich (PVLDB 2025, "How to Optimize SQL Queries? A Comparison Between
+Split, Holistic, and Hybrid Approaches") name these two designs SPLIT (join order then
+physical, as here) and HOLISTIC (fused, as classic Cascades), and measure a hybrid TOP-K
+in between: enumerate the k best join orders, optimize each physically, keep the cheapest.
+Their result is that SPLIT loses the global optimum only when join order interacts with
+physical properties (sort order, fused operators, and here distribution), and that TOP-K
+with k around 5-10 recovers most of the HOLISTIC benefit at a fraction of the cost.
+Feeding several top orders into the memo (Future Work item 7) is that hybrid; the current
+optimizer is the k = 1 case, kept deliberately because larger k multiplies the search space.
 
 **Structural property hashing**: `isOptimizedFor`, `isEnforcedFor`, and physical
 expression deduplication use `ExpressionPropertiesHash` for O(1) lookup.  Expression
@@ -493,7 +502,8 @@ branch-and-bound pruning as the primary bound.
 7. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
    (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
    `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
-   receives a single fixed order; feeding several top orders into the memo is future work.
+   receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
+   of Gretscher & Dittrich, PVLDB 2025) is future work.
 8. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.
