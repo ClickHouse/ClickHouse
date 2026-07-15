@@ -2022,7 +2022,11 @@ static BlockIO executeQueryImpl(
                 {
                     if (!interpreter->ignoreLimits())
                     {
-                        limits = StreamLocalLimits::forQueryResult(settings);
+                        limits.mode = LimitsMode::LIMITS_CURRENT;
+                        limits.size_limits = SizeLimits(
+                            settings[Setting::max_result_rows],
+                            settings[Setting::max_result_bytes],
+                            settings[Setting::result_overflow_mode]);
 
                         /// For INSERT ... RETURNING, apply RETURNING subquery SETTINGS only after INSERT completes
                         /// (when the pulling pipeline is set up), not here before interpreter->execute().
