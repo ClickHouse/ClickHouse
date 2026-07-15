@@ -920,6 +920,82 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
 }
 
 
+/// Concurrency stress for the reclaimable/spill machinery: many query threads churn allocation sizes and
+/// reclaimable reports across sibling queues while the workload sits around a small soft limit, so spill
+/// signals fire concurrently with increases, decreases, re-keying, clamping and removals; meanwhile the
+/// soft limit itself is repeatedly moved. Run under ThreadSanitizer this exercises every cross-thread path
+/// of the feature: `setReclaimable` vs approvals, `checkSoftLimit` from all of its trigger sites, and
+/// `spillAllocation` callbacks racing allocation owners.
+TEST(SchedulerSpaceShared, ConcurrentSpillChurn)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 1000000000); // huge hard limit: no kills, only spills
+    FairAllocation * fair = r.addFair("/fair", limit);
+    constexpr size_t num_queues = 4;
+    std::vector<AllocationQueue *> queues;
+    for (size_t i = 0; i < num_queues; ++i)
+        queues.push_back(r.addQueueUnder(fmt::format("/fair/q{}", i), fair));
+    r.registerResource();
+    r.setSoftLimit(limit, 1000); // small soft limit: almost always exceeded while threads run
+
+    constexpr size_t num_threads = 8;
+    constexpr size_t iterations = 50;
+    std::atomic<size_t> total_spills{0};
+    std::barrier<> start_barrier(num_threads + 1);
+
+    std::vector<std::thread> threads;
+    for (size_t th = 0; th < num_threads; ++th)
+    {
+        threads.emplace_back([&, th]
+        {
+            start_barrier.arrive_and_wait();
+            AllocationQueue * queue = queues[th % num_queues];
+            for (size_t i = 0; i < iterations; ++i)
+            {
+                SpillableAllocation a(queue, fmt::format("a_{}_{}", th, i), 5000 + th * 100);
+                a.reportReclaimable(3000);
+                a.setSize(8000 + i);
+                a.reportReclaimable(6000);
+                a.setSize(2000);      // shrink below the last report: exercises the clamp path
+                a.reportReclaimable(0);
+                a.reportReclaimable(1500);
+                total_spills += a.spillCount();
+                // Allocation destroyed here: exercises removal while possibly spill-signaled
+            }
+        });
+    }
+
+    // Concurrently move the soft limit up and down (as `CREATE OR REPLACE WORKLOAD` would).
+    std::thread toggler([&]
+    {
+        start_barrier.arrive_and_wait();
+        for (size_t i = 0; i < iterations; ++i)
+        {
+            r.setSoftLimit(limit, 500 + (i % 7) * 1000);
+            std::this_thread::yield();
+        }
+        r.setSoftLimit(limit, 1000);
+    });
+
+    for (auto & thread : threads)
+        thread.join();
+    toggler.join();
+
+    // With the soft limit far below the working set, spill signals must have fired.
+    EXPECT_GT(total_spills.load(), 0u);
+
+    // After all allocations are gone, every aggregate must return to zero (nothing leaks in the sets
+    // either: destructors would trip on still-linked intrusive hooks).
+    std::promise<std::pair<ResourceCost, ResourceCost>> p;
+    auto fut = p.get_future();
+    t.scheduler.event_queue.enqueue([&] { p.set_value({t.scheduler.reclaimable, t.scheduler.allocated}); });
+    auto [reclaimable, allocated] = fut.get();
+    EXPECT_EQ(reclaimable, 0);
+    EXPECT_EQ(allocated, 0);
+}
+
+
 /// Reads `SCHED_PERF_ITERS` (default 1000: functional coverage). Set it large for a manual perf run,
 /// ideally against a non-sanitizer release build (`build_release/src/unit_tests_dbms
 /// --gtest_filter='*ReclaimablePerf*'`).
