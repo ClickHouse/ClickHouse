@@ -1235,16 +1235,8 @@ ColumnPtr RecordBatchDecoder::decodeField(
     if (node.null_count() != 0)
     {
         own_null_map = buildNullMap(validity, rows, node.null_count());
-        const auto & own = assert_cast<const ColumnUInt8 &>(*own_null_map).getData();
-        if (invisible_rows)
-        {
-            composed_invisible.resize(rows);
-            for (size_t i = 0; i < rows; ++i)
-                composed_invisible[i] = own[i] | (*invisible_rows)[i];
-            effective_invisible = &composed_invisible;
-        }
-        else
-            effective_invisible = &own;
+        effective_invisible = unionNullMaps(
+            assert_cast<const ColumnUInt8 &>(*own_null_map).getData(), invisible_rows, composed_invisible);
     }
 
     /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.

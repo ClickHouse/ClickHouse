@@ -41,6 +41,20 @@ private:
 /// and their values decode as type defaults.
 using InvisibleRowsMask = NullMap;
 
+/// The union of a row-aligned null map with an optional second one: returns `own` unchanged when
+/// `other` is null, otherwise fills `storage` with the element-wise OR and returns it. The inputs are
+/// left untouched — `own` typically keeps serving as a column's real null map while the union only
+/// drives value decoding.
+inline const NullMap * unionNullMaps(const NullMap & own, const NullMap * other, NullMap & storage)
+{
+    if (!other)
+        return &own;
+    storage.resize(own.size());
+    for (size_t i = 0; i < own.size(); ++i)
+        storage[i] = own[i] | (*other)[i];
+    return &storage;
+}
+
 /// Decodes Arrow IPC record batches directly into ClickHouse columns, without the Apache Arrow library.
 /// Supports flat and nested (Array/Tuple/Map) types, LowCardinality (dictionary-encoded) fields, and
 /// uncompressed bodies. The decoder walks the pre-ordered flattened `nodes` (FieldNode) and `buffers`
