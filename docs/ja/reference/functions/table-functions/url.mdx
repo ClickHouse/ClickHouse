@@ -1,0 +1,135 @@
+---
+description: '指定された `フォーマット` と `構造` を使用して `URL` からテーブルを作成します'
+sidebarTitle: 'url'
+slug: /sql-reference/table-functions/url
+title: 'url'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="url-table-function">
+  # url テーブル関数
+</div>
+
+`url` 関数は、指定された `フォーマット` と `構造` を使用して `URL` からテーブルを作成します。
+
+`url` 関数は、[URL](/ja/reference/engines/table-engines/special/url) テーブル内のデータに対する `SELECT` および `INSERT` クエリで使用できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+url(URL [,format] [,structure] [,headers])
+```
+
+<div id="parameters">
+  ## パラメーター
+</div>
+
+| Parameter   | Description                                                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | 単一引用符で囲んだ HTTP または HTTPS のサーバーアドレスです。`GET` または `POST` リクエストを受け付けます (それぞれ `SELECT` クエリ、`INSERT` クエリに対応) 。型: [String](/ja/reference/data-types/string)。 |
+| `format`    | データの[フォーマット](/ja/reference/formats/index)です。型: [String](/ja/reference/data-types/string)。                                                                |
+| `structure` | `'UserID UInt64, Name String'` フォーマットで指定するテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                         |
+| `headers`   | `'headers('key1'='value1', 'key2'='value2')'` フォーマットのヘッダーです。HTTP 呼び出し用のヘッダーを設定できます。                                                                |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたフォーマットと構造を持ち、指定した`URL`のデータを含むテーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+[CSV](/ja/reference/formats/CSV/CSV) フォーマットで応答する HTTP サーバーから、`String` 型と [UInt32](/ja/reference/data-types/int-uint) 型のカラムを含むテーブルの先頭 3 行を取得します。
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+`URL` からテーブルへデータを挿入するには:
+
+```sql
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
+```
+
+<div id="globs-in-url">
+  ## URL 内の globs
+</div>
+
+`{ }` 内のパターンは、分片のセットを生成したり、フェイルオーバー先のアドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
+パターン内の文字 `|` は、フェイルオーバー先のアドレスを指定するために使用されます。これらは、パターンに記載された順序どおりに順番に試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings#glob_expansion_max_elements) 設定によって制限されます。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — `URL` のパス。型: `LowCardinality(String)`。
+* `_file` — `URL` のリソース名。型: `LowCardinality(String)`。
+* `_size` — リソースのサイズ (バイト単位) 。型: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
+* `_headers` - HTTP レスポンスヘッダー。型: `Map(LowCardinality(String), LowCardinality(String))`。
+
+<div id="hive-style-partitioning">
+  ## `use_hive_partitioning` 設定
+</div>
+
+`use_hive_partitioning` 設定を 1 にすると、ClickHouse はパス (`/name=value/`) 内の Hive スタイルのパーティション化を検出し、クエリ内でパーティションカラムを仮想カラムとして使用できるようになります。これらの仮想カラムには、パーティション化されたパス内と同じ名前が付きます。
+
+**例**
+
+Hive スタイルのパーティション化で作成された仮想カラムを使用する
+
+```sql
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="resolving-relative-urls">
+  ## 相対 URL の解決
+</div>
+
+[url&#95;base](/ja/reference/settings/session-settings#url_base) 設定を使用すると、`url` 関数に相対 URL を渡せます。`url_base` が設定されていて、関数の引数が相対参照である場合、その参照は [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従ってベース URL を基準に解決されます。
+
+解決規則は次のとおりです。
+
+* **パス相対** (例: `data.csv`) : ベース URL のパスにマージされ、ベースパスの最後の `/` 以降はすべて置き換えられます。末尾のスラッシュの有無は重要です。`https://example.com/dir/` + `data.csv` は `https://example.com/dir/data.csv` になりますが、`https://example.com/dir` + `data.csv` は `https://example.com/data.csv` になります。ドットセグメント (`./` と `../`) は正規化されます。
+* **ホスト相対** (例: `/test/data.csv`) : ベース URL のスキームとホストを使用して解決されます。
+* **スキーム相対** (例: `//other.com/test/data.csv`) : ベース URL のスキームを使用して解決されます。
+* **クエリのみ** (例: `?x=1`) : 完全なベースパスに付加され、既存のクエリやフラグメントは置き換えられます。
+* **フラグメントのみ** (例: `#frag`) : ベース URL に付加され、クエリは保持されたまま、既存のフラグメントは置き換えられます。
+* **空**: フラグメントを除いたベース URL を返します。
+* **絶対 URL**: 変更せずそのまま渡されます。`url_base` は無視されます。
+
+**例**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
+```
+
+<div id="storage-settings">
+  ## ストレージ設定
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#engine_url_skip_empty_files) - 読み取り時に空のファイルをスキップできます。デフォルトでは無効です。
+* [enable&#95;url&#95;encoding](/ja/reference/settings/session-settings#enable_url_encoding) - URI 内のパスのデコード/エンコードを有効または無効にできます。デフォルトでは有効です。
+* [url&#95;base](/ja/reference/settings/session-settings#url_base) - `url` 関数に渡された相対 URL を解決するためのベース URL です。
+
+<div id="permissions">
+  ## 権限
+</div>
+
+`url` 関数を使用するには、`CREATE TEMPORARY TABLE` 権限が必要です。そのため、[readonly](/ja/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1 に設定されているユーザーは利用できません。少なくとも readonly = 2 が必要です。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)

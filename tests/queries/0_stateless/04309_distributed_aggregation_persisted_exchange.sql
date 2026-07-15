@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS t_agg_persisted;
 CREATE TABLE t_agg_persisted (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_agg_persisted SELECT number % 500, number FROM numbers(50000);
 
+SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+
 SELECT k, count() AS c FROM t_agg_persisted GROUP BY k ORDER BY k LIMIT 5
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 1000000000, distributed_plan_force_exchange_kind = 'Persisted',

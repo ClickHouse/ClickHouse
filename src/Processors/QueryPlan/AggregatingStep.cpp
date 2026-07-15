@@ -336,6 +336,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         ? std::min(params.max_threads, pipeline.getNumStreams())
         : params.max_threads;
 
+    /// Clear after use so it does not leak into downstream JOIN/UNION pipeline compositions.
+    pipeline.setReadStreamCountWasReduced(false);
+
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
@@ -351,6 +354,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         /// It is incorrect for in order aggregation.
         params.stats_collecting_params.disable();
+
+        /// Aggregation in order rebuilds the aggregation-method state for every run of equal
+        /// order-key values, so the whole-block `prealloc_serialized` method would make it
+        /// quadratic. Fall back to the plain `serialized` method (see `Params::aggregation_in_order`).
+        params.aggregation_in_order = true;
     }
 
     if (!allow_to_use_two_level_group_by)
@@ -533,6 +541,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data,
                     counter++,
+                    limit_hint,
                     nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
                 );
             });
@@ -554,7 +563,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 transform_params,
                 group_by_sort_description,
                 max_block_size,
-                aggregation_in_order_max_block_bytes);
+                aggregation_in_order_max_block_bytes,
+                limit_hint);
 
             pipeline.addTransform(std::move(transform));
 
@@ -582,6 +592,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
+                    limit_hint,
                     dataflow_cache_updater);
             });
 
@@ -1039,7 +1050,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

@@ -75,7 +75,17 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             for (const auto & [arg_name, arg_ast] : complex_args)
             {
                 if (arg_name == "database" || arg_name == "db")
-                    remote_table_function_ptr = arg_ast;
+                {
+                    /// A table function is allowed here (remote(nc, database = mysql(...))), mirroring the
+                    /// positional signature remote('addr', table_function()). Any other expression is a
+                    /// database name, so a non-function node never reaches TableFunctionFactory::get().
+                    const auto * function = arg_ast->as<ASTFunction>();
+                    if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
+                        remote_table_function_ptr = arg_ast;
+                    else
+                        database = checkAndGetLiteralArgument<String>(
+                            evaluateConstantExpressionForDatabaseName(arg_ast, context), "database");
+                }
                 else if (arg_name == "sharding_key")
                     sharding_key = arg_ast;
                 else

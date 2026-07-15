@@ -1,0 +1,934 @@
+---
+description: 'توثيق تعليمات SYSTEM'
+sidebarTitle: 'SYSTEM'
+slug: /sql-reference/statements/system
+title: 'تعليمات SYSTEM'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="reload-embedded-dictionaries">
+  ## SYSTEM RELOAD EMBEDDED DICTIONARIES
+</div>
+
+أعِد تحميل جميع [القواميس الداخلية](/ar/reference/statements/create/dictionary).
+تكون القواميس الداخلية معطّلة افتراضيًا.
+يعيد دائمًا `Ok.` بغضّ النظر عن نتيجة تحديث القواميس الداخلية.
+
+<div id="reload-dictionaries">
+  ## SYSTEM RELOAD DICTIONARIES
+</div>
+
+يعيد الاستعلام `SYSTEM RELOAD DICTIONARIES` تحميل القواميس التي تكون حالتها `LOADED` (راجع العمود `status` في [`system.dictionaries`](/ar/reference/system-tables/dictionaries))، أي القواميس التي سبق تحميلها بنجاح.
+تُحمَّل القواميس افتراضيًا بأسلوب التحميل عند الطلب (راجع [dictionaries&#95;lazy&#95;load](/ar/reference/settings/server-settings/settings#dictionaries_lazy_load))، لذلك بدلًا من تحميلها تلقائيًا عند بدء التشغيل، تُهيَّأ عند أول وصول إليها باستخدام الدالة [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) أو بتنفيذ `SELECT` على الجداول التي تستخدم `ENGINE = Dictionary`.
+
+**الصياغة**
+
+```sql
+SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+<div id="reload-dictionary">
+  ## SYSTEM RELOAD DICTIONARY
+</div>
+
+يعيد تحميل القاموس `dictionary_name` بالكامل، بغضّ النظر عن حالته (LOADED / NOT&#95;LOADED / FAILED).
+ويُرجع دائمًا `Ok.` بصرف النظر عن نتيجة تحديث القاموس.
+
+```sql
+SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
+
+يمكن التحقق من حالة القاموس عبر الاستعلام عن الجدول `system.dictionaries`.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="reload-models">
+  ## SYSTEM RELOAD MODELS
+</div>
+
+<Note>
+  لا تقوم هذه التعليمة ولا `SYSTEM RELOAD MODEL` إلا بإلغاء تحميل نماذج catboost من clickhouse-library-bridge. وتحمّل الدالة `catboostEvaluate()`
+  نموذجًا عند أول استخدام له إذا لم يكن محمّلًا بالفعل.
+</Note>
+
+يفرّغ جميع نماذج CatBoost من الذاكرة.
+
+**الصياغة**
+
+```sql
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+```
+
+<div id="reload-model">
+  ## SYSTEM RELOAD MODEL
+</div>
+
+يلغي تحميل نموذج CatBoost الموجود في `model_path`.
+
+**الصياغة**
+
+```sql
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+```
+
+<div id="reload-functions">
+  ## SYSTEM RELOAD FUNCTIONS
+</div>
+
+يعيد تحميل جميع [الدوال المعرفة من قبل المستخدم القابلة للتنفيذ](/ar/reference/functions/regular-functions/udf#executable-user-defined-functions) المسجَّلة، أو إحداها، من ملف التهيئة.
+
+**الصياغة**
+
+```sql
+SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+```
+
+<div id="reload-asynchronous-metrics">
+  ## SYSTEM RELOAD ASYNCHRONOUS METRICS
+</div>
+
+يعيد حساب جميع [المقاييس غير المتزامنة](/ar/reference/system-tables/asynchronous_metrics). ونظرًا إلى أن المقاييس غير المتزامنة تُحدَّث دوريًا استنادًا إلى الإعداد [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ar/reference/settings/server-settings/settings)، فلا تكون هناك حاجة عادةً إلى تحديثها يدويًا باستخدام هذه العبارة.
+
+```sql
+SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+```
+
+<div id="drop-dns-cache">
+  ## SYSTEM CLEAR|DROP DNS CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت الداخلية لـ DNS في ClickHouse. وأحيانًا (في الإصدارات القديمة من ClickHouse) يكون من الضروري استخدام هذا الأمر عند تغيير البنية التحتية (مثل تغيير عنوان IP لخادم ClickHouse آخر أو للخادم الذي تستخدمه القواميس).
+
+للحصول على إدارة أكثر سهولة (وتلقائية) لذاكرة التخزين المؤقت، راجع المعلمات `disable_internal_dns_cache` و`dns_cache_max_entries` و`dns_cache_update_period`.
+
+<div id="drop-mark-cache">
+  ## SYSTEM CLEAR|DROP MARK CACHE
+</div>
+
+يمسح ذاكرة تخزين العلامات المؤقتة.
+
+<div id="drop-iceberg-metadata-cache">
+  ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للبيانات الوصفية الخاصة بـ Iceberg.
+
+<div id="drop-avro-schema-cache">
+  ## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE
+</div>
+
+يمسح ذواكر التخزين المؤقت لكل عنوان URL في Confluent Schema Registry والمستخدمة بواسطة التنسيق `AvroConfluent`. تُسقِط هذه العملية كلاً من ذاكرة التخزين المؤقت لجلب المخططات (id → schema) وذاكرة التخزين المؤقت لتسجيل المخططات (subject + schema → id)، لذا ستعود عمليات القراءة والكتابة اللاحقة إلى خادم السجل. ويكون ذلك مفيدًا عندما يكون مخطط قد حُذف أو أُعيدت كتابته على جانب السجل، أو للتحقق من خاصية idempotency الخاصة بالسجل في الاختبارات.
+
+<div id="drop-parquet-metadata-cache">
+  ## SYSTEM DROP PARQUET METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet.
+
+<div id="drop-text-index-caches">
+  ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
+</div>
+
+يمسح ذاكرات التخزين المؤقت لترويسة الفهرس النصي والقاموس وpostings.
+
+إذا أردت مسح إحدى هذه الذاكرات المؤقتة بشكل منفصل، يمكنك تشغيل:
+
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
+* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`، أو
+* `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-replica">
+  ## SYSTEM DROP REPLICA
+</div>
+
+يمكن حذف النسخ المتماثلة المعطّلة لجداول `ReplicatedMergeTree` باستخدام الصيغة التالية:
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
+SYSTEM DROP REPLICA 'replica_name' FROM DATABASE database;
+SYSTEM DROP REPLICA 'replica_name';
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
+```
+
+ستزيل الاستعلامات مسار النسخة المتماثلة لـ `ReplicatedMergeTree` في ZooKeeper. ويكون ذلك مفيدًا عندما تكون النسخة المتماثلة متوقفة ولا يمكن إزالة بياناتها الوصفية من ZooKeeper باستخدام `DROP TABLE` لأنه لم يعد هناك مثل هذا الجدول. ولن يؤدي ذلك إلا إلى حذف النسخة المتماثلة غير النشطة/القديمة، ولا يمكنه حذف النسخة المتماثلة المحلية، لذا يُرجى استخدام `DROP TABLE` لهذا الغرض. ولا يقوم `DROP REPLICA` بحذف أي جداول، كما لا يزيل أي بيانات أو بيانات وصفية من القرص.
+
+الأول يزيل البيانات الوصفية للنسخة المتماثلة `'replica_name'` من الجدول `database.table`.
+والثاني يفعل الأمر نفسه لجميع الجداول المتماثلة في قاعدة البيانات.
+والثالث يفعل الأمر نفسه لجميع الجداول المتماثلة على الخادم المحلي.
+والرابع مفيد لإزالة البيانات الوصفية لنسخة متماثلة متوقفة عندما تكون جميع النسخ المتماثلة الأخرى للجدول قد حُذفت. ويتطلب تحديد مسار الجدول بشكل صريح. ويجب أن يكون هو نفسه المسار الذي مُرِّر إلى الوسيطة الأولى لمحرك `ReplicatedMergeTree` عند إنشاء الجدول.
+
+<div id="drop-database-replica">
+  ## SYSTEM DROP DATABASE REPLICA
+</div>
+
+يمكن حذف النسخ المتماثلة المعطّلة لقواعد بيانات `Replicated` باستخدام الصياغة التالية:
+
+```sql
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
+```
+
+مشابه لـ `SYSTEM DROP REPLICA`، لكنه يزيل مسار النسخة المتماثلة لقاعدة البيانات `Replicated` من ZooKeeper عندما لا تكون هناك قاعدة بيانات يمكن تنفيذ `DROP DATABASE` عليها. يُرجى ملاحظة أنه لا يزيل النسخ المتماثلة لـ `ReplicatedMergeTree` (لذا قد تحتاج أيضًا إلى `SYSTEM DROP REPLICA`). اسمَا الـ shard والنسخة المتماثلة هما الاسمان اللذان تم تحديدهما في وسائط المحرك `Replicated` عند إنشاء قاعدة البيانات. كذلك، يمكن الحصول على هذين الاسمين من العمودين `database_shard_name` و`database_replica_name` في `system.clusters`. إذا كان بند `FROM SHARD` غير موجود، فيجب أن يكون `replica_name` اسم النسخة المتماثلة الكامل بالتنسيق `shard_name|replica_name`.
+
+<div id="drop-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE
+</div>
+
+يمسح الذاكرة المؤقتة للبيانات غير المضغوطة.
+يُفعَّل أو يُعطَّل التخزين المؤقت للبيانات غير المضغوطة باستخدام الإعداد [`use_uncompressed_cache`](/ar/reference/settings/session-settings#use_uncompressed_cache) على مستوى الاستعلام/المستخدم/ملف التعريف.
+يمكن تهيئة حجمه باستخدام الإعداد [`uncompressed_cache_size`](/ar/reference/settings/server-settings/settings#uncompressed_cache_size) على مستوى الخادم.
+
+<div id="drop-compiled-expression-cache">
+  ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للتعبيرات المترجمة.
+يمكن تمكين ذاكرة التخزين المؤقت للتعبيرات المترجمة أو تعطيلها عبر الإعداد [`compile_expressions`](/ar/reference/settings/session-settings#compile_expressions) على مستوى الاستعلام/المستخدم/الملف الشخصي.
+
+<div id="drop-query-condition-cache">
+  ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لشرط الاستعلام.
+
+<div id="drop-query-cache">
+  ## SYSTEM CLEAR|DROP QUERY CACHE
+</div>
+
+```sql
+SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '<tag>'
+```
+
+يمسح [ذاكرة التخزين المؤقت للاستعلام](/ar/concepts/features/performance/caches/query-cache).
+إذا تم تحديد وسم، فلا تُحذف إلا عناصر ذاكرة التخزين المؤقت للاستعلام التي تحمل الوسم المحدد.
+
+<div id="system-drop-schema-format">
+  ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للمخططات المحمّلة من [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path).
+
+الأهداف المدعومة:
+
+* Protobuf: يزيل تعريفات رسائل Protobuf المستوردة من الذاكرة.
+* Files: يحذف ملفات المخططات المخزّنة مؤقتًا والمحفوظة محليًا في [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path)، والتي تُنشأ عند تعيين `format_schema_source` إلى `query`.
+  ملاحظة: إذا لم يتم تحديد أي هدف، فستُمسح كلتا الذاكرتين المؤقتتين.
+
+```sql
+SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+```
+
+<div id="flush-logs">
+  ## SYSTEM FLUSH LOGS
+</div>
+
+يُفرِّغ رسائل السجل المخزّنة مؤقتًا إلى جداول النظام، مثل system.query&#95;log. ويكون مفيدًا أساسًا لأغراض استكشاف الأخطاء وإصلاحها، لأن معظم جداول النظام لها فاصل تفريغ افتراضي قدره 7.5 ثانية.
+وسيؤدي هذا أيضًا إلى إنشاء جداول النظام حتى إذا كانت قائمة انتظار الرسائل فارغة.
+
+```sql
+SYSTEM FLUSH LOGS [ON CLUSTER cluster_name] [log_name|[database.table]] [, ...]
+```
+
+إذا كنت لا تريد تفريغ كل شيء، يمكنك تفريغ سجل واحد أو عدة سجلات بعينها بتمرير إما اسمها أو الجدول الهدف الخاص بها:
+
+```sql
+SYSTEM FLUSH LOGS query_log, system.query_views_log;
+```
+
+<div id="reload-config">
+  ## SYSTEM RELOAD CONFIG
+</div>
+
+يعيد تحميل تهيئة ClickHouse. يُستخدم عندما تكون التهيئة مخزنة في ZooKeeper. لاحظ أن `SYSTEM RELOAD CONFIG` لا يعيد تحميل تهيئة `USER` المخزنة في ZooKeeper، وإنما يعيد تحميل تهيئة `USER` المخزنة في `users.xml` فقط.  لإعادة تحميل جميع إعدادات `USER`، استخدم `SYSTEM RELOAD USERS`
+
+```sql
+SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
+```
+
+<div id="reload-users">
+  ## SYSTEM RELOAD USERS
+</div>
+
+يعيد تحميل جميع مخازن الوصول، بما في ذلك: users.xml، ومخزن الوصول المحلي على القرص، ومخزن الوصول المُكرَّر (في ZooKeeper).
+
+```sql
+SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
+```
+
+<div id="shutdown">
+  ## SYSTEM SHUTDOWN
+</div>
+
+<CloudNotSupportedBadge />
+
+يُغلق ClickHouse عادةً (مثل `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
+
+<div id="kill">
+  ## SYSTEM KILL
+</div>
+
+ينهي عملية ClickHouse قسرًا (مثل `kill -9 {$ pid_clickhouse-server}`)
+
+<div id="instrument">
+  ## SYSTEM INSTRUMENT
+</div>
+
+يدير نقاط التتبّع باستخدام ميزة XRay من LLVM، وهي متاحة عندما يُبنى ClickHouse باستخدام `ENABLE_XRAY=1`.
+ويتيح ذلك تصحيح الأعطال وتحليل الأداء في بيئة الإنتاج من دون تعديل الشيفرة المصدرية وبأقل تكلفة إضافية ممكنة.
+وعند عدم إضافة أي نقطة تتبّع، تكون كلفة الأداء مهملة تقريبًا، لأنه لا يضيف سوى قفزة إضافية إلى عنوان قريب
+في بداية تلك الدوال ونهايتها التي يزيد طولها على 200 تعليمة.
+
+<div id="instrument-add">
+  ### SYSTEM INSTRUMENT ADD
+</div>
+
+يضيف نقطة تتبّع جديدة. يمكن فحص الدوال التي أُضيفت إليها تتبّع في جدول النظام [`system.instrumentation`](/ar/reference/system-tables/instrumentation). ويمكن إضافة أكثر من handler واحد إلى الدالة نفسها، وسيُنفَّذ بالترتيب نفسه الذي أُضيفت به تتبّع.
+يمكن جلب الدوال المطلوب تتبّعها من جدول النظام [`system.symbols`](/ar/reference/system-tables/symbols).
+
+توجد ثلاثة أنواع مختلفة من handler يمكن إضافتها إلى الدوال:
+
+**Syntax**
+
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
+```
+
+حيث تكون `FUNCTION` أي دالة أو جزءًا فرعيًا من دالة، مثل `QueryMetricLog::startQuery`، ويكون المعالج أحد العناصر التالية
+
+<div id="instrument-add-log">
+  #### LOG
+</div>
+
+يطبع النص المُمرَّر كوسيطة وأثر المكدس عند `ENTRY` أو `EXIT` للدالة.
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
+```
+
+<div id="instrument-add-sleep">
+  #### SLEEP
+</div>
+
+يتوقف لمدة ثابتة من الثواني، سواء عند `ENTRY` أو `EXIT`:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
+```
+
+أو لعدد عشوائي من الثواني بتوزيع منتظم، مع تحديد الحدين الأدنى والأقصى مفصولين بمسافة:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
+```
+
+<div id="instrument-add-profile">
+  #### PROFILE
+</div>
+
+يقيس الوقت المستغرَق بين `ENTRY` و`EXIT` في الدالة.
+تُخزَّن نتيجة التنميط في [`system.trace_log`](/ar/reference/system-tables/trace_log)، ويمكن تحويلها
+إلى [تنسيق تتبّع أحداث Chrome](/ar/reference/system-tables/trace_log#chrome-event-trace-format).
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
+```
+
+<div id="instrument-remove">
+  ### SYSTEM INSTRUMENT REMOVE
+</div>
+
+يزيل نقطة تتبّع واحدة بإحدى الطريقتين التاليتين:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+كلّها باستخدام الكلمة المفتاحية `ALL`:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+مجموعة من المعرّفات الناتجة عن استعلام فرعي:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+أو جميع نقاط التتبّع التي تتطابق مع قيمة function&#95;name معيّنة:
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+يمكن جمع معلومات نقطة التتبّع من جدول النظام [`system.instrumentation`](/ar/reference/system-tables/instrumentation).
+
+<div id="managing-distributed-tables">
+  ## إدارة الجداول الموزعة
+</div>
+
+يمكن لـ ClickHouse إدارة جداول [Distributed](/ar/reference/engines/table-engines/special/distributed). عند إدراج مستخدمٍ بياناتٍ في هذه الجداول، ينشئ ClickHouse أولًا قائمة انتظار للبيانات المطلوب إرسالها إلى عُقد cluster، ثم يرسلها بشكل غير متزامن. يمكنك إدارة معالجة قائمة الانتظار باستخدام الاستعلامات [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends) و[FLUSH DISTRIBUTED](#flush-distributed) و[`START DISTRIBUTED SENDS`](#start-distributed-sends). ويمكنك أيضًا إدراج البيانات الموزعة بشكل متزامن باستخدام الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings#distributed_foreground_insert).
+
+<div id="stop-distributed-sends">
+  ### SYSTEM STOP DISTRIBUTED SENDS
+</div>
+
+يعطّل توزيع البيانات في الخلفية عند إدراج البيانات في الجداول الموزعة.
+
+```sql
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<Note>
+  إذا كان [`prefer_localhost_replica`](/ar/reference/settings/session-settings#prefer_localhost_replica) مُمكّنًا (وهو الإعداد الافتراضي)، فستُدرَج البيانات في الشظية المحلية على أي حال.
+</Note>
+
+<div id="flush-distributed">
+  ### SYSTEM FLUSH DISTRIBUTED
+</div>
+
+يُجبر ClickHouse على إرسال البيانات إلى عُقد العنقود بشكل متزامن. وإذا كانت أي من العُقد غير متاحة، فإن ClickHouse يرفع استثناءً ويوقف تنفيذ الاستعلام. يمكنك إعادة محاولة الاستعلام حتى ينجح، وسيحدث ذلك عندما تعود جميع العُقد للعمل.
+
+يمكنك أيضًا تجاوز بعض الإعدادات عبر العبارة `SETTINGS`، وقد يكون ذلك مفيدًا لتجاوز بعض القيود المؤقتة، مثل `max_concurrent_queries_for_all_users` أو `max_memory_usage`.
+
+```sql
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name] [SETTINGS ...]
+```
+
+<Note>
+  تُخزَّن كل كتلة معلّقة على القرص وفقًا لإعدادات استعلام INSERT الأصلي، لذلك قد تحتاج أحيانًا إلى تجاوز هذه الإعدادات.
+</Note>
+
+<div id="start-distributed-sends">
+  ### SYSTEM START DISTRIBUTED SENDS
+</div>
+
+يُفعِّل توزيع البيانات في الخلفية عند إدراج البيانات في الجداول الموزعة.
+
+```sql
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<div id="stop-listen">
+  ### SYSTEM STOP LISTEN
+</div>
+
+يُغلق المقبس وينهي الاتصالات الحالية مع الخادم على المنفذ المحدد وباستخدام البروتوكول المحدد، وذلك بشكلٍ منظم.
+
+ومع ذلك، إذا لم تكن إعدادات البروتوكول المقابلة محددة في إعداد clickhouse-server، فلن يكون لهذا الأمر أي تأثير.
+
+```sql
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+* إذا جرى تحديد المُعدِّل `CUSTOM 'protocol'`، فسيتم إيقاف البروتوكول المخصّص الذي يحمل الاسم المحدد، والمُعرَّف في قسم البروتوكولات ضمن إعدادات الخادم.
+* إذا جرى تحديد المُعدِّل `QUERIES ALL [EXCEPT .. [,..]]`، فسيتم إيقاف جميع البروتوكولات، ما لم يُنص على خلاف ذلك باستخدام العبارة `EXCEPT`.
+* إذا جرى تحديد المُعدِّل `QUERIES DEFAULT [EXCEPT .. [,..]]`، فسيتم إيقاف جميع البروتوكولات الافتراضية، ما لم يُنص على خلاف ذلك باستخدام العبارة `EXCEPT`.
+* إذا جرى تحديد المُعدِّل `QUERIES CUSTOM [EXCEPT .. [,..]]`، فسيتم إيقاف جميع البروتوكولات المخصّصة، ما لم يُنص على خلاف ذلك باستخدام العبارة `EXCEPT`.
+
+<div id="start-listen">
+  ### SYSTEM START LISTEN
+</div>
+
+يسمح بإنشاء اتصالات جديدة عبر البروتوكولات المحددة.
+
+ومع ذلك، إذا لم يكن الخادم على المنفذ والبروتوكول المحددين قد أُوقِف باستخدام الأمر SYSTEM STOP LISTEN، فلن يكون لهذا الأمر أي تأثير.
+
+```sql
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+<div id="managing-mergetree-tables">
+  ## إدارة جداول MergeTree
+</div>
+
+يمكن لـ ClickHouse إدارة العمليات التي تُنفَّذ في الخلفية في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+<div id="stop-merges">
+  ### SYSTEM STOP MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+يتيح إيقاف عمليات الدمج في الخلفية للجداول من عائلة MergeTree:
+
+```sql
+SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<Note>
+  سيؤدي تنفيذ `DETACH / ATTACH` على الجدول إلى بدء عمليات الدمج في الخلفية لهذا الجدول، حتى إذا كانت عمليات الدمج قد أُوقِفت سابقًا لجميع جداول MergeTree.
+</Note>
+
+<div id="start-merges">
+  ### SYSTEM START MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+يتيح بدء عمليات الدمج في الخلفية لجداول عائلة MergeTree:
+
+```sql
+SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<div id="stop-ttl-merges">
+  ### SYSTEM STOP TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+يوفّر إمكانية إيقاف الحذف التلقائي للبيانات القديمة في الخلفية وفقًا لـ [تعبير TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) للجداول ضمن عائلة MergeTree:
+يُرجع `Ok.` حتى إذا لم يكن الجدول موجودًا أو لم يكن يستخدم محرك MergeTree. ويُرجع خطأ إذا كانت قاعدة البيانات غير موجودة:
+
+```sql
+SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-ttl-merges">
+  ### SYSTEM START TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+يوفّر إمكانية بدء عمليات الدمج في الخلفية لحذف البيانات القديمة وفقًا لـ [تعبير TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) للجداول في عائلة MergeTree:
+يعيد `Ok.` حتى إذا لم يكن الجدول موجودًا. ويعيد خطأً إذا لم تكن قاعدة البيانات موجودة:
+
+```sql
+SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="stop-moves">
+  ### SYSTEM STOP MOVES
+</div>
+
+يوفّر إمكانية إيقاف عمليات نقل البيانات في الخلفية وفقًا لـ [تعبير TTL للجدول مع العبارة TO VOLUME أو TO DISK](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl) للجداول في عائلة MergeTree:
+يعيد `Ok.` حتى إذا لم يكن الجدول موجودًا. ويعيد خطأً عندما لا تكون قاعدة البيانات موجودة:
+
+```sql
+SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-moves">
+  ### SYSTEM START MOVES
+</div>
+
+يوفّر إمكانية بدء عمليات نقل البيانات في الخلفية وفقًا لـ [تعبير TTL للجدول مع عبارتي TO VOLUME وTO DISK](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl) للجداول في عائلة MergeTree:
+يُرجع `Ok.` حتى إذا لم يكن الجدول موجودًا. ويُرجع خطأً عندما لا تكون قاعدة البيانات موجودة:
+
+```sql
+SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="query_language-system-unfreeze">
+  ### SYSTEM UNFREEZE
+</div>
+
+يحذف نسخة احتياطية مجمّدة بالاسم المحدد من جميع الأقراص. لمعرفة المزيد عن إلغاء تجميد الأجزاء بشكل منفصل، راجع [ALTER TABLE table&#95;name UNFREEZE WITH NAME ](/ar/reference/statements/alter/partition#unfreeze-partition)
+
+```sql
+SYSTEM UNFREEZE WITH NAME <backup_name>
+```
+
+<div id="wait-loading-parts">
+  ### SYSTEM WAIT LOADING PARTS
+</div>
+
+انتظر حتى يكتمل تحميل جميع أجزاء بيانات الجدول التي تُحمَّل بشكل غير متزامن (أجزاء البيانات القديمة).
+
+```sql
+SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
+```
+
+<div id="managing-replicatedmergetree-tables">
+  ## إدارة جداول ReplicatedMergeTree
+</div>
+
+يمكن لـ ClickHouse إدارة عمليات النسخ المتماثل ذات الصلة التي تعمل في الخلفية في جداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication).
+
+<div id="stop-fetches">
+  ### SYSTEM STOP FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+يوفّر إمكانية إيقاف عمليات الجلب في الخلفية للأجزاء المُدرجة للجداول ضمن عائلة `ReplicatedMergeTree`:
+يُرجِع دائمًا `Ok.` بغضّ النظر عن محرك الجدول، وحتى إذا لم يكن الجدول أو قاعدة البيانات موجودَين.
+
+```sql
+SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-fetches">
+  ### SYSTEM START FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+يوفّر إمكانية بدء عمليات الجلب في الخلفية للأجزاء المُدخلة للجداول ضمن عائلة `ReplicatedMergeTree`:
+ويُرجع دائمًا `Ok.` بغضّ النظر عن محرك الجدول، وحتى إذا لم يكن الجدول أو قاعدة البيانات موجودًا.
+
+```sql
+SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replicated-sends">
+  ### SYSTEM STOP REPLICATED SENDS
+</div>
+
+يتيح إيقاف عمليات الإرسال في الخلفية إلى النسخ المتماثلة الأخرى في العنقود للأجزاء الجديدة المُدرجة في جداول عائلة `ReplicatedMergeTree`:
+
+```sql
+SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replicated-sends">
+  ### SYSTEM START REPLICATED SENDS
+</div>
+
+يتيح بدء عمليات الإرسال الخلفية إلى النُسخ المتماثلة الأخرى في العنقود للأجزاء الجديدة المُدرجة في الجداول ضمن عائلة `ReplicatedMergeTree`:
+
+```sql
+SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replication-queues">
+  ### SYSTEM STOP REPLICATION QUEUES
+</div>
+
+يتيح إيقاف مهام الجلب الخلفية من قوائم انتظار النسخ المتماثل المخزّنة في ZooKeeper للجداول ضمن عائلة `ReplicatedMergeTree`. أنواع مهام الخلفية الممكنة هي - عمليات الدمج، وعمليات الجلب، وعمليات mutation، وعبارات DDL التي تتضمن عبارة ON CLUSTER:
+
+```sql
+SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replication-queues">
+  ### SYSTEM START REPLICATION QUEUES
+</div>
+
+يتيح بدء مهام الجلب الخلفية من قوائم انتظار النسخ المتماثل المخزّنة في ZooKeeper للجداول من عائلة `ReplicatedMergeTree`. أنواع المهام الخلفية الممكنة: عمليات الدمج، وعمليات الجلب، وعمليات التعديل، وعبارات DDL مع البند ON CLUSTER:
+
+```sql
+SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-pulling-replication-log">
+  ### SYSTEM STOP PULLING REPLICATION LOG
+</div>
+
+يوقف تحميل الإدخالات الجديدة من سجل النسخ المتماثل إلى قائمة انتظار النسخ المتماثل في جدول `ReplicatedMergeTree`.
+
+```sql
+SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-pulling-replication-log">
+  ### SYSTEM START PULLING REPLICATION LOG
+</div>
+
+يلغي الأمر `SYSTEM STOP PULLING REPLICATION LOG`.
+
+```sql
+SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="sync-replica">
+  ### SYSTEM SYNC REPLICA
+</div>
+
+انتظر حتى تتم مزامنة جدول `ReplicatedMergeTree` مع النسخ المتماثلة الأخرى في العنقود، على ألا تتجاوز مدة الانتظار `receive_timeout` ثانية.
+
+```sql
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [IF EXISTS] [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+```
+
+بعد تشغيل هذه التعليمة، يجلب `[db.]replicated_merge_tree_family_table_name` الأوامر من السجل المشترك للنسخ المتماثل إلى قائمة انتظار النسخ المتماثل الخاصة به، ثم ينتظر الاستعلام حتى تعالج النسخة المتماثلة جميع الأوامر التي تم جلبها. المعدِّلات التالية مدعومة:
+
+* مع `IF EXISTS` (متاح منذ 25.6)، لن يُرجع الاستعلام خطأً إذا لم يكن الجدول موجودًا. يفيد ذلك عند إضافة نسخة متماثلة جديدة إلى عنقود، عندما تكون بالفعل جزءًا من تهيئة العنقود لكنها لا تزال في طور إنشاء الجدول ومزامنته.
+* إذا جرى تحديد المعدِّل `STRICT`، فإن الاستعلام ينتظر حتى تصبح قائمة انتظار النسخ المتماثل فارغة. وقد لا ينجح `STRICT` أبدًا إذا كانت إدخالات جديدة تظهر باستمرار في قائمة انتظار النسخ المتماثل.
+* إذا جرى تحديد المعدِّل `LIGHTWEIGHT`، فإن الاستعلام ينتظر فقط حتى تتم معالجة إدخالات `GET_PART` و`ATTACH_PART` و`DROP_RANGE` و`REPLACE_RANGE` و`DROP_PART`.
+  بالإضافة إلى ذلك، يدعم المعدِّل `LIGHTWEIGHT` عبارة `FROM &#39;srcReplicas&#39;` اختيارية، حيث إن &#39;srcReplicas&#39; هي قائمة مفصولة بفواصل تضم أسماء النسخ المتماثلة المصدر. يتيح هذا الامتداد مزامنة أكثر استهدافًا من خلال التركيز فقط على مهام النسخ المتماثل القادمة من النسخ المتماثلة المصدر المحددة.
+* إذا جرى تحديد المعدِّل `PULL`، فإن الاستعلام يسحب إدخالات جديدة إلى قائمة انتظار النسخ المتماثل من ZooKeeper، لكنه لا ينتظر معالجة أي شيء.
+
+<div id="sync-database-replica">
+  ### SYNC DATABASE REPLICA
+</div>
+
+ينتظر إلى أن تطبّق [قاعدة البيانات المكرّرة](/ar/reference/engines/database-engines/replicated) المحددة جميع تغييرات المخطط من قائمة انتظار DDL الخاصة بتلك القاعدة.
+
+**الصياغة**
+
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
+
+<div id="restart-replica">
+  ### SYSTEM RESTART REPLICA
+</div>
+
+يوفّر هذا الأمر إمكانية إعادة تهيئة حالة جلسة ZooKeeper لجدول `ReplicatedMergeTree`، إذ يقارن الحالة الحالية مع ZooKeeper باعتباره المصدر المرجعي المعتمد، ويضيف مهام إلى قائمة انتظار ZooKeeper عند الحاجة.
+تتم تهيئة قائمة انتظار النسخ المتماثل استنادًا إلى بيانات ZooKeeper بالطريقة نفسها المتبعة في تعليمة `ATTACH TABLE`. وخلال فترة قصيرة، لن يكون الجدول متاحًا لإجراء أي عمليات.
+
+```sql
+SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+<div id="restore-replica">
+  ### SYSTEM RESTORE REPLICA
+</div>
+
+يستعيد نسخة متماثلة إذا كانت البيانات موجودة [على الأرجح] لكن بيانات ZooKeeper الوصفية مفقودة.
+
+يعمل فقط على جداول `ReplicatedMergeTree` في وضع readonly.
+
+يمكن تنفيذ الاستعلام بعد:
+
+* فقدان جذر ZooKeeper `/`.
+* فقدان مسار النسخ المتماثلة `/replicas`.
+* فقدان مسار نسخة متماثلة فردية `/replicas/replica_name/`.
+
+تُرفِق النسخة المتماثلة الأجزاء التي عُثر عليها محليًا وترسل معلومات عنها إلى ZooKeeper.
+ولا تُجلَب الأجزاء الموجودة على النسخة المتماثلة قبل فقدان البيانات الوصفية مجددًا من النسخ الأخرى ما لم تكن قديمة (لذا فإن استعادة النسخة المتماثلة لا تعني إعادة تنزيل جميع البيانات عبر الشبكة).
+
+<Note>
+  تُنقل الأجزاء في جميع حالاتها إلى المجلد `detached/`. وتُرفَق الأجزاء التي كانت نشطة قبل فقدان البيانات (committed).
+</Note>
+
+<div id="restore-database-replica">
+  ### SYSTEM RESTORE DATABASE REPLICA
+</div>
+
+يستعيد نسخة متماثلة إذا كانت البيانات موجودة [من المحتمل] لكن البيانات الوصفية في ZooKeeper مفقودة.
+
+**الصياغة**
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
+```
+
+**مثال**
+
+```sql
+CREATE DATABASE repl_db
+ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
+
+CREATE TABLE repl_db.test_table (n UInt32)
+ENGINE = ReplicatedMergeTree
+ORDER BY n PARTITION BY n % 10;
+
+-- zookeeper_delete_path("/clickhouse/repl_db", recursive=True) <- root loss.
+
+SYSTEM RESTORE DATABASE REPLICA repl_db;
+```
+
+**الصياغة**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+الصيغة البديلة:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**مثال**
+
+إنشاء جدول على عدة خوادم. بعد فقدان البيانات الوصفية الخاصة بالنسخة المتماثلة في ZooKeeper، سيتم إرفاق الجدول في وضع القراءة فقط بسبب فقدان البيانات الوصفية. يجب تنفيذ الاستعلام الأخير على كل نسخة متماثلة.
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+طريقة أخرى:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
+```
+
+<div id="restart-replicas">
+  ### SYSTEM RESTART REPLICAS
+</div>
+
+يوفّر إمكانية إعادة تهيئة حالة جلسات ZooKeeper لجميع جداول `ReplicatedMergeTree`، ويقارن الحالة الحالية مع ZooKeeper بوصفه المصدر المرجعي الصحيح، ويضيف مهام إلى قائمة الانتظار في ZooKeeper إذا لزم الأمر
+
+<div id="drop-filesystem-cache">
+  ### SYSTEM CLEAR|DROP FILESYSTEM CACHE
+</div>
+
+يسمح بمسح ذاكرة التخزين المؤقت لنظام الملفات.
+
+```sql
+SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="sync-file-cache">
+  ### SYSTEM SYNC FILE CACHE
+</div>
+
+<Note>
+  هذا الإجراء مكلف جدًا وقد يُساء استخدامه.
+</Note>
+
+سينفّذ نداء النظام sync.
+
+```sql
+SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="load-primary-key">
+  ### SYSTEM LOAD PRIMARY KEY
+</div>
+
+حمّل المفاتيح الأساسية للجدول المعني أو لجميع الجداول.
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
+<div id="unload-primary-key">
+  ### SYSTEM UNLOAD PRIMARY KEY
+</div>
+
+يؤدي هذا الأمر إلى إلغاء تحميل المفاتيح الأساسية للجدول المحدد أو لجميع الجداول.
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY
+```
+
+<div id="managing-refreshable-materialized-views">
+  ## إدارة Refreshable Materialized Views
+</div>
+
+أوامر للتحكم في المهام التي تُنفَّذ في الخلفية بواسطة [Refreshable Materialized Views](/ar/reference/statements/create/view#refreshable-materialized-view)
+
+راقب [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes) عند استخدامها.
+
+<div id="stop-view-stop-views">
+  ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS
+</div>
+
+عطّل التحديث الدوري للعرض المحدد أو لجميع العروض القابلة للتحديث. وإذا كان هناك تحديث جارٍ، فألغِه أيضًا.
+
+إذا كان العرض ضمن قاعدة بيانات Replicated أو Shared، فإن `STOP VIEW` يؤثر فقط في النسخة المتماثلة الحالية، بينما يؤثر `STOP REPLICATED VIEW` في جميع النسخ المتماثلة.
+
+<Note>
+  لا تستمر حالة الإيقاف بعد إعادة تشغيل الخادم. بعد إعادة التشغيل، ستستأنف العروض جداول التحديث المُعدّة لها.
+  في قواعد بيانات Replicated أو Shared، يؤثر `SYSTEM STOP VIEW` فقط في النسخة المتماثلة الحالية. استخدم `SYSTEM STOP REPLICATED VIEW` لإيقاف عمليات التحديث على جميع النسخ المتماثلة.
+</Note>
+
+```sql
+SYSTEM STOP VIEW [db.]name
+```
+
+```sql
+SYSTEM STOP VIEWS
+```
+
+<div id="start-view-start-views">
+  ### SYSTEM START [REPLICATED] VIEW, START VIEWS
+</div>
+
+فعِّل التحديث الدوري للعرض المحدد أو لجميع العروض القابلة للتحديث. ولا يؤدي ذلك إلى تشغيل تحديث فوري.
+
+إذا كان العرض موجودًا في قاعدة بيانات Replicated أو Shared، فإن `START VIEW` يلغي أثر `STOP VIEW`، و`START REPLICATED VIEW` يلغي أثر `STOP REPLICATED VIEW`. كما يلغي `START VIEW` أثر `PAUSE VIEW`.
+
+```sql
+SYSTEM START VIEW [db.]name
+```
+
+```sql
+SYSTEM START VIEWS
+```
+
+<div id="pause-view-pause-views">
+  ### SYSTEM PAUSE VIEW, PAUSE VIEWS
+</div>
+
+عطّل التحديث الدوري للعرض المحدد أو لجميع العروض القابلة للتحديث.
+وعلى خلاف `SYSTEM STOP VIEW`، فإن `SYSTEM PAUSE VIEW` لا يوقف تحديثًا قيد التنفيذ بالفعل: يُسمح للتحديث الجاري بأن يكتمل، ولا تُمنع إلا التحديثات اللاحقة.
+
+يمكن التراجع عن ذلك باستخدام `SYSTEM START VIEW` أو `SYSTEM START VIEWS`.
+
+<Note>
+  لا تستمر حالة الإيقاف المؤقت بعد إعادة تشغيل الخادم. بعد إعادة التشغيل، ستستأنف العروض جداول التحديث المُهيأة لها.
+  في قواعد البيانات Replicated أو Shared، يؤثر `SYSTEM PAUSE VIEW` في النسخة المتماثلة الحالية فقط.
+</Note>
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+
+```sql
+SYSTEM PAUSE VIEWS
+```
+
+<div id="refresh-view">
+  ### SYSTEM REFRESH VIEW
+</div>
+
+نفّذ تحديثًا فوريًا خارج الجدولة لعرضٍ معيّن.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+<div id="wait-view">
+  ### SYSTEM WAIT VIEW
+</div>
+
+ينتظر اكتمال عملية التحديث الجارية. وإذا لم تكن هناك أي عملية تحديث قيد التشغيل، فيعود فورًا. وإذا فشلت أحدث محاولة تحديث، فسيُبلّغ عن خطأ.
+
+يمكن استخدامه مباشرةً بعد إنشاء refreshable materialized view جديد (من دون الكلمة المفتاحية EMPTY) لانتظار اكتمال التحديث الأولي.
+
+إذا كان العرض موجودًا في قاعدة بيانات Replicated أو Shared database، وكانت عملية التحديث جارية على نسخة متماثلة أخرى، فإنه ينتظر اكتمال ذلك التحديث.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
+```
+
+<div id="cancel-view">
+  ### SYSTEM CANCEL VIEW
+</div>
+
+إذا كانت هناك عملية تحديث جارية للعرض المحدد على النسخة المتماثلة الحالية، فقُم بمقاطعتها وإلغائها. وإلا فلا تفعل شيئًا.
+
+```sql
+SYSTEM CANCEL VIEW [db.]name
+```
+
+<div id="flush-object-storage-queue">
+  ## SYSTEM FLUSH OBJECT STORAGE QUEUE
+</div>
+
+ينتظر إلى أن تتم معالجة الملف المحدد أو أن يفشل نهائيًا ضمن جدول [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue) أو [AzureQueue](/ar/reference/engines/table-engines/integrations/azure-queue) المحدد. ويعود فورًا إذا كان الملف قد تمت معالجته بالفعل. ويُصدر خطأ إذا كان الملف قد فشل نهائيًا (بعد استنفاد جميع إعادة المحاولة).
+
+```sql
+SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
+```

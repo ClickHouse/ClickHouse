@@ -42,6 +42,11 @@ def check_docs():
     info = Info()
     if Labels.PR_FEATURE in info.pr_labels:
         changed_files = info.get_kv_data("changed_files")
+        assert changed_files is not None, (
+            "changed_files is not populated in JOB_KV_DATA: the store_data pre-hook "
+            "most likely failed to fetch the PR file list from the GitHub API. "
+            "See the Config Workflow logs for the underlying error."
+        )
         has_doc_changes = any(
             file.startswith("docs/")
             or file in embedded_doc_files

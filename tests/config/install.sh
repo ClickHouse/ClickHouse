@@ -17,10 +17,12 @@ EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=${USE_AZURE_STORAGE_FOR_MERGE_TREE:0}
 USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
+PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
+LLVM_COVERAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -30,6 +32,7 @@ while [[ "$#" -gt 0 ]]; do
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
+        --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
 
         --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
@@ -39,6 +42,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
+        --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
         --wasm-engine) WASM_ENGINE=$2 && shift ;;
@@ -46,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
+        --llvm-coverage) LLVM_COVERAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -137,6 +142,39 @@ ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
 value=$((RANDOM % 2))
 echo "Async logging: $value"
 sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_trace.xml >$DEST_SERVER_PATH/config.d/logger_trace.xml
+
+# Randomize the default compression codec (used for columns without an explicit CODEC)
+# across LZ4, ZSTD(1) and ZSTD(3) to exercise all of them across CI runs. It is set through
+# the `default_compression_codec` MergeTree setting in the <merge_tree> config section, NOT
+# the top-level <compression> codec selector: clickhouse-client/local read <compression> as
+# a connection-level boolean (ConnectionParameters), so a codec selector there makes them
+# fail with "Cannot convert to boolean" (e.g. the system-table scraping step). It applies to
+# .sql and .sh tests alike; a test that needs a specific codec pins it with
+# `SETTINGS default_compression_codec = '...'`, which overrides this server default.
+default_compression_codec_options=("LZ4" "ZSTD(1)" "ZSTD(3)")
+default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
+echo "Default compression codec: $default_compression_codec"
+{
+    echo "<clickhouse>"
+    echo "    <merge_tree>"
+    echo "        <default_compression_codec>${default_compression_codec}</default_compression_codec>"
+    echo "    </merge_tree>"
+    echo "</clickhouse>"
+} > $DEST_SERVER_PATH/config.d/default_compression_codec.xml
+
+# Randomize the per-step overcommit eviction budget so the multi-step retry path
+# in `OvercommitFileCachePriority::collectCandidatesForEviction` gets exercised
+# across runs. Picked from values spanning single-step and many-step regimes.
+#
+# The outer retry loop has a fixed `max_tries = 1000` cap, so the smallest step
+# must keep `step * max_tries` above the largest expected single-reservation
+# deficit. With `max_file_segment_size = 5Mi` in the cache config, that means
+# step >= ~5243 bytes; we use 8Ki as a safe lower bound that still forces ~640
+# outer iterations per 5 MiB reservation.
+overcommit_evict_step_values=(8192 65536 1048576 10485760)
+OVERCOMMIT_EVICT_STEP=${overcommit_evict_step_values[$((RANDOM % ${#overcommit_evict_step_values[@]}))]}
+echo "Overcommit eviction evict step: $OVERCOMMIT_EVICT_STEP"
+export OVERCOMMIT_EVICT_STEP
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
@@ -158,10 +196,12 @@ cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 # distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
-# non-Linux builds; only install it where the streaming exchange is supported.
-if [ "$(uname -s)" = "Linux" ]; then
-    ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
-fi
+# platforms without the streaming exchange (only Linux and macOS support it); install it there only.
+case "$(uname -s)" in
+    Linux|Darwin)
+        ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
+        ;;
+esac
 
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
@@ -239,6 +279,19 @@ if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/distributed_plan.xml $DEST_SERVER_PATH/users.d/
 fi
 
+echo $USE_DISTRIBUTED_CACHE
+if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/enable_distributed_cache_for_reads.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/enable_distributed_cache_for_tmp_files.xml $DEST_SERVER_PATH/config.d/
+
+fi
+
+if [[ -n "$LLVM_COVERAGE" ]] && [[ "$LLVM_COVERAGE" -eq 1 ]]; then
+    # Pin random-by-default fault injection seeds in the default profile so coverage
+    # is deterministic without injecting per-query settings (which break readonly tests).
+    ln -sf $SRC_PATH/users.d/coverage_fault_injection_seeds.xml $DEST_SERVER_PATH/users.d/
+fi
+
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
 # but socket is owned by HTTPSessionPool, so it's not closed.
@@ -306,10 +359,14 @@ echo "Replacing commit_logs_cache_size_threshold with $value_commit_logs_cache_s
 value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
 
+value_nuraft_use_bg_thread_for_snapshot_io=$((RANDOM % 2))
+echo "Replacing nuraft_use_bg_thread_for_snapshot_io with $value_nuraft_use_bg_thread_for_snapshot_io"
+
 sed -E "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value_create_snapshot_on_exit</create_snapshot_on_exit>|; \
     s|<latest_logs_cache_size_threshold>[[:digit:]]+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value_latest_logs_cache_size_threshold</latest_logs_cache_size_threshold>|; \
     s|<commit_logs_cache_size_threshold>[[:digit:]]+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value_commit_logs_cache_size_threshold</commit_logs_cache_size_threshold>|; \
-    s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" \
+    s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|; \
+    s|<nuraft_use_bg_thread_for_snapshot_io>[01]</nuraft_use_bg_thread_for_snapshot_io>|<nuraft_use_bg_thread_for_snapshot_io>$value_nuraft_use_bg_thread_for_snapshot_io</nuraft_use_bg_thread_for_snapshot_io>|" \
     $SRC_PATH/config.d/keeper_port.xml > $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 inject_auth=$((RANDOM % 2))
@@ -373,12 +430,43 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
 
+    # Randomize the filesystem cache reserve_granularity to get coverage of the reserve-ahead path.
+    reserve_granularity_options=("1Mi" "4Mi" "8Mi")
+    reserve_granularity="${reserve_granularity_options[$((RANDOM % ${#reserve_granularity_options[@]}))]}"
+    echo "Replacing s3_cache reserve_granularity with $reserve_granularity"
+    # Scope the substitution to the <s3_cache> block so it does not touch other caches'
+    # reserve_granularity (e.g. dynamically_resize_filesystem_cache intentionally sets it to 0).
+    reserve_granularity_sed="/<s3_cache>/,/<\/s3_cache>/s|<reserve_granularity>[^<]*</reserve_granularity>|<reserve_granularity>$reserve_granularity</reserve_granularity>|"
+
     if check_clickhouse_version 25.5; then
-      ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
       ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     else
-      sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml
       sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf_02944.xml >$DEST_SERVER_PATH/config.d/storage_conf_02944.xml
+    fi
+    # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
+    # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
+    # reserve_granularity in 26.7.
+    # --remove-destination: an earlier install may have left this path as a symlink to the
+    # source; without it cp would follow the link and fail with "same file" under set -e.
+    cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
+    # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
+    if check_clickhouse_version 26.7; then
+        sed -i "$reserve_granularity_sed" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    else
+        sed -i "s|<reserve_granularity>[^<]*</reserve_granularity>||g" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    fi
+
+    # Apply `overcommit_eviction_evict_step` randomization only under
+    # distributed cache — that is where the overcommit multi-step retry path
+    # actually gets exercised in CI. `sed >tmp && mv` reads through the dest
+    # (symlink or file) and atomically replaces it without touching the source.
+    if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+        sed "s|<overcommit_eviction_evict_step>[0-9]*</overcommit_eviction_evict_step>|<overcommit_eviction_evict_step>$OVERCOMMIT_EVICT_STEP</overcommit_eviction_evict_step>|" \
+            $DEST_SERVER_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml.tmp
+        mv $DEST_SERVER_PATH/config.d/storage_conf.xml.tmp $DEST_SERVER_PATH/config.d/storage_conf.xml
     fi
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
@@ -455,16 +543,13 @@ if [ ! -z "$WASM_ENGINE" ]; then
     sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
 fi
 
-if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sed -i "/<use_xid_64>1<\/use_xid_64>/d" $DEST_SERVER_PATH/config.d/zookeeper.xml
-
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
     {
         sed -i "/<$1>$2<\/$1>/d" $DEST_SERVER_PATH/config.d/keeper_port.xml
     }
 
-    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
-    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
+    remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

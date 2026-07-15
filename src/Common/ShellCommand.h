@@ -66,6 +66,8 @@ public:
 
         bool pipe_stdin_only = false;
 
+        size_t pipe_capacity = 0;
+
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
 
         /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
@@ -73,6 +75,11 @@ public:
         /// When false (the default) it reaps with plain `waitpid` and allocates
         /// nothing. Set for executable (non-pool) UDFs, which read the usage.
         bool collect_resource_usage = false;
+
+        /// When true, the child pid is tracked in the global `UDFProcessRegistry`
+        /// from spawn until reaped. Off by default; enabled only for executable
+        /// and executable_pool UDFs.
+        bool register_in_udf_process_registry = false;
     };
 
     pid_t getPid() const
@@ -120,10 +127,9 @@ public:
     /// If process terminated, then handle return code.
     bool waitIfProccesTerminated();
 
-    /// Non-blocking reap: if the child has already terminated, collect its `rusage`
-    /// without inspecting the exit status, so a non-zero or signalled exit is not
-    /// raised as an error. Returns whether the child was reaped.
-    bool tryReapWithoutStatusCheck();
+    /// Collect the child's `rusage` without inspecting the exit status, so a non-zero
+    /// or signalled exit is not raised as an error. Returns whether the child was waited.
+    bool tryWaitWithoutStatusCheck();
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
@@ -144,6 +150,23 @@ private:
     bool child_resource_usage_captured = false;
     UInt64 child_user_time_us = 0;
     UInt64 child_system_time_us = 0;
+
+    /// Identifies which incarnation of the pid this wrapper owns, so reap removes
+    /// only its own entry and never one belonging to a later process that reused
+    /// the pid. Stamped by `UDFProcessRegistry::add` at spawn; 0 for non-UDF
+    /// commands, which never register.
+    UInt64 udf_registry_generation = 0;
+
+    /// Absolute monotonic deadline (ns, `clock_gettime_ns`) shared by the cleanup-side
+    /// wait and the destructor-side wait so `command_termination_timeout` bounds their
+    /// SUM, not each separately. Armed lazily by `remainingTerminationTimeoutMs`; 0 means
+    /// not yet armed.
+    UInt64 termination_deadline_ns = 0;
+
+    /// Milliseconds left until the shared termination deadline, arming it on the first
+    /// call from `wait_for_normal_exit_before_termination_seconds`. Returns 0 once the
+    /// deadline has passed, so both wait paths stop at one shared budget.
+    UInt64 remainingTerminationTimeoutMs();
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 

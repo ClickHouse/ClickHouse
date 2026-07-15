@@ -1,0 +1,442 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-metrics
+title: 'ClickStack으로 Kafka 메트릭 모니터링'
+sidebarTitle: 'Kafka 메트릭'
+description: 'ClickStack으로 Kafka 메트릭 모니터링'
+doc_type: 'guide'
+keywords: ['Kafka', '메트릭', 'OTel', 'ClickStack', 'JMX']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **요약**
+
+  OTel JMX Metric Gatherer를 사용해 ClickStack에서 Apache Kafka 성능 메트릭을 모니터링합니다. 데모 데이터셋과 사전 구축된 대시보드가 포함되어 있습니다.
+</Info>
+
+<div id="existing-kafka">
+  ## 기존 Kafka 배포와 통합
+</div>
+
+기존 Kafka 배포를 모니터링하려면 OpenTelemetry JMX Metric Gatherer 컨테이너를 실행하여 메트릭을 수집하고 OTLP를 통해 ClickStack으로 전송하십시오.
+
+기존 설정을 수정하지 않고 먼저 이 통합을 테스트하려면 [데모 데이터셋 섹션](#demo-dataset)으로 건너뛰십시오.
+
+<div id="prerequisites">
+  ##### 사전 요구 사항
+</div>
+
+* 실행 중인 ClickStack 인스턴스
+* JMX가 활성화된 기존 Kafka 설치(버전 2.0 이상)
+* ClickStack과 Kafka 간 네트워크 연결(JMX 포트 9999, Kafka 포트 9092)
+* OpenTelemetry JMX Metric Gatherer JAR(다운로드 방법은 아래 참조)
+
+<Steps>
+  <Step>
+    #### ClickStack API Key 가져오기
+
+    JMX Metric Gatherer는 데이터를 ClickStack의 OTLP 엔드포인트로 전송하며, 이 엔드포인트에는 인증이 필요합니다.
+
+    1. ClickStack URL에서 HyperDX를 여세요(예: http://localhost:8080)
+    2. 필요한 경우 계정을 만들거나 로그인하세요
+    3. **Team Settings → API Keys**로 이동하세요
+    4. **수집 API Key**를 복사하세요
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+
+    5. 환경 변수로 설정하세요:
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### OpenTelemetry JMX Metric Gatherer 다운로드
+
+    JMX Metric Gatherer JAR 파일을 다운로드합니다:
+
+    ```bash
+    curl -L -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step>
+    #### Kafka JMX 활성화 여부 확인
+
+    Kafka 브로커에서 JMX가 활성화되어 있는지 확인하십시오. Docker 배포의 경우:
+
+    ```yaml
+    services:
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        environment:
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          # ... 기타 Kafka 구성
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+    ```
+
+    Docker를 사용하지 않는 배포 환경에서는 Kafka 시작 시 다음 설정을 적용하십시오:
+
+    ```bash
+    export JMX_PORT=9999
+    ```
+
+    JMX에 접근 가능한지 확인하십시오:
+
+    ```bash
+    netstat -an | grep 9999
+    ```
+  </Step>
+
+  <Step>
+    #### Docker Compose로 JMX Metric Gatherer 배포
+
+    이 예시는 Kafka, JMX Metric Gatherer, ClickStack를 포함한 전체 구성을 보여줍니다. 기존 배포 환경에 맞게 서비스 이름과 endpoint를 조정하십시오:
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        hostname: kafka
+        container_name: kafka
+        environment:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:29093'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          KAFKA_JMX_OPTS: '-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9999'
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+        networks:
+          - monitoring
+
+      kafka-jmx-exporter:
+        image: eclipse-temurin:11-jre
+        depends_on:
+          - kafka
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar
+        command: >
+          sh -c "java
+          -Dotel.jmx.service.url=service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi
+          -Dotel.jmx.target.system=kafka
+          -Dotel.metrics.exporter=otlp
+          -Dotel.exporter.otlp.protocol=http/protobuf
+          -Dotel.exporter.otlp.endpoint=http://clickstack:4318
+          -Dotel.exporter.otlp.headers=authorization=\${CLICKSTACK_API_KEY}
+          -Dotel.resource.attributes=service.name=kafka,kafka.broker.id=broker-0
+          -Dotel.jmx.interval.milliseconds=10000
+          -jar /app/opentelemetry-jmx-metrics.jar"
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    **주요 구성 매개변수:**
+
+    * `service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi` - JMX 연결 URL(사용 중인 Kafka 호스트명을 사용하세요)
+    * `otel.jmx.target.system=kafka` - Kafka 전용 메트릭을 활성화합니다
+    * `http://clickstack:4318` - OTLP HTTP 엔드포인트(사용 중인 ClickStack 호스트명을 사용하세요)
+    * `authorization=\${CLICKSTACK_API_KEY}` - 인증에 사용할 API Key(필수)
+    * `service.name=kafka,kafka.broker.id=broker-0` - 필터링에 사용할 리소스 속성
+    * `10000` - 밀리초 단위 수집 인터벌(10초)
+  </Step>
+
+  <Step>
+    #### HyperDX에서 메트릭 확인
+
+    HyperDX에 로그인하고 메트릭이 수집되고 있는지 확인합니다:
+
+    1. Chart Explorer로 이동합니다
+    2. `kafka.message.count` 또는 `kafka.partition.count`를 검색합니다
+    3. 메트릭이 10초 간격으로 표시되어야 합니다
+
+    **확인할 주요 메트릭:**
+
+    * `kafka.message.count` - 처리된 총 메시지 수
+    * `kafka.partition.count` - 총 파티션 수
+    * `kafka.partition.under_replicated` - 클러스터가 정상 상태라면 0이어야 합니다
+    * `kafka.network.io` - 네트워크 처리량
+    * `kafka.request.time.*` - 요청 지연 시간 백분위수
+
+    활동을 생성하여 더 많은 메트릭이 표시되도록 하려면:
+
+    ```bash
+    # 테스트 토픽 생성
+    docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+    # 테스트 메시지 전송
+    echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+    ```
+
+    <Note>
+      Kafka 컨테이너 내부에서 Kafka 클라이언트 명령(`kafka-topics`, `kafka-console-producer` 등)을 실행할 때는 JMX 포트 충돌을 방지하기 위해 명령 앞에 `unset JMX_PORT &&`를 추가하십시오.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 데모 데이터셋
+</div>
+
+프로덕션 시스템을 구성하기 전에 Kafka 메트릭 통합을 테스트하려는 사용자를 위해, 실제와 유사한 Kafka 메트릭 패턴이 반영된 사전 생성 데이터셋을 제공합니다.
+
+<Steps>
+  <Step>
+    #### 샘플 메트릭 데이터셋 다운로드
+
+    사전 생성된 메트릭 파일을 다운로드하세요(실제와 유사한 패턴이 반영된 29시간 분량의 Kafka 메트릭).
+
+    ```bash
+    # 게이지 메트릭 다운로드(파티션 수, 큐 크기, 지연 시간, consumer lag)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-gauge.csv
+
+    # 합계 메트릭 다운로드(메시지 속도, 바이트 속도, 요청 수)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-sum.csv
+    ```
+
+    이 데이터셋에는 단일 broker 전자상거래 Kafka 클러스터의 현실적인 패턴이 포함되어 있습니다.
+
+    * **06:00-08:00: 아침 시간대 급증** - 야간 기준치에서 트래픽이 급격히 증가
+    * **10:00-10:15: 플래시 세일** - 평소 트래픽의 3.5배까지 급증
+    * **11:30: 배포 이벤트** - 복제가 부족한 파티션과 함께 consumer lag가 12배 급증
+    * **14:00-15:30: 쇼핑 피크 시간대** - 기준치의 2.8배 수준의 높은 트래픽이 지속
+    * **17:00-17:30: 퇴근 후 급증** - 두 번째 트래픽 피크
+    * **18:45: consumer 리밸런싱** - 리밸런싱 중 lag가 6배 급증
+    * **20:00-22:00: 저녁 시간대 감소** - 야간 수준으로 급격히 감소
+  </Step>
+
+  <Step>
+    #### ClickStack 시작
+
+    ClickStack 인스턴스를 시작하세요.
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### ClickStack에 메트릭 로드
+
+    메트릭을 ClickHouse에 직접 로드하세요.
+
+    ```bash
+    # 게이지 메트릭 로드(파티션 수, 큐 크기, 지연 시간, consumer lag)
+    cat kafka-metrics-gauge.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # 합계 메트릭 로드(메시지 속도, 바이트 속도, 요청 수)
+    cat kafka-metrics-sum.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX에서 메트릭 확인
+
+    로드가 완료되면 메트릭을 가장 빠르게 확인하는 방법은 사전 구축된 대시보드를 사용하는 것입니다.
+
+    [Dashboards and visualization](#dashboards) 섹션으로 이동하여 대시보드를 가져오고 모든 Kafka 메트릭을 한 번에 확인하세요.
+
+    <Info>
+      **시간대 표시**
+
+      HyperDX는 브라우저의 로컬 시간대로 timestamp를 표시합니다. 데모 데이터는 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** 기간에 걸쳐 있습니다. 위치와 관계없이 데모 메트릭이 표시되도록 시간 범위를 **2025-11-04 16:00:00 - 2025-11-07 16:00:00**로 설정하세요. 메트릭이 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
+
+ClickStack을 사용해 Kafka 모니터링을 빠르게 시작할 수 있도록 Kafka 메트릭에 대한 핵심 시각화를 제공합니다.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">다운로드</TrackedLink> 대시보드 구성 파일
+  </Step>
+
+  <Step>
+    #### 사전 구축된 대시보드 가져오기
+
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+
+    3. `kafka-metrics-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
+
+    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="가져오기 완료 대화상자" />
+  </Step>
+
+  <Step>
+    #### 대시보드 보기
+
+    모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다.
+
+    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka 메트릭 대시보드" />
+
+    <Note>
+      데모 데이터셋의 경우 시간 범위를 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="no-metrics">
+  ### HyperDX에 메트릭이 표시되지 않는 경우
+</div>
+
+**API Key가 설정되어 컨테이너에 전달되는지 확인하세요:**
+
+```bash
+# 환경 변수 확인
+echo $CLICKSTACK_API_KEY
+
+# 컨테이너 내 환경 변수 확인
+docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
+```
+
+없으면 설정한 후 다시 시작하세요:
+
+```bash
+export CLICKSTACK_API_KEY=your-api-key-here
+docker compose up -d kafka-jmx-exporter
+```
+
+**메트릭이 ClickHouse로 전달되고 있는지 확인하세요:**
+
+```bash
+docker exec <clickstack-container> clickhouse-client --query "
+SELECT DISTINCT MetricName 
+FROM otel_metrics_sum 
+WHERE ServiceName = 'kafka' 
+LIMIT 10
+"
+```
+
+결과가 보이지 않으면 JMX exporter 로그를 확인하세요:
+
+```bash
+docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
+```
+
+**메트릭을 채우기 위해 Kafka 트래픽을 발생시킵니다:**
+
+```bash
+# 테스트 토픽 생성
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+# 테스트 메시지 전송
+echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+```
+
+<div id="auth-errors">
+  ### 인증 오류
+</div>
+
+`Authorization failed` 또는 `401 Unauthorized`가 표시되면:
+
+1. HyperDX UI에서 API Key를 확인하세요 (설정 → API Keys → 수집 API key)
+2. 다시 export하고 재시작하세요:
+
+```bash
+export CLICKSTACK_API_KEY=your-correct-api-key
+docker compose down
+docker compose up -d
+```
+
+<div id="port-conflicts">
+  ### Kafka 클라이언트 명령 실행 시 포트 충돌
+</div>
+
+Kafka 컨테이너 내부에서 Kafka 명령을 실행할 때 다음과 같은 메시지가 표시될 수 있습니다:
+
+```bash
+Error: Port already in use: 9999
+```
+
+명령어 앞에 `unset JMX_PORT &&`를 붙이십시오:
+
+```bash
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-server kafka:9092"
+```
+
+<div id="network-issues">
+  ### 네트워크 연결 문제
+</div>
+
+JMX exporter 로그에 `Connection refused`가 표시되면 다음 사항을 확인하십시오.
+
+모든 컨테이너가 동일한 Docker 네트워크에 연결되어 있는지 확인하십시오.
+
+```bash
+docker compose ps
+docker network inspect <network-name>
+```
+
+연결을 테스트하세요:
+
+```bash
+# JMX exporter에서 ClickStack으로
+docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/clickstack/4318' && echo 'Connected' || echo 'Failed'"
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* 중요한 메트릭(과소 복제된 파티션, consumer lag 증가, 요청 지연 시간 급증)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
+* 특정 사용 사례에 맞는 추가 대시보드(토픽별 처리량, consumer group 모니터링)를 만드세요
+* 고유한 `kafka.broker.id` resource 속성을 사용해 추가 JMX Metric Gatherer 인스턴스를 배포하여 여러 Kafka broker를 모니터링하세요
+
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환
+</div>
+
+이 가이드는 메트릭을 JMX Metric Gatherer에서 ClickStack의 OTLP 엔드포인트로 직접 전송하며, 테스트 및 소규모 배포에는 적합합니다.
+
+프로덕션 환경에서는 자체 OpenTelemetry Collector를 agent로 배포하여 JMX Exporter에서 메트릭을 수신하고 ClickStack으로 전달하세요. 이를 통해 배칭, 복원력, 중앙 집중식 구성 관리의 이점을 얻을 수 있습니다.
+
+프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

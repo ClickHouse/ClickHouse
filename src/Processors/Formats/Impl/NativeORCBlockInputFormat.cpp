@@ -1,6 +1,9 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
+
+#include <Common/checkStackSize.h>
+#include <Core/Defines.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -9,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -58,6 +62,7 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -190,9 +195,24 @@ static DataTypePtr parseORCType(
     bool skip_columns_with_unsupported_types,
     bool dictionary_as_low_cardinality,
     const orc::StripeInformation * stripe_info,
-    bool & skipped)
+    bool & skipped,
+    size_t max_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+    size_t depth = 0)
 {
     chassert(orc_type != nullptr);
+
+    /// ORC LIST/MAP/STRUCT types can be nested arbitrarily deep and the ORC library does not bound
+    /// the nesting, so reject deep nesting early (before building the type) with an explicit limit.
+    /// This keeps schema inference cheap and interruptible instead of recursing over (and later
+    /// walking) a pathologically deep type. checkStackSize is a last-resort backstop.
+    /// max_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (max_depth != 0 && depth > max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while parsing the ORC schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            max_depth);
+    checkStackSize();
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
     switch (orc_type->getKind())
@@ -248,7 +268,7 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
             DataTypePtr nested_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -259,12 +279,12 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
             DataTypePtr key_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
             DataTypePtr value_type = parseORCType(
-                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -279,7 +299,7 @@ static DataTypePtr parseORCType(
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 auto parsed_type = parseORCType(
-                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
                 if (skipped)
                     return {};
 
@@ -581,7 +601,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -813,6 +833,11 @@ static void getFileReader(
 static const orc::Type *
 traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case)
 {
+    /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
+    /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
+    /// prepareFileReader before the readColumnFromORCColumn guard is reached.
+    checkStackSize();
+
     if (target.empty())
         return orc_type;
 
@@ -867,6 +892,11 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
 static void
 updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
 {
+    /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
+    /// Keep a stack backstop here too: this runs in prepareFileReader, before the
+    /// readColumnFromORCColumn guard is reached, also for explicit-schema reads.
+    checkStackSize();
+
     /// For primitive types, directly append column id into result
     if (orc_type->getSubtypeCount() == 0)
     {
@@ -979,7 +1009,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality);
+        format_settings.orc.dictionary_as_low_cardinality,
+        format_settings.date_time_overflow_behavior);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1180,7 +1211,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
             format_settings.orc.dictionary_as_low_cardinality,
             stripe_info.get(),
-            skipped);
+            skipped,
+            format_settings.max_parser_depth);
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
     }
@@ -1196,12 +1228,14 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_)
+    bool dictionary_as_low_cardinality_,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
+    , date_time_overflow_behavior(date_time_overflow_behavior_)
 {
 }
 
@@ -1350,7 +1384,16 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         {
             const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
             size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
+            if (buf_size > n)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC dictionary entry {} has size {} that exceeds the declared FixedString length {}",
+                    i, buf_size, n);
             memcpy(&column_chars[curr_offset], buf, buf_size);
+            /// resize_exact does not zero-initialize, so pad shorter entries to keep FixedString values
+            /// deterministic and to avoid leaking uninitialized heap memory.
+            if (buf_size < n)
+                memset(&column_chars[curr_offset + buf_size], 0, n - buf_size);
             curr_offset += n;
         }
     }
@@ -1379,6 +1422,16 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     auto index_column
         = dynamic_cast<IColumnUnique *>(dictionary_column.get())->uniqueInsertRangeFrom(*holder_column, 0, holder_column->size());
 
+    auto check_index = [&](Int64 orc_index, size_t row) -> Int64
+    {
+        if (orc_index < 0 || static_cast<size_t>(orc_index) >= dict_size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ORC dictionary index {} at row {} is out of range [0, {})",
+                orc_index, row, dict_size);
+        return orc_index;
+    };
+
     /// Fill index_column and wrap it with LowCardinality
     auto call_by_type = [&](auto index_type) -> MutableColumnPtr
     {
@@ -1396,7 +1449,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             for (size_t i = 0; i < rows; ++i)
             {
                 /// First map row index to ORC dictionary index, then map ORC dictionary index to CH dictionary index
-                new_index_data[i] = index_data[orc_str_column.index[i]];
+                new_index_data[i] = index_data[check_index(orc_str_column.index[i], i)];
             }
         }
         else
@@ -1405,7 +1458,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             {
                 /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
                 /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
-                new_index_data[i] = orc_str_column.notNull[i] ? index_data[orc_str_column.index[i]] : 0;
+                new_index_data[i] = orc_str_column.notNull[i] ? index_data[check_index(orc_str_column.index[i], i)] : 0;
             }
         }
 
@@ -1486,7 +1539,19 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
         if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
+        {
+            const Int64 length = orc_str_column->length[i];
+            if (length < 0 || static_cast<size_t>(length) > fixed_len)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC string value at row {} has size {} that doesn't fit into FixedString({})",
+                    i, length, fixed_len);
+
+            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + length);
+            /// Zero-pad shorter values to the fixed width to keep the FixedString layout consistent.
+            if (static_cast<size_t>(length) < fixed_len)
+                column_chars.resize_fill(column_chars.size() + (fixed_len - static_cast<size_t>(length)));
+        }
         else
             column_chars.resize_fill(column_chars.size() + fixed_len);
     }
@@ -1676,40 +1741,65 @@ static ColumnWithTypeAndName readColumnWithDateData(
     return {std::move(internal_column), internal_type, column_name};
 }
 
-static ColumnWithTypeAndName
-readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithTimestampData(
+    const orc::ColumnVectorBatch * orc_column,
+    const String & column_name,
+    const DataTypePtr & type_hint,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
     const auto * orc_ts_column = dynamic_cast<const orc::TimestampVectorBatch *>(orc_column);
 
-    auto internal_type = std::make_shared<DataTypeDateTime64>(9);
+    /// ORC stores timestamps as (seconds, nanoseconds). ClickHouse used to convert them through a fixed
+    /// DateTime64(9) intermediate (seconds * 1e9 + nanoseconds), which overflows Int64 for timestamps beyond
+    /// ~year 2262 even when the requested DateTime64 scale can represent the value (e.g. Iceberg's DateTime64(6)).
+    /// Read directly at the requested scale so such values round-trip like Parquet, and only handle overflow when
+    /// even the target scale does not fit Int64.
+    UInt32 scale = 9;
+    if (type_hint)
+    {
+        const auto * dt64_hint = typeid_cast<const DataTypeDateTime64 *>(removeNullable(recursiveRemoveLowCardinality(type_hint)).get());
+        if (dt64_hint)
+            scale = dt64_hint->getScale();
+    }
+
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDateTime64 &>(*internal_column).getData();
     column_data.reserve(orc_ts_column->numElements);
 
-    constexpr Int64 multiplier = 1e9L;
+    /// Factor to go from nanoseconds down to the target scale (scale is in [0, 9]).
+    const Int128 divisor = DecimalUtils::scaleMultiplier<Int128>(9 - scale);
+    const Int128 int64_min = std::numeric_limits<Int64>::min();
+    const Int128 int64_max = std::numeric_limits<Int64>::max();
+
     for (size_t i = 0; i < orc_ts_column->numElements; ++i)
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
-            Int64 timestamp_value = 0;
-            Int64 seconds = orc_ts_column->data[i];
-            Int64 nanoseconds = orc_ts_column->nanoseconds[i];
+            const Int64 seconds = orc_ts_column->data[i];
+            const Int64 nanoseconds = orc_ts_column->nanoseconds[i];
 
-            /// Check for overflow when converting timestamp to DateTime64(9)
-            bool overflow = common::mulOverflow(seconds, multiplier, timestamp_value);
-            overflow |= common::addOverflow(timestamp_value, nanoseconds, timestamp_value);
+            /// seconds * 1e9 + nanoseconds cannot overflow Int128 (|seconds| < 2^63, product < ~9.2e27 << Int128 max).
+            const Int128 nanos_total = static_cast<Int128>(seconds) * 1'000'000'000 + nanoseconds;
+            /// Integer division truncates toward zero, matching the DateTime64(9) -> DateTime64(scale) cast that ran afterwards.
+            Int128 value = nanos_total / divisor;
 
-            if (overflow)
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Timestamp value in column \"{}\" is out of range for DateTime64: seconds={}, nanoseconds={}",
-                    column_name,
-                    seconds,
-                    nanoseconds);
+            if (value < int64_min || value > int64_max)
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    value = value < int64_min ? int64_min : int64_max;
+                else
+                    /// Throw for both `throw` and `ignore` (the default): keep the historical behavior and never silently corrupt data.
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Timestamp value in column \"{}\" is out of range for DateTime64({}): seconds={}, nanoseconds={}",
+                        column_name,
+                        scale,
+                        seconds,
+                        nanoseconds);
+            }
 
-            Decimal64 decimal64;
-            decimal64.value = timestamp_value;
-            column_data.emplace_back(std::move(decimal64));
+            column_data.push_back(DateTime64(static_cast<Int64>(value)));
         }
         else
             column_data.push_back(0);
@@ -1724,6 +1814,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     bool inside_nullable,
     DataTypePtr type_hint) const
 {
+    /// Reading a nested LIST/MAP/STRUCT recurses through this function over the ORC type tree, whose
+    /// depth is attacker-controlled, so guard the native stack on the data-read path as well.
+    checkStackSize();
+
     bool skipped = false;
 
     if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
@@ -1827,7 +1921,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithDateData(orc_column, column_name, type_hint);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
-            return readColumnWithTimestampData(orc_column, column_name);
+            return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case orc::DECIMAL:
         {
             auto interal_type = parseORCType(orc_type, false, false, nullptr, skipped);

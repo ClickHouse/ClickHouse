@@ -1,0 +1,117 @@
+---
+slug: /clickhouse-operator/install/kubectl
+title: 'kubectl を使用した ClickHouse Operator のインストール'
+keywords: ['kubernetes']
+description: 'このガイドでは、kubectl とマニフェストファイルを使用した ClickHouse Operator のインストールについて説明します。'
+doc_type: 'guide'
+sidebarTitle: 'kubectl'
+---
+
+このガイドでは、kubectl とマニフェストファイルを使用した ClickHouse Operator のインストールについて説明します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Kubernetes クラスター v1.28.0 以降
+* kubectl v1.28.0 以降
+* クラスター管理者権限
+
+<div id="install-from-release-manifests">
+  ## リリースマニフェストを使ったインストール
+</div>
+
+<Note>
+  webhook 証明書の発行には cert-manager が必要です。
+</Note>
+
+最新リリースから operator と CRD をインストールします。
+
+```bash
+kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
+```
+
+サーバー側の apply が必要です。これは、結合された CRD がクライアント側 apply のサイズ制限を超えるためです。クライアント側 apply のみをサポートする環境では、description を削除した CRD バリアントを使用してください。
+
+```bash
+kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator-stripped-crds.yaml
+```
+
+これにより、以下が実行されます。
+
+1. `clickhouse-operator-system` ネームスペースを作成
+2. ClickHouseCluster と KeeperCluster 用の CustomResourceDefinitions (CRD) をインストール
+3. 必要な ServiceAccount、ロール、RoleBinding を作成
+4. operator の controller manager をデプロイ
+5. リソースの検証とデフォルト設定のための webhook を登録
+6. cert-manager を使用して SSL 証明書を設定
+7. メトリクスエンドポイントを有効化
+
+<div id="verify-installation">
+  ## インストールを確認する
+</div>
+
+operator が稼働していることを確認します。
+
+```bash
+kubectl get pods -n clickhouse-operator-system
+```
+
+想定される出力:
+
+```
+NAME                                                 READY   STATUS    RESTARTS   AGE
+clickhouse-operator-controller-manager-xxxxxxxxxx    1/1     Running   0          1m
+```
+
+CRD がインストールされていることを確認します。
+
+```bash
+kubectl get crd | grep clickhouse.com
+```
+
+出力例:
+
+```
+clickhouseclusters.clickhouse.com    2025-01-06T00:00:00Z
+keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
+```
+
+<div id="configure-custom-deployment-options">
+  ## カスタムのデプロイメントオプションを設定する
+</div>
+
+operator のデプロイメントオプションを設定するには、以下の手順に従ってください。
+
+<Steps>
+  <Step>
+    ### リポジトリをクローンする
+
+    ```bash
+    git clone https://github.com/ClickHouse/clickhouse-operator.git
+    cd clickhouse-operator
+    ```
+  </Step>
+
+  <Step>
+    ### インストールオプションを設定する
+
+    必要に応じて機能を有効または無効にするため、config/default/kustomization.yaml を編集します。
+
+    * webhooks を無効にするには、`[WEBHOOK]` セクションと `[CERTMANAGER]` セクションをコメントアウトします。
+    * セキュアなメトリクスエンドポイントを有効にするには、`[METRICS]` セクションをコメントアウトし、`[METRICS SECURE]` セクションと `[CERTMANAGER]` セクションのコメントを解除します。
+    * Prometheus Operator の ServiceMonitor を有効にするには、`[PROMETHEUS]` セクションのコメントを解除します。
+    * operator のネットワークポリシーを有効にするには、`[NETWORK POLICY]` セクションのコメントを解除します。
+  </Step>
+
+  <Step>
+    ### ビルドしてデプロイする
+
+    operator のマニフェストをビルドして適用します。
+
+    ```bash
+    make build-installer VERSION=<required operator version> [IMG=<custom registry path>]
+    kubectl apply --server-side --force-conflicts -f dist/install.yaml
+    ```
+  </Step>
+</Steps>
