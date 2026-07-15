@@ -115,14 +115,14 @@ void ClusterFactory::replaceSQLCatalogClusters(const std::map<String, ClusterPtr
 
 bool ClusterFactory::hasCluster(const String & name) const
 {
-    auto snap = clusters_state.get();
+    auto snap = ensureRemoteServersMaterialized(Context::getGlobalContextInstance());
     return snap && snap->hasCluster(name);
 }
 
 void ClusterFactory::publishClustersSnapshotLocked(
     std::shared_ptr<Clusters> new_clusters,
     ConfigurationPtr new_config,
-    size_t new_version)
+    size_t new_version) const
 {
     auto snap = std::make_unique<ClustersSnapshot>();
     snap->clusters = std::move(new_clusters);
@@ -240,9 +240,47 @@ void ClusterFactory::registerCatalogClustersInto(Clusters & builder) const
     }
 }
 
-ClusterPtr ClusterFactory::tryGetCluster(const String & cluster_name) const
+std::shared_ptr<const ClusterFactory::ClustersSnapshot> ClusterFactory::ensureRemoteServersMaterialized(ContextPtr context) const
 {
     auto snap = clusters_state.get();
+    if (snap && snap->clusters)
+        return snap;
+
+    if (shutdown_called.load())
+        return snap;
+
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    if (!context)
+        return snap;
+
+    std::lock_guard writer_lock(clusters_writer_mutex);
+    snap = clusters_state.get();
+    if (snap && snap->clusters)
+        return snap;
+
+    if (shutdown_called.load())
+        return snap;
+
+    /// Prefer a pinned `clusters_config` from a previous `applyClustersConfig`; otherwise fall back to the
+    /// live application config — the same choice as the old `Context::getClustersImpl` path that
+    /// `clickhouse-local` relied on (no explicit `setClustersConfig`).
+    const Poco::Util::AbstractConfiguration & config
+        = (snap && snap->clusters_config) ? *snap->clusters_config : context->getConfigRef();
+
+    static constexpr const char * config_prefix = "remote_servers";
+    auto builder = std::make_shared<Clusters>(config, context->getSettingsRef(), context->getMacros(), config_prefix);
+    registerCatalogClustersInto(*builder);
+
+    const size_t version = snap ? snap->clusters_version : 0;
+    ConfigurationPtr pinned = snap ? snap->clusters_config : nullptr;
+    publishClustersSnapshotLocked(std::move(builder), std::move(pinned), version);
+    return clusters_state.get();
+}
+
+ClusterPtr ClusterFactory::tryGetCluster(const String & cluster_name) const
+{
+    auto snap = ensureRemoteServersMaterialized(Context::getGlobalContextInstance());
     if (!snap || !snap->clusters)
         return nullptr;
     return snap->clusters->getCluster(cluster_name);
@@ -250,7 +288,7 @@ ClusterPtr ClusterFactory::tryGetCluster(const String & cluster_name) const
 
 std::map<String, ClusterPtr> ClusterFactory::getClusters() const
 {
-    auto snap = clusters_state.get();
+    auto snap = ensureRemoteServersMaterialized(Context::getGlobalContextInstance());
     if (!snap || !snap->clusters)
         return {};
     return snap->clusters->getContainer();
@@ -297,6 +335,7 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
 
     ConfigurationPtr pinned_config;
     std::vector<String> config_cluster_names;
+    bool had_clusters = false;
     {
         auto snap = clusters_state.get();
         if (snap)
@@ -304,6 +343,7 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
             pinned_config = snap->clusters_config;
             if (snap->clusters)
             {
+                had_clusters = true;
                 for (const auto & [name, cluster] : snap->clusters->getContainer())
                 {
                     if (cluster && cluster->getDefinitionSource() == ClusterDefinitionSource::RemoteServersConfig)
@@ -315,6 +355,28 @@ void ClusterFactory::reloadClustersConfig(ContextPtr context)
 
     const auto & config = pinned_config ? *pinned_config : context->getConfigRef();
     const auto & settings = context->getSettingsRef();
+
+    /// Empty registry: materialise the full `<remote_servers>` subtree from config (clickhouse-local /
+    /// any process that never called `setClustersConfig`), matching old `getClustersImpl` + reload.
+    if (!had_clusters)
+    {
+        std::lock_guard writer_lock(clusters_writer_mutex);
+        auto current = clusters_state.get();
+        if (current && current->clusters)
+            return;
+        if (current && current->clusters_config.get() != pinned_config.get())
+            return;
+        if (shutdown_called.load())
+            return;
+
+        auto builder = std::make_shared<Clusters>(config, settings, context->getMacros(), String(config_prefix));
+        registerCatalogClustersInto(*builder);
+        publishClustersSnapshotLocked(
+            std::move(builder),
+            pinned_config,
+            current ? current->clusters_version : 0);
+        return;
+    }
 
     std::vector<std::pair<String, std::shared_ptr<Cluster>>> rebuilt;
     rebuilt.reserve(config_cluster_names.size());

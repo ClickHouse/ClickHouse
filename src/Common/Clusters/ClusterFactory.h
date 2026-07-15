@@ -57,8 +57,10 @@ public:
     /// Generic remove: drops `cluster_name` regardless of source.
     void removeCluster(const String & cluster_name);
 
-    /// Read-path accessors. Both read from the unified `clusters` registry; all sources (`<remote_servers>`, SQL
-    /// catalog, discovery) keep it warm on every state transition, so no extra materialisation step is needed here.
+    /// Read-path accessors. Both read from the unified `clusters` registry. When the registry has never been
+    /// populated (typical for `clickhouse-local`, which does not call `setClustersConfig`), the first call
+    /// lazily materialises `<remote_servers>` from `Context::getConfigRef()` — matching the old
+    /// `Context::getClustersImpl` behaviour.
     ClusterPtr tryGetCluster(const String & cluster_name) const;
     std::map<String, ClusterPtr> getClusters() const;
 
@@ -82,6 +84,8 @@ public:
 
     /// Re-read the last-applied `clusters_config` (captured by `applyClustersConfig`) — used by the config reload loop
     /// when nothing else changed but we want to rebuild connection endpoints (macros / host resolution may differ).
+    /// If no snapshot exists yet, materialises `<remote_servers>` from `context->getConfigRef()` (same lazy path as
+    /// `tryGetCluster`).
     void reloadClustersConfig(ContextPtr context);
 
 private:
@@ -112,13 +116,20 @@ private:
         bool hasCluster(const String & cluster_name) const { return clusters && clusters->hasCluster(cluster_name); }
     };
 
-    /// Lock-free read path for `tryGetCluster` / `getClusters` / `hasCluster` / `getClustersVersion` /
+    /// When the registry is empty / never published, build `Clusters` from the pinned `clusters_config` if any,
+    /// otherwise from `context->getConfigRef()` (or the global context). No-op once `clusters` is non-null.
+    /// Returns the post-ensure snapshot (may still be null if there is no usable context).
+    std::shared_ptr<const ClustersSnapshot> ensureRemoteServersMaterialized(ContextPtr context) const;
+
+    /// Primarily lock-free read path for `tryGetCluster` / `getClusters` / `hasCluster` / `getClustersVersion` /
     /// `isClusterDefinedOnlyInRemoteServers`: each call does a single `MultiVersion::get()` to snapshot the current
-    /// version, then operates on the immutable payload without synchronising with writers.
-    MultiVersion<ClustersSnapshot> clusters_state;
+    /// version, then operates on the immutable payload without synchronising with writers. The exception is the
+    /// first materialisation via `ensureRemoteServersMaterialized`, which takes `clusters_writer_mutex`.
+    /// Mutable so const read accessors can lazily populate an empty registry (clickhouse-local).
+    mutable MultiVersion<ClustersSnapshot> clusters_state;
 
     /// Serialises writers so one write sees a consistent "current" snapshot while building the next one. Readers
-    /// never take this mutex.
+    /// only take this mutex on the lazy-init path when the registry is still empty.
     mutable std::mutex clusters_writer_mutex;
 
     /// Atomically publishes `ClustersSnapshot` with the given components. Called by write paths while holding
@@ -126,7 +137,7 @@ private:
     void publishClustersSnapshotLocked(
         std::shared_ptr<Clusters> new_clusters,
         ConfigurationPtr new_config,
-        size_t new_version) TSA_REQUIRES(clusters_writer_mutex);
+        size_t new_version) const TSA_REQUIRES(clusters_writer_mutex);
 
     /// Copy already-materialized SQL-catalog clusters from the current registry into `builder` when rebuilding
     /// after a `<remote_servers>` config change.
