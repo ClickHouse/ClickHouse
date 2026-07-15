@@ -174,3 +174,91 @@ SELECT
 SELECT
     (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
   = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Build side coverage: the runtime-filter exact-values Set is built incrementally, so each build block
+-- after the first goes through Set::appendSetElements -> ColumnVariant/ColumnDynamic insertRangeFrom, and
+-- each per-thread filter is combined via ExactContainsRuntimeFilter::merge. numbers() with a small
+-- max_block_size forces many tiny build blocks (so the insertRangeFrom path runs); the merge path needs a
+-- multi-stream build source (numbers_mt) because numbers() is single-stream. query_plan_join_swap_table
+-- = false keeps the right table the build side. count() is join-order/block-size invariant.
+-- Each case also asserts the plan/pipeline so it fails (not silently passes) if the planner stops
+-- building the runtime filter for this shape: EXPLAIN actions = 1 must contain a BuildRuntimeFilter
+-- action, and the numbers_mt merge case must show multiple BuildRuntimeFilterTransform instances.
+
+-- Variant key, many tiny build blocks (repeated appendSetElements insertRangeFrom).
+SELECT count() FROM
+    (SELECT multiIf(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String)) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT multiIf(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String)) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 1, max_threads = 4, query_plan_join_swap_table = false;
+SELECT count() > 0 FROM (EXPLAIN actions = 1
+SELECT count() FROM
+    (SELECT multiIf(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String)) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT multiIf(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String)) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 1, max_threads = 4, query_plan_join_swap_table = false, enable_join_runtime_filters = 1
+) WHERE explain ILIKE '%BuildRuntimeFilter%';
+
+-- Dynamic key, consecutive small blocks see the alternatives in different first-seen order, so
+-- insertRangeFrom must reconcile diverging local discriminators.
+SELECT count() FROM
+    (SELECT multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 2, max_threads = 1, query_plan_join_swap_table = false;
+SELECT count() > 0 FROM (EXPLAIN actions = 1
+SELECT count() FROM
+    (SELECT multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 2, max_threads = 1, query_plan_join_swap_table = false, enable_join_runtime_filters = 1
+) WHERE explain ILIKE '%BuildRuntimeFilter%';
+
+-- Dynamic key, parallel hash so several per-thread filters are built and merged (ExactContainsRuntimeFilter::merge).
+-- numbers_mt (not numbers) is required: numbers() is forced to one stream, so BuildRuntimeFilterStep would
+-- capture a single build stream (filters_to_merge = 0) and merge() would never run. numbers_mt fans the build
+-- side across max_threads streams, giving several BuildRuntimeFilterTransform instances whose filters merge.
+SELECT count() FROM
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers(200)) AS t1
+    JOIN
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers_mt(2000)) AS t2
+    USING (k)
+SETTINGS max_block_size = 37, max_threads = 8, join_algorithm = 'parallel_hash', query_plan_join_swap_table = false;
+SELECT count() > 0 FROM (EXPLAIN actions = 1
+SELECT count() FROM
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers(200)) AS t1
+    JOIN
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers_mt(2000)) AS t2
+    USING (k)
+SETTINGS max_block_size = 37, max_threads = 8, join_algorithm = 'parallel_hash', query_plan_join_swap_table = false, enable_join_runtime_filters = 1
+) WHERE explain ILIKE '%BuildRuntimeFilter%';
+-- The pipeline must show more than one BuildRuntimeFilterTransform (the numbers_mt build side is multi-stream),
+-- otherwise filters_to_merge = 0 and ExactContainsRuntimeFilter::merge is never exercised.
+SELECT count() > 0 FROM (EXPLAIN PIPELINE
+SELECT count() FROM
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers(200)) AS t1
+    JOIN
+    (SELECT multiIf(number % 4 = 0, number::Int64::Dynamic, number % 4 = 1, toString(number)::Dynamic, number % 4 = 2, number::Float64::Dynamic, (number % 2)::UInt8::Dynamic) AS k FROM numbers_mt(2000)) AS t2
+    USING (k)
+SETTINGS max_block_size = 37, max_threads = 8, join_algorithm = 'parallel_hash', query_plan_join_swap_table = false, enable_join_runtime_filters = 1
+) WHERE explain LIKE '%BuildRuntimeFilterTransform × %';
+
+-- Tuple(Dynamic, ...) key, many tiny build blocks with diverging local order.
+SELECT count() FROM
+    (SELECT tuple(multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic), 1) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT tuple(multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic), 1) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 1, max_threads = 2, query_plan_join_swap_table = false;
+SELECT count() > 0 FROM (EXPLAIN actions = 1
+SELECT count() FROM
+    (SELECT tuple(multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic), 1) AS k FROM numbers(8)) AS t1
+    JOIN
+    (SELECT tuple(multiIf(number % 4 IN (0, 3), number::Int64::Dynamic, toString(number)::Dynamic), 1) AS k FROM numbers(40)) AS t2
+    USING (k)
+SETTINGS max_block_size = 1, max_threads = 2, query_plan_join_swap_table = false, enable_join_runtime_filters = 1
+) WHERE explain ILIKE '%BuildRuntimeFilter%';
