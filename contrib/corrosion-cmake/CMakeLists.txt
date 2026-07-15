@@ -186,12 +186,15 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
-elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
+elseif ((SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined") AND NOT CLICKHOUSE_HWASAN)
     # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
     # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
+    # CLICKHOUSE_HWASAN is excluded here: rustc has no `-Zsanitizer=hwaddress` for generic
+    # aarch64-unknown-linux-gnu (only android), and mixing HWASan C++ with ASan Rust would
+    # clash at the FFI boundary. Rust is built uninstrumented in HWASan builds.
 endif()
 
 # Force `rustix` to use its libc backend under sanitizers.
@@ -209,9 +212,21 @@ if (NOT SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
 endif()
 
-# Set metadata flag to force different hashes for different sanitizers
+# Set metadata flag to force different hashes for different sanitizers.
+#
+# HWASan and software ASan produce incompatible native artifacts (cargo's bundled C - `ring`,
+# OpenSSL via `openssl-sys` - references `__hwasan_*` vs `__asan_*`), yet share the same
+# SANITIZE value, so the metadata must also encode CLICKHOUSE_HWASAN; otherwise a cache seeded
+# by the ASan variant is reused and fails with undefined `__asan_*` symbols.
+#
+# The `-ntg` ("no tagged globals") suffix also invalidates the target-dir when the way HWASan
+# instruments the statically bundled C changes: cargo doesn't track external `libcrypto.a`, so a
+# CFLAGS-only change (e.g. disabling global tagging, HWASAN_EXTRA_FLAGS) wouldn't otherwise
+# re-bundle a cached `libdelta_kernel_ffi.a`.
 if (SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+elseif (CLICKHOUSE_HWASAN)
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-hwaddress")
 else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()

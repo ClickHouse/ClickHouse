@@ -1,6 +1,6 @@
-#include <base/defines.h> // ADDRESS_SANITIZER
+#include <base/defines.h> // ADDRESS_SANITIZER, HWADDRESS_SANITIZER
 
-#ifdef ADDRESS_SANITIZER
+#if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER)
 
 #include <cstdlib>
 #include <thread>

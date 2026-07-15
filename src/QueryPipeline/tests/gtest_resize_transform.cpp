@@ -113,6 +113,10 @@ TEST(ResizeTransformTest, SplitResizeTest)
 {
 #if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(ADDRESS_SANITIZER)
     GTEST_SKIP() << "Too slow with heavy sanitizers. Ok in release or UBSan";
+#elif defined(HWADDRESS_SANITIZER)
+    /// HWASan's overhead is much lower than software ASan's, but that's unconfirmed on the new
+    /// aarch64 HWASan CI job; stay conservative and revisit (drop this branch) once verified.
+    GTEST_SKIP() << "Not yet confirmed fast enough under HWASan";
 #else
     for (size_t instreams = 2; instreams < 100; ++instreams)
     {

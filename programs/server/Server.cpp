@@ -1189,6 +1189,9 @@ std::vector<String> getSanitizerNames()
 #if defined(ADDRESS_SANITIZER)
     names.push_back("address");
 #endif
+#if defined(HWADDRESS_SANITIZER)
+    names.push_back("hardware-assisted address");
+#endif
 #if defined(THREAD_SANITIZER)
     names.push_back("thread");
 #endif

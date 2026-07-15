@@ -55,6 +55,14 @@ if (ENABLE_OPENSSL_ENCRYPTION)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DENABLE_OPENSSL_ENCRYPTION")
 endif()
 
+if (CLICKHOUSE_HWASAN)
+    # aws-c-common marks functions with intentional out-of-bounds reads (e.g. hashlittle2 in
+    # lookup3.inl, s_sba_free in allocator_sba.c) with AWS_SUPPRESS_ASAN, but its definition in
+    # macros.h only knows software ASan, so under HWASan it expands to nothing and those reads
+    # become tag-mismatch reports. Predefine the HWASan equivalent; macros.h keeps ours.
+    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_SUPPRESS_ASAN=__attribute__((no_sanitize(\"hwaddress\")))")
+endif()
+
 
 # Directories.
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
