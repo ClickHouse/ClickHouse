@@ -19,11 +19,15 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
-    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
-    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
-    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
-    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
+if (ARCH_AMD64 AND NOT X86_ARCH_LEVEL VERSION_EQUAL 3)
+    # Multi-target dispatch (see `src/Common/TargetSpecific.h`) is only useful at
+    # the default x86-64-v3 level, where the default code uses AVX2 and the v4
+    # variants add AVX-512.  At other levels it causes problems:
+    #  - Below v3: FORCE_INLINE in DECLARE_*_SPECIFIC_CODE blocks leaks higher
+    #    ISA requirements into generic code.
+    #  - Above v3 (e.g. v4): the default code already includes AVX-512, and
+    #    multi-target macros may conflict with third-party libraries that do
+    #    their own ISA detection (e.g. StringZilla, see #99172).
     set(ENABLE_MULTITARGET_CODE OFF)
 endif()
 
@@ -71,6 +75,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
@@ -94,11 +102,14 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/RegexpJIT)
 add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
+add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/SpaceShared)
+add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/TimeShared)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
@@ -111,6 +122,10 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
+
+if (TARGET ch_contrib::sz3)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
+endif()
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
@@ -139,17 +154,23 @@ add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
+add_headers_and_sources(dbms Storages/ObjectStorage/Web)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Common)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/OOMCanary)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -202,10 +223,10 @@ if (ENABLE_CLIENT_AI)
     add_headers_and_sources(dbms Client/AI)
 endif()
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_DARWIN)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
-    message(STATUS "StorageFileLog is only supported on Linux")
+    message(STATUS "StorageFileLog is only supported on Linux and macOS")
 endif ()
 
 list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
@@ -223,13 +244,36 @@ else()
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
 endif()
 
-# Settings dumpToMap is too slow with MSAN
+# Origin tracking dominates the QueryLog flush hot path under MSan. Both the per-element
+# helpers (SettingsImpl::dumpToMapColumn in Core/Settings.cpp,
+# ProfileEvents::dumpToMapColumn in Interpreters/ProfileEventsExt.cpp) and the per-row
+# LogElement::appendToBlock functions walk hundreds of values and do tight column inserts in
+# a loop, so the per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to
+# seconds per `SYSTEM FLUSH LOGS query_log`. With x86-64-v3 AVX2 codegen these flushes push
+# the MSan WasmEdge stateless check over the 600s/180s timeouts.
+#
+# Origin tracking is still on globally; these files are leaf helpers where MSan checks
+# don't carry uninit values into user code, so dropping origin tracking here is safe.
+# History: Core/Settings.cpp got this treatment in #92716. The QueryLog flush path
+# (Interpreters/ProfileEventsExt.cpp, Interpreters/SystemLog.cpp, and the LogElement files
+# Interpreters/QueryLog.cpp / QueryThreadLog.cpp / MetricLog.cpp / QueryMetricLog.cpp) was
+# added when the same pattern surfaced under v3.
 if (SANITIZE STREQUAL "memory")
-    set_source_files_properties(Core/Settings.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer -fno-sanitize-memory-track-origins")
-else ()
-    set_source_files_properties(Core/Settings.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
+    set_source_files_properties(
+        Core/Settings.cpp
+        Interpreters/ProfileEventsExt.cpp
+        Interpreters/SystemLog.cpp
+        Interpreters/QueryLog.cpp
+        Interpreters/QueryThreadLog.cpp
+        Interpreters/MetricLog.cpp
+        Interpreters/QueryMetricLog.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize-memory-track-origins"
+    )
 endif ()
 
+# ThreadFuzzer's injection() shows up in perf top of mutex-heavy code paths. Omitting the
+# frame pointer here shaves a couple of instructions off each call (almost a 2x speedup of
+# the ThreadFuzzer test); see commit d5825ec8 / azat 2024-03-04.
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 # Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
@@ -308,9 +352,17 @@ add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_interpreters_merge_tree_transaction Interpreters/MergeTreeTransaction)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+
+# TODO: at v3 SLP-emitted YMM zero-stores in column construction add `vzeroupper`s around the
+# per-block dispatch and regress `generate_table_function #0/#1/#5` ~18% with no real win.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set_source_files_properties(Storages/StorageGenerateRandom.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+endif()
+
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
+add_object_library(clickhouse_storages_mergetree_unique_key Storages/MergeTree/UniqueKey)
 add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Storages/MergeTree/Compaction/MergePredicates)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
@@ -345,12 +397,26 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/viz-standalone.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/marked.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/katex.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/katex.min.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html;\
+${CMAKE_SOURCE_DIR}/programs/server/processors_profile.html;\
+${CMAKE_SOURCE_DIR}/programs/server/docs.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
 
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
@@ -389,6 +455,8 @@ if (TARGET ch_contrib::arrow_flight)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
+add_object_library(clickhouse_server_statelessworker Server/StatelessWorker)
+add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -402,6 +470,14 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+# Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
+# At -Og with AVX2+ targets, the compiler miscompiles functions that combine
+# floating-point return values with ymm-based memset zero-initialization.
+# Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
+    set_source_files_properties(Processors/QueryPlan/Optimizations/joinOrder.cpp PROPERTIES COMPILE_FLAGS "-O2")
+endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
@@ -415,6 +491,10 @@ set_property(SOURCE
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
+endif()
+
+if (USE_ARROW)
+    add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
 endif()
 
 if (TARGET ch_contrib::nuraft)
@@ -484,8 +564,16 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
+if (TARGET ch_contrib::libdeflate)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libdeflate)
+endif()
+
 if (TARGET ch_contrib::libfiu)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
+endif()
+
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::silk_fibers)
 endif()
 
 if (TARGET ch_contrib::cpuid)
@@ -506,12 +594,17 @@ endif()
 
 target_link_libraries(dbms PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 target_link_libraries(dbms PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
+endif()
+
+if (TARGET ch_contrib::libpng)
+    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
@@ -578,14 +671,19 @@ target_link_libraries(
     dbms
     PUBLIC
         boost::circular_buffer
-        boost::heap)
+        boost::heap
+        boost::iostreams)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::ipnsort
+    ch_contrib::driftsort)
 target_link_libraries(dbms PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::ipnsort
+    ch_contrib::driftsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
 
@@ -610,6 +708,11 @@ endif ()
 
 if (TARGET ch_contrib::parquet)
     target_link_libraries(dbms PRIVATE ch_contrib::parquet)
+endif ()
+
+# Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
+if (TARGET ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -739,6 +842,10 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
+if (TARGET ch_contrib::base64)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::base64)
+endif()
+
 if (TARGET ch_contrib::libarchive)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::libarchive)
 endif()
@@ -822,6 +929,10 @@ if (ENABLE_TESTS)
         -Wno-sign-compare
     )
 
+    target_compile_definitions(unit_tests_dbms PRIVATE
+        CLICKHOUSE_TESTS_CONFIG_DIR="${ClickHouse_SOURCE_DIR}/tests/config"
+    )
+
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gmock_all
         ch_contrib::gtest
@@ -832,7 +943,14 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper)
+        clickhouse_common_zookeeper
+        # `ConnectionParameters` (exercised by a gtest) pulls in `readpassphrase` for the
+        # interactive password prompt, so the unit test executable must link it too.
+        readpassphrase)
+
+    if (TARGET ch_contrib::krb5)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
+    endif()
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -856,6 +974,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::silk_fibers)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
 endif ()
 

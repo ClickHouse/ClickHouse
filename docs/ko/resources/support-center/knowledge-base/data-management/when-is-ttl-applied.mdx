@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: TTL 규칙은 언제 적용되며, 이를 제어할 수 있습니까?
+description: ClickHouse의 TTL 규칙은 시간이 지나면 적용되며, `merge_with_ttl_timeout` 설정으로 실행 시점을 제어할 수 있습니다. TTL 적용을 강제로 실행하는 방법과 TTL 실행용 백그라운드 스레드를 관리하는 방법을 알아보십시오.
+tags: ['핵심 데이터 개념']
+keywords: ['TTL']
+---
+
+<div id="ttl-rules-and-control">
+  ## TTL 규칙 및 제어
+</div>
+
+TTL은 ***결국*** 적용됩니다. 이 말은 무슨 뜻일까요? `MergeTree` 테이블 설정 [`merge_with_ttl_timeout`](/ko/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout)은 삭제 TTL이 있는 머지를 다시 수행하기 전까지의 최소 지연 시간을 초 단위로 지정합니다. 기본값은 14400초(4시간)입니다. 하지만 이는 최소 지연 시간일 뿐이며, 삭제 TTL용 머지가 트리거되기까지는 더 오래 걸릴 수 있습니다.
+
+다음 쿼리를 사용하면 현재 TTL 설정 전체(`merge_with_ttl_timeout` 등)를 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ How many tasks of merging parts with TTL are allowed simultaneously in ReplicatedMergeTree queue.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ When there is more than specified number of merges with TTL entries in pool, do not assign new merge with TTL. This is to leave free threads for regular merges and avoid "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Minimal time in seconds, when merge with delete TTL can be repeated.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Minimal time in seconds, when merge with recompression TTL can be repeated.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Only drop altogether the expired parts and not partially prune them.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Only recalculate ttl info when MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+`SHOW CREATE TABLE`을 사용하면 테이블에 TTL 규칙이 포함되어 있는지, 그리고 테이블 `SETTINGS`에서 위 설정의 값이 변경되었는지도 확인할 수 있습니다:
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## TTL 규칙 강제로 적용하기
+</div>
+
+가장 깔끔한 해결책은 아니지만, `MATERIALIZE TTL`을 명시적으로 호출하여 테이블의 모든 TTL 규칙을 강제로 구체화할 수 있습니다:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## TTL에 영향을 미치는 백그라운드 스레드
+</div>
+
+background pool에 작업 스레드가 충분하지 않으면 TTL 규칙이 적용되지 않을 수 있습니다. 예를 들어 데이터를 집중적으로 삽입하면 background pool 전체가 일반적인 머지 작업에 사용될 수 있습니다. 하지만 background pool 크기를 늘릴 수 있습니다.
+
+다음 쿼리로 현재 background pool 크기를 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ 더 이상 사용되지 않는 설정으로, 아무런 효과가 없습니다. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+다음과 같이 구성된 [`background_pool_size` 설정](/ko/reference/settings/server-settings/settings#background_pool_size)을 수정하는 방법은 문서에서 확인하세요:
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+다음 쿼리로 현재 background pool의 동작 상태를 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```

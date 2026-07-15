@@ -1,4 +1,4 @@
-#include <Access/ViewDefinerDependencies.h>
+#include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -119,6 +120,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * The context is also marked as a view inner context so that the query analyzer
+  * resolves positional arguments inside the view even on remote/secondary nodes
+  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -135,6 +140,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 
@@ -171,7 +177,7 @@ StorageView::StorageView(
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -203,7 +209,8 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     if (context->hasInsertionTable())
         return nullptr;
 
-    auto inner_query_ast = getInMemoryMetadataPtr(context, false)->getSelectQuery().inner_query;
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
 
     QueryTreeNodePtr inner_query_tree;
     try
@@ -344,16 +351,16 @@ void StorageView::readImpl(
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
+
+        /// It's expected that the columns read from storage are not constant.
+        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+        ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
+
+        auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
+        materializing->setStepDescription("Materialize constants after VIEW subquery");
+        query_plan.addStep(std::move(materializing));
     }
-
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
-
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
-    materializing->setStepDescription("Materialize constants after VIEW subquery");
-    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -373,7 +380,7 @@ void StorageView::readImpl(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
-            context);
+            context, false, false, nullptr, nullptr, false);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
@@ -384,8 +391,9 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+        DefinerDependencies::instance().removeDependencies(table_id);
 }
 
 void StorageView::alter(
@@ -394,20 +402,21 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = ViewDefinerDependencies::instance();
+    auto & instance = DefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeViewDependencies(table_id);
+        instance.removeDependencies(table_id);
 
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addViewDependency(*new_metadata.definer, table_id);
+        instance.addDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 }
@@ -499,6 +508,7 @@ void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     }
 }
 
+void registerStorageView(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory)
 {
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)
@@ -526,7 +536,14 @@ void registerStorageView(StorageFactory & factory)
         }
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query).
+)DOCS_MD",
+        .syntax = "CREATE VIEW name AS SELECT ...",
+        .related = {"MaterializedView"}});
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

@@ -2,6 +2,8 @@
 import concurrent.futures
 import math
 import os
+import time
+
 import pytest
 
 import helpers.keeper_utils as keeper_utils
@@ -80,6 +82,12 @@ def started_cluster():
 
 CHUNK_SIZE = 4096  # matches snapshot_transfer_chunk_size in small-chunk configs
 
+# Recovery here means replaying raft logs and installing a snapshot (over S3, with a
+# 1 KiB read buffer) before the node accepts connections. Under msan/tsan that legitimately
+# took ~95 s in CI, so the wait must be generous: start_clickhouse returns as soon as the
+# server is ready, so a large upper bound costs nothing on fast runs.
+RESTART_TIMEOUT_SECONDS = 180
+
 CHUNKED_TRANSFER_PARAMS = [
     pytest.param({"leader": node1, "middle": node2, "lagging": node3, "disk_type": "local"}, id="local_disk"),
     pytest.param({"leader": node7, "middle": node8, "lagging": node9, "disk_type": "remote"}, id="remote_disk"),
@@ -120,10 +128,19 @@ def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
     node_lagging.stop_clickhouse(kill=True)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
     assert received is not None
+
+    # The kazoo client created before `stop_clickhouse(kill=True)` may have its
+    # session expire while the server is down (the default session timeout is
+    # shorter than the kill+restart window in CI under load). Once a kazoo
+    # session is expired the client cannot resume it on reconnect — even with
+    # implicit retries — and subsequent requests raise `ConnectionClosedError`.
+    # Re-create the client after the restart, matching the pattern used by the
+    # other test methods in this file.
+    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
 
     assert lagging_zk.get(prefix)[0] == b"somedata"
     verify_test_tree(leader_zk, lagging_zk, prefix)
@@ -168,7 +185,7 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         user="root",
     )
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         node_lagging.query("SYSTEM ENABLE FAILPOINT keeper_save_snapshot_pause_mid_transfer")
     except Exception:
         _drop_rule()
@@ -201,6 +218,16 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
             "root", prefix=s3_prefix + "tmp_snapshot_"
         ))
         assert tmp_objects, "No tmp_snapshot object in S3 after killing mid-transfer"
+        # Record (name, last_modified) tuples to uniquely identify these specific
+        # files.  A new snapshot transfer after restart may create a tmp_ marker
+        # with the *same* object_name (the leader can resend the same log_idx if
+        # nothing committed in the meantime), so matching by name alone causes
+        # false positives where the new in-flight marker is mistaken for the
+        # interrupted-transfer marker that startup cleanup already removed.
+        # last_modified has microsecond precision in MinIO and is monotonically
+        # increasing across writes, so the (name, last_modified) tuple is a
+        # reliable identity for the original interrupted-transfer file.
+        interrupted_tmp_ids = {(o.object_name, o.last_modified) for o in tmp_objects}
     else:
         snapshot_dir = "/var/lib/clickhouse/coordination/snapshots"
         tmp_snapshot_path = node_lagging.exec_in_container(
@@ -208,16 +235,35 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         ).strip()
         assert tmp_snapshot_path, "No tmp_snapshot file on disk after killing mid-transfer"
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
     lagging_zk.sync(prefix)  # wait until all committed entries (including snapshot) are applied
 
     if is_remote:
-        remaining = list(started_cluster.minio_client.list_objects(
-            "root", prefix=s3_prefix + "tmp_snapshot_"
-        ))
-        assert not remaining, f"tmp_snapshot objects not removed from S3 on startup: {[o.object_name for o in remaining]}"
+        # After restart the node may also create new local snapshots asynchronously
+        # (queued via snapshots_queue) or receive a fresh snapshot from the leader
+        # that re-uses the same log_idx, both of which temporarily produce a tmp_
+        # marker with the same object_name as the interrupted-transfer marker.
+        # Match on (name, last_modified) so we only count the *original* file —
+        # the one whose cleanup we are verifying — and ignore unrelated in-flight
+        # markers created after the restart.
+        deadline = time.time() + 15
+        remaining = None
+        while True:
+            remaining = [
+                o for o in started_cluster.minio_client.list_objects(
+                    "root", prefix=s3_prefix + "tmp_snapshot_"
+                )
+                if (o.object_name, o.last_modified) in interrupted_tmp_ids
+            ]
+            if not remaining or time.time() >= deadline:
+                break
+            time.sleep(1)
+        assert not remaining, (
+            f"tmp_snapshot objects from interrupted transfer not removed within 15 s: "
+            f"{[o.object_name for o in remaining]}"
+        )
     else:
         assert (
             node_lagging.exec_in_container(
@@ -247,7 +293,7 @@ def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
     leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
 
@@ -284,7 +330,7 @@ def test_recover_after_s3_read_error_during_transfer(started_cluster):
 
     node_leader.query("SYSTEM ENABLE FAILPOINT s3_read_buffer_throw_expired_token")
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         keeper_utils.wait_until_connected(cluster, node_lagging)
 
         received = get_received_snapshot_info(node_lagging, kill_time, timeout=30)
@@ -320,7 +366,7 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     leader_zk = keeper_utils.get_fake_zk(cluster, node_old_leader.name)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
 

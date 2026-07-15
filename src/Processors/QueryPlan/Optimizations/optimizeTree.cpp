@@ -10,10 +10,14 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
 
 #include <memory>
 #include <stack>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -42,6 +46,7 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations
@@ -80,10 +85,14 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.make_distributed_plan,
     };
 
     while (!stack.empty())
@@ -173,6 +182,10 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root);
+void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -190,10 +203,14 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.make_distributed_plan,
     };
 
     Stack stack;
@@ -238,6 +255,14 @@ void optimizeTreeSecondPass(
         });
     }
 
+    /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
+    /// in the traversal below. A join runtime filter injects a per-execution-random constant into the
+    /// probe-side Filter (see `joinRuntimeFilter.cpp`); hashing a plan that contains it would make an
+    /// aggregation's key differ across executions of the same query and defeat the size-stats cache.
+    /// Join steps avoid this for exactly the same reason by computing their key before the filter is
+    /// added. The plan here is already deterministic (post first pass and subplan materialization).
+    setAggregationHashTableCacheKeys(optimization_settings, root);
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -274,6 +299,16 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Run after runtime filter push-down so that chains of joins are detected correctly.
+    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
+    }
+
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -284,19 +319,27 @@ void optimizeTreeSecondPass(
             });
     }
 
-    traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
-        {
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+    /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
+    /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
+    /// than silently running single-node.
+    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
+    /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
+    if (optimization_settings.make_distributed_plan)
+        checkDistributedReadSupported(root);
+    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    if (optimization_settings.make_distributed_plan)
+        validateDistributedPlanBucketCounts(optimization_settings);
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
-            if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-        },
+    traverseQueryPlan(stack, root,
+        [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (optimization_settings.make_distributed_plan)
+            if (make_distributed_plan)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -319,16 +362,8 @@ void optimizeTreeSecondPass(
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                {
-                    auto applied_projection = optimizeUseAggregateProjections(
-                        *frame.node,
-                        nodes,
-                        optimization_settings.optimize_use_implicit_projections,
-                        optimization_settings.is_parallel_replicas_initiator_with_projection_support,
-                        optimization_settings.max_step_description_length);
-                    if (applied_projection)
+                    if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
-                }
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
@@ -347,12 +382,7 @@ void optimizeTreeSecondPass(
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(
-                stack,
-                nodes,
-                optimization_settings,
-                optimization_settings.is_parallel_replicas_initiator_with_projection_support,
-                optimization_settings.max_step_description_length))
+            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
             {
                 applied_projection_names.insert(*applied_projection);
 
@@ -376,6 +406,28 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.aggregate_partitions_independently)
+                optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_partitions_independently)
+                optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_in_order)
+                optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.push_limit_by_into_sort)
+                pushLimitByIntoSort(frame_node);
+        });
+
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.
@@ -397,26 +449,53 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
+            /// The local plan is the initiator's share of a parallel-replicas read. The only thing it must
+            /// agree on with the remote replicas is the coordination mode (Default / WithOrder / ReverseOrder)
+            /// announced to the shared coordinator — everything else stays local (each replica announces its
+            /// own ranges and the coordinator reconciles them). That mode is a pure function of
+            /// `query_info.input_order_info`, which is set only by `ReadFromMergeTree::requestReadingInOrder`.
+            /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
+            /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
+            /// subquery's values, exactly the settings that gate an optimization which can call
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
+            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
+            /// must be added here too.
+            auto local_optimization_settings = optimization_settings;
+            if (auto local_context = read_from_local->getContext())
+            {
+                const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
+                local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
+                local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
+                local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
+                local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.reuse_storage_ordering_for_window_functions
+                    = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+            }
+
             auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
+            local_plan->optimize(local_optimization_settings);
 
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
-            // after applying optimize() we still can have several expression in a row,
-            // so merge them to make plan more concise
-            if (optimization_settings.merge_expressions)
+            if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, {});
         }
 
         stack.pop_back();
     }
-    // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
     /// Optimize exchanges
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
         optimizeExchanges(root);
+
+    /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
+    /// and constness is re-derived per step.
+    if (optimization_settings.make_distributed_plan)
+        materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
@@ -514,6 +593,11 @@ void optimizeTreeSecondPass(
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
+    /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
+    /// Must run after applyOrder, which converts SortingStep to FinishSorting.
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
+
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
@@ -545,6 +629,7 @@ void addStepsToBuildSets(
         stack.pop_back();
     }
 }
+
 
 }
 }

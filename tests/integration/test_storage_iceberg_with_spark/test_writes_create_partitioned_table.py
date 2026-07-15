@@ -37,3 +37,29 @@ def test_writes_create_partitioned_table(started_cluster_iceberg_with_spark, for
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+@pytest.mark.parametrize("partition_type", ["toYearNumSinceEpoch(d)", "toMonthNumSinceEpoch(d)", "toRelativeDayNum(d)"])
+def test_writes_date_column_with_time_transforms(started_cluster_iceberg_with_spark, storage_type, partition_type):
+    """Test that Date columns work with year/month/day partition transforms (issue #86337)."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_writes_date_time_transforms_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(id Int64, d Date)", 2, partition_type)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, '2025-08-28');", settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\t2025-08-28\n'
+
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 1

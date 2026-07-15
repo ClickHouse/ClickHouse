@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: '数据验证'
+title: '迁移后验证数据是否正确'
+description: '了解迁移到 ClickHouse Managed Postgres 后如何验证数据是否正确'
+keywords: ['postgres', 'postgresql', 'logical replication', 'migration', 'data transfer', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## 比较所有表的行数
+</div>
+
+迁移后，验证数据是否正确的一个简单方法，是比较源数据库和目标数据库中所有表的行数。你可以在两个数据库中分别运行以下查询：
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```

@@ -7,23 +7,29 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 tmp_file=$(mktemp "$CURDIR/clickhouse.XXXXXX.csv")
 trap 'rm $tmp_file' EXIT
 
-# NOTE: this file should be huge enough, so that it is impossible to upload it
-# in 0.15s, see _timeout command below, this will ensure, that EOF will be
-# received during creating a set from externally uploaded table.
+# This test verifies that the server handles EOF correctly when an HTTP
+# multipart upload is interrupted mid-stream (the upload is killed by the
+# parent shell after 0.15s).
 #
-# Previously code there wasn't ready for EOF, and you will get one of the
-# following assertions:
+# Previously the code wasn't ready for EOF, and you will get one of the
+# following exceptions:
 #
 #     - ./src/IO/ReadBuffer.h:58: bool DB::ReadBuffer::next(): Assertion `!hasPendingData()' failed.
 #     - ./src/Server/HTTP/HTMLForm.cpp:245: bool DB::HTMLForm::MultipartReadBuffer::skipToNextBoundary(): Assertion `boundary_hit' failed.
 #     - ./src/IO/LimitReadBuffer.cpp:17: virtual bool DB::LimitReadBuffer::nextImpl(): Assertion `position() >= in->position()' failed.
 #
+# `curl --limit-rate` throttles the upload to a known rate, so the kill at
+# 0.15s reliably arrives mid-upload regardless of CPU speed or network
+# bandwidth. Without it, on a fast (release-style, e.g. `*_binary`) build
+# over loopback the entire 78 MB upload can complete in under 0.15s, and
+# the `Error: completed early` branch fires — leading to a flaky
+# `+Error: completed early` diff against the reference output.
 $CLICKHOUSE_CLIENT -q "SELECT toString(number) FROM numbers(10e6) FORMAT TSV" > "$tmp_file"
 
 _timeout() {
     echo Run
     (
-        ${CLICKHOUSE_CURL} -sS -F "s=@$tmp_file;" "$1" -o /dev/null 2>/dev/null
+        ${CLICKHOUSE_CURL} --limit-rate 100k -sS -F "s=@$tmp_file;" "$1" -o /dev/null 2>/dev/null
         echo Error: completed early
     ) &
     local pid=$!

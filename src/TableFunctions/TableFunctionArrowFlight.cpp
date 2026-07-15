@@ -53,8 +53,14 @@ void TableFunctionArrowFlight::parseArguments(const ASTPtr & ast_function, Conte
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionArrowFlight>(
-         {.description = R"(Allows to perform queries on data exposed via an Apache Arrow Flight server.)",
-            .examples{{"arrowFlight", "SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;", ""}},
+         {.description = R"(Allows reading from and writing to data exposed via an Apache Arrow Flight server.
+The schema is inferred from the Arrow Flight server. Named collections are supported, and the
+`arrow_flight_request_descriptor_type` setting controls how the dataset name is sent to the server
+(`path` or `command`).)",
+            .examples{
+                {"Read", "SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;", ""},
+                {"Insert", "INSERT INTO FUNCTION arrowFlight('127.0.0.1:9005', 'sample_dataset') VALUES (4, 'qux', 99.9);", ""},
+                {"Named collection", "SELECT * FROM arrowFlight(named_collection_name);", ""}},
             .category = FunctionDocumentation::Category::TableFunction}, {});
 
     /// "arrowflight" is an obsolete name.

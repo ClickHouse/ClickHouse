@@ -237,7 +237,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     validateKeyTypes(key_types);
 
@@ -1092,7 +1092,7 @@ static auto keyViewGetter()
         for (size_t row : collections::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            size_t str_len;
+            size_t str_len = 0;
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
@@ -1222,6 +1222,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     return ipNotFound();
 }
 
+void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,
@@ -1258,7 +1259,10 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
-    factory.registerLayout("ip_trie", create_layout, true);
+    factory.registerLayout("ip_trie", create_layout, true, true, Documentation{
+        .description = "Stores the dictionary as a trie keyed by IP prefixes (CIDR ranges), for mapping IP addresses to attributes such as ASN or country code.",
+        .syntax = "LAYOUT(IP_TRIE())",
+        .related = {}});
 }
 
 }

@@ -61,9 +61,27 @@ SELECT number AS n, toString(number) AS s FROM numbers(5000) FORMAT Parquet
 echo '--- multiple row groups: count ---'
 ${CLICKHOUSE_LOCAL} --query "SELECT count(), sum(n) FROM file('${OUT}', 'Parquet')"
 
-echo '--- filter pushdown on id column ---'
+echo '--- filter pushdown: row groups pruned ---'
+# Profile events may be emitted on multiple lines (one per thread/batch under
+# parallel decode), so sum the counters and emit a binary verdict. A regression
+# that disables Parquet stats pushdown would drop pruned to 0.
+${CLICKHOUSE_LOCAL} --print-profile-events --query "
+    SELECT count() FROM file('${OUT}', 'Parquet') WHERE n BETWEEN 100 AND 200
+" 2>&1 | awk '
+    /ParquetReadRowGroups:/   { read   += $(NF-1) }
+    /ParquetPrunedRowGroups:/ { pruned += $(NF-1) }
+    END {
+        if (pruned > 0 && read > 0) print "pruned"
+        else                        print "not pruned (read=" read+0 " pruned=" pruned+0 ")"
+    }
+'
+
+echo '--- filter pushdown: result correctness ---'
 ${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${OUT}', 'Parquet') WHERE n BETWEEN 100 AND 200"
 ${CLICKHOUSE_LOCAL} --query "SELECT min(n), max(n) FROM file('${OUT}', 'Parquet') WHERE n < 50"
+
+echo '--- filter pushdown: result identical with pushdown off ---'
+${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${OUT}', 'Parquet') WHERE n BETWEEN 100 AND 200 SETTINGS input_format_parquet_filter_push_down = 0"
 
 # -----------------------------------------------------------------------------
 # 4. Column pruning: SELECT a subset forces projection.
@@ -74,6 +92,17 @@ SELECT number AS a, number * 2 AS b, number * 3 AS c FROM numbers(100) FORMAT Pa
 echo '--- column pruning ---'
 ${CLICKHOUSE_LOCAL} --query "SELECT sum(b) FROM file('${OUT}', 'Parquet')"
 ${CLICKHOUSE_LOCAL} --query "SELECT sum(a), sum(c) FROM file('${OUT}', 'Parquet')"
+
+# Parquet column pruning: reading a single column issues fewer decoding tasks
+# than reading all three. Sum across lines (CI emits one event line per thread
+# under parallel decode) and assert single-column total < all-columns total.
+# A regression that read all columns regardless of projection would tie them.
+echo '--- column pruning: decoding tasks shrink with projection ---'
+ONE=$(${CLICKHOUSE_LOCAL} --print-profile-events --query "SELECT sum(b) FROM file('${OUT}', 'Parquet')" 2>&1 \
+    | awk '/ParquetDecodingTasks:/ { sum += $(NF-1) } END { print sum+0 }')
+ALL=$(${CLICKHOUSE_LOCAL} --print-profile-events --query "SELECT * FROM file('${OUT}', 'Parquet') FORMAT Null" 2>&1 \
+    | awk '/ParquetDecodingTasks:/ { sum += $(NF-1) } END { print sum+0 }')
+if [ "$ONE" -lt "$ALL" ]; then echo "pruned"; else echo "not pruned (one=$ONE all=$ALL)"; fi
 
 # -----------------------------------------------------------------------------
 # 5. Nullable handling.

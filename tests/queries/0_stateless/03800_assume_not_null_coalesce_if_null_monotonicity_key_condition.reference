@@ -86,7 +86,7 @@ WHERE ts >= toDateTime64('2025-01-01 00:00:00', 3);
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
+      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
         ReadFromMergeTree (default.test)
         Indexes:
           PrimaryKey
@@ -118,7 +118,7 @@ WHERE ts >= toDateTime64('2025-01-01 00:00:00', 3);
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
+      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
         ReadFromMergeTree (default.test)
         Indexes:
           PrimaryKey
@@ -150,7 +150,7 @@ WHERE ts >= toDateTime64('2025-01-01 00:00:00', 3);
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
+      Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
         ReadFromMergeTree (default.test)
         Indexes:
           PrimaryKey

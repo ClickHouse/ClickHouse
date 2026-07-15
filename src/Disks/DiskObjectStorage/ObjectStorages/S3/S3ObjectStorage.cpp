@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
@@ -28,6 +29,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -49,6 +51,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageS3Threads;
     extern const Metric ObjectStorageS3ThreadsActive;
     extern const Metric ObjectStorageS3ThreadsScheduled;
+}
+
+namespace DB::FailPoints
+{
+    extern const char object_storage_force_refresh_callback_success[];
 }
 
 
@@ -84,6 +91,20 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
         throw S3Exception(
             fmt::format("{} (Code: {}, S3 exception: '{}')",
                         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
+            err.GetErrorType());
+    }
+}
+
+template <typename Result, typename Error, typename... Args>
+void throwIfError(const Aws::Utils::Outcome<Result, Error> & response, fmt::format_string<Args...> context_fmt, Args &&... args)
+{
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(
+            fmt::format("{} (Code: {}, S3 exception: '{}'), {}",
+                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(),
+                        fmt::format(context_fmt, std::forward<Args>(args)...)),
             err.GetErrorType());
     }
 }
@@ -212,22 +233,49 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>) const
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
     auto settings_ptr = s3_settings.get();
+
+    /// A query can override request settings (from its SETTINGS clause or profile). Apply them to a
+    /// local copy so they affect only this read and don't stick around for later queries, same as writeObject.
+    S3::S3RequestSettings request_settings = settings_ptr->request_settings;
+    if (auto query_context = CurrentThread::tryGetQueryContext();
+        query_context && !query_context->isBackgroundContext())
+    {
+        const auto & settings = query_context->getSettingsRef();
+        request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
+    }
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
         object.remote_path,
         uri.version_id,
-        settings_ptr->request_settings,
+        request_settings,
         patchSettings(read_settings),
-        read_settings.remote_read_buffer_use_external_buffer,
+        use_external_buffer,
         /* offset */0,
         /* read_until_position */0,
-        read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        credentials_refresh_callback);
+        restrict_seek,
+        /// `bytes_size` may be `StoredObject::UnknownSize` for an object whose size is not known
+        /// (for example an HTTP source that omits `Content-Length`). It is a sentinel, not a real
+        /// size, so it must map to `std::nullopt` (read to EOF) just like the legacy `0` value —
+        /// otherwise `ReadBufferFromS3` treats it as a real size and issues ranged reads forever.
+        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        credentials_refresh_callback,
+        std::move(blob_storage_log),
+        object.etag);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -321,7 +369,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         outcome = client.get()->ListObjectsV2(request);
-        throwIfError(outcome);
+        throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path, disk_name);
 
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
@@ -370,7 +418,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     Strings local_paths_for_blob_storage_log;
-    std::vector<size_t> file_sizes_for_blob_storage_log;
+    VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
     if (blob_storage_log)
     {
         local_paths_for_blob_storage_log.reserve(objects.size());
@@ -400,7 +448,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-void putObjectsTagOnS3(
+static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & object_keys,
@@ -513,7 +561,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
         }
         if (!updated)
         {
-            e.addMessage("while reading " + path);
+            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
             throw;
         }
     }
@@ -651,24 +699,63 @@ void S3ObjectStorage::applyNewSettings(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+
+    auto apply_endpoint_settings = [&]
+    {
+        if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+        {
+            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+            modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+        }
+    };
+
+    auto apply_config_settings = [&]
+    {
+        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+        modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+    };
+
+    /// When a setting is given both in the general config and for a specific endpoint, the more specific
+    /// one should win. For a disk the config is the disk's own section (more specific than an endpoint
+    /// block), so apply it last. For S3/S3Queue tables the config is the general <s3> section (less
+    /// specific than an endpoint block), so apply the endpoint last instead. Whichever is applied last wins.
+    if (for_disk_s3)
+    {
+        apply_endpoint_settings();
+        apply_config_settings();
+    }
+    else
+    {
+        apply_config_settings();
+        apply_endpoint_settings();
+    }
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+    /// The effective credentials of a non-disk S3 storage depend on the accessing session's restriction mode
+    /// (`s3_allow_server_credentials_in_user_queries`), not only on the stored settings. Rebuild the client when
+    /// that mode differs from the one the current client was built under, so an opt-in session cannot leave a
+    /// credentialed client in the shared slot for a later restricted session to reuse (and a restricted session
+    /// keeps using an anonymous client). Server disks (`for_disk_s3`) are never restricted, so their mode is
+    /// constant and this adds no rebuilds.
+    const bool restricts_now = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+    const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
     auto current_settings = s3_settings.get();
-    if (options.allow_client_change
-        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+    /// A change in the accessing session's restriction mode forces a client rebuild even for an otherwise static
+    /// configuration: the restriction is a per-session security property, not a stored setting. Without this, a
+    /// table whose client was built credentialed by an opt-in session (or at create) would keep serving those
+    /// server credentials to later restricted sessions. The rebuild under the restricted context fails closed
+    /// (getClient throws ACCESS_DENIED), which read() propagates instead of falling back to the cached client.
+    if ((options.allow_client_change
+            && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+        || restriction_mode_changed
+        || options.force_client_rebuild)
     {
         auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
         client.set(std::move(new_client));
+        client_restricts_server_credentials = restricts_now;
     }
     s3_settings.set(std::move(modified_settings));
 }
@@ -689,6 +776,19 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
+}
+
+bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    fiu_do_on(FailPoints::object_storage_force_refresh_callback_success, { return true; });
+
+    if (!credentials_refresh_callback)
+        return false;
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+    client.set(std::move(new_client));
+    return true;
 }
 }
 

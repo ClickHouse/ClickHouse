@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -40,16 +41,19 @@ public:
         CLEAR_TEXT_INDEX_CACHES,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
+        CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
+        CLEAR_POINT_IN_POLYGON_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
         CLEAR_PAGE_CACHE,
         CLEAR_SCHEMA_CACHE,
         CLEAR_FORMAT_SCHEMA_CACHE,
+        CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
@@ -58,6 +62,7 @@ public:
         RESTORE_REPLICA,
         RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
+        WAIT_QUERY_RUNNER,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
@@ -117,6 +122,8 @@ public:
         START_PULLING_REPLICATION_LOG,
         STOP_CLEANUP,
         START_CLEANUP,
+        SCHEDULE_MERGE,
+        SYNC_MERGES,
         RESET_COVERAGE,
         SET_COVERAGE_TEST,
         REFRESH_VIEW,
@@ -127,6 +134,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -216,18 +225,20 @@ public:
 
 #if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
-    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    Instrumentation::EntryType instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type{};
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
-    std::vector<InstrumentParameter> instrumentation_parameters;
+    std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;
 #endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
     std::optional<Int64> fake_time_for_view;
+
+    ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -240,6 +251,7 @@ public:
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
         if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
+        if (scheduled_merge_parts) { res->scheduled_merge_parts = scheduled_merge_parts->clone(); res->children.push_back(res->scheduled_merge_parts); }
 
         return res;
     }
@@ -257,3 +269,12 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more than 128 values, which is outside the default magic_enum range
+/// [-128, 127]. ParserSystemQuery matches SYSTEM keywords via magic_enum::enum_values, so any
+/// out-of-range value silently drops from the keyword list and stops parsing.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};

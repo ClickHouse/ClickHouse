@@ -23,6 +23,15 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (dagContainsNonReadySet(filter_dag) || dagContainsNonReadySet(pre_actions_dag))
         return FilterResult::UNKNOWN;
 
+    /// Bail out for functions that are not deterministic in the scope of a single query for the
+    /// same reason as in `filterResultForNotMatchedRows`: a single plan-time evaluation of `rand`,
+    /// `nowInBlock`, `rowNumberInAllBlocks`, `blockNumber`, etc. cannot stand in for the runtime
+    /// per-row behaviour, and acting on it would silently change the result of the JOIN. Functions
+    /// like `now` / `today` / `currentUser` ARE deterministic within a single query and do NOT
+    /// trip the guard.
+    if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
+        return FilterResult::UNKNOWN;
+
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 

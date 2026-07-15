@@ -1,0 +1,4 @@
+test 1: hash throw on max_rows_in_join
+test 2: hash throw on max_bytes_in_join
+test 3: parallel_hash throw on max_rows_in_join
+test 4: parallel_hash throw on max_bytes_in_join

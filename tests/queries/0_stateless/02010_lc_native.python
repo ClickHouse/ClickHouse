@@ -254,9 +254,6 @@ def insertValidLowCardinalityRow():
         # Fin block
         sendEmptyBlock(s)
 
-        assertPacket(readVarUInt(s), 3)  # Progress
-        readProgress(s)
-
         assertPacket(readVarUInt(s), 5)  # End of stream
         s.close()
 

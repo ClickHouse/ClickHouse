@@ -1,0 +1,137 @@
+---
+sidebarTitle: 'アカウントの管理'
+slug: /cloud/security/manage-my-account
+title: 'アカウントの管理'
+description: 'このページでは、招待の承諾、MFA 設定の管理、パスワードのリセット方法について説明します'
+doc_type: 'guide'
+keywords: ['アカウント管理', 'ユーザープロフィール', 'セキュリティ', 'Cloud Console', '設定']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="accept-invitation">
+  ## 招待を承諾する
+</div>
+
+組織への参加招待を承諾する方法はいくつかあります。これが初めての招待である場合は、以下から組織に適した認証方法を選択してください。
+
+これが初めて参加する組織でない場合は、既存の組織にサインインしてからページの左下で招待を承諾するか、メール内の招待から承諾して既存のアカウントでサインインしてください。
+
+<Info>
+  **SAML Users**
+
+  SAML を使用している組織では、ClickHouse の組織ごとに固有のログインがあります。ログインするには、管理者から提供された直接リンクを使用してください。
+</Info>
+
+<div id="email-and-password">
+  ### メールアドレスとパスワード
+</div>
+
+ClickHouse Cloud では、メールアドレスとパスワードを使用して認証できます。この方法を使用する場合、ClickHouse アカウントを保護する最も効果的な方法は、強力なパスワードを設定することです。覚えやすいパスワードを考えるのに役立つオンラインリソースは数多くあります。また、セキュリティを高めるために、ランダムなパスワード生成ツールを使用し、パスワードマネージャーに保存することもできます。
+
+パスワードは 12 文字以上で、複雑さに関する 4 つの要件のうち 3 つ以上を満たしている必要があります: 英大文字、英小文字、数字、特殊文字。
+
+<div id="social-sso">
+  ### ソーシャルシングルサインオン (SSO)
+</div>
+
+サービスへの登録や招待の承諾には、`Continue with Google` または `Continue with Microsoft Account` を使用します。
+
+会社で Google Workspace または Microsoft 365 を使用している場合は、ClickHouse Cloud でも現在のシングルサインオン設定を利用できます。そのためには、会社のメールアドレスで登録し、ほかのユーザーも会社のメールアドレスで招待するだけです。これにより、ユーザーは ClickHouse Cloud に認証される前に、ID プロバイダー経由でも Google または Microsoft の認証経由でも、会社のログインフローを使用してログインする必要があります。
+
+<div id="saml-sso">
+  ### SAML シングルサインオン (SSO)
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+SAML SSO を使用するユーザーは、サインイン時に ID プロバイダー によって自動的に自動追加されます。Organization Admin ロールを持つ ClickHouse Cloud ユーザーは、SAML ユーザーに割り当てられた[ロールを管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)し、認証方法を SAML のみに制限できます。
+
+<div id="mfa">
+  ## 多要素認証 (MFA) を管理する
+</div>
+
+メールアドレス + パスワードまたはソーシャル認証を使用するユーザーは、多要素認証 (MFA) を使ってアカウントのセキュリティをさらに強化できます。MFA を設定するには、次の手順を実行します。
+
+1. [console.clickhouse.cloud](https://console.clickhouse.cloud/) にログインします
+2. ClickHouse ロゴの横にある、画面左上の自分のイニシャルをクリックします
+3. Profile を選択します
+4. 左側で Security を選択します
+5. Authenticator app タイルの Set up をクリックします
+6. Authy、1Password、Google Authenticator などの認証アプリを使用して QR コードをスキャンします
+7. コードを入力して確認します
+8. 次の画面でリカバリーコードをコピーし、安全な場所に保管します
+9. `I have safely recorded this code` の横にあるチェックボックスをオンにします
+10. Continue をクリックします
+
+<div id="obtain-recovery-code">
+  ### 新しいリカバリーコードを取得する
+</div>
+
+以前にMFAを設定済みで、リカバリーコードを作成していない、または紛失してしまった場合は、以下の手順で新しいリカバリーコードを取得できます。
+
+1. https://console.clickhouse.cloud にアクセスします
+2. 認証情報 とMFAを使用してサインインします
+3. 左上のプロフィールに移動します
+4. 左側の Security をクリックします
+5. Authenticator app の横にあるゴミ箱アイコンをクリックします
+6. Remove authenticator app をクリックします
+7. コードを入力し、Continue をクリックします
+8. Authenticator app セクションの Set up をクリックします
+9. QRコードをスキャンし、新しいコードを入力します
+10. リカバリーコードをコピーして、安全な場所に保管します
+11. `I have safely recorded this code` の横にあるチェックボックスをオンにします
+12. Continue をクリックします
+
+<div id="account-recovery">
+  ## アカウントの復旧
+</div>
+
+<div id="forgot-password">
+  ### パスワードを忘れた場合
+</div>
+
+パスワードを忘れた場合は、以下の手順でセルフサービスによる復旧を行ってください。
+
+1. https://console.clickhouse.cloud にアクセスします
+2. メールアドレスを入力し、Continue をクリックします
+3. Forgot your password? をクリックします
+4. Send password reset link をクリックします
+5. メールを確認し、メール内の Reset password をクリックします
+6. 新しいパスワードを入力し、確認のため再度入力して、Update password をクリックします
+7. Back to sign in をクリックします
+8. 新しいパスワードで通常どおりサインインします
+
+<div id="mfa-self-serivce-recovery">
+  ### MFA のセルフサービス復旧
+</div>
+
+MFA デバイスを紛失した場合や、トークンを削除してしまった場合は、次の手順に従って復旧し、新しいトークンを作成してください。
+
+1. https://console.clickhouse.cloud にアクセスします
+2. 認証情報を入力し、Continue をクリックします
+3. Multi-factor authentication 画面で Cancel をクリックします
+4. リカバリーコード をクリックします
+5. コードを入力し、Continue を押します
+6. 新しい リカバリーコード をコピーし、安全な場所に保管します
+7. `I have safely recorded this code` の横にあるチェックボックスをオンにし、Continue をクリックします
+8. サインインしたら、左上のプロフィールに移動します
+9. 左上の Security をクリックします
+10. Authenticator app の横にあるごみ箱アイコンをクリックして、古い認証アプリを削除します
+11. Remove authenticator app をクリックします
+12. Multi-factor authentication の入力を求められたら、Cancel をクリックします
+13. リカバリーコード をクリックします
+14. リカバリーコード を入力し (これは手順 7 で生成された新しいコードです) 、Continue をクリックします
+15. 新しい リカバリーコード をコピーし、安全な場所に保管します。これは、削除プロセスの途中でこの画面を離れた場合に備えるためです
+16. `I have safely recorded this code` の横にあるチェックボックスをオンにし、Continue をクリックします
+17. 上記の手順に従って、新しい MFA 要素を設定します
+
+<div id="lost-mfa-and-recovery-code">
+  ### MFA デバイスとリカバリーコードの紛失
+</div>
+
+MFA デバイスとリカバリーコードの両方を紛失した場合、または MFA デバイスを紛失し、リカバリーコードを一度も取得していない場合は、リセットを依頼するために次の手順に従ってください。
+
+**チケットを送信**: 組織内に他の管理ユーザーがいる場合は、単一ユーザーの組織にアクセスしようとしている場合でも、Admin ロールが割り当てられている組織メンバーに組織へログインしてもらい、あなたに代わって MFA のリセットを依頼するサポートチケットを送信してもらってください。リクエストが正当なものであることを確認できしだい、MFA をリセットし、Admin に通知します。その後は通常どおり MFA なしでサインインし、必要に応じてプロフィール設定から新しい認証要素を登録してください。
+
+**メールでリセット**: 組織内であなたが唯一のユーザーである場合は、アカウントに関連付けられているメールアドレスを使って、メール (support@clickhouse.com) でサポートケースを作成してください。リクエストが正しいメールアドレスから送信されていることを確認できしだい、MFA とパスワードの両方をリセットします。メールに届くパスワードのリセットリンクを開いてください。新しいパスワードを設定した後、必要に応じてプロフィール設定から新しい認証要素を登録してください。

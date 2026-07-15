@@ -5,9 +5,12 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
+
+#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/HistogramMetrics.h>
@@ -17,6 +20,7 @@
 #include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
+#include <cstdint>
 #include <utility>
 
 
@@ -48,6 +52,8 @@ namespace S3RequestSetting
 namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
+    extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_inject_etag_mismatch[];
 }
 
 namespace ErrorCodes
@@ -58,6 +64,30 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates that
+/// `inner` is fully contained in `outer` WITHOUT touching `Buffer::size` or
+/// `begin + size` arithmetic on `inner`. If `inner` is corrupt (inverted, or
+/// `begin`/`end` from different allocations), `Buffer::size` would be a huge
+/// unsigned and `begin + size` would overflow before `chassert` ever reports
+/// anything. Compare the four stored pointers as integer addresses instead.
+void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer outer)
+{
+    auto inner_begin = reinterpret_cast<std::uintptr_t>(inner.begin());
+    auto inner_end = reinterpret_cast<std::uintptr_t>(inner.end());
+    auto outer_begin = reinterpret_cast<std::uintptr_t>(outer.begin());
+    auto outer_end = reinterpret_cast<std::uintptr_t>(outer.end());
+    chassert(inner_begin <= inner_end);
+    chassert(inner_begin >= outer_begin);
+    chassert(inner_end <= outer_end);
+}
+
 }
 
 
@@ -73,12 +103,15 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_,
-    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
+    const S3CredentialsRefreshCallback & credentials_refresh_callback_,
+    BlobStorageLogWriterPtr blob_storage_log_,
+    const String & expected_etag_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
+    , expected_etag(expected_etag_)
     , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
@@ -86,6 +119,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , credentials_refresh_callback(credentials_refresh_callback_)
+    , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
 }
@@ -138,8 +172,8 @@ bool ReadBufferFromS3::nextImpl()
             * each nextImpl() call we can fill a different buffer.
             */
             impl->set(internal_buffer.begin(), internal_buffer.size());
-            assert(working_buffer.begin() != nullptr);
-            assert(!internal_buffer.empty());
+            chassert(working_buffer.begin() != nullptr);
+            chassert(!internal_buffer.empty());
         }
         else
         {
@@ -169,8 +203,8 @@ bool ReadBufferFromS3::nextImpl()
                 if (use_external_buffer)
                 {
                     impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
+                    chassert(working_buffer.begin() != nullptr);
+                    chassert(!internal_buffer.empty());
                 }
                 else
                 {
@@ -217,6 +251,15 @@ bool ReadBufferFromS3::nextImpl()
         return false;
     }
 
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. When
+    /// `use_external_buffer` is set, the inner `impl` was told to fill our
+    /// caller-provided `internal_buffer`. If the populated range escapes that
+    /// external buffer, every consumer up the chain
+    /// (`ReadBufferFromRemoteFSGather`, `AsynchronousBoundedReadBuffer`,
+    /// `readMetadataFile`) inherits the corrupt bounds.
+    if (use_external_buffer)
+        assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
@@ -344,6 +387,11 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         return false;
     }
 
+    /// The object was overwritten in place; re-fetching the same range would just return the new
+    /// generation again. Fail fast and let the caller retry the whole read with fresh metadata.
+    if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+        return false;
+
     return true;
 }
 
@@ -381,8 +429,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -391,7 +439,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -425,9 +473,10 @@ size_t ReadBufferFromS3::getObjectSizeFromS3() const
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
-std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+std::optional<RemoteFileMetadata> ReadBufferFromS3::getRemoteFileMetadata() const
 {
-    return getObjectSizeFromS3();
+    const auto object_info = S3::getObjectInfo(*client_ptr, bucket, key, version_id);
+    return RemoteFileMetadata{.size = object_info.size, .last_modification_time = object_info.last_modification_time};
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -500,7 +549,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
@@ -511,6 +560,11 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
+    /// Pin the GET to the generation seen at read setup via If-Match, so an in-place overwrite is
+    /// rejected with 412 instead of transferring torn cross-generation bytes. Only for non-versioned
+    /// reads with a known expected_etag.
+    else if (!expected_etag.empty())
+        req.SetIfMatch(expected_etag);
 
     S3::setClickhouseAttemptNumber(req, attempt);
 
@@ -533,17 +587,83 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
+    /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
+    /// the credentials refresh callback path in `processException`. Unlike
+    /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
+    /// therefore only fires on multi-fill streaming reads), this failpoint fires inside
+    /// `sendRequest` itself, so it covers both `nextImpl`-driven reads and the
+    /// `readBigAt` range-read path used by Parquet column-chunk reads.
+    fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
+    {
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
+    });
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
     CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
+
+    /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
+    /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
+    Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
-        return outcome.GetResultWithOwnership();
+    {
+        auto result = outcome.GetResultWithOwnership();
+
+        String response_etag = result.GetETag();
+        fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
+
+        /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
+        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
+        /// taken from the current version, would falsely mismatch) and empty response ETags.
+        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
+                "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+                bucket, key, expected_etag, response_etag);
+
+        if (blob_storage_log)
+        {
+            size_t data_size = static_cast<size_t>(result.GetContentLength());
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Read,
+                bucket, key, /* local_path */ {},
+                data_size,
+                blob_log_watch.elapsedMicroseconds(),
+                /* error_code */ 0, /* error_message */ {});
+        }
+        return result;
+    }
 
     const auto & error = outcome.GetError();
+    if (blob_storage_log)
+    {
+        size_t data_size = range_end_incl ? (*range_end_incl - range_begin + 1) : 0;
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Read,
+            bucket, key, /* local_path */ {},
+            data_size,
+            blob_log_watch.elapsedMicroseconds(),
+            static_cast<Int32>(error.GetErrorType()), error.GetMessage());
+    }
+
+    /// Map the If-Match 412 to the same non-retryable S3_OBJECT_CHANGED_DURING_READ as the success-path
+    /// comparison (a generic S3 error would be retried by processException). Must map here from the raw
+    /// error: S3Exception keeps only the Aws S3Errors code, not the HTTP 412 status.
+    if (version_id.empty() && !expected_etag.empty()
+        && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} was replaced during read (If-Match on etag {} failed); "
+            "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+            bucket, key, expected_etag);
+
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

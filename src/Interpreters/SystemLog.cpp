@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
@@ -47,13 +49,14 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Interpreters/HistogramMetricLog.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -102,6 +105,20 @@ namespace ActionLocks
 
 namespace
 {
+
+/// Flush buffered text-log entries from the application's async logger, if any.
+///
+/// `BaseDaemon::flushTextLogs` is what `clickhouse-server` uses to drain its async log
+/// channels into `system.text_log`. `clickhouse-local`/`clickhouse-client` derive from
+/// `ClientApplicationBase` rather than `BaseDaemon`, so `BaseDaemon::instance()` would
+/// throw `std::bad_cast`; that exception used to escape `SystemLogs::flushAndShutdown`,
+/// leaving the saving threads alive while `~SystemLogQueue` ran `pthread_cond_destroy`,
+/// which hangs while there are waiters.
+void flushAsyncTextLogsIfPossible()
+{
+    if (auto base_daemon = BaseDaemon::tryGetInstance())
+        base_daemon->get().flushTextLogs();
+}
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -363,13 +380,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 
-    if (histogram_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("histogram_metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        histogram_metric_log->startCollect(ThreadName::HISTOGRAM_METRIC_LOG, collect_interval_milliseconds);
-    }
-
     if (background_schedule_pool_log)
     {
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
@@ -402,6 +412,21 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config)
+{
+#define CHECK_HAS_SYSTEM_LOG(log_type, member, descr) \
+    if (config.has(#member)) \
+        return true;
+
+    LIST_OF_ALL_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
+    #endif
+#undef CHECK_HAS_SYSTEM_LOG
+
+    return false;
+}
+
 namespace
 {
 constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
@@ -430,7 +455,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     if (names.empty())
     {
         if (text_log)
-            BaseDaemon::instance().flushTextLogs();
+            flushAsyncTextLogsIfPossible();
 
         for (auto * log : getAllLogs())
         {
@@ -476,7 +501,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             auto * log = it->second;
 
             if (log == text_log.get())
-                BaseDaemon::instance().flushTextLogs();
+                flushAsyncTextLogsIfPossible();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -572,7 +597,13 @@ SystemLog<LogElement>::SystemLog(
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
-    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+}
+
+template <typename LogElement>
+SystemLog<LogElement>::~SystemLog()
+{
+    Base::stopFlushThread();
 }
 
 template <typename LogElement>
@@ -676,6 +707,14 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
+
+        /// Explicitly specify column names to avoid mismatch when the table
+        /// has been altered (e.g. columns added) between prepareTable() and this INSERT.
+        auto columns_ast = make_intrusive<ASTExpressionList>();
+        for (const auto & name : block.getNames())
+            columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+        insert->columns = std::move(columns_ast);
+
         ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
@@ -795,6 +834,71 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
+            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
+            /// This prevents the old table from wasting CPU on background operations.
+            ///
+            /// `table_readonly` is only supported for `StorageMergeTree`: `StorageReplicatedMergeTree`
+            /// rejects `ALTER TABLE ... MODIFY SETTING table_readonly` with `NOT_IMPLEMENTED`, so issuing
+            /// it for a replicated system log table (configured via a custom `<engine>`) would throw and
+            /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
+            ///
+            /// A `table_readonly` table performs no modifications on disk at all, including TTL drop/delete
+            /// merges. So if a system log table is configured with a TTL (e.g. `event_date + INTERVAL 30 DAY
+            /// DELETE`), marking it readonly would prevent its expired data from ever being reclaimed. Keep
+            /// such tables writable so background TTL still runs. In the default open-source configuration
+            /// most system logs (including `query_log`) have no TTL, so their rotated tables are frozen as
+            /// readonly; only the few logs configured with a TTL stay writable.
+            ///
+            /// Marking the old table read-only is purely an optimization and must never break log rotation.
+            /// The rename has already succeeded above, so if applying the setting throws (for example, a
+            /// transient error, or the table being dropped concurrently), swallow it, log it, and continue
+            /// to create the new table. Letting the exception propagate would abort `flushImpl` and discard
+            /// the current batch of log entries.
+            try
+            {
+                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
+
+                bool old_table_has_ttl = false;
+                if (old_table)
+                {
+                    auto old_metadata = old_table->getInMemoryMetadataPtr(getContext(), false);
+                    old_table_has_ttl = old_metadata->hasAnyTTL();
+                }
+
+                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication() && !old_table_has_ttl)
+                {
+                    auto alter_context = Context::createCopy(context);
+                    alter_context->makeQueryContext();
+                    addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                    auto alter_command = make_intrusive<ASTAlterCommand>();
+                    alter_command->type = ASTAlterCommand::MODIFY_SETTING;
+
+                    auto settings_changes = make_intrusive<ASTSetQuery>();
+                    settings_changes->is_standalone = false;
+                    settings_changes->changes.push_back({"table_readonly", Field(true)});
+                    alter_command->settings_changes = settings_changes.get();
+                    alter_command->children.push_back(settings_changes);
+
+                    auto alter_commands = make_intrusive<ASTExpressionList>();
+                    alter_commands->children.push_back(alter_command);
+
+                    auto alter_query = make_intrusive<ASTAlterQuery>();
+                    alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                    alter_query->setDatabase(old_table_id.database_name);
+                    alter_query->setTable(old_table_id.table_name);
+                    alter_query->command_list = alter_commands.get();
+                    alter_query->children.push_back(alter_commands);
+
+                    InterpreterAlterQuery(alter_query, alter_context).execute();
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to mark the rotated system log table as readonly; continuing with rotation");
+            }
+
             /// The required table will be created.
             table = nullptr;
         }
@@ -867,6 +971,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
+    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
+    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
+    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
+    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
+    {
+        if (storage->partition_by)
+            storage->partition_by->setParenthesized(false);
+        if (storage->order_by)
+            storage->order_by->setParenthesized(false);
+        if (storage->primary_key)
+            storage->primary_key->setParenthesized(false);
+        if (storage->sample_by)
+            storage->sample_by->setParenthesized(false);
+    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

@@ -31,23 +31,48 @@ def start_zookeeper():
             time.sleep(3)
 
 
+# pgrep / pkill -f match against the full command line, which includes the
+# pgrep / pkill process itself. The bracket expression `[o]rg` is a standard
+# trick that keeps `pgrep -f` from matching its own shell process: pgrep's
+# argv contains the literal string `[o]rg.apache.zookeeper.server` (the
+# brackets are passed through verbatim by bash because they are inside single
+# quotes), and the regex `[o]rg\.apache\.zookeeper\.server` does not match
+# that literal string (it needs `o` as the first character, not `[`).
+ZK_JVM_PATTERN = "[o]rg\\.apache\\.zookeeper\\.server"
+
+
+def _zk_jvm_running():
+    return bool(
+        node.exec_in_container(
+            ["bash", "-c", f"pgrep -f '{ZK_JVM_PATTERN}' || true"],
+            nothrow=True,
+        ).strip()
+    )
+
+
 def stop_zookeeper():
+    # `zkServer.sh stop` sends a single SIGTERM to the JVM, removes the PID
+    # file, and returns — it does not wait for the JVM to actually exit and
+    # has no SIGKILL fallback. Under sanitizer-heavy CI builds the JVM can
+    # take a long time to run its shutdown hooks, so we have to do the wait
+    # ourselves and force-kill the JVM if it does not exit in time.
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
-    timeout = time.time() + 60
-    # get_process_pid("zookeeper") uses the regex '^[^ ]*zookeeper' which only
-    # matches the first word of the command line. The ZooKeeper Java process
-    # starts with "java -Dzookeeper..." so it never matches. Use a direct pgrep
-    # for the ZooKeeper main class to properly detect the running JVM.
-    # The bracket expression [o]rg is a standard trick to keep pgrep -f from
-    # matching the shell process that is running pgrep itself (its argv
-    # contains the literal string '[o]rg.apache.zookeeper.server', which the
-    # regex '[o]rg.apache.zookeeper.server' does not match).
-    while node.exec_in_container(
-        ["bash", "-c", "pgrep -f '[o]rg\\.apache\\.zookeeper\\.server' || true"],
-        nothrow=True,
-    ).strip():
-        if time.time() > timeout:
-            raise Exception("Failed to stop ZooKeeper in 60 secs")
+    sigterm_deadline = time.time() + 60
+    while _zk_jvm_running():
+        if time.time() > sigterm_deadline:
+            # SIGTERM did not stop the JVM in time. The JVM is just an
+            # external dependency used to populate test data, so a hard
+            # kill is acceptable — we do not need a clean shutdown.
+            print("ZooKeeper JVM did not exit 60s after SIGTERM; sending SIGKILL")
+            node.exec_in_container(
+                ["bash", "-c", f"pkill -9 -f '{ZK_JVM_PATTERN}' || true"],
+            )
+            sigkill_deadline = time.time() + 10
+            while _zk_jvm_running():
+                if time.time() > sigkill_deadline:
+                    raise Exception("Failed to stop ZooKeeper even after SIGKILL")
+                time.sleep(0.2)
+            return
         time.sleep(0.2)
 
 

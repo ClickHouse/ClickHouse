@@ -6,8 +6,6 @@ title: 'Functions for generating random numbers'
 doc_type: 'reference'
 ---
 
-# Functions for generating random numbers
-
 All functions in this section accept zero or one arguments. The only use of the argument (if provided) is to prevent [common subexpression
 elimination](/sql-reference/functions/overview#common-subexpression-elimination) such that two different executions within a row of the same random
 function return different random values.

@@ -22,19 +22,30 @@ struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllo
     Int64 allocated_bytes;
 };
 
-class AggregatingInOrderTransform : public IProcessor
+class AggregatingInOrderTransform final : public IProcessor
 {
 public:
-    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_,
-                                ManyAggregatedDataPtr many_data, size_t current_variant);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        size_t limit_hint_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
-    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        size_t limit_hint_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -78,6 +89,8 @@ private:
     UInt64 src_bytes = 0;
     UInt64 res_rows = 0;
 
+    size_t limit_hint = 0;
+
     bool need_generate = false;
     bool block_end_reached = false;
     bool is_consume_started = false;
@@ -89,11 +102,13 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
+
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
 
-class FinalizeAggregatedTransform : public ISimpleTransform
+class FinalizeAggregatedTransform final : public ISimpleTransform
 {
 public:
     FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_);

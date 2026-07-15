@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/faq
+sidebarTitle: 'FAQ'
+title: 'Managed Postgres FAQ'
+description: 'ClickHouse Managed Postgres에 관한 자주 묻는 질문'
+keywords: ['managed postgres faq', 'Postgres 관련 질문', '메트릭', '확장 기능', '마이그레이션', 'terraform', 'pgbouncer', 'prepared statements']
+doc_type: '참고'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
+<div id="monitoring-and-metrics">
+  ## 모니터링 및 메트릭
+</div>
+
+<div id="metrics-access">
+  ### Managed Postgres 인스턴스의 메트릭은 어떻게 확인하나요?
+</div>
+
+ClickHouse Cloud Console에서 Managed Postgres 인스턴스의 **모니터링** 탭으로 이동하면 CPU, 메모리, IOPS 및 스토리지 사용량을 직접 모니터링할 수 있습니다.
+
+또한 **Query Insights** 탭에서 쿼리를 자세히 분석할 수 있도록 [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud)를 살펴볼 수 있습니다.
+
+<div id="backup-and-recovery">
+  ## 백업 및 복구
+</div>
+
+<div id="backup-options">
+  ### 사용 가능한 백업 옵션은 무엇입니까?
+</div>
+
+Managed Postgres에는 지속적인 WAL 아카이빙과 함께 매일 자동 백업이 포함되어 있어 7일 보관 기간 내의 임의 시점으로 시점 복구를 수행할 수 있습니다. 백업은 S3에 저장됩니다.
+
+백업 주기, 보관 기간, 시점 복구 수행 방법에 대한 자세한 내용은 [백업 및 복원](/ko/products/managed-postgres/backup-and-restore) 문서를 참조하십시오.
+
+<div id="infrastructure-and-automation">
+  ## 인프라 및 자동화
+</div>
+
+<div id="terraform-support">
+  ### Managed Postgres에서 Terraform을 지원하나요?
+</div>
+
+현재 Managed Postgres에서는 Terraform을 지원하지 않습니다. 인스턴스를 생성하고 관리할 때는 ClickHouse Cloud Console 또는 [OpenAPI](/ko/products/managed-postgres/openapi)를 사용하는 것이 좋습니다.
+
+<div id="extensions-and-configuration">
+  ## 확장 기능 및 구성
+</div>
+
+<div id="extensions-supported">
+  ### 어떤 확장 기능을 지원하나요?
+</div>
+
+Managed Postgres에는 PostGIS, pgvector, pg&#95;cron 등 널리 사용되는 PostgreSQL 확장 기능을 포함해 90개 이상의 PostgreSQL 확장 기능이 제공됩니다. 사용 가능한 확장 기능의 전체 목록과 설치 방법은 [확장 기능](/ko/products/managed-postgres/extensions) 문서를 참조하십시오.
+
+<div id="config-customization">
+  ### PostgreSQL 구성 매개변수를 사용자 지정할 수 있나요?
+</div>
+
+예, Console의 **설정** 탭에서 PostgreSQL 및 PgBouncer의 구성 매개변수를 수정할 수 있습니다. 사용 가능한 매개변수와 변경 방법에 대한 자세한 내용은 [설정](/ko/products/managed-postgres/settings) 문서를 참조하십시오.
+
+<Tip>
+  현재 제공되지 않는 매개변수가 필요하면 [support](https://clickhouse.com/support/program)에 문의하여 요청하십시오.
+</Tip>
+
+<div id="connection-pooling">
+  ## 연결 풀링
+</div>
+
+<div id="prepared-statement-errors">
+  ### PgBouncer를 통해 `prepared statement does not exist` 오류가 발생하는 이유는 무엇입니까?
+</div>
+
+Managed Postgres는 **트랜잭션 풀링** 모드로 PgBouncer를 실행합니다. 이 모드에서는 단일 트랜잭션 동안에만 백엔드 Postgres 연결(connection)이 클라이언트에 할당된 후 풀로 반환됩니다. 따라서 동일한 클라이언트의 다음 트랜잭션은 다른 백엔드로 연결될 수 있습니다.
+
+이로 인해 **서버 측 prepared statement**가 동작하지 않게 됩니다. 서버 측 prepared statement는 `PREPARE`(또는 확장 쿼리 `Parse`)를 실행한 특정 백엔드에 연결되어 있기 때문입니다. 해당 `EXECUTE`가 다른 백엔드로 전달되면 다음과 같은 오류가 발생합니다:
+
+```text
+ERROR:  prepared statement "..." does not exist
+ERROR:  unnamed prepared statement does not exist
+```
+
+같은 근본 원인에서 흔히 나타나는 증상은 다음과 같습니다.
+
+* 특히 backfill이나 동시성이 높은 쓰기 작업 중에 `prepared statement does not exist` 오류가 급증합니다
+* &quot;조용히 실패하는&quot; 것처럼 보이는 삽입 — SQL 문에서 오류가 발생하고 드라이버가 재시도하면서, Batch가 일부만 적용되거나 아예 누락될 수 있습니다
+* 유형이 잘못된 반환 값(예: `BIGINT` 컬럼이 `float64` 비트 패턴으로 디코딩됨) — 캐시된 클라이언트 측 계획이, 해당 `Parse`를 전송받은 적이 없는 백엔드에 오래된 유형/포맷 코드를 재사용할 때 발생합니다
+
+**해결 방법: 드라이버에서 서버 측 prepared statement를 비활성화하십시오.** 정확한 설정은 사용하는 클라이언트 라이브러리에 따라 다릅니다.
+
+| 드라이버                             | 설정                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
+| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
+| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
+| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
+| **node-postgres / pg** (Node.js) | `query()`에 `name`을 전달하지 마십시오 (`name`이 지정된 쿼리는 서버 측 prepared statement가 됩니다)            |
+
+워크로드가 prepared statement에 의존한다면, PgBouncer 풀러를 거치지 말고 **PostgreSQL에 직접**(포트 5432) 연결하십시오. 직접 연결은 prepared statement를 정상적으로 지원합니다. pooled 엔드포인트와 direct 엔드포인트 중 무엇을 선택할지에 대한 자세한 내용은 [Connection](/ko/products/managed-postgres/connection)을 참조하십시오.
+
+<div id="pgbouncer-vs-pg-connections">
+  ### PgBouncer의 `max_client_conn` 설정은 무엇을 의미하며, Postgres의 `max_connections`와는 어떤 관련이 있습니까?
+</div>
+
+두 설정은 서로 다른 대상을 제어합니다.
+
+* **Postgres `max_connections`**는 PostgreSQL 자체의 **백엔드(backend)** 연결 수 상한을 정합니다. 이 값은 비용이 큰 편입니다. 각 백엔드는 메모리와 프로세스 슬롯을 사용합니다.
+* **PgBouncer `max_client_conn`**는 풀러에 동시에 열 수 있는 **클라이언트(client)** 연결 수 상한을 정합니다. PgBouncer는 이렇게 많은 클라이언트 연결을 훨씬 더 적은 수의 백엔드 연결에 다중화합니다.
+
+일반적인 Managed Postgres 인스턴스는 PgBouncer가 **Postgres 백엔드 수보다 약 10배 많은 클라이언트 연결**을 허용하도록 구성됩니다(예: 클라이언트 5000개 / 백엔드 500개). 풀러에서 연결 오류가 발생한다면, 겉으로 드러나는 클라이언트 제한에 도달했다기보다 풀별 백엔드 제한(`default_pool_size`)에 걸렸을 가능성이 훨씬 높습니다.
+
+<div id="database-capabilities">
+  ## 데이터베이스 기능
+</div>
+
+<div id="multiple-databases-schemas">
+  ### 여러 데이터베이스와 스키마를 생성할 수 있습니까?
+</div>
+
+예. Managed Postgres는 단일 인스턴스 내에서 여러 데이터베이스와 스키마를 지원하는 등 PostgreSQL의 모든 네이티브 기능을 제공합니다. 표준 PostgreSQL 명령으로 데이터베이스와 스키마를 생성하고 관리할 수 있습니다.
+
+<div id="rbac-support">
+  ### 역할 기반 접근 제어(RBAC)를 지원하나요?
+</div>
+
+Managed Postgres 인스턴스에서는 전체 슈퍼유저 액세스 권한이 제공되며, 표준 PostgreSQL 명령을 사용해 역할을 생성하고 권한을 관리할 수 있습니다.
+
+<Note>
+  Console 통합이 포함된 향상된 RBAC 기능은 올해 중 제공될 예정입니다.
+</Note>
+
+<div id="upgrades">
+  ## 업그레이드
+</div>
+
+<div id="version-upgrades">
+  ### PostgreSQL 버전 업그레이드는 어떻게 처리되나요?
+</div>
+
+마이너 버전 업그레이드와 메이저 버전 업그레이드는 모두 페일오버를 통해 수행되며, 일반적으로 다운타임은 몇 초에 불과합니다. 업그레이드가 적용되는 시점을 제어할 수 있도록 유지 관리 기간을 설정할 수 있습니다. 자세한 내용은 [업그레이드](/ko/products/managed-postgres/upgrades) 문서를 참조하십시오.
+
+<div id="migration">
+  ## 마이그레이션
+</div>
+
+<div id="migration-tools">
+  ### Managed Postgres로 마이그레이션할 때 사용할 수 있는 도구는 무엇인가요?
+</div>
+
+Managed Postgres는 여러 가지 마이그레이션 방식을 지원합니다.
+
+* **pg&#95;dump and pg&#95;restore**: 소규모 데이터베이스 또는 일회성 마이그레이션에 적합합니다. [pg&#95;dump and pg&#95;restore](/ko/products/managed-postgres/migrations/pg_dump-pg_restore) 가이드를 참조하세요.
+* **Logical replication**: 다운타임을 최소화해야 하는 대규모 데이터베이스에 적합합니다. [논리적 복제](/ko/products/managed-postgres/migrations/logical-replication) 가이드를 참조하세요.
+* **PeerDB**: 다른 Postgres 소스의 CDC 기반 복제에 적합합니다. [PeerDB migration](/ko/products/managed-postgres/migrations/peerdb) 가이드를 참조하세요.
+
+<Note>
+  완전 관리형 마이그레이션 환경이 곧 제공될 예정입니다.
+</Note>

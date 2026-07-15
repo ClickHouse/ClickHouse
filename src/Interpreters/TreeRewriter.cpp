@@ -724,7 +724,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
 {
-    assert(tables.size() >= 2);
+    chassert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -750,13 +750,16 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 analyzed_join.addDisjunct();
                 CollectJoinOnKeysVisitor(data).visit(disjunct);
             }
-            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+            chassert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
         }
         else
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            assert(analyzed_join.oneDisjunct());
+            /// Not checking non-emptiness: for `ASOF` with a pure inequality the visitor
+            /// records keys into `data` and `asofToJoinKeys` populates the clause later.
+            /// Truly empty clauses are caught by the `any_keys_empty` check below.
+            chassert(analyzed_join.getClauses().size() == 1);
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };

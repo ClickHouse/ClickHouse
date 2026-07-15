@@ -126,6 +126,9 @@ public:
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
 
+    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
+    virtual bool supportsStreaming() const { return false; }
+
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
 
@@ -206,7 +209,7 @@ public:
     /// used without any locks.
     /// Pass query context to enable metadata caching in MergeTree.
     /// Pass nullptr when no query context is available.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    virtual StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
     {
         return metadata.get();
     }
@@ -219,7 +222,7 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    Names getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
@@ -451,6 +454,10 @@ public:
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
+    /// Return true if the storage supports TRUNCATE operation.
+    /// Storages without their own data (e.g. View) return false.
+    virtual bool supportsTruncate() const { return true; }
+
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
       */
@@ -643,6 +650,17 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
+    /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
+    /// `max_table_size_to_drop` before EXCHANGE. Narrower than
+    /// `checkTableCanBeDropped` (no dictionary/view-dependency throws), so it
+    /// can run on any storage engine. NOT a pure dry-run: the `MergeTreeData`
+    /// override reaches `Context::checkCanBeDropped`, which removes the
+    /// `force_drop_table` flag when it authorizes an over-limit drop. Callers
+    /// must invoke it exactly once; a second call after the flag was consumed
+    /// throws TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT.
+    /// Default: no-op (engine has no on-disk data the size guard would care about).
+    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
+
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
@@ -673,6 +691,18 @@ public:
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
+
+    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
+    /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
+    /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
+    /// reliability rules. Default implementation returns nullopt.
+    struct ColumnDefaultnessStats
+    {
+        UInt64 num_rows = 0;
+        UInt64 num_defaults = 0;
+    };
+    virtual std::optional<ColumnDefaultnessStats>
+    getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

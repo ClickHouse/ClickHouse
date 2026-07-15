@@ -191,6 +191,7 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
 }
 
 
+void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

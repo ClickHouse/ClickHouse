@@ -1,0 +1,218 @@
+---
+sidebarTitle: 'Tableau Desktop'
+slug: /integrations/tableau
+keywords: ['ClickHouse', 'tableau', 'conectar', 'integrar', 'UI']
+description: 'O Tableau pode usar databases e tabelas do ClickHouse como fonte de dados.'
+title: 'Como conectar o Tableau ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://github.com/analytikaplus/clickhouse-tableau-connector-jdbc'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+O ClickHouse oferece um conector oficial para o Tableau, disponível no
+[Tableau Exchange](https://exchange.tableau.com/products/1064).
+O conector é baseado no avançado [driver JDBC](/pt-BR/integrations/language-clients/java/jdbc) do ClickHouse.
+
+Com esse conector, o Tableau integra bancos de dados e tabelas do ClickHouse como fontes de dados. Para ativar essa funcionalidade,
+siga o guia de configuração abaixo.
+
+<div id="setup-required-prior-usage">
+  ## Configuração necessária antes do uso
+</div>
+
+1. Reúna os detalhes da sua conexão
+   <ConnectionDetails />
+
+2. Baixe e instale o <a href="https://www.tableau.com/products/desktop/download" target="_blank">Tableau
+   Desktop</a>.
+
+3. Siga as instruções de `clickhouse-tableau-connector-jdbc` para baixar a versão compatível
+   do <a href="https://github.com/ClickHouse/clickhouse-java/releases/" target="_blank">driver JDBC do ClickHouse</a>.
+
+<Note>
+  Certifique-se de baixar o arquivo JAR [clickhouse-jdbc-X.X.X-all-dependencies.jar](https://github.com/ClickHouse/clickhouse-java/releases). Esse artefato está disponível a partir da versão `0.9.2`.
+</Note>
+
+4. Salve o driver JDBC na seguinte pasta (de acordo com seu sistema operacional; se a pasta não existir, você pode criá-la):
+   * macOS: `~/Library/Tableau/Drivers`
+   * Windows: `C:\Program Files\Tableau\Drivers`
+5. Configure uma fonte de dados do ClickHouse no Tableau e comece a criar visualizações de dados!
+
+<div id="configure-a-clickhouse-data-source-in-tableau">
+  ## Configure uma fonte de dados do ClickHouse no Tableau
+</div>
+
+Agora que você instalou e configurou o driver `clickhouse-jdbc`, vamos ver como definir uma fonte de dados
+no Tableau que se conecta ao banco de dados **TPCD** no ClickHouse.
+
+1. Inicie o Tableau. (Se ele já estiver em execução, reinicie-o.)
+
+2. No menu à esquerda, clique em **More** na seção **To a Server**. Procure por **ClickHouse by ClickHouse** na lista de conectores disponíveis:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connecttoserver.webp" alt="Tela de conexão do Tableau mostrando o menu de seleção de conectores com a opção ClickHouse by ClickHouse destacada" border />
+
+<br />
+
+<Note>
+  Não está vendo o conector **ClickHouse by ClickHouse** na lista de conectores? Isso pode estar relacionado a uma versão antiga do Tableau Desktop.
+  Para resolver isso, considere atualizar o Tableau Desktop ou [instalar o conector manualmente](#install-the-connector-manually).
+</Note>
+
+3. Clique em **ClickHouse by ClickHouse** e a seguinte caixa de diálogo será exibida:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_details.webp" alt="Caixa de diálogo de instalação do conector no Tableau mostrando os detalhes do conector ClickHouse JDBC e o botão de instalação" border />
+
+<br />
+
+4. Clique em **Install and Restart Tableau**. Reinicie o aplicativo.
+5. Após a reinicialização, o conector aparecerá com o nome completo: `ClickHouse JDBC by ClickHouse, Inc.`. Ao clicar nele, a seguinte caixa de diálogo será exibida:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_dialog.webp" alt="Caixa de diálogo de conexão do ClickHouse no Tableau mostrando campos para servidor, porta, banco de dados, nome de usuário e senha" border />
+
+<br />
+
+6. Insira os detalhes da conexão:
+
+   | Configuração    | Valor                                                 |
+   | --------------- | ----------------------------------------------------- |
+   | Servidor        | **Seu host do ClickHouse (sem prefixos nem sufixos)** |
+   | Porta           | **8443**                                              |
+   | Banco de dados  | **default**                                           |
+   | Nome de usuário | **default**                                           |
+   | Senha           | ******                                                |
+
+<Note>
+  Ao usar o ClickHouse Cloud, é necessário marcar a caixa de seleção SSL para conexões seguras.
+</Note>
+
+<br />
+
+<Note>
+  Nosso banco de dados ClickHouse se chama **TPCD**, mas você deve definir **Database** como **default** na caixa de diálogo acima e, em seguida,
+  selecionar **TPCD** em **Schema** na próxima etapa. (Isso provavelmente ocorre devido a um bug no conector, então esse comportamento
+  pode mudar, mas, por enquanto, você deve usar **default** como banco de dados.)
+</Note>
+
+7. Clique no botão **Sign In** e você deverá ver uma nova pasta de trabalho do Tableau:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="Nova pasta de trabalho do Tableau mostrando a tela inicial de conexão com opções de seleção de banco de dados" border />
+
+<br />
+
+8. Selecione **TPCD** na lista suspensa **Schema** e você deverá ver a lista de tabelas em **TPCD**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="Seleção de esquema no Tableau mostrando as tabelas do banco de dados TPCD, incluindo CUSTOMER, LINEITEM, NATION, ORDERS e outras" border />
+
+<br />
+
+Agora você está pronto para criar visualizações no Tableau!
+
+<div id="building-visualizations-in-tableau">
+  ## Criando visualizações no Tableau
+</div>
+
+Agora que temos uma fonte de dados do ClickHouse configurada no Tableau, vamos visualizar os dados...
+
+1. Arraste a tabela **CUSTOMER** para a pasta de trabalho. Observe que as colunas aparecem, mas a tabela de dados está vazia:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook1.webp" alt="Pasta de trabalho do Tableau com a tabela CUSTOMER arrastada para a área de trabalho, mostrando cabeçalhos de coluna, mas sem dados" border />
+
+<br />
+
+2. Clique no botão **Update Now** e 100 linhas de **CUSTOMER** serão carregadas na tabela.
+
+3. Arraste a tabela **ORDERS** para a pasta de trabalho e, em seguida, defina **Custkey** como o campo de relacionamento entre as duas tabelas:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook2.webp" alt="Editor de relacionamento do Tableau mostrando a conexão entre as tabelas CUSTOMER e ORDERS usando o campo Custkey" border />
+
+<br />
+
+4. Agora você tem as tabelas **ORDERS** e **LINEITEM** associadas entre si na sua fonte de dados, então pode usar
+   esse relacionamento para responder a perguntas sobre os dados. Selecione a aba **Sheet 1** na parte inferior da pasta de trabalho.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook3.webp" alt="Planilha do Tableau mostrando as dimensões e medidas das tabelas do ClickHouse disponíveis para análise" border />
+
+<br />
+
+5. Suponha que você queira saber quantos itens específicos foram pedidos em cada ano. Arraste **OrderDate** de **ORDERS** para
+   a seção **Columns** (o campo horizontal) e, em seguida, arraste **Quantity** de **LINEITEM** para **Rows**. O Tableau
+   gerará o seguinte gráfico de linhas:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook4.webp" alt="Gráfico de linhas do Tableau mostrando a quantidade pedida por ano a partir de dados do ClickHouse" border />
+
+<br />
+
+Não é um gráfico de linhas muito empolgante, mas o conjunto de dados foi gerado por um script e criado para testar o desempenho de consultas, então
+você perceberá que não há muita variação nos pedidos simulados dos dados TCPD.
+
+6. Suponha que você queira saber o valor médio dos pedidos (em dólares) por trimestre e também por modo de envio (air, mail, ship,
+   truck etc.):
+
+   * Clique na aba **New Worksheet** para criar uma nova planilha
+   * Arraste **OrderDate** de **ORDERS** para **Columns** e altere de **Year** para **Quarter**
+   * Arraste **Shipmode** de **LINEITEM** para **Rows**
+
+Você deverá ver o seguinte:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook5.webp" alt="Visualização de tabela cruzada do Tableau com trimestres como colunas e modos de envio como linhas" border />
+
+<br />
+
+7. Os valores **Abc** estão apenas preenchendo o espaço até que você arraste uma métrica para a tabela. Arraste **Totalprice** de *
+   *ORDERS** para a tabela. Observe que o cálculo padrão é **SUM** de **Totalprices**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook6.webp" alt="Tabela cruzada do Tableau mostrando a soma do preço total por trimestre e modo de envio" border />
+
+<br />
+
+8. Clique em **SUM** e altere a **Measure** para **Average**. No mesmo menu suspenso, selecione **Format** e altere
+   **Numbers** para **Currency (Standard)**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook7.webp" alt="Tabela cruzada do Tableau mostrando o preço médio dos pedidos por trimestre e modo de envio com formatação de moeda" border />
+
+<br />
+
+Muito bem! Você conectou o Tableau ao ClickHouse com sucesso e abriu um mundo inteiro de possibilidades
+para analisar e visualizar seus dados do ClickHouse.
+
+<div id="install-the-connector-manually">
+  ## Instale o conector manualmente
+</div>
+
+Caso você use uma versão antiga do Tableau Desktop que não inclua o conector por padrão, é possível instalá-lo manualmente seguindo estas etapas:
+
+1. Baixe o arquivo taco mais recente no [Tableau Exchange](https://exchange.tableau.com/products/1064)
+2. Coloque o arquivo taco em
+   * macOS: `~/Documents/My Tableau Repository/Connectors`
+   * Windows: `C:\Users\[Windows User]\Documents\My Tableau Repository\Connectors`
+3. Reinicie o Tableau Desktop. Se a instalação tiver sido concluída com sucesso, você verá o conector na seção `New Data Source`.
+
+<div id="connection-and-analysis-tips">
+  ## Dicas de conexão e análise
+</div>
+
+Para mais orientações sobre como otimizar sua integração Tableau-ClickHouse,
+visite [Dicas de conexão](/pt-BR/integrations/connectors/data-visualization/tableau/tableau-connection-tips) e [Dicas de análise](/pt-BR/integrations/connectors/data-visualization/tableau/tableau-analysis-tips).
+
+<div id="tests">
+  ## Testes
+</div>
+
+O conector está sendo testado com o [framework TDVT](https://tableau.github.io/connector-plugin-sdk/docs/tdvt) e atualmente apresenta uma cobertura de 97%.
+
+<div id="summary">
+  ## Resumo
+</div>
+
+Você pode conectar o Tableau ao ClickHouse usando o driver genérico ODBC/JDBC do ClickHouse. No entanto, este
+conector simplifica o processo de configuração da conexão. Se tiver qualquer problema com o conector, entre em contato
+pelo <a href="https://github.com/ClickHouse/clickhouse-tableau-connector-jdbc/issues" target="_blank">GitHub</a>.
