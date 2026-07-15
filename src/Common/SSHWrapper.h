@@ -60,6 +60,11 @@ public:
     static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
 
     static bool isPublicKeyUsableInFIPSBuilds(const String & type_name);
+
+    /// Detect the key type of a key file WITHOUT importing it into libssh (importing an Ed25519 key
+    /// under FIPS mode crashes) and report whether it is usable in FIPS builds.
+    static bool isPrivateKeyFileUsableInFIPSBuilds(const String & filename);
+    static bool isPublicKeyFileUsableInFIPSBuilds(const String & filename);
 };
 
 }

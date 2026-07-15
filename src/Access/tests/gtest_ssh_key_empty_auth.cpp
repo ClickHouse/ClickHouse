@@ -26,14 +26,18 @@ TEST(SSHKeyEmptyAuth, FromASTRejectsEmptyKeyList)
 }
 
 /// A non-empty SSH_KEY method still parses and stores its keys as before.
+/// Use an RSA key: it is usable in both FIPS and non-FIPS builds, so the method is never
+/// filtered down to empty and this positive expectation holds regardless of FIPS mode.
 TEST(SSHKeyEmptyAuth, FromASTAcceptsNonEmptyKeyList)
 {
     ASTAuthenticationData ast;
     ast.type = AuthenticationType::SSH_KEY;
-    /// A real ed25519 public key (base64 of the 32-byte key blob).
     ast.children.push_back(make_intrusive<ASTPublicSSHKey>(
-        "AAAAC3NzaC1lZDI1NTE5AAAAICWLVGm05y2+pXSwkw4NNRoVKJtOflnwuYsuUhFx7VNs",
-        "ssh-ed25519"));
+        "AAAAB3NzaC1yc2EAAAADAQABAAABAQCYtXyCeWwmjokz6sCT5zg/TGbk4FEZF4huwXwPtXtnBlqw8/K/fIUjpfKmT8tgSziag"
+        "qEfOClBfpHje8HvtQj8rSYsw6+OSV+qpEEVQy75GwTax3kH62+kZ/SxucWVLgYx6uZVZS6XnpK3H0i+azWU07keNRqIdvu9mcJ"
+        "jnljNZAdm+OEgqrUYyCR1Bii1azI95rLvGdXJ/ZJz8WSgbCfSr4ME8GPEpIp8BSD097IrKtW0PuePrwH8BR+0rzLwKlxSKT1K1"
+        "B3ktWO45bZ3QwHFo4BcdGkR6VpjUzugZJKK6uqnKFZ9e02EYidy6SKHPM1ifksWOprZdrtLYGkpW0tf",
+        "ssh-rsa"));
 
     auto auth_data = AuthenticationData::fromAST(ast, nullptr, /* validate= */ false);
     EXPECT_EQ(auth_data.getType(), AuthenticationType::SSH_KEY);

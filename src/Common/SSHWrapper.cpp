@@ -5,6 +5,12 @@
 #endif
 
 #if USE_SSH
+#    include <Common/Base64.h>
+#    include <IO/ReadBufferFromFile.h>
+#    include <IO/ReadHelpers.h>
+
+#    include <string_view>
+
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
 #    pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -49,10 +55,126 @@ void checkIfKeyCanBeUsedInFIPSBuilds(ssh_key key)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     }
 }
+
+/// Read an SSH wire-format string (big-endian uint32 length prefix + bytes) from the front of `data`,
+/// advancing `data` past it. Returns false when `data` is too short.
+bool readSSHWireString(std::string_view & data, std::string_view & out)
+{
+    if (data.size() < 4)
+        return false;
+    const auto * p = reinterpret_cast<const unsigned char *>(data.data());
+    size_t len = (size_t(p[0]) << 24) | (size_t(p[1]) << 16) | (size_t(p[2]) << 8) | size_t(p[3]);
+    if (data.size() - 4 < len)
+        return false;
+    out = data.substr(4, len);
+    data.remove_prefix(4 + len);
+    return true;
+}
+
+String readFileContents(const String & filename)
+{
+    String contents;
+    ReadBufferFromFile in(filename);
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+/// Determine the key type of a private key file WITHOUT importing it into libssh (importing an
+/// Ed25519 key under FIPS mode crashes). Only the OpenSSH container ("openssh-key-v1") can hold an
+/// Ed25519 key; the unencrypted header always exposes the public key type, so this works even for
+/// passphrase-protected keys. Anything else (legacy PEM RSA/EC/DSA) is reported as UNKNOWN, which
+/// callers treat as "not Ed25519, safe to import".
+enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
+{
+    String contents;
+    try
+    {
+        contents = readFileContents(filename);
+    }
+    catch (...)
+    {
+        return SSH_KEYTYPE_UNKNOWN;
+    }
+
+    static constexpr std::string_view begin_marker = "-----BEGIN OPENSSH PRIVATE KEY-----";
+    static constexpr std::string_view end_marker = "-----END OPENSSH PRIVATE KEY-----";
+    auto begin_pos = contents.find(begin_marker);
+    if (begin_pos == String::npos)
+        return SSH_KEYTYPE_UNKNOWN;
+    begin_pos += begin_marker.size();
+    auto end_pos = contents.find(end_marker, begin_pos);
+    if (end_pos == String::npos)
+        return SSH_KEYTYPE_UNKNOWN;
+
+    String base64_body;
+    for (char c : std::string_view(contents).substr(begin_pos, end_pos - begin_pos))
+        if (!isspace(static_cast<unsigned char>(c)))
+            base64_body += c;
+
+    String blob;
+    try
+    {
+        blob = base64Decode(base64_body);
+    }
+    catch (...)
+    {
+        return SSH_KEYTYPE_UNKNOWN;
+    }
+
+    static constexpr std::string_view magic = "openssh-key-v1";
+    if (blob.size() < magic.size() + 1 || std::string_view(blob).substr(0, magic.size()) != magic)
+        return SSH_KEYTYPE_UNKNOWN;
+
+    /// Layout: magic '\0', string ciphername, string kdfname, string kdfoptions, uint32 nkeys,
+    /// string pubkey0 (whose own first wire-string is the key type name), ...
+    std::string_view rest = std::string_view(blob).substr(magic.size() + 1);
+    std::string_view ciphername;
+    std::string_view kdfname;
+    std::string_view kdfoptions;
+    if (!readSSHWireString(rest, ciphername) || !readSSHWireString(rest, kdfname) || !readSSHWireString(rest, kdfoptions))
+        return SSH_KEYTYPE_UNKNOWN;
+    if (rest.size() < 4)
+        return SSH_KEYTYPE_UNKNOWN;
+    rest.remove_prefix(4); /// nkeys
+    std::string_view pubkey0;
+    if (!readSSHWireString(rest, pubkey0))
+        return SSH_KEYTYPE_UNKNOWN;
+    std::string_view type_name;
+    if (!readSSHWireString(pubkey0, type_name))
+        return SSH_KEYTYPE_UNKNOWN;
+
+    return ssh_key_type_from_name(String(type_name).c_str());
+}
+
+/// Determine the key type of a public key file ("<type> <base64> [comment]") from its first token,
+/// without importing it into libssh.
+enum ssh_keytypes_e detectPublicKeyType(const String & filename)
+{
+    String contents;
+    try
+    {
+        contents = readFileContents(filename);
+    }
+    catch (...)
+    {
+        return SSH_KEYTYPE_UNKNOWN;
+    }
+
+    auto start = contents.find_first_not_of(" \t\r\n");
+    if (start == String::npos)
+        return SSH_KEYTYPE_UNKNOWN;
+    auto stop = contents.find_first_of(" \t\r\n", start);
+    String token = contents.substr(start, stop == String::npos ? String::npos : stop - start);
+    return ssh_key_type_from_name(token.c_str());
+}
 }
 
 SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
 {
+    /// Reject unsupported key types BEFORE ssh_pki_import_privkey_file: handing an Ed25519 key to
+    /// libssh under FIPS mode crashes (this path is reachable via clickhouse-client --ssh-key-file).
+    if (OpenSSLInitializer::instance().isFIPSEnabled() && !isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename)))
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file");
@@ -62,6 +184,8 @@ SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
 
 SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
 {
+    if (OpenSSLInitializer::instance().isFIPSEnabled() && !isKeyTypeUsableInFIPSBuilds(detectPublicKeyType(filename)))
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH public key from file");
@@ -84,6 +208,16 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
 bool SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(const String & type_name)
 {
     return isKeyTypeUsableInFIPSBuilds(ssh_key_type_from_name(type_name.c_str()));
+}
+
+bool SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(const String & filename)
+{
+    return isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename));
+}
+
+bool SSHKeyFactory::isPublicKeyFileUsableInFIPSBuilds(const String & filename)
+{
+    return isKeyTypeUsableInFIPSBuilds(detectPublicKeyType(filename));
 }
 
 SSHKey::SSHKey(const SSHKey & other)
