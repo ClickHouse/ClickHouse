@@ -348,6 +348,14 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <warnings/> unless --no-warnings is specified
     if (!config().has("no-warnings") && !config().getBool("warnings", true))
         config().setBool("no-warnings", true);
+
+    /// Use <echo_formatted/> unless --echo-formatted is specified
+    if (!config().has("echo-formatted") && config().has("echo_formatted"))
+        config().setBool("echo-formatted", config().getBool("echo_formatted"));
+
+    /// Use <echo_query_id/> unless --echo-query-id is specified
+    if (!config().has("echo-query-id") && config().has("echo_query_id"))
+        config().setBool("echo-query-id", config().getBool("echo_query_id"));
 }
 
 
@@ -1359,7 +1367,7 @@ void Client::readArguments(
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
-                common_arguments.emplace_back(arg);
+                common_arguments.emplace_back(arg); /// anything else, eg --hilite
         }
     }
     if (!prev_host_arg.empty())

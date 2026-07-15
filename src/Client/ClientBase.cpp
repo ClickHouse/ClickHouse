@@ -4017,9 +4017,9 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
     if (options.contains("suggestion_limit"))
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-    if (options.contains("highlight"))
+    if (options.contains("highlight") && !options["highlight"].defaulted())
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
-    if (options.contains("hints"))
+    if (options.contains("hints") && !options["hints"].defaulted())
         getClientConfiguration().setBool("hints", options["hints"].as<bool>());
     if (options.contains("history_file"))
     {
