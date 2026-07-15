@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_ttl_clear_index_merge_type_generation>1</enable_ttl_clear_index_merge_type_generation>
+        </default>
+    </profiles>
+</clickhouse>
