@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
@@ -387,7 +388,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
@@ -401,11 +402,19 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     reclassifyGeneratedColumnsFromRemote(context_);
 
     Names explicitly_inserted_columns;
-    /// An INSERT into the `sqlite` table function leaves the context's insertion table unset, and
-    /// `StorageID`'s comparison throws on an empty id, so check for emptiness first. Such an insert has no
-    /// explicitly named generated columns to preserve anyway.
+    /// The context records the explicit column list of the INSERT being executed. Adopt it when this storage
+    /// is the insert's direct target: either a named table matching the recorded insertion table, or an INSERT
+    /// INTO TABLE FUNCTION `sqlite`. The latter leaves the recorded insertion table unset (and `StorageID`'s
+    /// comparison throws on an empty id, so check for emptiness first), but the column list is still recorded,
+    /// and a generated column named in it must reach SQLite to be rejected there instead of being dropped.
+    /// The direct target receives the original insert query AST here, while a materialized-view push receives
+    /// the view's select query and a non-empty recorded insertion table, so it never adopts the list.
     const auto & insertion_table = context_->getInsertionTable();
-    if (!insertion_table.empty() && insertion_table == getStorageID())
+    const auto * insert_query = query ? query->as<ASTInsertQuery>() : nullptr;
+    bool is_direct_insert_target = insertion_table.empty()
+        ? (insert_query && insert_query->table_function)
+        : insertion_table == getStorageID();
+    if (is_direct_insert_target)
     {
         const auto & insertion_column_names = context_->getInsertionTableColumnNames();
         if (insertion_column_names)
