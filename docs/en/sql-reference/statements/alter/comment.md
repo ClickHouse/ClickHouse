@@ -6,8 +6,9 @@ sidebar_position: 51
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
 keywords: ['ALTER TABLE', 'MODIFY COMMENT']
-doc_type: 'reference'
 ---
+
+# ALTER TABLE ... MODIFY COMMENT
 
 Adds, modifies, or removes a table comment, regardless of whether it was set 
 before or not. The comment change is reflected in both [`system.tables`](../../../operations/system-tables/tables.md) 
@@ -23,7 +24,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 To create a table with a comment:
 
-```sql title="Query"
+```sql
 CREATE TABLE table_with_comment
 (
     `k` UInt64,
@@ -35,7 +36,7 @@ COMMENT 'The temporary table';
 
 To modify the table comment:
 
-```sql title="Query"
+```sql
 ALTER TABLE table_with_comment 
 MODIFY COMMENT 'new comment on a table';
 ```
@@ -56,7 +57,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 
 To remove the table comment:
 
-```sql title="Query"
+```sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
 ```
 

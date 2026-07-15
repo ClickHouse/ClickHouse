@@ -20,12 +20,12 @@ template <bool WITH_ESCAPING>
 class NeedleFactory
 {
 public:
-    static SearchSymbols getWaitKeyNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getWaitKeyNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, _]
             = extractor_configuration;
 
-        VectorWithMemoryTracking<char> needles;
+        std::vector<char> needles;
 
         needles.push_back(key_value_delimiter);
 
@@ -39,12 +39,12 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    static SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
 
-        VectorWithMemoryTracking<char> needles;
+        std::vector<char> needles;
 
         needles.push_back(key_value_delimiter);
 
@@ -63,12 +63,12 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    static SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
 
-        VectorWithMemoryTracking<char> needles;
+        std::vector<char> needles;
 
         if (unexpected_quoting_character_strategy != Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT)
         {
@@ -85,11 +85,11 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    static SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
     {
         const auto quoting_character = extractor_configuration.quoting_character;
 
-        VectorWithMemoryTracking<char> needles;
+        std::vector<char> needles;
 
         needles.push_back(quoting_character);
 
@@ -101,11 +101,11 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    static SearchSymbols getWaitPairDelimiterNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getWaitPairDelimiterNeedles(const Configuration & extractor_configuration)
     {
         const auto & pair_delimiters = extractor_configuration.pair_delimiters;
 
-        VectorWithMemoryTracking<char> needles;
+        std::vector<char> needles;
 
         std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 

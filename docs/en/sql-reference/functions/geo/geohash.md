@@ -3,7 +3,6 @@ description: 'Documentation for Geohash'
 sidebar_label: 'Geohash'
 slug: /sql-reference/functions/geo/geohash
 title: 'Functions for Working with Geohash'
-doc_type: 'reference'
 ---
 
 ## Geohash {#geohash}
@@ -39,13 +38,15 @@ geohashEncode(longitude, latitude, [precision])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
@@ -114,13 +115,15 @@ Function throws an exception if resulting array is over 10'000'000 items long.
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘

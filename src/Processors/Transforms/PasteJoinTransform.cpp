@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -130,6 +131,7 @@ PasteJoinTransform::PasteJoinTransform(
         table_join, input_headers, max_block_size)
     , log(getLogger("PasteJoinTransform"))
 {
+    LOG_TRACE(log, "Use PasteJoinTransform");
 }
 
 void PasteJoinTransform::onFinish() {};

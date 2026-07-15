@@ -12,7 +12,7 @@ bool ParserShowFunctionsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     ASTPtr like;
 
-    auto query = make_intrusive<ASTShowFunctionsQuery>();
+    auto query = std::make_shared<ASTShowFunctionsQuery>();
     if (!ParserKeyword(Keyword::SHOW_FUNCTIONS).ignore(pos, expected))
         return false;
 

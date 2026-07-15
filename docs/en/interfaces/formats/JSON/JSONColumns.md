@@ -6,7 +6,6 @@ keywords: ['JSONColumns']
 output_format: true
 slug: /interfaces/formats/JSONColumns
 title: 'JSONColumns'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectIntersectExceptQuery>(*this);
+    auto res = std::make_shared<ASTSelectIntersectExceptQuery>(*this);
 
     res->children.clear();
     for (const auto & child : children)
@@ -32,21 +32,7 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
                           << settings.nl_or_ws;
         }
 
-        /// Wrap compound children in parentheses: `UNION` has lower precedence than
-        /// `INTERSECT`/`EXCEPT`, and we also keep nested `INTERSECT`/`EXCEPT` explicit.
-        bool need_parens = (*it)->as<ASTSelectWithUnionQuery>() != nullptr
-            || (*it)->as<ASTSelectIntersectExceptQuery>() != nullptr;
-
-        if (need_parens)
-        {
-            ostr << indent_str;
-            auto subquery = make_intrusive<ASTSubquery>(*it);
-            subquery->format(ostr, settings, state, frame);
-        }
-        else
-        {
-            (*it)->format(ostr, settings, state, frame);
-        }
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 

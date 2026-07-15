@@ -2,19 +2,20 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTAssignment.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -25,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -36,8 +37,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -50,9 +49,9 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 {
 }
 
-static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query, const Settings & settings)
+static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
-    auto alter_query = make_intrusive<ASTAlterCommand>();
+    auto alter_query = std::make_shared<ASTAlterCommand>();
 
     alter_query->type = ASTAlterCommand::UPDATE;
     alter_query->set(alter_query->predicate, update_query.predicate);
@@ -61,12 +60,7 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(
-        *alter_query,
-        /* parse_alter_commands = */ false,
-        /* with_pure_metadata_commands = */ false,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+    auto mutation_command = MutationCommand::parse(alter_query.get());
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());
@@ -83,32 +77,8 @@ BlockIO InterpreterUpdateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
-    /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
-    /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
-    /// ALTER DELETE. Any other assignment - including `_row_exists = <expr>` that edits the deletion
-    /// mask - stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
-    /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
-    /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
-    StoragePtr table_for_access;
-    if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
-        table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
-    const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
-
-    bool deletes_via_row_exists = false;
-    bool updates_columns = false;
-    for (const ASTPtr & assignment_ast : update_query.assignments->children)
-    {
-        if (row_exists_is_marker && isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
-            deletes_via_row_exists = true;
-        else
-            updates_columns = true;
-    }
-
     AccessRightsElements required_access;
-    if (deletes_via_row_exists)
-        required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
-    if (updates_columns)
-        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
@@ -127,7 +97,7 @@ BlockIO InterpreterUpdateQuery::execute()
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
@@ -141,7 +111,7 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     MutationCommands commands;
-    commands.emplace_back(createMutationCommand(update_query, settings));
+    commands.emplace_back(createMutationCommand(update_query));
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
@@ -151,7 +121,6 @@ BlockIO InterpreterUpdateQuery::execute()
     return res;
 }
 
-void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

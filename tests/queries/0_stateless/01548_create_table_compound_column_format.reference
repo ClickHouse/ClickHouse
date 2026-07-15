@@ -7,6 +7,7 @@ ENGINE = TinyLog
 CREATE TABLE test
 (
     `a` Int64,
-    `b` Tuple(a Int64)
+    `b` Tuple(
+        a Int64)
 )
 ENGINE = TinyLog

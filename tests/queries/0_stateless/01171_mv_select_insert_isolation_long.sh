@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database, no-msan, no-azure-blob-storage
+# Tags: long, no-ordinary-database, no-encrypted-storage, no-msan
 # no-msan: it is too slow
 # shellcheck disable=SC2119
 
@@ -170,7 +170,7 @@ fi
 START_TIME=$SECONDS
 MIN_TIME=$((START_TIME + MIN_SECONDS))
 MAX_TIME=$((START_TIME + MAX_SECONDS))
-MIN_ITERATIONS=5
+MIN_ITERATIONS=15
 MAX_ITERATIONS=200
 
 run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 1   & PID_1=$!

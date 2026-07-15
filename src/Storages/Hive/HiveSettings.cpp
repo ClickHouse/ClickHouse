@@ -29,8 +29,21 @@ namespace ErrorCodes
     HIVE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HIVE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HiveSettings, HiveSetting)
+DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS)
+
+struct HiveSettingsImpl : public BaseSettings<HiveSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) HiveSettings##TYPE NAME = &HiveSettingsImpl ::NAME;
+
+namespace HiveSetting
+{
+LIST_OF_HIVE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 HiveSettings::HiveSettings() : impl(std::make_unique<HiveSettingsImpl>())
 {
@@ -40,7 +53,9 @@ HiveSettings::HiveSettings(const HiveSettings & settings) : impl(std::make_uniqu
 {
 }
 
-HiveSettings::HiveSettings(HiveSettings && settings) noexcept = default;
+HiveSettings::HiveSettings(HiveSettings && settings) noexcept : impl(std::make_unique<HiveSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 HiveSettings::~HiveSettings() = default;
 
@@ -84,7 +99,7 @@ void HiveSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

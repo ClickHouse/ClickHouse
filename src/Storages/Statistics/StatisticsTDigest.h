@@ -15,19 +15,17 @@ public:
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    void deserialize(ReadBuffer & buf) override;
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
+    Float64 estimateLess(const Field & val) const override;
     Float64 estimateEqual(const Field & val) const override;
-
-    String getNameForLogs() const override { return "TDigest"; }
 
 private:
     QuantileTDigest<Float64> t_digest;
     DataTypePtr data_type;
 };
 
-bool tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+void tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

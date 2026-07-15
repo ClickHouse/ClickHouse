@@ -1,17 +1,16 @@
 ---
 alias: []
 description: 'Documentation for the JSONStringsEachRow format'
-input_format: true
+input_format: false
 keywords: ['JSONStringsEachRow']
 output_format: true
 slug: /interfaces/formats/JSONStringsEachRow
 title: 'JSONStringsEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     | ✔      |       |
+| ✗     | ✔      |       |
 
 ## Description {#description}
 

@@ -8,7 +8,6 @@ namespace DB
 {
 
 struct FormatSettings;
-class CaseAwareBlockNameMap;
 using Names = std::vector<std::string>;
 
 /// Used for input text formats with headers/structure to map columns from input
@@ -34,9 +33,6 @@ struct ColumnMapping
 
     void addColumns(
         const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
-
-    void addColumns(
-        const Names & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
     void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
 };

@@ -75,14 +75,18 @@ open(sys.argv[2], "wb").write(b"PAR1" + fmd + st.pack("<i", len(fmd)) + b"PAR1")
 PYEOF
 }
 
+# SchemaConverter lives in the native Parquet reader (v3), which is not the default in this release,
+# so force it on to exercise the guarded code path.
+NATIVE_READER="input_format_parquet_use_native_reader_v3 = 1"
+
 # Case 1 - default max_parser_depth (1000): 60000 nested REQUIRED groups is far above the limit and
 # deep enough to overflow the native stack in any build, so the rejection is build-independent.
 gen_parquet 60000 "${TMP_DIR}/deep.parquet"
-$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/deep.parquet', Parquet) FORMAT Null" 2>&1 \
+$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/deep.parquet', Parquet) SETTINGS ${NATIVE_READER} FORMAT Null" 2>&1 \
     | expect_contains parquet_required_depth TOO_DEEP_RECURSION
 
 # Case 2 - max_parser_depth=0 means unlimited (matching the SQL parser), so a shallow schema must
 # still be inferred normally rather than rejected by the explicit limit.
 gen_parquet 2 "${TMP_DIR}/shallow.parquet"
-$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/shallow.parquet', Parquet) SETTINGS max_parser_depth = 0 FORMAT Null" 2>&1 \
+$CLICKHOUSE_LOCAL --query "DESCRIBE TABLE file('${TMP_DIR}/shallow.parquet', Parquet) SETTINGS max_parser_depth = 0, ${NATIVE_READER} FORMAT Null" 2>&1 \
     | expect_absent unlimited_depth TOO_DEEP_RECURSION

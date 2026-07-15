@@ -25,19 +25,19 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
         const char * begin = nullptr;
         auto settings = IColumn::SerializationSettings::createForAggregationState();
         auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
-        chassert(!serialized.empty());
+        assert(serialized.data != nullptr);
         return SerializedKeyHolder{serialized, arena};
     }
 }
 
 template <bool is_plain_column>
-static void deserializeAndInsert(std::string_view str, IColumn & data_to)
+static void deserializeAndInsert(StringRef str, IColumn & data_to)
 {
     if constexpr (is_plain_column)
-        data_to.insertData(str.data(), str.size());
+        data_to.insertData(str.data, str.size);
     else
     {
-        ReadBufferFromString in(str);
+        ReadBufferFromString in({str.data, str.size});
         auto settings = IColumn::SerializationSettings::createForAggregationState();
         data_to.deserializeAndInsertFromArena(in, &settings);
         if (!in.eof())

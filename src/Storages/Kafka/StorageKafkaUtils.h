@@ -1,8 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <Common/Logger_fwd.h>
-#include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Interpreters/Context_fwd.h>
@@ -96,16 +94,6 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
-
-/// Given the full write header and the Kafka virtual column mapping setting, splits columns into
-/// those that should appear in the produced message payload and their positions in the original
-/// header. When `map_virtual_columns_on_write` is `false`, the whole header is used as-is.
-struct PayloadSplit
-{
-    Block format_header;
-    std::vector<size_t> format_column_indices;
-};
-PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write);
 }
 }
 

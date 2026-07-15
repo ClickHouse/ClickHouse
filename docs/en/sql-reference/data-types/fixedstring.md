@@ -4,8 +4,9 @@ sidebar_label: 'FixedString(N)'
 sidebar_position: 10
 slug: /sql-reference/data-types/fixedstring
 title: 'FixedString(N)'
-doc_type: 'reference'
 ---
+
+# FixedString(N)
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 
@@ -33,77 +34,29 @@ When inserting the data, ClickHouse:
 - Complements a string with null bytes if the string contains fewer than `N` bytes.
 - Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
 
+When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
+
 Let's consider the following table with the single `FixedString(2)` column:
 
-```sql
-
-
-INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
+```text
+┌─name──┐
+│ b     │
+└───────┘
 ```
 
+The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
+
 ```sql
-SELECT
-    name,
-    toTypeName(name),
-    length(name),
-    empty(name)
-FROM FixedStringTable;
+SELECT * FROM FixedStringTable
+WHERE a = 'b\0'
 ```
 
 ```text
-┌─name─┬─toTypeName(name)─┬─length(name)─┬─empty(name)─┐
-│ a    │ FixedString(2)   │            2 │           0 │
-│ ab   │ FixedString(2)   │            2 │           0 │
-│      │ FixedString(2)   │            2 │           1 │
-└──────┴──────────────────┴──────────────┴─────────────┘
+┌─a─┐
+│ b │
+└───┘
 ```
 
-Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](/sql-reference/functions/array-functions#empty) function returns `1` in this case.
+This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
 
-Selecting data with `WHERE` clause return various result depending on how the condition is specified:
-
-- If equality operator `=` or `==` or `equals` function used, ClickHouse _doesn't_ take `\0` char into consideration, i.e. queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result.
-- If `LIKE` clause is used, ClickHouse _does_ take `\0` char into consideration, so one may need to explicitly specify `\0` char in the filter condition.
-
-```sql
-SELECT name
-FROM FixedStringTable
-WHERE name = 'a'
-FORMAT JSONStringsEachRow
-
-{"name":"a\u0000"}
-
-
-SELECT name
-FROM FixedStringTable
-WHERE name = 'a\0'
-FORMAT JSONStringsEachRow
-
-{"name":"a\u0000"}
-
-
-SELECT name
-FROM FixedStringTable
-WHERE name = 'a'
-FORMAT JSONStringsEachRow
-
-Query id: c32cec28-bb9e-4650-86ce-d74a1694d79e
-
-{"name":"a\u0000"}
-
-
-SELECT name
-FROM FixedStringTable
-WHERE name LIKE 'a'
-FORMAT JSONStringsEachRow
-
-0 rows in set.
-
-
-SELECT name
-FROM FixedStringTable
-WHERE name LIKE 'a\0'
-FORMAT JSONStringsEachRow
-
-{"name":"a\u0000"}
-```
+Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
