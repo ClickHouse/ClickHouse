@@ -781,11 +781,22 @@ public:
 
 private:
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    void addColumnReference(const ColumnPtr & column);
+    /// How many references to a column were enumerated, split by the kind of the holder
+    /// (the split makes the failure message actionable).
+    struct References
+    {
+        size_t from_substreams_cache = 0;
+        size_t from_deserialize_states = 0;
+        size_t direct = 0;
+
+        size_t total() const { return from_substreams_cache + from_deserialize_states + direct; }
+    };
+
+    void addColumnReference(const ColumnPtr & column, size_t References::* counter);
 
     /// The same state can be reachable through several maps; the columns of each state must be counted only once.
     std::unordered_set<const ISerialization::DeserializeBinaryBulkState *> seen_states;
-    std::unordered_map<const IColumn *, size_t> known_references;
+    std::unordered_map<const IColumn *, References> known_references;
 #endif
 };
 

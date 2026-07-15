@@ -870,10 +870,10 @@ bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const IS
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 
-void ColumnsOwnershipValidator::addColumnReference(const ColumnPtr & column)
+void ColumnsOwnershipValidator::addColumnReference(const ColumnPtr & column, size_t References::* counter)
 {
     if (column)
-        ++known_references[column.get()];
+        ++(known_references[column.get()].*counter);
 }
 
 void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache & cache)
@@ -881,7 +881,7 @@ void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache & cach
     for (const auto & [_, element] : cache)
     {
         if (element)
-            element->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column); });
+            element->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column, &References::from_substreams_cache); });
     }
 }
 
@@ -899,12 +899,12 @@ void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkS
     if (!seen_states.emplace(state.get()).second)
         return;
 
-    state->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column); });
+    state->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column, &References::from_deserialize_states); });
 }
 
 void ColumnsOwnershipValidator::add(const ColumnPtr & column)
 {
-    addColumnReference(column);
+    addColumnReference(column, &References::direct);
 }
 
 void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
@@ -912,28 +912,68 @@ void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
     /// Each reference enumerated here is a live ColumnPtr owned by a structure of the current thread,
     /// so it cannot go away concurrently, and concurrent activity of other threads can only make the
     /// reference count larger than what we enumerate, never smaller.
-    auto references = known_references;
+    std::unordered_map<const IColumn *, size_t> tree_references;
+    std::unordered_set<const IColumn *> visited;
+
+    /// Walk the subcolumn trees manually and descend into each column object only once: the children
+    /// of a column are referenced by the members of that single object, so when the same object is
+    /// reachable through several parents (e.g. a full column and its subcolumn in one result block
+    /// sharing a nested column), descending into it repeatedly would count the same member references
+    /// multiple times and produce false positives. The reference TO a shared object is counted once
+    /// per referencing parent, which is exact: each parent holds its own counted pointer.
+    std::function<void(const IColumn &)> walk = [&](const IColumn & column)
+    {
+        if (!visited.emplace(&column).second)
+            return;
+
+        column.forEachSubcolumn([&](const IColumn::WrappedPtr & child)
+        {
+            if (!child)
+                return;
+
+            ++tree_references[child.get()];
+            walk(*child);
+        });
+    };
 
     for (const auto & column : result_columns)
     {
         if (!column)
             continue;
 
-        ++references[column.get()];
-        column->forEachSubcolumnRecursively([&](const IColumn & subcolumn) { ++references[&subcolumn]; });
+        ++tree_references[column.get()];
+        walk(*column);
     }
 
-    for (const auto & [column, num_references] : references)
+    auto check = [](const IColumn * column, const References & references, size_t from_result_columns)
     {
+        size_t num_references = references.total() + from_result_columns;
         /// A single enumerated reference proves nothing beyond the column being alive;
         /// only columns reachable from two or more holders can expose an inconsistency.
         if (num_references > 1 && column->use_count() < num_references)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Column {} of type {} has reference count {} which is less than the number of its known holders ({}). "
+                "Column {} of type {} has reference count {} which is less than the number of its known holders "
+                "({}: {} from the substreams cache, {} from deserialize states, {} direct, {} from the result columns). "
                 "Copy-on-write reference counting was broken somewhere on the read path, which leads to use-after-free "
                 "(see https://github.com/ClickHouse/ClickHouse/issues/105626)",
-                reinterpret_cast<const void *>(column), column->getName(), column->use_count(), num_references);
+                reinterpret_cast<const void *>(column), column->getName(), column->use_count(),
+                num_references, references.from_substreams_cache, references.from_deserialize_states,
+                references.direct, from_result_columns);
+    };
+
+    for (const auto & [column, num_tree_references] : tree_references)
+    {
+        auto it = known_references.find(column);
+        check(column, it != known_references.end() ? it->second : References{}, num_tree_references);
+    }
+
+    /// Columns held only by the caches and states (not reachable from any result column)
+    /// can be inconsistent among themselves as well.
+    for (const auto & [column, references] : known_references)
+    {
+        if (!tree_references.contains(column))
+            check(column, references, 0);
     }
 }
 
