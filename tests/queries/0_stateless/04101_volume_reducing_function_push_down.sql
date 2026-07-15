@@ -33,19 +33,19 @@ INSERT INTO volume_reducing_function_push_down VALUES
 
 SELECT 'plan: filter — pushdown applied';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
 SELECT 'plan: filter — no pushdown when disabled';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%')
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
     SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_merge_expressions = 0);
 
 SELECT 'plan: sort+limit — pushdown applied';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(s), length(arr), empty(arr), notEmpty(fs) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
@@ -66,7 +66,7 @@ FROM (
     SELECT explain LIKE '%[volume-reducing functions]%' AS marker,
            rn,
            minIf(rn, explain LIKE '%Distinct%') OVER () AS first_distinct
-    FROM (SELECT explain, rowNumberInAllBlocks() AS rn FROM (EXPLAIN description = 1
+    FROM (SELECT explain, rowNumberInAllBlocks() AS rn FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
         SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
         SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0,
                  optimize_functions_to_subcolumns = 0))
@@ -74,13 +74,13 @@ FROM (
 
 SELECT 'plan: group by — barrier respected';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%')
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(s), count() FROM volume_reducing_function_push_down GROUP BY s
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
 SELECT 'plan: nested expression (length(s)+1) — not pushed';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%')
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(s) + 1 FROM volume_reducing_function_push_down WHERE id > 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
@@ -100,7 +100,7 @@ FROM (EXPLAIN description = 1
 
 SELECT 'plan: default lift-up not regressed when push-down disabled';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT notEmpty(fs), lower(s), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 0,
              query_plan_execute_functions_after_sorting = 1,
@@ -108,7 +108,7 @@ FROM (EXPLAIN description = 1
 
 SELECT 'plan: mixed roots keep only volume-reducing functions below sort';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT notEmpty(fs), lower(s), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1,
@@ -116,7 +116,7 @@ FROM (EXPLAIN description = 1
 
 SELECT 'plan: unsupported UUID/IP roots still lift up';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
-FROM (EXPLAIN description = 1
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT empty(u), empty(ipv4), empty(ipv6), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1,
