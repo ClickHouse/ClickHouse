@@ -160,6 +160,17 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         " You can enable it with the 'allow_experimental_codecs' setting",
                         codec_family_name);
 
+                /// A codec that needs the column type to compress (e.g. `PCO`) cannot be used where
+                /// the codec is resolved without a column type: the untyped MergeTree compression
+                /// settings (`marks_compression_codec`, `primary_key_compression_codec`,
+                /// `default_compression_codec`, `temporary_files_codec`) and `TTL ... RECOMPRESS`.
+                /// This is the single validation chokepoint they all reach; among the callers only
+                /// those pass a null `column_type`, so column codecs in CREATE/ALTER are unaffected.
+                if (!column_type && result_codec->requiresColumnTypeToCompress())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} requires the column type to compress and can only be specified for a column",
+                        codec_family_name);
+
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 

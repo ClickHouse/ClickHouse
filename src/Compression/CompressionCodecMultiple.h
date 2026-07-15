@@ -27,6 +27,10 @@ protected:
 
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
+    /// Propagate from wrapped codecs so a chain such as `PCO, ZSTD` is still recognised as
+    /// experimental / column-type-requiring by callers that inspect the outer codec object.
+    bool isExperimental() const override;
+    bool requiresColumnTypeToCompress() const override;
 
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 

@@ -1437,6 +1437,23 @@ flowchart LR
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
+| `0x9d` | PCO    | Experimental per-column codec (pcodec) for fixed-width numbers. See [Per-column codec frames](#per-column-codec-frames). |
+
+### Per-column codec frames {#per-column-codec-frames}
+
+The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHouse transport *emits*: `compress=1` output and the network compression path use one of them. However, the shared `CompressedReadBuffer` that decodes a frame dispatches on the method byte against the full codec registry, so any registered per-column codec byte is *accepted* on input — including on the HTTP `decompress=1` path. An interoperating implementation therefore need not produce these frames, but a fully general reader must recognise them (or reject unknown bytes rather than misparse them).
+
+`0x9d` (PCO) carries a self-describing body written by the `PCO` codec:
+
+```
+[1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
+[1 byte:  B]        ← number of leading raw bytes = uncompressed_size mod W
+[B bytes]           ← the raw leading partial value (as in Gorilla/FPC)
+[payload]           ← if the 0x80 flag is set: the raw uncompressed bytes;
+                      otherwise: a standalone pcodec (.pco) stream of (uncompressed_size − B) / W values
+```
+
+When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is byte-for-byte compatible with the reference pcodec implementation and self-describes its number type; the stored form (flag set) is used only when compression would not shrink the block, bounding the output to the input size plus the two header bytes. `PCO` needs the column type to compress, but it decodes without one: the element width `W` and the number type carried inside the `.pco` stream are sufficient.
 
 ### Checksum {#checksum}
 

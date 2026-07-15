@@ -1762,9 +1762,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+                /// A codec-only `MODIFY COLUMN x CODEC(...)` leaves `command.data_type` null; `apply`
+                /// then falls back to the existing column type. Mirror that here so a type-dependent
+                /// codec (e.g. `PCO`) is validated against the real column type instead of being
+                /// rejected as untyped.
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
+                    command.data_type ? command.data_type : all_columns.get(column_name).type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }

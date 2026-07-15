@@ -151,6 +151,22 @@ bool CompressionCodecMultiple::isCompression() const
     return false;
 }
 
+bool CompressionCodecMultiple::isExperimental() const
+{
+    for (const auto & codec : codecs)
+        if (codec->isExperimental())
+            return true;
+    return false;
+}
+
+bool CompressionCodecMultiple::requiresColumnTypeToCompress() const
+{
+    for (const auto & codec : codecs)
+        if (codec->requiresColumnTypeToCompress())
+            return true;
+    return false;
+}
+
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

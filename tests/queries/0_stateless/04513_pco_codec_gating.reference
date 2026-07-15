@@ -1,0 +1,3 @@
+rows	1000
+alter_added_pco	0
+alter_codec	CODEC(PCO(8))

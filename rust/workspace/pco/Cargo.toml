@@ -1,0 +1,12 @@
+[package]
+edition = "2021"
+name = "_ch_rust_pco"
+version = "0.1.0"
+
+[dependencies]
+# The pcodec ("pco") crate, patched in the ClickHouse fork to add runtime CPU
+# feature dispatch for its hot loops (see contrib/pcodec).
+pco = { path = "../../../contrib/pcodec/pco" }
+
+[lib]
+crate-type = ["staticlib"]
