@@ -660,6 +660,21 @@ TEST(BackupInfo, NormalizedStringIgnoresAzureNonLocatorNamedCollectionOverrides)
     EXPECT_EQ(ignored_non_locator.toNormalizedString().find("CSV"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringIgnoresShadowedAzureNamedCollectionOverrides)
+{
+    auto positional_path = BackupInfo::fromString("AzureBlobStorage(collection, 'backup')");
+    auto positional_path_with_shadowed_override = BackupInfo::fromString(
+        "AzureBlobStorage(collection, 'backup', blob_path='ignored')");
+    auto connection_string = BackupInfo::fromString(
+        "AzureBlobStorage(collection, connection_string='https://account.blob.core.windows.net')");
+    auto connection_string_with_shadowed_url = BackupInfo::fromString(
+        "AzureBlobStorage(collection, storage_account_url='https://ignored.blob.core.windows.net', "
+        "connection_string='https://account.blob.core.windows.net')");
+
+    EXPECT_EQ(positional_path.toNormalizedString(), positional_path_with_shadowed_override.toNormalizedString());
+    EXPECT_EQ(connection_string.toNormalizedString(), connection_string_with_shadowed_url.toNormalizedString());
+}
+
 TEST(BackupInfo, NormalizedStringRejectsNonOverridableNamedCollectionOverride)
 {
     const String collection_name = "backup_info_non_overridable_url";

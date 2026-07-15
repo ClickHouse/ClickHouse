@@ -615,6 +615,11 @@ namespace
             Strings kv_strings;
             kv_strings.reserve(info.kv_args.size());
             std::unordered_set<String> keys;
+            const bool has_azure_connection_string_override = info.backup_engine_name == "AzureBlobStorage"
+                && std::any_of(
+                    info.kv_args.begin(),
+                    info.kv_args.end(),
+                    [](const auto & kv) { return getKeyValueArgName(kv) == "connection_string"; });
             for (const auto & kv : info.kv_args)
             {
                 auto key = getKeyValueArgName(kv);
@@ -632,6 +637,11 @@ namespace
                     continue;
 
                 if (!isLocatorKeyForNormalizedIdentity(info.backup_engine_name, *key))
+                    continue;
+
+                if (info.backup_engine_name == "AzureBlobStorage"
+                    && ((*key == "blob_path" && !info.args.empty())
+                        || (*key == "storage_account_url" && has_azure_connection_string_override)))
                     continue;
 
                 auto value = getKeyValueArgStringValue(kv);
