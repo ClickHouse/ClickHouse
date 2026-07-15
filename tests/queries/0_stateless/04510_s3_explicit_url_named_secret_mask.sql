@@ -35,6 +35,16 @@ ENGINE = S3('http://localhost:11111/test/04510mid', 'ak', 'SEKRIT_SAK',
 SHOW CREATE TABLE t_04510_mid SETTINGS format_display_secrets_in_show_and_select = 0;
 DROP TABLE t_04510_mid;
 
+-- A constant-expression format at the session_token slot is valid (the parser evaluates it). The
+-- storage stores the evaluated literal, so SHOW CREATE keeps the format visible. In the logged text
+-- of the original query the unevaluated expression is indistinguishable from a session token (which
+-- would show its pieces verbatim), so there it is hidden: fail closed.
+DROP TABLE IF EXISTS t_04510_exprfmt;
+CREATE TABLE t_04510_exprfmt (x UInt8)
+ENGINE = S3('http://localhost:11111/test/04510exprfmt', 'ak', 'SEKRIT_SAK', concat('TS', 'V'), 'none');
+SHOW CREATE TABLE t_04510_exprfmt SETTINGS format_display_secrets_in_show_and_select = 0;
+DROP TABLE t_04510_exprfmt;
+
 -- The forms below all fail at analysis (empty host / missing collection) before any network access,
 -- and are logged with secrets replaced. Each carries a unique marker checked by the final assertion.
 
