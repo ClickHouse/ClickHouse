@@ -1196,21 +1196,30 @@ void MergeTreeData::checkProperties(
     /// runs from `setProperties` during the base `MergeTreeData` constructor, before the derived
     /// vtable exists.
     const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
+    /// The settings the table has BEFORE this operation. On CREATE / ATTACH this equals
+    /// `effective_settings` (no pending change). On the `checkAlterIsPossible` path it is the OLD
+    /// (pre-`ALTER`) value, while `effective_settings` is the post-`ALTER` value; the difference
+    /// lets us detect an `ALTER` that flips a gate from enabled to disabled.
+    const MergeTreeSettings & live_settings = *getSettings();
 
     for (const auto & projection : new_metadata.projections)
     {
         /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
         /// pure CREATE-time feature gates: nothing at merge / MATERIALIZE PROJECTION time reads
-        /// them. So they must fire ONLY for a projection INTRODUCED by the current operation
-        /// (CREATE or ADD PROJECTION), validated against the effective post-operation settings,
-        /// and never on ATTACH. A projection is introduced now iff it is absent from
-        /// `old_metadata`; on CREATE / ATTACH the constructor passes the same metadata object as
-        /// both old and new, so compare identity to treat every projection there as introduced.
-        /// Otherwise: an existing table becomes unattachable once the setting is disabled (issue
-        /// #102445); after `MODIFY SETTING allow_commit_order_projection = 0` an unrelated later
-        /// `ALTER` (e.g. `ADD COLUMN`) re-hits this branch for the pre-existing projection and
-        /// throws; and a mixed `ADD PROJECTION` + enable-the-gate `ALTER` would read the stale
-        /// live value and be rejected.
+        /// them. They must fire only when THIS operation is responsible for pairing the projection
+        /// with a disabled gate, i.e. either:
+        ///   - the projection is introduced by the current operation (CREATE / ADD PROJECTION)
+        ///     while the effective gate is off; or
+        ///   - this `ALTER` flips the gate from enabled to disabled while the projection already
+        ///     exists (`MODIFY SETTING ... = 0` / `RESET SETTING`); a table with such a projection
+        ///     must not be able to turn the feature off (matches PR #104822's regression).
+        /// They must NOT fire on ATTACH (else an existing table becomes unattachable once the
+        /// setting is disabled, issue #102445), nor for an unrelated `ALTER` (e.g. `ADD COLUMN`)
+        /// that leaves an already-disabled gate untouched, nor for a mixed
+        /// `ADD PROJECTION` + enable-the-gate `ALTER` (the effective post-`ALTER` gate is on).
+        /// A projection is introduced now iff it is absent from `old_metadata`; on CREATE / ATTACH
+        /// the constructor passes the same metadata object as both old and new, so compare identity
+        /// to treat every projection there as introduced.
         ///
         /// `enable_block_number_column` / `enable_block_offset_column` are NOT CREATE-only: a
         /// commit-order projection can be rebuilt from the base part during a horizontal merge
@@ -1221,29 +1230,46 @@ void MergeTreeData::checkProperties(
         /// settings below: attaching or altering with them disabled would let a later merge run
         /// without the columns the projection requires.
         const bool introduced_now = &old_metadata == &new_metadata || !old_metadata.projections.has(projection.name);
-        if (!attach && introduced_now)
+
+        /// True when a CREATE-only gate that is off in the effective (post-operation) settings must
+        /// be treated as violated: this operation either introduces the projection or disables the
+        /// gate under a pre-existing one.
+        const auto create_gate_violated = [&](bool effective_enabled, bool live_enabled)
         {
-            if (projection.with_parent_part_offset && !effective_settings[MergeTreeSetting::allow_part_offset_column_in_projections])
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
-                    "This projection cannot be used in this table",
-                    projection.name);
-            }
+            if (attach || effective_enabled)
+                return false;
+            return introduced_now || live_enabled;
+        };
 
-            if (projection.with_block_number && !effective_settings[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
-
-            if (projection.with_block_offset && !effective_settings[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
+        if (projection.with_parent_part_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_part_offset_column_in_projections],
+                live_settings[MergeTreeSetting::allow_part_offset_column_in_projections]))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
+                "This projection cannot be used in this table",
+                projection.name);
         }
+
+        if (projection.with_block_number
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
+
+        if (projection.with_block_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
 
         if (projection.with_block_number && !effective_settings[MergeTreeSetting::enable_block_number_column])
             throw Exception(
