@@ -639,6 +639,27 @@ struct FormatSettings
     /// (http_column_* URL params) to enforce "body or header, not both":
     /// a body field that matches a mapped column is always an error.
     NameSet http_column_names = {};
+
+    /// Returns true when name matches a protected http_column_* target,
+    /// respecting the active column-name case-sensitivity mode.
+    bool isHTTPColumnName(std::string_view name) const noexcept
+    {
+        if (http_column_names.empty())
+            return false;
+        if (http_column_names.contains(String(name)))
+            return true;
+        /// AUTO and IGNORE_CASE modes match columns case-insensitively, so also
+        /// check the lowercase spelling to catch body fields like EVENT_TYPE when
+        /// the mapped column is event_type.
+        if (input_format_column_matching_case_sensitivity != InputFormatColumnMatchingCaseSensitivity::MATCH_CASE)
+        {
+            String lower(name);
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+            return http_column_names.contains(lower);
+        }
+        return false;
+    }
 };
 
 }

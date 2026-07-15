@@ -57,6 +57,10 @@ NOT_IMPLEMENTED
 --- async: different header values per request coalesce into one batch
 push	sig1	batch1
 release	sig2	batch2
+--- error: CSVWithNames body header contains http_column_* target (skip_unknown_fields=1 must not bypass)
+INCORRECT_DATA
+--- error: case-insensitive body field matches http_column_* target
+INCORRECT_DATA
 --- error: column listed in both INSERT list and http_column_*
 DUPLICATE_COLUMN
 --- error: non-existent column

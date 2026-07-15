@@ -35,7 +35,7 @@ void addColumnsInternal(
         std::optional<size_t> column_idx = find(name);
         if (!column_idx.has_value())
         {
-            if (settings.skip_unknown_fields)
+            if (settings.skip_unknown_fields && !settings.isHTTPColumnName(name))
             {
                 column_indexes_for_input_fields.push_back(std::nullopt);
                 continue;

@@ -195,6 +195,20 @@ ${CLICKHOUSE_CLIENT} -q "
     ) ENGINE = MergeTree ORDER BY tuple();
 "
 
+echo "--- error: CSVWithNames body header contains http_column_* target (skip_unknown_fields=1 must not bypass)"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+CSVWithNames&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
+    --data-binary $'event_type,payload\nfrom-body,conflict' \
+    | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+
+echo "--- error: case-insensitive body field matches http_column_* target"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Event-Type: push' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1&input_format_column_name_matching_mode=ignore_case" \
+    -d '{"EVENT_TYPE":"from-body","payload":"conflict"}' \
+    | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+
 echo "--- error: column listed in both INSERT list and http_column_*"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-E: push' \
