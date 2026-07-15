@@ -1,0 +1,752 @@
+---
+description: 'NumericIndexedVector とその関数のドキュメント'
+sidebarTitle: 'NumericIndexedVector'
+slug: /sql-reference/functions/numeric-indexed-vector-functions
+title: 'NumericIndexedVector 関数'
+doc_type: 'reference'
+---
+
+NumericIndexedVector は、ベクトルを保持し、ベクトルの集約演算や要素単位の演算を実装する抽象データ構造です。Bit-Sliced Index はその保存方式です。理論的な背景やユースケースについては、論文 [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411) を参照してください。
+
+<div id="bit-sliced-index">
+  ## BSI
+</div>
+
+BSI (Bit-Sliced Index) ストレージ方式では、データを [Bit-Sliced Index](https://dl.acm.org/doi/abs/10.1145/253260.253268) として格納し、その後 [Roaring Bitmap](https://github.com/RoaringBitmap/RoaringBitmap) を用いて圧縮します。集約演算や要素ごとの演算は圧縮データに対して直接実行されるため、ストレージ効率とクエリ効率を大幅に向上させることができます。
+
+ベクトルには、索引とそれに対応する値が含まれます。以下は、BSI ストレージモードにおけるこのデータ構造の特性と制約の一部です。
+
+* 索引型として使用できるのは、`UInt8`、`UInt16`、`UInt32` のいずれかです。**注:** Roaring Bitmap の 64 ビット実装の性能を考慮し、BSI フォーマットは `UInt64`/`Int64` をサポートしていません。
+* 値型として使用できるのは、`Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32`、`UInt64`、`Float32`、`Float64` のいずれかです。**注:** 値型は自動的には拡張されません。たとえば、値型として `UInt8` を使用した場合、`UInt8` の容量を超える合計値は上位の型に昇格されるのではなく、オーバーフローになります。同様に、整数に対する演算は整数として結果が返されます (たとえば、除算しても自動的に浮動小数点の結果には変換されません) 。そのため、値型は事前によく計画して設計することが重要です。実運用では、浮動小数点型 (`Float32`/`Float64`) が一般的によく使われます。
+* 演算を実行できるのは、索引型と値型が同じ 2 つのベクトルだけです。
+* 下位ストレージには Bit-Sliced Index が使われ、索引はビットマップに格納されます。ビットマップの具体的な実装には Roaring Bitmap が使用されます。圧縮率とクエリ性能を最大化するベストプラクティスは、索引をできるだけ少数の Roaring Bitmap コンテナーに集中させることです。
+* Bit-Sliced Index の仕組みでは、値はバイナリに変換されます。浮動小数点型では、この変換に固定小数点表現が使われるため、精度が失われる可能性があります。精度は小数部に使用するビット数をカスタマイズすることで調整でき、既定値は 24 ビットです。これはほとんどのケースで十分です。NumericIndexedVector の構築時には、`-State` を付けた集約関数 groupNumericIndexedVector を使用して、整数部と小数部のビット数をカスタマイズできます。
+* 索引には、非ゼロ値、ゼロ値、存在しない値の 3 つのケースがあります。NumericIndexedVector では、非ゼロ値とゼロ値のみが格納されます。また、2 つの NumericIndexedVector 間で要素ごとの演算を行う場合、存在しない索引の値は 0 として扱われます。除算では、除数が 0 の場合の結果は 0 になります。
+
+<div id="create-numeric-indexed-vector-object">
+  ## numericIndexedVector オブジェクトを作成する
+</div>
+
+この構造を作成する方法は 2 つあります。1 つは、集約関数 `groupNumericIndexedVector` に `-State` を付けて使用する方法です。
+追加の条件を受け付けるために、接尾辞 `-if` を追加できます。
+この集約関数は、その条件を満たす行のみを処理します。
+もう 1 つは、`numericIndexedVectorBuild` を使用して map から構築する方法です。
+`groupNumericIndexedVectorState` 関数では、パラメータによって整数部と小数部のビット数をカスタマイズできますが、`numericIndexedVectorBuild` ではできません。
+
+<div id="group-numeric-indexed-vector">
+  ## groupNumericIndexedVector
+</div>
+
+2つのデータカラムから NumericIndexedVector を構築し、すべての値の合計を `Float64` 型で返します。接尾辞 `State` を付けると、NumericIndexedVector オブジェクトを返します。
+
+**構文**
+
+```sql
+groupNumericIndexedVectorState(col1, col2)
+groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, col2)
+```
+
+**パラメータ**
+
+* `type`: String、任意。ストレージフォーマットを指定します。現在サポートされているのは `'BSI'` のみです。
+* `integer_bit_num`: `UInt32`、任意。`'BSI'` ストレージフォーマットで有効です。このパラメータは整数部に使用するビット数を示します。索引の型が整数型の場合、デフォルト値はその索引の格納に使用されるビット数に対応します。たとえば、索引の型が UInt16 の場合、デフォルトの `integer_bit_num` は 16 です。索引型が Float32 または Float64 の場合、integer&#95;bit&#95;num のデフォルト値は 40 なので、表現可能なデータの整数部の範囲は `[-2^39, 2^39 - 1]` です。有効範囲は `[0, 64]` です。
+* `fraction_bit_num`: `UInt32`、任意。`'BSI'` ストレージフォーマットで有効です。このパラメータは小数部に使用するビット数を示します。値の型が整数の場合、デフォルト値は 0 です。値の型が Float32 または Float64 の場合、デフォルト値は 24 です。有効範囲は `[0, 24]` です。
+* さらに、integer&#95;bit&#95;num + fraction&#95;bit&#95;num の有効範囲も `[0, 64]` である必要があります。
+* `col1`: 索引カラム。サポートされる型: `UInt8`/`UInt16`/`UInt32`/`Int8`/`Int16`/`Int32`。
+* `col2`: 値カラム。サポートされる型: `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`。
+
+**戻り値**
+
+すべての値の合計を表す `Float64` 値。
+
+**例**
+
+テストデータ:
+
+```text
+UserID  PlayTime
+1       10
+2       20
+3       30
+```
+
+クエリと結果:
+
+```sql
+SELECT groupNumericIndexedVector(UserID, PlayTime) AS num FROM t;
+┌─num─┐
+│  60 │
+└─────┘
+
+SELECT groupNumericIndexedVectorState(UserID, PlayTime) as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)─────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8)  │ 60                                    │
+└─────┴─────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+SELECT groupNumericIndexedVectorStateIf(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+SELECT groupNumericIndexedVectorStateIf('BSI', 32, 0)(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)──────────────────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction('BSI', 32, 0)(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+<Note>
+  以下のドキュメントは、システムテーブル `system.functions` から生成されています。
+</Note>
+
+{/* 
+  以下のタグはシステムテーブルからドキュメントを生成するために使用されるため、削除しないでください。
+  詳細は https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md を参照してください。
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="numericIndexedVectorAllValueSum">
+  ## numericIndexedVectorAllValueSum
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector 内のすべての値の合計値を返します。
+
+**構文**
+
+```sql
+numericIndexedVectorAllValueSum(v)
+```
+
+**引数**
+
+* `v` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+合計値を返します。 [`Float64`](/ja/reference/data-types/float)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  60 │
+└─────┘
+```
+
+<div id="numericIndexedVectorBuild">
+  ## numericIndexedVectorBuild
+</div>
+
+導入バージョン: v25.7.0
+
+Map から NumericIndexedVector を作成します。Map のキーはベクトルの索引を表し、Map の値はベクトルの値を表します。
+
+**構文**
+
+```sql
+numericIndexedVectorBuild(map)
+```
+
+**引数**
+
+* `map` — 索引から値へのマッピングです。[`Map`](/ja/reference/data-types/map)
+
+**戻り値**
+
+NumericIndexedVector オブジェクトを返します。[`AggregateFunction`](/ja/reference/data-types/aggregatefunction)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);
+```
+
+```response title=Response
+┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
+└─────┴────────────────────────────────────────────────────────────┘
+```
+
+<div id="numericIndexedVectorCardinality">
+  ## numericIndexedVectorCardinality
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector のカーディナリティ (一意な索引数) を返します。
+
+**構文**
+
+```sql
+numericIndexedVectorCardinality(v)
+```
+
+**引数**
+
+* `v` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+一意な索引の数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  3  │
+└─────┘
+```
+
+<div id="numericIndexedVectorGetValue">
+  ## numericIndexedVectorGetValue
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector から、指定した索引に対応する値を返します。
+
+**構文**
+
+```sql
+numericIndexedVectorGetValue(v, i)
+```
+
+**引数**
+
+* `v` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `i` — 取得する値の索引です。 [`(U)Int*`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+NumericIndexedVector の値型と同じ型の数値を返します。 [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])), 3) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  30 │
+└─────┘
+```
+
+<div id="numericIndexedVectorPointwiseAdd">
+  ## numericIndexedVectorPointwiseAdd
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との要素ごとの加算を実行します。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseAdd(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数、または numericIndexedVector オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい numericIndexedVector オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────────────┬─res2─────────────┐
+│ {1:10,2:30,3:50,4:30} │ {1:12,2:22,3:32} │
+└───────────────────────┴──────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseDivide">
+  ## numericIndexedVectorPointwiseDivide
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、要素ごとの除算を行います。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseDivide(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1────────┬─res2────────────┐
+│ {2:2,3:1.5} │ {1:5,2:10,3:15} │
+└─────────────┴─────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseEqual">
+  ## numericIndexedVectorPointwiseEqual
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数を要素ごとに比較します。
+結果は、値が等しい位置の索引を含む numericIndexedVector となり、対応するすべての値は 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseEqual(v1, v2)
+```
+
+**引数**
+
+* `v1` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数、または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+***
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──┬─res2──┐
+│ {2:1} │ {2:1} │
+└───────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseGreater">
+  ## numericIndexedVectorPointwiseGreater
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、要素ごとの比較を行います。
+結果は numericIndexedVector となり、1 つ目のベクトルの値が 2 つ目のベクトルの値より大きい索引を含み、対応するすべての値は 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseGreater(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)`、`または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────┬─res2──┐
+│ {1:1,3:1} │ {3:1} │
+└───────────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseGreaterEqual">
+  ## numericIndexedVectorPointwiseGreaterEqual
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数を要素ごとに比較します。
+結果は numericIndexedVector となり、1 つ目のベクトルの値が 2 つ目のベクトルの値以上である索引を含み、対応するすべての値は 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseGreaterEqual(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {1:1,2:1,3:1} │ {2:1,3:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseLess">
+  ## numericIndexedVectorPointwiseLess
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、要素ごとの比較を行います。
+結果は numericIndexedVector となり、第1ベクトルの値が第2ベクトルの値より小さい索引を含み、対応するすべての値は 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseLess(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────┬─res2──┐
+│ {3:1,4:1} │ {1:1} │
+└───────────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseLessEqual">
+  ## numericIndexedVectorPointwiseLessEqual
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、要素ごとの比較を行います。
+結果は numericIndexedVector となり、1 つ目のベクトルの値が 2 つ目のベクトルの値以下であるインデックスを含み、対応するすべての値は 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseLessEqual(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数、または [`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object) 型の `numericIndexedVector` オブジェクト
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。 [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {2:1,3:1,4:1} │ {1:1,2:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseMultiply">
+  ## numericIndexedVectorPointwiseMultiply
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、要素ごとの乗算を行います。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseMultiply(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数または `numericIndexedVector` オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい `numericIndexedVector` オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+***
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2─────────────┐
+│ {2:200,3:600} │ {1:20,2:40,3:60} │
+└───────────────┴──────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseNotEqual">
+  ## numericIndexedVectorPointwiseNotEqual
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数を要素ごとに比較します。
+結果は、値が等しくない索引を含む numericIndexedVector となり、対応するすべての値が 1 に設定されます。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseNotEqual(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数、または numericIndexedVector オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい numericIndexedVector オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {1:1,3:1,4:1} │ {1:1,3:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseSubtract">
+  ## numericIndexedVectorPointwiseSubtract
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector と、別の numericIndexedVector または数値定数との間で、対応する要素ごとに減算を行います。
+
+**構文**
+
+```sql
+numericIndexedVectorPointwiseSubtract(v1, v2)
+```
+
+**引数**
+
+* `v1` — [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — 数値定数、または numericIndexedVector オブジェクト。[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)`、`または [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+新しい numericIndexedVector オブジェクトを返します。[`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1───────────────────┬─res2────────────┐
+│ {1:10,2:10,3:10,4:-30} │ {1:8,2:18,3:28} │
+└────────────────────────┴─────────────────┘
+```
+
+<div id="numericIndexedVectorShortDebugString">
+  ## numericIndexedVectorShortDebugString
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector の内部情報を JSON フォーマットで返します。
+この関数は主にデバッグ目的で使用されます。
+
+**構文**
+
+```sql
+numericIndexedVectorShortDebugString(v)
+```
+
+**引数**
+
+* `v` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+デバッグ情報を含むJSON文字列を返します。 [`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
+```
+
+```response title=Response
+Row 1:
+──────
+res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
+```
+
+<div id="numericIndexedVectorToMap">
+  ## numericIndexedVectorToMap
+</div>
+
+導入バージョン: v25.7.0
+
+numericIndexedVector を Map に変換します。
+
+**構文**
+
+```sql
+numericIndexedVectorToMap(v)
+```
+
+**引数**
+
+* `v` —  [`numericIndexedVector`](/ja/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**戻り値**
+
+索引と値のペアからなるマップを返します。[`Map`](/ja/reference/data-types/map)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res──────────────┐
+│ {1:10,2:20,3:30} │
+└──────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}

@@ -1,0 +1,167 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
+description: 'ClickStack の属性で Map 型と JSON 型を使い分けるタイミング'
+sidebarTitle: 'Map 型 vs JSON 型'
+title: 'ClickStack の属性における Map 型と JSON 型の使い分け'
+doc_type: 'reference'
+keywords: ['clickstack', 'json', 'map', '属性', 'スキーマ', 'オブザーバビリティ']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schemas)では、resource、scope、log、span の属性は `Map(LowCardinality(String), String)` カラムに保存されます。ClickHouse は厳密に型付けされた [`JSON` 型](/ja/reference/formats/JSON/JSON) もサポートしており、ClickStack では `Map` の代わりにこれを使用するためのベータサポートも提供されています。
+
+**一般的なオブザーバビリティのワークロードでは、[デフォルトの `Map` ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)をそのまま使用することを推奨します。** JSON 型は、属性キーの種類が少なく、かつ安定しているワークロードで評価したいユーザー向けに利用できますが、一般用途向けの推奨スキーマではありません。
+
+<div id="why-map">
+  ## Map が推奨されるデフォルトである理由
+</div>
+
+オブザーバビリティデータの大部分は、resource attributes、scope attributes、span 属性、log 属性のような attribute によって占められます。これらは通常、規模が大きく、カーディナリティが高く、高スループットで取り込まれます。こうした attribute にどのスキーマを選ぶかが、取り込みコストとストレージレイアウトを左右する最も重要な要因です。
+
+`Map(LowCardinality(String), String)` は、キーと値を単一の構造として格納します。従来の `Map` の欠点は、1 つのキーを読み取るだけでも map カラム全体を読む必要があったことです。しかし、これはもう当てはまりません。現在の ClickHouse は [bucketed map serialization](/ja/reference/data-types/map#bucketed-map-serialization) をサポートしており、map を複数の bucket に分割することで、クエリは必要な bucket だけを読み取れます。さらに、map のキーと値に対する [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を組み合わせることで、つまり [ClickStack のデフォルトスキーマ](/ja/clickstack/ingesting-data/schemas) が採用している構成により、新しいキーが増えても取り込み時の追加コストを発生させることなく、`Map` は読み取り時にも選択的かつ高速に動作します。
+
+実際には、これは次のことを意味します。
+
+* **キーが増えても取り込みコストは安定。** 新しい attribute キーを追加しても、ディスク上のカラムレイアウトは変わらず、新たな column file も作成されません。取り込みコストはキーのカーディナリティではなく、データ量によって決まります。
+* **メタデータの爆発的な増加を防げる。** ディスク上の column file の数は、一意な attribute キーの数に連動しません。
+* **索引を使った選択的なルックアップ。** map のキーと値に対するテキスト索引により、すべての行をスキャンしなくても point lookup を実行できます。
+* **高スループットでも予測可能な動作。** `Map` は、tracing や logs で一般的な、バースト的でスキーマレスな attribute 群を、キーごとのオーバーヘッドなしで処理できます。
+
+<div id="why-not-json">
+  ## デフォルトで JSON を使わないのはなぜか
+</div>
+
+`JSON` 型は、これとは異なるアプローチを取ります。挿入時に、ClickHouse は見つかった各パスごとに、強く型付けされた専用のサブカラムを動的に作成します。読み取り時には、要求されたサブカラムだけを読み込めばよく、型も保持され、クエリ時のキャストも不要なため、これは魅力的です。
+
+ただし、そのしわ寄せは取り込み時に生じます。多数の動的サブカラムを作成して管理すると、書き込み時のオーバーヘッドとメタデータの複雑さが増します。オブザーバビリティのワークロードでは、属性セットが非常に大きかったり変動が激しかったりするうえ、取り込みスループットも高いのが一般的なため、このオーバーヘッドは無視できません。[`max_dynamic_paths`](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns) 制限を使えば、追加のパスを共有カラムに退避させることで影響を抑えられますが、共有カラムへのアクセスは専用サブカラムより遅いため、そもそも JSON を使う動機だった読み取り時の利点が薄れてしまいます。
+
+bucketed map シリアライゼーションによって `Map` の従来の読み取り時オーバーヘッドの大半が解消されたため、一般的なオブザーバビリティのワークロードでは、`JSON` の読み取り時の利点は、もはや取り込み時のコストを上回りません。
+
+<div id="when-to-consider-json">
+  ## それでも JSON を検討すべき場合
+</div>
+
+JSON 型は、次の条件をすべて満たす場合に、妥当な選択肢となり得ます。
+
+* 属性のキーセットが**小さく安定**しており、何千もの一意なキーが存在せず、新しいキーが追加されることもまれである。
+* 取り込みスループットが、属性のカーディナリティに対して**控えめ**である。
+* クエリ時にキャストせず、属性に**厳密な型でアクセス**したい (数値は数値のまま、ブール値はブール値のまま) 。
+* ClickStack で**ベータ機能**を運用し、インテグレーションが変更される可能性を受け入れられる。
+
+これらの条件をすべて満たさない場合は、[デフォルトの `Map` ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)を引き続き使用してください。
+
+<div id="beta-status">
+  ## ベータステータス
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **ベータ機能のため、本番環境には適していません**
+
+  **ClickStack** における **JSON 型** のサポートは **ベータ機能** です。JSON 型自体は ClickHouse 25.3+ で本番利用可能ですが、ClickStack へのインテグレーションは現在も活発に開発中のため、制限があったり、今後変更されたり、バグが含まれていたりする可能性があります。
+</Warning>
+
+ClickStack はバージョン `2.0.4` から JSON 型をベータサポートしています。
+
+<div id="enabling-json-support">
+  ## JSON サポートの有効化
+</div>
+
+[デフォルトの`Map`ベースのスキーマ](/ja/clickstack/ingesting-data/schemas)ではなく JSON 型のスキーマを使用するには、以下の環境変数を設定します。
+
+| 変数                                                              | 設定先                     | 用途                                                                |
+| --------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector          | ClickHouse で JSON type を使用したスキーマを作成します。                           |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | アプリケーション層で JSON 型のスキーマに対してクエリできるようにします。ClickStack Open Source のみ。 |
+
+<div id="managed-clickstack">
+  ### Managed ClickStack
+</div>
+
+Managed ClickStack で JSON サポートを有効にするには、collector を設定する前に support@clickhouse.com へお問い合わせください。この機能は、ClickHouse Cloud の ClickStack UI (HyperDX) でも有効にする必要があります。
+
+collector で `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` を設定します。例:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### オープンソースの ClickStack
+</div>
+
+collector を含むすべてのデプロイメントで `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` を設定し、HyperDX のアプリケーションレイヤーでは `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` を設定して、JSON 型のスキーマに対してクエリを実行できるようにします。
+
+例:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="migrating-from-map-to-json">
+  ## MapベースのスキーマからJSONへの移行
+</div>
+
+<Warning>
+  **後方互換性**
+
+  [JSON 型](/ja/reference/formats/JSON/JSON) は、既存のMapベースのスキーマと **後方互換性がありません**。この機能を有効にすると、`JSON` 型を使用する新しいテーブルが作成され、データを手動で移行する必要があります。
+</Warning>
+
+[デフォルトのMapベースのスキーマ](/ja/clickstack/ingesting-data/schemas) から移行するには、次の手順に従ってください。
+
+<Steps>
+  <Step>
+    ### OTel collector を停止する
+  </Step>
+
+  <Step>
+    ### 既存のテーブル名を変更し、データソースを更新する
+
+    既存のテーブル名を変更し、HyperDX のデータソースを更新します。
+
+    たとえば、次のようにします。
+
+    ```sql
+    RENAME TABLE otel_logs TO otel_logs_map;
+    RENAME TABLE otel_metrics TO otel_metrics_map;
+    ```
+  </Step>
+
+  <Step>
+    ### OTel collector をデプロイする
+
+    `OTEL_AGENT_FEATURE_GATE_ARG` を設定して OTel collector をデプロイします。
+  </Step>
+
+  <Step>
+    ### JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する
+
+    ```shell
+    export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
+    ```
+  </Step>
+
+  <Step>
+    ### 新しいデータソースを作成する
+
+    JSONテーブルを参照する新しいデータソースを HyperDX で作成します。
+  </Step>
+</Steps>
+
+<div id="migrating-existing-data">
+  ### 既存データの移行 (任意)
+</div>
+
+古いデータを新しい JSON テーブルに移行するには:
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+  おおよそ100億行未満のデータセットにのみ推奨されます。以前 Map 型 で保存されたデータでは型の精度が保持されておらず (すべての値が文字列でした) 、そのため、この古いデータは保持期間が過ぎるまで新しいスキーマでも文字列として表示され、フロントエンド側で一部 CAST が必要になります。新しいデータでは、JSON 型 によって型が保持されます。
+</Warning>

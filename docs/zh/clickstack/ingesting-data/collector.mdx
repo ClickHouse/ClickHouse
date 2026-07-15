@@ -1,0 +1,634 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/otel-collector
+description: 'ClickStack 的 OpenTelemetry collector - ClickHouse 可观测性技术栈'
+sidebarTitle: 'OpenTelemetry collector'
+title: 'ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', 'OpenTelemetry collector', 'ClickHouse 可观测性', 'OTel collector 配置', 'OpenTelemetry ClickHouse']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ExtendingConfig from '/snippets/zh/_extending_config.mdx';
+
+<Tip>
+  **试试 OTel FYI——让 OTel collector 文档一目了然**
+
+  [OTel FYI](https://otel.fyi) 提供清晰简明的 OpenTelemetry collector 文档，涵盖 receivers、processors、exporters 和 pipelines。它是配置 ClickStack OTel collector 的绝佳参考资源。
+</Tip>
+
+本页介绍官方 ClickStack OpenTelemetry (OTel) collector 的配置细节。
+
+<div id="collector-roles">
+  ## collector 角色
+</div>
+
+OpenTelemetry collectors 可部署为两种主要角色：
+
+* **Agent** - Agent 实例在边缘收集数据，例如在服务器或 Kubernetes 节点上，或直接从应用程序接收事件——这些应用程序已通过 OpenTelemetry SDK 完成埋点。在后一种情况下，agent 实例会与应用程序一起运行，或运行在与应用程序相同的主机上 (例如以 sidecar 或 DaemonSet 守护进程集的形式) 。Agent 可以将数据直接发送到 ClickHouse，也可以发送到 gateway 实例。前者称为 [Agent deployment pattern](https://opentelemetry.io/docs/collector/deployment/agent/)。
+
+* **Gateway** - Gateway 实例提供独立服务 (例如 Kubernetes 中的一个部署) ，通常按集群、数据中心或区域部署。它们通过单个 OTLP 端点接收来自应用程序 (或作为 agent 的其他 collectors) 的事件。通常会部署一组 gateway 实例，并使用现成的负载均衡器在它们之间分配负载。如果所有 agent 和应用程序都将其信号发送到这一个端点，通常称为 [Gateway deployment pattern](https://opentelemetry.io/docs/collector/deployment/gateway/)。
+
+**重要：collector (包括 ClickStack 默认发行版中的 collector) 默认采用[下文所述的 gateway 角色](#collector-roles)，接收来自 agent 或 SDK 的数据。**
+
+以 agent 角色部署 OTel collectors 的用户通常会使用[collector 的默认 contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-contrib)，而不是 ClickStack 版本；不过，也可以自由使用其他兼容 OTLP 的技术，例如 [Fluentd](https://www.fluentd.org/) 和 [Vector](https://vector.dev/)。
+
+<div id="configuring-the-collector">
+  ## 部署 collector
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    在向托管 ClickStack 发送数据时，我们[建议尽可能使用官方 ClickStack 发行版的 collector](/zh/clickstack/deployment/hyperdx-only#otel-collector) 充当 gateway 角色。如果您选择自行提供，请确保其中包含 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)。
+
+    collector 可通过 Helm (推荐用于 Kubernetes) 或 Docker 进行部署。官方 [ClickStack Helm 图表](https://github.com/ClickHouse/ClickStack-helm-charts) 将上游 [OpenTelemetry collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts) 作为子图表嵌入，并预配置了 ClickStack 发行版镜像——如需安装包含 HyperDX 的完整技术栈，请参阅 [ClickStack Helm 部署指南](/zh/clickstack/deployment/helm)。如需单独部署 collector，可直接使用上游图表配合 ClickStack 镜像，如下所示。
+
+    <Tabs>
+      <Tab title="Helm">
+        添加上游 OpenTelemetry Helm 仓库：
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        创建一个 `values.yaml`，配置 ClickStack 镜像和托管 ClickStack 凭证：
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "https://your-instance.clickhouse.cloud:8443"
+          - name: CLICKHOUSE_USER
+            value: "default"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+        ```
+
+        安装该 chart：
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        对于生产环境部署，建议将 `CLICKHOUSE_PASSWORD` 存储在 Kubernetes Secret 中，并通过 `extraEnvsFrom` 引用，而不是直接内联该值。
+      </Tab>
+
+      <Tab title="Docker">
+        如需以独立模式部署 ClickStack 版 OTel connector，请运行以下 docker 命令：
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **镜像名称更新**
+
+          ClickStack 镜像现已发布为 `clickhouse/clickstack-*` (此前为 `docker.hyperdx.io/hyperdx/*`) 。
+        </Info>
+      </Tab>
+    </Tabs>
+
+    目标 ClickHouse 实例通过环境变量 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 进行配置。`CLICKHOUSE_ENDPOINT` 应为完整的 ClickHouse Cloud HTTP 端点，包含协议和端口，例如 `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`。
+
+    有关如何获取托管 ClickStack 凭据的详细信息，请参阅[此处](/zh/products/cloud/guides/sql-console/connection-details)。
+
+    <Info>
+      **生产环境用户**
+
+      在生产环境中，应使用具有[相应凭据](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user)的用户。
+    </Info>
+
+    ### 修改配置
+
+    #### 配置托管 ClickStack 实例
+
+    可以通过环境变量 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 将 OpenTelemetry collector 配置为使用托管 ClickStack 实例。这些变量的设置方式取决于您所采用的部署方式：
+
+    <Tabs>
+      <Tab title="Helm">
+        在 `values.yaml` 中覆盖 `extraEnvs` 下的相应条目，然后升级该 release：
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        所有包含 OpenTelemetry Collector 的 Docker 镜像都可以通过环境变量进行配置。例如，all-in-one 镜像：
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    使用 Docker Compose 时，通过与上述相同的环境变量修改 collector 配置：
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          CUSTOM_OTELCOL_CONFIG_FILE: '/etc/otelcol-contrib/custom.config.yaml'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        volumes:
+          - ./custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    如果您在独立部署中自行管理 OpenTelemetry collector (例如使用仅含 HyperDX 的发行版) ，我们[建议在条件允许的情况下，仍使用官方 ClickStack 发行版的 collector](/zh/clickstack/deployment/hyperdx-only#otel-collector) 承担 gateway 角色。但若您选择自行提供 collector，请确保其中包含 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)。
+
+    collector 可通过 Helm (推荐用于 Kubernetes) 或 Docker 进行部署。官方 [ClickStack Helm 图表](https://github.com/ClickHouse/ClickStack-helm-charts) 将上游 [OpenTelemetry collector Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts) 作为子图表嵌入，并通过共享的 `clickstack-config` ConfigMap 和 `clickstack-secret` Secret 自动完成 OpAMP 端点、ClickStack 镜像及 HyperDX API key 的配置——如需安装包含 HyperDX 的完整技术栈，请参阅 [ClickStack Helm 部署指南](/zh/clickstack/deployment/helm)。如需独立部署 collector 并连接至现有的 HyperDX 实例，可直接使用上游图表配合 ClickStack 镜像，如下所示。
+
+    <Tabs>
+      <Tab title="Helm">
+        添加上游 OpenTelemetry Helm 仓库：
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        创建一个 `values.yaml`，配置 ClickStack 镜像、ClickHouse 凭据，以及你的 HyperDX 部署的 OpAMP 端点：
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "tcp://clickhouse.your-namespace.svc.cluster.local:9000?dial_timeout=10s"
+          - name: CLICKHOUSE_USER
+            value: "otelcollector"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+          - name: OPAMP_SERVER_URL
+            value: "http://hyperdx.your-namespace.svc.cluster.local:4320"
+          - name: HYPERDX_API_KEY
+            value: "<your-ingestion-api-key>"
+        ```
+
+        安装该 chart：
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        `OPAMP_SERVER_URL` 应解析到你的 HyperDX 服务。当 HyperDX 和采集器在同一集群中运行时，请使用集群内服务的 DNS 名称 (例如 `http://hyperdx.your-namespace.svc.cluster.local:4320`) 。默认情况下，HyperDX 会在端口 `4320` 的 `/v1/opamp` 暴露 OpAMP API。
+
+        对于生产部署，我们建议将 `CLICKHOUSE_PASSWORD` 和 `HYPERDX_API_KEY` 存储在 Kubernetes secret 中，并通过 `extraEnvsFrom` 引用它们，而不是将这些值直接内联写入。
+      </Tab>
+
+      <Tab title="Docker">
+        要以 standalone 模式部署 ClickStack 发行版的 OTel connector，请运行以下 docker 命令：
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **镜像名称更新**
+
+          ClickStack 镜像现已发布为 `clickhouse/clickstack-*` (此前为 `docker.hyperdx.io/hyperdx/*`) 。
+        </Info>
+
+        `OPAMP_SERVER_URL` 应指向你的 HyperDX 部署，例如 `http://localhost:4320`。默认情况下，HyperDX 会在端口 `4320` 的 `/v1/opamp` 暴露 OpAMP (Open Agent Management Protocol) server。请确保运行 HyperDX 的容器已暴露该端口 (例如使用 `-p 4320:4320`) 。
+
+        <Info>
+          **暴露并连接到 OpAMP 端口**
+
+          要让采集器连接到 OpAMP 端口，必须由 HyperDX 容器将其暴露出来，例如 `-p 4320:4320`。在本地测试时，OSX 用户随后可以设置 `OPAMP_SERVER_URL=http://host.docker.internal:4320`。Linux 用户则可以使用 `--network=host` 启动采集器容器。
+        </Info>
+      </Tab>
+    </Tabs>
+
+    目标 ClickHouse 实例通过环境变量 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 进行配置。`CLICKHOUSE_ENDPOINT` 应为完整的 ClickHouse HTTP 端点，包含协议和端口，例如 `http://localhost:8123`。
+
+    **这些环境变量可用于任何包含该连接器的 Docker 发行版。**
+
+    <Info>
+      **生产环境用户**
+
+      在生产环境中，应使用具有[相应凭据](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user)的用户。
+    </Info>
+
+    ### 修改配置
+
+    #### 配置 ClickHouse 实例
+
+    OpenTelemetry collector 可通过环境变量 `OPAMP_SERVER_URL`、`CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 配置为使用 ClickHouse 实例。这些变量的具体设置方式取决于您的部署方式：
+
+    <Tabs>
+      <Tab title="Helm">
+        在 `values.yaml` 中覆盖 `extraEnvs` 下的相应条目，然后升级该 release：
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OPAMP_SERVER_URL
+            value: "<OPAMP_SERVER_URL>"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        所有包含 OpenTelemetry Collector 的 Docker 镜像都可以通过环境变量进行配置。例如，all-in-one 镜像：
+
+        ```shell
+        export OPAMP_SERVER_URL=<OPAMP_SERVER_URL>
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    使用 Docker Compose 时，通过与上述相同的环境变量修改 collector 配置：
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+</Tabs>
+
+<div id="securing-the-collector">
+  ## 保障 collector 安全
+</div>
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    默认情况下，在 Open Source 发行版之外部署 ClickStack OpenTelemetry collector 时，它不会默认启用安全保护，其 OTLP 端口也不要求身份验证。
+
+    要保护摄取，请在部署 collector 时通过 `OTLP_AUTH_TOKEN` 环境变量指定身份验证令牌。具体设置方式取决于你的部署方式：
+
+    <Tabs>
+      <Tab title="Helm">
+        在 `values.yaml` 的 `extraEnvs` 中添加 `OTLP_AUTH_TOKEN`，然后升级该 release：
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OTLP_AUTH_TOKEN
+            value: "a_very_secure_string"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        对于生产部署，我们建议将 `OTLP_AUTH_TOKEN` 和 `CLICKHOUSE_PASSWORD` 存储在 Kubernetes Secret 中，并通过 `extraEnvsFrom` 引用它们。
+      </Tab>
+
+      <Tab title="Docker">
+        ```sh
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+        docker run \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    此外，我们还建议：
+
+    * 将 collector 配置为通过 HTTPS 与 ClickHouse 通信。
+    * 为摄取创建一个权限受限的专用用户——见下文。
+    * 为 OTLP 端点启用 TLS，确保 SDK/agents 与 collector 之间的通信经过加密。这可以通过[自定义 collector 配置](#extending-collector-config)进行配置。
+
+    ### 创建摄取用户
+
+    我们建议为 OTel collector 创建一个专用 database 和用户，用于向托管 ClickStack 摄取数据。该用户应具备对 [ClickStack 创建并使用的表](/zh/clickstack/ingesting-data/schemas)执行创建和插入操作的权限。
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    这里假设 collector 已配置为使用 `otel` 数据库。这可以通过环境变量 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` 进行控制。将其传递给 collector，[方式与传递其他环境变量类似](#modifying-otel-collector-configuration)。
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    ClickStack 版 OpenTelemetry collector 内置支持 OpAMP (Open Agent Management Protocol) ，可用于安全地配置和管理 OTLP 端点。启动时，您必须提供 `OPAMP_SERVER_URL` 环境变量——它应指向 HyperDX 应用，该应用在 `/v1/opamp` 提供 OpAMP API。
+
+    此集成可确保 OTLP 端点通过自动生成的摄取 API key 进行保护，该 key 会在部署 HyperDX 应用时创建。所有发送到 collector 的遥测数据都必须包含此 API key 才能完成身份验证。您可以在 HyperDX 应用的 `Team Settings → API Keys` 中找到该 key。
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取 API key" size="lg" />
+
+    为进一步保障部署安全，我们建议：
+
+    * 将 collector 配置为通过 HTTPS 与 ClickHouse 通信。
+    * 为摄取创建一个权限受限的专用用户——见下文。
+    * 为 OTLP 端点启用 TLS，以确保 SDKs/agent 与 collector 之间的通信经过加密。这可以通过[自定义 collector 配置](#extending-collector-config)进行配置。
+
+    ### 创建摄取用户
+
+    我们建议为 OTel collector 创建专用的数据库和用户，用于将数据摄取到 ClickHouse。该用户应具备创建并写入 [ClickStack 创建和使用的表](/zh/clickstack/ingesting-data/schemas)的权限。
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    这里假设 collector 已配置为使用 `otel` 数据库。这可以通过环境变量 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` 进行控制。将该变量传递给运行 collector 的镜像，[方式与其他环境变量类似](#modifying-otel-collector-configuration)。
+  </Tab>
+</Tabs>
+
+<div id="processing-filtering-transforming-enriching">
+  ## 处理——过滤、转换与富集
+</div>
+
+用户通常都希望在摄取过程中对事件消息进行过滤、转换和富集。由于 ClickStack connector 的配置无法修改，我们建议需要进一步进行事件过滤和处理的用户采用以下任一方式：
+
+* 部署自有版本的 OTel collector 执行过滤和处理，并通过 OTLP 将事件发送到 ClickStack collector，摄取到 ClickHouse。
+* 部署自有版本的 OTel collector，并使用 ClickHouse exporter 将事件直接发送到 ClickHouse。
+
+如果使用 OTel collector 进行处理，我们建议在 gateway 实例上执行转换，并尽量减少在 agent 实例上进行的工作。这样可以确保运行在服务器上的边缘 agent 所需资源尽可能少。通常，我们看到用户只执行过滤 (以尽量减少不必要的网络开销) 、时间戳设置 (通过 operators) 以及需要上下文的富集。例如，如果 gateway 实例位于不同的 Kubernetes cluster 中，则 k8s 富集就需要在 agent 中完成。
+
+OpenTelemetry 支持以下可加以利用的处理和过滤功能：
+
+* **Processors** - Processors 会在数据由 [receivers 接收后对其进行修改或转换](https://opentelemetry.io/docs/collector/transforming-telemetry/)，再发送给 exporters。Processors 会按照 collector 配置中 `processors` 部分定义的顺序依次应用。这些是可选的，但通常建议至少使用[最小集合](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)。在将 OTel collector 与 ClickHouse 配合使用时，我们建议将 processors 限制为：
+
+* 使用 [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) 防止 collector 出现内存不足的情况。有关建议，请参见[资源估算](#estimating-resources)。
+
+* 任何基于上下文进行富集的 processor。例如，[Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) 可以利用 k8s 元数据自动设置 spans、metrics 和 logs 的资源属性，例如用源 pod (容器组) id 为事件补充信息。
+
+* 如果 traces 需要采样，可使用[尾部采样或头部采样](https://opentelemetry.io/docs/concepts/sampling/)。
+
+* [基础过滤](https://opentelemetry.io/docs/collector/transforming-telemetry/) - 丢弃不需要的事件；如果无法通过 operator 完成 (见下文) ，则可在这里进行。
+
+* [批处理](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - 在与 ClickHouse 配合使用时至关重要，以确保数据按批次发送。请参见[“优化插入”](#optimizing-inserts)。
+
+* **Operators** - [Operators](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) 是 receiver 中可用的最基本处理单元。这里支持基础解析，可设置 Severity 和 Timestamp 等字段。这里还支持 JSON 和正则表达式解析，以及事件过滤和基础转换。我们建议在这里执行事件过滤。
+
+我们建议用户避免使用 operators 或 [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md) 进行过多事件处理。这类处理可能带来相当大的内存和 CPU 开销，尤其是 JSON 解析。除少数例外外——尤其是依赖上下文的富集，例如添加 k8s 元数据——所有处理都可以在 ClickHouse 中通过 materialized views 和列在写入时完成。更多详细信息，请参见[使用 SQL 提取结构](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。
+
+<div id="example-processing">
+  ### 示例
+</div>
+
+以下配置展示了如何采集这个[非结构化日志文件](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz)。该配置可由以 agent 角色运行的 collector 使用，并将数据发送到 ClickStack gateway。
+
+请注意，这里使用了多个 operator 从日志行中提取结构 (`regex_parser`) 并过滤事件，同时配合处理器将事件按批次处理并限制内存使用量。
+
+```yaml file=code_snippets/ClickStack/config-unstructured-logs-with-processor.yaml
+receivers:
+  filelog:
+    include:
+      - /opt/data/logs/access-unstructured.log
+    start_at: beginning
+    operators:
+      - type: regex_parser
+        regex: '^(?P<ip>[\d.]+)\s+-\s+-\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>[A-Z]+)\s+(?P<url>[^\s]+)\s+HTTP/[^\s]+"\s+(?P<status>\d+)\s+(?P<size>\d+)\s+"(?P<referrer>[^"]*)"\s+"(?P<user_agent>[^"]*)"'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%d/%b/%Y:%H:%M:%S %z'
+          #22/Jan/2019:03:56:14 +0330
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 10000
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 2048
+    spike_limit_mib: 256
+exporters:
+  # HTTP 配置
+  otlphttp/hdx:
+    endpoint: 'http://localhost:4318'
+    headers:
+      authorization: <YOUR_INGESTION_API_KEY>
+    compression: gzip
+
+  # gRPC 配置（备选方案）
+  otlp/hdx:
+    endpoint: 'localhost:4317'
+    headers:
+      authorization: <YOUR_API_INGESTION_KEY>
+    compression: gzip
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:9888 # 已修改，因为同一主机上运行着 2 个 collector
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [otlphttp/hdx]
+
+```
+
+请注意，任何 OTLP 通信都必须包含[带有您的摄取 API key 的授权请求头](#securing-the-collector)。
+
+如需进行更高级的配置，建议参阅 [OpenTelemetry Collector 文档](https://opentelemetry.io/docs/collector/)。
+
+<div id="optimizing-inserts">
+  ## 优化插入
+</div>
+
+为了在通过 ClickStack collector 将可观测性数据插入 ClickHouse 时实现高性能插入并获得强一致性保障，你应在插入时遵循一些简单规则。只要正确配置 OTel collector，遵循以下规则并不难。这样还能避免用户初次使用 ClickHouse 时常遇到的[常见问题](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)。
+
+<div id="batching">
+  ### 批量处理
+</div>
+
+默认情况下，发送到 ClickHouse 的每次插入，都会让 ClickHouse 立即创建一个存储分片，其中包含此次插入的数据以及其他需要存储的元数据。因此，与发送大量但每次数据较少的插入相比，减少插入次数、同时让每次插入包含更多数据，可以减少所需的写入次数。我们建议每次至少以 1,000 行为一个较大的批次插入数据。更多细节见[此处](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)。
+
+默认情况下，写入 ClickHouse 的插入是同步的，并且在内容完全相同的情况下具备幂等性。对于 MergeTree 引擎家族的表，ClickHouse 默认会自动[对插入去重](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time)。这意味着在如下场景中，插入操作具备容错性：
+
+* (1) 如果接收数据的节点出现问题，插入查询会超时 (或返回更具体的错误) ，并且不会收到确认。
+* (2) 如果节点已写入数据，但由于网络中断，确认无法返回给查询发送方，那么发送方会收到超时或网络错误。
+
+从 collector 的角度来看，(1) 和 (2) 很难区分。不过在这两种情况下，都可以立即重试未确认的插入。只要重试的插入查询包含相同的数据且顺序一致，如果原始 (未确认的) 插入已成功，ClickHouse 就会自动忽略这次重试的插入。
+
+因此，ClickStack 发行版的 OTel collector 使用了 [batch processor](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md)。这样可以确保插入以一致的行批次发送，并满足上述要求。如果预计某个 collector 会有高吞吐量 (每秒事件数) ，并且每次插入至少可以发送 10,000 个事件，那么这通常就是管道中唯一需要的批量处理方式。如果内存允许，该值最高可设为 100,000。在这种情况下，collector 会在 batch processor 的 `timeout` 到达之前刷新批次，从而确保管道的端到端延迟保持较低，并且各批次的大小保持一致。
+
+<div id="use-asynchronous-inserts">
+  ### 使用异步插入
+</div>
+
+通常，当 collector 的吞吐量较低时，用户往往不得不发送更小的批次，但同时仍希望数据能以尽可能低的端到端延迟到达 ClickHouse。在这种情况下，当batch processor的 `timeout` 到期时，就会发送小批次。这可能会带来问题，此时就需要使用异步插入。如果你将数据发送到以 Gateway 角色运行的 ClickStack collector，这种情况通常较少见——由于它们充当聚合器，可以缓解这一问题——请参见 [Collector 角色](#collector-roles)。
+
+如果无法保证使用大批次，可以通过 [异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) 将批处理交给 ClickHouse。启用异步插入后，数据会先写入缓冲区，随后再异步写入数据库存储。
+
+<Image img="/images/use-cases/observability/observability-6.webp" alt="异步插入" size="md" />
+
+在[启用异步插入](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)后，当 ClickHouse ① 收到一条插入查询时，查询中的数据会先 ② 立即写入内存缓冲区。等到 ③ 下一次缓冲区 flush 发生时，缓冲区中的数据会被[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)，并作为一个分片写入数据库存储。请注意，在 flush 到数据库存储之前，这些数据无法被查询到；缓冲区 flush 的行为是[可配置的](/zh/concepts/features/operations/insert/asyncinserts)。
+
+要为 collector 启用异步插入，请在连接字符串中添加 `async_insert=1`。我们建议使用 `wait_for_async_insert=1` (默认值) 来获得投递保证——更多细节请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
+
+异步插入的数据会在 ClickHouse 缓冲区 flush 后写入。当超过 [`async_insert_max_data_size`](/zh/reference/settings/session-settings#async_insert_max_data_size) 时，或自第一次 `INSERT` 查询起经过 [`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings#async_insert_max_data_size) 毫秒后，就会发生这种情况。如果 `async_insert_stale_timeout_ms` 设置为非零值，则会在距离上一次查询经过 `async_insert_stale_timeout_ms milliseconds` 后写入数据。你可以调整这些设置来控制管道的端到端延迟。可用于调优缓冲区 flush 的更多设置记录在[这里](/zh/reference/settings/session-settings#async_insert)。通常，默认值已经足够合适。
+
+<Info>
+  **考虑自适应异步插入**
+
+  如果只使用少量 agent、吞吐量较低，但对端到端延迟有严格要求，则[自适应异步插入](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)可能会有帮助。一般来说，它们并不适用于 ClickHouse 常见的高吞吐量可观测性用例。
+</Info>
+
+最后，使用异步插入时，之前与 ClickHouse 同步插入相关的去重行为默认不会启用。如有需要，请参见设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings#async_insert_deduplicate)。
+
+有关如何配置此功能的完整细节，请参见这篇[文档页面](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)，或阅读这篇深入讲解的[博客文章](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
+
+<div id="scaling">
+  ## 扩缩容
+</div>
+
+ClickStack OTel collector 作为 gateway 实例运行——参见 [Collector roles](#collector-roles)。它们提供独立服务，通常按每个数据中心或每个区域部署。这些实例通过单一 OTLP 端点接收来自应用程序 (或其他承担 agent 角色的 collector) 的事件。通常会部署一组 collector 实例，并使用现成的负载均衡器在它们之间分摊负载。
+
+<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="通过gateway进行扩缩容" size="lg" />
+
+这种架构的目标是将计算密集型处理从 agent 侧卸载出去，从而尽可能减少其资源占用。这些 ClickStack gateway 可以执行原本需要由 agent 完成的转换任务。此外，通过聚合来自多个 agent 的事件，这些 gateway 能够确保向 ClickHouse 发送更大的批次，从而实现高效插入。随着更多 agent 和 SDK 来源的加入，以及事件吞吐量的提升，这些 gateway collector 也可以轻松扩展。
+
+<div id="adding-kafka">
+  ### 添加 Kafka
+</div>
+
+读者可能会注意到，上述架构并未使用 Kafka 作为消息队列。
+
+在日志架构中，使用 Kafka 队列作为消息缓冲区是一种常见的设计模式，ELK 栈也因此推动了这种模式的普及。它有几个好处：最主要的是，可以提供更强的消息传递保障，并帮助应对背压。消息从采集 agent 发送到 Kafka 并写入磁盘。理论上，集群化的 Kafka 实例能够提供高吞吐的消息缓冲能力，因为相比解析和处理消息，将数据顺序写入磁盘的计算开销更低。以 Elastic 为例，标记化和索引会带来显著开销。将数据从 agent 侧移走后，也能降低因源端日志轮转而导致消息丢失的风险。最后，它还提供一定的消息重放和跨区域复制能力，这对某些用例可能很有吸引力。
+
+不过，ClickHouse 的数据插入速度非常快——在中等配置的硬件上，每秒可插入数百万行。来自 ClickHouse 的背压非常少见。很多时候，引入 Kafka 队列只会增加架构复杂度和成本。如果你能够接受这样一个原则：日志并不需要像银行事务和其他关键任务数据那样具备同等的传递保障，我们建议避免引入 Kafka 带来的复杂性。
+
+但是，如果你需要很高的传递保障，或者需要数据重放能力 (可能还要重放到多个目标) ，那么 Kafka 会是一个有价值的架构补充。
+
+<Image img="/images/use-cases/observability/observability-8.webp" alt="添加 Kafka" size="lg" />
+
+在这种情况下，可以将 OTel agent 配置为通过 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md) 将数据发送到 Kafka。而 gateway 实例则使用 [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md) 来消费消息。更多细节请参阅 Confluent 和 OTel 文档。
+
+<Info>
+  **OTel collector 配置**
+
+  ClickStack OpenTelemetry collector 发行版可通过[自定义 collector 配置](#extending-collector-config)接入 Kafka。
+</Info>
+
+<div id="estimating-resources">
+  ## 资源估算
+</div>
+
+OTel collector 的资源需求取决于事件吞吐量、消息大小以及执行的处理量。OpenTelemetry 项目维护了一套[基准测试](https://opentelemetry.io/docs/collector/benchmarks/)，用户可据此估算资源需求。
+
+[根据我们的经验](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog#architectural-overview)，一个配备 3 个 CPU 核心和 12GB RAM 的 ClickStack gateway 实例可处理约每秒 6 万个事件。这一估算基于最小化处理管道，即仅负责重命名字段，且不使用正则表达式。
+
+对于负责将事件发送到 gateway，且仅为事件设置时间戳的 agent 实例，我们建议用户根据预期的每秒日志量来确定资源规格。以下是可作为起点的近似参考值：
+
+| 日志速率  | collector agent 资源 |
+| ----- | ------------------ |
+| 1k/秒  | 0.2CPU, 0.2GiB     |
+| 5k/秒  | 0.5 CPU, 0.5GiB    |
+| 10k/秒 | 1 CPU, 1GiB        |
+
+<div id="schema-choice">
+  ## Schema 选择：Map vs JSON
+</div>
+
+ClickStack collector 默认创建的表会将属性存储在 `Map(LowCardinality(String), String)` 列中。这是可观测性工作负载推荐使用的 schema。对于属性键集合较小且稳定的工作负载，也提供了处于 Beta 阶段的 `JSON` 类型 schema 供评估。
+
+如需查看完整对比、了解各自的适用场景、启用 `JSON` 类型 schema 所需的环境变量以及迁移演练，请参阅 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。

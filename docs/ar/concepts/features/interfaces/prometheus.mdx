@@ -1,0 +1,171 @@
+---
+description: 'توثيق دعم بروتوكول Prometheus في ClickHouse'
+sidebarTitle: 'بروتوكولات Prometheus'
+slug: /interfaces/prometheus
+title: 'بروتوكولات Prometheus'
+doc_type: 'reference'
+---
+
+<div id="expose">
+  ## كشف المقاييس
+</div>
+
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud، يمكنك كشف المقاييس لـ Prometheus باستخدام [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus).
+</Note>
+
+يمكن لـ ClickHouse كشف مقاييسه الخاصة ليجمعها Prometheus:
+
+````xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+
+Section `<prometheus.handlers>` can be used to make more extended handlers.
+This section is similar to [<http_handlers>](/concepts/features/interfaces/http) but works for prometheus protocols:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+````
+
+الإعدادات:
+
+| الاسم                        | الافتراضي  | الوصف                                                                                                                                                            |
+| ---------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | لا شيء     | المنفذ المستخدم لخدمة بروتوكول عرض المقاييس.                                                                                                                     |
+| `endpoint`                   | `/metrics` | نقطة نهاية HTTP لكشط المقاييس بواسطة خادم Prometheus. تبدأ بـ `/`. يجب عدم استخدامها مع قسم `<handlers>`.                                                        |
+| `url` / `headers` / `method` | لا شيء     | عوامل التصفية المستخدمة للعثور على معالج مطابق للطلب. وهي مشابهة للحقول التي تحمل الأسماء نفسها في قسم [`<http_handlers>`](/ar/concepts/features/interfaces/http).  |
+| `metrics`                    | true       | يعرض المقاييس من جدول [system.metrics](/ar/reference/system-tables/metrics).                                                                                        |
+| `asynchronous_metrics`       | true       | يعرض قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).                                              |
+| `events`                     | true       | يعرض المقاييس من جدول [system.events](/ar/reference/system-tables/events).                                                                                          |
+| `errors`                     | true       | يعرض عدد الأخطاء بحسب رموز الخطأ التي حدثت منذ آخر إعادة تشغيل للخادم. ويمكن أيضًا الحصول على هذه المعلومات من [system.errors](/ar/reference/system-tables/errors). |
+| `histograms`                 | true       | يعرض مقاييس المُدرَّج التكراري من [system.histogram&#95;metrics](/ar/reference/system-tables/histogram_metrics)                                                     |
+| `dimensional_metrics`        | true       | يعرض المقاييس متعددة الأبعاد من [system.dimensional&#95;metrics](/ar/reference/system-tables/dimensional_metrics)                                                   |
+
+تحقّق من ذلك (استبدل `127.0.0.1` بعنوان IP أو باسم المضيف لخادم ClickHouse لديك):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+## بروتوكول remote-write
+
+يدعم ClickHouse بروتوكول [remote-write](https://prometheus.io/docs/specs/remote_write_spec/).
+تُستقبَل البيانات عبر هذا البروتوكول وتُكتَب في جدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series)
+(ويجب إنشاؤه مسبقًا).
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+الإعدادات:
+
+| الاسم                        | الافتراضي | الوصف                                                                                                                                                                                                      |
+| ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | لا يوجد   | المنفذ المستخدَم لخدمة بروتوكول `remote-write`.                                                                                                                                                            |
+| `url` / `headers` / `method` | لا يوجد   | عوامل التصفية المستخدمة للعثور على معالج مطابق للطلب. وهي مشابهة للحقول التي تحمل الأسماء نفسها في قسم [`<http_handlers>`](/ar/concepts/features/interfaces/http).                                            |
+| `table`                      | لا يوجد   | اسم جدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) الذي تُكتب إليه البيانات المستلمة عبر بروتوكول `remote-write`. ويمكن أن يتضمن هذا الاسم اختياريًا اسم قاعدة بيانات أيضًا. |
+| `database`                   | لا يوجد   | اسم قاعدة البيانات التي يوجد فيها الجدول المحدد في الإعداد `table` إذا لم يكن اسم قاعدة البيانات محددًا في الإعداد `table`.                                                                                |
+
+## بروتوكول remote-read
+
+يدعم ClickHouse بروتوكول [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/).
+تُقرأ البيانات من جدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) وتُرسَل عبر هذا البروتوكول.
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+الإعدادات:
+
+| الاسم                        | الافتراضي | الوصف                                                                                                                                                                                          |
+| ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | لا شيء    | المنفذ المستخدم لخدمة بروتوكول `remote-read`.                                                                                                                                                  |
+| `url` / `headers` / `method` | لا شيء    | عوامل التصفية المستخدمة للعثور على معالج مطابق للطلب. وهي مشابهة للحقول التي تحمل الأسماء نفسها في قسم [`<http_handlers>`](/ar/concepts/features/interfaces/http).                                |
+| `table`                      | لا شيء    | اسم جدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) الذي تُقرأ منه البيانات لإرسالها عبر بروتوكول `remote-read`. ويمكن أن يتضمن هذا الاسم أيضًا اسم قاعدة بيانات. |
+| `database`                   | لا شيء    | اسم قاعدة البيانات التي يوجد فيها الجدول المحدد في الإعداد `table`، إذا لم يكن اسم قاعدة البيانات محددًا ضمن الإعداد `table`.                                                                  |
+
+## تهيئة عدة بروتوكولات
+
+يمكن تحديد عدة بروتوكولات معًا في موضع واحد:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```

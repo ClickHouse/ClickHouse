@@ -1,0 +1,147 @@
+---
+description: 'Documentação da instrução ATTACH'
+sidebarTitle: 'ATTACH'
+slug: /sql-reference/statements/attach
+title: 'Instrução ATTACH'
+doc_type: 'reference'
+---
+
+Anexa uma tabela ou um Dicionário, por exemplo, ao mover um banco de dados para outro servidor.
+
+**Sintaxe**
+
+```sql
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+```
+
+A consulta não cria dados em disco, mas parte do pressuposto de que os dados já estejam nos locais apropriados e apenas adiciona ao servidor informações sobre a tabela, o dicionário ou o banco de dados especificado. Após executar a consulta `ATTACH`, o servidor passará a reconhecer a existência da tabela, do dicionário ou do banco de dados.
+
+Se uma tabela tiver sido previamente desanexada (consulta [DETACH](/pt-BR/reference/statements/detach)), ou seja, se sua estrutura já for conhecida, você poderá usar a forma abreviada sem definir a estrutura.
+
+<div id="attach-existing-table">
+  ## Anexar tabela existente
+</div>
+
+**Sintaxe**
+
+```sql
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Esta consulta é usada ao iniciar o servidor. O servidor armazena os metadados da tabela em arquivos com consultas `ATTACH`, que ele simplesmente executa na inicialização (com exceção de algumas tabelas de sistema, que são criadas explicitamente no servidor).
+
+Se a tabela tiver sido desanexada permanentemente, ela não será anexada novamente quando o servidor iniciar, então você precisará usar a consulta `ATTACH` explicitamente.
+
+<div id="create-new-table-and-attach-data">
+  ## Criar nova tabela e anexar dados
+</div>
+
+<div id="with-specified-path-to-table-data">
+  ### Com caminho especificado para os dados da tabela
+</div>
+
+A consulta cria uma nova tabela com a estrutura fornecida e associa os dados da tabela ao diretório informado em `user_files`.
+
+**Sintaxe**
+
+```sql
+ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
+```
+
+**Exemplo**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test;
+INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
+ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
+SELECT * FROM test;
+```
+
+```sql title="Response"
+┌─s────┬──n─┐
+│ test │ 42 │
+└──────┴────┘
+```
+
+<div id="with-specified-table-uuid">
+  ### Com UUID da tabela especificado
+</div>
+
+Esta consulta cria uma nova tabela com a estrutura informada e anexa os dados da tabela com o UUID especificado.
+Ela é compatível com o motor de banco de dados [Atomic](/pt-BR/reference/engines/database-engines/atomic).
+
+**Sintaxe**
+
+```sql
+ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
+```
+
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## Anexar tabela MergeTree como ReplicatedMergeTree
+</div>
+
+Permite anexar uma tabela MergeTree não replicada como ReplicatedMergeTree. A tabela ReplicatedMergeTree será criada com os valores das configurações `default_replica_path` e `default_replica_name`. Também é possível anexar uma tabela replicada como uma MergeTree comum.
+
+Observe que os dados da tabela no ZooKeeper não são afetados por esta consulta. Isso significa que você precisa adicionar metadados no ZooKeeper usando `SYSTEM RESTORE REPLICA` ou limpá-los com `SYSTEM DROP REPLICA ... FROM ZKPATH ...` após a operação de attach.
+
+Se você estiver tentando adicionar uma réplica a uma tabela ReplicatedMergeTree existente, tenha em mente que todos os dados locais da tabela MergeTree convertida serão desanexados.
+
+**Sintaxe**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**Converter a tabela em tabela replicada**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**Converter a tabela para não replicada**
+
+Obtenha o caminho do ZooKeeper e o nome da réplica da tabela:
+
+```sql title="Query"
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+
+```sql title="Response"
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+Anexe a tabela como não replicada e exclua os dados da réplica do ZooKeeper:
+
+```sql title="Query"
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
+<div id="attach-existing-dictionary">
+  ## Anexar Dicionário Existente
+</div>
+
+Anexa um dicionário anteriormente desanexado.
+
+**Sintaxe**
+
+```sql
+ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+<div id="attach-existing-database">
+  ## Anexar banco de dados existente
+</div>
+
+Anexa um banco de dados que foi desanexado anteriormente.
+
+**Sintaxe**
+
+```sql
+ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
+```

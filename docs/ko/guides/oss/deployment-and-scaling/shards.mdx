@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: '테이블 세그먼트와 레플리카'
+description: 'ClickHouse에서 테이블 세그먼트와 레플리카란 무엇인가'
+keywords: ['세그먼트', '세그먼트', '세그먼트 분할', '레플리카', '레플리카']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<br />
+
+<Note>
+  이 주제는 ClickHouse Cloud에는 해당하지 않습니다. ClickHouse Cloud에서는 [병렬 레플리카](/ko/products/cloud/features/infrastructure/parallel-replicas)가 기존 shared-nothing ClickHouse 클러스터의 여러 세그먼트처럼 작동하며, 객체 스토리지가 [레플리카를 대체해](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) 고가용성과 장애 허용을 보장합니다.
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## ClickHouse의 테이블 세그먼트란 무엇입니까?
+</div>
+
+전통적인 [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) ClickHouse 클러스터에서는 ① 데이터가 단일 서버에 담기에는 너무 크거나 ② 단일 서버로는 데이터를 처리하기에 너무 느릴 때 세그먼트 분할을 사용합니다. 다음 그림은 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블이 단일 머신의 용량을 초과하는 ①의 경우를 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+이 경우 데이터는 테이블 세그먼트 형태로 여러 ClickHouse 서버에 분산할 수 있습니다:
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+각 세그먼트는 데이터의 부분 집합을 보유하며, 독립적으로 쿼리할 수 있는 일반적인 ClickHouse 테이블처럼 동작합니다. 다만 쿼리는 해당 부분 집합만 처리하므로, 데이터 분포에 따라서는 이것이 적절한 사용 사례가 될 수 있습니다. 일반적으로 [분산 테이블(Distributed Table)](/ko/reference/engines/table-engines/special/distributed) (대개 서버별로 하나)이 전체 데이터셋을 단일하게 볼 수 있는 뷰를 제공합니다. 분산 테이블 자체는 데이터를 저장하지 않고 **SELECT** 쿼리를 모든 세그먼트로 전달해 결과를 조합하며, 데이터를 고르게 분산하도록 **INSERTS**를 라우팅합니다.
+
+<div id="distributed-table-creation">
+  ## 분산 테이블 생성
+</div>
+
+**SELECT** 쿼리 전달과 **INSERT** 라우팅을 설명하기 위해, 두 개의 ClickHouse 서버에 있는 두 개의 세그먼트로 나뉜 [테이블 파트란 무엇인가요](/ko/concepts/core-concepts/parts) 예시 테이블을 살펴보겠습니다. 먼저, 이 구성에 대응하는 **분산 테이블**을 생성하는 DDL 문을 보여드립니다:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+`ON CLUSTER` 절은 DDL 문을 [분산 DDL 문](/ko/reference/statements/distributed-ddl)으로 만들어, ClickHouse가 `test_cluster` [클러스터 정의](/ko/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers)에 나열된 모든 서버에 테이블을 생성하도록 합니다. 분산 DDL을 사용하려면 [클러스터 아키텍처](/ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)에 추가적인 [Keeper](https://clickhouse.com/clickhouse/keeper) 구성 요소가 필요합니다.
+
+[분산 엔진 매개변수](/ko/reference/engines/table-engines/special/distributed#distributed-parameters)에서는 세그먼트 분할된 대상 테이블의 클러스터 이름(`test_cluster`), 데이터베이스 이름(`uk`), 테이블 이름(`uk_price_paid_simple`), 그리고 INSERT 라우팅에 사용할 **세그먼트 분할 키**를 지정합니다. 이 예시에서는 [rand](/ko/reference/functions/regular-functions/random-functions#rand) 함수를 사용해 행을 세그먼트에 무작위로 할당합니다. 하지만 사용 사례에 따라 복잡한 표현식을 포함해 어떤 표현식이든 세그먼트 분할 키로 사용할 수 있습니다. 다음 섹션에서는 INSERT 라우팅이 어떻게 작동하는지 설명합니다.
+
+<div id="insert-routing">
+  ## INSERT 라우팅
+</div>
+
+아래 다이어그램은 분산 테이블에 대한 INSERT가 ClickHouse에서 어떻게 처리되는지 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="세그먼트" />
+
+<br />
+
+① 분산 테이블을 대상으로 하는 INSERT(단일 행 1개 포함)는 해당 테이블을 호스팅하는 ClickHouse 서버로 직접 전송되거나, 로드 밸런서를 통해 전송됩니다.
+
+② INSERT의 각 행(이 예시에서는 1개뿐임)에 대해 ClickHouse는 세그먼트 분할 키(여기서는 `rand()`)를 평가한 뒤, 그 결과를 세그먼트 서버 수로 나눈 나머지를 대상 서버 ID로 사용합니다(ID는 0부터 시작해 1씩 증가합니다). 그러면 해당 행이 전달되고 ③ 해당 서버의 테이블 세그먼트에 삽입됩니다.
+
+다음 섹션에서는 SELECT 전달이 어떻게 작동하는지 설명합니다.
+
+<div id="select-forwarding">
+  ## SELECT 전달
+</div>
+
+이 다이어그램은 ClickHouse에서 분산 테이블을 사용할 때 SELECT 쿼리가 처리되는 방식을 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① 분산 테이블을 대상으로 하는 SELECT 집계 쿼리가 직접 또는 로드 밸런서를 통해 해당 ClickHouse 서버로 전송됩니다.
+
+② 분산 테이블은 쿼리를 대상 테이블의 세그먼트를 보유한 모든 서버로 전달하고, 각 ClickHouse 서버는 **병렬로** 로컬 집계 결과를 계산합니다.
+
+그런 다음 처음 대상으로 지정된 분산 테이블을 호스팅하는 ClickHouse 서버가 ③ 모든 로컬 결과를 수집하고, ④ 이를 머지하여 최종 전역 결과를 만든 뒤, ⑤ 쿼리 전송자에게 반환합니다.
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## ClickHouse의 테이블 레플리카란 무엇입니까?
+</div>
+
+ClickHouse의 복제는 여러 서버에 **세그먼트 데이터의 복사본**을 유지함으로써 **데이터 무결성**과 **장애 조치**를 보장합니다. 하드웨어 장애는 피할 수 없으므로, 복제는 각 세그먼트에 여러 레플리카를 두어 데이터 손실을 방지합니다. 쓰기 작업은 직접 또는 작업에 사용할 레플리카를 선택하는 [분산 테이블](#distributed-table-creation)을 통해 어느 레플리카로든 보낼 수 있습니다. 변경 사항은 다른 레플리카로 자동으로 전파됩니다. 장애가 발생하거나 유지 관리 중인 경우에도 데이터는 다른 레플리카에서 계속 사용할 수 있으며, 장애가 발생한 호스트가 복구되면 최신 상태를 유지하도록 자동으로 동기화됩니다.
+
+복제를 사용하려면 [클러스터 아키텍처](/ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)에 [Keeper](https://clickhouse.com/clickhouse/keeper) 구성 요소가 필요합니다.
+
+다음 다이어그램은 6개의 서버로 구성된 ClickHouse 클러스터를 보여 줍니다. 여기서 앞서 소개한 두 개의 테이블 세그먼트 `Shard-1` 및 `Shard-2`는 각각 3개의 레플리카를 가집니다. 이 클러스터로 쿼리가 전송됩니다.
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+쿼리 처리는 레플리카가 없는 구성과 유사하며, 각 세그먼트에서는 레플리카 하나만 쿼리를 실행합니다.
+
+> 레플리카는 데이터 무결성과 장애 조치를 보장할 뿐만 아니라, 여러 쿼리를 서로 다른 레플리카에서 병렬로 실행할 수 있게 해 쿼리 처리량도 높입니다.
+
+① 분산 테이블을 대상으로 하는 쿼리는 직접 또는 로드 밸런서를 통해 해당 ClickHouse 서버로 전송됩니다.
+
+② 분산 테이블은 쿼리를 각 세그먼트의 레플리카 하나로 전달하며, 선택된 레플리카를 호스팅하는 각 ClickHouse 서버는 병렬로 로컬 쿼리 결과를 계산합니다.
+
+나머지 과정은 레플리카가 없는 구성과 [동일하므로](#select-forwarding) 위 다이어그램에는 표시하지 않았습니다. 처음 대상으로 지정된 분산 테이블을 호스팅하는 ClickHouse 서버는 모든 로컬 결과를 수집하고, 이를 머지하여 최종 전역 결과를 만든 다음 쿼리 요청자에게 반환합니다.
+
+ClickHouse에서는 ②의 쿼리 전달 전략을 구성할 수 있습니다. 기본적으로는 — 위 다이어그램과 달리 — 분산 테이블이 가능하면 로컬 레플리카를 [우선 사용](/ko/reference/settings/session-settings#prefer_localhost_replica)하지만, 다른 로드 밸런싱 [전략](/ko/reference/settings/session-settings#load_balancing)도 사용할 수 있습니다.
+
+<div id="where-to-find-more-information">
+  ## 더 많은 정보를 확인할 수 있는 곳
+</div>
+
+테이블 세그먼트와 레플리카에 대한 개괄적인 소개를 넘어 더 자세한 내용은 [배포 및 스케일링 가이드](/ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)에서 확인하십시오.
+
+또한 ClickHouse 세그먼트와 레플리카를 더 깊이 있게 이해하는 데 도움이 되는 이 튜토리얼 비디오도 강력히 권장합니다:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

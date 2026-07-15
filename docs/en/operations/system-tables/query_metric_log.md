@@ -112,7 +112,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/sql-reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
-- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
+- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.

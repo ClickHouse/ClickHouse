@@ -1,0 +1,202 @@
+---
+description: 'Documentation de SETTINGS PROFILE'
+sidebarTitle: 'SETTINGS PROFILE'
+slug: /sql-reference/statements/alter/settings-profile
+title: 'ALTER SETTINGS PROFILE'
+doc_type: 'reference'
+---
+
+Modifie les profils de paramètres.
+
+Syntaxe :
+
+```sql
+ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL SETTINGS]
+    [DROP ALL PROFILES]
+    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
+```
+
+La clause `ON CLUSTER` permet de modifier les profils de paramètres d’un cluster, voir [DDL distribué](/fr/reference/statements/distributed-ddl).
+
+<div id="replacing-vs-modifying">
+  ## Remplacer ou modifier des paramètres
+</div>
+
+`ALTER SETTINGS PROFILE` prend en charge deux manières distinctes de modifier les paramètres et les profils parents (hérités) d’un profil. Leur comportement diffère fortement, il est donc important de choisir la bonne.
+
+<div id="replacing-form">
+  ### Forme de remplacement : `SETTINGS` / `INHERIT` seuls
+</div>
+
+Une clause `SETTINGS` seule (sans `ADD`, `MODIFY` ni `DROP`) **remplace l’intégralité de la liste des paramètres ainsi que tous les profils parents** du profil par exactement les éléments que vous indiquez. Tout ce qui était présent auparavant mais ne figure pas dans la liste est supprimé sans avertissement.
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p
+    SETTINGS max_execution_time = 10, enable_lazy_columns_replication = 1;
+
+ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;
+
+SHOW CREATE SETTINGS PROFILE p;
+-- → CREATE SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360
+-- max_execution_time and enable_lazy_columns_replication are gone.
+```
+
+<Warning>
+  Comme la forme `SETTINGS` seule effectue un remplacement complet, l’utiliser pour « redéfinir un seul paramètre » sur un profil de base déjà renseigné supprimera tous les autres paramètres (ainsi que tous les profils parents) de ce profil. Si vous voulez seulement modifier un seul paramètre tout en conservant le reste, utilisez la forme incrémentielle `MODIFY`/`ADD`/`DROP` décrite ci-dessous.
+</Warning>
+
+Il s’agit du même comportement que `SETTINGS` dans [`CREATE SETTINGS PROFILE`](/fr/reference/statements/create/settings-profile) : la clause définit la liste complète des paramètres.
+
+<div id="incremental-form">
+  ### Forme incrémentale : `ADD` / `MODIFY` / `DROP`
+</div>
+
+Les mots-clés `ADD`, `MODIFY` et `DROP` modifient des entrées individuelles tout en laissant le reste du profil intact :
+
+* `ADD SETTINGS variable = value [constraints]` — ajoute un paramètre qui n&#39;est pas encore présent.
+* `MODIFY SETTINGS variable = value [constraints]` — remplace l&#39;entrée d&#39;un seul paramètre. L&#39;entrée entière (valeur et contraintes) est remplacée ; indiquez donc à nouveau `MIN`/`MAX`/`READONLY`/etc. si vous souhaitez les conserver.
+* `DROP SETTINGS variable [,...]` — supprime les paramètres indiqués.
+* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — ajoute ou supprime des profils parents (hérités).
+* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — supprime tous les paramètres ou tous les profils parents.
+
+Plusieurs de ces clauses peuvent être combinées dans une seule instruction, par exemple `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Surchargez un seul paramètre tout en conservant le reste d’un profil existant :
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 16106127360;
+```
+
+Ajoutez un nouveau paramètre soumis à des contraintes et supprimez-en un autre :
+
+```sql
+ALTER SETTINGS PROFILE my_profile
+    DROP SETTINGS readonly
+    ADD SETTINGS max_threads = 8 MIN 4 MAX 16 WRITABLE;
+```
+
+Gérez les profils parents de façon incrémentale :
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD PROFILES p1;
+ALTER SETTINGS PROFILE my_profile DROP PROFILES p1;
+```
+
+Vérifiez toujours le résultat à l’aide de [`SHOW CREATE SETTINGS PROFILE`](/fr/reference/statements/show) :
+
+```sql
+SHOW CREATE SETTINGS PROFILE my_profile;
+```
+
+<div id="incremental-vs-full-replacement">
+  ## Incrémental vs remplacement complet
+</div>
+
+<Warning>
+  Une clause `SETTINGS` utilisée seule **supprime tous les paramètres existants ainsi que tous les profils hérités (parents)** du profil avant d’appliquer les nouveaux.
+</Warning>
+
+Pour modifier un seul paramètre tout en conservant les autres, utilisez `ADD SETTINGS` ou `MODIFY SETTINGS` (voir les exemples ci-dessous).
+
+<div id="add-vs-modify">
+  ## ADD vs MODIFY
+</div>
+
+`ADD SETTINGS` et `MODIFY SETTINGS` conservent tous deux les autres paramètres du profil, mais ils traitent différemment une entrée existante pour le *même* paramètre :
+
+* `ADD SETTINGS variable = value ...` supprime d’abord toute entrée existante pour `variable`, puis insère la nouvelle. Il **remplace donc la valeur ainsi que toutes les contraintes** de ce paramètre. Tout `MIN`, `MAX` ou attribut de modification (`READONLY`/`WRITABLE`/`CONST`/`CHANGEABLE_IN_READONLY`) précédemment défini pour `variable` et que vous ne répétez pas est supprimé.
+* `MODIFY SETTINGS variable = value ...` **fusionne champ par champ** : il remplace uniquement les champs que vous spécifiez effectivement (la valeur, ou `MIN`, ou `MAX`, ou l’attribut de modification) et conserve les autres champs de ce paramètre en l’état.
+
+<Tip>
+  En bref, utilisez `MODIFY SETTINGS` lorsque vous voulez seulement ajuster un aspect d’un paramètre (par exemple, uniquement la valeur, tout en conservant un `MAX` existant) ; utilisez `ADD SETTINGS` lorsque vous voulez redéfinir un paramètre à partir de zéro.
+</Tip>
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Créez un profil qui sera utilisé dans les exemples ci-dessous :
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p SETTINGS max_execution_time = 60;
+```
+
+<div id="example-modify-settings">
+  ### MODIFY SETTINGS
+</div>
+
+Ajoutez ou modifiez un paramètre sans changer les autres :
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- CREATE SETTINGS PROFILE p SETTINGS
+--     max_execution_time = 60,
+--     max_memory_usage = 20000000000
+```
+
+Comme `MODIFY` fusionne les champs un par un, le fait de ne modifier que la valeur d’un paramètre conserve les contraintes existantes :
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000 MAX 30000000000;
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 25000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_memory_usage = 25000000000 MAX 30000000000  -- the MAX constraint is preserved
+```
+
+<div id="example-add-settings">
+  ### ADD SETTINGS
+</div>
+
+Ajoutez un paramètre (sans supprimer les autres), en le redéfinissant entièrement s&#39;il existe déjà :
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 8 MAX 16 READONLY;
+```
+
+Contrairement à `MODIFY`, le fait de réexécuter `ADD` en ne fournissant qu’une valeur supprime les contraintes précédemment définies pour ce paramètre :
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 4;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_threads = 4   -- the MAX and READONLY constraints are gone
+```
+
+<div id="example-drop-settings">
+  ### DROP SETTINGS
+</div>
+
+Supprime un ou plusieurs paramètres nommés :
+
+```sql
+ALTER SETTINGS PROFILE p DROP SETTINGS max_threads;
+```
+
+Supprimez tous les paramètres d’un seul coup :
+
+```sql
+ALTER SETTINGS PROFILE p DROP ALL SETTINGS;
+```
+
+<div id="example-profiles">
+  ### Travailler avec des profils hérités
+</div>
+
+Ajoutez ou supprimez des profils parents (hérités) sans affecter les propres paramètres du profil :
+
+```sql
+ALTER SETTINGS PROFILE p ADD PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP ALL PROFILES;
+```
