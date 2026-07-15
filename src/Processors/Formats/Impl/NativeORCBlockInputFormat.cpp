@@ -275,7 +275,11 @@ static DataTypePtr parseORCType(
             if (skipped)
                 return {};
 
-            if (!seen_type_names.insert(parsed_type->getName()).second)
+            /// Branch identity must not depend on the stripe's physical encoding: a
+            /// dictionary-encoded branch parses as LowCardinality(...), which would let e.g.
+            /// uniontype<string,string> with one dictionary-encoded branch slip past this check
+            /// (and the read would then fail on any stripe where the encodings agree).
+            if (!seen_type_names.insert(recursiveRemoveLowCardinality(parsed_type)->getName()).second)
             {
                 if (skip_columns_with_unsupported_types)
                 {
@@ -2061,6 +2065,35 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
     return false;
 }
 
+/// The natural inference pairing of the string-like ORC kinds, used to tie-break their union-branch
+/// matching: CHAR is inferred as FixedString of the same length and STRING/VARCHAR as String, but
+/// all of them can be *read* as either (see orcUnionBranchMatchesType), so e.g.
+/// uniontype<char(1),string> with the inferred Variant(FixedString(1), String) leaves both branches
+/// with two candidates. Without a hint each branch would materialize per the current stripe's
+/// physical encoding (a dictionary-encoded stripe comes back as LowCardinality), making a supported
+/// schema fail depending on per-stripe encoding choices; preferring the natural pairing keeps the
+/// assignment stable. The target is inspected with the LowCardinality/Nullable wrappers stripped,
+/// so a LowCardinality-wrapped alternative (inferred from a dictionary-encoded stripe) pairs the
+/// same way. BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
+/// integers, Decimal256), so a preference could steal a String alternative from a STRING branch.
+static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
+{
+    const DataTypePtr type = removeLowCardinality(removeNullableOrLowCardinalityNullable(target_type));
+    const WhichDataType which(type);
+
+    switch (orc_branch_type->getKind())
+    {
+        case orc::TypeKind::CHAR:
+            return which.isFixedString()
+                && assert_cast<const DataTypeFixedString &>(*type).getN() == orc_branch_type->getMaximumLength();
+        case orc::TypeKind::STRING:
+        case orc::TypeKind::VARCHAR:
+            return which.isString();
+        default:
+            return false;
+    }
+}
+
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const orc::ColumnVectorBatch * orc_column,
     const orc::Type * orc_type,
@@ -2114,10 +2147,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// branches and the alternatives of an explicit Variant type hint is lost. Reconstruct it
         /// structurally: collect the alternatives each branch can be read as, then keep only the
         /// forced assignments (a branch takes an alternative when it is its only remaining
-        /// candidate). A branch whose correspondence stays ambiguous is read without a hint, so no
-        /// guess is ever made. The hints enable the explicit-schema conversions the scalar readers
-        /// support (e.g. binary -> IPv6) and keep the branch types aligned with the hinted Variant
-        /// (e.g. Array(Nullable(...)) produced by schema inference).
+        /// candidate), tie-breaking the string-like branches by their natural inference pairing
+        /// (see orcUnionBranchPrefersType). A branch whose correspondence stays ambiguous is read
+        /// without a hint, so no guess is ever made. The hints enable the explicit-schema
+        /// conversions the scalar readers support (e.g. binary -> IPv6) and keep the branch types
+        /// aligned with the hinted Variant (e.g. Array(Nullable(...)) produced by schema
+        /// inference).
         DataTypes branch_hints(num_children);
         if (const auto * variant_hint = type_hint ? typeid_cast<const DataTypeVariant *>(type_hint.get()) : nullptr)
         {
@@ -2129,6 +2164,14 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                         candidates[i].push_back(a);
 
             std::vector<bool> alternative_taken(alternatives.size(), false);
+            const auto preferred_candidates = [&](size_t i)
+            {
+                std::vector<size_t> preferred;
+                for (const size_t a : candidates[i])
+                    if (orcUnionBranchPrefersType(orc_type->getSubtype(i), alternatives[a]))
+                        preferred.push_back(a);
+                return preferred;
+            };
             bool changed = true;
             while (changed)
             {
@@ -2144,6 +2187,41 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                         candidates[i].clear();
                         continue;
                     }
+                    alternative_taken[a] = true;
+                    branch_hints[i] = alternatives[a];
+                    changed = true;
+                    for (size_t j = 0; j < num_children; ++j)
+                        if (j != i)
+                            std::erase(candidates[j], a);
+                }
+
+                if (changed)
+                    continue;
+
+                /// The forced assignments are exhausted. Tie-break the string-like branches by their
+                /// natural inference pairing (see orcUnionBranchPrefersType): a branch takes the
+                /// single alternative it prefers among its remaining candidates, unless another
+                /// unassigned branch uniquely prefers the same one - a contested preference is
+                /// still ambiguous and no guess is ever made. One assignment at a time, then back
+                /// to the forced-assignment loop to propagate it.
+                for (size_t i = 0; i < num_children && !changed; ++i)
+                {
+                    if (branch_hints[i] || candidates[i].size() < 2)
+                        continue;
+                    const auto preferred = preferred_candidates(i);
+                    if (preferred.size() != 1)
+                        continue;
+                    const size_t a = preferred.front();
+                    bool contested = false;
+                    for (size_t j = 0; j < num_children && !contested; ++j)
+                    {
+                        if (j == i || branch_hints[j])
+                            continue;
+                        const auto preferred_j = preferred_candidates(j);
+                        contested = preferred_j.size() == 1 && preferred_j.front() == a;
+                    }
+                    if (contested)
+                        continue;
                     alternative_taken[a] = true;
                     branch_hints[i] = alternatives[a];
                     changed = true;
@@ -2234,10 +2312,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         }
 
         /// ORC keeps one physical stream per branch, so branches with identical types cannot be
-        /// represented as a Variant (which de-duplicates types); reject them explicitly.
+        /// represented as a Variant (which de-duplicates types); reject them explicitly. The
+        /// identity is compared with LowCardinality stripped, so it does not depend on the current
+        /// stripe's physical encoding (a dictionary-encoded branch materializes as LowCardinality),
+        /// mirroring the schema-inference check in parseORCType.
         std::unordered_set<String> seen_type_names;
         for (const auto & branch_type : branch_types)
-            if (!seen_type_names.insert(branch_type->getName()).second)
+            if (!seen_type_names.insert(recursiveRemoveLowCardinality(branch_type)->getName()).second)
                 throw Exception(
                     ErrorCodes::UNKNOWN_TYPE,
                     "ORC union type '{}' has branches with identical types, which is not supported, while reading column {}",
