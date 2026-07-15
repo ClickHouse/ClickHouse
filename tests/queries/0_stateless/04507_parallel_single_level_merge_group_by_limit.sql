@@ -20,8 +20,12 @@ SELECT 'throw mode, merged total over the limit';
 SELECT count() FROM (SELECT intDiv(number, 200) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g)
 SETTINGS max_rows_to_group_by = 1000, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 
-SELECT 'the serial merge throws the same way';
-SELECT count() FROM (SELECT intDiv(number, 200) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g)
+-- The serial merge checks the limit only between source tables, so with clustered keys the throw
+-- depends on how many streams the scheduler fed (two tables of ~750 keys merge to 1500 with the
+-- single check passing). Interleaved keys make every stream exceed the limit during aggregation,
+-- which throws deterministically for any stream count.
+SELECT 'the limit is enforced with the parallel merge disabled';
+SELECT count() FROM (SELECT number % 1500 AS g, count() AS c FROM numbers_mt(300000) GROUP BY g)
 SETTINGS max_rows_to_group_by = 1000, group_by_overflow_mode = 'throw', enable_parallel_single_level_merge = 0; -- { serverError TOO_MANY_ROWS }
 
 SELECT 'break mode returns a partial result';
