@@ -1,77 +1,115 @@
--- Checks the DirectInsertedRows/DirectInsertedBytes and
--- MaterializedViewInsertedRows/MaterializedViewInsertedBytes profile events.
--- Rows written by the top-level INSERT are attributed to the "Direct" counters, while
--- rows written by a materialized view into its target table are attributed to the
--- "MaterializedView" counters. Per-query ProfileEvents from system.query_log (isolated
--- by current_database) make the check deterministic and independent of other queries
--- running on the server. The INSERT queries are tagged with an inline comment so they
--- can be found in system.query_log.
+-- Checks root INSERT and dependent materialized-view insert profile events.
+-- The INSERTs are selected by log_comment from system.query_log after flushing logs, which
+-- keeps this test independent of concurrent queries on the server.
 
 SET log_queries = 1;
 SET log_queries_min_type = 'QUERY_FINISH';
 SET parallel_view_processing = 0;
 
+DROP VIEW IF EXISTS mv_metrics_chain_2_mv;
+DROP VIEW IF EXISTS mv_metrics_chain_1_mv;
+DROP VIEW IF EXISTS mv_metrics_zero_mv;
+DROP VIEW IF EXISTS mv_metrics_fanout_2_mv;
+DROP VIEW IF EXISTS mv_metrics_fanout_1_mv;
+DROP VIEW IF EXISTS mv_metrics_filter_mv;
+DROP TABLE IF EXISTS mv_metrics_chain_2;
+DROP TABLE IF EXISTS mv_metrics_chain_1;
+DROP TABLE IF EXISTS mv_metrics_zero;
+DROP TABLE IF EXISTS mv_metrics_fanout_2;
+DROP TABLE IF EXISTS mv_metrics_fanout_1;
+DROP TABLE IF EXISTS mv_metrics_filter;
 DROP TABLE IF EXISTS mv_metrics_src;
-DROP TABLE IF EXISTS mv_metrics_dst;
-DROP VIEW IF EXISTS mv_metrics_mv;
+DROP TABLE IF EXISTS mv_metrics_direct;
 
+CREATE TABLE mv_metrics_direct (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE mv_metrics_src (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE mv_metrics_dst (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
-CREATE MATERIALIZED VIEW mv_metrics_mv TO mv_metrics_dst AS SELECT id, s FROM mv_metrics_src;
+CREATE TABLE mv_metrics_filter (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_fanout_1 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_fanout_2 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_zero (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_chain_1 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_chain_2 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO /* test 04538 direct */ mv_metrics_dst SELECT number, toString(number) FROM numbers(5);
-INSERT INTO /* test 04538 mv */ mv_metrics_src SELECT number, toString(number) FROM numbers(10);
+CREATE MATERIALIZED VIEW mv_metrics_filter_mv TO mv_metrics_filter AS
+    SELECT id, s FROM mv_metrics_src WHERE id < 3;
+CREATE MATERIALIZED VIEW mv_metrics_fanout_1_mv TO mv_metrics_fanout_1 AS
+    SELECT id, s FROM mv_metrics_src WHERE id < 2;
+CREATE MATERIALIZED VIEW mv_metrics_fanout_2_mv TO mv_metrics_fanout_2 AS
+    SELECT id, s FROM mv_metrics_src WHERE id < 4;
+CREATE MATERIALIZED VIEW mv_metrics_zero_mv TO mv_metrics_zero AS
+    SELECT id, s FROM mv_metrics_src WHERE false;
+CREATE MATERIALIZED VIEW mv_metrics_chain_1_mv TO mv_metrics_chain_1 AS
+    SELECT id, s FROM mv_metrics_src;
+CREATE MATERIALIZED VIEW mv_metrics_chain_2_mv TO mv_metrics_chain_2 AS
+    SELECT id, s FROM mv_metrics_chain_1 WHERE id < 4;
+
+-- Inline data takes the buildInsertPipeline path.
+SET log_comment = '04538_direct';
+INSERT INTO mv_metrics_direct VALUES (0, '0'), (1, '1'), (2, '2'), (3, '3'), (4, '4');
+-- INSERT SELECT takes the addInsertToSelectPipeline path. The views produce
+-- 3 + 2 + 4 + 0 + 10 + 4 = 23 rows, including a fan-out and a chain.
+SET log_comment = '04538_views';
+INSERT INTO mv_metrics_src SELECT number, toString(number) FROM numbers(10);
+SET log_comment = '';
 
 SYSTEM FLUSH LOGS query_log;
 
--- Plain INSERT into a table without materialized views: all 5 rows are Direct, none are MaterializedView.
 SELECT
     ProfileEvents['DirectInsertedRows'],
-    ProfileEvents['MaterializedViewInsertedRows']
+    ProfileEvents['MaterializedViewInsertedRows'],
+    ProfileEvents['DirectInsertedBytes'] = ProfileEvents['InsertedBytes'],
+    ProfileEvents['MaterializedViewInsertedBytes'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND query LIKE 'INSERT INTO /* test 04538 direct */%'
+  AND log_comment = '04538_direct'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- INSERT feeding a materialized view: 10 rows go directly into mv_metrics_src and 10 rows into mv_metrics_dst via the view.
 SELECT
     ProfileEvents['DirectInsertedRows'],
-    ProfileEvents['MaterializedViewInsertedRows']
+    ProfileEvents['MaterializedViewInsertedRows'],
+    ProfileEvents['InsertedRows'],
+    ProfileEvents['DirectInsertedRows'] + ProfileEvents['MaterializedViewInsertedRows'] = ProfileEvents['InsertedRows']
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND query LIKE 'INSERT INTO /* test 04538 mv */%'
+  AND log_comment = '04538_views'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- Both byte counters must be non-zero for the materialized-view INSERT.
 SELECT
     ProfileEvents['DirectInsertedBytes'] > 0,
-    ProfileEvents['MaterializedViewInsertedBytes'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND query LIKE 'INSERT INTO /* test 04538 mv */%'
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-ORDER BY event_time DESC
-LIMIT 1;
-
--- The Direct and MaterializedView counters together must account for all InsertedRows/InsertedBytes.
-SELECT
-    ProfileEvents['DirectInsertedRows'] + ProfileEvents['MaterializedViewInsertedRows'] = ProfileEvents['InsertedRows'],
+    ProfileEvents['MaterializedViewInsertedBytes'] > 0,
     ProfileEvents['DirectInsertedBytes'] + ProfileEvents['MaterializedViewInsertedBytes'] = ProfileEvents['InsertedBytes']
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND query LIKE 'INSERT INTO /* test 04538 mv */%'
+  AND log_comment = '04538_views'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
 LIMIT 1;
 
-DROP VIEW mv_metrics_mv;
+SELECT count() FROM mv_metrics_filter;
+SELECT count() FROM mv_metrics_fanout_1;
+SELECT count() FROM mv_metrics_fanout_2;
+SELECT count() FROM mv_metrics_zero;
+SELECT count() FROM mv_metrics_chain_1;
+SELECT count() FROM mv_metrics_chain_2;
+
+DROP VIEW mv_metrics_chain_2_mv;
+DROP VIEW mv_metrics_chain_1_mv;
+DROP VIEW mv_metrics_zero_mv;
+DROP VIEW mv_metrics_fanout_2_mv;
+DROP VIEW mv_metrics_fanout_1_mv;
+DROP VIEW mv_metrics_filter_mv;
+DROP TABLE mv_metrics_chain_2;
+DROP TABLE mv_metrics_chain_1;
+DROP TABLE mv_metrics_zero;
+DROP TABLE mv_metrics_fanout_2;
+DROP TABLE mv_metrics_fanout_1;
+DROP TABLE mv_metrics_filter;
 DROP TABLE mv_metrics_src;
-DROP TABLE mv_metrics_dst;
+DROP TABLE mv_metrics_direct;

@@ -286,6 +286,10 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_QuorumFailedInserts` ([UInt64](/sql-reference/data-types/int-uint)) — Number of inserts failed due to quorum not reaching.
 - `ProfileEvent_InsertedRows` ([UInt64](/sql-reference/data-types/int-uint)) — Number of rows INSERTed to all tables.
 - `ProfileEvent_InsertedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.
+- `ProfileEvent_DirectInsertedRows` ([UInt64](/sql-reference/data-types/int-uint)) — Number of rows processed by the root INSERT pipeline, excluding rows produced by dependent materialized views.
+- `ProfileEvent_DirectInsertedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of uncompressed bytes processed by the root INSERT pipeline, excluding bytes produced by dependent materialized views.
+- `ProfileEvent_MaterializedViewInsertedRows` ([UInt64](/sql-reference/data-types/int-uint)) — Number of rows produced by dependent materialized views triggered by INSERT queries.
+- `ProfileEvent_MaterializedViewInsertedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of uncompressed bytes produced by dependent materialized views triggered by INSERT queries.
 - `ProfileEvent_DelayedInserts` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.
 - `ProfileEvent_RejectedInserts` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.
 - `ProfileEvent_DelayedInsertsMilliseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.
