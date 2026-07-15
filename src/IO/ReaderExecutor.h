@@ -197,8 +197,8 @@ private:
         return !offset_map.hasUnknownSize() && position >= totalSize();
     }
 
-    /// Predicted forward reach as a logical end position, clamped to the file end.
-    size_t clampReach(size_t reach, size_t logical_pos) const;
+    /// Clamp the estimator's run-anchored predicted end to `[logical_pos, file end]`.
+    size_t clampReach(size_t predicted_end, size_t logical_pos) const;
     /// Open a long connection now? True when a slot budget is configured, none is held,
     /// and the estimator predicts the read continues past this window.
     bool shouldOpenLongConnection() const;

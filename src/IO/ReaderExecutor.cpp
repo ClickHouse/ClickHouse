@@ -219,10 +219,12 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
     }
 }
 
-size_t ReaderExecutor::clampReach(size_t reach, size_t logical_pos) const
+size_t ReaderExecutor::clampReach(size_t predicted_end, size_t logical_pos) const
 {
-    /// The estimator's reach is unclamped; bound it to the file end when the size is known.
-    size_t end = logical_pos + reach;
+    /// The estimator's predicted run end is run-anchored and unclamped: bound it to the file end
+    /// when the size is known, and never below `logical_pos` (a prediction behind the current
+    /// position means no reach there, not a negative one).
+    size_t end = std::max(predicted_end, logical_pos);
     if (!offset_map.hasUnknownSize())
         end = std::min(end, totalSize());
     return end;
@@ -232,8 +234,8 @@ bool ReaderExecutor::shouldOpenLongConnection() const
 {
     if (long_conn || !long_connection_limit)
         return false;
-    /// Open a long connection when the predicted contiguous reach runs past this window.
-    return clampReach(continuity_tracker.predictedForwardLength(), position) > position + block_size;
+    /// Open a long connection when the predicted run end runs past this window.
+    return clampReach(continuity_tracker.predictedEnd(), position) > position + block_size;
 }
 
 bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
@@ -245,13 +247,13 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
         return false;
     }
 
-    /// Bound the held GET to the predicted forward reach (`clampReach` of the estimator), kept
+    /// Bound the held GET to the predicted run end (`clampReach` of the estimator), kept
     /// object-local and clamped to the object end. The estimate adapts: a long contiguous run
     /// grows it toward the whole object, while sparse access keeps it small -- so the connection
     /// reads ahead only as far as the pattern predicts (no full-object over-read when just a
     /// slice is used). Reuse spans this bound; once the read runs past it the connection completes
     /// (pool-reusable) and the next window opens a fresh, longer one as the run keeps growing.
-    const size_t forward = clampReach(continuity_tracker.predictedForwardLength(), position) - position;
+    const size_t forward = clampReach(continuity_tracker.predictedEnd(), position) - position;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
         read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);

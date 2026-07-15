@@ -25,8 +25,9 @@ public:
         /// from `min_bytes_for_seek`.
         size_t bridgeable_gap = 2 * MiB;
         /// EWMA weight for the just-finished run (0..1): higher trusts the most
-        /// recent run more, lower is smoother / decays slower.
-        double ewma_alpha = 0.5;
+        /// recent run more, lower is smoother / decays slower. Also the damping
+        /// of the live run inside `predictedEnd`.
+        double ewma_alpha = 0.7;
     };
 
     /// All-defaults overload kept separate from the `Options` one: a default
@@ -39,17 +40,26 @@ public:
     }
 
     /// Record a `len`-byte window served forward from `start_pos`: extends the run when
-    /// it continues the frontier (within `bridgeable_gap`), else closes the run first.
+    /// it continues the frontier (within `bridgeable_gap`); a far-forward range closes
+    /// the run first. A range from the past is a re-declaration, not a pattern signal:
+    /// the covered part is skipped and only the tail past the frontier feeds the run.
     void recordReadRange(size_t start_pos, size_t len);
 
     /// Record a seek to `new_pos`: a forward gap within `bridgeable_gap` keeps the run; any
     /// other jump closes it, folding its span into the estimate.
     void recordSeek(size_t new_pos);
 
-    /// The predicted contiguous length (bytes) the read will cover going forward:
-    /// `max(currentRun, estimate)` - "we have read this far contiguously (or did last
-    /// time), so expect about as far again".
-    size_t predictedForwardLength() const;
+    /// The predicted ABSOLUTE end of the current run, anchored at the run (the
+    /// last seek position), not at the caller's offset:
+    /// `frontier + max(ewma_alpha * currentRun + (1 - ewma_alpha) * estimate, estimate)`.
+    /// The first read of a
+    /// run predicts only the historical estimate; as the run accumulates
+    /// evidence the end grows as `run_start + (1 + alpha) * run` - proportional,
+    /// and identical for every caller wherever they ask from (anchoring the full
+    /// length at the caller's offset would re-anchor it forward as the cursor
+    /// advances, inflating the prediction at twice the consumption rate).
+    /// 0 before the first serve / right after a reset.
+    size_t predictedEnd() const;
 
     /// The current contiguous run span (frontier - run start).
     size_t currentRun() const;
@@ -58,6 +68,14 @@ public:
     size_t estimate() const { return static_cast<size_t>(expected_run); }
 
 private:
+    /// The estimator's single defining formula: the EWMA fold of the live run into
+    /// the carried estimate, `alpha * currentRun + (1 - alpha) * expected_run`.
+    double foldedEstimate() const;
+
+    /// Fold the current run span into the EWMA estimate WITHOUT ending the run -
+    /// the positive-signal checkpoint for exact continuations and gapless seeks.
+    void checkpointRun();
+
     /// Fold the current run span into the EWMA estimate and clear the run.
     void closeRun();
 
