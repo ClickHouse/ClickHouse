@@ -326,6 +326,9 @@ void IEJoinAlgorithm::runBuildStage()
             break;
         case BuildStage::BuildL1:
             buildL1(build_validity, build_encoded_keys[0]);
+            /// Only the L1 build reads the first condition's encoding; freeing it here keeps it
+            /// out of the L2 build's peak.
+            build_encoded_keys[0] = {};
             build_stage = BuildStage::BuildL2;
             break;
         case BuildStage::BuildL2:
@@ -624,19 +627,9 @@ void IEJoinAlgorithm::buildL1(const std::array<SideValidity, 2> & validity, cons
         chassert(!l1_order_less(l1_entries[pos], l1_entries[pos - 1]));
 #endif
 
-    l1_row_ids.resize(num_union_entries);
-    for (size_t pos = 0; pos < num_union_entries; ++pos)
-    {
-        UInt64 entry = l1_entries[pos];
-        /// Row ids are 1-based so that the sign always carries the side.
-        if (entry < num_side_rows[0])
-            l1_row_ids[pos] = static_cast<Int64>(entry) + 1;
-        else
-            l1_row_ids[pos] = -(static_cast<Int64>(entry - num_side_rows[0]) + 1);
-    }
 }
 
-void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys)
+void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, PaddedPODArray<UInt64> & encoded_keys)
 {
     const bool l2_descending = key_order[1].descending;
 
@@ -657,6 +650,9 @@ void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, cons
         for (size_t pos = 0; pos < num_union_entries; ++pos)
             l2_keys_by_position[pos] = encoded_keys[l1_entries[pos]];
     }
+    /// Fully folded into `l2_keys_by_position`: freed before the sort, so the union-order copy
+    /// does not sit in the build-phase peak.
+    encoded_keys = {};
 
     permutation.resize(num_union_entries);
     /// The side whose entries are already in L2 order within L1 order: it reads the same column
@@ -684,7 +680,7 @@ void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, cons
             size_t num_in_order = 0;
             for (size_t pos = 0; pos < num_union_entries; ++pos)
             {
-                if ((l1_row_ids[pos] > 0) == in_order_from_left)
+                if (entryIsLeft(l1_entries[pos]) == in_order_from_left)
                     permutation[num_in_order++] = pos;
                 else
                     sorted_positions.push_back(pos);
@@ -779,7 +775,7 @@ void IEJoinAlgorithm::checkFrontierInvariant() const
     for (size_t i = 0; i < num_union_entries; ++i)
     {
         bool qualifies = frontierAdvances(i, l2_cursor);
-        bool is_right_side = l1_row_ids[permutation[i]] < 0;
+        bool is_right_side = !entryIsLeft(l1_entries[permutation[i]]);
         chassert(testBit(permutation[i]) == (is_right_side && qualifies));
     }
 }
@@ -793,8 +789,8 @@ bool IEJoinAlgorithm::nextLeftRow()
         ++produce_work;
 
         size_t pos = permutation[l2_cursor];
-        Int64 row_id = l1_row_ids[pos];
-        if (row_id < 0)
+        UInt64 entry = l1_entries[pos];
+        if (!entryIsLeft(entry))
         {
             /// Right-side entry: nothing to do here, it is marked when the frontier passes it.
             ++l2_cursor;
@@ -808,7 +804,7 @@ bool IEJoinAlgorithm::nextLeftRow()
                 ++produce_work;
                 size_t frontier_pos = permutation[frontier];
                 /// Mark right-side entries only, so that a row can never match same-side rows.
-                if (l1_row_ids[frontier_pos] < 0)
+                if (!entryIsLeft(l1_entries[frontier_pos]))
                     setBit(frontier_pos);
                 ++frontier;
             }
@@ -836,7 +832,7 @@ bool IEJoinAlgorithm::nextLeftRow()
         if (frontier < num_union_entries && produce_work >= produce_work_budget)
             return false;
 
-        current_left_row_id = row_id;
+        current_left_row = entry;
         /// The tie-break in the L1 order guarantees that the entry's own position is the exact scan
         /// boundary: every set bit at a position >= pos is a match. The bit at pos itself can never
         /// be set because pos holds a left-side entry.
@@ -927,12 +923,12 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             continue;
         }
 
-        Int64 right_row_id = l1_row_ids[*found];
+        UInt64 right_entry = l1_entries[*found];
         /// Bits are set only at positions of right-side entries.
-        chassert(current_left_row_id > 0 && right_row_id < 0);
+        chassert(has_current_left && !entryIsLeft(right_entry));
 
-        size_t left_row = current_left_row_id - 1;
-        size_t right_row = -right_row_id - 1;
+        size_t left_row = current_left_row;
+        size_t right_row = right_entry - num_side_rows[0];
 
         /// Every found pair must satisfy both conditions, re-verify by direct evaluation.
         chassert(checkEmittedPair(0, left_row, right_row));

@@ -135,21 +135,26 @@ private:
     /// the two conditions decide independently.
     std::array<PaddedPODArray<UInt64>, 2> encodeKeys() const;
 
-    /// Build L1 (`l1_entries`, `l1_row_ids`): the union of both sides ordered by the first
+    /// Build L1 (`l1_entries`): the union of both sides ordered by the first
     /// condition so that any entry satisfies it with respect to all entries below.
     /// `encoded_keys` is the first condition's encoding (may be empty).
     void buildL1(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys);
 
     /// Build L2 (`permutation`, `l2_keys_by_position`): L1 positions ordered by the second
     /// condition so that any entry satisfies it with respect to all entries after it.
-    /// `encoded_keys` is the second condition's encoding (may be empty).
-    void buildL2(const std::array<SideValidity, 2> & validity, const PaddedPODArray<UInt64> & encoded_keys);
+    /// `encoded_keys` is the second condition's encoding (may be empty); it is fully folded
+    /// into `l2_keys_by_position` and freed before the sort, cutting the build-phase peak.
+    void buildL2(const std::array<SideValidity, 2> & validity, PaddedPODArray<UInt64> & encoded_keys);
 
     /// Compare key values (key_index: 0 for L1 keys, 1 for L2 keys) of two union entries via the
     /// generic virtual comparator. This is the reference implementation: the encoded fixed-width
     /// fast path must reproduce its order exactly, all debug checks run against it, and it serves
     /// the types that have no encoding.
     int compareKeysAt(size_t key_index, size_t union_a, size_t union_b) const;
+
+    /// Which side a union entry comes from (see `l1_entries`); the row within the side is the
+    /// entry itself for the left one and `entry - num_side_rows[0]` for the right one.
+    bool entryIsLeft(UInt64 entry) const { return entry < num_side_rows[0]; }
 
     /// Whether the frontier should advance past L2 entry `l2_from` while processing L2 entry `l2_current`,
     /// i.e. whether the value of `l2_from` satisfies the second condition with respect to `l2_current`.
@@ -287,10 +292,8 @@ private:
     size_t num_union_entries = 0;
 
     /// Union entry at each L1 position. Entry u is left row u if u < num_side_rows[0],
-    /// otherwise right row u - num_side_rows[0].
+    /// otherwise right row u - num_side_rows[0] (see `entryIsLeft`).
     PaddedPODArray<UInt64> l1_entries;
-    /// Signed 1-based row ids per L1 position: +k for the k-th left row, -k for the k-th right row.
-    PaddedPODArray<Int64> l1_row_ids;
     /// L1 position of each L2 entry (the permutation array P).
     IColumn::Permutation permutation;
     /// Second-condition keys encoded into fixed-width values whose unsigned order is the L2 order,
@@ -318,8 +321,8 @@ private:
     size_t frontier = 0;
     /// L1 position where the search for the current left row's next match resumes.
     size_t scan_pos = 0;
-    /// The left row being scanned (signed 1-based id, see `l1_row_ids`), if there is one.
-    Int64 current_left_row_id = 0;
+    /// The left row being scanned (0-based row of the left side), valid iff `has_current_left`.
+    size_t current_left_row = 0;
     bool has_current_left = false;
 
     /// Bound on the work of one produceBatch call - cursor advances, bit-array words inspected,
