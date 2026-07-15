@@ -112,6 +112,13 @@ struct DeltaLakeLocalDefinition
     static constexpr auto object_storage_type = "local";
 };
 
+struct LanceLocalDefinition
+{
+    static constexpr auto name = "lanceLocal";
+    static constexpr auto storage_engine_name = "LanceLocal";
+    static constexpr auto object_storage_type = "local";
+};
+
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";

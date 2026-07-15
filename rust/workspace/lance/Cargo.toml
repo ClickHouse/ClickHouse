@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "_ch_rust_lance"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+arrow-array = "=57.3.0"
+arrow-data = "=57.3.0"
+arrow-schema = "=57.3.0"
+futures = "0.3.32"
+lance = { version = "2.0.1", default-features = false }
+tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

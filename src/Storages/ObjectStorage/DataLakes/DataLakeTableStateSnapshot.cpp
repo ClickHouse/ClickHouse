@@ -9,6 +9,9 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #endif
+#if USE_LANCE
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
+#endif
 
 namespace DB
 {
@@ -35,6 +38,13 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
     {
         writeVarInt(DELTA_LAKE_TABLE_STATE_SNAPSHOT, out);
         std::get<DeltaLake::TableStateSnapshot>(state).serialize(out);
+    }
+#endif
+#if USE_LANCE
+    else if (std::holds_alternative<Lance::TableStateSnapshot>(state))
+    {
+        writeVarInt(LANCE_TABLE_STATE_SNAPSHOT, out);
+        std::get<Lance::TableStateSnapshot>(state).serialize(out);
     }
 #endif
     else
@@ -65,6 +75,12 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
         else if (type == DELTA_LAKE_TABLE_STATE_SNAPSHOT)
         {
             return DeltaLake::TableStateSnapshot::deserialize(in, protocol_version);
+        }
+#endif
+#if USE_LANCE
+        else if (type == LANCE_TABLE_STATE_SNAPSHOT)
+        {
+            return Lance::TableStateSnapshot::deserialize(in, protocol_version);
         }
 #endif
         else

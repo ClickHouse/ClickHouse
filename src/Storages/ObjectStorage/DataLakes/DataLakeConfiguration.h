@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -224,6 +225,28 @@ public:
     {
         assertInitialized();
         return current_metadata->getSchemaTransformer(local_context, object_info);
+    }
+
+    std::optional<Pipe> read(
+        ObjectInfoPtr object_info,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count) const override
+    {
+        assertInitialized();
+        return current_metadata->read(
+            object_info,
+            read_from_format_info,
+            format_settings,
+            local_context,
+            max_block_size,
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count);
     }
 
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
@@ -457,6 +480,10 @@ using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureCon
 
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
 
+#endif
+
+#if USE_LANCE
+using StorageLocalLanceConfiguration = DataLakeConfiguration<StorageLocalConfiguration, LanceMetadata>;
 #endif
 
 #if USE_AWS_S3
