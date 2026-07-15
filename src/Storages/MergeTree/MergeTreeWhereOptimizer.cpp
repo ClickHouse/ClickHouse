@@ -62,6 +62,33 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
+/// Greedy cost/benefit score used to order PREWHERE candidates: read cost (bytes) divided by the
+/// fraction of rows the condition eliminates. The lower the better. Without a reliable row estimate
+/// the benefit is 1 and the score is just `columns_size`. See #110462.
+static Float64 computeConditionCostScore(UInt64 columns_size, UInt64 estimated_row_count, UInt64 total_rows)
+{
+    /// Score = read cost / benefit, where benefit is the fraction of rows the condition eliminates.
+    /// A condition that reads a large column (e.g. the whole Map behind a map-key predicate) is only
+    /// worth hoisting to the front of PREWHERE if it eliminates proportionally many rows; a cheap,
+    /// selective filter on a small column wins. Lower is better.
+    ///
+    /// Without a usable estimate (no statistics / row count unknown) fall back to `columns_size`, which
+    /// matches the previous size-based ordering. Two conditions that read the same columns then keep
+    /// selectivity-first ordering (equal cost, `estimated_row_count` decides in the comparison tuple).
+    if (total_rows == 0)
+        return static_cast<Float64>(columns_size);
+
+    /// A condition that keeps all rows eliminates nothing: it is the worst possible prefilter and must
+    /// sort last, regardless of how cheap its columns are. Otherwise a small column that filters nothing
+    /// (e.g. a predicate matched by every row) would be ranked cheaper than a genuinely selective filter
+    /// on a wider column and hoisted ahead of it. See #110462.
+    if (estimated_row_count >= total_rows)
+        return std::numeric_limits<Float64>::max();
+
+    const Float64 eliminated_fraction = 1.0 - static_cast<Float64>(estimated_row_count) / static_cast<Float64>(total_rows);
+    return static_cast<Float64>(columns_size) / eliminated_fraction;
+}
+
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
@@ -712,30 +739,6 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
     }
 
     return size;
-}
-
-Float64 MergeTreeWhereOptimizer::computeConditionCostScore(UInt64 columns_size, UInt64 estimated_row_count, UInt64 total_rows)
-{
-    /// Score = read cost / benefit, where benefit is the fraction of rows the condition eliminates.
-    /// A condition that reads a large column (e.g. the whole Map behind a map-key predicate) is only
-    /// worth hoisting to the front of PREWHERE if it eliminates proportionally many rows; a cheap,
-    /// selective filter on a small column wins. Lower is better.
-    ///
-    /// Without a usable estimate (no statistics / row count unknown) fall back to `columns_size`, which
-    /// matches the previous size-based ordering. Two conditions that read the same columns then keep
-    /// selectivity-first ordering (equal cost, `estimated_row_count` decides in the comparison tuple).
-    if (total_rows == 0)
-        return static_cast<Float64>(columns_size);
-
-    /// A condition that keeps all rows eliminates nothing: it is the worst possible prefilter and must
-    /// sort last, regardless of how cheap its columns are. Otherwise a small column that filters nothing
-    /// (e.g. a predicate matched by every row) would be ranked cheaper than a genuinely selective filter
-    /// on a wider column and hoisted ahead of it. See #110462.
-    if (estimated_row_count >= total_rows)
-        return std::numeric_limits<Float64>::max();
-
-    const Float64 eliminated_fraction = 1.0 - static_cast<Float64>(estimated_row_count) / static_cast<Float64>(total_rows);
-    return static_cast<Float64>(columns_size) / eliminated_fraction;
 }
 
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const

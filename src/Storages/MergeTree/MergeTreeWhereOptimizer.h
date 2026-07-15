@@ -161,11 +161,6 @@ private:
 
     UInt64 getColumnsSize(const NameSet & columns) const;
 
-    /// Greedy cost/benefit score used to order PREWHERE candidates: read cost (bytes) divided by the
-    /// fraction of rows the condition eliminates. The lower the better. Without a reliable row estimate
-    /// the benefit is 1 and the score is just `columns_size`. See #110462.
-    static Float64 computeConditionCostScore(UInt64 columns_size, UInt64 estimated_row_count, UInt64 total_rows);
-
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
     bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
