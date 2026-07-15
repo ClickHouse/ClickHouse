@@ -2082,7 +2082,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        /// The boundaries of column i in this last mark range are equal only when the
+                        /// value at range.begin coincides with the open far side of the range.
+                        ///
+                        /// Ascending key: the far side is +inf, and NULL maps to +inf (NULL_LAST), so the
+                        /// boundaries are equal exactly when the value at range.begin is NULL (then the whole
+                        /// tail is NULL, since NULLs sort last and are contiguous at the end of the part).
+                        ///
+                        /// Reverse (descending) key: NULLs sort first, so the value at range.begin is the
+                        /// part maximum (NULL/+inf) while the open far side reaches the part minimum. The
+                        /// range spans the whole column, not a single point, so the boundaries are never
+                        /// equal on a NULL first value. Treating them as equal (isNullAt) collapses the
+                        /// whole-part range to the point {+inf} and mis-prunes every non-NULL granule
+                        /// (false negatives for key IN (set) / key IS NOT NULL).
+                        equal_boundaries_mask[i] = !reverse_flags[i] && col->isNullAt(range.begin);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
@@ -2099,12 +2112,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         /// values. Using +inf unconditionally inverts the key range (left > right)
                         /// for a reverse key. index_bounds tightens this bound per call.
                         ///
-                        /// Exception: a nullable reverse key sorts NULLs at the +inf side
-                        /// (create_field_ref maps NULL to +inf for NULL_LAST). When the value at
-                        /// range.begin is NULL, `left` is that +inf sentinel and the open side still
-                        /// reaches the +inf side, so it must stay +inf; forcing -inf would drop the
-                        /// NULL rows and mis-prune the range (false negatives for has([NULL]) / IS NULL).
-                        right = (reverse_flags[key_col] && !left.isPositiveInfinity()) ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        /// This holds even when the value at range.begin is NULL: on a reverse key
+                        /// NULLs sort first (NULL_LAST maps NULL to +inf, the part maximum), so `left`
+                        /// is +inf while the open far side still reaches the part minimum (-inf). The
+                        /// resulting range [-inf, +inf] spans the whole column and keeps both the NULL
+                        /// granules (has([NULL]) / IS NULL) and the non-NULL ones (key IN (set) /
+                        /// key IS NOT NULL); pinning the far side to +inf would collapse it to {+inf}
+                        /// (see also equal_boundaries_mask above) and drop every non-NULL granule.
+                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2162,13 +2177,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     /// range (left > right) for a reverse key, which mis-prunes granules (wrong
                     /// results) and trips the MergeTreeSetIndex binary-search assertion.
                     ///
-                    /// Exception: a nullable reverse key sorts NULLs at the +inf side
-                    /// (create_field_ref maps NULL to +inf for NULL_LAST). When the value at
-                    /// range.begin is NULL, `left` is that +inf sentinel and the open side still
-                    /// reaches the +inf side, so it must stay the upper bound; forcing the lower
-                    /// bound would drop the NULL rows and mis-prune the range (false negatives for
-                    /// has([NULL]) / IS NULL).
-                    right = (reverse_flags[i] && !left.isPositiveInfinity()) ? index_bounds[i].left : index_bounds[i].right;
+                    /// This holds even when the value at range.begin is NULL: on a reverse key NULLs
+                    /// sort first (NULL_LAST maps NULL to +inf, the part maximum), so `left` is +inf
+                    /// while the open far side still reaches the part minimum. The resulting range
+                    /// [min, +inf] spans the whole column and correctly keeps both the NULL granules
+                    /// (has([NULL]) / IS NULL) and the non-NULL ones (key IN (set) / key IS NOT NULL);
+                    /// pinning the far side to +inf would collapse it to {+inf} and drop every
+                    /// non-NULL granule.
+                    right = reverse_flags[i] ? index_bounds[i].left : index_bounds[i].right;
                 }
             }
             else

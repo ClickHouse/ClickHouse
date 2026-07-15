@@ -12,3 +12,7 @@ null_is_null	200
 null_has_null	200
 null_ge0	300
 null_lt_neg400	100
+null_is_not_null	800
+null_in_set	5
+null_is_not_null_full	800
+null_in_set_full	5

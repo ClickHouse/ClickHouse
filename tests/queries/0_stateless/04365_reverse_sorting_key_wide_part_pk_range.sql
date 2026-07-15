@@ -55,6 +55,17 @@ SELECT 'null_has_null', count() FROM t_rev_null WHERE has([NULL :: Nullable(Int6
 SELECT 'null_ge0', count() FROM t_rev_null WHERE id >= 0 SETTINGS optimize_use_implicit_projections = 0;
 SELECT 'null_lt_neg400', count() FROM t_rev_null WHERE id < -400 SETTINGS optimize_use_implicit_projections = 0;
 
+-- Symmetric to the NULL granules above: on a nullable reverse key the whole-part range spans
+-- NULL (+inf side) down to the part minimum, so it must NOT be collapsed to the single point
+-- {+inf}. Setting the last mark's boundary-equality from isNullAt (correct only for ascending
+-- keys) or pinning the open far side to +inf dropped every non-NULL granule, giving 0 rows for
+-- `key IN (multi-element set)` and `key IS NOT NULL`. Both the sparse (default) and the full
+-- (use_lightweight_primary_key_index_analysis = 0) primary key analysis are exercised.
+SELECT 'null_is_not_null', count() FROM t_rev_null WHERE id IS NOT NULL SETTINGS optimize_use_implicit_projections = 0;
+SELECT 'null_in_set', count() FROM t_rev_null WHERE id IN (-400, -200, 0, 100, 299) SETTINGS optimize_use_implicit_projections = 0;
+SELECT 'null_is_not_null_full', count() FROM t_rev_null WHERE id IS NOT NULL SETTINGS optimize_use_implicit_projections = 0, use_lightweight_primary_key_index_analysis = 0;
+SELECT 'null_in_set_full', count() FROM t_rev_null WHERE id IN (-400, -200, 0, 100, 299) SETTINGS optimize_use_implicit_projections = 0, use_lightweight_primary_key_index_analysis = 0;
+
 DROP TABLE t_rev;
 DROP TABLE t_rev2;
 DROP TABLE t_rev_null;
