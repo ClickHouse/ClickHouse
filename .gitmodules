@@ -390,6 +390,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/musl"]
+	path = contrib/musl
+	url = https://github.com/ClickHouse/musl
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
