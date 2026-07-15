@@ -2840,7 +2840,21 @@ void MergeTreeData::startStatisticsCache()
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
-            [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
+            [this, refresh_statistics_seconds]
+            {
+                /// refreshStatistics propagates errors to the caller. Here, in the asynchronous
+                /// task, there is no caller to handle them, so catch at this upper level: a broken
+                /// part must not permanently disable the periodic refresh, log and retry on schedule.
+                try
+                {
+                    refreshStatistics();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to refresh statistics");
+                }
+                refresh_stats_task->scheduleAfter(refresh_statistics_seconds * 1000);
+            });
 
         refresh_stats_task->activateAndSchedule();
     }
@@ -2857,7 +2871,7 @@ catch (...)
     tryLogCurrentException(log, "Failed to refresh parts");
     /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
     /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
-    /// reschedule that refreshStatistics performs in its own catch block.
+    /// reschedule that the statistics refresh task performs in its catch block (see startStatisticsCache).
     refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
@@ -2967,15 +2981,14 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 }
 
-void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
+void MergeTreeData::refreshStatistics()
 {
     auto parts_lock = readLockParts();
     auto data_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, parts_lock);
-    refreshStatistics(data_parts, interval_seconds);
+    refreshStatistics(data_parts);
 }
 
-void MergeTreeData::refreshStatistics(const DataPartsVector & data_parts, UInt64 interval_seconds)
-try
+void MergeTreeData::refreshStatistics(const DataPartsVector & data_parts)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
     {
@@ -2983,8 +2996,6 @@ try
         if (cached_estimator && !cached_estimator->isStale(data_parts))
         {
             LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
-            if (interval_seconds)
-                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
             return;
         }
     }
@@ -2993,30 +3004,17 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        try
-        {
-            auto stats = data_part->loadStatistics();
-            estimator_builder.markDataPart(data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
-        }
+        /// A part whose statistics cannot be loaded is similar to a broken part: do not swallow
+        /// the error and silently degrade the estimator to "no statistics for that part".
+        /// The error propagates to the caller; the background refresh task catches it at the
+        /// upper level (see startStatisticsCache) and keeps the periodic refresh alive.
+        auto stats = data_part->loadStatistics();
+        estimator_builder.markDataPart(data_part);
+        for (const auto & [column_name, stat] : stats)
+            estimator_builder.addStatistics(column_name, stat);
     }
     std::lock_guard<std::mutex> lock(stats_mutex);
     cached_estimator = estimator_builder.getEstimator();
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh statistics");
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-    else
-        throw;
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -9274,6 +9272,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
+    bool warm_statistics = false;
 
     if (!isEmpty())
     {
@@ -9412,21 +9411,26 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         /// would loop all active parts and do the full on-disk cold-load we are trying to avoid,
         /// synchronously on the INSERT path.
         /// A production version should make this coalesced/asynchronous and memory-aware.
-        if (data.getContext()->getSettingsRef()[Setting::use_statistics_cache]
+        warm_statistics = data.getContext()->getSettingsRef()[Setting::use_statistics_cache]
             && std::any_of(
                 precommitted_parts.begin(),
                 precommitted_parts.end(),
-                [](const auto & part) { return part->hasCachedStatistics(); }))
-        {
-            auto active_parts = data.getDataPartsVectorForInternalUsage({DataPartState::Active}, acquired_parts_lock);
-            data.refreshStatistics(active_parts, /*interval_seconds=*/ 0);
-        }
+                [](const auto & part) { return part->hasCachedStatistics(); });
     }
 
     clear();
 
     data.preactive_parts_cv.notify_all();
     data.triggerStreamingSubscriptionEnrichment();
+
+    /// The warm runs after the transaction is finalized (clear() above): refreshStatistics
+    /// propagates errors, and an exception thrown before clear() would make the destructor
+    /// roll back parts that are already committed and Active.
+    if (warm_statistics)
+    {
+        auto active_parts = data.getDataPartsVectorForInternalUsage({DataPartState::Active}, acquired_parts_lock);
+        data.refreshStatistics(active_parts);
+    }
 
     return total_covered_parts;
 }

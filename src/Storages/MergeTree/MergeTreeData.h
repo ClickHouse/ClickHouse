@@ -1991,8 +1991,12 @@ protected:
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
-    void refreshStatistics(UInt64 interval_seconds);
-    void refreshStatistics(const DataPartsVector & data_parts, UInt64 interval_seconds);
+
+    /// Rebuild the cached selectivity estimator from the statistics of the given parts.
+    /// Errors (e.g. a part whose statistics cannot be loaded) propagate to the caller;
+    /// the asynchronous refresh task catches them at its level (see startStatisticsCache).
+    void refreshStatistics();
+    void refreshStatistics(const DataPartsVector & data_parts);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
