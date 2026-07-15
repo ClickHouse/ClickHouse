@@ -255,9 +255,12 @@ void StorageMergeTree::startup()
         startStatisticsCache();
 
         /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
-        /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
-        /// we observe it here — after arming — we must deactivate the tasks we just re-armed; otherwise a
-        /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
+        /// `shutdown_called`. `shutdown()` publishes that flag before stopping the background workers, so if
+        /// we observe it here — after arming — we must unwind *everything* we just armed above; otherwise a
+        /// logically shut-down table would keep doing background work until some later `shutdown()` stops it.
+        /// In particular, if the concurrent `shutdown()` has already run `flushAndPrepareForShutdown()`
+        /// (guarded by `flush_called`, so it never runs again), nothing else would ever stop the assignees
+        /// and the cleanup thread re-armed by this startup. All the stops below are idempotent.
         if (shutdown_called.load())
         {
             if (refresh_parts_task)
@@ -265,6 +268,10 @@ void StorageMergeTree::startup()
             if (refresh_stats_task)
                 refresh_stats_task->deactivate();
             stopOutdatedAndUnexpectedDataPartsLoadingTask();
+            background_operations_assignee.finish();
+            background_moves_assignee.finish();
+            background_streaming_assignee.finish();
+            cleanup_thread.stop();
         }
     }
     catch (...)
@@ -332,6 +339,10 @@ void StorageMergeTree::shutdown(bool)
         /// touches (the task holders are destroyed after `outdated_unloaded_data_parts` and
         /// `unexpected_data_parts`). Stopping is idempotent and waits for a running iteration to finish.
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        /// Same for the cleanup thread: `flushAndPrepareForShutdown()` never runs again once `flush_called`
+        /// is set, so a cleanup thread re-armed by a racing `startup()` must be stopped here as well.
+        /// (The destructor stops the assignees explicitly after `shutdown(false)` returns.)
+        cleanup_thread.stop();
         return;
     }
 

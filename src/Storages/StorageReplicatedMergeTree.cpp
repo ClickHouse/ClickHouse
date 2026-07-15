@@ -5859,6 +5859,11 @@ void StorageReplicatedMergeTree::startup()
     /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
     /// we observe it here — after arming — we must deactivate the tasks we just re-armed; otherwise a
     /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
+    /// Also stop right here: continuing into `attach_thread->start()` / `startupImpl` would re-arm the
+    /// attach/restarting threads that `flushAndPrepareForShutdown()` has already shut down (it never runs
+    /// again once `shutdown_prepared_called` is set), and the destructor's `shutdown(false)` takes the
+    /// `already_called` branch and would never stop that second startup. `shutdown_called` is never reset,
+    /// so this storage object is only going to be destroyed — there is nothing to start up.
     if (shutdown_called.load())
     {
         if (refresh_parts_task)
@@ -5866,6 +5871,7 @@ void StorageReplicatedMergeTree::startup()
         if (refresh_stats_task)
             refresh_stats_task->deactivate();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        return;
     }
 
     if (attach_thread)
