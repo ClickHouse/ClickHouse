@@ -1,4 +1,3 @@
-#include <Core/Defines.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -6,10 +5,16 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Core/SortDescription.h>
+#include <Common/Exception.h>
 #include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Produces a self-referential SortingStep enforcer expression.
 /// The expression lives in the same group as the source and its single input
@@ -41,16 +46,12 @@ bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const Expressi
 std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const SortDescription & sort_desc = required_properties.sorting;
-    /// Use the sort settings captured from the query's own SortingStep so the enforcer-built
-    /// sort keeps the query's size limits and spill thresholds.
-    SortingStep::Settings sort_settings = [&]
-    {
-        if (const auto & captured_settings = memo.getEnvironment().sort_settings)
-            return *captured_settings;
-        SortingStep::Settings fallback_settings(65000);
-        fallback_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        return fallback_settings;
-    }();
+    /// The environment carries the query's sort settings (size limits, spill thresholds), seeded
+    /// at optimizer setup, so the enforcer-built sort matches the rest of the query's pipeline.
+    const auto & captured_settings = memo.getEnvironment().sort_settings;
+    if (!captured_settings)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "SortingEnforcer has no sort settings; they must be seeded at optimizer setup");
+    const SortingStep::Settings & sort_settings = *captured_settings;
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
 
     /// Create a full SortingStep expression whose input requires the same distribution

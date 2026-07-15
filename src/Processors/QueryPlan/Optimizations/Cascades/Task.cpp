@@ -157,23 +157,27 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
 }
 
 
-void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
+/// Schedule an ApplyRuleTask for every rule that matches the expression, then explore any
+/// unexplored input group. Explore and optimize differ only in the rule set (transformation
+/// vs implementation) and the properties the rules match against.
+static void scheduleApplicableRules(
+    OptimizerContext & optimizer_context,
+    const GroupExpressionPtr & expression,
+    const ExpressionProperties & required_properties,
+    const std::vector<OptimizationRulePtr> & rules)
 {
-    LOG_TEST(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
-        expression->group_id, expression->getName());
-
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
-    for (const auto & rule : optimizer_context.getTransformationRules())
+    for (const auto & rule : rules)
     {
-        if (!expression->isApplied(*rule, {}) && rule->checkPattern(expression, {}, optimizer_context.getMemo()))
+        if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer_context.getMemo()))
             moves.push_back({rule->getPromise(), rule});
     }
 
-    /// Sort moves by promise in ascending order
+    /// Sort ascending so the LIFO task stack pops the highest-promise rule first.
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
-    for (const auto & m : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, ExpressionProperties{}, m.second, m.first));
+    for (const auto & move : moves)
+        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, move.second, move.first));
 
     for (const auto & input : expression->inputs)
     {
@@ -183,31 +187,23 @@ void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
 }
 
 
+void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
+{
+    LOG_TEST(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
+        expression->group_id, expression->getName());
+
+    /// Transformation rules produce logical alternatives, so they match against no required properties.
+    scheduleApplicableRules(optimizer_context, expression, ExpressionProperties{}, optimizer_context.getTransformationRules());
+}
+
+
 void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TEST(optimizer_context.log, "OptimizeExpressionTask group #{}, expression: {}, required properties {}",
         expression->group_id, expression->getName(), required_properties.dump());
 
-    /// TODO: is this the same as ExploreExpressionTask::execute but just with a different set of rules?
-
-    std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
-    for (const auto & rule : optimizer_context.getImplementationRules())
-    {
-        if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer_context.getMemo()))
-            moves.push_back({rule->getPromise(), rule});
-    }
-
-    /// Sort moves by promise in ascending order
-    std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-    for (const auto & m : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, m.second, m.first));
-
-    for (const auto & input : expression->inputs)
-    {
-        if (!optimizer_context.getGroup(input.group_id)->isExplored())
-            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id));
-    }
+    /// Implementation rules produce physical alternatives that must satisfy the required properties.
+    scheduleApplicableRules(optimizer_context, expression, required_properties, optimizer_context.getImplementationRules());
 }
 
 

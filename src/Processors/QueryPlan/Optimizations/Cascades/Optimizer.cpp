@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -58,6 +59,10 @@ void CascadesOptimizer::optimize()
         statistics = createEmptyStatistics();
 
     OptimizationEnvironment environment;
+
+    /// Seed the sort settings from the query so any sort added by SortingEnforcer keeps the query's
+    /// size limits and spill thresholds instead of arbitrary defaults.
+    environment.sort_settings = SortingStep::Settings(query_context->getSettingsRef());
 
     /// Parameter takes priority (for testing or to limit parallelism); otherwise use the same worker
     /// source as the distributed executor.

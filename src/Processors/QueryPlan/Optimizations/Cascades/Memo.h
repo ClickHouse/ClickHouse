@@ -21,9 +21,8 @@ struct OptimizationEnvironment
     bool distributed_aggregation_memory_efficient = true;
     bool distributed_plan_force_shuffle_aggregation = false;
     bool exact_rows_before_limit = false;
-    /// Sort settings from the query's own SortingStep (they carry the query's size limits and
-    /// spill thresholds), used when SortingEnforcer builds a new sort. All sorts of one query
-    /// share these settings, so keeping the first is enough.
+    /// Sort settings taken from the query (size limits, spill thresholds), used when
+    /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.
     std::optional<SortingStep::Settings> sort_settings;
 };
 
@@ -43,14 +42,6 @@ public:
 
     const OptimizationEnvironment & getEnvironment() const { return environment; }
     void setEnvironment(OptimizationEnvironment environment_) { environment = std::move(environment_); }
-
-    /// All sorts of one query carry the same settings, so the first captured value serves the
-    /// whole search; later calls are ignored.
-    void captureSortSettings(const SortingStep::Settings & settings)
-    {
-        if (!environment.sort_settings)
-            environment.sort_settings = settings;
-    }
 
     void dump(WriteBuffer & out) const;
     String dump() const;
