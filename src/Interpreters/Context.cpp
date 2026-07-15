@@ -699,7 +699,7 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    /// Optional server-wide override for the new analyzer in mutations.
+    /// Optional server-wide override for the analyzer in mutations.
     /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
     /// Refreshed on config reload.
     std::atomic<int8_t> mutations_use_analyzer_override = -1;
@@ -1805,7 +1805,7 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-void Context::setFilesystemCacheUser(const String & user)
+void Context::setFilesystemCacheUser(const String & user) const
 {
     std::lock_guard lock(shared->mutex);
     shared->filesystem_cache_user = user;
