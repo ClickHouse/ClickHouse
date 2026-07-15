@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <limits>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -676,26 +677,37 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
 
 UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
 {
-    /// `column_sizes` is keyed by base storage columns. A subcolumn (e.g. the map-key subcolumn
-    /// `h.key_k`) is not a key, so a naive lookup returns 0 and makes the condition look free -
-    /// even though evaluating it reads the whole base column (the entire `Map`). Resolve each
-    /// column to its base storage name and charge the base column's size, deduplicating so that
-    /// several subcolumns of the same base column (e.g. `h.key_a`, `h.key_b`) are charged once.
-    /// See #110462.
+    /// `column_sizes` is keyed by base storage columns and holds only whole-column sizes;
+    /// per-subcolumn stream sizes are not plumbed into this planning layer.
+    ///
+    /// A `Map`-key subcolumn (e.g. `h.key_k` from `h['k']`) has no dedicated stream on disk:
+    /// evaluating it reads the entire `Map`. A naive lookup returns 0 and makes such a condition
+    /// look free, so we charge it the base column's size instead. See #110462.
+    ///
+    /// Other subcolumns (`Nullable.null`, `Array.size0`, tuple elements, LowCardinality dict) each
+    /// have their own small stream and do NOT force a full parent read, so charging them the whole
+    /// parent size would over-estimate their cost and could reorder cheap filters behind expensive
+    /// ones. We keep them at 0 (the historical behavior) rather than over-charging them.
     UInt64 size = 0;
     NameSet counted_storage_columns;
     const auto & storage_columns_description = storage_metadata->getColumns();
 
     for (const auto & column : columns)
     {
-        String storage_column = column;
-        if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column))
-            storage_column = resolved->getNameInStorage();
+        String size_column = column;
+        if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column);
+            resolved && resolved->isSubcolumn())
+        {
+            /// Charge the base-column size only for subcolumns that force reading the whole parent
+            /// (Map subcolumns). Cheap physical substreams keep their own name and resolve to 0 below.
+            if (resolved->getTypeInStorage() && WhichDataType(*resolved->getTypeInStorage()).isMap())
+                size_column = resolved->getNameInStorage();
+        }
 
-        if (!counted_storage_columns.insert(storage_column).second)
+        if (!counted_storage_columns.insert(size_column).second)
             continue;
 
-        if (auto it = column_sizes.find(storage_column); it != column_sizes.end())
+        if (auto it = column_sizes.find(size_column); it != column_sizes.end())
             size += it->second;
     }
 
