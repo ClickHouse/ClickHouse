@@ -23,6 +23,12 @@ SET split_intersecting_parts_ranges_into_layers_final = 1;
 SELECT 'in-order small limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_final_layers FINAL WHERE v > 0 ORDER BY k LIMIT 10);
 
+-- The limit counts rows after the FINAL collapse: with 3 fully duplicated parts a layer of
+-- 75000 source rows emits only 25000 rows, so a limit of 50000 needs about two layers
+-- and must keep them.
+SELECT 'in-order mid limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
+FROM (EXPLAIN PIPELINE SELECT k, v FROM t_final_layers FINAL WHERE v > 0 ORDER BY k LIMIT 50000);
+
 -- Read-in-order without a limit consumes the whole ordered stream: layers must be kept.
 SELECT 'in-order no limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_final_layers FINAL WHERE v > 0 ORDER BY k);

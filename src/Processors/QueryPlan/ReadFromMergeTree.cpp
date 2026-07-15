@@ -1971,13 +1971,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// lazy merging stream instead.
                 if (split_intersecting_parts_ranges_into_layers && reader_settings.read_in_order && query_task_size_limit)
                 {
-                    const size_t rows_per_layer = std::max<size_t>(new_parts.getRowsCountAllParts() / max_layers, 1);
+                    /// The limit counts rows after the FINAL collapse, while getRowsCountAllParts() counts source
+                    /// rows. Every key appears at most once per part, so a layer emits at least 1/parts of its
+                    /// source rows; use this lower bound to keep layers unless the limit fits into one layer even
+                    /// under the worst-case duplication.
+                    const size_t rows_per_layer = std::max<size_t>(new_parts.getRowsCountAllParts() / max_layers / new_parts.size(), 1);
                     if (query_task_size_limit < rows_per_layer)
                     {
                         LOG_TRACE(
                             log,
                             "Skipping split of intersecting ranges into layers for FINAL: reading in order with limit {} "
-                            "is expected to consume less than one layer of {} rows",
+                            "is expected to consume less than one layer of at least {} rows",
                             query_task_size_limit,
                             rows_per_layer);
                         split_intersecting_parts_ranges_into_layers = false;
