@@ -296,27 +296,6 @@ export const IntegrationGrid = () => {
       }
       const fetchIntegrations = async () => {
         try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("Se cargaron los datos de integración de respaldo")
-          } else {
-            console.warn("El archivo de respaldo no está disponible, se intentará solo con el CMS")
-          }
-        } catch (fallbackErr) {
-          console.error("Error al cargar los datos de integración de respaldo:", fallbackErr)
-        }
-
-        try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()

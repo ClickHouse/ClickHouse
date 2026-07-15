@@ -959,6 +959,7 @@ public:
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+    ClientInfo & getClientInfo() { return client_info; }
 
     /// Modify stored in the context information about the client executing a query.
     void setClientInfo(const ClientInfo & client_info_);

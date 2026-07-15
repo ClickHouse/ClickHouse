@@ -16,6 +16,7 @@
               "group": "はじめる",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
+                "ja/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -37,8 +38,7 @@
                   ],
                   "root": "ja/get-started/use-cases/overview"
                 },
-                "ja/get-started/about/deployment-modes",
-                "ja/get-started/quickstarts/home"
+                "ja/get-started/about/deployment-modes"
               ],
               "root": "ja/get-started/index"
             },

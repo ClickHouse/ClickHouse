@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
+#include <set>
 #include <stack>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -20,6 +22,7 @@
 #include <Common/JSONBuilder.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -43,6 +46,138 @@ static ITransformingStep::Traits getTraits()
             .preserves_number_of_rows = false,
         }
     };
+}
+
+FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions,
+    bool remove_inputs)
+{
+    FilterDAGOutputPruningResult result;
+
+    const bool was_remove_filter_column = remove_filter_column;
+    const auto & old_outputs = dag.getOutputs();
+    const size_t old_dag_outputs_size = old_outputs.size();
+    const auto actions_dag_input_count_before = dag.getInputs().size();
+
+    /// The pre-erase output header (from ActionsDAG::updateHeader) is:
+    /// [DAG output 0, ..., DAG output N-1, pass-through input 0, ...]
+    /// When remove_filter_column is true, then the first column named filter_column_name is
+    /// erased from the block, shifting subsequent positions by -1.
+    /// Map the caller's positions (into the final output header) back to the pre-erase layout.
+
+    /// Find the filter column's position in the pre-erase header.
+    size_t filter_col_pre_erase_pos = std::numeric_limits<size_t>::max();
+    for (size_t i = 0; i < old_dag_outputs_size; ++i)
+    {
+        if (old_outputs[i]->result_name == filter_column_name)
+        {
+            filter_col_pre_erase_pos = i;
+            break;
+        }
+    }
+    if (filter_col_pre_erase_pos == std::numeric_limits<size_t>::max())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Filter column {} not found in DAG outputs: [{}]",
+            filter_column_name,
+            fmt::join(dag.getNames(), ", "));
+
+    /// Map positions from the final (post-erase) header to the pre-erase header.
+    /// remove_filter_column is captured by value because the mapping depends on the original value of the flag, not on
+    /// whether the filter column is still present at the time of mapping.
+    auto map_to_pre_erase_pos = [filter_col_pre_erase_pos, was_remove_filter_column](size_t pos) -> size_t
+    {
+        if (!was_remove_filter_column)
+            return pos;
+        return pos >= filter_col_pre_erase_pos ? pos + 1 : pos;
+    };
+
+    /// Map positions from post-erase to pre-erase layout, then split into DAG vs pass-through.
+    std::vector<size_t> pre_erase_positions;
+    pre_erase_positions.reserve(required_output_positions.size());
+    for (size_t pos : required_output_positions)
+        pre_erase_positions.push_back(map_to_pre_erase_pos(pos));
+
+    auto [required_dag_indices, required_passthrough_indices] = dag.splitOutputPositions(pre_erase_positions);
+
+    /// Build the list of pass-through input columns.
+    const auto passthrough_input_header_positions = dag.matchInputPositionsToHeader(input_header).passthrough;
+
+    std::set<size_t> required_passthrough_input_header_positions;
+    for (size_t passthrough_index : required_passthrough_indices)
+    {
+        if (passthrough_index >= passthrough_input_header_positions.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", passthrough_index);
+        required_passthrough_input_header_positions.insert(passthrough_input_header_positions[passthrough_index]);
+    }
+
+    const auto has_to_remove_any_pass_through
+        = passthrough_input_header_positions.size() > required_passthrough_input_header_positions.size();
+
+    std::set<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
+
+    /// Check if the filter column is required by the caller. If not, we can remove it.
+    if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
+        remove_filter_column = true;
+
+    required_dag_index_set.insert(filter_col_pre_erase_pos);
+
+    /// Keep only the required DAG output nodes, plus always keep the filter column.
+    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
+    new_dag_outputs.reserve(required_dag_index_set.size());
+
+    for (size_t i = 0; i < old_dag_outputs_size; ++i)
+    {
+        if (required_dag_index_set.contains(i))
+            new_dag_outputs.push_back(old_outputs[i]);
+    }
+
+    auto & dag_outputs = dag.getOutputs();
+    if (new_dag_outputs.size() != dag_outputs.size())
+        result.changed = true;
+    dag_outputs = std::move(new_dag_outputs);
+
+    if (was_remove_filter_column != remove_filter_column)
+        result.changed = true;
+
+    if (dag.removeUnusedActions(remove_inputs))
+        result.changed = true;
+
+    if (!remove_inputs && has_to_remove_any_pass_through)
+    {
+        for (size_t passthrough_input_header_position : passthrough_input_header_positions)
+        {
+            if (!required_passthrough_input_header_positions.contains(passthrough_input_header_position))
+            {
+                const auto & column = input_header.getByPosition(passthrough_input_header_position);
+                dag.addInput(column);
+            }
+        }
+        result.changed = true;
+    }
+
+    if (remove_inputs)
+    {
+        auto required_input_positions = dag.matchInputPositionsToHeader(input_header).matched;
+        required_input_positions.insert(
+            required_input_positions.end(),
+            required_passthrough_input_header_positions.begin(),
+            required_passthrough_input_header_positions.end());
+
+        std::sort(required_input_positions.begin(), required_input_positions.end());
+        result.required_input_positions = std::move(required_input_positions);
+        result.input_positions_changed = dag.getInputs().size() != actions_dag_input_count_before || has_to_remove_any_pass_through;
+
+        if (result.input_positions_changed)
+            result.changed = true;
+    }
+
+    return result;
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
@@ -317,135 +452,24 @@ FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std:
         && "There cannot be more DAG inputs than columns in the input header");
 
     const auto & input_header = input_headers.front();
-    const size_t num_dag_outputs = actions_dag.getOutputs().size();
-    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
+    auto pruning_result = pruneFilterDAGOutputsByPosition(
+        actions_dag, filter_column_name, remove_filter_column, *input_header, required_output_positions, remove_inputs);
 
-    /// The pre-erase output header (from updateHeader) is:
-    /// [DAG output 0, ..., DAG output N-1, pass-through input 0, ...]
-    /// When remove_filter_column is true, FilterTransform::transformHeader erases the first column
-    /// named filter_column_name from this block, shifting subsequent positions by -1.
-    /// Map the caller's positions (into the final output header) back to the pre-erase layout.
-
-    /// Find the filter column's position in the pre-erase header.
-    size_t filter_col_pre_erase_pos = std::numeric_limits<size_t>::max();
-    for (size_t i = 0; i < num_dag_outputs; ++i)
-    {
-        if (actions_dag.getOutputs()[i]->result_name == filter_column_name)
-        {
-            filter_col_pre_erase_pos = i;
-            break;
-        }
-    }
-    chassert(filter_col_pre_erase_pos != std::numeric_limits<size_t>::max() && "Filter column not found in DAG outputs");
-
-    /// Map positions from the final (post-erase) header to the pre-erase header.
-    /// remove_filter_column is captured by value because the mapping depends on the original value of the flag, not on
-    /// whether the filter column is still present at the time of mapping.
-    auto map_to_pre_erase_pos = [filter_col_pre_erase_pos, is_filter_column_removed = remove_filter_column](size_t pos) -> size_t
-    {
-        if (!is_filter_column_removed)
-            return pos;
-        return pos >= filter_col_pre_erase_pos ? pos + 1 : pos;
-    };
-
-    /// Map positions from post-erase to pre-erase layout, then split into DAG vs pass-through.
-    std::vector<size_t> pre_erase_positions;
-    pre_erase_positions.reserve(required_output_positions.size());
-    for (size_t pos : required_output_positions)
-        pre_erase_positions.push_back(map_to_pre_erase_pos(pos));
-
-    auto [required_dag_indices, required_passthrough_indices]
-        = actions_dag.splitOutputPositions(pre_erase_positions);
-
-
-    if (!remove_filter_column)
-    {
-        /// Check if the filter column is required by the caller. If not, we can remove it.
-        bool filter_column_required_by_caller =
-            std::find(required_dag_indices.begin(), required_dag_indices.end(), filter_col_pre_erase_pos)
-            != required_dag_indices.end();
-        if (!filter_column_required_by_caller)
-            remove_filter_column = true;
-    }
-
-    /// Build the list of pass-through input columns.
-    auto passthrough_input_header_positions = actions_dag.matchInputPositionsToHeader(*input_header).passthrough;
-
-    std::set<size_t> required_passthrough_input_header_positions;
-    for (size_t pt_idx : required_passthrough_indices)
-    {
-        if (pt_idx >= passthrough_input_header_positions.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", pt_idx);
-        required_passthrough_input_header_positions.insert(passthrough_input_header_positions[pt_idx]);
-    }
-
-    const auto num_passthrough = passthrough_input_header_positions.size();
-    const auto has_to_remove_any_pass_through = num_passthrough > required_passthrough_indices.size();
-
-    /// Keep only the required DAG output nodes, plus always keep the filter column.
-    auto & dag_outputs = actions_dag.getOutputs();
-    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
-    new_dag_outputs.reserve(required_dag_indices.size() + 1);
-
-    std::set<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
-
-    /// Always keep the filter column in the DAG outputs.
-    required_dag_index_set.insert(filter_col_pre_erase_pos);
-
-    for (size_t i = 0; i < num_dag_outputs; ++i)
-    {
-        if (required_dag_index_set.contains(i))
-            new_dag_outputs.push_back(dag_outputs[i]);
-    }
-    dag_outputs = std::move(new_dag_outputs);
-
-    auto updated_actions = actions_dag.removeUnusedActions(remove_inputs);
-
-    /// If we cannot remove inputs but need to remove pass-through outputs,
-    /// convert unrequired pass-through inputs into DAG inputs.
-    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through;
-    if (has_to_add_input_to_actions)
-    {
-        for (size_t pt_pos : passthrough_input_header_positions)
-        {
-            if (!required_passthrough_input_header_positions.contains(pt_pos))
-            {
-                const auto & col = input_header->getByPosition(pt_pos);
-                actions_dag.addInput(col);
-            }
-        }
-        updated_actions = true;
-    }
-
-    if (!updated_actions && output_header->columns() == required_output_positions.size())
+    if (!pruning_result.changed && output_header->columns() == required_output_positions.size())
         return {};
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
-    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through);
-
-    if (update_inputs)
+    if (pruning_result.input_positions_changed)
     {
-        /// Build the set of required input header positions.
-        auto matched_positions = actions_dag.matchInputPositionsToHeader(*input_header).matched;
-        std::vector<size_t> required_input_positions(matched_positions.begin(), matched_positions.end());
-        required_input_positions.insert(
-            required_input_positions.end(),
-            required_passthrough_input_header_positions.begin(),
-            required_passthrough_input_header_positions.end());
-
-        /// Build the result vector and update the input header.
-        std::sort(required_input_positions.begin(), required_input_positions.end());
-
         Block new_input_header{};
-        for (size_t pos : required_input_positions)
+        for (size_t pos : pruning_result.required_input_positions)
             new_input_header.insert(input_header->getByPosition(pos));
 
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
-        return {true, {std::move(required_input_positions)}, required_output_positions};
+        return {true, {std::move(pruning_result.required_input_positions)}, required_output_positions};
     }
 
     updateOutputHeader();

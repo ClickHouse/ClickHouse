@@ -1515,6 +1515,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
@@ -1575,6 +1576,7 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
     }
@@ -1651,6 +1653,7 @@ class MergeTreeSettingsRandomizer:
         "ratio_of_defaults_for_sparse_serialization": threshold_generator(
             0.3, 0.5, 0.0, 1.0
         ),
+        "compute_exact_num_defaults_for_sparse_columns": lambda: random.randint(0, 1),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
