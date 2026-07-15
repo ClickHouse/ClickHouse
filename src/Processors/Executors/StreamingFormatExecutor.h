@@ -44,14 +44,6 @@ public:
     /// Sets query parameters for input format if applicable.
     void setQueryParameters(const NameToNameMap & parameters);
 
-    /// Sets per-entry constant columns that are temporarily appended to each chunk
-    /// before AddingDefaultsTransform runs, then stripped back out. This lets
-    /// DEFAULT expressions (e.g. `b DEFAULT a + 1`) correctly reference columns
-    /// that are injected from HTTP headers rather than parsed from the body.
-    /// AddingDefaultsTransform must be constructed with a header that includes
-    /// these columns appended after the body columns.
-    void setConstantColumnsForDefaults(Columns cols) { constant_cols_for_defaults = std::move(cols); }
-
 private:
     void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
 
@@ -59,10 +51,6 @@ private:
     const InputFormatPtr format;
     const ErrorCallback on_error;
     const SimpleTransformPtr adding_defaults_transform;
-
-    /// Per-entry single-row columns for DEFAULT expression evaluation.
-    /// Set via setConstantColumnsForDefaults(); empty when no injection is needed.
-    Columns constant_cols_for_defaults;
 
     InputPort port;
     MutableColumns result_columns;

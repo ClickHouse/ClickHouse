@@ -28,6 +28,10 @@ public:
 
     String getName() const override { return "AddingDefaultsTransform"; }
 
+    /// Updates the injected columns used for DEFAULT expression evaluation.
+    /// Called per-entry in the async path so each entry uses its own header values.
+    void setInjectedColumns(ColumnsWithTypeAndName cols) { injected_columns = std::move(cols); }
+
 protected:
     void transform(Chunk & chunk) override;
 
@@ -37,7 +41,7 @@ private:
     IInputFormat & input_format;
     ContextPtr context;
     /// Single-row value columns for header-injected columns (name, type, 1-row column).
-    const ColumnsWithTypeAndName injected_columns;
+    ColumnsWithTypeAndName injected_columns;
 };
 
 }

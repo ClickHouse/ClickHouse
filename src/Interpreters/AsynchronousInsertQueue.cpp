@@ -1415,17 +1415,25 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
         {
-            /// When there are injected columns, build an extended header for
-            /// AddingDefaultsTransform that appends the injected columns after
-            /// the body columns. This lets DEFAULT expressions that reference
-            /// injected columns (e.g. `b DEFAULT a + 1` where `a` is from a
-            /// header) evaluate correctly. The injected columns are appended
-            /// at the end so body column positions match BlockMissingValues indices.
-            Block defaults_header = format_header;
-            for (const auto & info : injected_column_infos)
-                defaults_header.insert(header.getByPosition(info.header_col_idx));
+            /// Pass the injected columns directly to AddingDefaultsTransform so it
+            /// appends them internally (same as the sync path in getSourceFromInputFormat).
+            /// This keeps num_body_columns = format_header.columns() correct inside
+            /// transform(), preventing out-of-bounds BlockMissingValues access when
+            /// injected columns have DEFAULT/MATERIALIZED expressions.
+            ColumnsWithTypeAndName injected_for_defaults;
+            injected_for_defaults.reserve(injected_column_infos.size());
+            /// Use the first entry's stored 1-row columns; updated per-entry below.
+            if (!data->entries.empty())
+            {
+                for (const auto & info : injected_column_infos)
+                {
+                    const auto & stored = data->entries.front()->http_header_column_values[info.entry_parsed_idx];
+                    injected_for_defaults.push_back({stored.col, info.type, header.getByPosition(info.header_col_idx).name});
+                }
+            }
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
-                std::make_shared<const Block>(defaults_header), columns, *format, insert_context);
+                std::make_shared<const Block>(format_header), columns, *format, insert_context,
+                std::move(injected_for_defaults));
         }
     }
 
@@ -1483,37 +1491,25 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
 
-        /// For each entry, update the per-entry injected constant columns so that
-        /// AddingDefaultsTransform can evaluate DEFAULT expressions (e.g. `b DEFAULT a+1`)
-        /// using the correct header-injected value for this entry's rows.
-        if (!injected_column_infos.empty())
+        /// Update AddingDefaultsTransform with this entry's per-entry injected column
+        /// values so DEFAULT expressions (e.g. `b DEFAULT a + 1`) use the correct value.
+        /// The transform now handles injection internally (format_header only, injected
+        /// appended inside transform()), so we only need to update the per-entry values.
+        if (!injected_column_infos.empty() && adding_defaults_transform)
         {
-            /// Build constant columns for AddingDefaultsTransform. If schema drift
-            /// causes a conversion failure, fail this entry in isolation and skip it.
             std::exception_ptr defaults_conversion_exception;
-            Columns const_cols;
-            const_cols.reserve(injected_column_infos.size());
+            ColumnsWithTypeAndName per_entry_injected;
+            per_entry_injected.reserve(injected_column_infos.size());
             for (const auto & info : injected_column_infos)
             {
                 const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
-                const ColumnPtr & stored_col = stored.col;
+                ColumnPtr col_to_use = stored.col;
                 if (!stored.push_time_type->equals(*info.type))
                 {
-                    try
-                    {
-                        const_cols.push_back(reparse_for_drift(stored_col, stored.push_time_type, info.type));
-                    }
-                    catch (...)
-                    {
-                        /// Capture inside the catch — std::current_exception() is null after.
-                        defaults_conversion_exception = std::current_exception();
-                        break;
-                    }
+                    try { col_to_use = reparse_for_drift(stored.col, stored.push_time_type, info.type); }
+                    catch (...) { defaults_conversion_exception = std::current_exception(); break; }
                 }
-                else
-                {
-                    const_cols.push_back(stored_col);
-                }
+                per_entry_injected.push_back({col_to_use, info.type, header.getByPosition(info.header_col_idx).name});
             }
 
             if (defaults_conversion_exception)
@@ -1526,7 +1522,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 entry->resetChunk();
                 continue;
             }
-            executor.setConstantColumnsForDefaults(std::move(const_cols));
+            static_cast<AddingDefaultsTransform &>(*adding_defaults_transform)
+                .setInjectedColumns(std::move(per_entry_injected));
         }
 
         size_t num_bytes = bytes->size();
