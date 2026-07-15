@@ -7,8 +7,6 @@ title: 'fuzzJSON'
 doc_type: 'reference'
 ---
 
-# fuzzJSON Table Function
-
 Perturbs a JSON string with random variations.
 
 ## Syntax {#syntax}
@@ -21,7 +19,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 | Argument                           | Description                                                                                 |
 |------------------------------------|---------------------------------------------------------------------------------------------|
-| `named_collection`                 | A [NAMED COLLECTION](sql-reference/statements/create/named-collection.md).                  |
+| `named_collection`                 | A [NAMED COLLECTION](/sql-reference/statements/create/named-collection.md).                  |
 | `option=value`                     | Named collection optional parameters and their values.                                      |
 | `json_str` (String)                | The source string representing structured data in JSON format.                              |
 | `random_seed` (UInt64)             | Manual random seed for producing stable results.                                            |
@@ -38,7 +36,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 ## Returned value {#returned_value}
 
-A table object with a a single column containing perturbed JSON strings.
+A table object with a single column containing perturbed JSON strings.
 
 ## Usage Example {#usage-example}
 

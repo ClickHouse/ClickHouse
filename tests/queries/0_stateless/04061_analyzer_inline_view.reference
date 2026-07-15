@@ -24,16 +24,16 @@ QUERY id: 0
     FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 12, nodes: 2
-          COLUMN id: 13, column_name: name, result_type: String, source_id: 3
-          CONSTANT id: 14, constant_value: \'\', constant_value_type: String
+          COLUMN id: 2, column_name: name, result_type: String, source_id: 3
+          CONSTANT id: 13, constant_value: \'\', constant_value_type: String
   GROUP BY
-    LIST id: 15, nodes: 1
-      COLUMN id: 16, column_name: name, result_type: String, source_id: 3
+    LIST id: 14, nodes: 1
+      COLUMN id: 2, column_name: name, result_type: String, source_id: 3
   ORDER BY
-    LIST id: 17, nodes: 1
-      SORT id: 18, sort_direction: ASCENDING, with_fill: 0
+    LIST id: 15, nodes: 1
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION name
-          COLUMN id: 19, column_name: name, result_type: String, source_id: 3
+          COLUMN id: 2, column_name: name, result_type: String, source_id: 3
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))

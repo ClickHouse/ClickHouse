@@ -3,12 +3,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -26,13 +26,12 @@ namespace ErrorCodes
 }
 
 ChunkPartitioner::ChunkPartitioner(
-    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_)
+    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Array::Ptr schema_fields, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
     , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
     std::unordered_map<Int32, String> id_to_column;
     {
-        auto schema_fields = schema->getArray(Iceberg::f_fields);
         for (size_t i = 0; i < schema_fields->size(); ++i)
         {
             auto field = schema_fields->getObject(static_cast<UInt32>(i));
@@ -82,6 +81,9 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
 ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
+    if (chunk.empty())
+        return {};
+
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
     for (size_t i = 0; i < sample_block->columns(); ++i)
     {
@@ -106,9 +108,10 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
         auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
+            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
+
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
             Field field;
@@ -121,12 +124,11 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     {
         return transform_results[row_num];
     };
+
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
-
 
     size_t partitions_count = partition_num_to_first_row.size();
     if (partitions_count > max_partitions_count)
@@ -155,12 +157,27 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
         }
     }
+
+    result.reserve(result_columns.size());
     for (auto && [key, partition_columns] : result_columns)
     {
         size_t column_size = partition_columns[0]->size();
         result.push_back({key, Chunk(std::move(partition_columns), column_size)});
     }
     return result;
+}
+
+void IcebergPartitionCalculator::transform(Chunk & chunk)
+{
+    if (!partition_value.empty())
+        return;
+
+    auto result = partitioner.partitionChunk(chunk);
+    if (result.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not calculate partition when chunk have {} partitions", result.size());
+
+    for (const auto & [partition_key, _] : result)
+        partition_value = partition_key;
 }
 
 #endif

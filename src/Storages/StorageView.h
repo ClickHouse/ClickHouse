@@ -3,14 +3,16 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
 {
 
-class StorageView final : public IStorage
+class StorageView final : public StorageWithCommonVirtualColumns
 {
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     StorageView(
         const StorageID & table_id_,
@@ -21,6 +23,7 @@ public:
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.
@@ -31,7 +34,9 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
-    void read(
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

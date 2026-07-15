@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'Apache Spark と ClickHouse の統合'
+slug: /integrations/apache-spark
+description: 'Apache Spark と ClickHouse の概要'
+keywords: ['clickhouse', 'Apache Spark', '移行', 'データ']
+title: 'Apache Spark と ClickHouse の統合'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Spark](https://spark.apache.org/) は、単一ノードのマシンまたはクラスター上で、データエンジニアリング、データ
+サイエンス、機械学習を実行するためのマルチ言語対応エンジンです。
+
+Apache Spark と ClickHouse を接続する主な方法は 2 つあります。
+
+1. [Spark Connector](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Spark コネクタは `DataSourceV2` を実装しており、独自のカタログ
+   管理機能を備えています。現時点では、これが ClickHouse と Spark を連携するための推奨方法です。
+2. [Spark JDBC](/ja/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - [JDBC data source](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) を使用して Spark と ClickHouse
+   を連携します。
+
+<br />
+
+どちらのソリューションもテストで十分に検証されており、Java、Scala、PySpark、Spark SQL などの各種 API と完全に互換性があります。
+
+<div id="spark-runtime-environment">
+  ### Spark ランタイム環境
+</div>
+
+<div id="standard-spark-runtime">
+  #### 標準的な Spark ランタイム
+</div>
+
+Spark Connector は、Amazon EMR や Kubernetes ベースの Spark デプロイメントなど、Apache Spark のアップストリームランタイムに近い環境で、そのまま利用できます。
+
+<div id="managed-spark-platforms">
+  #### マネージド Spark プラットフォーム
+</div>
+
+[AWS Glue](/ja/integrations/connectors/data-ingestion/AWS/glue) や [Databricks](/ja/integrations/connectors/data-ingestion/apache-spark/databricks) などのプラットフォームでは、追加の抽象化や環境固有の挙動が生じます。
+コアとなるインテグレーション自体は同じですが、個別の設定やセットアップ手順が必要になる場合があります。詳細は、それぞれのドキュメントページを参照してください。

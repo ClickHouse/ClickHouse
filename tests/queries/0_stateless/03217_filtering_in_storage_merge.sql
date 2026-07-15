@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE test_03217_merge_replica_1(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_03217_merge_replica', 'r1')
     ORDER BY x;
@@ -13,4 +14,5 @@ INSERT INTO test_03217_merge_replica_1 SELECT number AS x FROM numbers(10);
 SYSTEM SYNC REPLICA test_03217_merge_replica_2;
 
 -- If the filter on _table is not applied, then the plan will show both replicas
-EXPLAIN SELECT _table, count() FROM test_03217_all_replicas WHERE  _table = 'test_03217_merge_replica_1' AND x >= 0 GROUP BY _table SETTINGS enable_analyzer=1;
+EXPLAIN SELECT _table, count() FROM test_03217_all_replicas WHERE  _table = 'test_03217_merge_replica_1' AND x >= 0 GROUP BY _table
+SETTINGS enable_analyzer=1, query_plan_optimize_prewhere=1, optimize_move_to_prewhere=1;

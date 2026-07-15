@@ -26,8 +26,10 @@ class SettingsChanges;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -64,6 +66,24 @@ Get latest metadata path from version-hint.text file.
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
+    DECLARE(Bool, paimon_incremental_read, false, R"(
+Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
+in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
+)", 0) \
+    DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
+Background metadata refresh interval for Paimon tables (seconds).
+0 disables background refresh. When >0, a background task periodically calls
+metadata update to pull latest snapshot/schema. Queries still trigger update
+as usual. Use cautiously on many tables to avoid excessive object storage/Keeper I/O.
+Default: 30
+)", 0) \
+    DECLARE(String, paimon_keeper_path, "", R"(
+Keeper path for Paimon incremental read state. Must be unique per table.
+If empty, incremental read is not allowed.
+)", 0) \
+    DECLARE(String, paimon_replica_name, "", R"(
+Replica name for Paimon incremental read state. Must be set and unique per replica.
+)", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
@@ -71,8 +91,8 @@ Metadata format version.
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, storage_warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
-    DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
-    DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
+    DECLARE(String, storage_aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
+    DECLARE(String, storage_aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, storage_aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \

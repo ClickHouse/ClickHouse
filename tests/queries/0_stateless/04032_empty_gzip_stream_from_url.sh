@@ -73,3 +73,9 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM url('http://127.0.0.1:$HTTP_PORT/{a,b,c}.csv.xz', CSV, 'x UInt64')
 "
+
+echo "--- bzip2 ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count()
+    FROM url('http://127.0.0.1:$HTTP_PORT/{a,b,c}.csv.bz2', CSV, 'x UInt64')
+"

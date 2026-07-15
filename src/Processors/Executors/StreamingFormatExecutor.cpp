@@ -115,7 +115,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
 
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::ExpandPipeline:
+                case IProcessor::Status::UpdatePipeline:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Source processor returned status {}", IProcessor::statusToName(status));
             }
         }

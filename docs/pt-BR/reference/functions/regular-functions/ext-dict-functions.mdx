@@ -1,0 +1,2253 @@
+---
+description: 'Documentação de funções para trabalhar com dicionários'
+sidebarTitle: 'Dicionários'
+slug: /sql-reference/functions/ext-dict-functions
+title: 'Funções para Trabalhar com Dicionários'
+doc_type: 'reference'
+---
+
+<Note>
+  Para dicionários criados com [consultas DDL](/pt-BR/reference/statements/create/dictionary), o parâmetro `dict_name` deve ser especificado por completo, como `<database>.<dict_name>`. Caso contrário, será usado o banco de dados atual.
+</Note>
+
+Para obter informações sobre como conectar e configurar dicionários, consulte [Dicionários](/pt-BR/reference/statements/create/dictionary).
+
+<div id="example-dictionary">
+  ## Dicionários de exemplo
+</div>
+
+Os exemplos desta seção usam os dicionários a seguir. Você pode criá-los no ClickHouse
+para executar os exemplos das funções descritas abaixo.
+
+<Accordion title="Dicionário de exemplo para as funções dictGet\<T\> e dictGet\<T\>OrDefault">
+  ```sql
+  -- Criar tabela com todos os tipos de dados necessários
+  CREATE TABLE all_types_test (
+      `id` UInt32,
+      
+      -- Tipo String
+      `String_value` String,
+      
+      -- Tipos inteiros sem sinal
+      `UInt8_value` UInt8,
+      `UInt16_value` UInt16,
+      `UInt32_value` UInt32,
+      `UInt64_value` UInt64,
+      
+      -- Tipos inteiros com sinal
+      `Int8_value` Int8,
+      `Int16_value` Int16,
+      `Int32_value` Int32,
+      `Int64_value` Int64,
+      
+      -- Tipos de ponto flutuante
+      `Float32_value` Float32,
+      `Float64_value` Float64,
+      
+      -- Tipos de data/hora
+      `Date_value` Date,
+      `DateTime_value` DateTime,
+      
+      -- Tipos de rede
+      `IPv4_value` IPv4,
+      `IPv6_value` IPv6,
+      
+      -- Tipo UUID
+      `UUID_value` UUID
+  ) ENGINE = MergeTree() 
+  ORDER BY id;
+  ```
+
+  ```sql
+  -- Inserir dados de teste
+  INSERT INTO all_types_test VALUES
+  (
+      1,                              -- id
+      'ClickHouse',                   -- String
+      100,                            -- UInt8
+      5000,                           -- UInt16
+      1000000,                        -- UInt32
+      9223372036854775807,            -- UInt64
+      -100,                           -- Int8
+      -5000,                          -- Int16
+      -1000000,                       -- Int32
+      -9223372036854775808,           -- Int64
+      123.45,                         -- Float32
+      987654.123456,                  -- Float64
+      '2024-01-15',                   -- Date
+      '2024-01-15 10:30:00',          -- DateTime
+      '192.168.1.1',                  -- IPv4
+      '2001:db8::1',                  -- IPv6
+      '550e8400-e29b-41d4-a716-446655440000' -- UUID
+  )
+  ```
+
+  ```sql
+  -- Criar dicionário
+  CREATE DICTIONARY all_types_dict
+  (
+      id UInt32,
+      String_value String,
+      UInt8_value UInt8,
+      UInt16_value UInt16,
+      UInt32_value UInt32,
+      UInt64_value UInt64,
+      Int8_value Int8,
+      Int16_value Int16,
+      Int32_value Int32,
+      Int64_value Int64,
+      Float32_value Float32,
+      Float64_value Float64,
+      Date_value Date,
+      DateTime_value DateTime,
+      IPv4_value IPv4,
+      IPv6_value IPv6,
+      UUID_value UUID
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'all_types_test' DB 'default'))
+  LAYOUT(HASHED())
+  LIFETIME(MIN 300 MAX 600);
+  ```
+</Accordion>
+
+<Accordion title="Dicionário de exemplo para dictGetAll">
+  Crie uma tabela para armazenar os dados do dicionário regexp tree:
+
+  ```sql
+  CREATE TABLE regexp_os(
+      id UInt64,
+      parent_id UInt64,
+      regexp String,
+      keys Array(String),
+      values Array(String)
+  )
+  ENGINE = Memory;
+  ```
+
+  Insira os dados na tabela:
+
+  ```sql
+  INSERT INTO regexp_os 
+  SELECT *
+  FROM s3(
+      'https://datasets-documentation.s3.eu-west-3.amazonaws.com/' ||
+      'user_agent_regex/regexp_os.csv'
+  );
+  ```
+
+  Crie o dicionário regexp tree:
+
+  ```sql
+  CREATE DICTIONARY regexp_tree
+  (
+      regexp String,
+      os_replacement String DEFAULT 'Other',
+      os_v1_replacement String DEFAULT '0',
+      os_v2_replacement String DEFAULT '0',
+      os_v3_replacement String DEFAULT '0',
+      os_v4_replacement String DEFAULT '0'
+  )
+  PRIMARY KEY regexp
+  SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+  LIFETIME(MIN 0 MAX 0)
+  LAYOUT(REGEXP_TREE);
+  ```
+</Accordion>
+
+<Accordion title="Exemplo de dicionário com chave de intervalo">
+  Crie a tabela de entrada:
+
+  ```sql
+  CREATE TABLE range_key_dictionary_source_table
+  (
+      key UInt64,
+      start_date Date,
+      end_date Date,
+      value String,
+      value_nullable Nullable(String)
+  )
+  ENGINE = TinyLog();
+  ```
+
+  Insira os dados na tabela de entrada:
+
+  ```sql
+  INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+  INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+  INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+  ```
+
+  Crie o dicionário:
+
+  ```sql
+  CREATE DICTIONARY range_key_dictionary
+  (
+      key UInt64,
+      start_date Date,
+      end_date Date,
+      value String,
+      value_nullable Nullable(String)
+  )
+  PRIMARY KEY key
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_dictionary_source_table'))
+  LIFETIME(MIN 1 MAX 1000)
+  LAYOUT(RANGE_HASHED())
+  RANGE(MIN start_date MAX end_date);
+  ```
+</Accordion>
+
+<Accordion title="Exemplo de dicionário com chave complexa">
+  Crie a tabela de origem:
+
+  ```sql
+  CREATE TABLE dict_mult_source
+  (
+  id UInt32,
+  c1 UInt32,
+  c2 String
+  ) ENGINE = Memory;
+  ```
+
+  Insira os dados na tabela de origem:
+
+  ```sql
+  INSERT INTO dict_mult_source VALUES
+  (1, 1, '1'),
+  (2, 2, '2'),
+  (3, 3, '3');
+  ```
+
+  Crie o dicionário:
+
+  ```sql
+  CREATE DICTIONARY ext_dict_mult
+  (
+      id UInt32,
+      c1 UInt32,
+      c2 String
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict_mult_source' DB 'default'))
+  LAYOUT(FLAT())
+  LIFETIME(MIN 0 MAX 0);
+  ```
+</Accordion>
+
+<Accordion title="Exemplo de dicionário hierárquico">
+  Crie a tabela de origem:
+
+  ```sql
+  CREATE TABLE hierarchy_source
+  (
+    id UInt64,
+    parent_id UInt64,
+    name String
+  ) ENGINE = Memory;
+  ```
+
+  Insira os dados na tabela de origem:
+
+  ```sql
+  INSERT INTO hierarchy_source VALUES
+  (0, 0, 'Root'),
+  (1, 0, 'Level 1 - Node 1'),
+  (2, 1, 'Level 2 - Node 2'),
+  (3, 1, 'Level 2 - Node 3'),
+  (4, 2, 'Level 3 - Node 4'),
+  (5, 2, 'Level 3 - Node 5'),
+  (6, 3, 'Level 3 - Node 6');
+
+  -- 0 (Raiz)
+  -- └── 1 (Nível 1 - Nó 1)
+  --     ├── 2 (Nível 2 - Nó 2)
+  --     │   ├── 4 (Nível 3 - Nó 4)
+  --     │   └── 5 (Nível 3 - Nó 5)
+  --     └── 3 (Nível 2 - Nó 3)
+  --         └── 6 (Nível 3 - Nó 6)
+  ```
+
+  Crie o dicionário:
+
+  ```sql
+  CREATE DICTIONARY hierarchical_dictionary
+  (
+      id UInt64,
+      parent_id UInt64 HIERARCHICAL,
+      name String
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'hierarchy_source' DB 'default'))
+  LAYOUT(HASHED())
+  LIFETIME(MIN 300 MAX 600);
+  ```
+</Accordion>
+
+{/* 
+  O conteúdo interno das tags abaixo é substituído, no momento da compilação do framework de documentação, por 
+  documentação gerada a partir de system.functions. Não modifique nem remova as tags.
+  Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="dictGet">
+  ## dictGet
+</div>
+
+Introduzido em: v18.16.0
+
+Recupera valores de um dicionário.
+
+**Sintaxe**
+
+```sql
+dictGet('dict_name', attr_names, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_names` — Nome da coluna do dicionário ou tupla de nomes de colunas. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna UInt64/Tuple(T). [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a id&#95;expr, se a chave for encontrada.
+Se a chave não for encontrada, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+**Exemplos**
+
+**Obter um único atributo**
+
+```sql title=Query
+SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
+```
+
+```response title=Response
+1
+```
+
+**Vários atributos**
+
+```sql title=Query
+SELECT
+    dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+```response title=Response
+┌─val─────┬─type───────────┐
+│ (1,'1') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+│ (2,'2') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+│ (3,'3') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+└─────────┴────────────────┘
+```
+
+<div id="dictGetAll">
+  ## dictGetAll
+</div>
+
+Introduzido em: v23.5.0
+
+Recupera os valores do atributo de todos os nós que corresponderam a cada chave em um [dicionário de árvore de expressões regulares](/pt-BR/reference/statements/create/dictionary/layouts/regexp-tree).
+
+Além de retornar valores do tipo `Array(T)` em vez de `T`, esta função se comporta de forma semelhante a [`dictGet`](#dictGet).
+
+**Sintaxe**
+
+```sql
+dictGetAll(dict_name, attr_names, id_expr[, limit])
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_names` — Nome da coluna do dicionário ou tupla de nomes de colunas. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `limit` — Opcional. Comprimento máximo de cada array de valores retornado. Ao truncar, os nós filhos têm precedência sobre os nós pais e, caso contrário, a ordem definida da lista para o dicionário regexp tree é respeitada. Se não for especificado, o comprimento do array é ilimitado. [`UInt*`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Retorna um array com os valores dos atributos do dicionário que correspondem a `id_expr` para cada atributo especificado por `attr_names`.
+Se não houver nenhuma chave correspondente a `id_expr` no dicionário, um array vazio será retornado.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+[`Array(T)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT
+    'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
+
+    -- This will match ALL applicable patterns
+    dictGetAll('regexp_tree', 'os_replacement', 'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36') AS all_matches,
+
+    -- This returns only the first match
+    dictGet('regexp_tree', 'os_replacement', 'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36') AS first_match;
+```
+
+```response title=Response
+┌─user_agent─────────────────────────────────────────────────────┬─all_matches─────────────────────────────┬─first_match─┐
+│ Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36 │ ['Android','Android','Android','Linux'] │ Android     │
+└────────────────────────────────────────────────────────────────┴─────────────────────────────────────────┴─────────────┘
+```
+
+<div id="dictGetChildren">
+  ## dictGetChildren
+</div>
+
+Introduzido na versão: v21.4.0
+
+Retorna os filhos de primeiro nível como um Array de índices. É a transformação inversa de [dictGetHierarchy](#dictGetHierarchy).
+
+**Sintaxe**
+
+```sql
+dictGetChildren(dict_name, key)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `key` — Chave a ser verificada. [`const String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna os filhos de primeiro nível da chave. [`Array(UInt64)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Obter os filhos de primeiro nível de um dicionário**
+
+```sql title=Query
+SELECT dictGetChildren('hierarchical_dictionary', 2);
+```
+
+```response title=Response
+┌─dictGetChild⋯ionary', 2)─┐
+│ [4,5]                    │
+└──────────────────────────┘
+```
+
+<div id="dictGetDate">
+  ## dictGetDate
+</div>
+
+Introduzido na versão: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `Date`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetDate(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetDate('all_types_dict', 'Date_value', 1)
+```
+
+```response title=Response
+┌─dictGetDate(⋯_value', 1)─┐
+│               2020-01-01 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateOrDefault">
+  ## dictGetDateOrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte um valor de atributo de dicionário para o tipo de dados `Date`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetDate('all_types_dict', 'Date_value', 1);
+
+-- para a chave que não existe, retorna o valor padrão informado
+SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
+```
+
+```response title=Response
+┌─dictGetDate(⋯_value', 1)─┐
+│               2024-01-15 │
+└──────────────────────────┘
+┌─dictGetDateO⋯70-01-01'))─┐
+│               1970-01-01 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateTime">
+  ## dictGetDateTime
+</div>
+
+Introduzido na: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `DateTime`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetDateTime(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
+```
+
+```response title=Response
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateTimeOrDefault">
+  ## dictGetDateTimeOrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `DateTime`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo da chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido
+SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
+```
+
+```response title=Response
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
+┌─dictGetDateT⋯0:00:00'))──┐
+│      1970-01-01 00:00:00 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDescendants">
+  ## dictGetDescendants
+</div>
+
+Introduzido em: v21.4.0
+
+Retorna todos os descendentes como se a função [`dictGetChildren`](#dictGetChildren) fosse aplicada recursivamente `level` vezes.
+
+**Sintaxe**
+
+```sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `key` — Chave a ser verificada. [`const String`](/pt-BR/reference/data-types/string)
+* `level` — Chave a ser verificada. Nível da hierarquia. Se `level = 0`, retorna todos os descendentes até o final. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+Retorna os descendentes da chave. [`Array(UInt64)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Obter os filhos de primeiro nível de um dicionário**
+
+```sql title=Query
+-- considere o seguinte dicionário hierárquico:
+-- 0 (Raiz)
+-- └── 1 (Nível 1 - Nó 1)
+--     ├── 2 (Nível 2 - Nó 2)
+--     │   ├── 4 (Nível 3 - Nó 4)
+--     │   └── 5 (Nível 3 - Nó 5)
+--     └── 3 (Nível 2 - Nó 3)
+--         └── 6 (Nível 3 - Nó 6)
+
+SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
+```
+
+```response title=Response
+┌─dictGetDesce⋯ary', 0, 2)─┐
+│ [3,2]                    │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat32">
+  ## dictGetFloat32
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `Float32`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetFloat32(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│               -123.123   │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat32OrDefault">
+  ## dictGetFloat32OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Float32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetFloat32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão informado (-1.0)
+SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│                   123.45 │
+└──────────────────────────┘
+┌─dictGetFloat⋯e', 999, -1)─┐
+│                       -1  │
+└───────────────────────────┘
+```
+
+<div id="dictGetFloat64">
+  ## dictGetFloat64
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Float64`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetFloat64(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│                 -123.123 │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat64OrDefault">
+  ## dictGetFloat64OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Float64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para chave que existe
+SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
+
+-- para chave que não existe, retorna o valor padrão fornecido (nan)
+SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│            987654.123456 │
+└──────────────────────────┘
+┌─dictGetFloat⋯, 999, nan)─┐
+│                      nan │
+└──────────────────────────┘
+```
+
+<div id="dictGetHierarchy">
+  ## dictGetHierarchy
+</div>
+
+Introduzido em: v1.1.0
+
+Cria um array contendo todos os ancestrais de uma chave no [dicionário hierárquico](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+**Sintaxe**
+
+```sql
+dictGetHierarchy(dict_name, key)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `key` — Valor da chave. [`const String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna os ancestrais da chave. [`Array(UInt64)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Obter a hierarquia de uma chave**
+
+```sql title=Query
+SELECT dictGetHierarchy('hierarchical_dictionary', 5)
+```
+
+```response title=Response
+┌─dictGetHiera⋯ionary', 5)─┐
+│ [5,2,1]                  │
+└──────────────────────────┘
+```
+
+<div id="dictGetIPv4">
+  ## dictGetIPv4
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `IPv4`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetIPv4(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor com o tipo da chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
+```
+
+```response title=Response
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
+```
+
+<div id="dictGetIPv4OrDefault">
+  ## dictGetIPv4OrDefault
+</div>
+
+Introduzido em: v23.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `IPv4`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido
+SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
+```
+
+```response title=Response
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
+┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
+│ 0.0.0.0                      │
+└──────────────────────────────┘
+```
+
+<div id="dictGetIPv6">
+  ## dictGetIPv6
+</div>
+
+Introduzido em: v23.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `IPv6`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetIPv6(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
+```
+
+```response title=Response
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
+```
+
+<div id="dictGetIPv6OrDefault">
+  ## dictGetIPv6OrDefault
+</div>
+
+Introduzido em: v23.1.0
+
+Converte um valor de atributo do dicionário para o tipo de dado `IPv6`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor ou valores retornados se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão informado
+SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
+```
+
+```response title=Response
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
+┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
+│ ::1                          │
+└──────────────────────────────┘
+```
+
+<div id="dictGetInt16">
+  ## dictGetInt16
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Int16`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetInt16(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt16OrDefault">
+  ## dictGetInt16OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Int16`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave que existe
+SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
+
+-- para a chave que não existe, retorna o valor padrão fornecido (-1)
+SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
+┌─dictGetInt16⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt32">
+  ## dictGetInt32
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Int32`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetInt32(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt32OrDefault">
+  ## dictGetInt32OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `Int32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave que existe
+SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
+
+-- para a chave que não existe, retorna o valor padrão fornecido (-1)
+SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
+┌─dictGetInt32⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt64">
+  ## dictGetInt64
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dados `Int64`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetInt64(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)───┐
+│       -9223372036854775807 │
+└────────────────────────────┘
+```
+
+<div id="dictGetInt64OrDefault">
+  ## dictGetInt64OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dado `Int64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave que existe
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
+
+-- para a chave que não existe, retorna o valor padrão fornecido (-1)
+SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)─┐
+│     -9223372036854775808 │
+└──────────────────────────┘
+┌─dictGetInt64⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt8">
+  ## dictGetInt8
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dados `Int8`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetInt8(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt8OrDefault">
+  ## dictGetInt8OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `Int8`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver nenhuma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave que existe
+SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
+
+-- para a chave que não existe, retorna o valor padrão fornecido (-1)
+SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
+┌─dictGetInt8O⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetKeys">
+  ## dictGetKeys
+</div>
+
+Introduzido em: v25.12.0
+
+Retorna a(s) chave(s) do dicionário cujo atributo é igual ao valor especificado. Esta é a função inversa de `dictGet` para um único atributo.
+
+Use a configuração `max_reverse_dictionary_lookup_cache_size_bytes` para limitar o tamanho do cache de busca reversa por consulta usado por `dictGetKeys`.
+O cache armazena tuplas de chaves serializadas para cada valor de atributo, evitando varrer o dicionário novamente dentro da mesma consulta.
+O cache não é persistente entre consultas. Quando o limite é atingido, as entradas são removidas com LRU.
+Isso é mais eficaz com dicionários grandes quando a entrada tem baixa cardinalidade e o conjunto de trabalho cabe no cache. Defina como `0` para desabilitar o cache.
+
+**Sintaxe**
+
+```sql
+dictGetKeys('dict_name', 'attr_name', value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Atributo a ser comparado. [`String`](/pt-BR/reference/data-types/string)
+* `value_expr` — Valor a ser comparado com o atributo. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression)
+
+**Valor retornado**
+
+Para dicionários de chave única: um array de chaves cujo atributo é igual a `value_expr`. Para dicionários com múltiplas chaves: um array de tuplas de chaves cujo atributo é igual a `value_expr`. Se não houver nenhum atributo correspondente a `value_expr` no dicionário, será retornado um array vazio. O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não puder ser convertido para o tipo de dado do atributo.
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+```
+
+```response title=Response
+┌─ids───┐
+│ [4,2] │
+└───────┘
+```
+
+<div id="dictGetOrDefault">
+  ## dictGetOrDefault
+</div>
+
+Introduzido em: v18.16.0
+
+Recupera valores de um dicionário, com um valor padrão caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_names` — Nome da coluna do dicionário ou tupla de nomes de colunas. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna UInt64/Tuple(T). [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value` — Valor padrão retornado se a chave não for encontrada. O tipo deve corresponder ao tipo de dado do atributo.
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr` se a chave for encontrada.
+Se a chave não for encontrada, retorna o `default_value` fornecido.
+
+**Exemplos**
+
+**Obter valor com valor padrão**
+
+```sql title=Query
+SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
+```
+
+```response title=Response
+0
+```
+
+<div id="dictGetOrNull">
+  ## dictGetOrNull
+</div>
+
+Introduzido em: v21.4.0
+
+Obtém valores de um Dicionário, retornando NULL se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetOrNull('dict_name', 'attr_name', id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. Literal de String. - `attr_name` — Nome da coluna a ser obtida. Literal de String. - `id_expr` — Valor da chave. Expression que retorna um valor do tipo de chave do dicionário.
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr` se a chave for encontrada.
+Se a chave não for encontrada, retorna `NULL`.
+
+**Exemplos**
+
+**Exemplo usando o dicionário com chave de intervalo**
+
+```sql title=Query
+SELECT
+    (number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
+FROM system.numbers LIMIT 5 FORMAT TabSeparated;
+```
+
+```response title=Response
+(0,'2019-05-20')  \N
+(1,'2019-05-20')  First
+(2,'2019-05-20')  Second
+(3,'2019-05-20')  Third
+(4,'2019-05-20')  \N
+```
+
+<div id="dictGetString">
+  ## dictGetString
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de Dicionário para o tipo de dado `String`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetString(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetString('all_types_dict', 'String_value', 1)
+```
+
+```response title=Response
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
+```
+
+<div id="dictGetStringOrDefault">
+  ## dictGetStringOrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo do dicionário para o tipo de dados `String`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetString('all_types_dict', 'String_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido
+SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
+```
+
+```response title=Response
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
+┌─dictGetStringO⋯ 999, 'default')─┐
+│ default                         │
+└─────────────────────────────────┘
+```
+
+<div id="dictGetUInt16">
+  ## dictGetUInt16
+</div>
+
+Introduzido em: v1.1.0
+
+Converte um valor de atributo do dicionário para o tipo de dado `UInt16`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetUInt16(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt16OrDefault">
+  ## dictGetUInt16OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte um valor de atributo de dicionário para o tipo de dados `UInt16`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetUInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido (0)
+SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
+┌─dictGetUInt1⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt32">
+  ## dictGetUInt32
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UInt32`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetUInt32(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt32OrDefault">
+  ## dictGetUInt32OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UInt32`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+do contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido (0)
+SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
+┌─dictGetUInt3⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt64">
+  ## dictGetUInt64
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UInt64`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetUInt64(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt64OrDefault">
+  ## dictGetUInt64OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UInt64`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor passado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido (0)
+SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
+┌─dictGetUInt6⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt8">
+  ## dictGetUInt8
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UInt8`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetUInt8(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dados do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt8OrDefault">
+  ## dictGetUInt8OrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte um valor de atributo do dicionário para o tipo de dado `UInt8`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido se a chave não for encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetUInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo da chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse gera uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido (0)
+SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
+┌─dictGetUInt8⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUUID">
+  ## dictGetUUID
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UUID`, independentemente da configuração do dicionário.
+
+**Sintaxe**
+
+```sql
+dictGetUUID(dict_name, attr_name, id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Uma expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o conteúdo do elemento `<null_value>` especificado para o atributo na configuração do dicionário.
+
+<Note>
+  O ClickHouse gera uma exceção se não conseguir analisar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
+```
+
+```response title=Response
+┌─dictGetUUID(⋯_value', 1)─────────────┐
+│ 123e4567-e89b-12d3-a456-426614174000 │
+└──────────────────────────────────────┘
+```
+
+<div id="dictGetUUIDOrDefault">
+  ## dictGetUUIDOrDefault
+</div>
+
+Introduzido em: v1.1.0
+
+Converte o valor de um atributo de dicionário para o tipo de dado `UUID`, independentemente da configuração do dicionário, ou retorna o valor padrão fornecido caso a chave não seja encontrada.
+
+**Sintaxe**
+
+```sql
+dictGetUUIDOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `attr_name` — Nome da coluna do dicionário. [`String`](/pt-BR/reference/data-types/string) ou [`Tuple(String)`](/pt-BR/reference/data-types/tuple)
+* `id_expr` — Valor da chave. Expressão que retorna um valor do tipo de chave do dicionário ou um valor de tupla (dependendo da configuração do dicionário). [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `default_value_expr` — Valor(es) retornado(s) se o dicionário não contiver uma linha com a chave `id_expr`. [`Expression`](/pt-BR/reference/data-types/special-data-types/expression) ou [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+
+**Valor retornado**
+
+Retorna o valor do atributo do dicionário correspondente a `id_expr`;
+caso contrário, retorna o valor informado no parâmetro `default_value_expr`.
+
+<Note>
+  O ClickHouse lança uma exceção se não conseguir interpretar o valor do atributo ou se o valor não corresponder ao tipo de dado do atributo.
+</Note>
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+-- para a chave existente
+SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
+
+-- para a chave inexistente, retorna o valor padrão fornecido
+SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
+```
+
+```response title=Response
+┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000 │
+└──────────────────────────────────────┘
+┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
+│ 00000000-0000-0000-0000-000000000000   │
+└────────────────────────────────────────┘
+```
+
+<div id="dictHas">
+  ## dictHas
+</div>
+
+Introduzido em: v1.1.0
+
+Verifica se uma chave está presente em um dicionário.
+
+**Sintaxe**
+
+```sql
+dictHas('dict_name', id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `id_expr` — Valor da chave [`const String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna `1` se a chave existir; caso contrário, `0`. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Verificar a existência de uma chave em um dicionário**
+
+```sql title=Query
+-- considere o seguinte dicionário hierárquico:
+-- 0 (Raiz)
+-- └── 1 (Nível 1 - Nó 1)
+--     ├── 2 (Nível 2 - Nó 2)
+--     │   ├── 4 (Nível 3 - Nó 4)
+--     │   └── 5 (Nível 3 - Nó 5)
+--     └── 3 (Nível 2 - Nó 3)
+--         └── 6 (Nível 3 - Nó 6)
+
+SELECT dictHas('hierarchical_dictionary', 2);
+SELECT dictHas('hierarchical_dictionary', 7);
+```
+
+```response title=Response
+┌─dictHas('hie⋯ionary', 2)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictHas('hie⋯ionary', 7)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictIsIn">
+  ## dictIsIn
+</div>
+
+Introduzido em: v1.1.0
+
+Verifica o ancestral de uma chave ao longo de toda a cadeia hierárquica do dicionário.
+
+**Sintaxe**
+
+```sql
+dictIsIn(dict_name, child_id_expr, ancestor_id_expr)
+```
+
+**Argumentos**
+
+* `dict_name` — Nome do dicionário. [`String`](/pt-BR/reference/data-types/string)
+* `child_id_expr` — Chave a ser verificada. [`String`](/pt-BR/reference/data-types/string)
+* `ancestor_id_expr` — Suposto ancestral da chave `child_id_expr`. [`const String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna `0` se `child_id_expr` não for filho de `ancestor_id_expr` e `1` se `child_id_expr` for filho de `ancestor_id_expr` ou se `child_id_expr` for o próprio `ancestor_id_expr`. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Verificar a relação hierárquica**
+
+```sql title=Query
+-- hierarquia válida
+SELECT dictIsIn('hierarchical_dictionary', 6, 3)
+
+-- hierarquia inválida
+SELECT dictIsIn('hierarchical_dictionary', 3, 5)
+```
+
+```response title=Response
+┌─dictIsIn('hi⋯ary', 6, 3)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictIsIn('hi⋯ary', 3, 5)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}

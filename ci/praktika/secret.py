@@ -161,12 +161,9 @@ class Secret:
                 other.name, str
             ), f"Secret [{other.name}] must be single name"
 
-            # Convert self.name to list if it's a string
-            if isinstance(self.name, str):
-                self.name = [self.name]
-
-            self.name.append(other.name)
-            return self
+            names = list(self.name) if isinstance(self.name, list) else [self.name]
+            names.append(other.name)
+            return Secret.Config(name=names, type=self.type, region=self.region)
 
         def __repr__(self):
             return self.name

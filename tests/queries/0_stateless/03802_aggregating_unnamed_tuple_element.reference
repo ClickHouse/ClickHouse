@@ -1,0 +1,32 @@
+=== Test 1: Unnamed Tuple (positional access) ===
+Unnamed Tuple test - with FINAL (after two inserts):
+0	0	0	new_0	2	2
+1	4	20	new_1	2	2
+2	8	40	new_2	2	2
+3	12	60	new_3	2	2
+4	16	80	new_4	2	2
+5	20	100	new_5	2	2
+6	24	120	new_6	2	2
+7	28	140	new_7	2	2
+8	32	160	new_8	2	2
+9	36	180	new_9	2	2
+Unnamed Tuple test - after OPTIMIZE:
+0	0	0	new_0	2	2
+1	4	20	new_1	2	2
+2	8	40	new_2	2	2
+3	12	60	new_3	2	2
+4	16	80	new_4	2	2
+5	20	100	new_5	2	2
+6	24	120	new_6	2	2
+7	28	140	new_7	2	2
+8	32	160	new_8	2	2
+9	36	180	new_9	2	2
+=== Test 2: Nested Unnamed Tuple ===
+Nested Unnamed Tuple test - with FINAL:
+0	2700	180	0	9.5
+1	1800	140	1	9
+2	2250	160	2	10
+Nested Unnamed Tuple test - after OPTIMIZE:
+0	2700	180	0	9.5
+1	1800	140	1	9
+2	2250	160	2	10

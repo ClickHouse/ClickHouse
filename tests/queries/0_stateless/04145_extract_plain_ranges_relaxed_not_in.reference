@@ -1,0 +1,51 @@
+numbers NOT IN tuple
+0
+1
+2
+3
+4
+numbers NOT has tuple
+0
+1
+2
+3
+4
+per-row eval
+0	1
+1	1
+2	1
+3	1
+4	1
+numbers IN tuple
+generate_series NOT IN tuple
+0
+1
+2
+3
+4
+mergetree NOT IN tuple
+0
+1
+2
+3
+4
+primes NOT IN tuple
+2
+3
+5
+7
+11
+13
+17
+19
+primes IN tuple
+numbers NOT IN tuple LIMIT
+0
+1
+2
+primes NOT IN tuple LIMIT
+2
+3
+5
+7
+11

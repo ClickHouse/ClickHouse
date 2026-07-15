@@ -1,0 +1,32 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE sort_lc (
+            lc_col LowCardinality(String),
+            uint_col UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_lc
+        SELECT
+            toString(rand() % 1000) AS lc_col,
+            rand64() AS uint_col
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>SELECT * FROM sort_lc ORDER BY lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_lc ORDER BY lc_col, uint_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_lc ORDER BY uint_col, lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_lc</drop_query>
+</test>

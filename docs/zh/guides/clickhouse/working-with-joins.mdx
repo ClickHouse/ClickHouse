@@ -1,0 +1,460 @@
+---
+title: '在 ClickHouse 中使用 JOINs'
+description: 'ClickHouse 中使用 JOINs 的入门指南'
+keywords: ['JOINs', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: '在 ClickHouse 中使用 JOINs'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 完全支持标准 SQL JOIN，可实现高效的数据分析。
+在本指南中，你将借助维恩图以及基于归一化 [IMDB](https://en.wikipedia.org/wiki/IMDb) 数据集的示例查询，了解一些常见的 JOIN 类型及其用法。该数据集源自[关系型数据集存储库](https://relational.fit.cvut.cz/dataset/IMDb)。
+
+<div id="test-data-and-resources">
+  ## 测试数据和资源
+</div>
+
+有关如何创建并加载这些表的说明，请参见[此处](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides)。
+如果你不想在本地创建并加载这些表，也可以在 [playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) 中使用该数据集。
+
+你将使用示例数据集中的以下四个表：
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB Schema" />
+
+这四个表中的数据表示电影，一部电影可以对应一个或多个类型。
+电影中的角色由演员扮演。
+
+上图中的箭头表示[外键与主键之间的关系](https://en.wikipedia.org/wiki/Foreign_key)。例如，`genres` 表中某一行的 `movie_id` 列包含 `movies` 表中某一行的 `id` 值。
+
+电影和演员之间存在[多对多关系](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\))。
+通过使用 `roles` 表，这种多对多关系被归一化为两个[一对多关系](https://en.wikipedia.org/wiki/One-to-many_\(data_model\))。
+`roles` 表中的每一行都包含 `movies` 表和 `actors` 表中 `id` 列的值。
+
+<div id="join-types-supported-in-clickhouse">
+  ## ClickHouse 支持的 JOIN 类型
+</div>
+
+ClickHouse 支持以下 JOIN 类型：
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+在接下来的各节中，你将为上述每种 JOIN 类型编写示例查询。
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+`INNER JOIN` 会针对每一对在连接键上匹配的行，返回由左表中该行的列值与右表中该行的列值组合而成的结果。
+如果某一行有多个匹配项，则会返回所有匹配项 (这意味着对于连接键匹配的行，会产生[笛卡尔积](https://en.wikipedia.org/wiki/Cartesian_product)) 。
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="内连接" />
+
+此查询通过将 `movies` 表与 `genres` 表进行连接，找出每部电影对应的类型：
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  可以省略 `INNER` 关键字。
+</Note>
+
+使用以下其他 JOIN 类型，可以扩展或改变 `INNER JOIN` 的行为。
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+`LEFT OUTER JOIN` 的行为类似于 `INNER JOIN`；此外，对于左表中没有匹配项的行，ClickHouse 会为右表的列返回[默认值](/zh/reference/statements/create/table#default_values)。
+
+`RIGHT OUTER JOIN` 查询与之类似，也会返回右表中没有匹配项的行的值，以及左表各列的默认值。
+
+`FULL OUTER JOIN` 查询结合了 `LEFT` 和 `RIGHT OUTER JOIN`，会返回左表和右表中没有匹配项的行的值，并分别附带右表和左表各列的默认值。
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
+
+<Note>
+  可以将 ClickHouse [配置为](/zh/reference/settings/session-settings#join_use_nulls)返回 [NULL](/zh/reference/syntax#null) 而非默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
+</Note>
+
+此查询会找出所有没有类型的电影：它查询 `movies` 表中在 `genres` 表里没有匹配项的所有行，因此这些行会在 `movie_id` 列中得到默认值 0 (在查询时) ：
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  可省略 `OUTER` 关键字。
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+`CROSS JOIN` 会生成两个表的完整笛卡尔积，不考虑连接键。
+左表中的每一行都会与右表中的每一行相组合。
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="交叉连接" />
+
+因此，下面的查询会将 `movies` 表中的每一行与 `genres` 表中的每一行组合：
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+虽然前面的示例查询本身意义不大，但可以通过添加 `WHERE` 子句进一步扩展，将匹配的行关联起来，模拟 `INNER JOIN` 的行为，以找出每部电影的类型：
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+`CROSS JOIN` 的另一种语法是在 `FROM` 子句中用逗号分隔多个表。
+
+如果查询的 `WHERE` 子句中包含连接表达式，ClickHouse 会将 `CROSS JOIN` [重写](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896) 为 `INNER JOIN`。
+
+你可以通过 [EXPLAIN SYNTAX](/zh/reference/statements/explain#explain-syntax) 查看该示例查询的这一点 (它会返回查询在被[执行](https://youtu.be/hP6G2Nlz_cA)之前重写后的语法优化版本) ：
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+在经过语法优化的 `CROSS JOIN` 查询版本中，`INNER JOIN` 子句包含显式添加的 `ALL` 关键字，以确保即使将其重写为 `INNER JOIN`，仍能保留 `CROSS JOIN` 的笛卡尔积语义；而对于 `INNER JOIN`，笛卡尔积是可以被[禁用](/zh/reference/settings/session-settings#join_default_strictness)的。
+
+```sql
+ALL
+```
+
+而且，正如上文所述，对于 `RIGHT OUTER JOIN`，`OUTER` 关键字可以省略，也可以再加上可选的 `ALL` 关键字，因此你可以写成 `ALL RIGHT JOIN`，而且它同样能正常工作。
+
+<div id="left--right-semi-join">
+  ## (LEFT / RIGHT) SEMI JOIN
+</div>
+
+`LEFT SEMI JOIN` 查询会返回左表中在右表里至少有一个连接键匹配的每一行的列值。
+只返回找到的第一个匹配项 (笛卡尔积被禁用) 。
+
+`RIGHT SEMI JOIN` 查询与之类似，会返回右表中在左表里至少有一个匹配项的所有行的值，但同样只返回找到的第一个匹配项。
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="半连接" />
+
+此查询会找出所有在 2023 年参演过电影的男演员/女演员。
+请注意，使用普通的 (`INNER`) 连接时，如果同一位男演员/女演员在 2023 年出演了多个角色，则会出现多次：
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+`LEFT ANTI JOIN` 返回左表中所有未匹配行的列值。
+
+同样，`RIGHT ANTI JOIN` 返回右表中所有未匹配行的列值。
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="ANTI JOIN" />
+
+前一个 OUTER JOIN 示例查询也可以改写为使用 ANTI JOIN，以查找数据集中没有流派的电影：
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## &#x20;(LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+`LEFT ANY JOIN` 是 `LEFT OUTER JOIN` + `LEFT SEMI JOIN` 的组合，也就是说，ClickHouse 会返回左表中每一行的列值：如果能在右表中找到匹配行，就将其与该匹配行的列值组合；如果找不到匹配行，则与右表的默认列值组合。
+如果左表中的某一行在右表中有多个匹配项，ClickHouse 只会返回与找到的第一个匹配项组合后的列值 (笛卡尔积已禁用) 。
+
+同样，`RIGHT ANY JOIN` 是 `RIGHT OUTER JOIN` + `RIGHT SEMI JOIN` 的组合。
+
+而 `INNER ANY JOIN` 则是禁用了笛卡尔积的 `INNER JOIN`。
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+
+下面的示例使用两个通过 [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [表函数](/zh/reference/functions/table-functions/index) 构造的临时表 (`left_table` 和 `right_table`) ，以一个抽象示例演示 `LEFT ANY JOIN`：
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+这是使用 `RIGHT ANY JOIN` 的相同查询：
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+以下是使用 `INNER ANY JOIN` 的查询：
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+`ASOF JOIN` 提供非精确匹配能力。
+如果左表中的某一行在右表中没有精确匹配项，则会改用右表中最接近的一行作为匹配结果。
+
+这对于时间序列分析尤其有用，并且可以显著降低查询复杂度。
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+
+下面的示例展示了如何对股票市场数据进行时间序列分析。
+`quotes` 表包含股票代码在一天中各个特定时刻的报价。
+在示例数据中，价格每 10 秒更新一次。
+`trades` 表列出了股票代码的交易记录——某个代码的特定成交量在特定时刻被买入：
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+
+为了计算每笔交易的实际成本，我们需要将交易与时间上最接近的报价相匹配。
+
+使用 `ASOF JOIN` 可以轻松而简洁地实现这一点：使用 `ON` 子句指定精确匹配条件，使用 `AND` 子句指定最接近匹配条件——对于某个特定代码 (精确匹配) ，需要从 `quotes` 表中找到时间“最接近”、且时间等于或早于该代码某笔交易时间的那一行 (非精确匹配) ：
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  `ASOF JOIN` 的 `ON` 子句是必需的，用于指定一个精确匹配条件，与 `AND` 子句中的非精确匹配条件配合使用。
+</Note>
+
+<div id="summary">
+  ## 摘要
+</div>
+
+本指南介绍 ClickHouse 如何支持所有标准 SQL JOIN 类型，以及专为分析查询设计的特殊 JOIN。
+有关 JOIN 的更多信息，请参阅 [JOIN](/zh/reference/statements/select/join) 语句文档。

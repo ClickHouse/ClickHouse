@@ -247,9 +247,9 @@ bool FourLetterCommandFactory::supportArguments(int32_t code) const
 
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
+    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
     auto log = getLogger("FourLetterCommandFactory");
-    String list_str = keeper_settings->four_letter_word_allow_list;
+    String list_str = server_config->four_letter_word_allow_list;
     std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
@@ -372,7 +372,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
@@ -656,7 +656,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-void printToString(void * output, const char * data)
+static void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);
@@ -702,7 +702,7 @@ String ProfileEventsCommand::run()
 
     for (auto i : ProfileEvents::keeper_profile_events)
     {
-        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const auto counter = ProfileEvents::global_counters[i];
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);

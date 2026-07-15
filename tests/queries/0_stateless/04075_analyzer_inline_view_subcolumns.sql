@@ -32,8 +32,8 @@ SELECT '-- nullable.null from view (inlined)';
 SELECT n.null FROM v_subcol ORDER BY n.null;
 
 SELECT '-- map subcolumns from view (inlined)';
-SELECT m.keys FROM v_subcol ORDER BY length(m.keys);
-SELECT m.values FROM v_subcol ORDER BY length(m.values);
+SELECT arraySort(m.keys) FROM v_subcol ORDER BY length(m.keys);
+SELECT arraySort(m.values) FROM v_subcol ORDER BY length(m.values);
 
 -- Same queries without inlining to verify correctness.
 SET analyzer_inline_views = 0;
@@ -48,8 +48,8 @@ SELECT '-- nullable.null from view (not inlined)';
 SELECT n.null FROM v_subcol ORDER BY n.null;
 
 SELECT '-- map subcolumns from view (not inlined)';
-SELECT m.keys FROM v_subcol ORDER BY length(m.keys);
-SELECT m.values FROM v_subcol ORDER BY length(m.values);
+SELECT arraySort(m.keys) FROM v_subcol ORDER BY length(m.keys);
+SELECT arraySort(m.values) FROM v_subcol ORDER BY length(m.values);
 
 -- View with type conversion: source has Array(UInt16) but view declares Array(UInt64).
 SET analyzer_inline_views = 1;

@@ -25,7 +25,7 @@ INSERT INTO tab VALUES
   (5, {'key1':'1'}, {'key3':'3'}),
   (6, {'key1':'1'}, {'key1':'1'});
 
-SELECT *
+SELECT id, mapSort(map1), mapSort(map2)
 FROM tab
 WHERE (mapContains(map1, 'key2') OR mapContains(map2, 'key2')) AND (NOT mapContains(map2, 'key3'))
 ORDER BY id;

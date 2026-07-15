@@ -2,11 +2,14 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
+#include <unordered_set>
 #include <Core/SettingsEnums.h>
 #include "config.h"
 
@@ -20,6 +23,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -43,6 +47,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 
 
@@ -52,6 +57,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int ACCESS_DENIED;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 }
 
 namespace DB::FailPoints
@@ -122,6 +133,22 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
+std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
+    const Poco::Util::AbstractConfiguration & config)
+{
+    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
+    std::unordered_set<std::string> allowed;
+    if (!config.has(SECTION))
+        return allowed;
+
+    std::vector<std::string> keys;
+    config.keys(SECTION, keys);
+    for (const auto & key : keys)
+        allowed.insert(config.getString(std::string(SECTION) + "." + key));
+    return allowed;
+}
+
+
 }
 
 std::string RestCatalog::Config::toString() const
@@ -162,6 +189,7 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        validateAuthHeaders(auth_header.value());
     }
     config = loadConfig();
 }
@@ -222,6 +250,18 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
+void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
+{
+    /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+    /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+    /// The catalog is built lazily on first use instead; this is where the user-provided
+    /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+    /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+    /// validated and the original parsed header is kept.
+    DB::HTTPHeaderEntries header_to_check{header};
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+}
+
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
@@ -241,13 +281,15 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        if (!access_token.has_value() || update_token)
+        auto current = access_token.get();
+        if (!current || update_token)
         {
-            access_token = retrieveAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
     return {};
@@ -259,6 +301,7 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
     const std::string & onelake_client_secret,
+    const std::string & bearer_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
@@ -266,15 +309,38 @@ OneLakeCatalog::OneLakeCatalog(
     : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
     , tenant_id(onelake_tenant_id)
 {
-    client_id = onelake_client_id;
-    client_secret = onelake_client_secret;
-    update_token_if_expired = true;
-    // Get token before loading config so getAuthHeaders() can work
-    if (!client_id.empty() && !client_secret.empty())
+    if (!bearer_token_.empty())
     {
-        access_token = retrieveAccessToken();
+        /// Pre-obtained token scoped to https://storage.azure.com. Used for both catalog header
+        /// and Azure Blob access. Does not support refresh.
+        bearer_token = bearer_token_;
+        auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token);
+        validateAuthHeaders(auth_header.value());
+    }
+    else
+    {
+        client_id = onelake_client_id;
+        client_secret = onelake_client_secret;
+        update_token_if_expired = true;
+        // Get token before loading config so getAuthHeaders() can work
+        if (!client_id.empty() && !client_secret.empty())
+        {
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+        }
     }
     config = loadConfig();
+}
+
+DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
+{
+    auto headers = RestCatalog::getAuthHeaders(update_token);
+    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return headers;
+}
+
+String OneLakeCatalog::getBearerToken() const
+{
+    return bearer_token;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const
@@ -327,6 +393,7 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -373,7 +440,8 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -382,12 +450,13 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token = retrieveGoogleCloudAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
 }
@@ -400,13 +469,15 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
+        auto current = access_token.get();
+        if (!current || update_token || current->isExpired())
         {
-            access_token = retrieveGoogleCloudAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -444,21 +515,44 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
-    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-    {
-        try
-        {
-            return retrieveGoogleCloudAccessTokenFromRefreshToken();
-        }
-        catch (const DB::Exception & e)
-        {
-            LOG_DEBUG(log, "Failed to use ADC credentials, falling back to metadata service: {}", e.what());
-        }
-    }
+    const auto & context = getContext();
 
-    /// Fallback to GCP metadata service (works inside GCP infrastructure)
+    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
+    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
+    /// mint a token with the server's own identity.
+    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+        return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
+    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
+    /// unless that was allowed when the database was created. The context here is the global one, whose live
+    /// setting never reflects the creating session, so pass the value captured at CREATE time.
+    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
+            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
+            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
+            "`s3_allow_server_credentials_in_user_queries`.");
+
+    /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
+
+    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
+    if (allowed_metadata_hosts.empty())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake metadata service requests are disabled. To enable, configure "
+            "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
+            "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
+
+    if (!allowed_metadata_hosts.contains(google_metadata_service))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "google_metadata_service host `{}` is not in the server-side allow-list "
+            "<iceberg_biglake_metadata_service_hosts>",
+            google_metadata_service);
 
     Poco::URI url;
     url.setScheme("http");
@@ -470,7 +564,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -582,19 +676,21 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-        const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        if (found_table)
+            return true;
+        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
+        if (!tables.empty())
+            found_table = true;
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const
@@ -612,7 +708,7 @@ DB::Names RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = getTables(current_namespace);
+                auto tables_in_namespace = listTablesInNamespace(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -631,6 +727,24 @@ DB::Names RestCatalog::getTables() const
     return tables;
 }
 
+RestCatalog::Namespaces RestCatalog::getNamespaces() const
+{
+    /// Enumerate the whole namespace tree (every node at every level). Used by
+    /// the `getTables(const TableNameFilter &)` namespace push-down.
+    Namespaces namespaces;
+    getNamespacesRecursive(
+        /* base_namespace */"", /// Empty base namespace means starting from root.
+        namespaces,
+        /* stop_condition */{},
+        /* execute_func */{});
+    return namespaces;
+}
+
+DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return listTablesInNamespace(namespace_name);
+}
+
 void RestCatalog::getNamespacesRecursive(
     const std::string & base_namespace,
     Namespaces & result,
@@ -639,7 +753,7 @@ void RestCatalog::getNamespacesRecursive(
 {
     checkStackSize();
 
-    auto namespaces = getNamespaces(base_namespace);
+    auto namespaces = listChildNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -673,18 +787,70 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
-RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
+bool RestCatalog::hasFlatNamespaces() const
 {
-    Poco::URI::QueryParameters params;
+    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
+    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
+    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
+    const auto type = getCatalogType();
+    return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+}
+
+RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
+{
+    Poco::URI::QueryParameters base_params;
     if (!base_namespace.empty())
-        params = createParentNamespaceParams(base_namespace);
+        base_params = createParentNamespaceParams(base_namespace);
+
+    Namespaces all_namespaces;
+    String page_token;
+    /// Cycle-detection guard: tracks every non-empty `next-page-token` we have seen on this
+    /// request so we can refuse to loop when a malformed catalog repeats a token. Covers both
+    /// the immediate-repeat case (`A -> A`) and longer cycles (`A -> B -> A -> ...`), since
+    /// any revisit triggers a duplicate `insert`.
+    std::unordered_set<String> seen_tokens;
 
     try
     {
-        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
-        auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
-        return namespaces;
+        while (true)
+        {
+            /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+            /// for paginating the list-namespaces endpoint. Without this loop we silently return
+            /// only the first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric)
+            /// caps the page size.
+            Poco::URI::QueryParameters params = base_params;
+            if (!page_token.empty())
+                params.push_back({"pageToken", page_token});
+
+            auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+            String next_page_token;
+            auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
+            LOG_DEBUG(
+                log,
+                "Loaded {} namespaces in base namespace `{}` (page_token=`{}`, next_page_token=`{}`)",
+                page_namespaces.size(), base_namespace, page_token, next_page_token);
+
+            all_namespaces.insert(
+                all_namespaces.end(),
+                std::make_move_iterator(page_namespaces.begin()),
+                std::make_move_iterator(page_namespaces.end()));
+
+            if (next_page_token.empty())
+                break;
+            /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+            /// on this request, iterating further would loop forever. Treat it as a malformed
+            /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+            /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+            if (!seen_tokens.insert(next_page_token).second)
+                throw DB::Exception(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                    "request while listing namespaces under `{}` — refusing to loop.",
+                    next_page_token, base_namespace);
+            page_token = std::move(next_page_token);
+        }
+        return all_namespaces;
     }
     catch (const DB::HTTPException & e)
     {
@@ -703,8 +869,10 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     }
 }
 
-RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const
 {
+    next_page_token.clear();
+
     if (buf.eof())
         return {};
 
@@ -738,11 +906,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
-            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
-            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
-            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
+            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
+            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
+            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
+            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
+            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
+            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
+            if (hasFlatNamespaces() && !base_namespace.empty())
             {
                 continue;
             }
@@ -751,6 +921,22 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
                 : base_namespace + "." + current_namespace;
 
             namespaces.push_back(full_namespace);
+        }
+
+        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
+        /// Empty / null / missing token all mean "no more pages".
+        ///
+        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
+        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
+        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
+        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
+        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
+        if (!flat_namespace_drops_all_entries
+            && object->has("next-page-token")
+            && !object->isNull("next-page-token"))
+        {
+            next_page_token = object->get("next-page-token").extract<String>();
         }
 
         return namespaces;
@@ -762,17 +948,66 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
 {
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-    auto buf = createReadBuffer(config.prefix / endpoint);
-    return parseTables(*buf, base_namespace, limit);
+    DB::Names tables;
+    String page_token;
+    /// Cycle-detection guard: tracks every non-empty `next-page-token` we have seen on this
+    /// request so we can refuse to loop when a malformed catalog repeats a token. Covers both
+    /// the immediate-repeat case (`A -> A`) and longer cycles (`A -> B -> A -> ...`), since
+    /// any revisit triggers a duplicate `insert`.
+    std::unordered_set<String> seen_tokens;
+
+    while (true)
+    {
+        /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+        /// for paginating the list-tables endpoint. Without this loop we silently return only the
+        /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
+        /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
+        Poco::URI::QueryParameters params;
+        if (!page_token.empty())
+            params.push_back({"pageToken", page_token});
+
+        auto buf = createReadBuffer(config.prefix / endpoint, params);
+
+        /// Pass through the remaining limit so that single-page short-circuiting still works
+        /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
+        const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
+        String next_page_token;
+        auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+
+        tables.insert(
+            tables.end(),
+            std::make_move_iterator(page_tables.begin()),
+            std::make_move_iterator(page_tables.end()));
+
+        if (limit && tables.size() >= limit)
+            break;
+        if (next_page_token.empty())
+            break;
+        /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+        /// on this request, iterating further would loop forever. Treat it as a malformed
+        /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+        /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+        if (!seen_tokens.insert(next_page_token).second)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                "request while listing tables in namespace `{}` — refusing to loop.",
+                next_page_token, base_namespace);
+        page_token = std::move(next_page_token);
+    }
+
+    return tables;
 }
 
-DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const
 {
+    next_page_token.clear();
+
     if (buf.eof())
         return {};
 
@@ -806,6 +1041,11 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             if (limit && tables.size() >= limit)
                 break;
         }
+
+        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
+        /// Empty / null / missing token all mean "no more pages".
+        if (object->has("next-page-token") && !object->isNull("next-page-token"))
+            next_page_token = object->get("next-page-token").extract<String>();
 
         return tables;
     }
@@ -909,8 +1149,9 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
+        const bool allow_geo_parser
+            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -936,6 +1177,9 @@ bool RestCatalog::getTableMetadataImpl(
             result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
+
+    if (metadata_object->has("table-uuid"))
+        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
 
     return true;
 }
@@ -1033,6 +1277,10 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+
+    if (metadata_content->has("format-version"))
+        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
     request_body->set("properties", properties);
 
     try
@@ -1104,8 +1352,71 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        return false;
+    }
+    return true;
+}
+
+bool RestCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id) const
+{
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", new_schema);
+            updates->add(add_schema);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+
+        request_body->set("updates", updates);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;

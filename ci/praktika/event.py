@@ -36,13 +36,13 @@ class Event:
     timestamp: int  # Unix timestamp when event occurred
     sha: str  # Git commit SHA
     result: dict  # Top-level workflow result
-    ci_status: str  # Overall CI status (success/failure/pending)
+    ci_status: str  # Overall CI status (Result.Status value)
     ext: dict  # Additional extensible metadata (includes: branch, pr_number, pr_status, pr_title)
     linked_events: List["Event"] = dataclasses.field(default_factory=list)
 
 
 # Maximum number of days to retain non-open PRs in the timeline
-MAX_TIMELINE_DAYS = 120
+MAX_TIMELINE_DAYS = 30
 
 
 def _sanitize_s3_key_name(name: str) -> str:
@@ -81,14 +81,41 @@ class EventFeed:
         running_cutoff_timestamp = int(time.time()) - (12 * 60 * 60)
 
         def sanitize_event(e: Event) -> None:
-            if e.timestamp < running_cutoff_timestamp and e.ci_status in (
-                "running",
-                "pending",
+            if e.timestamp < running_cutoff_timestamp and (e.ci_status or "").upper() in (
+                "RUNNING",
+                "PENDING",
             ):
-                e.ci_status = "failure"
+                e.ci_status = "FAIL"
                 if not isinstance(e.ext, dict):
                     e.ext = {}
                 e.ext["is_cancelled"] = True
+
+            # Compact bloated result entries that were stored before the
+            # pruning was added to Result.to_event.  The feed only needs
+            # name+status from each sub-result and report_url from ext.
+            result = getattr(e, "result", None)
+            if isinstance(result, dict):
+                for key in ("start_time", "duration", "files", "assets", "links", "info"):
+                    if key in result:
+                        del result[key]
+                results = result.get("results")
+                if isinstance(results, list) and results:
+                    first = results[0]
+                    if isinstance(first, dict) and len(first) > 2:
+                        result["results"] = [
+                            {
+                                "name": r.get("name", ""),
+                                "status": r.get("status", ""),
+                            }
+                            for r in results
+                            if isinstance(r, dict)
+                        ]
+                ext = result.get("ext")
+                if isinstance(ext, dict) and len(ext) > 1:
+                    report_url = ext.get("report_url", "")
+                    result["ext"] = (
+                        {"report_url": report_url} if report_url else {}
+                    )
 
         # Remove existing events that match the incoming event
         event_pr_number = event.ext.get("pr_number", 0)

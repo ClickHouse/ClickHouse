@@ -25,7 +25,7 @@ namespace
 /// - if the argument is a nullable column, return its embedded column;
 /// - otherwise return the original argument.
 /// NOTE: assumeNotNull may not be called with the NULL value.
-class FunctionAssumeNotNull : public IFunction
+class FunctionAssumeNotNull final : public IFunction
 {
 public:
     static constexpr auto name = "assumeNotNull";
@@ -120,7 +120,7 @@ ORDER BY x;
 
 INSERT INTO t_null VALUES (1, NULL), (2, 3);
 
-SELECT assumeNotNull(y) FROM table;
+SELECT assumeNotNull(y) FROM t_null;
 SELECT toTypeName(assumeNotNull(y)) FROM t_null;
         )",
          R"(

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupEntry.h>
-
+#include <IO/SeekableReadBuffer.h>
 
 namespace DB
 {

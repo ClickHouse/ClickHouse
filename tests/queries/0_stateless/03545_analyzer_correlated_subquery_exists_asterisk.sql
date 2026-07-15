@@ -1,8 +1,11 @@
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;

@@ -2,7 +2,6 @@
 #include <chrono>
 #include <IO/CompressionMethod.h>
 #include <base/defines.h>
-#include <Common/Logger.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -36,9 +35,9 @@ namespace Iceberg
 {
 struct MetadataFileWithInfo
 {
-    Int32 version;
+    Int32 version{};
     String path;
-    CompressionMethod compression_method;
+    CompressionMethod compression_method{};
 };
 }
 

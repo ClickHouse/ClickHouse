@@ -1,0 +1,118 @@
+---
+description: 'ClickHouse Keeper HTTP API 및 내장 웹 대시보드 문서'
+sidebarTitle: 'Keeper HTTP API'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'Keeper HTTP API 및 대시보드'
+doc_type: 'reference'
+---
+
+ClickHouse Keeper는 모니터링, 상태 확인, 스토리지 관리를 위한 HTTP API와 내장 웹 대시보드를 제공합니다.
+이 인터페이스를 통해 운영자는 웹 브라우저 또는 HTTP 클라이언트에서 클러스터 상태를 확인하고, 명령을 실행하며, Keeper 스토리지를 관리할 수 있습니다.
+
+<div id="configuration">
+  ## 구성
+</div>
+
+HTTP API를 활성화하려면 `keeper_server` 구성에 `http_control` 섹션을 추가하세요:
+
+```xml
+<keeper_server>
+    <!-- 다른 keeper_server 구성 -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### 구성 옵션
+</div>
+
+| 설정                                        | 기본값      | 설명                      |
+| ----------------------------------------- | -------- | ----------------------- |
+| `http_control.port`                       | -        | 대시보드 및 API용 HTTP 포트     |
+| `http_control.secure_port`                | -        | HTTPS 포트(SSL 구성 필요)     |
+| `http_control.readiness.endpoint`         | `/ready` | 준비 상태 프로브의 사용자 지정 경로    |
+| `http_control.storage.session_timeout_ms` | `30000`  | 스토리지 API 작업의 세션 시간 초과 값 |
+
+<div id="endpoints">
+  ## 엔드포인트
+</div>
+
+<div id="dashboard">
+  ### 대시보드
+</div>
+
+* **경로**: `/dashboard`
+* **메서드**: GET
+* **설명**: Keeper를 모니터링하고 관리할 수 있는 내장 웹 대시보드를 제공합니다
+
+대시보드에서 다음 기능을 제공합니다:
+
+* 실시간 클러스터 상태 시각화
+* 노드 모니터링(역할, 지연 시간, 연결)
+* 스토리지 브라우저
+* 명령 실행 인터페이스
+
+<div id="readiness-probe">
+  ### 준비 상태 프로브
+</div>
+
+* **경로**: `/ready` (구성 가능)
+* **메서드**: GET
+* **설명**: 상태 확인 엔드포인트
+
+성공 응답(HTTP 200):
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### Commands API
+</div>
+
+* **경로**: `/api/v1/commands/{command}`
+* **메서드**: GET, POST
+* **설명**: Four-Letter Word 명령 또는 ClickHouse Keeper Client CLI 명령을 실행합니다
+
+쿼리 매개변수:
+
+* `command` - 실행할 명령
+* `cwd` - 경로 기반 명령에 대한 현재 작업 디렉터리 (기본값: `/`)
+
+예시:
+
+```bash
+# Four-Letter Word 명령어
+curl http://localhost:9182/api/v1/commands/stat
+
+# ZooKeeper CLI 명령어
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### Storage API
+</div>
+
+* **기본 경로**: `/api/v1/storage`
+* **설명**: Keeper 스토리지 작업을 위한 REST API
+
+Storage API는 HTTP 메서드로 작업 유형을 나타내는 REST 규약을 따릅니다:
+
+| 작업    | 경로                                     | 메서드    | 상태 코드 | 설명          |
+| ----- | -------------------------------------- | ------ | ----- | ----------- |
+| 가져오기  | `/api/v1/storage/{path}`               | GET    | 200   | 노드 데이터 가져오기 |
+| 목록    | `/api/v1/storage/{path}?children=true` | GET    | 200   | 하위 노드 나열    |
+| 존재 확인 | `/api/v1/storage/{path}`               | HEAD   | 200   | 노드 존재 여부 확인 |
+| 생성    | `/api/v1/storage/{path}`               | POST   | 201   | 새 노드 생성     |
+| 업데이트  | `/api/v1/storage/{path}?version={v}`   | PUT    | 200   | 노드 데이터 업데이트 |
+| 삭제    | `/api/v1/storage/{path}?version={v}`   | DELETE | 204   | 노드 삭제       |

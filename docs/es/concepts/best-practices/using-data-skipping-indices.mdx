@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: 'Índices de omisión de datos'
+title: 'Utilice índices de omisión de datos cuando corresponda'
+description: 'Página que describe cómo y cuándo usar índices de omisión de datos'
+keywords: ['índice de omisión de datos', 'índice de omisión']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Los índices de omisión de datos deben considerarse cuando ya se hayan seguido las buenas prácticas previas; es decir, cuando los tipos de datos estén optimizados, se haya seleccionado una buena clave primaria y se hayan aprovechado las vistas materializadas. Si no conoce aún los índices de omisión, [esta guía](/es/concepts/features/performance/skip-indexes/skipping-indexes) es un buen punto de partida.
+
+Estos tipos de índices pueden usarse para acelerar el rendimiento de las consultas si se utilizan con cuidado y comprendiendo cómo funcionan.
+
+ClickHouse proporciona un potente mecanismo llamado **índices de omisión de datos** que puede reducir drásticamente la cantidad de datos analizados durante la ejecución de consultas, especialmente cuando la clave primaria no resulta útil para una condición de filtro concreta. A diferencia de las bases de datos tradicionales, que dependen de índices secundarios basados en filas (como los árboles B), ClickHouse es una base de datos columnar y no almacena las ubicaciones de las filas de una forma que admita esas estructuras. En su lugar, utiliza índices de omisión, que ayudan a evitar la lectura de bloques de datos que con certeza no coincidirán con las condiciones de filtrado de una consulta.
+
+Los índices de omisión funcionan almacenando metadatos sobre bloques de datos, como valores mínimos y máximos, conjuntos de valores o representaciones de filtros Bloom, y utilizando estos metadatos durante la ejecución de consultas para determinar qué bloques de datos pueden omitirse por completo. Se aplican solo a la [familia MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) de motores de tabla y se definen mediante una expresión, un tipo de índice, un nombre y una granularidad que define el tamaño de cada bloque indexado. Estos índices se almacenan junto con los datos de la tabla y se consultan cuando el filtro de la consulta coincide con la expresión del índice.
+
+Hay varios tipos de índices de omisión de datos, cada uno adecuado para distintos tipos de consultas y distribuciones de datos:
+
+* **minmax**: Realiza un seguimiento del valor mínimo y máximo de una expresión por bloque. Ideal para consultas de rango sobre datos poco ordenados.
+* **set(N)**: Realiza un seguimiento de un conjunto de valores hasta un tamaño N especificado para cada bloque. Eficaz en columnas con baja cardinalidad por bloque.
+* **text**: Crea un índice invertido sobre datos de texto tokenizados, lo que permite una búsqueda de texto completo eficiente y determinista. Se recomienda para lenguaje natural o columnas grandes de texto libre en las que se requiere una búsqueda precisa de tokens y una búsqueda escalable de varios términos, en lugar de enfoques aproximados basados en filtros Bloom.
+* **bloom&#95;filter**: Determina probabilísticamente si un valor existe en un bloque, lo que permite un filtrado aproximado rápido para comprobar la pertenencia a un conjunto. Eficaz para optimizar consultas que buscan la “aguja en un pajar”, donde se necesita una coincidencia positiva.
+* **tokenbf&#95;v1 / ngrambf&#95;v1**: *(Obsoleto)* Variantes especializadas de filtros Bloom diseñadas para buscar tokens o secuencias de caracteres en cadenas, especialmente útiles para datos de logs o casos de uso de búsqueda de texto. Obsoleto en las versiones de ClickHouse &gt;= 26.2 en favor de los índices de texto.
+
+Aunque son potentes, los índices de omisión deben usarse con cuidado. Solo aportan beneficios cuando eliminan una cantidad significativa de bloques de datos, y de hecho pueden introducir sobrecarga si la consulta o la estructura de los datos no encajan. Si existe хотя sea un único valor coincidente en un bloque, ese bloque completo debe seguir leyéndose.
+
+**El uso eficaz de índices de omisión suele depender de una fuerte correlación entre la columna indexada y la clave primaria de la tabla, o de insertar los datos de forma que agrupe valores similares.**
+
+En general, los índices de omisión de datos se aplican mejor después de garantizar un diseño adecuado de la clave primaria y la optimización de tipos. Son especialmente útiles para:
+
+* Columnas con alta cardinalidad general pero baja cardinalidad dentro de un bloque.
+* Valores poco frecuentes que son fundamentales para la búsqueda (p. ej., códigos de error, ID específicos).
+* Casos en los que el filtrado se realiza sobre columnas que no forman parte de la clave primaria y tienen una distribución localizada.
+
+Siempre:
+
+1. Pruebe los índices de omisión con datos reales y consultas realistas. Pruebe distintos tipos de índice y valores de granularidad.
+2. Evalúe su impacto usando herramientas como send&#95;logs&#95;level=&#39;trace&#39; y `EXPLAIN indexes=1` para ver la eficacia del índice.
+3. Evalúe siempre el tamaño de un índice y cómo se ve afectado por la granularidad. Reducir el tamaño de la granularidad a menudo mejorará el rendimiento hasta cierto punto, lo que hará que se filtren más gránulos y que también sea necesario escanearlos. Sin embargo, a medida que el tamaño del índice aumenta con una granularidad menor, el rendimiento también puede degradarse. Mida el rendimiento y el tamaño del índice para distintos valores de granularidad. Esto es especialmente pertinente en los índices de filtros Bloom.
+
+<p />
+
+**Cuando se usan adecuadamente, los índices de omisión pueden proporcionar una mejora sustancial del rendimiento; cuando se usan a ciegas, pueden añadir un coste innecesario.**
+
+Para una guía más detallada sobre los índices de omisión de datos, consulte [aquí](/es/reference/statements/alter/skipping-index).
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+Considere la siguiente tabla optimizada. Esta contiene datos de Stack Overflow con una fila por publicación.
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+Esta tabla está optimizada para consultas que filtran y agregan por tipo de post y fecha. Supongamos que queremos contar el número de posts con más de 10.000.000 de vistas publicados después de 2009.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+Esta consulta puede excluir algunas de las filas (y granules) mediante el índice primario. Sin embargo, la mayoría de las filas aún deben leerse, como se indica en la respuesta anterior y en el siguiente `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 filas en el conjunto. Transcurrido: 0.070 seg.
+```
+
+Un análisis sencillo muestra que `ViewCount` está correlacionado con `CreationDate` (una clave primaria), como era de esperar: cuanto más tiempo lleva publicada una entrada, más tiempo ha tenido para ser visualizada.
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+Esto hace que sea una opción lógica para un índice de omisión de datos. Dado que es de tipo numérico, un índice minmax resulta adecuado. Añadimos un índice con los siguientes comandos `ALTER TABLE`: primero lo añadimos y luego &quot;lo materializamos&quot;.
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+Este índice también podría haberse agregado durante la creación inicial de la tabla. El esquema con el índice minmax definido como parte del DDL:
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --índice aquí
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+La siguiente animación ilustra cómo se construye nuestro índice minmax de omisión para la tabla de ejemplo, registrando los valores mínimos y máximos de `ViewCount` para cada bloque de filas (gránulo) de la tabla:
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Creación de índices de omisión" />
+
+Si repetimos la consulta anterior, veremos mejoras significativas en el rendimiento. Observe la reducción en el número de filas analizadas:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+Un `EXPLAIN indexes = 1` confirma que se usa el índice.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+También mostramos una animación que ilustra cómo el índice minmax de omisión descarta todos los bloques de filas que no pueden contener coincidencias para el predicado `ViewCount` &gt; 10,000,000 en nuestra consulta de ejemplo:
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Uso de índices de omisión" />
+
+<div id="related-docs">
+  ## Documentación relacionada
+</div>
+
+* [Guía de índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Ejemplos de índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Gestión de índices de omisión de datos](/es/reference/statements/alter/skipping-index)
+* [Información sobre la tabla del sistema](/es/reference/system-tables/data_skipping_indices)

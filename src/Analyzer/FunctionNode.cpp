@@ -166,7 +166,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
@@ -175,9 +175,6 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting
-
-    if (!compare_options.compare_types)
-        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -197,7 +194,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
@@ -207,9 +204,6 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(nulls_action);
 
     /// is_operator is ignored here because it affects only AST formatting
-
-    if (!compare_options.compare_types)
-        return;
 
     if (!isResolved())
         return;
@@ -266,7 +260,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// tuple, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
-        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression()
+        && !isArray(argument_nodes[1]->getResultType()))
     {
         auto expression_list_ast = make_intrusive<ASTExpressionList>();
 

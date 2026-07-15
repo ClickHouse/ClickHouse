@@ -1,4 +1,5 @@
 -- This test validates Statistics-based part pruning functionality.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning;
 
@@ -20,6 +21,7 @@ SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Part 1: 202501, id [0, 99], value [0, 99], version [0, 99]
 INSERT INTO test_stats_pruning SELECT '2025-01-11', number, number, number, toDecimal128(number, 0), 'a', number FROM numbers(100);

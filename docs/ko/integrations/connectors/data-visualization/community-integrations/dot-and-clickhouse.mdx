@@ -1,0 +1,82 @@
+---
+sidebarTitle: 'Dot'
+slug: /integrations/dot
+keywords: ['clickhouse', 'dot', 'ai', '챗봇', 'mysql', '통합', 'UI', '가상 비서']
+description: 'AI 챗봇 | Dot은 ClickHouse 기반의 지능형 가상 데이터 비서로, 비즈니스 데이터 관련 질문에 답하고, 정의와 관련 데이터 자산을 찾아주며, 데이터 모델링까지 지원할 수 있습니다.'
+title: 'Dot'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Dot](https://www.getdot.ai/)은 **AI 데이터 분석가**입니다.
+ClickHouse에 직접 연결되므로 자연어로 데이터 관련 질문을 하고, 데이터를 탐색하고, 가설을 검증하고, 왜 그런지에 대한 질문에 답할 수 있습니다. 이 모든 작업은 Slack, Microsoft Teams, ChatGPT 또는 네이티브 Web UI에서 직접 수행할 수 있습니다.
+
+<div id="pre-requisites">
+  ## 사전 요구 사항
+</div>
+
+* 자체 호스팅 환경 또는 [ClickHouse Cloud](https://clickhouse.com/cloud)의 ClickHouse 데이터베이스
+* [Dot](https://www.getdot.ai/) 계정  
+
+<div id="connecting-dot-to-clickhouse">
+  ## Dot을 ClickHouse에 연결하기
+</div>
+
+<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Dot에서 ClickHouse 연결 구성(라이트 모드)" border />
+
+<br />
+
+1. Dot UI에서 **Settings → Connections**로 이동합니다.
+2. **Add new connection**을 클릭한 다음 **ClickHouse**를 선택합니다.
+3. 연결 정보를 입력합니다.
+   * **Host**: ClickHouse 서버 호스트명 또는 ClickHouse Cloud 엔드포인트
+   * **Port**: `8443` (ClickHouse Cloud HTTPS) 또는 `8123` (자체 호스팅 HTTP)
+   * **Username / Password**: 읽기 권한이 있는 사용자
+   * **Database**: 필요에 따라 기본 스키마를 설정할 수 있습니다
+4. **Connect**를 클릭합니다.
+
+<Image img="/images/integrations/data-visualization/dot_02.webp" alt="ClickHouse 연결" size="sm" />
+
+Dot은 **query-pushdown**을 사용합니다. 대규모 연산은 ClickHouse가 처리하고, Dot은 정확하고 신뢰할 수 있는 답변을 제공합니다.
+
+<div id="highlights">
+  ## 주요 특징
+</div>
+
+Dot는 대화를 통해 데이터에 쉽게 접근할 수 있도록 합니다:
+
+* **자연어로 질문**: SQL을 작성하지 않고도 답변을 얻을 수 있습니다.
+* **원인 분석**: 추세와 이상 징후를 이해할 수 있도록 후속 질문을 할 수 있습니다.
+* **업무 환경에서 바로 사용**: Slack, Microsoft Teams, ChatGPT 또는 웹 앱에서 사용할 수 있습니다.
+* **신뢰할 수 있는 결과**: Dot는 오류를 최소화하기 위해 쿼리를 스키마와 정의를 기준으로 검증합니다.
+* **확장성**: query-pushdown을 기반으로 하여 Dot의 지능과 ClickHouse의 속도를 결합합니다.
+
+<div id="security">
+  ## 보안 및 거버넌스
+</div>
+
+Dot은 엔터프라이즈급 환경에 적합합니다:
+
+* **권한 및 역할**: ClickHouse 사용자 액세스 제어를 그대로 상속합니다
+* **행 수준 보안**: ClickHouse에서 구성한 경우 지원됩니다
+* **TLS / SSL**: ClickHouse Cloud에서는 기본으로 활성화되며, 자체 호스팅 환경에서는 수동으로 구성해야 합니다
+* **거버넌스 및 검증**: 학습/검증 공간이 환각을 방지하는 데 도움이 됩니다
+* **컴플라이언스**: SOC 2 Type I 인증
+
+<div id="additional-resources">
+  ## 추가 자료
+</div>
+
+* Dot 웹사이트: [https://www.getdot.ai/](https://www.getdot.ai/)
+* 문서: [https://docs.getdot.ai/](https://docs.getdot.ai/)
+* Dot 앱: [https://app.getdot.ai/](https://app.getdot.ai/)
+
+이제 **ClickHouse + Dot**를 사용해 데이터를 대화형으로 분석할 수 있습니다. Dot의 AI 어시스턴트와 ClickHouse의 빠르고 확장성 높은 분석 엔진이 결합되어 있습니다.

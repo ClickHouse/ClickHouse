@@ -1,0 +1,59 @@
+---
+description: 'Esta es una extensión de la función de tabla deltaLake.'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'reference'
+---
+
+Esta es una extensión de la función de tabla [deltaLake](/es/reference/functions/table-functions/deltalake).
+
+Permite procesar en paralelo, desde muchos nodos de un clúster especificado, archivos de tablas de [Delta Lake](https://github.com/delta-io/delta) en Amazon S3. En el nodo iniciador, crea una conexión con todos los nodos del clúster y distribuye dinámicamente cada archivo. En el nodo worker, consulta al iniciador cuál es la siguiente tarea que debe procesar y la procesa. Esto se repite hasta que todas las tareas hayan finalizado.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` es un alias de `deltaLakeCluster`; ambos se usan para S3.
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+* `cluster_name` — Nombre de un clúster que se utiliza para construir un conjunto de direcciones y parámetros de conexión para servidores remotos y locales.
+* La descripción de todos los demás argumentos coincide con la de los argumentos de la función de tabla [deltaLake](/es/reference/functions/table-functions/deltalake) equivalente.
+* Se puede usar el parámetro opcional `extra_credentials` para pasar un `role_arn` para el acceso basado en roles en ClickHouse Cloud. Consulta [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Una tabla con la estructura especificada para leer datos del clúster desde la tabla Delta Lake especificada en S3.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño del archivo, el valor es `NULL`.
+* `_time` — Fecha y hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_etag` — El etag del archivo. Tipo: `LowCardinality(String)`. Si se desconoce el etag, el valor es `NULL`.
+
+<div id="related">
+  ## Relacionado
+</div>
+
+* [motor deltaLake](/es/reference/engines/table-engines/integrations/deltalake)
+* [función de tabla deltaLake](/es/reference/functions/table-functions/deltalake)

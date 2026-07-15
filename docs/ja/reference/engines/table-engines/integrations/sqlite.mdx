@@ -1,0 +1,86 @@
+---
+description: 'このエンジンでは、SQLite へのデータのインポートとエクスポートが可能で、
+  ClickHouse から SQLite のテーブルに対して直接クエリを実行することもできます。'
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'SQLite テーブルエンジン'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+このエンジンでは、SQLite との間でデータをインポートおよびエクスポートできるほか、ClickHouse から SQLite のテーブルに対して直接クエリを実行できます。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**エンジンパラメータ**
+
+* `db_path` — データベースを含む SQLite ファイルへのパス。
+* `table` — SQLite データベース内のテーブル名。
+
+<div id="data-types-support">
+  ## サポートされるデータ型
+</div>
+
+テーブル定義で ClickHouse のカラム型を明示的に指定すると、SQLite の TEXT カラムから以下の ClickHouse 型をパースできます。
+
+* [Date](/ja/reference/data-types/date), [Date32](/ja/reference/data-types/date32)
+* [DateTime](/ja/reference/data-types/datetime), [DateTime64](/ja/reference/data-types/datetime64)
+* [UUID](/ja/reference/data-types/uuid)
+* [Enum8, Enum16](/ja/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/ja/reference/data-types/decimal)
+* [FixedString](/ja/reference/data-types/fixedstring)
+* すべての整数型 ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ja/reference/data-types/int-uint))
+* [Float32, Float64](/ja/reference/data-types/float)
+
+デフォルトの型マッピングについては、[SQLite データベースエンジン](/ja/reference/engines/database-engines/sqlite#data_types-support) を参照してください。
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+SQLite のテーブルを作成するクエリを示します。
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+テーブルのデータを返します：
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**関連項目**
+
+* [SQLite](/ja/reference/engines/database-engines/sqlite) エンジン
+* [sqlite](/ja/reference/functions/table-functions/sqlite) テーブル関数

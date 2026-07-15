@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Processors/Sources/ShellCommandSource.h>
 
 
@@ -13,14 +14,14 @@ struct ExecutableSettings;
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public IStorage
+class StorageExecutable final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageExecutable(
         const StorageID & table_id,
         const String & format,
         const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
+        const VectorWithMemoryTracking<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const String & comment);
@@ -29,7 +30,9 @@ public:
 
     String getName() const override;
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -41,7 +44,7 @@ public:
 
 private:
     std::unique_ptr<ExecutableSettings> settings;
-    std::vector<ASTPtr> input_queries;
+    VectorWithMemoryTracking<ASTPtr> input_queries;
     LoggerPtr log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
