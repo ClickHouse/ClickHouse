@@ -1,8 +1,11 @@
 
+# Use the native-build pre_compressor only when actually cross-compiling (host != target).
+# This must match the native-build guard in the root CMakeLists.txt: a native musl
+# host build (host == target) does not produce a native/ subtree, and its own
+# statically-linked pre_compressor runs on the host.
 if (NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     set (COMPRESSOR "${PROJECT_BINARY_DIR}/native/utils/self-extracting-executable/pre_compressor")
