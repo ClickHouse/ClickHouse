@@ -468,6 +468,15 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
+    elif is_flaky_check and info.is_merge_queue_event:
+        # The merge-queue flaky check is a drift guard, not a full flakiness
+        # hunt: the PR CI already ran the full flaky check, and this rerun only
+        # needs to catch new tests broken by the current `master` state (e.g. a
+        # setting randomization added to `tests/clickhouse-test` after the PR's
+        # last CI run). A randomized setting drawn with probability 0.4 per run
+        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
+        # count keeps merge-queue latency bounded without losing the signal.
+        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
@@ -685,11 +694,33 @@ def main():
             CH.set_random_timezone,
         ]
 
+        # Sanitizer builds run under heavy memory pressure: besides the server's
+        # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
+        # `clickhouse-client` processes alive at once (~0.4 GiB each, ~17 GiB in
+        # total on a 60 GiB host). With the default 0.9
+        # `max_server_memory_usage_to_ram_ratio` the server is allowed to grow to
+        # ~0.9 of RAM on its own, so it can drive the host into a global OOM and be
+        # killed at an RSS well below its own memory limit - before any query hits
+        # `MEMORY_LIMIT_EXCEEDED` - which surfaces as a "Server died" failure.
+        # Cap the server low enough that the clients' footprint still fits, so the
+        # server kills a runaway query gracefully instead of being OOM-killed by
+        # the host. This applies to every sanitizer run, not just the flaky check
+        # (which previously used 0.8, sufficient there only because it runs a small
+        # test subset at reduced concurrency). 0.7 stays comfortably above the
+        # largest legitimate single-query need (the ~25 GiB stateful-load INSERT).
+        sanitizers = ("asan", "tsan", "msan", "ubsan")
+        # In bugfix validation `args.options` is only `BugfixValidation`, so the
+        # sanitizer names never appear there. That mode instead downloads and swaps
+        # through several master-HEAD build-type binaries (`build_types`), most of
+        # them sanitizer builds, on the same memory-constrained runner. Key the
+        # ratio off those actual build types in that mode so the same runner-wide
+        # OOM cannot slip through the guard on the sanitizer bugfix-validation paths.
+        ratio_sources = build_types if is_bugfix_validation else [args.options]
+        if any(san in source for source in ratio_sources for san in sanitizers):
+            commands.append(lambda: CH.set_memory_ratio(0.7))
+
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
-            sanitizers = ("asan", "tsan", "msan", "ubsan")
-            if any(san in args.options for san in sanitizers):
-                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
@@ -809,9 +840,18 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            # The merge-queue run gets a tighter budget: it delays merges
+            # directly, and its reduced rerun_count needs less time anyway.
+            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            # Floor the budget at a small positive value: `run_tests` interprets
+            # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
+            # cap at all. If setup already consumed the whole budget (more likely
+            # under the tighter merge-queue limit) a `0` here would turn the run
+            # unbounded, defeating the very latency bound it is meant to enforce.
+            # A minimal explicit limit keeps the run bounded while still doing one
+            # quick pass. Mirrors the targeted-check floor below.
             global_time_limit = max(
-                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
                 f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
