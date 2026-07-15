@@ -18,6 +18,9 @@ exclude_path = [
   # Site source assets (redirects.json, favicon, logos, customization JS) that
   # are referenced by docs.json, not doc pages to link-check.
   "^\\./_site/",
+  # Local scratch directory (untracked; the repo convention for temp files),
+  # never present in CI.
+  "^\\./tmp/",
   # Generated translations of the English site. These live both at the top
   # level (./zh/) and under snippets/ (./snippets/zh/), so match the locale
   # directory at any depth. The codes only ever name locale dirs, so this is
@@ -34,6 +37,9 @@ exclude_path = [
   "^\\./README\\.md$",
   "^\\./AGENTS\\.md$",
   "^\\./changelog_entry_guidelines\\.md$",
+  # Authoring templates, not site pages: their links are placeholders
+  # (e.g. /get-started/quickstarts/example), so don't check them.
+  "/_TEMPLATE\\.mdx?$",
   # The pg_clickhouse reference is a known-stale upstream copy whose outbound
   # links use the wrong anchor casing; exclude it as an input so its links are
   # not checked (the `pg_clickhouse` entry in `exclude` below only covers links

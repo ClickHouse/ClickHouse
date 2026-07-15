@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 
 This guide walks you through deploying an OpenTelemetry collector against an existing Managed ClickStack service, or adapting your existing collector, before verifying that data is flowing through.
 
+Install the official ClickHouse agent skills before using the setup assistant:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="Use curl to download, read and follow: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my Managed ClickStack service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
     "Install clickhousectl if missing and authenticate it (asks you for a ClickHouse Cloud API key — paste in chat or run the login command yourself).",
     "Ask you for the target ClickHouse Cloud service ID or name, then fetch its HTTPS endpoint.",
@@ -43,18 +51,15 @@ Pick the tab that matches your situation:
 <Tab title="I don't have a collector">
 
 <Steps>
-<Step>
-## Gather your credentials {#gather-credentials}
+<Step title="Gather your credentials" id="gather-credentials">
 
 <GatherCredentials />
 </Step>
-<Step>
-## Create an ingestion user {#create-ingestion-user}
+<Step title="Create an ingestion user" id="create-ingestion-user">
 
 <CreateIngestionUser />
 </Step>
-<Step>
-## Deploy the collector {#deploy-the-collector}
+<Step title="Deploy the collector" id="deploy-the-collector">
 
 Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for Managed ClickStack. In the example below, we run the collector locally and generate artificial telemetry from the same machine for simplicity.
 
@@ -93,8 +98,7 @@ The collector now exposes OTLP gRPC on `4317` and OTLP HTTP on `4318`. Applicati
 For production, we recommend enabling TLS on the OTLP endpoint. See [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector).
 </Info>
 </Step>
-<Step>
-## Verify the endpoint {#verify-the-endpoint}
+<Step title="Verify the endpoint" id="verify-the-endpoint">
 
 Generate some synthetic traffic against the collector to confirm the full pipeline works. We use [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), the OpenTelemetry Collector Contrib generator, which emits OTLP logs, traces, and metrics and exposes flags to shape the data across services, severities, span statuses, and metric types.
 
@@ -184,8 +188,7 @@ tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-
 
 For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/example-datasets/telemetrygen).
 </Step>
-<Step>
-## Confirm in the ClickStack UI {#confirm-in-ui}
+<Step title="Confirm in the ClickStack UI" id="confirm-in-ui">
 
 <ConfirmInUI />
 </Step>
@@ -196,18 +199,15 @@ For the full set of flags and more variations, see [Synthetic data with telemetr
 <Tab title="I have a collector">
 
 <Steps>
-<Step>
-## Gather your credentials {#gather-credentials-existing}
+<Step title="Gather your credentials" id="gather-credentials-existing">
 
 <GatherCredentials />
 </Step>
-<Step>
-## Create an ingestion user {#create-ingestion-user-existing}
+<Step title="Create an ingestion user" id="create-ingestion-user-existing">
 
 <CreateIngestionUser />
 </Step>
-<Step>
-## Adapt your collector configuration {#adapt-collector}
+<Step title="Adapt your collector configuration" id="adapt-collector">
 
 Extend your existing collector configuration to write to Managed ClickStack via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
@@ -311,8 +311,7 @@ Reload your collector with the new configuration. Applications, SDKs, and agent 
 
 For further details on configuring OpenTelemetry collectors against Managed ClickStack, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
 </Step>
-<Step>
-## Verify the endpoint {#verify-the-endpoint-existing}
+<Step title="Verify the endpoint" id="verify-the-endpoint-existing">
 
 Generate some synthetic traffic against your collector to confirm the full pipeline works. We use [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), the OpenTelemetry Collector Contrib generator, which emits OTLP logs, traces, and metrics and exposes flags to shape the data across services, severities, span statuses, and metric types.
 
@@ -402,8 +401,7 @@ tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-
 
 For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/example-datasets/telemetrygen).
 </Step>
-<Step>
-## Confirm in the ClickStack UI {#confirm-in-ui-existing}
+<Step title="Confirm in the ClickStack UI" id="confirm-in-ui-existing">
 
 <ConfirmInUI />
 </Step>
