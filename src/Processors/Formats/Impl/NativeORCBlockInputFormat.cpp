@@ -971,6 +971,13 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
     return nullptr;
 }
 
+/// Forward declarations: updateIncludeTypeIds needs the union branch-hint machinery (defined
+/// below, near readColumnFromORCColumn, which is where it is also used) to prune struct-branch
+/// fields the same way the read path does. See computeOrcUnionBranchHints.
+static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive);
+static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const DataTypePtr & target_type);
+static DataTypes computeOrcUnionBranchHints(const orc::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching);
+
 static void
 updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
 {
@@ -1052,14 +1059,25 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             return;
         }
         case orc::UNION: {
-            /// ORC union maps to the ClickHouse Variant type, and readColumnFromORCColumn reads
-            /// every branch of the union (there is no per-branch pruning, because Variant reorders
-            /// its branch types). Including the union's own column id makes the ORC reader select
-            /// the union together with all of its descendant columns (see
-            /// ColumnSelector::selectChildren), which is exactly the set that is read back. Without
-            /// this, none of the union's tag stream or branch columns would be decoded and every
-            /// value would be read as NULL.
-            include_typeids.insert(orc_type->getColumnId());
+            /// ORC union maps to the ClickHouse Variant type. A branch that gets a forced type hint
+            /// (the same way readColumnFromORCColumn computes it - see computeOrcUnionBranchHints)
+            /// is selected by recursing into the hint, so a STRUCT branch keeps the named-tuple
+            /// field pruning above: a field the hint's tuple does not reference (e.g. an
+            /// unsupported or corrupt one) is never added to include_typeids. A branch without a
+            /// forced hint is read in full, matching readColumnFromORCColumn's "no guess is ever
+            /// made" policy, so its entire subtree is selected. Every branch always contributes at
+            /// least one id, so ORC's ColumnSelector::selectParents never falls back to its "fully
+            /// select every branch or none" override for partial branch selection, and the union's
+            /// own tag stream is selected as the automatic parent of the selected branches.
+            const DataTypes branch_hints = computeOrcUnionBranchHints(orc_type, non_nullable_type, ignore_case);
+            for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
+            {
+                const auto * branch_orc_type = orc_type->getSubtype(i);
+                if (branch_hints[i])
+                    updateIncludeTypeIds(branch_hints[i], branch_orc_type, ignore_case, include_typeids);
+                else
+                    include_typeids.insert(branch_orc_type->getColumnId());
+            }
             return;
         }
         default:
@@ -2123,6 +2141,101 @@ static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const D
     }
 }
 
+/// Variant sorts its nested types, so the positional correspondence between ORC union branches
+/// and the alternatives of an explicit (or inferred) Variant type hint is lost. Reconstruct it
+/// structurally: collect the alternatives each branch can be read as (orcUnionBranchMatchesType),
+/// then keep only the forced assignments (a branch takes an alternative when it is its only
+/// remaining candidate), tie-breaking the string-like branches by their natural inference pairing
+/// (orcUnionBranchPrefersType). A branch whose correspondence stays ambiguous is left without a
+/// hint (nullptr in the result), so no guess is ever made. Shared between
+/// readColumnFromORCColumn (drives the branch conversions) and updateIncludeTypeIds (prunes a
+/// hinted STRUCT branch's fields the same way the read path does), so the two stay in sync.
+static DataTypes computeOrcUnionBranchHints(const orc::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching)
+{
+    const size_t num_children = orc_type->getSubtypeCount();
+    DataTypes branch_hints(num_children);
+    const auto * variant_hint = type_hint ? typeid_cast<const DataTypeVariant *>(type_hint.get()) : nullptr;
+    if (!variant_hint)
+        return branch_hints;
+
+    const auto & alternatives = variant_hint->getVariants();
+    std::vector<std::vector<size_t>> candidates(num_children);
+    for (size_t i = 0; i < num_children; ++i)
+        for (size_t a = 0; a < alternatives.size(); ++a)
+            if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
+                candidates[i].push_back(a);
+
+    std::vector<bool> alternative_taken(alternatives.size(), false);
+    const auto preferred_candidates = [&](size_t i)
+    {
+        std::vector<size_t> preferred;
+        for (const size_t a : candidates[i])
+            if (orcUnionBranchPrefersType(orc_type->getSubtype(i), alternatives[a]))
+                preferred.push_back(a);
+        return preferred;
+    };
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            if (branch_hints[i] || candidates[i].size() != 1)
+                continue;
+            const size_t a = candidates[i].front();
+            if (alternative_taken[a])
+            {
+                /// Another branch already took this alternative; leave this branch without a hint.
+                candidates[i].clear();
+                continue;
+            }
+            alternative_taken[a] = true;
+            branch_hints[i] = alternatives[a];
+            changed = true;
+            for (size_t j = 0; j < num_children; ++j)
+                if (j != i)
+                    std::erase(candidates[j], a);
+        }
+
+        if (changed)
+            continue;
+
+        /// The forced assignments are exhausted. Tie-break the string-like branches by their
+        /// natural inference pairing (see orcUnionBranchPrefersType): a branch takes the single
+        /// alternative it prefers among its remaining candidates, unless another unassigned
+        /// branch uniquely prefers the same one - a contested preference is still ambiguous and no
+        /// guess is ever made. One assignment at a time, then back to the forced-assignment loop
+        /// to propagate it.
+        for (size_t i = 0; i < num_children && !changed; ++i)
+        {
+            if (branch_hints[i] || candidates[i].size() < 2)
+                continue;
+            const auto preferred = preferred_candidates(i);
+            if (preferred.size() != 1)
+                continue;
+            const size_t a = preferred.front();
+            bool contested = false;
+            for (size_t j = 0; j < num_children && !contested; ++j)
+            {
+                if (j == i || branch_hints[j])
+                    continue;
+                const auto preferred_j = preferred_candidates(j);
+                contested = preferred_j.size() == 1 && preferred_j.front() == a;
+            }
+            if (contested)
+                continue;
+            alternative_taken[a] = true;
+            branch_hints[i] = alternatives[a];
+            changed = true;
+            for (size_t j = 0; j < num_children; ++j)
+                if (j != i)
+                    std::erase(candidates[j], a);
+        }
+    }
+
+    return branch_hints;
+}
+
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const orc::ColumnVectorBatch * orc_column,
     const orc::Type * orc_type,
@@ -2172,94 +2285,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 "ORC union type with {} branches is not supported (Variant supports at most {} nested types), while reading column {}",
                 num_children, ColumnVariant::MAX_NESTED_COLUMNS, column_name);
 
-        /// Variant sorts its nested types, so the positional correspondence between ORC union
-        /// branches and the alternatives of an explicit Variant type hint is lost. Reconstruct it
-        /// structurally: collect the alternatives each branch can be read as, then keep only the
-        /// forced assignments (a branch takes an alternative when it is its only remaining
-        /// candidate), tie-breaking the string-like branches by their natural inference pairing
-        /// (see orcUnionBranchPrefersType). A branch whose correspondence stays ambiguous is read
-        /// without a hint, so no guess is ever made. The hints enable the explicit-schema
-        /// conversions the scalar readers support (e.g. binary -> IPv6) and keep the branch types
-        /// aligned with the hinted Variant (e.g. Array(Nullable(...)) produced by schema
-        /// inference).
-        DataTypes branch_hints(num_children);
-        if (const auto * variant_hint = type_hint ? typeid_cast<const DataTypeVariant *>(type_hint.get()) : nullptr)
-        {
-            const auto & alternatives = variant_hint->getVariants();
-            std::vector<std::vector<size_t>> candidates(num_children);
-            for (size_t i = 0; i < num_children; ++i)
-                for (size_t a = 0; a < alternatives.size(); ++a)
-                    if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
-                        candidates[i].push_back(a);
-
-            std::vector<bool> alternative_taken(alternatives.size(), false);
-            const auto preferred_candidates = [&](size_t i)
-            {
-                std::vector<size_t> preferred;
-                for (const size_t a : candidates[i])
-                    if (orcUnionBranchPrefersType(orc_type->getSubtype(i), alternatives[a]))
-                        preferred.push_back(a);
-                return preferred;
-            };
-            bool changed = true;
-            while (changed)
-            {
-                changed = false;
-                for (size_t i = 0; i < num_children; ++i)
-                {
-                    if (branch_hints[i] || candidates[i].size() != 1)
-                        continue;
-                    const size_t a = candidates[i].front();
-                    if (alternative_taken[a])
-                    {
-                        /// Another branch already took this alternative; leave this branch without a hint.
-                        candidates[i].clear();
-                        continue;
-                    }
-                    alternative_taken[a] = true;
-                    branch_hints[i] = alternatives[a];
-                    changed = true;
-                    for (size_t j = 0; j < num_children; ++j)
-                        if (j != i)
-                            std::erase(candidates[j], a);
-                }
-
-                if (changed)
-                    continue;
-
-                /// The forced assignments are exhausted. Tie-break the string-like branches by their
-                /// natural inference pairing (see orcUnionBranchPrefersType): a branch takes the
-                /// single alternative it prefers among its remaining candidates, unless another
-                /// unassigned branch uniquely prefers the same one - a contested preference is
-                /// still ambiguous and no guess is ever made. One assignment at a time, then back
-                /// to the forced-assignment loop to propagate it.
-                for (size_t i = 0; i < num_children && !changed; ++i)
-                {
-                    if (branch_hints[i] || candidates[i].size() < 2)
-                        continue;
-                    const auto preferred = preferred_candidates(i);
-                    if (preferred.size() != 1)
-                        continue;
-                    const size_t a = preferred.front();
-                    bool contested = false;
-                    for (size_t j = 0; j < num_children && !contested; ++j)
-                    {
-                        if (j == i || branch_hints[j])
-                            continue;
-                        const auto preferred_j = preferred_candidates(j);
-                        contested = preferred_j.size() == 1 && preferred_j.front() == a;
-                    }
-                    if (contested)
-                        continue;
-                    alternative_taken[a] = true;
-                    branch_hints[i] = alternatives[a];
-                    changed = true;
-                    for (size_t j = 0; j < num_children; ++j)
-                        if (j != i)
-                            std::erase(candidates[j], a);
-                }
-            }
-        }
+        /// The hints enable the explicit-schema conversions the scalar readers support (e.g.
+        /// binary -> IPv6) and keep the branch types aligned with the hinted Variant (e.g.
+        /// Array(Nullable(...)) produced by schema inference). See computeOrcUnionBranchHints for
+        /// how a branch's forced alternative is reconstructed; updateIncludeTypeIds calls the same
+        /// function so a hinted STRUCT branch's field pruning matches what is actually read here.
+        const DataTypes branch_hints = computeOrcUnionBranchHints(orc_type, type_hint, case_insensitive_matching);
 
         /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
         /// branch. Variant branches are non-nullable, and an ORC union row can be non-null yet
