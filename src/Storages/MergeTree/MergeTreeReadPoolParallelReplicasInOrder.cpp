@@ -100,6 +100,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
             continue;
         }
 
+        /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
+        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, refined.getNumberOfMarks());
         return createTask(per_part_infos[task_idx], std::move(refined), previous_task);
     }
 }
@@ -139,7 +141,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
-                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -165,7 +166,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                         }
 
                         chassert(result.size() == 1);
-                        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                         return result;
                     }
 
@@ -183,7 +183,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     }
                     chassert(!result.empty());
                     desc.ranges = MarkRanges{};
-                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
                 else
@@ -204,7 +203,6 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
                     }
 
                     chassert(result.size() == 1);
-                    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, result.getNumberOfMarks());
                     return result;
                 }
             }

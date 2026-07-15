@@ -199,6 +199,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         if (task_ranges.empty())
             continue;
 
+        /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
+        ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, task_ranges.getNumberOfMarks());
         return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task);
     }
 }
@@ -333,8 +335,6 @@ void MergeTreeReadPoolParallelReplicas::cutFromCurrentTask(size_t need_marks, Ma
 
     if (current_task.ranges.empty())
         buffered_ranges.pop_front();
-
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, current_sum_marks);
 }
 
 }
