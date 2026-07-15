@@ -5804,7 +5804,7 @@ Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHou
 Replace expressions like `equals`, `like`, `ilike`, `position` over a string conversion of a restricted-alphabet type (numbers, dates, and arrays/tuples/maps of them) with a constant when the string constant requires characters that can never appear in the text representation of that type. For example, `toString(number) LIKE '%hello%'` is always false because the text representation of an unsigned integer consists only of digits.
 )", 0) \
     DECLARE(Bool, optimize_destructure_tuple_string_comparisons, true, R"(
-Rewrite `toString(tuple) LIKE '%needle%'` (and `ILIKE`) into a chain of per-element conditions `toString(x) LIKE '%needle%' OR toString(y) LIKE '%needle%'` when the needle cannot span multiple tuple elements. This may allow the query to use a text index. Note that for `String` elements the rewritten condition matches the raw value, while the original expression matches the quoted and escaped rendering inside the tuple, so results may differ for values that contain quotes, backslashes, or control characters.
+Rewrite `toString(tuple) LIKE '%needle%'` (and `ILIKE`) into a chain of per-element conditions `toString(x) LIKE '%needle%' OR toString(y) LIKE '%needle%'` when the needle can neither span multiple tuple elements nor match the quoting and escaping of the tuple rendering. This may allow the query to use a text index.
 )", 0) \
 DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
 Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.

@@ -468,11 +468,18 @@ private:
       *     (a `_` could match an element separator, and multiple literal runs could match in different elements);
       *   - the needle must not contain `(`, `)`, `,` (every boundary between elements in the rendered tuple contains
       *     a comma, so a needle without these characters cannot span two elements), nor `'`, `\\` and control characters
-      *     (which could match the quoting and escaping of quoted elements).
+      *     (which could match the quoting and escaping of quoted elements);
+      *   - if some element is a String or FixedString, the needle must not start with one of `b`, `f`, `n`, `r`,
+      *     `t`, `0` (see below).
       *
-      * For String elements the rewritten condition matches the raw value while the original expression matches
-      * the quoted and escaped rendering inside the tuple, so results may differ for values containing characters
-      * that are escaped in the text rendering (quotes, backslashes, control characters).
+      * For String elements the rewritten condition matches the raw value, while the original expression matches the
+      * quoted and escaped rendering inside the tuple. Escaping (see `writeAnyEscapedString`) can only insert the
+      * characters `\\`, `'` and the letters of the escape sequences `\\b`, `\\f`, `\\n`, `\\r`, `\\t`, `\\0`; all other
+      * characters pass through verbatim, so an occurrence of the needle in the raw value is also present in the
+      * escaped rendering. In the other direction, a match in the escaped rendering that is absent from the raw value
+      * must overlap a character inserted by escaping; it cannot overlap `\\` or `'` (the needle does not contain
+      * them), so it must start exactly at the second character of an escape pair, which requires the first character
+      * of the needle to be one of `bfnrt0`. Refusing such needles (in both cases for ILIKE) makes the rewrite exact.
       */
     void tryDestructureTuple(
         QueryTreeNodePtr & node,
@@ -495,9 +502,32 @@ private:
         if (!needle)
             return;
 
-        for (char c : extractLikeRequiredChars(*needle))
+        const String unescaped_needle = extractLikeRequiredChars(*needle);
+        for (char c : unescaped_needle)
         {
             if (c == '(' || c == ')' || c == ',' || c == '\'' || c == '\\' || static_cast<UInt8>(c) < 0x20)
+                return;
+        }
+
+        bool has_string_elements = false;
+        for (const auto & element_type : tuple_type->getElements())
+            has_string_elements |= isStringOrFixedString(removeLowCardinality(element_type));
+
+        if (has_string_elements)
+        {
+            /// A needle starting with one of the escape sequence letters could match the escaped rendering of
+            /// a String element without matching its raw value (e.g. `%nb%` matches the rendering `'a\nb'` of the
+            /// value `a<newline>b`). See the function comment above for why only the first character has to be checked.
+            char first_char = unescaped_needle.front();
+            if (is_case_insensitive)
+            {
+                /// Unicode case folding of non-ASCII characters is not modeled.
+                if (static_cast<UInt8>(first_char) >= 0x80)
+                    return;
+                if (first_char >= 'A' && first_char <= 'Z')
+                    first_char = first_char - 'A' + 'a';
+            }
+            if (std::string_view("bfnrt0").find(first_char) != std::string_view::npos)
                 return;
         }
 
