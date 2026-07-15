@@ -1,0 +1,61 @@
+---
+title: 解决 `remote` 和 `remoteSecure` 表函数的超时错误
+description: 了解如何通过调整连接超时设置，解决在 ClickHouse 中使用 `remote` 或 `remoteSecure` 表函数时出现的超时错误。
+date: 2023-03-20
+tags: ['错误与异常']
+keywords: ['连接尝试失败']
+---
+
+<div id="code-279-dbnetexception-all-connection-tries-failed">
+  ## 代码：279. DB::NetException: All connection tries failed.
+</div>
+
+**问题**
+[`remote()` or `remoteSecure()`](/zh/reference/functions/table-functions/remote) 表函数允许从另一个 ClickHouse 节点访问远程表。
+
+当在与远程节点之间的延迟超过 100 毫秒的节点上使用这些函数时，通常会遇到超时错误。
+
+例如：
+
+```
+4776d4bd8190 :) SELECT * FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+
+SELECT *
+FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+
+Query id: 2bd6ddd0-66d9-4d19-830f-87e3cec3724b
+
+0 rows in set. Elapsed: 1.213 sec.
+
+Received exception from server (version 22.6.9):
+Code: 519. DB::Exception: Received from localhost:9000. DB::NetException. DB::NetException: All attempts to get table structure failed. Log:
+
+Code: 279. DB::NetException: All connection tries failed. Log:
+
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+
+. (ALL_CONNECTION_TRIES_FAILED) (version 22.6.9.11 (official build))
+
+. (NO_REMOTE_SHARD_AVAILABLE)
+```
+
+**变通方法**
+如需增大连接超时时间，请将 [`connect_timeout_with_failover_secure_ms`](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L67) 的值从默认的 100 毫秒调高 (例如设为 1 秒) 。
+
+```
+4776d4bd8190 :) SELECT * FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud:9440', DATABASE, TABLE, 'USER', 'USER_PASSWORD') SETTINGS connect_timeout_with_failover_secure_ms = 1000
+
+SELECT *
+FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud:9440', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+SETTINGS connect_timeout_with_failover_secure_ms = 1000
+
+Query id: 8e2f4d41-307b-4e61-abb8-809190023247
+
+┌─x─┐
+│ 1 │
+└───┘
+
+1 row in set. Elapsed: 2.403 sec.
+```

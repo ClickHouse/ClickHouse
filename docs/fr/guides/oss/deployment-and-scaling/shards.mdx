@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: 'Shards et répliques de tables'
+description: 'Que sont les shards et les répliques de tables dans ClickHouse'
+keywords: ['shard', 'shards', 'sharding', 'réplique', 'répliques']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<br />
+
+<Note>
+  Cette rubrique ne s&#39;applique pas à ClickHouse Cloud, où les [Parallel Replicas](/fr/products/cloud/features/infrastructure/parallel-replicas) fonctionnent comme plusieurs shards dans les clusters ClickHouse shared-nothing traditionnels, et où le stockage objet [remplace](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) les répliques, garantissant une haute disponibilité et une tolérance aux pannes.
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## Que sont les shards de table dans ClickHouse ?
+</div>
+
+Dans les clusters ClickHouse [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) traditionnels, le sharding est utilisé lorsque ① les données sont trop volumineuses pour un seul serveur ou ② un seul serveur est trop lent pour les traiter. La figure suivante illustre le cas ①, où la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) dépasse la capacité d&#39;une seule machine :
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+Dans ce cas, les données peuvent être réparties sur plusieurs serveurs ClickHouse sous forme de shards de table :
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+Chaque shard contient un sous-ensemble des données et fonctionne comme une table ClickHouse classique, interrogeable indépendamment. Toutefois, les requêtes ne traiteront que ce sous-ensemble, ce qui peut être un cas d&#39;usage valable selon la distribution des données. En général, une [table distribuée](/fr/reference/engines/table-engines/special/distributed) (souvent une par serveur) fournit une vue unifiée de l&#39;ensemble du jeu de données. Elle ne stocke pas elle-même les données, mais transmet les requêtes **SELECT** à tous les shards, assemble les résultats et achemine les **INSERTS** afin de répartir les données uniformément.
+
+<div id="distributed-table-creation">
+  ## Création d&#39;une table distribuée
+</div>
+
+Pour illustrer le transfert des requêtes **SELECT** et le routage des **INSERT**, nous considérons l&#39;exemple de table [Que sont les parts de table](/fr/concepts/core-concepts/parts), répartie sur deux shards et deux serveurs ClickHouse. Nous montrons d&#39;abord l&#39;instruction DDL permettant de créer la **table distribuée** correspondante pour cette configuration :
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+La clause `ON CLUSTER` transforme l’instruction DDL en [instruction DDL distribuée](/fr/reference/statements/distributed-ddl), demandant à ClickHouse de créer la table sur tous les serveurs répertoriés dans la [définition du cluster](/fr/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers) `test_cluster`. Le DDL distribué nécessite un composant [Keeper](https://clickhouse.com/clickhouse/keeper) supplémentaire dans l’[architecture du cluster](/fr/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Pour les [paramètres du moteur Distributed](/fr/reference/engines/table-engines/special/distributed#distributed-parameters), nous spécifions le nom du cluster (`test_cluster`), le nom de la base de données (`uk`) de la table cible shardée, le nom de cette table cible shardée (`uk_price_paid_simple`) et la **clé de sharding** pour le routage des INSERT. Dans cet exemple, nous utilisons la fonction [rand](/fr/reference/functions/regular-functions/random-functions#rand) pour répartir aléatoirement les lignes entre les shards. Cependant, n’importe quelle expression, même complexe, peut être utilisée comme clé de sharding, selon le cas d’usage. La section suivante illustre le fonctionnement du routage des INSERT.
+
+<div id="insert-routing">
+  ## Routage des INSERT
+</div>
+
+Le diagramme ci-dessous illustre comment les INSERT dans une table distribuée sont traités dans ClickHouse :
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① Un INSERT (avec une seule ligne) visant la table distribuée est envoyé à un serveur ClickHouse qui héberge la table, soit directement, soit via un répartiteur de charge.
+
+② Pour chaque ligne de l’INSERT (une seule dans notre exemple), ClickHouse évalue la clé de sharding (ici, rand()), calcule le modulo du résultat par le nombre de serveurs shards, et utilise la valeur obtenue comme ID du serveur cible (les ID commencent à 0 et sont incrémentés de 1). La ligne est ensuite transmise puis ③ insérée dans le shard de table du serveur correspondant.
+
+La section suivante explique comment fonctionne le transfert des SELECT.
+
+<div id="select-forwarding">
+  ## Routage des requêtes SELECT
+</div>
+
+Ce schéma montre comment les requêtes SELECT sont traitées avec une table distribuée dans ClickHouse :
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① Une requête d’agrégation SELECT visant la table distribuée est envoyée au serveur ClickHouse correspondant, soit directement, soit via un répartiteur de charge.
+
+② La table distribuée transmet la requête à tous les serveurs hébergeant les shards de la table cible, où chaque serveur ClickHouse calcule son résultat d’agrégation local **en parallèle**.
+
+Ensuite, le serveur ClickHouse hébergeant la table distribuée initialement visée ③ collecte tous les résultats locaux, ④ les fusionne pour produire le résultat global final, et ⑤ le renvoie à l’émetteur de la requête.
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## Que sont les répliques de table dans ClickHouse ?
+</div>
+
+La réplication dans ClickHouse garantit **l’intégrité des données** et le **failover** en maintenant **des copies des données de shard** sur plusieurs serveurs. Comme les pannes matérielles sont inévitables, la réplication évite les pertes de données en garantissant que chaque shard dispose de plusieurs répliques. Les écritures peuvent être dirigées vers n’importe quelle réplique, soit directement, soit via une [table distribuée](#distributed-table-creation), qui sélectionne une réplique pour l’opération. Les modifications sont automatiquement propagées aux autres répliques. En cas de panne ou de maintenance, les données restent disponibles sur les autres répliques, et lorsqu’un hôte défaillant revient en service, il se resynchronise automatiquement pour rester à jour.
+
+Notez que la réplication nécessite un composant [Keeper](https://clickhouse.com/clickhouse/keeper) dans l’[architecture du cluster](/fr/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Le schéma suivant illustre un cluster ClickHouse avec six serveurs, où les deux shards de table `Shard-1` et `Shard-2` introduits précédemment disposent chacun de trois répliques. Une requête est envoyée à ce cluster :
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+Le traitement des requêtes fonctionne de manière similaire aux configurations sans répliques, une seule réplique de chaque shard exécutant la requête.
+
+> Les répliques assurent non seulement l’intégrité des données et le failover, mais elles améliorent également le débit du traitement des requêtes en permettant à plusieurs requêtes de s’exécuter en parallèle sur différentes répliques.
+
+① Une requête ciblant la table distribuée est envoyée au serveur ClickHouse correspondant, soit directement, soit via un répartiteur de charge.
+
+② La table distribuée transmet la requête à une réplique de chaque shard, où chaque serveur ClickHouse hébergeant la réplique sélectionnée calcule son résultat local de requête en parallèle.
+
+La suite fonctionne de la [même manière](#select-forwarding) que dans les configurations sans répliques et n’est pas représentée dans le schéma ci-dessus. Le serveur ClickHouse hébergeant la table distribuée initialement ciblée collecte tous les résultats locaux, les fusionne en un résultat global final, puis le renvoie à l’émetteur de la requête.
+
+Notez que ClickHouse permet de configurer la stratégie de transfert des requêtes pour ②. Par défaut — contrairement au schéma ci-dessus — la table distribuée [privilégie](/fr/reference/settings/session-settings#prefer_localhost_replica) une réplique locale si elle est disponible, mais d’autres [stratégies](/fr/reference/settings/session-settings#load_balancing) d’équilibrage de charge peuvent être utilisées.
+
+<div id="where-to-find-more-information">
+  ## Où trouver plus d’informations
+</div>
+
+Pour en savoir plus au-delà de cette présentation générale des shards et des répliques de table, consultez notre [guide de déploiement et de mise à l’échelle](/fr/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Nous vous recommandons également vivement cette vidéo de tutoriel pour approfondir les notions de shards et de répliques dans ClickHouse :
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

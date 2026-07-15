@@ -45,9 +45,9 @@ SELECT name, value FROM system.settings WHERE name = 'max_threads'
 Which will return something like this:
 
 ```response
-┌─name────────┬─value─────┐
-│ max_threads │ 'auto(8)' │
-└─────────────┴───────────┘
+┌─name────────┬─value───┐
+│ max_threads │ auto(8) │
+└─────────────┴─────────┘
 
 1 row in set. Elapsed: 0.002 sec.
 ```

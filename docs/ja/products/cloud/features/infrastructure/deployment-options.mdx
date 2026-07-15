@@ -1,0 +1,45 @@
+---
+title: 'デプロイオプション'
+slug: /infrastructure/deployment-options
+description: 'ClickHouseのお客様が利用できるデプロイオプション'
+keywords: ['独自Cloudの持ち込み', 'byoc', 'プライベート', 'Government', 'セルフデプロイ']
+doc_type: 'reference'
+---
+
+ClickHouseは、多様なお客様の要件に対応するため、幅広いデプロイオプションを提供しています。これらのオプションは、制御レベル、コンプライアンス、運用負荷の点でそれぞれ異なります。
+このドキュメントでは、利用可能な各デプロイタイプの違いを説明し、アーキテクチャ上の選好、規制上の要件、リソース管理戦略に合った最適なソリューションを選択できるようにします。
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud は、自己管理に伴う運用の複雑さなしに、ClickHouse の性能とスピードを利用できる完全マネージド型のクラウドネイティブサービスです。
+このオプションは、迅速な導入、拡張性、管理負荷の最小化を重視する場合に最適です。
+ClickHouse Cloud がプロビジョニング、スケーリング、保守、アップデートを担うため、ユーザーはデータ分析とアプリケーション開発に専念できます。
+分析ワークロードに対して、信頼性が高く費用対効果に優れたパフォーマンスを実現するため、従量課金制と自動スケーリングを提供しています。AWS、GCP、Azure で利用でき、マーケットプレイス経由の直接請求オプションにも対応しています。
+
+詳しくは [ClickHouse Cloud](/ja/get-started/setup/cloud) を参照してください。
+
+<div id="byoc">
+  ## Bring Your Own Cloud
+</div>
+
+ClickHouse Bring Your Own Cloud (BYOC) を使用すると、組織はマネージドサービスレイヤーを活用しながら、自社のクラウド環境内で ClickHouse をデプロイおよび管理できます。このオプションは、ClickHouse Cloud の完全マネージド型の利便性と、セルフマネージドなデプロイの完全な制御性との間を埋めるものです。ClickHouse BYOC では、ユーザーはデータ、インフラストラクチャ、セキュリティポリシーの管理権限を維持し、特定のコンプライアンス要件や規制要件に対応できる一方で、パッチ適用、監視、スケーリングといった運用タスクは ClickHouse に委ねることができます。このモデルは、プライベートクラウドデプロイの柔軟性とマネージドサービスの利点を兼ね備えているため、厳格なセキュリティ、ガバナンス、データレジデンシー要件を持つエンタープライズの大規模デプロイに適しています。
+
+[Bring Your Own Cloud](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) の詳細をご覧ください。
+
+<div id="clickhouse-private">
+  ## ClickHouse Private
+</div>
+
+ClickHouse Private は、ClickHouse Cloud を支えるのと同じ独自技術を活用した、ClickHouse のセルフデプロイ版です。最高レベルの制御性を実現できるため、厳格なコンプライアンス、ネットワーク、セキュリティ要件を持つ組織や、自社のインフラストラクチャを運用管理するための専門知識を備えたチームに最適です。ClickHouse Cloud 環境で徹底的に検証された定期的な更新とアップグレードに加え、充実したロードマップと当社の専門サポートチームによる支援も提供されます。
+
+[ClickHouse Private](/ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private) の詳細をご覧ください。
+
+<div id="clickhouse-government">
+  ## ClickHouse Government
+</div>
+
+ClickHouse Government は、隔離され認定を受けた環境を必要とする政府機関や公共部門の組織に特有の厳格な要件を満たすよう設計された、ClickHouse のセルフデプロイ版です。このデプロイオプションは、OpenSSL を利用した FIPS 140-3 準拠、追加のシステム強化、脆弱性管理に重点を置いた、高度にセキュアでコンプライアンスに対応した隔離環境を提供します。ClickHouse Cloud の堅牢な機能を活用しながら、政府機関特有の運用要件やセキュリティ要件に対応するための専用機能や構成を統合しています。ClickHouse Government を利用することで、政府機関は、公共部門のニーズに合わせた専門的なサポートを受けながら、管理され認定を受けたインフラストラクチャ内で機密データに対する高性能な分析を実現できます。
+
+[ClickHouse Government](/ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-government) の詳細をご覧ください。

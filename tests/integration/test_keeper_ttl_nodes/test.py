@@ -164,8 +164,14 @@ def test_many_nodes_with_different_ttls():
         node1_zk = get_fake_zk(cluster, "node1")
         node2_zk = get_fake_zk(cluster, "node2")
 
+        # Consecutive nodes' destroy_times differ by this step. Each "still alive" assertion
+        # below runs right after wait_nodes_gone() for the previous node, whose return can
+        # overshoot the target's destroy_time (GC period + Raft commit + poll granularity +
+        # round-trips under load). Keep the step well above that overshoot so an assertion
+        # never races a just-expired node.
+        ttl_step_ms = 3000
         for i in range(10):
-            node1_zk.create(f"/n{i}", str(i).encode(), ttl=1000 * (i + 1))
+            node1_zk.create(f"/n{i}", str(i).encode(), ttl=ttl_step_ms * (i + 1))
 
         wait_nodes_gone([node1_zk, node2_zk], ["/n0"])
         for i in range(1, 10):
