@@ -49,6 +49,10 @@ void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
 
+#if USE_LANCE
+void registerStorageLance(StorageFactory & factory);
+#endif
+
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
 void registerStoragePaimon(StorageFactory & factory);
@@ -167,6 +171,10 @@ void registerStorages()
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
+#endif
+
+#if USE_LANCE
+    registerStorageLance(factory);
 #endif
 
 #if USE_HDFS

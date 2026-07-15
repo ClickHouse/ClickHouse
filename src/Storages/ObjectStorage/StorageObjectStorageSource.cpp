@@ -929,7 +929,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
-    if (num_rows_from_cache)
+    if (auto custom_pipe = configuration->read(
+            object_info,
+            read_from_format_info,
+            format_settings,
+            context_,
+            max_block_size,
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count))
+    {
+        builder.init(std::move(*custom_pipe));
+    }
+    else if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
