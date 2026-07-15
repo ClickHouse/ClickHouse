@@ -341,19 +341,36 @@ namespace
         return result;
     }
 
+    void validateAzureEndpointFragment(const String & url, bool case_insensitive_scheme = false)
+    {
+        const bool is_url = case_insensitive_scheme ? toLower(url).starts_with("http") : url.starts_with("http");
+        if (is_url)
+        {
+            const size_t query_pos = url.find('?');
+            const size_t fragment_pos = url.find('#');
+            if (fragment_pos != String::npos && (query_pos == String::npos || fragment_pos < query_pos))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "AzureBlobStorage storage account URL must not contain a fragment");
+        }
+    }
+
     String normalizeAzureConnection(String s)
     {
+        validateAzureEndpointFragment(s);
+
 #if USE_AZURE_BLOB_STORAGE
         if (!s.starts_with("http"))
         {
             try
             {
                 s = Azure::Storage::_internal::ParseConnectionString(s).BlobServiceUrl.GetAbsoluteUrl();
+                if (s.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure connection string does not contain a blob service endpoint");
             }
             catch (const std::logic_error & e)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure connection string: {}", e.what());
             }
+            validateAzureEndpointFragment(s, /* case_insensitive_scheme = */ true);
         }
 
         s = stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
@@ -366,8 +383,10 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure blob URL: {}", e.what());
         }
 #else
-        if (s.find(';') == String::npos)
+        if (s.starts_with("http"))
             return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(s)));
+        if (s.find(';') == String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure connection string without Azure support");
 
         std::unordered_map<String, String> parts;
         Strings redacted_parts;
@@ -398,7 +417,10 @@ namespace
 
         auto blob_endpoint = parts.find("blobendpoint");
         if (blob_endpoint != parts.end())
+        {
+            validateAzureEndpointFragment(blob_endpoint->second, /* case_insensitive_scheme = */ true);
             return stripOneTrailingSlash(stripURLUserInfo(stripURLQuery(blob_endpoint->second)));
+        }
 
         auto protocol = parts.find("defaultendpointsprotocol");
         auto account_name = parts.find("accountname");
@@ -410,6 +432,7 @@ namespace
             result += account_name->second;
             result += ".blob.";
             result += endpoint_suffix->second;
+            validateAzureEndpointFragment(result, /* case_insensitive_scheme = */ true);
             return stripOneTrailingSlash(result);
         }
 

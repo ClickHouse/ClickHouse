@@ -809,6 +809,36 @@ TEST(BackupInfo, NormalizedStringRedactsAzureConnectionStringCredentials)
     EXPECT_EQ(second.toNormalizedString().find("key2"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringRejectsAzureURLFragments)
+{
+    auto clean = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup')");
+    auto fragment = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net#fragment', 'container', 'backup')");
+    auto uppercase_url = BackupInfo::fromString(
+        "AzureBlobStorage('HTTPS://account.blob.core.windows.net', 'container', 'backup')");
+    auto uppercase_fragment = BackupInfo::fromString(
+        "AzureBlobStorage('HTTPS://account.blob.core.windows.net#fragment', 'container', 'backup')");
+    auto sas_with_fragment_character = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net?sig=secret#credential', 'container', 'backup')");
+    auto connection_string_fragment = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=https://account.blob.core.windows.net#fragment;AccountName=account;AccountKey=key', "
+        "'container', 'backup')");
+    auto uppercase_connection_string_fragment = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=HTTPS://account.blob.core.windows.net#fragment;AccountName=account;AccountKey=key', "
+        "'container', 'backup')");
+
+    EXPECT_THROW((void)fragment.toNormalizedString(), Exception);
+    EXPECT_THROW((void)uppercase_url.toNormalizedString(), Exception);
+    EXPECT_THROW((void)uppercase_url.toNormalizedString(getContext().context), Exception);
+    EXPECT_THROW((void)uppercase_fragment.toNormalizedString(), Exception);
+    EXPECT_THROW((void)uppercase_fragment.toNormalizedString(getContext().context), Exception);
+    EXPECT_THROW((void)connection_string_fragment.toNormalizedString(), Exception);
+    EXPECT_THROW((void)connection_string_fragment.toNormalizedString(getContext().context), Exception);
+    EXPECT_THROW((void)uppercase_connection_string_fragment.toNormalizedString(), Exception);
+    EXPECT_EQ(clean.toNormalizedString(), sas_with_fragment_character.toNormalizedString());
+}
+
 #if USE_AZURE_BLOB_STORAGE
 TEST(BackupInfo, NormalizedStringRedactsAzureURLCredentials)
 {
@@ -901,6 +931,20 @@ TEST(BackupInfo, NormalizedStringValidatesFrozenAzureExplicitCredentialsURL)
             {"blob_path", "backup"},
             {"account_name", "account"},
             {"account_key", "key"},
+        });
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringRejectsFrozenAzureURLFragment)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("AzureBlobStorage(collection)");
+    info.frozen_named_collection = makeNamedCollection(
+        {
+            {"storage_account_url", "https://account.blob.core.windows.net#fragment"},
+            {"container", "container"},
+            {"blob_path", "backup"},
         });
 
     EXPECT_THROW((void)info.toNormalizedString(context), Exception);
