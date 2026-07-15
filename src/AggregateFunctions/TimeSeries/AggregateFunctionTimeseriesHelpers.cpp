@@ -687,10 +687,6 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     FunctionDocumentation::Category category_timeSeriesDerivToGrid = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesDerivToGrid = {description_timeSeriesDerivToGrid, syntax_timeSeriesDerivToGrid, arguments_timeSeriesDerivToGrid, parameters_timeSeriesDerivToGrid, returned_value_timeSeriesDerivToGrid, examples_timeSeriesDerivToGrid, introduced_in_timeSeriesDerivToGrid, category_timeSeriesDerivToGrid};
 
-    /// One big customer was testing these functions under old names, so we need to keep these aliases for compatibility until they migrate
-    factory.registerAlias("timeSeriesIrateToGrid", "timeSeriesInstantRateToGrid");
-    factory.registerAlias("timeSeriesIdeltaToGrid", "timeSeriesInstantDeltaToGrid");
-
     factory.registerFunction("timeSeriesDerivToGrid",
         {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>, documentation_timeSeriesDerivToGrid});
     /// timeSeriesPredictLinearToGrid documentation
