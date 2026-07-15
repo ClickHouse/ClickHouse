@@ -11,7 +11,7 @@
 -- rows by j; equal a values stop being contiguous. The read-in-order-through-join second pass must
 -- refuse to propagate the a-order through these joins. It reads the physical join's
 -- preservesLeftBlockOrder() (MergeJoin / FullSortingMergeJoin return false), so this holds under both
--- the old and the new analyzer; enable_analyzer is intentionally not pinned.
+-- the old and the current analyzer; enable_analyzer is intentionally not pinned.
 
 DROP TABLE IF EXISTS tl_04500;
 DROP TABLE IF EXISTS tr_04500;

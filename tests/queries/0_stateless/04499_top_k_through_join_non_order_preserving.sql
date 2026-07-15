@@ -96,7 +96,7 @@ SELECT count() > 0 FROM (
 -- longer inspects either.
 --
 -- enable_analyzer is pinned to 1: this deferral runs on the logical JoinStepLogical, which only
--- exists in the new analyzer; under the old analyzer topKThroughJoin sees the already-built physical
+-- exists in the analyzer; under the old analyzer topKThroughJoin sees the already-built physical
 -- ConcurrentHashJoin and reads its exact preservesLeftBlockOrder(), a different (also correct) path.
 -- The stateless runner randomizes max_threads and the in-order trio, so both are pinned per query.
 -- Pinned on both the wrapper and the EXPLAIN because the old-analyzer job forbids changing
