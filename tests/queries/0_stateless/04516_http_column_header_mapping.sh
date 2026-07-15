@@ -307,6 +307,38 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 # Entries are buffered with a large busy timeout so they stay in the queue until
 # we ALTER the column type and call SYSTEM FLUSH ASYNC INSERT QUEUE manually.
 
+# Test 0: multi-header, middle-entry failure isolation.
+# Three entries, two mapped headers (code FixedString(4) + tag String).
+# After ALTER, the middle entry's code value ('abcd', 4 bytes) no longer fits
+# FixedString(2). Entries 1 and 3 must survive with their own header values.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t;
+    CREATE TABLE t (code FixedString(4), tag String, payload String)
+    ENGINE = MergeTree ORDER BY tuple();
+"
+
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: aa' -H 'X-Tag: first' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    -d '{"payload":"entry1"}'
+
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: abcd' -H 'X-Tag: second' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    -d '{"payload":"entry2"}'
+
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: bb' -H 'X-Tag: third' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    -d '{"payload":"entry3"}'
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+
+echo "--- async: multi-header middle-entry failure isolation"
+${CLICKHOUSE_CLIENT} -q "SELECT code, tag, payload FROM t ORDER BY payload"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
+
 # Test 1: FixedString(4) -> FixedString(2) shrink.
 # Both entries are enqueued before the ALTER; the one with the 4-byte value must
 # fail in isolation while the 2-byte entry survives.
