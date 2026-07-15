@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <limits>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
@@ -707,14 +708,16 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
     /// `column_sizes` is keyed by base storage columns and holds only whole-column sizes;
     /// per-subcolumn stream sizes are not plumbed into this planning layer.
     ///
-    /// A `Map`-key subcolumn (e.g. `h.key_k` from `h['k']`) has no dedicated stream on disk:
+    /// A dynamic `Map`-key subcolumn (e.g. `h.key_k` from `h['k']`) has no dedicated stream on disk:
     /// evaluating it reads the entire `Map`. A naive lookup returns 0 and makes such a condition
     /// look free, so we charge it the base column's size instead. See #110462.
     ///
-    /// Other subcolumns (`Nullable.null`, `Array.size0`, tuple elements, LowCardinality dict) each
-    /// have their own small stream and do NOT force a full parent read, so charging them the whole
-    /// parent size would over-estimate their cost and could reorder cheap filters behind expensive
-    /// ones. We keep them at 0 (the historical behavior) rather than over-charging them.
+    /// All other subcolumns keep their own name and resolve to 0 (the historical behavior). This
+    /// includes the fixed physical `Map` subcolumns (`map.size0`, `map.keys`, `map.values`), which
+    /// have dedicated serializations and stream sizes and do NOT force a full-map read, as well as
+    /// `Nullable.null`, `Array.size0`, tuple elements and LowCardinality dict. Charging any of these
+    /// the whole parent size would over-estimate their cost and could reorder cheap filters behind
+    /// expensive ones.
     UInt64 size = 0;
     NameSet counted_storage_columns;
     const auto & storage_columns_description = storage_metadata->getColumns();
@@ -725,9 +728,12 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
         if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column);
             resolved && resolved->isSubcolumn())
         {
-            /// Charge the base-column size only for subcolumns that force reading the whole parent
-            /// (Map subcolumns). Cheap physical substreams keep their own name and resolve to 0 below.
-            if (resolved->getTypeInStorage() && WhichDataType(*resolved->getTypeInStorage()).isMap())
+            /// Charge the base-column size only for the dynamic `Map` key-lookup subcolumn
+            /// (`key_<value>`), which has no dedicated stream and forces reading the whole `Map`.
+            /// The fixed physical `Map` subcolumns (`size0`, `keys`, `values`) and every other
+            /// subcolumn have their own small stream, so they keep their name and resolve to 0 below.
+            if (resolved->getTypeInStorage() && WhichDataType(*resolved->getTypeInStorage()).isMap()
+                && resolved->getSubcolumnName().starts_with(DataTypeMap::KEY_SUBCOLUMN_PREFIX))
                 size_column = resolved->getNameInStorage();
         }
 
