@@ -1,5 +1,5 @@
 -- The plan-shape assertions below describe the step layout produced by the
--- new analyzer; with the old analyzer the projection expressions are computed
+-- Analyzer; with the old analyzer the projection expressions are computed
 -- below the Sorting step already and the pass (correctly) never fires.
 SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
