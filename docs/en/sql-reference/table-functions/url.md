@@ -90,7 +90,7 @@ SELECT * FROM url(
 ```
 
 :::note
-When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. For endpoints that are not safe to call twice, or to avoid re-running the subquery, specify an explicit `structure` so that the request is sent exactly once:
+When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. Specifying an explicit `structure` avoids the extra schema-inference request:
 
 ```sql
 SELECT * FROM url(
@@ -100,6 +100,8 @@ SELECT * FROM url(
     body((SELECT id, name FROM local_table WHERE active))
 );
 ```
+
+Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
 :::
 
 ## Dispatching by URL scheme {#scheme-dispatch}
