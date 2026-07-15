@@ -19,4 +19,5 @@ echo "not a real gzip" > "$DATA_DIR/1broken.gz"
 echo "data" | gzip -c > "$DATA_DIR/2good.gz"
 
 # Without the setting, the query must fail with a decompression error (default behavior).
-$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM file('$DATA_DIR/**.gz', 'LineAsString')" 2>&1 | grep -q "INFLATE_FAILED" && echo "1" || echo "0"
+# A truncated gzip fails with `ZLIB_INFLATE_FAILED`, a non-gzip payload with `CANNOT_DECOMPRESS`.
+$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM file('$DATA_DIR/**.gz', 'LineAsString')" 2>&1 | grep -q -E "INFLATE_FAILED|CANNOT_DECOMPRESS" && echo "1" || echo "0"

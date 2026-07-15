@@ -22,7 +22,7 @@ echo "not a real gzip" > "$DATA_DIR/1broken.gz"
 echo "row2" | gzip -c > "$DATA_DIR/2good.gz"
 
 echo "=== With explicit format (LineAsString) + setting enabled: SUCCESS ==="
-$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM file('$DATA_DIR/**.gz', 'LineAsString') SETTINGS engine_file_skip_failed_data_files=1"
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT count(*) FROM file('$DATA_DIR/**.gz', 'LineAsString') SETTINGS engine_file_skip_failed_data_files=1"
 
 echo "=== Without format (schema inference) + setting enabled: FAILS ==="
-$CLICKHOUSE_CLIENT -q "SELECT * FROM file('$DATA_DIR/**.gz') SETTINGS engine_file_skip_failed_data_files=1" 2>&1 | grep -q "INFLATE_FAILED" && echo "1" || echo "0"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM file('$DATA_DIR/**.gz') SETTINGS engine_file_skip_failed_data_files=1" 2>&1 | grep -q -E "INFLATE_FAILED|CANNOT_DECOMPRESS|CANNOT_EXTRACT_TABLE_STRUCTURE" && echo "1" || echo "0"

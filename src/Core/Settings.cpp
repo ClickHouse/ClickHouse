@@ -6090,18 +6090,17 @@ Possible values:
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
     DECLARE(Bool, engine_file_skip_failed_data_files, false, R"(
-Enables or disables skipping files that fail to open or read (e.g. a corrupted gzip file) in [File](../../engines/table-engines/special/file.md) engine tables.
+Enables or disables skipping files that fail to open, read, decompress, or parse (e.g. a corrupted gzip file) in [File](../../engines/table-engines/special/file.md) engine tables.
 
 Possible values:
 - 0 — `SELECT` throws an exception when a file cannot be read.
 - 1 — `SELECT` skips files that cannot be read and returns results only from files that were read successfully.
 
 Notes:
+- Errors caused by reading the file are skipped: open and stat failures, decompression errors, format parse errors, and unreadable archives. Query-level errors (e.g. memory limits, timeouts, quota violations, query cancellation, logical errors) always propagate.
 - If a file fails in the middle of reading, the rows already read from it are kept in the result; only the rest of the file is skipped.
-- Any read error is skipped, including parse errors in the requested format, not only decompression and open failures.
+- A corrupted archive container (e.g. an unreadable `tar` or `zip`) is skipped as a whole.
 - The setting applies only to data reading. If format is not specified, schema inference on a corrupted file will still cause an error, so specify the format explicitly.
-- A corrupted archive itself (e.g. an unreadable `tar` or `zip`) still causes an error; the setting only skips unreadable files inside a readable archive.
-- Fatal errors (e.g. exceeding the memory limit or query cancellation) are never skipped.
 )", 0) \
     DECLARE(Bool, engine_url_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.

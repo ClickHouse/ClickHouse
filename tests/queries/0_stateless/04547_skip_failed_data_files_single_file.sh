@@ -18,4 +18,5 @@ mkdir -p "$DATA_DIR"
 echo "not a real gzip header" > "$DATA_DIR/corrupted.gz"
 
 # With the setting enabled, the corrupted file is skipped and 0 rows are returned.
-$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM file('$DATA_DIR/corrupted.gz', 'LineAsString') SETTINGS engine_file_skip_failed_data_files=1"
+# Every skipped file is logged with a warning, so silence server logs.
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT count(*) FROM file('$DATA_DIR/corrupted.gz', 'LineAsString') SETTINGS engine_file_skip_failed_data_files=1"
