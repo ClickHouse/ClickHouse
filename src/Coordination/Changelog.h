@@ -223,9 +223,9 @@ struct LogReadPlan
     struct FileSpan
     {
         ChangelogFileDescriptionPtr file_description;
-        size_t position = 0;
-        uint64_t first_index = 0;
-        size_t count = 0;
+        size_t position = 0; /// byte offset of the first record in the file
+        uint64_t first_index = 0; /// log index of the record at `position`
+        size_t count = 0; /// number of consecutive records covered by this span
     };
 
     /// Speculative fill cursors. Present only when read-ahead is engaged.
