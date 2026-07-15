@@ -24,10 +24,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 إذا كانت حالة الاستخدام لديك تتضمن أداة معيّنة لا يتوفر لها برنامج تشغيل ClickHouse أصلي، وكنت ترغب في استخدامها عبر واجهة MySQL ووجدت بعض حالات عدم التوافق، فيُرجى [إنشاء issue](https://github.com/ClickHouse/ClickHouse/issues) في مستودع ClickHouse.
 
-::::note
+<Note>
 لدعم لهجة SQL الخاصة بأدوات ذكاء الأعمال المذكورة أعلاه بشكل أفضل، تُشغّل واجهة MySQL في ClickHouse استعلامات SELECT ضمنيًا مع الإعداد [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ar/reference/settings/session-settings#prefer_column_name_to_alias).
 لا يمكن تعطيل هذا، وقد يؤدي في حالات نادرة إلى اختلاف في السلوك بين الاستعلامات المرسلة إلى واجهتَي الاستعلام العادية وMySQL في ClickHouse.
-::::
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## تمكين واجهة MySQL على ClickHouse Cloud

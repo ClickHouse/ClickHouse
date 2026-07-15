@@ -1,0 +1,67 @@
+<test>
+    <settings>
+        <!-- Single-threaded so the measurement reflects encode/decode cost, not pipeline parallelism. -->
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- The queries deliberately do NOT set input_format_arrow_use_native_reader /
+         output_format_arrow_use_native_writer: they exercise the default path, which is the native
+         implementation on this branch and the Apache Arrow library on the compared master build, so
+         the comparison directly measures the speedup of this change. Pinning those settings would also
+         make every query fail on the master server (the settings do not exist there yet), which the
+         perf runner reports as an error and fails the whole test. -->
+
+    <!-- Source data covering the encoder/decoder paths that are not a plain memcpy: nullable columns
+         (validity bitmap), Bool (bit packing), Date (uint16->int32 widening), DateTime64 (rescale),
+         Decimal (sign extension), String, LowCardinality, Array. ~1/3 nulls exercises the validity path. -->
+    <create_query>
+        CREATE TABLE na_src
+        (
+            i64    Int64,
+            n_i64  Nullable(Int64),
+            n_u32  Nullable(UInt32),
+            b      Bool,
+            d      Date,
+            dt64   DateTime64(3),
+            dec    Decimal64(4),
+            s      String,
+            lc     LowCardinality(String),
+            arr    Array(Int64)
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO na_src
+        SELECT
+            number,
+            if(number % 3 = 0, NULL, number),
+            if(number % 5 = 0, NULL, toUInt32(number)),
+            number % 2,
+            toDate(number % 40000),
+            toDateTime64(number / 1000, 3),
+            toDecimal64(number % 100000, 4),
+            toString(number % 100000),
+            toString(number % 1000),
+            range(number % 5)
+        FROM numbers(20000000)
+    </fill_query>
+
+    <!-- A File(Arrow) table holding the same data, for the read (decode) benchmarks. -->
+    <create_query>CREATE TABLE na_arrow ENGINE = File(Arrow) AS na_src</create_query>
+    <fill_query>INSERT INTO na_arrow SELECT * FROM na_src</fill_query>
+
+    <!-- A File(Arrow) sink pointed at /dev/null for the write (encode) benchmark: the INSERT drives
+         the Arrow encoder server-side and the output is discarded. A plain "SELECT ... FORMAT Arrow"
+         would not measure encoding here, because the perf runner uses the native TCP protocol, which
+         ignores the query's FORMAT clause and sends Native blocks back to the client. -->
+    <create_query>CREATE TABLE na_arrow_out ENGINE = File(Arrow, '/dev/null') AS na_src</create_query>
+
+    <!-- WRITE / encode. -->
+    <query>INSERT INTO na_arrow_out SELECT * FROM na_src SETTINGS output_format_arrow_compression_method = 'none'</query>
+
+    <!-- READ / decode. -->
+    <query>SELECT * FROM na_arrow FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS na_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS na_arrow</drop_query>
+    <drop_query>DROP TABLE IF EXISTS na_arrow_out</drop_query>
+</test>
