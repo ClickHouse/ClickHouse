@@ -22,7 +22,7 @@ namespace DB
 struct Settings;
 
 /// Format version for cache entries. Must be incremented when the serialization format changes.
-inline constexpr UInt64 QUERY_PLAN_CACHE_FORMAT_VERSION = 2;
+inline constexpr UInt64 QUERY_PLAN_CACHE_FORMAT_VERSION = 3;
 
 /// Identifies a cached query plan. Two queries with the same key can safely share a cached plan.
 /// The key includes:

@@ -1757,7 +1757,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
+                            false,
+                            nullptr,
+                            nullptr,
+                            table_expression_query_info.buildNodeNameToInputNodeColumn());
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

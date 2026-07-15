@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -183,6 +184,11 @@ struct SelectQueryInfo
     /// The analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
+
+    /// Analyzer identifier to storage column mapping used by `SourceStepWithFilter`.
+    /// Cache-hit plans skip analyzer/planner construction, so `ReadFromTableStep`
+    /// restores this mapping directly.
+    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 
     /// Cached value of ExpressionAnalysisResult
     bool has_window = false;

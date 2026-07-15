@@ -15,7 +15,8 @@ public:
         TableExpressionModifiers table_expression_modifiers_,
         bool use_parallel_replicas_ = false,
         PrewhereInfoPtr prewhere_info_ = nullptr,
-        FilterDAGInfoPtr row_level_filter_ = nullptr);
+        FilterDAGInfoPtr row_level_filter_ = nullptr,
+        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column_ = {});
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -31,6 +32,7 @@ public:
     bool & useParallelReplicas() { return use_parallel_replicas; }
     PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
     FilterDAGInfoPtr getRowLevelFilter() const { return row_level_filter; }
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & getNodeNameToInputNodeColumn() const { return node_name_to_input_node_column; }
 
     QueryPlanStepPtr clone() const override;
 private:
@@ -42,6 +44,7 @@ private:
     /// policy: `ReadFromMergeTree` keeps it in `SelectQueryInfo::row_level_filter`, and
     /// `resolveStorages` restores it onto the freshly bound `SelectQueryInfo`.
     FilterDAGInfoPtr row_level_filter;
+    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 };
 
 }

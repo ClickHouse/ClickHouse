@@ -180,6 +180,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
         select_query_info.prewhere_info = reading_from_table->getPrewhereInfo();
         select_query_info.row_level_filter = reading_from_table->getRowLevelFilter();
+        select_query_info.node_name_to_input_node_column = reading_from_table->getNodeNameToInputNodeColumn();
     }
     else
     {
