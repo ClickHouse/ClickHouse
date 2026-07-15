@@ -37,8 +37,22 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_A} ENGINE = Atomic;
     CREATE DATABASE ${DB_B} ENGINE = Atomic;
 
-    CREATE TABLE ${DB_A}.${T_A} (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
-    CREATE TABLE ${DB_B}.${T_B} (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE ${DB_A}.${T_A}
+    (
+        id UInt32,
+        s String,
+        INDEX idx s TYPE minmax GRANULARITY 1,
+        CONSTRAINT cnstr CHECK id < 1000,
+        PROJECTION proj (SELECT s, count() GROUP BY s)
+    ) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE ${DB_B}.${T_B}
+    (
+        id UInt32,
+        s String,
+        INDEX idx s TYPE minmax GRANULARITY 1,
+        CONSTRAINT cnstr CHECK id < 1000,
+        PROJECTION proj (SELECT s, count() GROUP BY s)
+    ) ENGINE = MergeTree ORDER BY id;
 
     CREATE DATABASE ${DB_OVL} ENGINE = Overlay('${DB_A}', '${DB_B}');
 
@@ -49,6 +63,12 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 
     GRANT SHOW ON ${DB_OVL}.* TO ${USER_DUAL};
     GRANT SHOW ON ${DB_A}.* TO ${USER_DUAL};
+
+    -- Reading these system tables needs an explicit SELECT grant (unlike system.tables/columns).
+    -- The row-level SHOW privilege filter is what must hide the source rows through the facade.
+    GRANT SELECT ON system.data_skipping_indices TO ${USER_OVL}, ${USER_DUAL};
+    GRANT SELECT ON system.projections TO ${USER_OVL}, ${USER_DUAL};
+    GRANT SELECT ON system.constraints TO ${USER_OVL}, ${USER_DUAL};
 "
 
 echo 'Sanity: default user sees both source tables through the facade'
@@ -80,6 +100,23 @@ ${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
     SETTINGS show_remote_databases_in_system_tables = 1;
 "
 
+echo 'Facade-only SHOW grant: system.data_skipping_indices, system.projections and system.constraints list nothing for the facade'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    SELECT count() FROM system.data_skipping_indices WHERE database = '${DB_OVL}'
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    SELECT count() FROM system.projections WHERE database = '${DB_OVL}'
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    SELECT count() FROM system.constraints WHERE database = '${DB_OVL}'
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+
+echo 'Facade-only SHOW grant: SHOW INDEXES exposes no secondary index'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "SHOW INDEXES FROM ${T_A} FROM ${DB_OVL};" | grep -c idx
+
 echo 'Dual SHOW grants: SHOW TABLES lists only the tables of the granted source'
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "SHOW TABLES FROM ${DB_OVL};"
 
@@ -102,6 +139,24 @@ ${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "DESCRIBE TABLE ${DB_OVL}
 echo 'Dual SHOW grants: SHOW COLUMNS lists the columns of the granted table only'
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "SHOW COLUMNS FROM ${T_A} FROM ${DB_OVL};" | wc -l
 ${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "SHOW COLUMNS FROM ${T_B} FROM ${DB_OVL};" | wc -l
+
+echo 'Dual SHOW grants: system.data_skipping_indices, system.projections and system.constraints show the granted source only'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "
+    SELECT table, name FROM system.data_skipping_indices WHERE database = '${DB_OVL}' ORDER BY table, name
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "
+    SELECT table, name FROM system.projections WHERE database = '${DB_OVL}' ORDER BY table, name
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "
+    SELECT table, name FROM system.constraints WHERE database = '${DB_OVL}' ORDER BY table, name
+    SETTINGS show_remote_databases_in_system_tables = 1;
+"
+
+echo 'Dual SHOW grants: SHOW INDEXES exposes the granted source index but not the non-granted one'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "SHOW INDEXES FROM ${T_A} FROM ${DB_OVL};" | grep -c idx
+${CLICKHOUSE_CLIENT} -nm --user="${USER_DUAL}" --query "SHOW INDEXES FROM ${T_B} FROM ${DB_OVL};" | grep -c idx
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE IF EXISTS ${DB_OVL};

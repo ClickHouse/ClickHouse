@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
@@ -148,6 +149,16 @@ protected:
 
                 const auto table = tables_it->table();
                 if (!table)
+                    continue;
+
+                /// When the table is reached through a read-only `Overlay` facade, `SHOW_TABLES` must
+                /// also be granted on the underlying source table: the facade must not widen metadata
+                /// visibility. The facade-side database shortcut above does not cover the source database,
+                /// so this check runs regardless of `check_access_for_tables`.
+                if (auto overlay_source_id
+                        = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, table);
+                    overlay_source_id
+                        && !access->isGranted(AccessType::SHOW_TABLES, overlay_source_id->database_name, overlay_source_id->table_name))
                     continue;
 
                 add_constraints(database_name, table_name, table);

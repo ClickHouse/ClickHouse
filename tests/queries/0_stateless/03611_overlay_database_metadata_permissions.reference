@@ -15,6 +15,12 @@ Facade-only SHOW grant: SHOW COLUMNS lists nothing
 Facade-only SHOW grant: system.tables and system.columns list nothing for the facade
 0
 0
+Facade-only SHOW grant: system.data_skipping_indices, system.projections and system.constraints list nothing for the facade
+0
+0
+0
+Facade-only SHOW grant: SHOW INDEXES exposes no secondary index
+0
 Dual SHOW grants: SHOW TABLES lists only the tables of the granted source
 t_a
 Dual SHOW grants: EXISTS sees the granted source table but not the non-granted one
@@ -30,4 +36,11 @@ Dual SHOW grants: DESCRIBE is denied for the non-granted source table
 ACCESS_DENIED
 Dual SHOW grants: SHOW COLUMNS lists the columns of the granted table only
 2
+0
+Dual SHOW grants: system.data_skipping_indices, system.projections and system.constraints show the granted source only
+t_a	idx
+t_a	proj
+t_a	cnstr
+Dual SHOW grants: SHOW INDEXES exposes the granted source index but not the non-granted one
+1
 0
