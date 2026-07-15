@@ -22,6 +22,12 @@
 === struct_map_date32_garbage_under_null, native_reader=1
 \N
 ({'b':'1970-01-02'})
+=== struct_string_view_garbage_view_under_null, native_reader=1
+\N
+('hi')
+=== struct_json_garbage_bytes_under_null, native_reader=1
+\N
+('{"a":1}')
 === struct_date32_garbage_under_null, native_reader=0
 \N
 ('1970-02-12')
@@ -46,6 +52,12 @@
 === struct_map_date32_garbage_under_null, native_reader=0
 \N
 ({'b':'1970-01-02'})
+=== struct_string_view_garbage_view_under_null, native_reader=0
+\N
+('hi')
+=== struct_json_garbage_bytes_under_null, native_reader=0
+\N
+('{"a":1}')
 === list_date32_garbage_in_null_slot_range, native reader
 ['1970-01-01']
 ['1970-01-02']

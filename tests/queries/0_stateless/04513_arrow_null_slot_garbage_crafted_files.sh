@@ -26,6 +26,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   struct_large_list_date32_garbage_under_null: as above with large_list
 #   struct_fixed_size_list_date32_garbage_under_null: as above with fixed_size_list
 #   struct_map_date32_garbage_under_null:        struct<m: map<string, date32>>, garbage map value
+#   struct_string_view_garbage_view_under_null:  struct<v: string_view>, the NULL row's 16-byte view
+#                                                struct holds garbage (length -1); the child's own
+#                                                validity marks the slot valid
+#   struct_json_garbage_bytes_under_null:        struct<j: string> read as Nullable(Tuple(j JSON));
+#                                                the NULL row's bytes are not valid JSON
 #
 # Read only with the native reader — a NULL list/map slot whose offsets span a non-empty range
 # (spec-legal: offsets stay monotonic, the range's bytes are undefined). The Apache Arrow library
@@ -63,6 +68,13 @@ for reader in 1 0; do
         $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/$f.arrow', 'Arrow')
             SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
     done
+
+    echo "=== struct_string_view_garbage_view_under_null, native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_string_view_garbage_view_under_null.arrow', 'Arrow')
+        SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_json_garbage_bytes_under_null, native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_json_garbage_bytes_under_null.arrow', 'Arrow', 's Nullable(Tuple(j JSON))')
+        SETTINGS allow_experimental_nullable_tuple_type = 1, enable_json_type = 1, input_format_arrow_use_native_reader = $reader"
 done
 
 for f in list_date32_garbage_in_null_slot_range fixed_size_list_date32_garbage_in_null_slot_range map_date32_garbage_in_null_slot_range; do

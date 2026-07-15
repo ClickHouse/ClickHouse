@@ -567,8 +567,16 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+/// Rows whose values are semantically absent: rows under a null slot of an ancestor struct, or rows in
+/// a list range no valid slot references. The Arrow spec leaves the value bytes of a null slot
+/// undefined, so value-level validation (the `Date32` range check, dictionary index bounds, view-struct
+/// checks, JSON parsing) must not reject such rows; their values decode as type defaults instead.
+using InvisibleRowsMask = std::vector<PaddedPODArray<UInt8>>;
+
 template <typename ArrowView>
-static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithViewData(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
+    const InvisibleRowsMask * invisible_rows)
 {
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
@@ -581,9 +589,9 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
 
     size_t total_bytes_size = 0;
 
-    for (const auto & arrow_chunk : arrow_column->chunks())
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_column->chunk(chunk_i), column_name);
         const int64_t chunk_length = arrow_view_chunk.length();
         /// An empty chunk in a multi-batch stream can leave buffers[1] null; skip it before
         /// forming a pointer into the view-struct buffer.
@@ -591,8 +599,9 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
             continue;
         const auto * view_structs = reinterpret_cast<const arrow::BinaryViewType::c_type *>(
             arrow_view_chunk.data()->buffers[1]->data()) + arrow_view_chunk.offset();
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
-        if (arrow_view_chunk.null_count() == 0)
+        if (arrow_view_chunk.null_count() == 0 && !invisible)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
@@ -604,7 +613,9 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
-                if (arrow_view_chunk.IsValid(i))
+                /// The 16-byte view struct of a null or invisible slot holds undefined bytes per the
+                /// Arrow spec — it must not be validated or dereferenced.
+                if (arrow_view_chunk.IsValid(i) && !(invisible && invisible[i]))
                 {
                     checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
                     total_bytes_size += static_cast<size_t>(view_structs[i].size());
@@ -622,12 +633,13 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
 
     const UInt8 dummy_byte = 0;
 
-    for (const auto & arrow_chunk : arrow_column->chunks())
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_column->chunk(chunk_i), column_name);
         const int64_t chunk_length = arrow_view_chunk.length();
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
-        if (arrow_view_chunk.null_count() == 0)
+        if (arrow_view_chunk.null_count() == 0 && !invisible)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
@@ -648,7 +660,8 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
-                if (arrow_view_chunk.IsValid(i))
+                /// A null or invisible slot decodes as an empty string.
+                if (arrow_view_chunk.IsValid(i) && !(invisible && invisible[i]))
                 {
                     const auto & view = arrow_view_chunk.GetView(i);
                     size_t len = view.length();
@@ -673,7 +686,8 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const String & column_name,
     DataTypePtr type_hint,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    const InvisibleRowsMask * invisible_rows)
 {
     const auto internal_type = type_hint ? type_hint : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
     const auto serialization = internal_type->getDefaultSerialization();
@@ -727,7 +741,9 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     column_name, row_i, chunk.value_offset(row_i), chunk.value_length(row_i), data_buf_size);
         };
 
-        if (chunk.null_count() == 0)
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
+
+        if (chunk.null_count() == 0 && !invisible)
         {
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
@@ -739,9 +755,12 @@ static ColumnWithTypeAndName readColumnWithJSONData(
         }
         else
         {
+            const bool has_nulls = chunk.null_count() != 0;
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
-                if (chunk.IsNull(row_i))
+                /// The bytes of a null or invisible slot are undefined per the Arrow spec and must not
+                /// be parsed; such rows decode as the default (empty) object.
+                if ((has_nulls && chunk.IsNull(row_i)) || (invisible && invisible[row_i]))
                 {
                     column_object.insertDefault();
                     continue;
@@ -892,12 +911,6 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
     }
     return {std::move(internal_column), internal_type, column_name};
 }
-
-/// Rows whose values are semantically absent: rows under a null slot of an ancestor struct, or rows in
-/// a list range no valid slot references. The Arrow spec leaves the value bytes of a null slot
-/// undefined, so value-level validation (the `Date32` range check, dictionary index bounds) must not
-/// reject such rows; their values decode as type defaults instead.
-using InvisibleRowsMask = std::vector<PaddedPODArray<UInt8>>;
 
 /// The invisible-rows mask for the children of a struct column: struct children are row-aligned with the
 /// parent, so a child row is invisible when the parent row is (mask) or when the struct's own slot is
@@ -1896,7 +1909,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     case TypeIndex::Object:
                         if (settings.enable_json_parsing)
                             return readColumnWithJSONData<arrow::BinaryArray>(
-                                arrow_column, column_name, type_hint, settings.format_settings);
+                                arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
                         [[fallthrough]];
                     default:
                         break;
@@ -1905,7 +1918,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             if (settings.enable_json_parsing && isColumnJSON(arrow_field, type_hint))
             {
-                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
+                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
             }
 
             if (geo_metadata && settings.allow_geoparquet_parser)
@@ -1992,7 +2005,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             if (settings.enable_json_parsing
                 && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field, type_hint)))
-                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
+                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
             return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::BOOL:
@@ -2479,11 +2492,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::BINARY_VIEW:
         {
-            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name);
+            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name, invisible_rows);
         }
         case arrow::Type::STRING_VIEW:
         {
-            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name);
+            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name, invisible_rows);
         }
             // TODO: read JSON as a string?
         case arrow::Type::NA:
