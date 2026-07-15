@@ -44,9 +44,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// The result must not be a constant column: `authenticated_user` is not propagated to
+    /// secondary queries (see `ClientInfo::write`), so folding the call on the initiator of a
+    /// distributed query would ship the initiator's authenticated user to every shard instead
+    /// of letting each shard observe its own value (same as `queryID` and `currentQueryID`).
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, user_name);
+        return DataTypeString().createColumnConst(input_rows_count, user_name)->convertToFullColumnIfConst();
     }
 };
 
