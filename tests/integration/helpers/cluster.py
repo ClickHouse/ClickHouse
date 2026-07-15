@@ -1,5 +1,4 @@
 import base64
-import concurrent
 import errno
 import http.client
 import json
@@ -4242,7 +4241,13 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
+    def shutdown(
+        self,
+        kill=True,
+        ignore_fatal=False,
+        ignore_logical_errors=False,
+        ignore_sanitizer=False,
+    ):
         sanitizer_assert_instance = None
         failure_logs = []
 
@@ -4268,7 +4273,7 @@ class ClickHouseCluster:
                     exit_code = res["StatusCode"]
                     logging.info(f"The server {name} exited with code: {exit_code}")
 
-                if instance.contains_in_log(
+                if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
@@ -4664,19 +4669,12 @@ class ClickHouseCluster:
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
-
-        def process_single_node(node):
-            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
-            subprocess_check_call(base_cmd + [action, node])
-            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
-            futures = []
-            for n in nodes:
-                futures += [executor.submit(process_single_node, n)]
-
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
+        # One `docker compose` invocation for all nodes: concurrent compose commands on
+        # the same project race on shared project state and can silently drop a node's
+        # action. compose parallelizes the services internally.
+        logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
+        subprocess_check_call(base_cmd + [action] + list(nodes))
+        logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
@@ -5416,7 +5414,13 @@ class ClickHouseInstance:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
     def start_clickhouse(
-        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+        self,
+        start_wait_sec=60,
+        retry_start=True,
+        expected_to_fail=False,
+        environment=None,
+        wait_start=True,
+        daemon=False
     ):
         if not self.stay_alive:
             raise Exception(
@@ -5433,12 +5437,23 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 exec_id = self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command],
+                    [
+                        "bash",
+                        "-c",
+                        (
+                            self.clickhouse_start_command_in_daemon
+                            if daemon
+                            else self.clickhouse_start_command
+                        ),
+                    ],
                     user=str(os.getuid()),
                     detach=True,
                     use_cli=False,
                     get_exec_id=True,
+                    environment=environment,
                 )
+                if not wait_start:
+                    return exec_id
                 if expected_to_fail:
                     self.wait_start_failed(start_wait_sec + start_time - time.time())
                     return
@@ -5530,9 +5545,9 @@ class ClickHouseInstance:
             "ClickHouse server is still running, but was expected to shutdown. Check logs."
         )
 
-    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False, daemon=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
-        self.start_clickhouse(stop_start_wait_sec)
+        self.start_clickhouse(stop_start_wait_sec, daemon=daemon)
 
     def exec_in_container(
         self,

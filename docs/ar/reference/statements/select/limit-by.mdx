@@ -1,0 +1,207 @@
+---
+description: 'توثيق بند LIMIT BY'
+sidebarTitle: 'LIMIT BY'
+slug: /sql-reference/statements/select/limit-by
+title: 'بند LIMIT BY'
+doc_type: 'reference'
+---
+
+يحدِّد الاستعلام الذي يحتوي على البند `LIMIT n BY expressions` أول `n` صفوف لكل قيمة مميزة من `expressions`. ويمكن أن يحتوي المفتاح الخاص بـ `LIMIT BY` على أي عدد من [expressions](/ar/reference/syntax#expressions).
+
+يدعم ClickHouse صيغ البنية التالية:
+
+* `LIMIT [offset_value, ]n BY expressions`
+* `LIMIT n OFFSET offset_value BY expressions`
+
+أثناء معالجة الاستعلام، يحدِّد ClickHouse البيانات مرتبةً بحسب مفتاح الفرز. ويُضبط مفتاح الفرز صراحةً باستخدام البند [ORDER BY](/ar/reference/statements/select/order-by) أو ضمنيًا كخاصية من خصائص محرك الجدول (لا يُضمن ترتيب الصفوف إلا عند استخدام [ORDER BY](/ar/reference/statements/select/order-by)، وإلا فلن تكون كتل الصفوف مرتبةً بسبب تعدد سلاسل التنفيذ). بعد ذلك يطبّق ClickHouse ‏`LIMIT n BY expressions` ويُرجع أول `n` صفوف لكل تركيبة مميزة من `expressions`. وإذا تم تحديد `OFFSET`، فعندئذٍ يتجاوز ClickHouse، لكل كتلة بيانات تنتمي إلى تركيبة مميزة من `expressions`، عدد `offset_value` من الصفوف من بداية الكتلة ويُرجع بحد أقصى `n` صفوف كنتيجة. وإذا كانت `offset_value` أكبر من عدد الصفوف في كتلة البيانات، فإن ClickHouse لا يُرجع أي صفوف من الكتلة.
+
+<Note>
+  لا يرتبط `LIMIT BY` بـ [LIMIT](/ar/reference/statements/select/limit). ويمكن استخدامهما معًا في الاستعلام نفسه.
+</Note>
+
+إذا أردت استخدام أرقام الأعمدة بدلًا من أسماء الأعمدة في البند `LIMIT BY`، ففعّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings#enable_positional_arguments).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+جدول مثال:
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+الاستعلامات:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+يعطي الاستعلام `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` النتيجة نفسها.
+
+يعطي الاستعلام التالي أعلى 5 مصادر إحالة لكل زوج `domain, device_type`، بحد أقصى 100 صف إجمالًا (`LIMIT n BY + LIMIT`).
+
+```sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer, device_type
+ORDER BY cnt DESC
+LIMIT 5 BY domain, device_type
+LIMIT 100;
+```
+
+يعمل `LIMIT BY` أيضًا مع الحدود والإزاحات السالبة. وعلى غرار [بند LIMIT السالب](/ar/reference/statements/select/limit#negative-limits)، يمكنك استخدام قيم سالبة مع `LIMIT BY` لاختيار الصفوف من *نهاية* كل مجموعة.
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+يُرجع آخر صفَّين لكل `id`. بالنسبة إلى `id = 1`، نحصل على الصفَّين `11` و`12`؛ وبالنسبة إلى `id = 2`، تُرجَع كلا الصفَّين لأن المجموعة لا تضم سوى صفَّين.
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -1 OFFSET -1 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  2 │  20 │
+└────┴─────┘
+```
+
+يعيد الصف قبل الأخير لكل `id`: حيث إن `OFFSET -1` في النهاية يستبعد الصف الأخير من كل مجموعة، ثم يُبقي `-1` في البداية على الصف الأخير مما تبقّى.
+
+ويمكن أيضًا مزج قيم `LIMIT` و`OFFSET` ذات الإشارات المختلفة. على سبيل المثال، لاستبعاد الصف الأول من كل مجموعة ثم الاحتفاظ بآخر صفَّين مما تبقّى:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+بالنسبة إلى `id = 1`، يُتخطى الصف الأول (`10`)؛ ثم يُعاد الصفّان `11` و`12` معًا. وبالنسبة إلى `id = 2`، يُتخطى الصف الأول (`20`)، فلا يبقى سوى `21`.
+
+<div id="limit-by-all">
+  ## LIMIT BY ALL
+</div>
+
+يعادل `LIMIT BY ALL` سرد جميع التعبيرات المحددة في `SELECT` التي ليست دوالًا تجميعية.
+
+على سبيل المثال:
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY ALL;
+```
+
+مماثل لـ
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY col1, col2, col3;
+```
+
+في حالة خاصة، إذا كانت هناك دالة تتضمن في وسائطها دوالًا تجميعية وحقولًا أخرى، فستتضمن مفاتيح `LIMIT BY` أكبر عدد ممكن من الحقول غير التجميعية التي يمكن استخراجها منها.
+
+على سبيل المثال:
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY ALL;
+```
+
+مطابق لـ
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+جدول توضيحي:
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+الاستعلامات:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+يعيد الاستعلام `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` النتيجة نفسها.
+
+باستخدام `LIMIT BY ALL`:
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY ALL;
+```
+
+وهذا يعادل:
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY id, val;
+```

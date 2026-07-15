@@ -2,10 +2,12 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -42,6 +44,8 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
         {"compressed_size", std::make_shared<DataTypeUInt64>(), "Compressed size of the backup. If the backup is not stored as an archive it equals to uncompressed_size."},
         {"files_read", std::make_shared<DataTypeUInt64>(), "Number of files read during the restore operation."},
         {"bytes_read", std::make_shared<DataTypeUInt64>(), "Total size of files read during the restore operation."},
+        {"settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeString>()), "Backup/restore-specific settings effectively used for this operation (from the `SETTINGS` clause, including defaults). Sensitive settings are not exposed."},
+        {"engine_settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeString>()), "Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty when the operation involves more than one engine that a flat map cannot represent: incremental backups and restores, lightweight snapshot restores, and non-internal `ON CLUSTER` operations."},
     };
 }
 
@@ -67,6 +71,17 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(info.compressed_size);
     columns[i++]->insert(info.num_read_files);
     columns[i++]->insert(info.num_read_bytes);
+
+    auto to_map_field = [](const std::map<String, String> & map)
+    {
+        Map map_field;
+        map_field.reserve(map.size());
+        for (const auto & [key, value] : map)
+            map_field.push_back(Tuple{key, value});
+        return map_field;
+    };
+    columns[i++]->insert(to_map_field(info.settings));
+    columns[i++]->insert(to_map_field(info.engine_settings));
 }
 
 }
