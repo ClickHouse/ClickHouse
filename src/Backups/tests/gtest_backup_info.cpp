@@ -469,8 +469,21 @@ TEST(BackupInfo, NormalizedStringRejectsInvalidBackupEngineShapes)
 
 TEST(BackupInfo, NormalizedStringSupportsNullAndRejectsMemoryEngine)
 {
+    auto ignored_null_arguments = BackupInfo::fromString(
+        "Null(missing_collection, url=throwIf(1), extra_credentials(foo='bar'))");
+
     EXPECT_THROW((void)BackupInfo::fromString("Memory('backup')").toNormalizedString(), Exception);
     EXPECT_EQ(BackupInfo::fromString("Null()").toNormalizedString(), "Null()");
+    EXPECT_EQ(BackupInfo::fromString("Null(collection)").toNormalizedString(), "Null()");
+    EXPECT_EQ(BackupInfo::fromString("Null(collection)").toNormalizedString(ContextPtr{}), "Null()");
+    EXPECT_EQ(ignored_null_arguments.toNormalizedString(ContextPtr{}), "Null()");
+    EXPECT_THROW((void)BackupInfo::fromString("Null(collection, 'x')").toNormalizedString(), Exception);
+
+    auto frozen = ignored_null_arguments.freezeNamedCollection(ContextPtr{});
+    EXPECT_EQ(frozen.id_arg, ignored_null_arguments.id_arg);
+    EXPECT_EQ(frozen.kv_args.size(), ignored_null_arguments.kv_args.size());
+    EXPECT_EQ(frozen.function_arg, ignored_null_arguments.function_arg);
+    EXPECT_FALSE(frozen.frozen_named_collection);
 }
 
 #if USE_AWS_S3

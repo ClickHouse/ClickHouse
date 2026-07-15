@@ -566,7 +566,7 @@ namespace
 
         if (info.backup_engine_name == "Null")
         {
-            if (has_named_collection || !info.args.empty())
+            if (!info.args.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Null' doesn't take arguments");
             return;
         }
@@ -576,6 +576,9 @@ namespace
 
     String toNormalizedStringImpl(const BackupInfo & info)
     {
+        if (info.backup_engine_name == "Null")
+            return "Null()";
+
         String result = info.backup_engine_name + "(";
         bool first = true;
         const bool has_named_collection = !info.id_arg.empty();
@@ -852,7 +855,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
         return toNormalizedStringImpl(info);
     };
 
-    if (id_arg.empty())
+    if (id_arg.empty() || backup_engine_name == "Null")
         return normalize_with_context(*this);
 
     validateBackupInfoShapeForNormalizedIdentity(*this, context);
@@ -1001,7 +1004,7 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
 
 BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
 {
-    if (id_arg.empty())
+    if (id_arg.empty() || backup_engine_name == "Null")
         return *this;
 
     BackupInfo res = *this;
