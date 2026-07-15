@@ -1,0 +1,17 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <test_disk_04327_sed_local>
+                <type>local</type>
+                <path from_env="TEST_DISK_04327_SED_LOCAL_PATH"></path>
+            </test_disk_04327_sed_local>
+            <test_disk_04327_sed_object_storage>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <path from_env="TEST_DISK_04327_SED_OBJECT_STORAGE_PATH"></path>
+                <metadata_path from_env="TEST_DISK_04327_SED_OBJECT_STORAGE_METADATA_PATH"></metadata_path>
+            </test_disk_04327_sed_object_storage>
+        </disks>
+    </storage_configuration>
+</clickhouse>

@@ -54,7 +54,7 @@ enum class FunctionSleepVariant : uint8_t
     PerRow
 };
 
-class FunctionSleep : public IFunction
+class FunctionSleep final : public IFunction
 {
 private:
     const char * function_name;

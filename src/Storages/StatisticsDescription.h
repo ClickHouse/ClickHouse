@@ -16,7 +16,8 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
-    NullCount = 4,
+    Basic = 4, /// Min, max, string-length min/max, and null count, depending on the column type.
+    UniqV2 = 5,
 
     Max = 63,
 };
@@ -32,9 +33,9 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription() = delete;
     SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
 
-    SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) : type{} { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
-    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept { *this = std::move(other); }
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept : type{} { *this = std::move(other); }
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;

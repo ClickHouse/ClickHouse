@@ -1,0 +1,62 @@
+<test>
+    <create_query>
+CREATE TABLE window_transform_wide_lc
+ENGINE = MergeTree ORDER BY (p, v)
+AS SELECT
+    number AS v,
+    toUInt16(number % 128) AS p,
+    toLowCardinality(concat('category_value_', toString(number % 5000))) AS c1,
+    toLowCardinality(concat('category_value_', toString(number % 4999))) AS c2,
+    toLowCardinality(concat('category_value_', toString(number % 4998))) AS c3,
+    toLowCardinality(concat('category_value_', toString(number % 4997))) AS c4,
+    toLowCardinality(concat('category_value_', toString(number % 4996))) AS c5,
+    toLowCardinality(concat('category_value_', toString(number % 4995))) AS c6,
+    toLowCardinality(concat('category_value_', toString(number % 4994))) AS c7,
+    toLowCardinality(concat('category_value_', toString(number % 4993))) AS c8,
+    toLowCardinality(concat('category_value_', toString(number % 4992))) AS c9,
+    toLowCardinality(concat('category_value_', toString(number % 4991))) AS c10
+FROM numbers_mt(10000000);
+    </create_query>
+
+    <!-- Lots of pass-through columns. -->
+    <query><![CDATA[
+        SELECT *, count() OVER () AS w FROM window_transform_wide_lc FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT *, sum(v) OVER () AS w FROM window_transform_wide_lc FORMAT Null;
+    ]]></query>
+
+    <!-- cume_dist over a low-cardinality ORDER BY. -->
+    <query><![CDATA[
+        SELECT cume_dist() OVER (ORDER BY k) FROM (SELECT number % 5000 AS k FROM numbers(1000000)) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT cume_dist() OVER (ORDER BY k) FROM (SELECT number % 2000 AS k FROM numbers(1000000)) FORMAT Null;
+    ]]></query>
+
+    <!-- Many rows that have the same frame and aggregate state that is expensive to finalize. -->
+    <query><![CDATA[
+        SELECT quantilesTDigest(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)(number) OVER () FROM numbers(1000000) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT quantilesTDigest(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)(number) OVER (ORDER BY k RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM (SELECT number, number % 50 AS k FROM numbers(1000000)) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(10000000) FORMAT Null;
+    ]]></query>
+
+    <!-- Partition-boundary and peer-group has big equal range. -->
+    <query><![CDATA[
+        SELECT count() OVER (PARTITION BY k) FROM (SELECT number % 8 AS k FROM numbers(50000000)) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT count() OVER (ORDER BY k RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM (SELECT number % 10 AS k FROM numbers(20000000)) FORMAT Null;
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS window_transform_wide_lc</drop_query>
+</test>

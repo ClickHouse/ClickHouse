@@ -36,7 +36,7 @@ TEST(ColumnObject, GetName)
     ASSERT_EQ(col->getName(), "Object(max_dynamic_paths=20, max_dynamic_types=10, a.b Array(String), b.d UInt32)");
 }
 
-Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
+static Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
     ReadBufferFromMemory buf(data);

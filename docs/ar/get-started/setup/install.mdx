@@ -1,0 +1,72 @@
+---
+description: 'تثبيت ClickHouse'
+keywords: ['clickhouse', 'تثبيت', 'البدء', 'البدء السريع']
+sidebarTitle: 'تثبيت'
+slug: /install
+title: 'إرشادات التثبيت'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/ar/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="ابدأ مجانًا">
+  ابدأ فورًا من دون الحاجة إلى تحديد حجم عنقودك أو توسيعه. تتولى ClickHouse Cloud مهام تحديد الحجم، والتوسّع
+  ، والأمان، والموثوقية، والترقيات.
+</Card>
+
+<br />
+
+إذا كنت تفضّل الإدارة الذاتية، فاختر أحد خيارات ClickHouse مفتوح المصدر أدناه.
+استخدم برنامج التثبيت السريع النصي أو واجهة سطر الأوامر `clickhousectl` لإعداد محلي، أو ثبّت
+ClickHouse Server من الحزم أو الملفات التنفيذية لنشره في بيئة الإنتاج.
+
+<h3 className="install-group-heading">التطوير المحلي</h3>
+
+<p className="install-group-description">
+  شغّل ClickHouse على جهازك لبناء التطبيقات واختبارها والتجربة.
+  يوفّر لك التثبيت السريع ملفًا تنفيذيًا واحدًا بسرعة، أو استخدم clickhousectl
+  لتثبيت الإصدارات والخوادم المحلية وإدارتها.
+</p>
+
+<div className="installContainer">
+  <a href="/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="التثبيت السريع" />
+  </a>
+
+  <a href="/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="البناء من المصدر" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">خادم الإنتاج</h3>
+
+<p className="install-group-description">
+  ثبّت ClickHouse Server من الحزم أو الملفات التنفيذية من أجل
+  نشر طويل الأمد على بنيتك التحتية الخاصة.
+</p>
+
+<div className="installContainer">
+  <a href="/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="لينكس آخر" />
+  </a>
+</div>

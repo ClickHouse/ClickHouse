@@ -194,7 +194,7 @@ Block NativeReader::read()
         String type_name;
         if (format_settings && format_settings->native.decode_types_in_binary_format)
         {
-            column.type = decodeDataType(istr);
+            column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
             type_name = column.type->getName();
         }
         else
@@ -214,7 +214,7 @@ Block NativeReader::read()
             /// in-memory state, it should be able to handle all possible serialization variants.
             auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
-            UInt8 has_custom;
+            UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);

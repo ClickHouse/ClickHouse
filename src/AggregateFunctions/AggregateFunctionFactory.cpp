@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -214,9 +215,28 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+
+        AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
-            return found.window_creator(name, argument_types, parameters, settings);
-        return found.creator(name, argument_types, parameters, settings);
+            function = found.window_creator(name, argument_types, parameters, settings);
+        else
+            function = found.creator(name, argument_types, parameters, settings);
+
+        /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
+        /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
+        /// or normalize these parameters.
+        /// (Otherwise it would become a different DataTypeAggregateFunction (see DataTypeAggregateFunction::strictEquals),
+        /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
+        /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
+        /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
+        ///
+        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
+        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
+        /// They should be fixed to preserve their parameters like every other aggregation function.
+        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
+            "function->getParameters() must equal the parameters passed to the factory");
+
+        return function;
     }
 
     /// Combinators of aggregate functions.
@@ -251,17 +271,35 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
-        DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
-        /// Aggregate function Nothing does not use parameters but preserves them for consistency.
-        if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
-            std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
-            std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
-                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        AggregateFunctionPtr combined_function;
+        if (combinator->transformsMultipleNestedFunctions())
+        {
+            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per
+            /// tuple element).
+            auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
 
-        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+            VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
+            nested_functions.reserve(nested_arguments_list.size());
+            for (const auto & nested_arguments : nested_arguments_list)
+                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+
+            combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
+                getAliasToOrName(nested_name), std::move(nested_functions), out_properties, argument_types, parameters);
+        }
+        else
+        {
+            DataTypes nested_types = combinator->transformArguments(argument_types);
+
+            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        }
+
+        /// Same invariant as above.
+        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
+            "function->getParameters() must equal the parameters passed to the factory");
+        return combined_function;
     }
 
 

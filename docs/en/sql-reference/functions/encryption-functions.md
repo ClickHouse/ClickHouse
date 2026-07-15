@@ -7,8 +7,6 @@ keywords: ['encryption', 'regular functions', 'encrypt', 'decrypt']
 doc_type: 'reference'
 ---
 
-# Encryption functions
-
 These functions implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
 The key length depends on the encryption mode: `16`, `24`, and `32` bytes long for `-128-`, `-196-`, and `-256-` modes respectively.

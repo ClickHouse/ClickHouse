@@ -3,7 +3,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Event.h>
 
@@ -121,6 +121,10 @@ public:
         return true;
     }
     bool supportsPrewhere() const override;
+    /// read() forwards the already-analyzed query straight to the destination table, so the
+    /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
+    /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
+    bool supportsOptimizationToSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

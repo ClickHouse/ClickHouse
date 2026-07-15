@@ -11,6 +11,8 @@
 
 #include <Columns/IColumn_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -21,7 +23,7 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -64,6 +66,11 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
 /// Returns true, if node has type QUERY or UNION and uses any columns from outer scope
 bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/// Returns true, if the node or any node in its subtree is a correlated subquery/union.
+/// A correlated subquery must be evaluated exactly once, so optimizations that clone or
+/// distribute an expression must not do so when the expression contains one.
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
 
 /* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
@@ -217,5 +224,16 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+
+/// Returns true if the subquery's projection matches the storage schema (column count and
+/// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise
+/// returns false.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch);
 
 }

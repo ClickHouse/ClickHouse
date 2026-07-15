@@ -1,0 +1,132 @@
+---
+slug: /use-cases/AI/MCP/anythingllm
+sidebarTitle: 'Integrar AnythingLLM'
+title: 'Uso de servidor MCP de ClickHouse con AnythingLLM'
+description: 'Esta guía explica cómo configurar AnythingLLM con un servidor MCP de ClickHouse usando Docker.'
+keywords: ['AI', 'AnythingLLM', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+> Esta guía explica cómo configurar [AnythingLLM](https://anythingllm.com/) con un servidor MCP de ClickHouse usando Docker
+> y cómo conectarlo a los conjuntos de datos de ejemplo de ClickHouse.
+
+<Steps>
+  <Step>
+    ## Instalar Docker
+
+    Necesitarás Docker para ejecutar LibreChat y el servidor MCP de ClickHouse. Para obtener Docker:
+
+    1. Visita [docker.com](https://www.docker.com/products/docker-desktop)
+    2. Descarga Docker Desktop para tu sistema operativo
+    3. Instala Docker siguiendo las instrucciones correspondientes a tu sistema operativo
+    4. Abre Docker Desktop y asegúrate de que esté en ejecución
+
+    <br />
+
+    Para más información, consulta la [documentación de Docker](https://docs.docker.com/get-docker/).
+  </Step>
+
+  <Step>
+    ## Descargar la imagen de Docker de AnythingLLM
+
+    Ejecuta el siguiente comando para descargar la imagen de Docker de AnythingLLM en tu equipo:
+
+    ```bash
+    docker pull anythingllm/anythingllm
+    ```
+  </Step>
+
+  <Step>
+    ## Configurar la ubicación de almacenamiento
+
+    Crea un directorio para el almacenamiento e inicializa el archivo de entorno:
+
+    ```bash
+    export STORAGE_LOCATION=$PWD/anythingllm && \
+    mkdir -p $STORAGE_LOCATION && \
+    touch "$STORAGE_LOCATION/.env" 
+    ```
+  </Step>
+
+  <Step>
+    ## Configurar el archivo de configuración del MCP server
+
+    Crea el directorio `plugins`:
+
+    ```bash
+    mkdir -p "$STORAGE_LOCATION/plugins"
+    ```
+
+    Crea un archivo llamado `anythingllm_mcp_servers.json` en el directorio `plugins` y añade el siguiente contenido:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": ""
+          }
+        }
+      }
+    }
+    ```
+
+    Si quieres explorar tus propios datos, puedes hacerlo
+    usando el [host, nombre de usuario y contraseña](/es/get-started/setup/cloud#connect-with-your-app)
+    de tu propio ClickHouse Cloud service.
+  </Step>
+
+  <Step>
+    ## Iniciar el contenedor de Docker de AnythingLLM
+
+    Ejecuta el siguiente comando para iniciar el contenedor de Docker de AnythingLLM:
+
+    ```bash
+    docker run -p 3001:3001 \
+    --cap-add SYS_ADMIN \
+    -v ${STORAGE_LOCATION}:/app/server/storage \
+    -v ${STORAGE_LOCATION}/.env:/app/server/.env \
+    -e STORAGE_DIR="/app/server/storage" \
+    mintplexlabs/anythingllm
+    ```
+
+    Una vez iniciado, ve a `http://localhost:3001` en tu navegador.
+    Selecciona el modelo que quieras usar y proporciona tu API key.
+  </Step>
+
+  <Step>
+    ## Esperar a que se inicien los MCP servers
+
+    Haz clic en el icono de herramientas en la esquina inferior izquierda de la interfaz:
+
+    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="Icono de herramientas" size="md" />
+
+    Haz clic en `Agent Skills` y busca la sección `MCP servers`.
+    Espera hasta que veas `Mcp ClickHouse` en `On`
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers listos" size="md" />
+  </Step>
+
+  <Step>
+    ## Chatear con servidor MCP de ClickHouse usando AnythingLLM
+
+    Ya está todo listo para iniciar un chat.
+    Para que los MCP servers estén disponibles en un chat, tendrás que anteponer `@agent` al primer mensaje de la conversación.
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversación" size="md" />
+  </Step>
+</Steps>

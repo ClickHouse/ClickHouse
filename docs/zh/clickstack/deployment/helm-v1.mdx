@@ -1,0 +1,425 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-v1
+title: 'Helm（v1.x）'
+description: '通过 v1.x 内联模板 Helm 图表部署 ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack Helm 图表', 'Helm ClickHouse 部署', 'HyperDX Helm 安装', 'Kubernetes 可观测性栈', 'ClickStack Kubernetes 部署']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+
+<Warning>
+  **已弃用 — v1.x 图表**
+
+  本页介绍的是 **v1.x** 内联模板 Helm 图表。该图表目前处于维护模式，不再添加新功能。新部署请使用 [v2.x 图表](/zh/clickstack/deployment/helm)。如需将现有 v1.x 部署迁移到新版本，请参阅[升级指南](/zh/clickstack/deployment/helm-upgrade)。
+</Warning>
+
+ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStack-helm-charts)找到，也是生产环境部署的**推荐**方式。
+
+默认情况下，Helm 图表会部署所有核心组件，包括：
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector**
+* **MongoDB** (用于持久化应用状态)
+
+不过，也可以轻松自定义，以便与现有的 ClickHouse 部署集成——例如托管在 **ClickHouse Cloud** 中的部署。
+
+该图表支持 Kubernetes 的标准最佳实践，包括：
+
+* 通过 `values.yaml` 按环境配置
+* 资源限制和 pod (容器组) 级别的扩缩容
+* TLS 和入口配置
+* Secrets 管理和身份验证设置
+
+<div id="suitable-for">
+  ### 适用场景
+</div>
+
+* 概念验证
+* 生产环境
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 前置条件
+
+    * [Helm](https://helm.sh/) v3+
+    * Kubernetes 集群 (推荐使用 v1.20+)
+    * 已配置为与你的集群进行交互的 `kubectl`
+  </Step>
+
+  <Step>
+    ### 添加 ClickStack 的 Helm 仓库
+
+    添加 ClickStack 的 Helm 仓库：
+
+    ```shell
+    helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### 安装 ClickStack
+
+    要使用默认值安装 ClickStack Chart：
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### 验证安装
+
+    确认安装是否成功：
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=clickstack"
+    ```
+
+    当所有 Pod (容器组) 都就绪后，即可继续。
+  </Step>
+
+  <Step>
+    ### 端口转发
+
+    通过端口转发，我们可以访问并配置 HyperDX。部署到生产环境时，建议改为通过入口或负载均衡器暴露该服务，以确保网络访问、TLS 终止和可扩展性都得到妥善保障。端口转发最适合用于本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
+
+    ```shell
+    kubectl port-forward \
+      pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
+      8080:3000
+    ```
+
+    <Tip>
+      **生产环境入口设置**
+
+      在生产环境中，建议使用启用 TLS 的入口配置，而不是端口转发。详细设置说明请参阅[入口配置指南](/zh/clickstack/deployment/helm-configuration-v1#ingress-setup)。
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 进入 UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 以打开 HyperDX UI。
+
+    创建用户时，请提供符合要求的用户名和密码。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    点击 `Create` 后，将为通过 Helm 图表部署的 ClickHouse 实例创建数据源。
+
+    <Info>
+      **覆盖默认连接**
+
+      你可以覆盖集成的 ClickHouse 实例的默认连接。详情请参见 [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud)。
+    </Info>
+  </Step>
+
+  <Step>
+    ### 自定义值 (可选)
+
+    您可以使用 `--set` 参数自定义配置。例如：
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack --set key=value
+    ```
+
+    或者，编辑 `values.yaml`。如需获取默认值：
+
+    ```shell
+    helm show values clickstack/clickstack > values.yaml
+    ```
+
+    配置示例：
+
+    ```yaml
+    replicaCount: 2
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+    ingress:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+      hosts:
+        - host: hyperdx.example.com
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+    ```
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack -f values.yaml
+    ```
+  </Step>
+
+  <Step>
+    ### 使用 Secret (可选)
+
+    如需处理 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret。HyperDX Helm 图表提供了默认的 Secret 文件，你可以修改后将其应用到集群。
+
+    #### 使用预配置的 Secret
+
+    Helm 图表包含一个默认的 Secret 模板，位于 [`charts/clickstack/templates/secrets.yaml`](https://github.com/ClickHouse/ClickStack-helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)。该文件为管理 Secret 提供了基础结构。
+
+    如果你需要手动应用 Secret，请修改并应用提供的 `secrets.yaml` 模板：
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: hyperdx-secret
+      annotations:
+        "helm.sh/resource-policy": keep
+    type: Opaque
+    data:
+      API_KEY: <base64-encoded-api-key>
+    ```
+
+    将该 Secret 应用到集群中：
+
+    ```shell
+    kubectl apply -f secrets.yaml
+    ```
+
+    #### 创建自定义 Secret
+
+    如果需要，你也可以手动创建自定义 Kubernetes Secret：
+
+    ```shell
+    kubectl create secret generic hyperdx-secret \
+      --from-literal=API_KEY=my-secret-api-key
+    ```
+
+    #### 引用 Secret
+
+    在 `values.yaml` 中引用 Secret：
+
+    ```yaml
+    hyperdx:
+      apiKey:
+        valueFrom:
+          secretKeyRef:
+            name: hyperdx-secret
+            key: API_KEY
+    ```
+
+    <Tip>
+      **API 密钥管理**
+
+      有关 API 密钥设置的详细说明，包括多种配置方式和 pod (容器组) 重启步骤，请参阅 [API 密钥设置指南](/zh/clickstack/deployment/helm-configuration-v1#api-key-setup)。
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="using-clickhouse-cloud">
+  ## 使用 ClickHouse Cloud
+</div>
+
+如果使用 ClickHouse Cloud，请禁用通过 Helm 图表部署的 ClickHouse 实例，并指定 Cloud 凭据：
+
+```shell
+# 指定 ClickHouse Cloud 凭据
+export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # 完整的 https url
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+# 如何覆盖默认连接
+helm install my-clickstack clickstack/clickstack \
+  --set clickhouse.enabled=false \
+  --set clickhouse.persistence.enabled=false \
+  --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} \
+  --set clickhouse.config.users.otelUser=${CLICKHOUSE_USER} \
+  --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD}
+```
+
+或者，也可以使用 `values.yaml` 文件：
+
+```yaml
+clickhouse:
+  enabled: false
+  persistence:
+    enabled: false
+  config:
+    users:
+      otelUser: ${CLICKHOUSE_USER}
+      otelUserPassword: ${CLICKHOUSE_PASSWORD}
+
+otel:
+  clickhouseEndpoint: ${CLICKHOUSE_URL}
+
+hyperdx:
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+# 或者如果已经安装过...
+# helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<Tip>
+  **高级外部配置**
+
+  对于采用基于 secret 的配置、外部 OTel collector 或精简配置的生产部署，请参阅[部署选项指南](/zh/clickstack/deployment/helm-deployment-options-v1)。
+</Tip>
+
+<div id="production-notes">
+  ## 生产注意事项
+</div>
+
+默认情况下，此 图表 也会安装 ClickHouse 和 OTel collector。不过，在生产环境中，建议分别管理 ClickHouse 和 OTel collector。
+
+要禁用 ClickHouse 和 OTel collector，请设置以下值：
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set clickhouse.enabled=false \
+  --set clickhouse.persistence.enabled=false \
+  --set otel.enabled=false
+```
+
+<Tip>
+  **生产环境最佳实践**
+
+  如需了解生产环境部署的相关内容，包括高可用配置、资源管理、入口/TLS 设置以及 Cloud 特定配置 (GKE、EKS、AKS) ，请参阅：
+
+  * [配置指南](/zh/clickstack/deployment/helm-configuration-v1) - 入口、TLS 和 Secret 管理
+  * [Cloud 部署](/zh/clickstack/deployment/helm-cloud-v1) - Cloud 特定设置和生产环境检查清单
+</Tip>
+
+<div id="task-configuration">
+  ## 任务配置
+</div>
+
+默认情况下，Chart 配置中有一个以 CronJob 形式运行的任务，负责检查是否应触发告警。以下是它的配置选项：
+
+| Parameter                     | Description                                                                           | Default          |
+| ----------------------------- | ------------------------------------------------------------------------------------- | ---------------- |
+| `tasks.enabled`               | 在集群中启用/禁用 cron 任务。默认情况下，HyperDX 镜像会在进程内运行 cron 任务。如果你更希望在集群中使用独立的 cron 任务，请将其设为 true。 | `false`          |
+| `tasks.checkAlerts.schedule`  | check-alerts 任务的 Cron 调度计划                                                            | `*/1 * * * *`    |
+| `tasks.checkAlerts.resources` | check-alerts 任务的资源请求与限制                                                               | 参见 `values.yaml` |
+
+<div id="upgrading-the-chart">
+  ## 升级 Helm 图表
+</div>
+
+要升级到更新的版本：
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+查看可用的 图表 版本：
+
+```shell
+helm search repo clickstack
+```
+
+<Info>
+  **升级到 v2.x**
+
+  如果你想迁移到基于子 图表 的 v2.x 图表，请参阅[升级指南](/zh/clickstack/deployment/helm-upgrade)获取迁移说明。这是一项破坏性变更——不支持就地执行 `helm upgrade`。
+</Info>
+
+<div id="uninstalling-clickstack">
+  ## 卸载 ClickStack
+</div>
+
+要删除该部署：
+
+```shell
+helm uninstall my-clickstack
+```
+
+这将删除与该 release 关联的所有资源，但持久化数据 (如有) 可能仍会保留。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="checking-logs">
+  ### 查看日志
+</div>
+
+```shell
+kubectl logs -l app.kubernetes.io/name=clickstack
+```
+
+<div id="debugging-a-failed-install">
+  ### 调试安装失败问题
+</div>
+
+```shell
+helm install my-clickstack clickstack/clickstack --debug --dry-run
+```
+
+<div id="verifying-deployment">
+  ### 验证部署
+</div>
+
+```shell
+kubectl get pods -l app.kubernetes.io/name=clickstack
+```
+
+<Tip>
+  **更多故障排查资源**
+
+  如遇与入口相关的问题、TLS 问题或 Cloud 部署故障排查需求，请参阅：
+
+  * [入口故障排查](/zh/clickstack/deployment/helm-configuration-v1#troubleshooting-ingress) - 静态资源服务、路径重写、浏览器问题
+  * [Cloud 部署](/zh/clickstack/deployment/helm-cloud-v1#loadbalancer-dns-resolution-issue) - GKE OpAMP 问题和 Cloud 特有问题
+</Tip>
+
+<JSONSupport />
+
+<div id="related-documentation">
+  ## 相关文档
+</div>
+
+<div id="deployment-guides">
+  ### v1.x 部署指南
+</div>
+
+* [部署选项 (v1.x) ](/zh/clickstack/deployment/helm-deployment-options-v1) - 外部 ClickHouse、OTel collector 和最小化部署
+* [配置指南 (v1.x) ](/zh/clickstack/deployment/helm-configuration-v1) - API 密钥、Secret 和入口设置
+* [Cloud 部署 (v1.x) ](/zh/clickstack/deployment/helm-cloud-v1) - GKE、EKS、AKS 配置和生产环境最佳实践
+
+<div id="v2x-documentation">
+  ### v2.x 文档
+</div>
+
+* [Helm (v2.x)](/zh/clickstack/deployment/helm) - v2.x 部署指南
+* [升级指南](/zh/clickstack/deployment/helm-upgrade) - 从 v1.x 升级到 v2.x
+
+<div id="additional-resources">
+  ### 其他资源
+</div>
+
+* [ClickStack 入门指南](/zh/clickstack/getting-started/index) - ClickStack 简介
+* [ClickStack Helm 图表仓库](https://github.com/ClickHouse/ClickStack-helm-charts) - 图表源码及 values 参考
+* [Kubernetes 文档](https://kubernetes.io/docs/) - Kubernetes 参考文档
+* [Helm 文档](https://helm.sh/docs/) - Helm 参考文档

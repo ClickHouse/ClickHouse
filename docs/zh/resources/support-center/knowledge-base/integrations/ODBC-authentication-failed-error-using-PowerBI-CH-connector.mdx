@@ -1,0 +1,48 @@
+---
+title: 使用 Power BI ClickHouse 连接器时出现 ODBC 身份验证失败错误
+description: "使用 Power BI ClickHouse 连接器时出现 ODBC 身份验证失败错误"
+date: 2024-07-10
+tags: ['原生客户端与接口', '错误和异常']
+keywords: ['ODBC', 'Power BI 连接器', '身份验证失败']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 问题
+</div>
+
+尝试通过连接器从 PowerBI 连接到 ClickHouse 时，会收到身份验证错误。
+
+此错误通常如下所示：
+
+```
+We encountered an error while trying to connect.
+Details: "ODBC: ERROR [HY000] HTTP status code: 403
+Received error:
+Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.ml on the server where
+ClickHouse is installed.
+```
+
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Power BI ODBC 身份验证错误对话框" border />
+
+<div id="answer">
+  ## 答案
+</div>
+
+请将 ClickHouse ODBC Driver 更新到 [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) 版本。
+
+如果无法更新，请检查密码中是否包含波浪号 (~) ，因为在 [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) 之前的版本中，这可能会导致问题。
+
+我们建议为该连接使用专用用户，并手动设置密码。如果你使用的是 ClickHouse Cloud，并且需要与 `default` 用户等效的管理员级访问权限，请创建一个新用户并为其分配 `default_role`。
+
+更多信息：
+https://clickhouse.com/docs/operations/access-rights#user-account-management
+https://clickhouse.com/docs/cloud/security/cloud-access-management#database-roles

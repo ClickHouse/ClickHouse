@@ -1,0 +1,123 @@
+---
+slug: /integrations/integration-development/documenting-your-integration
+sidebarTitle: 'توثيق تكاملك'
+title: 'توثيق تكامل ClickHouse الخاص بك'
+description: 'كيفية المساهمة بصفحات التكامل في clickhouse-docs، بما في ذلك الأقسام المطلوبة وقالب جاهز للنسخ واللصق.'
+keywords: ['شريك', 'تكامل', 'توثيق', 'مساهمة', 'طلب سحب', 'توثيق التكامل']
+doc_type: 'guide'
+---
+
+يوفّر توثيق التكامل في هذا الموقع للمستخدمين النهائيين مرجعًا واحدًا لمراجعة الإعدادات واستكشاف مشكلاتها وإصلاحها. توضّح هذه الصفحة ما يجب تضمينه، وأين توضع الملفات، وكيفية فتح طلب سحب.
+
+ابدأ بـ [بناء التكاملات](/ar/resources/develop-contribute/integrations/building-integrations) و[اختبار تكاملك](/ar/resources/develop-contribute/integrations/testing-your-integration) إذا لم تكن قد فعلت ذلك بالفعل.
+
+<div id="where-docs-live">
+  ## مكان وجود الوثائق
+</div>
+
+* **المستودع:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **التنسيق:** Markdown، ومبني باستخدام Docusaurus
+* **الموقع:** `/docs/integrations/<category>/<your-integration>/`، حيث يعكس `<category>` وظيفة منتجك (`data-visualization` و`data-ingestion` و`language-clients` وما إلى ذلك)
+* **العملية:** افتح طلب سحب على `main`. يراجع فريق تكاملات ClickHouse الطلب. ويوقّع المساهمون لأول مرة على اتفاقية ترخيص المساهم عندما يطلب البوت ذلك في طلب السحب
+
+تُعد صفحات التكامل في هذا المستودع المرجع الرئيسي للمستخدمين النهائيين. ويمكنك إضافة رابط من صفحة التكامل الخاصة بك إلى وثائق تكميلية على موقعك للاطلاع على التفاصيل الخاصة بالمنتج.
+
+أمثلة جيدة: [Tableau](/ar/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) و[Metabase](/ar/integrations/connectors/data-visualization/metabase-and-clickhouse).
+
+<div id="choosing-a-category">
+  ## اختيار فئة
+</div>
+
+اختر الفئة التي تناسب ما يقدّمه منتجك على أفضل نحو. تصفّح الفئات الحالية ضمن [التكاملات](/ar/integrations/home) قبل فتح PR. إذا لم تكن متأكدًا، فاذكر الفئة المقترحة في وصف PR، وسيساعدك فريق التكاملات في وضع الصفحة في مكانها المناسب.
+
+<div id="required-sections">
+  ## الأقسام المطلوبة
+</div>
+
+يجب أن تغطي كل صفحة تكامل ما يلي، ويفضل أن يكون بهذا الترتيب:
+
+1. **الغرض.** ما المشكلة التي يحلّها هذا التكامل، في جملتين أو ثلاث. تجنّب الصياغة التسويقية. فالقراء يكونون عادةً مهندسين يقيّمون الإعداد
+2. **المتطلبات المسبقة ومصفوفة الإصدارات المدعومة.** ما الذي يحتاج المستخدم إلى تثبيته، وما الإصدارات التي تدعمونها لكلٍ من **ClickHouse Cloud وذاتي الاستضافة (مفتوح المصدر)**. ويُفضَّل هنا استخدام جدول صغير
+3. **دليل الإعداد.** تعليمات خطوة بخطوة للوصول إلى connection يعمل، مع **عرضٍ متوازٍ لكل من Cloud وذاتي الاستضافة** حيث توجد اختلافات (المضيف، المنفذ، TLS)
+4. **المصادقة.** ما أوضاع authentication التي تدعمونها (اسم المستخدم وكلمة المرور عبر TLS كحدٍّ أدنى، بالإضافة إلى mTLS، وشهادة عميل SSL، وملاحظات قائمة السماح لعناوين IP عند الاقتضاء)
+5. **مثال شامل من البداية إلى النهاية.** قدّم مثالًا واقعيًا واحدًا على الأقل يبدأ من connection وينتهي بنتيجة مفيدة. استخدم [example dataset في ClickHouse](/ar/get-started/sample-datasets/index) حتى يتمكن القراء من إعادة تطبيقه
+6. **القيود المعروفة وخصائص الأداء.** فجوات نظام الأنواع، وحدود result-set، وملاحظات throughput، والميزات غير المدعومة. الصراحة هنا توفّر دورات دعم
+7. **Troubleshooting.** الأخطاء الشائعة وطرق حلّها. تكفي حالتان أو ثلاث من أكثر الحالات شيوعًا في الإصدار الأول
+
+<div id="style-notes">
+  ## ملاحظات الأسلوب
+</div>
+
+* **اعرض كلاً من Cloud وذاتي الاستضافة.** يستخدم Cloud عادةً HTTPS على المنفذ `8443` وnative TCP على `9440`. وتكون المنافذ الافتراضية في ذاتي الاستضافة هي `8123` و`9000`
+* **استخدم تنبيهات Docusaurus** (`:::note`, `:::warning`, `:::tip`) للملاحظات الجانبية بدلاً من الفقرات الغامقة
+* **أضف روابط لمزيد من التفصيل.** اربط بالوثائق الحالية لأنواع البيانات والتنسيقات وJDBC وClickPipes والموضوعات المشابهة بدلاً من إعادة شرحها
+* **من دون تسويق.** صفحات التكامل هنا هي مرجع تقني. يجب أن يكون المحتوى الترويجي على موقعك؛ ويمكننا وضع رابط إليه من دليل الشركاء
+
+<div id="copy-paste-skeleton">
+  ## قالب جاهز للنسخ واللصق
+</div>
+
+املأ الأقسام الموضوعة بين الأقواس، واحفظه بالاسم `/docs/integrations/<category>/<your-integration>/index.md`، ثم افتح PR.
+
+```markdown
+# [Your product] and ClickHouse
+
+[One to three sentences: what the integration does and why a
+ClickHouse user would want it.]
+
+## Prerequisites
+
+- [Your product, version X.Y or later]
+- ClickHouse Cloud, or self-hosted ClickHouse version [X.Y] or later
+- [Anything else: driver, plugin, network access requirements]
+
+### Version matrix
+
+| [Your product] | ClickHouse Cloud | ClickHouse open source | Notes    |
+| -------------- | ---------------- | ---------------------- | -------- |
+| X.Y            | ✅               | ✅ 24.x+               | [if any] |
+
+## Setup
+
+### Connect to ClickHouse Cloud
+
+1. In the ClickHouse Cloud console, select your service and click **Connect**.
+2. Choose **HTTPS**. Copy the host, port (8443), username, and password.
+3. In [your product], [steps to configure the connection].
+
+### Connect to self-hosted ClickHouse
+
+1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
+2. In [your product], [steps to configure the connection].
+
+## Authentication
+
+[List supported auth modes — username/password over TLS, mTLS, etc. — and how
+to configure each.]
+
+## Example: querying the [dataset] dataset
+
+[Walkthrough using one of the ClickHouse example datasets, end-to-end.]
+
+## Known limits
+
+- [Types not yet supported, e.g., deeply nested JSON]
+- [Result-set size thresholds or other performance notes]
+- [Feature gaps]
+
+## Troubleshooting
+
+### [Common error message]
+
+[Cause and resolution.]
+
+### [Another common error]
+
+[Cause and resolution.]
+```
+
+<div id="review">
+  ## المراجعة
+</div>
+
+يراجع فريق التكاملات في ClickHouse طلبات السحب (PRs) للتأكد من الدقة التقنية، وتغطية Cloud وعمليات النشر ذاتية الاستضافة، والالتزام بأسلوب التوثيق. واصل إجراء التعديلات على طلب السحب إلى أن يوافق عليه المراجعون. وتُعد هذه الموافقة شرط الدمج.

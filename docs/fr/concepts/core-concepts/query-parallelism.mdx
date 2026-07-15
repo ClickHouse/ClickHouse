@@ -1,0 +1,294 @@
+---
+slug: /optimize/query-parallelism
+sidebarTitle: 'Parallélisme des requêtes'
+description: 'ClickHouse parallélise l’exécution des requêtes grâce à des voies de traitement et au paramètre max_threads.'
+title: 'Comment ClickHouse exécute une requête en parallèle'
+doc_type: 'guide'
+keywords: ['traitement parallèle', 'optimisation des requêtes', 'performance', 'multithreading', 'bonnes pratiques']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse est [conçu pour la vitesse](/fr/get-started/about/why-clickhouse-is-so-fast). Il exécute les requêtes de manière hautement parallèle, en utilisant tous les cœurs de CPU disponibles, en répartissant les données entre les voies de traitement et en poussant souvent le matériel près de ses limites.
+
+Ce guide explique le fonctionnement du parallélisme des requêtes dans ClickHouse et comment l’ajuster ou le surveiller pour améliorer les performances sur des charges de travail importantes.
+
+Nous utilisons une requête d’agrégation sur le jeu de données [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) pour illustrer les concepts clés.
+
+<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
+  ## Étape par étape : comment ClickHouse parallélise une requête d’agrégation
+</div>
+
+Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur la clé primaire de la table, il ② charge l’index primaire en mémoire afin d’③ identifier les granules à traiter et celles qui peuvent être ignorées sans risque :
+
+<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Analyse de l’index" />
+
+<div id="distributing-work-across-processing-lanes">
+  ### Répartition du travail entre les voies de traitement
+</div>
+
+Les données sélectionnées sont ensuite réparties [dynamiquement](#load-balancing-across-processing-lanes) entre `n` [voies de traitement](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) parallèles, qui acheminent et traitent les données [bloc](/fr/resources/develop-contribute/introduction/architecture#block) par bloc jusqu’au résultat final :
+
+<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 voies de traitement parallèles" />
+
+<br />
+
+<br />
+
+Le nombre de `n` voies de traitement parallèles est contrôlé par le paramètre [`max_threads`](/fr/reference/settings/session-settings#max_threads), qui correspond par défaut au nombre de cœurs (threads) d’un seul CPU mis à la disposition de ClickHouse sur le serveur. Dans l’exemple ci-dessus, nous supposons `4` cœurs.
+
+Sur une machine avec `8` cœurs, le débit du traitement des requêtes doublerait approximativement (mais l’utilisation mémoire augmenterait également en conséquence), car davantage de voies traitent les données en parallèle :
+
+<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 voies de traitement parallèles" />
+
+<br />
+
+<br />
+
+Une répartition efficace des voies est essentielle pour maximiser l’utilisation du CPU et réduire le temps d’exécution total des requêtes.
+
+<div id="processing-queries-on-sharded-tables">
+  ### Traitement des requêtes sur des tables shardées
+</div>
+
+Lorsque les données d&#39;une table sont réparties sur plusieurs serveurs en [shards](/fr/guides/oss/deployment-and-scaling/shards), chaque serveur traite son shard en parallèle. Sur chaque serveur, les données locales sont traitées via des voies de traitement parallèles, comme décrit ci-dessus :
+
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Lanes distribuées" />
+
+<br />
+
+<br />
+
+Le serveur qui reçoit initialement la requête récupère tous les sous-résultats des shards et les combine pour produire le résultat global final.
+
+La répartition de la charge des requêtes entre les shards permet d&#39;augmenter horizontalement le parallélisme, en particulier dans les environnements à fort débit.
+
+<Info>
+  **ClickHouse Cloud utilise des répliques parallèles au lieu de shards**
+
+  Dans ClickHouse Cloud, ce même parallélisme est obtenu grâce aux [parallel replicas](/fr/products/cloud/features/infrastructure/parallel-replicas), qui fonctionnent de manière similaire aux shards dans les clusters shared-nothing. Chaque réplique ClickHouse Cloud — un nœud de calcul sans état — traite une partie des données en parallèle et contribue au résultat final, comme le ferait un shard indépendant.
+</Info>
+
+<div id="monitoring-query-parallelism">
+  ## Surveillance du parallélisme des requêtes
+</div>
+
+Utilisez ces outils pour vérifier que votre requête exploite pleinement les ressources CPU disponibles et pour identifier les cas où ce n’est pas le cas.
+
+Nous effectuons ce test sur un serveur doté de 59 cœurs CPU, ce qui permet à ClickHouse d’illustrer pleinement le parallélisme des requêtes.
+
+Pour observer comment la requête d’exemple s’exécute, nous pouvons demander au serveur ClickHouse de renvoyer toutes les entrées de log de niveau trace pendant la requête d’agrégation. Pour cette démonstration, nous avons supprimé le prédicat de la requête — sinon, seules 3 granules seraient traitées, ce qui ne représente pas assez de données pour que ClickHouse puisse exploiter plus de quelques voies de traitement parallèles :
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+SETTINGS send_logs_level='trace';
+```
+
+```txt
+① <Debug> ...: 3609 marks to read from 3 ranges
+② <Trace> ...: Spreading mark ranges among streams
+② <Debug> ...: Reading approx. 29564928 rows with 59 streams
+```
+
+On peut voir que
+
+* ① ClickHouse doit lire 3 609 granules (indiquées comme des marks dans les logs de trace) sur 3 plages de données.
+* ② Avec 59 cœurs CPU, il répartit ce travail sur 59 flux de traitement parallèles — un par voie de traitement.
+
+Autrement, on peut utiliser la clause [EXPLAIN](/fr/reference/statements/explain#explain-pipeline) pour examiner le [plan physique des opérateurs](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) — également appelé « query pipeline » — de la requête d’agrégation :
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple;
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                      │
+ 2. │ ExpressionTransform × 59                                                          │
+ 3. │   (Aggregating)                                                                   │
+ 4. │   Resize 59 → 59                                                                  │
+ 5. │     AggregatingTransform × 59                                                     │
+ 6. │       StrictResize 59 → 59                                                        │
+ 7. │         (Expression)                                                              │
+ 8. │         ExpressionTransform × 59                                                  │
+ 9. │           (ReadFromMergeTree)                                                     │
+10. │           MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+    └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Remarque : lisez le plan des opérateurs ci-dessus de bas en haut. Chaque ligne représente une étape du plan d’exécution physique, en commençant par la lecture des données depuis le stockage en bas et en se terminant par les étapes finales de traitement en haut. Les opérateurs marqués par `× 59` s’exécutent de manière concurrente sur des zones de données disjointes, réparties sur 59 voies de traitement parallèles. Cela reflète la valeur de `max_threads` et illustre comment chaque étape de la requête est parallélisée sur les cœurs du CPU.
+
+L’[interface web intégrée](/fr/concepts/features/interfaces/http) de ClickHouse (disponible sur l’endpoint `/play`) peut représenter le plan physique ci-dessus sous forme de visualisation graphique. Dans cet exemple, nous définissons `max_threads` sur `4` afin de conserver une visualisation compacte, avec seulement 4 voies de traitement parallèles affichées :
+
+<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Pipeline de requête" />
+
+Remarque : lisez la visualisation de gauche à droite. Chaque ligne représente une voie de traitement parallèle qui fait circuler les blocs de données bloc par bloc, en appliquant des transformations telles que le filtrage, l’agrégation et les étapes finales de traitement. Dans cet exemple, vous pouvez voir quatre voies parallèles correspondant au paramètre `max_threads = 4`.
+
+<div id="load-balancing-across-processing-lanes">
+  ### Équilibrage de charge entre les voies de traitement
+</div>
+
+Notez que les opérateurs `Resize` du plan physique ci-dessus [repartitionnent et redistribuent](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) les flux de blocs de données entre les voies de traitement afin d&#39;en équilibrer l&#39;utilisation. Ce rééquilibrage est particulièrement important lorsque les plages de données diffèrent par le nombre de lignes correspondant aux prédicats de la requête ; sinon, certaines voies risquent d&#39;être surchargées tandis que d&#39;autres restent inactives. En redistribuant le travail, les voies les plus rapides viennent en quelque sorte prêter main-forte aux plus lentes, ce qui optimise le temps d&#39;exécution global de la requête.
+
+<div id="why-max-threads-isnt-always-respected">
+  ## Pourquoi max_threads n’est pas toujours respecté
+</div>
+
+Comme indiqué ci-dessus, le nombre de `n` voies de traitement parallèles est contrôlé par le paramètre `max_threads`, qui correspond par défaut au nombre de cœurs de CPU disponibles pour ClickHouse sur le serveur :
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+```txt
+   ┌─getSetting('max_threads')─┐
+1. │                        59 │
+   └───────────────────────────┘
+```
+
+Cependant, la valeur `max_threads` peut ne pas être prise en compte en fonction de la quantité de données sélectionnée pour le traitement :
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 30
+```
+
+Comme le montre l’extrait du plan d’opérateurs ci-dessus, même si `max_threads` est défini sur `59`, ClickHouse n’utilise que **30** flux parallèles pour parcourir les données.
+
+Exécutons maintenant la requête :
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  594300000 │ -- 594.30 million
+   └────────────┘
+   
+1 row in set. Elapsed: 0.013 sec. Processed 2.31 million rows, 13.66 MB (173.12 million rows/s., 1.02 GB/s.)
+Peak memory usage: 27.24 MiB.   
+```
+
+Comme indiqué dans la sortie ci-dessus, la requête a traité 2,31 millions de lignes et lu 13,66 Mo de données. En effet, lors de la phase d&#39;analyse de l&#39;index, ClickHouse a sélectionné **282 granules** pour le traitement, chacune contenant 8 192 lignes, soit un total d&#39;environ 2,31 millions de lignes :
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 3/3                                │
+12. │             Granules: 282/3609                        │
+    └───────────────────────────────────────────────────────┘  
+```
+
+Quelle que soit la valeur configurée de `max_threads`, ClickHouse n’alloue des voies de traitement parallèles supplémentaires que s’il y a assez de données pour le justifier. Le « max » de `max_threads` désigne une limite supérieure, pas un nombre garanti de threads utilisés.
+
+La notion de « quantité suffisante de données » est principalement déterminée par deux paramètres, qui définissent le nombre minimal de lignes (163 840 par défaut) et le nombre minimal d’octets (2 097 152 par défaut) que chaque voie de traitement doit traiter :
+
+Pour les clusters shared-nothing :
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/fr/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/fr/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+
+Pour les clusters avec stockage partagé (par ex. ClickHouse Cloud) :
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/fr/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/fr/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+
+De plus, il existe une limite inférieure absolue pour la taille des tâches de lecture, contrôlée par :
+
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/fr/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/fr/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+
+<Warning>
+  **Ne modifiez pas ces paramètres**
+
+  Nous ne recommandons pas de modifier ces paramètres en production. Ils sont présentés ici uniquement pour illustrer pourquoi `max_threads` ne détermine pas toujours le niveau réel de parallélisme.
+</Warning>
+
+À des fins de démonstration, examinons le plan physique avec ces paramètres redéfinis afin de forcer un parallélisme maximal :
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON'
+SETTINGS
+  max_threads = 59,
+  merge_tree_min_read_task_size = 0,
+  merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, 
+  merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
+```
+
+ClickHouse utilise désormais 59 flux concurrents pour parcourir les données, tout en respectant pleinement la valeur configurée de `max_threads`.
+
+Cela montre que, pour les requêtes portant sur de petits volumes de données, ClickHouse limitera volontairement la concurrence. N’utilisez les surcharges de paramètres que pour les tests, jamais en production, car elles peuvent entraîner une exécution inefficace ou une contention des ressources.
+
+<div id="key-takeaways">
+  ## Points clés à retenir
+</div>
+
+* ClickHouse parallélise les requêtes à l’aide de voies de traitement liées à `max_threads`.
+* Le nombre réel de voies dépend de la quantité de données sélectionnées pour le traitement.
+* Utilisez `EXPLAIN PIPELINE` et les logs de trace pour analyser l’utilisation des voies.
+
+<div id="where-to-find-more-information">
+  ## Où trouver plus d’informations
+</div>
+
+Si vous souhaitez approfondir la façon dont ClickHouse exécute les requêtes en parallèle et atteint des performances élevées à grande échelle, consultez les ressources suivantes :
+
+* [Couche de traitement des requêtes – article VLDB 2024 (édition web)](/fr/concepts/core-concepts/academic-overview#4-query-processing-layer) - Une présentation détaillée du modèle d’exécution interne de ClickHouse, notamment l’ordonnancement, l’exécution en pipeline et la conception des opérateurs.
+
+* [Explication des états d’agrégation partiels](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) - Une analyse technique approfondie de la manière dont les états d’agrégation partiels permettent une exécution parallèle efficace sur plusieurs voies de traitement.
+
+* Un tutoriel vidéo qui présente en détail toutes les étapes du traitement des requêtes dans ClickHouse :
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/hP6G2Nlz_cA?si=Imd_i427J_kZOXHe" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

@@ -8,8 +8,6 @@ title: 'KeeperMap table engine'
 doc_type: 'reference'
 ---
 
-# KeeperMap table engine
-
 This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads.
 
 To enable KeeperMap storage engine, you need to define a ZooKeeper path where the tables will be stored using `<keeper_map_path_prefix>` config.

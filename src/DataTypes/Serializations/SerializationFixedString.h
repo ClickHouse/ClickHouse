@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class SerializationFixedString : public ISerialization
+class SerializationFixedString final : public ISerialization
 {
 private:
     size_t n;

@@ -1,0 +1,30 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # Personalizações
+</div>
+
+Scripts personalizados que ajustam a aparência e o comportamento do site do Mintlify.
+Eles são carregados por meio do array `scripts` em `docs.json` e executados em todas as páginas.
+
+Consulte a documentação do Mintlify sobre [scripts personalizados](https://www.mintlify.com/docs/customize/custom-scripts) para mais informações.
+
+<div id="scripts">
+  ## Scripts
+</div>
+
+* `ask-ai-button.js` — ajusta o estilo e o comportamento do botão Ask-AI.
+* `cookie-banner.js` — injeta e gerencia o banner de consentimento de cookies.
+* `custom-footer.js` — renderiza o rodapé personalizado do site (`#ch-custom-footer`).
+* `inkeep-init.js` — substitui a busca nativa do Mintlify (⌘K / barra de busca da navbar) pelo modal de busca do Inkeep. Apenas busca; o chat com IA continua no Kapa.
+* `kapa-init.js` — inicializa o widget RAG do Kapa.ai.
+* `navbar-cta.js` — adiciona o CTA &quot;Primeiros passos&quot; à navbar.
+* `clickhouse-sql-lexer-wasm.js` — expõe o lexer SQL do ClickHouse (`src/Parsers/Lexer.cpp` compilado para WebAssembly) como uma variável global em base64. Snapshot do ClickHouse `programs/server/play.html`; extraia novamente se o lexer/lista de palavras-chave do upstream mudar.
+* `clickhouse-sql-highlight.js` — reaplica o destaque em blocos de código `language="sql"` usando o lexer WASM (cores nativas do ClickHouse, correspondendo a play.html / clickhouse-client) no lugar do Shiki. Deve ser carregado após `clickhouse-sql-lexer-wasm.js`. Os demais idiomas permanecem como o Shiki os renderizou.
+* `quickstart-back-link.js` — em páginas de guia de início rápido, move o selo autogerado &quot;Todos os guias de início rápido&quot; do topo do conteúdo para o cabeçalho acima do título (posição de breadcrumb).
+
+Para integrar um novo script, adicione uma entrada
+`{ "src": "/_site/customizations/<name>.js" }`
+ao array `scripts` de nível superior em `docs.json`.
