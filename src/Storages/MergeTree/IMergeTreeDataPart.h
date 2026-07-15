@@ -846,9 +846,11 @@ private:
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
 
-    std::optional<ColumnsStatistics> tryGetCachedStatistics(const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    /// `columns_filter` contains names of storage columns whose statistics are requested;
+    /// an empty filter means "no filter": statistics of every column are returned.
+    std::optional<ColumnsStatistics> tryGetCachedStatistics(const NameSet & columns_filter) const;
+    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & columns_filter) const;
+    ColumnsStatistics loadStatisticsWide(const NameSet & columns_filter) const;
     PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);

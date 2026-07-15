@@ -1139,18 +1139,17 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
 namespace
 {
 
-bool isColumnStatisticsRequired(const String & column_name, const NameSet & required_columns)
+/// The filter contains names of storage columns whose statistics are requested.
+/// An empty filter means "no filter": statistics of every column pass
+/// (the convention used by the no-arg loadStatistics overload).
+bool columnPassesFilter(const String & column_name, const NameSet & columns_filter)
 {
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    return required_columns.empty()
-        || required_columns.contains(column_name)
-        || required_columns.contains(column_name + ".null");
+    return columns_filter.empty() || columns_filter.contains(column_name);
 }
 
 }
 
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
+static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & columns_filter)
 {
     chassert(filename.starts_with(STATS_FILE_PREFIX));
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
@@ -1158,15 +1157,13 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    if (!isColumnStatisticsRequired(column_name, required_columns))
+    if (!columnPassesFilter(column_name, columns_filter))
         return nullptr;
 
     return all_columns.tryGet(column_name);
 }
 
-std::optional<ColumnsStatistics> IMergeTreeDataPart::tryGetCachedStatistics(const NameSet & required_columns) const
+std::optional<ColumnsStatistics> IMergeTreeDataPart::tryGetCachedStatistics(const NameSet & columns_filter) const
 {
     std::lock_guard lock(statistics_cache_mutex);
     if (!statistics_cache)
@@ -1175,7 +1172,7 @@ std::optional<ColumnsStatistics> IMergeTreeDataPart::tryGetCachedStatistics(cons
     ColumnsStatistics result;
     for (const auto & [column_name, column_stats] : *statistics_cache)
     {
-        if (!isColumnStatisticsRequired(column_name, required_columns) || !column_stats)
+        if (!columnPassesFilter(column_name, columns_filter) || !column_stats)
             continue;
 
         result.emplace(column_name, column_stats);
@@ -1183,7 +1180,7 @@ std::optional<ColumnsStatistics> IMergeTreeDataPart::tryGetCachedStatistics(cons
     return result;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const
+ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & columns_filter) const
 {
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
@@ -1201,7 +1198,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns_filter);
         if (!column_desc)
             continue;
 
@@ -1225,7 +1222,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
     return result;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & required_columns) const
+ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & columns_filter) const
 {
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
@@ -1235,7 +1232,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             continue;
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns_filter);
         if (!column_desc)
             continue;
 
@@ -1279,15 +1276,27 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    if (auto cached_statistics = tryGetCachedStatistics(required_columns_set))
+    /// Statistics are stored per storage column, but a requested name may be a subcolumn:
+    /// e.g. `<col>.null` when `optimize_functions_to_subcolumns = 1`, or `<col>.size0`.
+    /// Such a request is served by the statistics of the parent column, so normalize every
+    /// name to its name in storage instead of enumerating subcolumn suffixes here.
+    NameSet columns_filter;
+    for (const auto & column_name : required_columns)
+    {
+        if (auto column = tryGetColumn(column_name))
+            columns_filter.insert(column->getNameInStorage());
+        else
+            columns_filter.insert(column_name);
+    }
+
+    if (auto cached_statistics = tryGetCachedStatistics(columns_filter))
         return std::move(*cached_statistics);
 
     if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, required_columns_set);
+        return loadStatisticsPacked(*reader, columns_filter);
 
-    return loadStatisticsWide(required_columns_set);
+    return loadStatisticsWide(columns_filter);
 }
 
 void IMergeTreeDataPart::setStatistics(const ColumnsStatistics & new_statistics)
