@@ -67,6 +67,9 @@ namespace ErrorCodes
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
+    DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and `write_cache_per_user_id_directory` is enabled, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
+    DECLARE(UInt64, idle_client_check_interval_sec, 0, "How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).", 0) \
+    DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
 

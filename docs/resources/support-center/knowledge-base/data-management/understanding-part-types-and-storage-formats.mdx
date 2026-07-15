@@ -1,0 +1,156 @@
+---
+title: Understanding part types and storage formats
+description: 'Learn about the different part types (Wide vs Compact) and storage formats (Full vs Packed) in ClickHouse, and how they affect performance.'
+date: 2026-02-03
+tags: ['Core Data Concepts']
+keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'part types', 'storage formats']
+---
+
+ClickHouse uses two independent concepts for organizing data within parts:
+
+- **Part types** (Wide vs Compact): How column data is stored within a part
+- **Storage formats** (Full vs Packed): How the part's files are stored on disk
+
+## Part types: Wide vs Compact {#part-types-wide-vs-compact}
+
+Part types determine how column data is organized within a data part.
+
+| Type | Description | Best for |
+|------|-------------|----------|
+| **Wide** | Each column is stored in separate file(s), each with its own [marks file](/concepts/core-concepts/glossary#mark-file) | Queries selecting a subset of columns |
+| **Compact** | All columns are stored in a single file with a single [marks file](/concepts/core-concepts/glossary#mark-file) | Ingestion performance and queries needing all columns |
+
+### When each type is used {#when-each-type-is-used}
+
+The part type is controlled by the following table settings:
+
+- [`min_bytes_for_wide_part`](/reference/settings/merge-tree-settings#min_bytes_for_wide_part): Minimum bytes for a part to use Wide format
+- [`min_rows_for_wide_part`](/reference/settings/merge-tree-settings#min_rows_for_wide_part): Minimum rows for a part to use Wide format
+
+If either the number of bytes or rows in a data part is less than the corresponding setting value, the part is stored in `Compact` format; otherwise, it uses `Wide` format.
+
+### Performance considerations {#performance-considerations}
+
+**Compact parts:**
+- Better ingestion performance
+- Optimal when queries need all columns
+- More efficient for small parts
+
+**Wide parts:**
+- More efficient for queries selecting only a subset of columns
+- Better for large datasets with selective column access
+
+Compact-to-wide merges are slower than wide-to-wide merges because ClickHouse uses [vertical merge](/concepts/core-concepts/merges#memory-optimized-merges) algorithms for compact-to-wide conversions, while using horizontal algorithms for compact-to-compact merges. If you want to force the use of wide parts regardless of size, you can set `min_bytes_for_wide_part=0`.
+
+This can be useful in the following scenarios:
+1. When you have tables with many columns (e.g. over 600 columns) and are making large inserts, setting this to 0 can help with performance
+2. For optimizing memory usage of system tables like `system.metric_log` and `system.text_log` that are consuming excessive memory during merges
+3. When dealing with tables that have high insert volumes and you want to optimize storage and merge behavior
+4. When you want consistent part format behavior and don't want the overhead of format transitions based on size thresholds
+
+It's worth noting that while setting this to 0 can improve certain performance characteristics, it may generate more GET requests to S3 storage due to the wide parts format.
+
+### Limitations {#limitations}
+
+Column size statistics are not calculated for compact parts, which can affect monitoring and optimization efforts. When querying `system.parts_columns`, compact parts show `0` for `column_data_compressed_bytes` and `column_data_uncompressed_bytes`. For more information see ["Find counts and sizes of wide or compact parts"](/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type).
+
+## Storage formats: Full vs Packed (ClickHouse Cloud) {#storage-formats-full-vs-packed}
+
+Storage formats determine how a part's files are physically stored on disk.
+
+| Format | Description | Availability |
+|--------|-------------|--------------|
+| **Full** | Each file is stored individually in the part directory | Open source and Cloud |
+| **Packed** | All files are bundled into a single archive file | ClickHouse Cloud only |
+
+### Full storage {#full-storage}
+
+In Full storage, each part consists of multiple separate files stored individually on disk. This is the default and only option in open source ClickHouse.
+
+### Packed storage (ClickHouse Cloud only) {#packed-storage}
+
+In Packed storage, all part files are bundled into a single archive. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
+
+**Benefits of Packed storage:**
+- Fewer S3/object storage API calls
+- Reduced metadata pressure on the coordination service
+- Lower storage costs (full storage can be significantly more expensive)
+- Better performance for small parts on remote storage
+
+### When Packed storage is used {#when-packed-storage-is-used}
+
+In ClickHouse Cloud, a part uses Packed storage if **any** of these conditions are true:
+
+- Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
+- Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
+- Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+
+<Info>
+**Open source**
+
+While the settings `min_bytes_for_full_part_storage`, `min_rows_for_full_part_storage`, and `min_level_for_full_part_storage` are defined in open source ClickHouse, they have no effect because the Packed storage implementation is only available in ClickHouse Cloud.
+</Info>
+
+The `min_level_for_full_part_storage` setting can be used to optimize both performance and costs in ClickHouse Cloud environments, particularly for tables that receive continuous inserts.
+The setting is available starting in ClickHouse version 25.10 and works in conjunction with `min_level_for_wide_part` to provide comprehensive control over part storage strategies.
+
+Changing it from the default value (0) could be considered in the following use cases:
+- When tables receive regular data ingestion, initial parts will be merged away quickly, making it wasteful to store them in full part format initially
+- Setting this parameter prevents expensive S3 PUT requests during inserts. For example, one analysis showed that inserts creating full parts averaged 31.3 PUT requests per insert, while those creating only packed parts averaged just 2.22 PUT requests per insert
+- Insert operations become faster, especially for tables with many columns, since packed storage writes all data into one file rather than creating separate files for each column.
+
+Recommended configuration:
+
+Set `min_level_for_full_part_storage = 2` for cloud deployments.
+This ensures that:
+- Level 0 parts (initial inserts) use packed storage
+- Level 1 parts continue using packed storage
+- Only parts at level 2 and above use full storage format
+
+<Tip>
+Avoid this setting for tables that receive very large but infrequent writes where insufficient merges occur, as large initial writes may benefit from full part storage immediately.
+</Tip>
+
+## Combining part types and storage formats {#combining-part-types-and-storage-formats}
+
+These two concepts are orthogonal and you can have any combination, depending on if you are using ClickHouse Cloud or Open Source ClickHouse:
+
+| Combination | Use case |
+|-------------|----------|
+| Wide + Full | Large parts on local storage (default in open source) |
+| Wide + Packed | Large parts on cloud storage |
+| Compact + Full | Small parts on local storage |
+| Compact + Packed | Small parts on cloud storage |
+
+## Querying part information {#querying-part-information}
+
+You can inspect the part type and part storage type of existing parts using the [`system.parts`](/reference/system-tables/parts) table:
+
+```sql
+SELECT
+    part_type,
+    part_storage_type,
+    max(level),
+    count(),
+    formatReadableSize(max(data_uncompressed_bytes)),
+    formatReadableSize(min(data_uncompressed_bytes))
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    1,
+    2
+ORDER BY
+    1 ASC,
+    2 ASC
+```
+
+You will see something like this:
+
+```response
+   ┌─part_type─┬─part_storage_type─┬─max(level)─┬─count()─┬─formatReadab⋯sed_bytes))─┬─formatReadab⋯sed_bytes))─┐
+1. │ Compact   │ Full              │      12688 │    2456 │ 1023.87 MiB              │ 23.78 MiB                │
+2. │ Compact   │ Packed            │      97383 │   13748 │ 127.77 MiB               │ 1.00 B                   │
+3. │ Wide      │ Full              │       7642 │    2000 │ 1.38 TiB                 │ 30.18 MiB                │
+4. │ Wide      │ Packed            │         10 │     187 │ 110.01 MiB               │ 1.30 KiB                 │
+   └───────────┴───────────────────┴────────────┴─────────┴──────────────────────────┴──────────────────────────┘
+```
