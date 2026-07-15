@@ -1,0 +1,64 @@
+---
+description: 'GenerateRandom テーブルエンジンは、指定したテーブルスキーマに基づいてランダムデータを生成します。'
+sidebarTitle: 'GenerateRandom'
+slug: /engines/table-engines/special/generate
+title: 'GenerateRandom テーブルエンジン'
+doc_type: 'reference'
+---
+
+GenerateRandom テーブルエンジンは、指定したテーブルスキーマに基づいてランダムデータを生成します。
+
+使用例:
+
+* テストで再現可能な大規模テーブルを生成するために使用します。
+* ファジングテスト用のランダムな入力を生成します。
+
+<div id="usage-in-clickhouse-server">
+  ## ClickHouse Server での利用
+</div>
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+`max_array_length` と `max_string_length` パラメータは、生成されるデータ内のすべての
+array または map 型のカラムと文字列の最大長を、それぞれ指定します。
+
+Generate テーブルエンジンは `SELECT` クエリのみをサポートします。
+
+`AggregateFunction` を除き、テーブルに格納できるすべての [DataTypes](/ja/reference/data-types/index) をサポートします。
+
+<div id="example">
+  ## 例
+</div>
+
+**1.** `generate_engine_table` テーブルを作成します:
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** データにクエリを実行します:
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+<div id="details-of-implementation">
+  ## 実装の詳細
+</div>
+
+* サポート対象外:
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * `INSERT`
+  * インデックス
+  * レプリケーション

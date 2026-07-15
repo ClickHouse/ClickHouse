@@ -76,6 +76,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
+    extern const char unexpected_packet_in_table_status_response[];
 }
 
 namespace ErrorCodes
@@ -820,9 +821,41 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
     });
 
+    /// Simulate a connection that was returned to the pool out of sync by a previous query, so that
+    /// reading the table status here sees a stale packet instead of the expected response.
+    fiu_do_on(FailPoints::unexpected_packet_in_table_status_response, {
+        throw NetException(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+            "Injected unexpected packet while reading table status from {}:{}", host, port);
+    });
+
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
+
+    /// Interserver secret: prove cluster-secret knowledge for this request, since
+    /// `TablesStatusRequest` is sent before any query is authenticated. Mirrors the
+    /// per-query hash; reuses the `salt`/`nonce` already exchanged during the Hello.
+    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS && !cluster_secret.empty())
+    {
+#if USE_SSL
+        std::string data(salt);
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
+        data += cluster_secret;
+        data += "TablesStatusRequest";
+        /// Bind the hash to the request body so a relayed hash cannot be reused for a
+        /// different set of tables (mirrors how the per-query secret hash covers the query).
+        data += request.getAuthDigest();
+
+        std::string hash = encodeSHA256(data);
+        writeStringBinary(hash, *out);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+#endif
+    }
+
     request.write(*out, server_revision);
     out->finishChunk();
     out->next();
@@ -1129,6 +1162,18 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    out->finishChunk();
+    out->next();
+}
+
+void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    /// Skip if the remote replica doesn't speak the new protocol.
+    if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return;
+
+    writeVarUInt(Protocol::Client::MergeTreeAllRangesAnnouncementResponse, *out);
     response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
@@ -1648,12 +1693,19 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto request = ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    /// `server_*` here is the FOLLOWER as seen from the initiator (we are the client of that
+    /// connection). Stash it on the request so the coordinator can recognise old followers and
+    /// degrade gracefully (instead of throwing on an unknown stream).
+    request.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return announcement;
 }
 
 
@@ -1668,7 +1720,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+                       getDescription(), expected, Protocol::Server::toString(packet_type));
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)

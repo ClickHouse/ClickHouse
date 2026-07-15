@@ -1,0 +1,351 @@
+---
+slug: /integrations/prometheus
+sidebarTitle: 'Prometheus エンドポイント'
+title: 'Prometheus インテグレーション'
+description: 'ClickHouse のメトリクスを Prometheus にエクスポート'
+keywords: ['prometheus', 'grafana', '監視', 'メトリクス', 'エクスポーター']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+この機能は、[Prometheus](https://prometheus.io/) とのインテグレーションにより、ClickHouse Cloud サービスを監視できるようにします。Prometheus メトリクスへのアクセスは、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) のエンドポイント経由で提供されており、安全に接続して Prometheus メトリクス collector にメトリクスをエクスポートできます。これらのメトリクスは、Grafana や Datadog などのダッシュボードに統合して可視化できます。
+
+利用を開始するには、[API key を生成](/ja/products/cloud/features/admin-features/api/openapi)してください。
+
+[Managed Postgres](/ja/products/managed-postgres/overview) サービスに対応するエンドポイントをお探しの場合は、[Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) を参照してください。
+
+<div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
+  ## ClickHouse Cloud のメトリクスを取得する Prometheus エンドポイント API
+</div>
+
+<div id="api-reference">
+  ### APIリファレンス
+</div>
+
+| メソッド | パス                                                                                                                              | 説明                   |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 特定のサービスのメトリクスを返します   |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 組織内の全サービスのメトリクスを返します |
+
+**リクエストパラメータ**
+
+| 名前                   | 場所          | 型            |
+| -------------------- | ----------- | ------------ |
+| Organization ID      | エンドポイントアドレス | uuid         |
+| Service ID           | エンドポイントアドレス | uuid (任意)    |
+| filtered&#95;metrics | クエリパラメータ    | boolean (任意) |
+
+<div id="authentication">
+  ### 認証
+</div>
+
+基本認証には、ClickHouse Cloud API キーを使用します。
+
+```bash
+Username: <KEY_ID>
+Password: <KEY_SECRET>
+Example request
+export KEY_SECRET=<key_secret>
+export KEY_ID=<key_id>
+export ORG_ID=<org_id>
+
+# $ORG_ID 内のすべてのサービスに対して
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/prometheus?filtered_metrics=true
+
+# 単一サービスのみに対して
+export SERVICE_ID=<service_id>
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/prometheus?filtered_metrics=true
+```
+
+<div id="sample-response">
+  ### レスポンス例
+</div>
+
+```response
+# HELP ClickHouse_ServiceInfo クラスターステータスおよびClickHouseバージョンを含む、サービスに関する情報
+# TYPE ClickHouse_ServiceInfo untyped
+ClickHouse_ServiceInfo{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",clickhouse_cluster_status="running",clickhouse_version="24.5",scrape="full"} 1
+
+# HELP ClickHouseProfileEvents_Query 解釈され、実行される可能性のあるクエリの数。パースに失敗したクエリ、またはASTサイズ制限・クォータ制限・同時実行クエリ数の制限により拒否されたクエリは含まれない。ClickHouse自身が開始した内部クエリが含まれる場合がある。サブクエリはカウントしない。
+# TYPE ClickHouseProfileEvents_Query counter
+ClickHouseProfileEvents_Query{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 6
+
+# HELP ClickHouseProfileEvents_QueriesWithSubqueries すべてのサブクエリを含むクエリ数
+# TYPE ClickHouseProfileEvents_QueriesWithSubqueries counter
+ClickHouseProfileEvents_QueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 230
+
+# HELP ClickHouseProfileEvents_SelectQueriesWithSubqueries すべてのサブクエリを含むSELECTクエリ数
+# TYPE ClickHouseProfileEvents_SelectQueriesWithSubqueries counter
+ClickHouseProfileEvents_SelectQueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 224
+
+# HELP ClickHouseProfileEvents_FileOpen オープンされたファイルの数。
+# TYPE ClickHouseProfileEvents_FileOpen counter
+ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 4157
+
+# HELP ClickHouseProfileEvents_Seek 'lseek'関数が呼び出された回数。
+# TYPE ClickHouseProfileEvents_Seek counter
+ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
+
+# HELP ClickPipes_Info 常に1。ラベル"clickpipe_state"にはパイプの現在の状態が含まれる: Stopped/Provisioning/Running/Paused/Failed
+# TYPE ClickPipes_Info gauge
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
+
+# HELP ClickPipes_SentEvents_Total ClickHouseに送信されたレコードの総数
+# TYPE ClickPipes_SentEvents_Total counter
+ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5534250
+
+# HELP ClickPipes_SentBytesCompressed_Total ClickHouseに送信された圧縮バイトの総数。
+# TYPE ClickPipes_SentBytesCompressed_Total counter
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 380837520
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+
+# HELP ClickPipes_FetchedBytes_Total ソースから取得した非圧縮バイトの総数。
+# TYPE ClickPipes_FetchedBytes_Total counter
+ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_Errors_Total データ取り込み時のエラーの総数。
+# TYPE ClickPipes_Errors_Total counter
+ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 0
+
+# HELP ClickPipes_SentBytes_Total ClickHouseに送信された非圧縮バイトの総数。
+# TYPE ClickPipes_SentBytes_Total counter
+ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 477187967
+
+# HELP ClickPipes_FetchedBytesCompressed_Total ソースから取得した圧縮バイトの総数。ソースのデータが非圧縮の場合、この値はClickPipes_FetchedBytes_Totalと等しくなる。
+# TYPE ClickPipes_FetchedBytesCompressed_Total counter
+ClickPipes_FetchedBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_FetchedEvents_Total ソースから取得したレコードの総数。
+# TYPE ClickPipes_FetchedEvents_Total counter
+ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5535376
+```
+
+<div id="metric-labels">
+  ### メトリクスラベル
+</div>
+
+すべてのメトリクスには、以下のラベルが含まれます。
+
+| Label                           | Description |
+| ------------------------------- | ----------- |
+| clickhouse&#95;org              | 組織 ID       |
+| clickhouse&#95;service          | サービス ID     |
+| clickhouse&#95;service&#95;name | サービス名       |
+
+ClickPipes のメトリクスには、以下のラベルも含まれます。
+
+| Label                | Description      |
+| -------------------- | ---------------- |
+| clickpipe&#95;id     | ClickPipe ID     |
+| clickpipe&#95;name   | ClickPipe 名      |
+| clickpipe&#95;source | ClickPipe ソースタイプ |
+
+<div id="information-metrics">
+  ### 情報メトリクス
+</div>
+
+ClickHouse Cloud は、値が常に `1` の特別な `Gauge` メトリクス `ClickHouse_ServiceInfo` を提供します。このメトリクスには、すべての **Metric Labels** に加えて、次のラベルが含まれます。
+
+| Label                             | Description                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| clickhouse&#95;cluster&#95;status | サービスのステータス。次のいずれかです: [`awaking` | `running` | `degraded` | `idle` | `stopped`] |
+| clickhouse&#95;version            | サービスで稼働している ClickHouse server のバージョン                                           |
+| scrape                            | 直近のスクレイプのステータスを示します。`full` または `partial` のいずれかです                               |
+| full                              | 直近のメトリクスのスクレイプ中にエラーがなかったことを示します                                                |
+| partial                           | 直近のメトリクスのスクレイプ中に一部エラーが発生し、`ClickHouse_ServiceInfo` メトリクスのみが返されたことを示します。        |
+
+メトリクス取得のリクエストでは、idled 状態のサービスは再開されません。サービスが `idle` 状態の場合、`ClickHouse_ServiceInfo` メトリクスのみが返されます。
+
+ClickPipes にも同様に `Gauge` メトリクス `ClickPipes_Info` があり、**Metric Labels** に加えて次のラベルが含まれます。
+
+| Label               | Description |
+| ------------------- | ----------- |
+| clickpipe&#95;state | パイプの現在の状態   |
+
+<div id="configuring-prometheus">
+  ### Prometheus の設定
+</div>
+
+Prometheus サーバーは、設定されたターゲットから指定した間隔でメトリクスを収集します。以下は、Prometheus サーバーで ClickHouse Cloud の Prometheus エンドポイントを使用するための設定例です。
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+    - targets: ["localhost:9090"]
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    scheme: https
+    params:
+      filtered_metrics: ["true"]
+    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+`honor_labels` のconfiguration parameterは、インスタンスラベルが正しく設定されるよう `true` に設定する必要がある点に注意してください。さらに、上記の例では `filtered_metrics` も `true` に設定されていますが、これはユーザーの好みに応じて設定してください。
+
+<div id="integrating-with-grafana">
+  ## Grafana との統合
+</div>
+
+Grafana と統合する主な方法は 2 つあります。
+
+* **Metrics Endpoint** – この方法の利点は、追加のコンポーネントやインフラストラクチャが不要なことです。この機能は Grafana Cloud でのみ利用でき、必要なのは ClickHouse Cloud Prometheus エンドポイント URL と認証情報だけです。
+* **Grafana Alloy** - Grafana Alloy は、Grafana Agent に代わる、ベンダー中立の OpenTelemetry (OTel) collector ディストリビューションです。スクレーパーとして使用でき、自社のインフラストラクチャにデプロイ可能で、あらゆる Prometheus エンドポイントと互換性があります。
+
+以下では、これらのオプションの使用方法を説明します。特に ClickHouse Cloud Prometheus エンドポイントに固有の詳細に焦点を当てます。
+
+<div id="grafana-cloud-with-metrics-endpoint">
+  ### メトリクス エンドポイントを使用した Grafana Cloud
+</div>
+
+* Grafana Cloud アカウントにログインします
+* **Metrics Endpoint** を選択して、新しい接続を追加します
+* Scrape URL が Prometheus エンドポイントを指すように設定し、ベーシック認証を使用して API キー/シークレットで接続を構成します
+* 接続テストを実行し、接続できることを確認します
+
+<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Grafana のメトリクス エンドポイントを設定" border />
+
+<br />
+
+設定が完了すると、ダッシュボードを構成する際に選択できるドロップダウンにメトリクスが表示されます。
+
+<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana メトリクス エクスプローラーのドロップダウン" border />
+
+<br />
+
+<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana メトリクス エクスプローラーのグラフ" border />
+
+<div id="grafana-cloud-with-alloy">
+  ### Grafana Cloud で Alloy を使用する
+</div>
+
+Grafana Cloud を使用している場合は、Grafana の Alloy メニューに移動し、画面上の指示に従って Alloy をインストールできます。
+
+<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+
+<br />
+
+これにより、認証トークンを使用して Grafana Cloud のエンドポイントにデータを送信するための `prometheus.remote_write` コンポーネントを含むように Alloy が設定されます。あとは、Alloy の設定 (Linux では `/etc/alloy/config.alloy`) を変更し、ClickHouse Cloud Prometheus エンドポイント用のスクレーパーを追加するだけです。
+
+以下は、ClickHouse Cloud エンドポイントからメトリクスをスクレイプするための `prometheus.scrape` コンポーネントと、自動的に設定される `prometheus.remote_write` コンポーネントを含む Alloy の設定例です。`basic_auth` 設定コンポーネントには、それぞれユーザー名とパスワードとして Cloud API キーの ID とシークレットが含まれている点に注意してください。
+
+```yaml
+prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels    = true
+  scrape_interval = "30s"
+  scrape_timeout  = "25s"
+
+  basic_auth {
+  username = "<clickhouse_api_key_id>"
+  password = "<clickhouse_api_key_secret>"
+  }
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+  prometheus.remote_write "grafana_cloud" {
+  endpoint {
+  url = "https://<grafana_prometheus_url>/api/prom/push"
+
+  basic_auth {
+  username = "<grafana_username>"
+  password = "<grafana_api_token>"
+  }
+  }
+}
+```
+
+インスタンスラベルが正しく設定されるよう、`honor_labels` 設定パラメータを `true` に設定する必要がある点に注意してください。
+
+<div id="grafana-self-managed-with-alloy">
+  ### Alloy を使用する Grafana のセルフマネージド環境
+</div>
+
+Grafana をセルフマネージドで利用している場合、Alloy エージェントのインストール手順は[こちら](https://grafana.com/docs/alloy/latest/get-started/install/)で確認できます。ここでは、Alloy が Prometheus メトリクスを任意の宛先に送信するよう設定済みであることを前提としています。以下の `prometheus.scrape` コンポーネントにより、Alloy は ClickHouse Cloud エンドポイント をスクレイプします。スクレイプしたメトリクスは `prometheus.remote_write` が受け取る想定です。これが存在しない場合は、`forward_to key` を対象の宛先に合わせて調整してください。
+
+```yaml
+// prometheus.scrape コンポーネントにより、Alloy が ClickHouse Cloud の Prometheus エンドポイントをスクレイプします。
+  // forward_to キーを、使用する remote_write の receiver に合わせて調整してください。
+  prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels = true
+
+  basic_auth {
+  username = "<KEY_ID>"
+  password = "<KEY_SECRET>"
+  }
+
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+```
+
+設定が完了すると、メトリクスエクスプローラーに ClickHouse 関連のメトリクスが表示されるようになります。
+
+<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana メトリクスエクスプローラー" border />
+
+<br />
+
+インスタンスラベルが正しく設定されるようにするには、`honor_labels` 構成パラメータを `true` に設定する必要がある点に注意してください。
+
+<div id="integrating-with-datadog">
+  ## Datadog とのインテグレーション
+</div>
+
+Datadog の [Agent](https://docs.datadoghq.com/agent/?tab=Linux) と [OpenMetrics インテグレーション](https://docs.datadoghq.com/integrations/openmetrics/) を使用すると、ClickHouse Cloud エンドポイントからメトリクスを収集できます。以下に、この Agent とインテグレーションのシンプルな設定例を示します。ただし、実際には本当に必要なメトリクスだけを選択することをおすすめします。以下の包括的な例では、数千にも及ぶメトリクスとインスタンスの組み合わせがエクスポートされ、Datadog ではそれらがカスタムメトリクスとして扱われますので注意してください。
+
+```yaml
+init_config:
+
+instances:
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+     namespace: 'clickhouse'
+     metrics:
+         - '^ClickHouse.*'
+     username: username
+     password: password
+```
+
+<br />
+
+<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus と Datadog のインテグレーション" />
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [監視の概要](/ja/products/cloud/features/monitoring/overview) — ClickHouse Cloud のすべての監視方法を比較
+* [Cloud Console での監視](/ja/products/cloud/features/monitoring/cloud-console) — 外部ツール不要の組み込みダッシュボード
+* [コミュニティおよびパートナーのインテグレーション](/ja/products/cloud/features/monitoring/integrations) — Datadog agent のインテグレーションとコミュニティソリューション
+* [システムテーブルのクエリ](/ja/products/cloud/features/monitoring/system-tables) — システムメトリクスに SQL で直接アクセス
+* [Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — Managed Postgres サービスのメトリクスをスクレイプ

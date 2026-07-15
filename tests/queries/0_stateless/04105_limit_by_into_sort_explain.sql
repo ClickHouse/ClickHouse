@@ -1,8 +1,11 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echo }
 
+SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_push_limit_by_into_sort = 1;
 SET max_threads = 12;
 

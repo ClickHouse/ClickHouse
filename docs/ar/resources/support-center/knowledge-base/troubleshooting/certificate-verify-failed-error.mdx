@@ -1,0 +1,53 @@
+---
+title: حل خطأ التحقق من شهادة SSL في ClickHouse
+description: تعرّف على كيفية حل خطأ SSL ‏CERTIFICATE_VERIFY_FAILED.
+date: 2023-05-02
+tags: ['الأمان والمصادقة', 'الأخطاء والاستثناءات']
+keywords: ['خطأ', 'شهادة SSL', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## حل خطأ التحقق من شهادة SSL ذي الرمز 210 في ClickHouse
+</div>
+
+يُبلَّغ عن هذا الخطأ عادةً على النحو التالي:
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## سبب الخطأ
+</div>
+
+يحدث هذا الخطأ أثناء محاولة الاتصال بخادم ClickHouse باستخدام `clickhouse-client`. ويكون سبب الخطأ أحد الأمرين التاليين:
+
+* أن ملف التهيئة `config.xml` يفتقد إلى الشهادة الجذرية في مخزن شهادات CA الافتراضي على الجهاز، أو
+* وجود شهادة CA موقعة ذاتيًا أو شهادة صادرة عن CA داخلية غير مُهيأة
+
+<div id="solution">
+  ## الحل
+</div>
+
+إذا كنت تستخدم CA داخلية أو موقعة ذاتيًا، فقم بتهيئة شهادة الجذر الخاصة بـ CA في `config.xml` داخل دليل العميل (على سبيل المثال `/etc/clickhouse-client`)، وعطّل تحميل شهادات جذر CA الافتراضية من موقعها الافتراضي.
+
+فيما يلي مثال على التهيئة:
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+اطّلع على [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ar/concepts/features/interfaces/cli#configuration_files)

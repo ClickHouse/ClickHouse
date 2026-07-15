@@ -7,17 +7,21 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
+    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table,
+    create_postgres_table_with_schema,
     get_postgres_conn,
     postgres_table_template_6,
 )
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/log_conf.xml"],
+    main_configs=["configs/log_conf.xml", "configs/backups_disk.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
@@ -838,6 +842,335 @@ def test_quoting_publication(started_cluster):
     )
 
 
+def test_single_table_engine_with_non_default_schema(started_cluster):
+    # Reproduces https://github.com/ClickHouse/ClickHouse/issues/59950:
+    # the standalone MaterializedPostgreSQL table engine ignored the
+    # `materialized_postgresql_schema` setting and created the publication for the bare,
+    # unqualified table name, failing with `relation "..." does not exist`.
+    cursor = pg_manager.get_db_cursor()
+    # The schema-aware default replication slot name is
+    # `<postgres_database>_<identity_hash>_ch_replication_slot`, where the schema and table are folded
+    # into a fixed-length hash, so it stays within PostgreSQL's 63-character identifier limit regardless
+    # of the schema/table length.
+    schema_name = "eng_schema"
+    table = "eng_table"
+    clickhouse_postgres_db = "postgres_database_with_schema_for_table_engine"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    # Ongoing replication (the consumer path) must work too.
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(50, 50)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 100 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_two_schemas_same_table_name_single_storage(started_cluster):
+    # Regression for the publication/slot collision uncovered while fixing
+    # https://github.com/ClickHouse/ClickHouse/issues/59950: two standalone
+    # MaterializedPostgreSQL tables that replicate a table with the SAME name from two
+    # different PostgreSQL schemas of the same database must not share a publication or a
+    # replication slot. Before making the publication/slot names schema-aware, both tables
+    # derived their identity from `<postgres_database>_<table>` only, so the second `CREATE`
+    # dropped and recreated the shared publication and the consumers cross-talked (one replica
+    # would stop receiving its schema's changes or ingest the other schema's rows).
+    cursor = pg_manager.get_db_cursor()
+    # The schema-aware default replication slot name folds the schema and table into a fixed-length
+    # `<postgres_database>_<identity_hash>_ch_replication_slot`, so it stays within PostgreSQL's
+    # 63-character identifier limit regardless of the schema/table length.
+    schema1 = "cs1"
+    schema2 = "cs2"
+    table = "ct"
+
+    create_postgres_schema(cursor, schema1)
+    create_postgres_schema(cursor, schema2)
+    create_postgres_table_with_schema(cursor, schema1, table)
+    create_postgres_table_with_schema(cursor, schema2, table)
+
+    # ClickHouse PostgreSQL databases scoped to each schema, used to seed and to read the source.
+    pg_db1 = "cs1_src"
+    pg_db2 = "cs2_src"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db1,
+        schema_name=schema1,
+        postgres_database="postgres_database",
+    )
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db2,
+        schema_name=schema2,
+        postgres_database="postgres_database",
+    )
+
+    # Distinct data per schema so cross-talk is detectable: schema2's values are offset by 1000.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(0, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    instance.query("DROP TABLE IF EXISTS ct_cs1 SYNC")
+    instance.query("DROP TABLE IF EXISTS ct_cs2 SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE ct_cs1 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema1}'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE ct_cs2 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema2}'
+        """
+    )
+
+    # Initial snapshot: each replica sees only its own schema's rows.
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs1", "50\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs2", "30\n")
+    # Values prove there is no cross-talk: schema2's rows (>= 1000) must never appear in replica 1.
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM ct_cs1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM ct_cs2", "0\n")
+
+    # Ongoing replication (the consumer path) stays isolated too.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(50, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(30, 30)"
+    )
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs1", "100\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs2", "60\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM ct_cs1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM ct_cs2", "0\n")
+
+    instance.query("DROP TABLE ct_cs1 SYNC")
+    instance.query("DROP TABLE ct_cs2 SYNC")
+
+
+def test_two_schemas_same_table_name_database_engine(started_cluster):
+    # Regression for the database-engine half of the publication/slot collision flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425 (the single-table half is covered by
+    # test_two_schemas_same_table_name_single_storage). Two `MaterializedPostgreSQL` DATABASE engines that
+    # each replicate a single common non-default schema (`materialized_postgresql_schema`) of the SAME
+    # PostgreSQL database must not share a publication or a replication slot. Before the identity became
+    # schema-aware for the database engine too, both derived their publication from `<postgres_database>`
+    # and their default slot from `<postgres_database>` only, so the second `CREATE DATABASE` dropped and
+    # recreated the shared publication for its own schema's tables and the consumers cross-talked (one
+    # database would stop receiving its schema's changes or ingest the other schema's rows, because in
+    # single-schema mode the publication carries only the bare relation name).
+    cursor = pg_manager.get_db_cursor()
+    schema1 = "dbs1"
+    schema2 = "dbs2"
+    table = "dbt"
+
+    create_postgres_schema(cursor, schema1)
+    create_postgres_schema(cursor, schema2)
+    create_postgres_table_with_schema(cursor, schema1, table)
+    create_postgres_table_with_schema(cursor, schema2, table)
+
+    # ClickHouse PostgreSQL databases scoped to each schema, used to seed and to read the source.
+    pg_db1 = "dbs1_src"
+    pg_db2 = "dbs2_src"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db1,
+        schema_name=schema1,
+        postgres_database="postgres_database",
+    )
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db2,
+        schema_name=schema2,
+        postgres_database="postgres_database",
+    )
+
+    # Distinct data per schema so cross-talk is detectable: schema2's values are offset by 1000.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(0, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    # Two MaterializedPostgreSQL database engines over the SAME PostgreSQL database, each scoped to one
+    # non-default schema. No unique-consumer identifier is set, so isolation must come solely from the
+    # schema-aware publication and slot names.
+    mat_db1 = "mat_dbs1"
+    mat_db2 = "mat_dbs2"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db1,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema1}'"],
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db2,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema2}'"],
+    )
+
+    # Initial snapshot: each database sees only its own schema's rows.
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db1, materialized_database=mat_db1
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db2, materialized_database=mat_db2
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db1}.{table}", "50\n")
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db2}.{table}", "30\n")
+    # Values prove there is no cross-talk: schema2's rows (>= 1000) must never appear in database 1.
+    assert_eq_with_retry(
+        instance, f"SELECT countIf(value >= 1000) FROM {mat_db1}.{table}", "0\n"
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT countIf(value < 1000) FROM {mat_db2}.{table}", "0\n"
+    )
+
+    # The two database engines must own DISTINCT publications and replication slots (the fix); before it
+    # they collapsed onto the single `<postgres_database>_ch_publication` / `<postgres_database>` pair.
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = {row[0] for row in cursor.fetchall()}
+    assert len(pubs) == 2, f"expected two distinct publications, got {pubs}"
+    for pub in pubs:
+        assert len(pub) <= 63, f"publication name too long: {pub} ({len(pub)})"
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots "
+        "WHERE database = 'postgres_database' AND slot_name LIKE '%\\_ch\\_replication\\_slot'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert len(slots) == 2, f"expected two distinct slots, got {slots}"
+    for slot in slots:
+        assert len(slot) <= 63, f"slot name too long: {slot} ({len(slot)})"
+
+    # Ongoing replication (the consumer path) stays isolated too.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(50, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(30, 30)"
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db1}.{table}", "100\n")
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db2}.{table}", "60\n")
+    assert_eq_with_retry(
+        instance, f"SELECT countIf(value >= 1000) FROM {mat_db1}.{table}", "0\n"
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT countIf(value < 1000) FROM {mat_db2}.{table}", "0\n"
+    )
+
+    pg_manager.drop_materialized_db(mat_db1)
+    pg_manager.drop_materialized_db(mat_db2)
+
+
+def test_default_schema_preserves_legacy_identity(started_cluster):
+    # A standalone MaterializedPostgreSQL table that targets PostgreSQL's default schema must keep the
+    # legacy, schema-unaware publication and default replication-slot names `<postgres_database>_<table>_*`,
+    # even when the schema is given explicitly as `materialized_postgresql_schema = 'public'`. Otherwise
+    # the generated default object names would change for tables created before the identity became
+    # schema-aware, so their `ATTACH` would look for a slot/publication that does not exist, run an
+    # initial sync, and reload a snapshot into the already-existing nested table (duplicating data).
+    cursor = pg_manager.get_db_cursor()
+    table = "ds_table"
+    clickhouse_postgres_db = "postgres_database_default_schema_table"
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table(cursor, table)
+
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'public'
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    # The explicit-default `public` schema must NOT change the generated default object names: the
+    # publication and replication slot must be the legacy schema-unaware `postgres_database_<table>_*`,
+    # not the schema-aware `postgres_database_public_<table>_*`.
+    legacy_slot = f"postgres_database_{table}_ch_replication_slot"
+    schema_aware_slot = f"postgres_database_public_{table}_ch_replication_slot"
+    cursor.execute("SELECT slot_name FROM pg_replication_slots")
+    slots = {row[0] for row in cursor.fetchall()}
+    assert legacy_slot in slots, f"expected legacy slot {legacy_slot}, got {slots}"
+    assert schema_aware_slot not in slots
+
+    legacy_publication = f"postgres_database_{table}_ch_publication"
+    schema_aware_publication = f"postgres_database_public_{table}_ch_publication"
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publications = {row[0] for row in cursor.fetchall()}
+    assert legacy_publication in publications, (
+        f"expected legacy publication {legacy_publication}, got {publications}"
+    )
+    assert schema_aware_publication not in publications
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
 def test_use_extended_date_and_time_types_setting(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/43153
     # By default PostgreSQL `date`/`timestamp` map to ClickHouse Date32/DateTime64 (wider range).
@@ -1033,6 +1366,476 @@ def test_use_extended_date_and_time_types_setting_alter_database_atomic(started_
     cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
 
 
+def test_backup_database(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/44252
+    # BACKUP of a MaterializedPostgreSQL database used to hang forever with
+    # "Table ... were created or changed its definition during scanning", because the table
+    # definition was generated with a fresh random UUID on every metadata read. Now the
+    # backup completes and the data of the nested ReplacingMergeTree is captured, so a table
+    # can be restored as a standalone ReplacingMergeTree.
+    pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
+    pg_manager.execute(
+        "CREATE TABLE test_backup_tbl (key integer PRIMARY KEY, value integer)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.test_backup_tbl SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_backup_tbl'"],
+    )
+    check_tables_are_synchronized(instance, "test_backup_tbl")
+    assert 50 == int(
+        instance.query("SELECT count() FROM test_database.test_backup_tbl")
+    )
+
+    backup_name = "Disk('backups', 'mpg_backup')"
+    # Must finish (previously looped forever on the consistency check).
+    instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
+
+    # Restoring the whole MaterializedPostgreSQL database is rejected (fail closed): recreating it
+    # would start replicating from the live PostgreSQL source before the backed-up table data is
+    # restored, which would mix the backup snapshot with the current remote state. The data must
+    # instead be restored per-table as a standalone ReplacingMergeTree (below).
+    instance.query("DROP DATABASE IF EXISTS restored_mpg_db SYNC")
+    error = instance.query_and_get_error(
+        f"RESTORE DATABASE test_database AS restored_mpg_db FROM {backup_name}"
+    )
+    assert "is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+
+    # The same rejection must also fire in `must-exist` mode, where RESTORE does not create the
+    # database but reuses an existing one: otherwise the backed-up nested ReplacingMergeTree parts
+    # would be attached into a database that is actively replicating from PostgreSQL, mixing the
+    # snapshot with the live remote state. `test_database` is already a live MaterializedPostgreSQL
+    # database, so restoring into it must be rejected during the database-creation stage, before any
+    # table data is restored.
+    error = instance.query_and_get_error(
+        f"RESTORE DATABASE test_database FROM {backup_name} SETTINGS create_database = 'must-exist'"
+    )
+    assert "is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+
+    # The backed-up table data can be restored as a standalone ReplacingMergeTree.
+    # `allow_different_table_def` is required because we intentionally restore a
+    # MaterializedPostgreSQL table as a plain ReplacingMergeTree: the create query stored in the
+    # backup is the synthetic nested-table query (without the default `index_granularity` setting,
+    # to match `SHOW CREATE TABLE`), while the freshly created standalone table normalizes its
+    # definition and gains `SETTINGS index_granularity = 8192`. Only the data has to match.
+    instance.query("DROP DATABASE IF EXISTS restored_db SYNC")
+    instance.query("CREATE DATABASE restored_db")
+    instance.query(
+        f"RESTORE TABLE test_database.test_backup_tbl AS restored_db.test_backup_tbl FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert 50 == int(
+        instance.query("SELECT count() FROM restored_db.test_backup_tbl")
+    )
+    assert "1225" == instance.query(
+        "SELECT sum(key) FROM restored_db.test_backup_tbl"
+    ).strip()
+
+    instance.query("DROP DATABASE restored_db SYNC")
+    pg_manager.drop_materialized_db()
+    pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
+
+
+def test_backup_table_engine(started_cluster):
+    # Restoring a standalone MaterializedPostgreSQL table in place is intentionally rejected: the
+    # storage starts replicating from the live PostgreSQL source the moment it is created, so
+    # restoring the backed-up parts on top would mix the backup snapshot with the current remote
+    # data. The data is still captured by the backup (delegated to the nested ReplacingMergeTree)
+    # and can be restored into a separately pre-created ReplacingMergeTree instead, which this test
+    # also exercises.
+    table = "test_backup_te"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    backup_name = "Disk('backups', 'mpg_te_backup')"
+    instance.query(f"BACKUP TABLE {table} TO {backup_name}")
+
+    # Restoring a standalone MaterializedPostgreSQL table is rejected. The target was just dropped, so RESTORE
+    # would have to (re)create it from the backup definition, again as MaterializedPostgreSQL. That is rejected in
+    # the storage factory *before* the table is created: otherwise the constructor would start replicating from
+    # the live PostgreSQL source and only then fail, leaving a live table behind (RestorerFromBackup does not roll
+    # back the created table on a later failure). Assert both the rejection and that no table was left behind.
+    instance.query(f"DROP TABLE {table} SYNC")
+    error = instance.query_and_get_error(
+        f"RESTORE TABLE {table} FROM {backup_name}",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "from a backup is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+    assert "0" == instance.query(f"EXISTS TABLE {table}").strip(), (
+        "the rejected restore must fail closed before creating the table, leaving no live "
+        "MaterializedPostgreSQL table replicating from the live PostgreSQL source"
+    )
+
+    # The backed-up data (delegated to the nested ReplacingMergeTree by backupData) can be restored
+    # into a ReplacingMergeTree created beforehand with the same structure as the nested table
+    # (including the _sign and _version columns). `allow_different_table_def` is required because the
+    # definition stored in the backup is the MaterializedPostgreSQL engine, which we intentionally
+    # restore into a plain ReplacingMergeTree; only the data has to match. This proves backupData
+    # actually captures the data (the in-place rejection above would pass even if it did not).
+    instance.query("DROP TABLE IF EXISTS restored_te SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_te
+        (
+            key Int32,
+            value Int32,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {table} AS restored_te FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert 50 == int(instance.query("SELECT count() FROM restored_te"))
+    assert "1225" == instance.query("SELECT sum(key) FROM restored_te").strip()
+    instance.query("DROP TABLE IF EXISTS restored_te SYNC")
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_backup_table_partitions(started_cluster):
+    # Regression for an AI-review finding: BACKUP TABLE ... PARTITIONS of a MaterializedPostgreSQL table
+    # used to be rejected with "Table engine MaterializedPostgreSQL doesn't support partitions", because
+    # StorageMaterializedPostgreSQL inherited IStorage::supportsBackupPartition() == false even though its
+    # backupData already forwards the selected partitions to the nested ReplacingMergeTree (which does
+    # support partition backups). BackupEntriesCollector checks that flag before calling backupData, so the
+    # backup failed before the delegation could run. supportsBackupPartition now delegates to the nested
+    # table, so a single-partition backup succeeds and, restored into a standalone ReplacingMergeTree,
+    # contains only the selected partitions.
+    #
+    # The nested table is partitioned via a TABLE OVERRIDE (the database engine path), because that is the
+    # only way to give the nested ReplacingMergeTree a partition key - the standalone table engine does not
+    # propagate PARTITION BY. The supportsBackupPartition override being exercised here is shared by both.
+    table_name = "test_backup_partitions"
+    materialized_database = "test_database"
+
+    pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    pg_manager.create_postgres_table(table_name, template=postgres_table_template_6)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number) FROM numbers(5)"
+    )
+
+    # PARTITION BY key makes each key its own partition in the nested ReplacingMergeTree.
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value String) PARTITION BY key)"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+        materialized_database=materialized_database,
+        table_overrides=table_overrides,
+    )
+    check_tables_are_synchronized(
+        instance, table_name, postgres_database=pg_manager.get_default_database()
+    )
+    assert 5 == int(
+        instance.query(f"SELECT count() FROM {materialized_database}.{table_name}")
+    )
+
+    backup_name = "Disk('backups', 'mpg_partitions_backup')"
+    # Previously rejected with "doesn't support partitions" before the delegation could run; must now succeed.
+    instance.query(
+        f"BACKUP TABLE {materialized_database}.{table_name} PARTITIONS '1', '3' TO {backup_name}"
+    )
+
+    # Only the selected partitions (keys 1 and 3) were backed up. Restore them into a standalone
+    # ReplacingMergeTree with the same partition key. `allow_different_table_def` is required because the
+    # definition stored in the backup is the MaterializedPostgreSQL nested table, which we intentionally
+    # restore as a plain ReplacingMergeTree; only the data has to match.
+    instance.query("DROP TABLE IF EXISTS restored_partitions SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_partitions
+        (
+            key Int32,
+            value String,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) PARTITION BY key ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {materialized_database}.{table_name} AS restored_partitions FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert "1\n3" == instance.query(
+        "SELECT key FROM restored_partitions ORDER BY key"
+    ).strip()
+
+    instance.query("DROP TABLE IF EXISTS restored_partitions SYNC")
+    pg_manager.drop_materialized_db()
+    pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+
+
+def test_backup_table_engine_partitions(started_cluster):
+    # Regression for an AI-review finding: this exercises StorageMaterializedPostgreSQL::supportsBackupPartition
+    # directly, on the wrapper storage. The database-engine partition backup (test_backup_table_partitions)
+    # does not: BACKUP TABLE test_database.<table> enumerates the database through getTablesIterator (the nested
+    # context), so BackupEntriesCollector sees the inner ReplacingMergeTree and checks supportsBackupPartition on
+    # *it*, never on the MaterializedPostgreSQL wrapper. Here the table is a standalone table-engine table, so
+    # BACKUP TABLE <table> resolves the storage to the StorageMaterializedPostgreSQL wrapper and the gate in
+    # BackupEntriesCollector calls the wrapper's supportsBackupPartition override. If that override regresses to
+    # the IStorage default (no partition support), the backup is rejected with "doesn't support partitions"
+    # before backupData can delegate to the nested table, and this test fails.
+    #
+    # The standalone table engine does not propagate PARTITION BY, so the nested ReplacingMergeTree has a single
+    # partition. We read its id from system.parts (the nested table is named "<wrapper_uuid>_nested" in the same
+    # database, mirroring StorageMaterializedPostgreSQL::getNestedTableName) and back up that partition by id.
+    table = "test_backup_te_part"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    partition_id = instance.query(
+        f"""
+        SELECT DISTINCT partition_id FROM system.parts
+        WHERE database = 'default'
+          AND table = (SELECT toString(uuid) || '_nested' FROM system.tables WHERE database = 'default' AND name = '{table}')
+          AND active
+        LIMIT 1
+        """
+    ).strip()
+    assert partition_id, "expected a single nested-table partition to back up"
+
+    backup_name = "Disk('backups', 'mpg_te_partitions_backup')"
+    # Must succeed. This is the check the AI-review finding is about: BackupEntriesCollector calls
+    # supportsBackupPartition on the StorageMaterializedPostgreSQL wrapper (not the nested table), and a
+    # regression to the IStorage default would reject this with "doesn't support partitions".
+    instance.query(
+        f"BACKUP TABLE {table} PARTITIONS ID '{partition_id}' TO {backup_name}"
+    )
+
+    # The backed-up partition (delegated to the nested ReplacingMergeTree by backupData) can be restored into a
+    # standalone ReplacingMergeTree. `allow_different_table_def` is required because the definition stored in the
+    # backup is the MaterializedPostgreSQL engine, which we intentionally restore as a plain ReplacingMergeTree;
+    # only the data has to match. The single partition holds all rows, so all 50 are restored.
+    instance.query("DROP TABLE IF EXISTS restored_te_part SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_te_part
+        (
+            key Int32,
+            value Int32,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {table} AS restored_te_part FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert 50 == int(instance.query("SELECT count() FROM restored_te_part"))
+    assert "1225" == instance.query("SELECT sum(key) FROM restored_te_part").strip()
+
+    instance.query("DROP TABLE IF EXISTS restored_te_part SYNC")
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_backup_database_fails_closed_on_unsynchronized_table(started_cluster):
+    # Regression for an AI-review finding: BACKUP DATABASE of a MaterializedPostgreSQL database used to
+    # succeed while silently omitting a table whose nested ReplacingMergeTree was never created. The
+    # database backup path enumerates tables through getTablesIterator (in the nested context), which only
+    # sees the already-created nested tables, so the fail-closed guard in
+    # StorageMaterializedPostgreSQL::backupData (which the database path bypasses, backing up the nested
+    # tables directly) never ran for such a table. DatabaseMaterializedPostgreSQL::getTablesForBackup now
+    # walks the configured tables and fails the whole backup when any of them still lacks its nested table.
+    #
+    # A PostgreSQL table with no primary key and no replica identity index deterministically fails to create
+    # its nested table (createNestedIfNeeded throws "has no primary key and no replica identity index"; in the
+    # database engine that failure is logged and swallowed, so its wrapper stays with no nested table), while a
+    # normal table listed alongside it synchronizes fine.
+    good = "backup_fail_closed_good"
+    bad = "backup_fail_closed_bad"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {good}")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {bad}")
+    pg_manager.execute(f"CREATE TABLE {good} (key integer PRIMARY KEY, value integer)")
+    # No primary key and no replica identity index -> its nested table is never created.
+    pg_manager.execute(f"CREATE TABLE {bad} (a integer, b integer)")
+    instance.query(
+        f"INSERT INTO postgres_database.{good} SELECT number, number FROM numbers(10)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{good},{bad}'"],
+    )
+    # The good table synchronizes; the bad one never gets a nested table.
+    check_tables_are_synchronized(instance, good)
+    assert "0" == instance.query(
+        f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name = '{bad}'"
+    ).strip(), "the table with no primary key must have no nested table"
+
+    backup_name = "Disk('backups', 'mpg_fail_closed_backup')"
+    error = instance.query_and_get_error(
+        f"BACKUP DATABASE test_database TO {backup_name}"
+    )
+    # Fail closed: the whole backup must be refused rather than silently omitting the unsynchronized table.
+    assert "nested ReplacingMergeTree table does not exist" in error, error
+    assert bad in error, error
+
+    pg_manager.drop_materialized_db()
+    pg_manager.execute(f"DROP TABLE IF EXISTS {good}")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {bad}")
+
+
+def test_backup_database_fails_closed_before_synchronization(started_cluster):
+    # Regression for an AI-review finding: BACKUP DATABASE of a MaterializedPostgreSQL database whose initial
+    # synchronization has not populated the wrapper set yet used to silently succeed with an empty (or partial)
+    # backup. `startupDatabaseAsync` only *schedules* the background synchronization task, and `waitDatabaseStarted`
+    # returns before `startSynchronization` fills `materialized_tables`. So right after CREATE DATABASE or a server
+    # restart - and for the whole time the initial `fetchRequiredTables` call to PostgreSQL is in flight -
+    # `getTablesForBackup` saw an empty map, skipped the fail-closed guard, and delegated to
+    # `DatabaseAtomic::getTablesForBackup`, which backs up only the (here: zero) already-created nested tables.
+    # DatabaseMaterializedPostgreSQL::getTablesForBackup now fails the whole backup closed when the map is empty.
+    #
+    # This deterministically reproduces the empty-`materialized_tables` window by pointing the database at
+    # PostgreSQL with bad credentials, so `startSynchronization` keeps failing at `fetchRequiredTables` and never
+    # populates the map (the same state that transiently exists right after CREATE DATABASE / restart).
+    table = "backup_before_sync"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        user="postrges",
+        password="kek",
+    )
+
+    # Synchronization cannot connect, so `materialized_tables` is never populated and no nested table is created.
+    instance.wait_for_log_line('role "postrges" does not exist')
+    assert "test_database" in instance.query("SHOW DATABASES")
+    assert "" == instance.query("SHOW TABLES FROM test_database").strip()
+
+    backup_name = "Disk('backups', 'mpg_before_sync_backup')"
+    # Fail closed: refuse the backup rather than silently producing an empty snapshot. Without the guard the
+    # backup would instead succeed with no table data.
+    error = instance.query_and_get_error(
+        f"BACKUP DATABASE test_database TO {backup_name}"
+    )
+    assert "has not finished its initial synchronization" in error, error
+
+    pg_manager.drop_materialized_db("test_database")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_table_schema_changed_while_server_down(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/66273:
+    # when the structure of a replicated PostgreSQL table changes while it is not observed
+    # through the replication stream (e.g. the change happens and then the server restarts),
+    # MaterializedPostgreSQL used to abort startup of the whole database with
+    # `LOGICAL_ERROR: Columns number mismatch`, stopping replication of *all* tables.
+    # Now only the affected table is skipped, the rest keep replicating, and the affected
+    # table can be brought back with DETACH/ATTACH.
+    NUM_TABLES = 3
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Change the structure of one table in PostgreSQL and restart ClickHouse, so that the
+    # change is detected during startup rather than through the replication stream.
+    pg_manager.execute("ALTER TABLE postgresql_replica_0 ADD COLUMN col_added integer")
+    instance.restart_clickhouse()
+
+    # The other tables must keep replicating despite the structure mismatch on replica_0.
+    for i in range(1, NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number from numbers(10, 10)"
+        )
+    for i in range(1, NUM_TABLES):
+        check_tables_are_synchronized(instance, f"postgresql_replica_{i}")
+
+    # Write to the affected table while it is skipped. The consumer observes its `Relation` message,
+    # finds no storage for it, and puts the table into the internal skip list (an empty start-LSN
+    # entry keyed by the PostgreSQL relation id). The DETACH/ATTACH recovery below must clear that
+    # entry, otherwise replication of the table would stay blocked forever after recovery.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(100, 5)"
+    )
+    # Wait until the table is actually marked as skipped in the replication stream, so the recovery
+    # really exercises the stale-skip-list path rather than winning a benign race.
+    instance.wait_for_log_line(
+        "postgresql_replica_0 is skipped from replication stream", timeout=60
+    )
+
+    # The affected table is recoverable with DETACH/ATTACH (it picks up the new structure).
+    instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
+    instance.query("ATTACH TABLE test_database.postgresql_replica_0")
+    assert_number_of_columns(instance, 3, "postgresql_replica_0")
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    # Prove that replication really resumes for the recovered table: a write that happens *after*
+    # ATTACH must be replicated. Without clearing the stale skip-list entry, this insert would be
+    # skipped indefinitely and the tables would never converge.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(200, 5)"
+    )
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    pg_manager.drop_materialized_db()
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
@@ -1089,6 +1892,58 @@ def test_numeric_to_int256(started_cluster):
 
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_int256")
+
+
+def test_prefix_valid_value_keeps_replicating(started_cluster):
+    # Regression for a prefix-valid PostgreSQL text value (e.g. '1abc') read into a declared
+    # Decimal. SerializationDecimal::deserializeText push_back's the parsed prefix and then calls
+    # throwUnexpectedDataAfterParsedValue, which popBack(1)'s that value before throwing
+    # UNEXPECTED_DATA_AFTER_PARSED_VALUE, so the destination column keeps a consistent size. The
+    # consumer catches the translated BAD_ARGUMENTS, inserts a default, and replication must keep
+    # advancing without duplicating the row or tripping Chunk::checkNumRowsIsConsistent.
+    table_name = "test_prefix_valid"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (key integer PRIMARY KEY, v text NOT NULL)")
+    cursor.execute(f"INSERT INTO {table_name} VALUES (1, '10.5')")
+
+    # Declare v as Decimal so the text prefix '1' parses and the trailing 'abc' throws.
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, v Decimal(10, 2)))"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=table_overrides,
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM test_database.{table_name}", "1"
+    )
+    assert "Decimal(10, 2)" == instance.query(
+        "SELECT type FROM system.columns WHERE database='test_database' "
+        f"AND table='{table_name}' AND name='v'"
+    ).strip()
+
+    # Prefix-valid junk: the '1' prefix is appended before the parser throws on 'abc'.
+    cursor.execute(f"INSERT INTO {table_name} VALUES (2, '1abc')")
+    # A valid follow-up row must still arrive, proving replication advanced past the bad tuple.
+    cursor.execute(f"INSERT INTO {table_name} VALUES (3, '7.25')")
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM test_database.{table_name}", "3"
+    )
+    # The bad value was replaced with the column default (0), not duplicated.
+    assert "0" == instance.query(
+        f"SELECT v FROM test_database.{table_name} WHERE key = 2"
+    ).strip()
+    assert "7.25" == instance.query(
+        f"SELECT v FROM test_database.{table_name} WHERE key = 3"
+    ).strip()
+
+    pg_manager.drop_materialized_db()
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
 
 
 def test_numeric_int256_validation(started_cluster):
@@ -1335,6 +2190,760 @@ def test_publication_name_case_collision_single_storage(started_cluster):
     for name in (upper, lower):
         instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
         pg_manager.execute(f'DROP TABLE "{name}"')
+
+
+def test_schema_aware_identity_publication_separator_collision(started_cluster):
+    # Regression for the publication/slot name collision flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425. The schema-aware identity must be injective:
+    # a plain `<postgres_database>_<schema>_<table>` concatenation is not, because `schema = a_b`,
+    # `table = c` and `schema = a`, `table = b_c` both fold to `postgres_database_a_b_c_*`. Two standalone
+    # MaterializedPostgreSQL engines built from those two identities would then share one publication and
+    # one replication slot and their consumers would cross-talk. The identity is derived from a
+    # collision-resistant hash of the full (database, schema, table) triple, so the two engines must own
+    # distinct publications and distinct slots and stay isolated.
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_schema(cursor, "a_b")
+    create_postgres_schema(cursor, "a")
+    create_postgres_table_with_schema(cursor, "a_b", "c")
+    create_postgres_table_with_schema(cursor, "a", "b_c")
+
+    pg_db1 = "sep_src1"
+    pg_db2 = "sep_src2"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db1, schema_name="a_b", postgres_database="postgres_database"
+    )
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db2, schema_name="a", postgres_database="postgres_database"
+    )
+
+    # Distinct data per engine so a collision is detectable: engine 2's values are offset by 1000.
+    instance.query(f"INSERT INTO {pg_db1}.c SELECT number, number from numbers(0, 50)")
+    instance.query(
+        f"INSERT INTO {pg_db2}.b_c SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    instance.query("DROP TABLE IF EXISTS sep_c1 SYNC")
+    instance.query("DROP TABLE IF EXISTS sep_c2 SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE sep_c1 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'c', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a_b'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE sep_c2 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'b_c', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a'
+        """
+    )
+
+    # Initial snapshot: each engine sees only its own table's rows.
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c1", "50\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c2", "30\n")
+    # No cross-talk: engine 2's rows (>= 1000) must never appear in engine 1, and vice versa.
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM sep_c1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM sep_c2", "0\n")
+
+    # The two engines must own distinct PostgreSQL objects (not one shared publication/slot).
+    cursor.execute(
+        "SELECT count(DISTINCT pubname) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+    cursor.execute(
+        "SELECT count(DISTINCT slot_name) FROM pg_replication_slots WHERE slot_name LIKE '%\\_ch\\_replication\\_slot'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+
+    # Ongoing replication (the consumer path) stays isolated too.
+    instance.query(
+        f"INSERT INTO {pg_db1}.c SELECT number, number from numbers(50, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.b_c SELECT number, number + 1000 from numbers(30, 30)"
+    )
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c1", "100\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c2", "60\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM sep_c1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM sep_c2", "0\n")
+
+    instance.query("DROP TABLE sep_c1 SYNC")
+    instance.query("DROP TABLE sep_c2 SYNC")
+
+
+def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
+    # Companion to test_schema_aware_identity_publication_separator_collision for the replication slot,
+    # whose name is additionally folded by normalizeReplicationSlot() (lower-cased, `-` mapped to `_`).
+    # PostgreSQL keeps the schemas `"a-b"` and `"a_b"` distinct, but the legacy
+    # `<postgres_database>_<schema>_<table>_ch_replication_slot` would map both (with the same table) to
+    # `postgres_database_a_b_t_ch_replication_slot`, so the two standalone engines would share one slot
+    # even though their publications differ. The collision-resistant identity hash is computed from the
+    # raw (case- and hyphen-preserving) schema, so the two engines must get distinct slots and stay
+    # isolated.
+    cursor = pg_manager.get_db_cursor()
+    # `a-b` is not a bare identifier, so it must be created (and referenced) quoted.
+    cursor.execute('DROP SCHEMA IF EXISTS "a-b" CASCADE')
+    cursor.execute('CREATE SCHEMA "a-b"')
+    create_postgres_schema(cursor, "a_b")
+    create_postgres_table_with_schema(cursor, "a-b", "t")
+    create_postgres_table_with_schema(cursor, "a_b", "t")
+
+    # Seed each source table directly: `a-b`'s values are offset by 1000 so cross-talk is detectable.
+    cursor.execute(
+        'INSERT INTO "a-b"."t" (key, value) SELECT g, g + 1000 FROM generate_series(0, 29) AS g'
+    )
+    cursor.execute(
+        'INSERT INTO "a_b"."t" (key, value) SELECT g, g FROM generate_series(0, 49) AS g'
+    )
+
+    instance.query("DROP TABLE IF EXISTS hyp_dash SYNC")
+    instance.query("DROP TABLE IF EXISTS hyp_underscore SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE hyp_dash (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a-b'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE hyp_underscore (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a_b'
+        """
+    )
+
+    assert_eq_with_retry(instance, "SELECT count() FROM hyp_dash", "30\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM hyp_underscore", "50\n")
+    # No cross-talk: `a-b`'s rows (>= 1000) must never appear in the `a_b` replica, and vice versa.
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM hyp_dash", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM hyp_underscore", "0\n")
+
+    # The case-/hyphen-distinct schemas must own distinct replication slots (not one shared slot).
+    cursor.execute(
+        "SELECT count(DISTINCT slot_name) FROM pg_replication_slots WHERE slot_name LIKE '%\\_ch\\_replication\\_slot'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+
+    instance.query("DROP TABLE hyp_dash SYNC")
+    instance.query("DROP TABLE hyp_underscore SYNC")
+    cursor.execute('DROP SCHEMA IF EXISTS "a-b" CASCADE')
+
+
+def test_schema_aware_identity_long_database_name(started_cluster):
+    # Regression for the length-bound flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425. The schema-aware single-table identity keeps a
+    # human-readable database prefix before the fixed-length hash; if that prefix were the full PostgreSQL
+    # database name, a moderately long database name would push the default replication slot
+    # `<database>_<hash>_ch_replication_slot` past PostgreSQL's 63-character identifier limit, and
+    # checkReplicationSlot() would reject the table before replication starts. With a 39-character database
+    # name the unbounded slot would be 76 bytes; the database prefix must therefore be capped so the
+    # generated publication and slot names stay within the limit and a non-default-schema table still
+    # replicates.
+    long_pg_db = "postgres_database_long_schema_slot_test"
+    assert len(long_pg_db) >= 28
+    schema_name = "lng_schema"
+    table = "lng_table"
+
+    pg_manager.create_postgres_db(long_pg_db)
+    cursor = pg_manager.get_db_cursor(database_name=long_pg_db)
+    create_postgres_schema(cursor, schema_name)
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 49) AS g'
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', '{long_pg_db}', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+
+    # The initial snapshot can only complete if the generated slot name passed checkReplicationSlot().
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "50\n")
+
+    # The generated default publication and slot names must stay within PostgreSQL's 63-character limit
+    # despite the long database name, and keep only the capped 16-character database prefix.
+    expected_prefix = long_pg_db[:16]
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE database = '{long_pg_db}'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    assert len(slots[0]) <= 63, f"slot name too long: {slots[0]} ({len(slots[0])})"
+    assert slots[0].startswith(f"{expected_prefix}_"), slots[0]
+    assert slots[0].endswith("_ch_replication_slot"), slots[0]
+
+    cursor.execute("SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'")
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    assert len(pubs[0]) <= 63, f"publication name too long: {pubs[0]} ({len(pubs[0])})"
+    assert pubs[0].startswith(f"{expected_prefix}_"), pubs[0]
+
+    # Ongoing replication (the consumer path) must work too.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(50, 99) AS g'
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "100\n")
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_legacy_identity_adopted_on_attach_table_engine(started_cluster):
+    # Backward compatibility of the schema-aware identity for the standalone table engine. A table with a
+    # non-default `materialized_postgresql_schema` created before the generated names became schema-aware
+    # (possible since 26.6, where the single-table publication became schema-qualified) owns the legacy,
+    # schema-unaware publication and replication slot `<postgres_database>_<table>_*`. On ATTACH such a
+    # deployment must adopt its legacy identity instead of looking for the schema-aware names: recreating
+    # the slot would reload a snapshot and leave the legacy slot orphaned on the PostgreSQL side,
+    # retaining WAL forever.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "leg_schema"
+    table = "leg_table"
+    clickhouse_postgres_db = "postgres_database_legacy_identity_table_engine"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+
+    # The freshly created table uses the schema-aware identity.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    schema_aware_publication = pubs[0]
+
+    legacy_slot = f"postgres_database_{table}_ch_replication_slot"
+    legacy_publication = f"postgres_database_{table}_ch_publication"
+    assert schema_aware_slot != legacy_slot
+    assert schema_aware_publication != legacy_publication
+
+    # While the table is detached, rewrite the PostgreSQL side into what a table created before the
+    # identity became schema-aware owns: the legacy, schema-unaware slot and publication.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(f"DROP PUBLICATION {schema_aware_publication}")
+    cursor.execute(
+        f'CREATE PUBLICATION {legacy_publication} FOR TABLE ONLY "{schema_name}"."{table}"'
+    )
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    # Rows written after the legacy slot was created must reach the replica through it after ATTACH.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(50, 69) AS g'
+    )
+
+    instance.query(f"ATTACH TABLE {table}")
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "70\n")
+
+    # The legacy identity was adopted: the legacy slot and publication are reused and the schema-aware
+    # ones are NOT recreated (recreating the slot would have re-snapshotted and orphaned the legacy slot).
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert slots == {legacy_slot}, f"expected only the adopted legacy slot, got {slots}"
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = {row[0] for row in cursor.fetchall()}
+    assert pubs == {
+        legacy_publication
+    }, f"expected only the adopted legacy publication, got {pubs}"
+
+    # Ongoing replication flows through the adopted identity.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(70, 99) AS g'
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "100\n")
+
+    # DROP must clean up the adopted legacy objects, not the schema-aware names.
+    instance.query(f"DROP TABLE {table} SYNC")
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert cursor.fetchall() == []
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert cursor.fetchall() == []
+
+
+def test_legacy_identity_adopted_on_restart_database_engine(started_cluster):
+    # Backward compatibility of the schema-aware identity for the DATABASE engine. A database with a
+    # non-default `materialized_postgresql_schema` created before the generated names became schema-aware
+    # owns the legacy `<postgres_database>` replication slot and `<postgres_database>_ch_publication`.
+    # On server restart (attach) such a deployment must adopt its legacy identity: looking for the
+    # schema-aware names instead would miss the existing slot, reload a snapshot into the
+    # already-populated nested tables and leave the legacy slot orphaned on the PostgreSQL side,
+    # retaining WAL forever.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "ldb_schema"
+    table = "ldb_table"
+    pg_db = "ldb_src"
+    mat_db = "mat_ldb"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema_name}'"],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+
+    # The freshly created database uses the schema-aware identity.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    schema_aware_publication = pubs[0]
+
+    legacy_slot = "postgres_database"
+    legacy_publication = "postgres_database_ch_publication"
+    assert schema_aware_slot != legacy_slot
+    assert schema_aware_publication != legacy_publication
+
+    # While the server is down — exactly the upgrade scenario — rewrite the PostgreSQL side into what a
+    # database created before the identity became schema-aware owns: the legacy slot and publication.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(f"DROP PUBLICATION {schema_aware_publication}")
+    cursor.execute(
+        f'CREATE PUBLICATION {legacy_publication} FOR TABLE ONLY "{schema_name}"."{table}"'
+    )
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    # Rows written after the legacy slot was created (while the server is down) must reach the replica
+    # through it after the restart.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(50, 69) AS g'
+    )
+    instance.start_clickhouse()
+
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db}.{table}", "70\n")
+
+    # The legacy identity was adopted: the legacy slot and publication are reused and the schema-aware
+    # ones are NOT recreated.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert slots == {legacy_slot}, f"expected only the adopted legacy slot, got {slots}"
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = {row[0] for row in cursor.fetchall()}
+    assert pubs == {
+        legacy_publication
+    }, f"expected only the adopted legacy publication, got {pubs}"
+
+    # Ongoing replication flows through the adopted identity.
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number from numbers(70, 30)"
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db}.{table}", "100\n")
+
+    # DROP DATABASE must clean up the adopted legacy objects, not the schema-aware names.
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert cursor.fetchall() == []
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert cursor.fetchall() == []
+
+
+def test_legacy_identity_not_adopted_for_foreign_publication(started_cluster):
+    # Fail-close half of the legacy-identity adoption. The legacy names are schema-blind, so they can
+    # belong to a DIFFERENT engine: a database over the DEFAULT schema of the same PostgreSQL database
+    # owns exactly the `<postgres_database>` slot and `<postgres_database>_ch_publication`. A
+    # schema-scoped database that lost its schema-aware slot (e.g. after a PostgreSQL failover) must NOT
+    # adopt them — two consumers on one slot and publication would cross-talk, the very failure the
+    # schema-aware identity removes. But it also must NOT silently proceed under its own schema-aware
+    # identity: the schema-aware slot is gone, so proceeding would re-run the initial sync and reload a
+    # snapshot into the already-existing nested table, duplicating data. So the attach fails closed with
+    # an exception — the schema-aware slot is NOT recreated (no fresh sync ran) — and the default-schema
+    # engine's objects are left untouched.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "fp_schema"
+    table = "fp_table"
+    pg_db = "fp_src"
+    mat_default_db = "mat_fp_default"
+    mat_schema_db = "mat_fp_schema"
+
+    # A table with the SAME name in the default schema and in a non-default one, with distinct data
+    # (values >= 1000 in the non-default schema) so cross-talk is detectable.
+    create_postgres_table(cursor, table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    # The default-schema database owns the legacy identity (the default schema keeps the legacy names).
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_default_db,
+        postgres_database="postgres_database",
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database="postgres_database",
+        materialized_database=mat_default_db,
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_schema_db,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema_name}'"],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_schema_db
+    )
+
+    legacy_slot = "postgres_database"
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert legacy_slot in slots and len(slots) == 2, f"got {slots}"
+    schema_aware_slot = next(slot for slot in slots if slot != legacy_slot)
+
+    # The schema-scoped database loses its schema-aware slot while the server is down. The legacy slot
+    # and publication it then finds belong to the default-schema database.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    instance.start_clickhouse()
+
+    # The schema-scoped database must fail closed on attach: it neither adopts the foreign legacy
+    # identity nor re-runs the initial sync under its schema-aware identity. The attach throws, so the
+    # error surfaces in the log.
+    assert_logs_contain_with_retry(
+        instance, "not this engine's schema", retry_count=120, sleep_time=1
+    )
+
+    # The schema-aware slot is NOT recreated. Recreating it is the only thing that runs the initial sync
+    # (and re-snapshots the existing nested table), so its absence proves no re-snapshot happened. The
+    # wrapper always reads with FINAL, which would hide a duplicated snapshot, so this slot check — not a
+    # logical row count — is what proves the fail-closed behavior. The legacy slot stays with the
+    # default-schema database. Give the retrying startup task time to prove the slot stays absent.
+    for _ in range(15):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = {row[0] for row in cursor.fetchall()}
+        assert (
+            schema_aware_slot not in slots
+        ), f"schema-aware slot was recreated; the attach must fail closed, got {slots}"
+        time.sleep(1)
+    assert legacy_slot in slots, f"legacy slot must stay untouched, got {slots}"
+
+    # The default-schema database is untouched: it keeps replicating its own schema's table without any
+    # cross-talk from the schema-scoped database that failed to start.
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(50, 50)"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database="postgres_database",
+        materialized_database=mat_default_db,
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM {mat_default_db}.{table}", "100\n"
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT countIf(value >= 1000) FROM {mat_default_db}.{table}", "0\n"
+    )
+
+    pg_manager.drop_materialized_db(mat_default_db)
+    pg_manager.drop_materialized_db(mat_schema_db)
+
+
+def test_legacy_identity_not_adopted_when_publication_missing(started_cluster):
+    # Fail-close half of the legacy-identity adoption, publication-missing case. The legacy slot name is
+    # schema-blind, so the mere existence of a legacy slot does not prove the legacy objects belong to this
+    # engine — only the legacy publication's table list carries the schema. If, on attach, the schema-aware
+    # slot is gone and a schema-blind legacy slot survives but its legacy publication is missing (e.g.
+    # dropped on the PostgreSQL side, or the slot is an orphan left by a different engine over the same
+    # database), ownership cannot be proven, so the legacy slot must NOT be adopted. Adopting it would hijack
+    # a possibly-foreign slot; proceeding under the schema-aware identity would re-run the initial sync and
+    # reload a snapshot into the already-existing nested table, duplicating data. So the attach fails closed
+    # with an exception and the schema-aware slot is NOT recreated. Without the ownership requirement this
+    # branch would skip the schema check entirely (the publication it reads is absent), adopt the orphaned
+    # legacy slot, and recreate the legacy publication for this engine's schema.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "pm_schema"
+    table = "pm_table"
+    pg_db = "pm_src"
+    mat_schema_db = "mat_pm_schema"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_schema_db,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema_name}'"],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_schema_db
+    )
+
+    # The freshly created schema-scoped database uses the schema-aware identity.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    legacy_slot = "postgres_database"
+    legacy_publication = "postgres_database_ch_publication"
+    assert schema_aware_slot != legacy_slot
+
+    # While the server is down, the schema-aware slot is lost and a schema-blind legacy slot appears with NO
+    # matching legacy publication — an orphan that carries no ownership evidence.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    cursor.execute(f"SELECT 1 FROM pg_publication WHERE pubname = '{legacy_publication}'")
+    assert not cursor.fetchall(), "the legacy publication must be absent for this test"
+    instance.start_clickhouse()
+
+    # The attach fails closed: the legacy slot cannot be proven to belong to this engine (its publication is
+    # missing), so it is not adopted and the initial sync does not run. The error surfaces in the log.
+    assert_logs_contain_with_retry(
+        instance, "cannot be proven to belong to this engine", retry_count=120, sleep_time=1
+    )
+
+    # The schema-aware slot is NOT recreated. Recreating it is the only thing that runs the initial sync (and
+    # re-snapshots the existing nested table), so its continued absence proves no re-snapshot happened. The
+    # orphaned legacy slot is left untouched, and no legacy publication is created for this engine's schema.
+    # Give the retrying startup task time to prove the slots stay as they were.
+    for _ in range(15):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = {row[0] for row in cursor.fetchall()}
+        assert (
+            schema_aware_slot not in slots
+        ), f"schema-aware slot was recreated; the attach must fail closed, got {slots}"
+        time.sleep(1)
+    assert legacy_slot in slots, f"orphaned legacy slot must stay untouched, got {slots}"
+    cursor.execute(f"SELECT 1 FROM pg_publication WHERE pubname = '{legacy_publication}'")
+    assert (
+        not cursor.fetchall()
+    ), "the legacy publication must not be recreated for this engine's schema"
+
+    pg_manager.drop_materialized_db(mat_schema_db)
+    # The manually created orphan legacy slot is not owned by the engine (the attach never adopted it), so
+    # DROP DATABASE leaves it behind; drop it explicitly.
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{legacy_slot}'"
+    )
+    if cursor.fetchall():
+        cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+
+
+def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
+    # Regression for the retry gap flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425. On attach the standalone
+    # MaterializedPostgreSQL table engine adopts the legacy replication identity, and fails closed with
+    # POSTGRESQL_REPLICATION_INTERNAL_ERROR when it cannot prove the schema-blind legacy slot belongs to
+    # this engine (the publication-missing case here). That failure is recoverable: once an operator
+    # resolves the replication-slot/publication conflict on the PostgreSQL side, replication must start
+    # again on its own, WITHOUT a server restart or a manual re-ATTACH. Before the fix,
+    # checkConnectionAndStart logged the exception once in its generic catch and gave up, so the attached
+    # table stayed permanently unsynchronized (the database engine already recovered, retrying via
+    # DatabaseMaterializedPostgreSQL::tryStartSynchronization). The fix reschedules the standalone
+    # table-engine startup task for this recoverable error too; each retry re-checks ownership and refuses
+    # again while the conflict persists, so no re-snapshot can happen in the meantime.
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "rc_schema"
+    table = "rc_table"
+    clickhouse_postgres_db = "postgres_database_recover_table_engine"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    # The freshly created table uses the schema-aware identity.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    legacy_slot = f"postgres_database_{table}_ch_replication_slot"
+    legacy_publication = f"postgres_database_{table}_ch_publication"
+    assert schema_aware_slot != legacy_slot
+
+    # Detach and recreate the recoverable conflict: the schema-aware slot is gone (e.g. after a PostgreSQL
+    # failover) and a schema-blind legacy slot survives with NO matching legacy publication - an orphan
+    # that carries no ownership evidence, so the attach cannot adopt it. The schema-aware publication is
+    # left intact so a later retry can resume through it.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    cursor.execute(f"SELECT 1 FROM pg_publication WHERE pubname = '{legacy_publication}'")
+    assert not cursor.fetchall(), "the legacy publication must be absent for this test"
+
+    # ATTACH returns immediately (startup is delayed) and the background startup task fails closed on the
+    # unprovable ownership. The error surfaces in the log, and the startup task keeps retrying (the fix).
+    instance.query(f"ATTACH TABLE {table}")
+    assert_logs_contain_with_retry(
+        instance, "cannot be proven to belong to this engine", retry_count=120, sleep_time=1
+    )
+
+    # The operator resolves the conflict by restoring the lost schema-aware slot. The retrying startup task
+    # must then resume replication on its own, WITHOUT a second ATTACH or a server restart. Rows written
+    # after the slot is restored must reach the replica through it.
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{schema_aware_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(50, 99) AS g'
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM {table}", "100\n", retry_count=120, sleep_time=1
+    )
+
+    # No re-snapshot happened: the restored schema-aware slot is reused (the attach took the "slot exists"
+    # early return in adoptLegacyReplicationIdentityIfNeeded), not dropped and recreated.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert schema_aware_slot in slots, f"schema-aware slot must be reused, got {slots}"
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    # The orphaned legacy slot was never adopted, so DROP leaves it behind; drop it explicitly.
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{legacy_slot}'"
+    )
+    if cursor.fetchall():
+        cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
 if __name__ == "__main__":
