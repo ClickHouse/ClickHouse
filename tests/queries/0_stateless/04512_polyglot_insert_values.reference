@@ -8,3 +8,6 @@ SYNTAX_ERROR
 SYNTAX_ERROR
 --- no partial insert after rejected multi-statement (expect: 100 5) ---
 100	5
+NOT_IMPLEMENTED
+--- no insert when external stdin data is rejected (expect: 100 5) ---
+100	5

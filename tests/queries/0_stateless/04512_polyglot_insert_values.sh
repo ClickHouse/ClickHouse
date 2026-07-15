@@ -40,5 +40,12 @@ $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t VALUES (1); SELECT 2" 2>&1 | grep -om
 echo "--- no partial insert after rejected multi-statement (expect: 100 5) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# External insert data (piped stdin) together with a polyglot INSERT is rejected instead of
+# being silently dropped: the query is sent to the server verbatim and the client never
+# forwards stdin data, so accepting it would lose the piped rows.
+printf '(6)\n' | $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t VALUES (5)" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- no insert when external stdin data is rejected (expect: 100 5) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

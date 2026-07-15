@@ -2570,6 +2570,19 @@ void ClientBase::processParsedSingleQuery(
                     "Processing inline insert data with both inlined and external data (from stdin or infile) is not supported");
         }
 
+        /// With a non-ClickHouse dialect the query is sent to the server verbatim and the server
+        /// reads the inline INSERT data from the transpiled query text; the client never forwards
+        /// external data. Reject external data (stdin or INFILE) instead of silently dropping it.
+        if (send_query_verbatim && insert && !insert->select)
+        {
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+
+            if (have_data_in_stdin || insert->infile)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing insert data from stdin or INFILE together with an INSERT query in a foreign SQL dialect "
+                    "is not supported: the query is sent to the server verbatim and must carry all its data inline");
+        }
+
         String query;
         /// An INSERT query may have the data that follows query text.
         /// Send part of the query without data, because data will be sent separately.
