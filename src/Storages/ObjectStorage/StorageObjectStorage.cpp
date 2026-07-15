@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <algorithm>
+#include <tuple>
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -523,6 +524,12 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     bool used_consumed_set = false;
     if (auto consumed_object_sets = query_context->getQueryConsumedObjectSets())
     {
+        /// A pruned read (e.g. a `_path` or Hive-partition filter) consumed only a filtered subset of
+        /// the objects, which could never hash equal to the pre-read hash of the full listing - fail
+        /// closed rather than make an incomparable comparison. See `QueryConsumedObjectSets::markPruned`.
+        if (consumed_object_sets->isPruned(getStorageID().uuid))
+            return {};
+
         if (auto consumed = consumed_object_sets->get(getStorageID().uuid))
         {
             objects = std::move(*consumed);
@@ -583,7 +590,19 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
 
     /// Hash in a deterministic (path-sorted) order so that the listing and the consumed set - which may
     /// enumerate the same objects in a different order - produce the same value for the same object set.
-    std::sort(objects.begin(), objects.end(), [](const auto & lhs, const auto & rhs) { return lhs.path < rhs.path; });
+    /// Deduplicate exact duplicates: a query that reads the same table more than once (e.g. two
+    /// subqueries) captures every object once per read, and the duplicated set would never hash equal
+    /// to the pre-read listing. Only byte-identical entries collapse - the same path consumed with two
+    /// different `ETag`s (the object changed between the reads) keeps both entries and fails the
+    /// comparison, as it must.
+    auto object_as_tuple = [](const QueryConsumedObjectSets::Object & object)
+    {
+        return std::tie(object.path, object.etag, object.size, object.last_modified, object.has_metadata);
+    };
+    std::sort(objects.begin(), objects.end(), [&](const auto & lhs, const auto & rhs) { return object_as_tuple(lhs) < object_as_tuple(rhs); });
+    objects.erase(
+        std::unique(objects.begin(), objects.end(), [&](const auto & lhs, const auto & rhs) { return object_as_tuple(lhs) == object_as_tuple(rhs); }),
+        objects.end());
 
     SipHash hash;
     /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an

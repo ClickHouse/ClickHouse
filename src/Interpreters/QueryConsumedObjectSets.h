@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 
@@ -40,6 +41,17 @@ struct QueryConsumedObjectSets
     /// Called (possibly concurrently from several read streams) for every object the read consumes.
     void add(const UUID & table_uuid, Object object);
 
+    /// Called when a read of `table_uuid` prunes the object set (e.g. a `_path`/`_file` or
+    /// Hive-partition filter narrows the iterator result): the consumed set is then a filtered subset
+    /// of the full listing the pre-read hash was built from, so the pre/post hashes could never
+    /// compare equal for an unchanged table. `getModificationHash` fails closed for such a table
+    /// instead of comparing incomparable sets. Sticky for the whole query, even if another read of the
+    /// same table does not prune.
+    void markPruned(const UUID & table_uuid);
+
+    /// Whether any read of `table_uuid` in this query pruned the object set.
+    bool isPruned(const UUID & table_uuid) const;
+
     /// The objects consumed for `table_uuid`, or nullopt if the read captured nothing for it (e.g. the
     /// table was not read, or this is the pre-read check that runs before any object was consumed).
     std::optional<std::vector<Object>> get(const UUID & table_uuid) const;
@@ -47,6 +59,7 @@ struct QueryConsumedObjectSets
 private:
     mutable std::mutex mutex;
     std::map<UUID, std::vector<Object>> objects_by_table;
+    std::set<UUID> pruned_tables;
 };
 
 using QueryConsumedObjectSetsPtr = std::shared_ptr<QueryConsumedObjectSets>;

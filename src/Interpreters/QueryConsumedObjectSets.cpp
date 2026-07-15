@@ -10,6 +10,18 @@ void QueryConsumedObjectSets::add(const UUID & table_uuid, Object object)
     objects_by_table[table_uuid].push_back(std::move(object));
 }
 
+void QueryConsumedObjectSets::markPruned(const UUID & table_uuid)
+{
+    std::lock_guard lock(mutex);
+    pruned_tables.insert(table_uuid);
+}
+
+bool QueryConsumedObjectSets::isPruned(const UUID & table_uuid) const
+{
+    std::lock_guard lock(mutex);
+    return pruned_tables.contains(table_uuid);
+}
+
 std::optional<std::vector<QueryConsumedObjectSets::Object>> QueryConsumedObjectSets::get(const UUID & table_uuid) const
 {
     std::lock_guard lock(mutex);

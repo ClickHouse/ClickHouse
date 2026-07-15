@@ -232,8 +232,23 @@ void ReadFromObjectStorageStep::createIterator()
     if (storage_id.hasUUID())
     {
         if (auto consumed_object_sets = context->getQueryConsumedObjectSets())
-            iterator_wrapper = std::make_shared<CapturingObjectIterator>(
-                std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+        {
+            /// A filter over `_path`/`_file` or Hive-partition columns makes the iterator enumerate
+            /// only a pruned subset of the table's objects (glob listing filter, `_path` value
+            /// extraction). The consumed set is then a subset of the full listing the pre-read hash
+            /// was built from, so the two hashes could never compare equal even for an unchanged
+            /// table. Mark the capture pruned instead of filling it with the subset - the consistency
+            /// check then fails closed for this table rather than comparing incomparable sets.
+            const bool may_prune_object_set = predicate
+                && VirtualColumnUtils::createPathAndFileFilterDAG(
+                       predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
+                       .has_value();
+            if (may_prune_object_set)
+                consumed_object_sets->markPruned(storage_id.uuid);
+            else
+                iterator_wrapper = std::make_shared<CapturingObjectIterator>(
+                    std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+        }
     }
 }
 
