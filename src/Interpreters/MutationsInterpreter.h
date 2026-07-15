@@ -266,7 +266,7 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
 
-        /// --- New analyzer path (populated when analyzer is enabled) ---
+        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 

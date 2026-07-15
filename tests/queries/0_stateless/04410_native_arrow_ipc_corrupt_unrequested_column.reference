@@ -1,0 +1,16 @@
+--- ArrowStream: subset SELECT of the intact column succeeds ---
+1
+2
+3
+4
+5
+--- ArrowStream: SELECT of the corrupt column fails ---
+out of the message body
+--- Arrow: subset SELECT of the intact column succeeds ---
+1
+2
+3
+4
+5
+--- Arrow: SELECT of the corrupt column fails ---
+out of the message body
