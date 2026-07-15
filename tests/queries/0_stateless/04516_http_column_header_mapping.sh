@@ -14,7 +14,7 @@ run_modes() {
     for mode in sync async; do
         if [ "$mode" = "async" ]; then
             INSERT_EXTRA="&async_insert=1&wait_for_async_insert=0"
-            flush() { ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"; }
+            flush() { ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"; }
         else
             INSERT_EXTRA=""
             flush() { :; }
@@ -181,7 +181,7 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature" \
     -d '{"payload":"batch2"}'
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 ${CLICKHOUSE_CLIENT} -q "SELECT event_type, signature, payload FROM t ORDER BY payload"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
@@ -316,8 +316,13 @@ run_modes do_default_tests
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
 # ── Async schema drift and per-entry failure isolation ────────────────────────
-# Entries are buffered with a large busy timeout so they stay in the queue until
-# we ALTER the column type and call SYSTEM FLUSH ASYNC INSERT QUEUE manually.
+# Entries are buffered until we ALTER the column type and call
+# SYSTEM FLUSH ASYNC INSERT QUEUE manually. A large fixed busy timeout with the
+# adaptive timeout disabled keeps entries in the queue even when the flaky check
+# randomizes async insert settings; otherwise an early flush could materialize
+# 'abcd' before the ALTER and make the ALTER itself fail with TOO_LARGE_STRING_SIZE.
+ASYNC_BUF="async_insert=1&wait_for_async_insert=0&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_min_ms=300000&async_insert_busy_timeout_max_ms=300000"
+ASYNC_BUF_WAIT="async_insert=1&wait_for_async_insert=1&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_min_ms=300000&async_insert_busy_timeout_max_ms=300000"
 
 # Test 0: multi-header, middle-entry failure isolation.
 # Three entries, two mapped headers (code FixedString(4) + tag String).
@@ -331,21 +336,21 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: aa' -H 'X-Tag: first' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
     -d '{"payload":"entry1"}'
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: abcd' -H 'X-Tag: second' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
     -d '{"payload":"entry2"}'
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: bb' -H 'X-Tag: third' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
     -d '{"payload":"entry3"}'
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
 echo "--- async: multi-header middle-entry failure isolation"
 ${CLICKHOUSE_CLIENT} -q "SELECT code, tag, payload FROM t ORDER BY payload"
@@ -361,16 +366,16 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: ab' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"short-valid"}'
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: abcd' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"exact-valid"}'
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
 echo "--- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives"
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
@@ -385,16 +390,16 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: ab' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&insert_deduplication_token=token-valid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&insert_deduplication_token=token-valid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"dedup-valid"}'
 
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Code: abcd' \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"dedup-invalid"}'
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
 echo "--- async: failed dedup token remains retryable after schema drift"
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
@@ -416,11 +421,11 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CURL} -sS \
     -H "X-Tags: ['a','b']" \
-    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t_tags+(payload)+FORMAT+JSONEachRow&http_column_X-Tags=tags" \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t_tags+(payload)+FORMAT+JSONEachRow&http_column_X-Tags=tags" \
     -d '{"payload":"text-compat"}'
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_tags MODIFY COLUMN tags Array(String)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t_tags"
 
 echo "--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse"
 ${CLICKHOUSE_CLIENT} -q "SELECT tags, payload FROM t_tags"
@@ -433,14 +438,14 @@ ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 drift_response=$(
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Code: abcd' \
-        "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+        "${CLICKHOUSE_URL}&${ASYNC_BUF_WAIT}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
         -d '{"payload":"drift-waiter"}' 2>&1
 ) &
 drift_pid=$!
 
 # Entry is now queued; shrink column to invalidate the buffered value.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(1)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 wait "${drift_pid}"
 
 echo "--- async: schema drift with wait_for_async_insert=1, waiter receives error"
