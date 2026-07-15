@@ -884,6 +884,43 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
 }
 
 
+bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the target's
+    /// dependent-view graph is expanded only inside that nested `INSERT` at execution time -
+    /// `collectAllDependencies` never sees it. Anything the nested write can reach counts as hidden.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+
+    /// `Distributed` and `Buffer` forward the write through a separate (remote or background) `INSERT`
+    /// whose destination is not cheaply known here: fail closed.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return true;
+
+    /// `MaterializedView` and proxies pass the write through within this pipeline, and
+    /// `collectAllDependencies` follows their targets: look through them (failing closed when the
+    /// target cannot be resolved).
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || forwardedInsertHidesDependentView(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return forwardedInsertHidesDependentView(proxy->getNested(), depth + 1);
+
+    /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
+    /// hazard scan over `storages` checks them (and whether their targets actually deduplicate)
+    /// directly - nothing is hidden.
+    return false;
+}
+
+
 bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -976,12 +1013,24 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// dependent target has its deduplication window disabled (e.g. a plain `MergeTree` target with
     /// `non_replicated_deduplication_window = 0`, or a non-deduplicating engine), the per-branch numbering
     /// is never consulted, so the fan-out stays safe and `max_insert_threads` should keep applying.
+    ///
+    /// The scan below sees every dependent target `collectAllDependencies` reaches, but a dependent-MV
+    /// target that forwards the write through a nested `INSERT` (an `Alias`) hides its own dependent-view
+    /// graph: that graph is expanded only inside the nested `INSERT` at execution time. A strict insert's
+    /// per-branch source block number survives the hop - the chunk has already visited a view, so the
+    /// nested `INSERT` preserves its deduplication info instead of restamping it - and a deduplicating
+    /// view target behind the hop then sees colliding view-level ids for identical blocks on different
+    /// branches. Whether that hidden view chain actually deduplicates cannot be checked from here, so
+    /// strict inserts fail closed on the presence of a dependent view behind such a hop.
     const bool strict_insert_block_limits = !async_insert && settings[Setting::use_strict_insert_block_limits];
     const bool any_dependent_target_dedup_hazard = std::ranges::any_of(storages, [&] (const auto & entry)
     {
-        return !isView(entry.first) && entry.first != init_table_id
-            && (strict_insert_block_limits || storageRebuildsDeduplicationIdsOnInsert(entry.second))
-            && storageDeduplicatesBlocksOnInsert(entry.second);
+        if (isView(entry.first) || entry.first == init_table_id)
+            return false;
+        if ((strict_insert_block_limits || storageRebuildsDeduplicationIdsOnInsert(entry.second))
+            && storageDeduplicatesBlocksOnInsert(entry.second))
+            return true;
+        return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second);
     });
     const bool mv_dedup_single_stream = isViewsInvolved()
         && deduplicate_blocks_in_dependent_materialized_views

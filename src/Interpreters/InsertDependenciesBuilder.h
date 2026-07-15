@@ -148,6 +148,19 @@ public:
     /// ultimate target is not cheaply known here (`Distributed`, `Buffer`, unresolvable, or too deep).
     static bool forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether inserting into `storage` can reach a dependent materialized view that is *hidden* from
+    /// `collectAllDependencies`. An `Alias` executes a full nested `INSERT` into its target per sink
+    /// (`AliasSink`), so the target's dependent-view graph is expanded only inside that nested `INSERT`
+    /// at execution time - the outer builder never sees it. A strict insert's per-branch source block
+    /// number survives that hop (the chunk has already visited a view, so the nested `INSERT` preserves
+    /// its deduplication info instead of restamping it), and a deduplicating view target behind the hop
+    /// then sees colliding view-level ids for identical blocks on different branches. Unlike
+    /// `forwardedInsertReachesDependentView`, a concrete local target reports false here: its dependent
+    /// views are visible to `collectAllDependencies` and are checked directly by the hazard scan. It
+    /// fails closed (returns true) when the ultimate target is not cheaply known here (`Distributed`,
+    /// `Buffer`, unresolvable, or too deep).
+    static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
+
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
     /// context other than this query's, so this query's deduplication settings (`deduplicate_insert` /
     /// `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views`) never govern it.
