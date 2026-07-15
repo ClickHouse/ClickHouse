@@ -225,7 +225,8 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
         {
             auto * node = stack.back();
             stack.pop_back();
-            if (typeid_cast<AggregatingStep *>(node->step.get()))
+            if (auto * aggregating = typeid_cast<AggregatingStep *>(node->step.get());
+                aggregating && !aggregating->getParams().stats_collecting_params.isCollectionAndUseEnabled())
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)
                 stack.push_back(child);
