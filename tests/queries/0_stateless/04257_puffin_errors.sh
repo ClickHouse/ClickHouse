@@ -6,14 +6,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 DATA="$CURDIR/data_puffin"
+PUFFIN="$DATA/spark_deletion_vector.puffin"
 
-for PUFFIN in \
+for PUFFIN_FILE in \
     "$DATA/overflow_offset_length.puffin" \
     "$DATA/negative_offset.puffin" \
     "$DATA/length_exceeds_file.puffin"
 do
-    echo "--- $(basename "$PUFFIN") ---"
-    $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN', Puffin)" 2>&1 | grep -oF 'Puffin blob 0: offset/length out of bounds'
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN_FILE', Puffin)" 2>&1 | grep -oF 'Puffin blob 0: offset/length out of bounds'
 done
 
 echo "--- invalid_roaring_bitmap.puffin ---"
@@ -25,11 +26,23 @@ $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/invalid_bitmap_key.pu
 echo "--- inflated_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 content size'
 
-for PUFFIN in \
+for PUFFIN_FILE in \
     "$DATA/missing_snapshot_id.puffin" \
     "$DATA/missing_sequence_number.puffin" \
     "$DATA/missing_fields.puffin"
 do
-    echo "--- $(basename "$PUFFIN") ---"
-    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN', PuffinMetadata)" 2>&1 | grep -oF 'missing required field'
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF 'missing required field'
 done
+
+echo "--- puffin_wrong_type ---"
+$CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')" 2>&1 | grep -oF 'Unexpected type'
+
+echo "--- puffin_unknown_column ---"
+$CLICKHOUSE_LOCAL -q "SELECT foo FROM file('$PUFFIN', Puffin, 'foo String')" 2>&1 | grep -oF 'Unexpected column'
+
+echo "--- puffin_metadata_wrong_type ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN', PuffinMetadata, 'blob_type Int32')" 2>&1 | grep -oF 'Unexpected type'
+
+echo "--- puffin_metadata_unknown_column ---"
+$CLICKHOUSE_LOCAL -q "SELECT foo FROM file('$PUFFIN', PuffinMetadata, 'foo String')" 2>&1 | grep -oF 'Unexpected column'

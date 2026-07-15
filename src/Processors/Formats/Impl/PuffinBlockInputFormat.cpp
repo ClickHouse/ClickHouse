@@ -454,11 +454,57 @@ NamesAndTypesList getPuffinSchema()
     };
 }
 
+void checkPuffinFormatHeader(const Block & header, const NamesAndTypesList & expected_schema, const char * format_name)
+{
+    std::unordered_map<String, DataTypePtr> name_to_type;
+    for (const auto & [name, type] : expected_schema)
+        name_to_type[name] = type;
+
+    String allowed_columns;
+    for (const auto & [name, type] : expected_schema)
+    {
+        if (!allowed_columns.empty())
+            allowed_columns += ", ";
+        allowed_columns += name;
+    }
+
+    for (const auto & [name, type] : header.getNamesAndTypes())
+    {
+        auto it = name_to_type.find(name);
+        if (it == name_to_type.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected column: {}. {} format allows only the next columns: {}",
+                name,
+                format_name,
+                allowed_columns);
+
+        if (!it->second->equals(*type))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected type {} for column {}. Expected type: {}",
+                type->getName(),
+                name,
+                it->second->getName());
+    }
+}
+
+void checkPuffinMetadataHeader(const Block & header)
+{
+    checkPuffinFormatHeader(header, getPuffinMetadataSchema(), "PuffinMetadata");
+}
+
+void checkPuffinHeader(const Block & header)
+{
+    checkPuffinFormatHeader(header, getPuffinSchema(), "Puffin");
+}
+
 }
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_)
     : IInputFormat(std::move(header_), &buf)
 {
+    checkPuffinMetadataHeader(getPort().getHeader());
 }
 
 Chunk PuffinMetadataInputFormat::read()
@@ -531,6 +577,7 @@ Chunk PuffinMetadataInputFormat::read()
 PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_)
     : IInputFormat(std::move(header_), &buf)
 {
+    checkPuffinHeader(getPort().getHeader());
 }
 
 Chunk PuffinInputFormat::read()

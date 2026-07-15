@@ -16,3 +16,11 @@ missing required field
 missing required field
 --- missing_fields.puffin ---
 missing required field
+--- puffin_wrong_type ---
+Unexpected type
+--- puffin_unknown_column ---
+Unexpected column
+--- puffin_metadata_wrong_type ---
+Unexpected type
+--- puffin_metadata_unknown_column ---
+Unexpected column
