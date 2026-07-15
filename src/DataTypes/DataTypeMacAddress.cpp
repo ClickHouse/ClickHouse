@@ -13,7 +13,7 @@ bool DataTypeMacAddress::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeMacAddress::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationMacAddress>();
+    return SerializationMacAddress::create();
 }
 
 Field DataTypeMacAddress::getDefault() const

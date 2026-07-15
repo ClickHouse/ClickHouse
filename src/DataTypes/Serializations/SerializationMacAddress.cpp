@@ -1,4 +1,5 @@
 #include <Columns/ColumnVector.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationMacAddress.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -6,6 +7,18 @@
 
 namespace DB
 {
+
+UInt128 SerializationMacAddress::getHash()
+{
+    SipHash hash;
+    hash.update("MacAddress");
+    return hash.get128();
+}
+
+SerializationPtr SerializationMacAddress::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationMacAddress(); });
+}
 
 void SerializationMacAddress::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {

@@ -296,6 +296,13 @@ void dispatchNonNullableColumnWise(
             appendVectorColumn(static_cast<const ColumnUUID &>(column), null_map, permutation, num_rows, out,
                 [](const UUID & v, String & dst) { appendBigEndian(v.toUnderType(), dst); });
             return;
+        case TypeIndex::MacAddress:
+            /// `toUInt64` masks to the low 48 bits exactly as `MacAddress::operator<` does,
+            /// so the encoding stays order-consistent even if the upper-16-bits-zero
+            /// invariant is ever violated.
+            appendVectorColumn(static_cast<const ColumnVector<MacAddress> &>(column), null_map, permutation, num_rows, out,
+                [](const MacAddress & v, String & dst) { appendBigEndian(v.toUInt64(), dst); });
+            return;
         case TypeIndex::UInt128:
             appendVectorColumn(static_cast<const ColumnUInt128 &>(column), null_map, permutation, num_rows, out,
                 [](const UInt128 & v, String & dst) { appendBigEndian(v, dst); });

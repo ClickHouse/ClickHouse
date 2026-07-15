@@ -9,6 +9,10 @@ doc_type: 'reference'
 
 # MacAddress
 
+:::note
+This type is experimental and requires the setting `allow_experimental_macaddress_type` to be enabled in order to create a table with a `MacAddress` column.
+:::
+
 A MAC (Media Access Control) address is a 48-bit (6-byte) identifier used to uniquely identify network interfaces. ClickHouse stores MAC addresses efficiently in 8 bytes internally, using only the lower 48 bits.
 
 ## Basic Usage {#basic-usage}

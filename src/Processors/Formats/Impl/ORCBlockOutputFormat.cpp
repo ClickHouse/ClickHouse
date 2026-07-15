@@ -116,6 +116,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             return orc::createPrimitiveType(orc::TypeKind::INT);
         }
         case TypeIndex::UInt64: [[fallthrough]];
+        case TypeIndex::MacAddress: [[fallthrough]];
         case TypeIndex::Int64:
         {
             return orc::createPrimitiveType(orc::TypeKind::LONG);
@@ -358,6 +359,11 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::UInt64:
         {
             writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt64 & value){ return value; });
+            break;
+        }
+        case TypeIndex::MacAddress:
+        {
+            writeNumbers<MacAddress, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const MacAddress & value){ return Int64(value.toUInt64()); });
             break;
         }
         case TypeIndex::Int128:
