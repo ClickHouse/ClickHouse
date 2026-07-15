@@ -58,6 +58,15 @@ public:
     /// slow sink (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
     void setCancellationHook(std::function<bool()> cancellation_hook_);
 
+    /// Best-effort direct write of a small out-of-band message (e.g. an interactive diagnostic
+    /// printed while cancelling a query), bypassing both the internal buffer and the cancellation
+    /// hook. It never blocks longer than the given budget: if the sink stays unwritable (e.g. a
+    /// terminal that stopped draining), the rest of the message is dropped - nothing is reading
+    /// that sink anyway. It does not touch the internal buffer state, so it is safe to call while
+    /// another thread writes through the buffer, but the message may then interleave with that
+    /// output.
+    void writeBestEffort(std::string_view data, UInt64 timeout_ms);
+
 protected:
     void nextImpl() override;
 

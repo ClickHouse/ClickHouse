@@ -238,6 +238,11 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
+
+    /// Print an interactive cancellation diagnostic (e.g. "Query was cancelled.") without risking
+    /// a hang when the sink of output_stream is itself the stuck terminal the cancellation is
+    /// fighting with - see the definition.
+    void printCancellationMessage(std::string_view message);
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);

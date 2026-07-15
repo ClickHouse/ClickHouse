@@ -256,6 +256,50 @@ void WriteBufferFromFileDescriptor::setFD(int fd_)
     fd = fd_;
 }
 
+void WriteBufferFromFileDescriptor::writeBestEffort(std::string_view data, UInt64 timeout_ms)
+{
+    /// Prefer the private non-blocking descriptor (present when the sink is a terminal and a
+    /// cancellation hook has ever been installed) so this cannot sleep in write() at all.
+    const int write_fd = nonblocking_write_fd >= 0 ? nonblocking_write_fd : fd;
+
+    Stopwatch watch;
+    size_t bytes_written = 0;
+    while (bytes_written < data.size())
+    {
+        const UInt64 elapsed_ms = watch.elapsedMilliseconds();
+        if (elapsed_ms >= timeout_ms)
+            return;
+
+        pollfd poll_fd{.fd = write_fd, .events = POLLOUT, .revents = 0};
+        const int poll_res = ::poll(&poll_fd, 1, static_cast<int>(std::min(timeout_ms - elapsed_ms, UInt64(100))));
+        if (poll_res < 0 && errno != EINTR)
+            return;
+        /// Timed out or interrupted by a signal - the descriptor is not writable yet.
+        if (poll_res <= 0)
+            continue;
+
+        size_t bytes_to_write = data.size() - bytes_written;
+        /// Without a non-blocking descriptor, cap the chunk at PIPE_BUF: after POLLOUT such a
+        /// write cannot block on a pipe (and for other sinks it at least bounds the wait).
+        if (write_fd == fd && !cancellation_fd_is_socket)
+            bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
+
+        ssize_t res = 0;
+        if (cancellation_fd_is_socket)
+            res = ::send(fd, data.data() + bytes_written, bytes_to_write, MSG_DONTWAIT);
+        else
+            res = ::write(write_fd, data.data() + bytes_written, bytes_to_write);
+
+        if (res > 0)
+            bytes_written += res;
+        else if (-1 == res && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+            continue;
+        else
+            /// Best effort: this is called on cancellation/teardown paths, so never throw here.
+            return;
+    }
+}
+
 void WriteBufferFromFileDescriptor::finalizeImpl()
 {
     if (fd < 0)

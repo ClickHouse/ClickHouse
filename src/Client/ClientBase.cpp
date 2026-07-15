@@ -1624,7 +1624,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         std::rethrow_exception(local_format_error);
 
     if (cancelled && is_interactive && !cancelled_printed.exchange(true))
-        output_stream << "Query was cancelled." << std::endl;
+        printCancellationMessage("Query was cancelled.");
 }
 
 
@@ -1758,7 +1758,7 @@ void ClientBase::onEndOfStream()
     if (is_interactive)
     {
         if (cancelled && !cancelled_printed.exchange(true))
-            output_stream << "Query was cancelled." << std::endl;
+            printCancellationMessage("Query was cancelled.");
         else if (!written_first_block)
             output_stream << "Ok." << std::endl;
     }
@@ -2487,6 +2487,28 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
     }
 }
 
+void ClientBase::printCancellationMessage(std::string_view message)
+{
+    /// These diagnostics accompany a Ctrl+C, when the output sink may be exactly what is stuck
+    /// (e.g. a terminal that stopped draining - the very case the cancellation hook on `std_out`
+    /// handles, see #22426): an ordinary blocking write of the diagnostic to that sink would then
+    /// hang the client right after the result-set write was successfully aborted. When the
+    /// diagnostics stream is the process stdout (the same sink `std_out` wraps), write the message
+    /// through the best-effort bounded path instead: on a live terminal it appears immediately, on
+    /// a stuck one it is dropped after a short wait - nothing is reading that terminal anyway. In
+    /// the embedded client output_stream is not the process stdout, so it prints normally there.
+    if (std_out && &output_stream == &std::cout)
+    {
+        /// Every interactive print to output_stream ends with std::endl, so this flush is normally
+        /// a no-op; it keeps the output ordered if anything is still buffered there.
+        output_stream.flush();
+        std_out->writeBestEffort(String(message) + '\n', /*timeout_ms*/ 1000);
+        return;
+    }
+
+    output_stream << message << std::endl;
+}
+
 void ClientBase::cancelQuery()
 {
     sendCancel();
@@ -2505,7 +2527,7 @@ void ClientBase::cancelQuery()
     }
 
     if (is_interactive)
-        output_stream << "Cancelling query." << std::endl;
+        printCancellationMessage("Cancelling query.");
 
     cancelled = true;
 }
