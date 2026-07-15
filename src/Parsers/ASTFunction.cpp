@@ -822,8 +822,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (j != 0)
                             ostr << ", ";
                         auto inner_arg = function->arguments->children[j];
+                        /// A child that is not `key = value` cannot be split into a visible key and a
+                        /// hidden value; it may be the secret itself, so fail closed and hide it whole.
                         if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                            ostr << "'[HIDDEN]'";
                     }
                     ostr << ")";
                     continue;
@@ -833,11 +835,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {
                     if (secret_arguments.are_named)
                     {
-                        if (const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get()))
+                        /// Print `key = ` only for a well-formed `key = value` argument. Anything else
+                        /// swept into the named span (e.g. a positional literal between two named
+                        /// secrets) may itself be the secret, so fail closed: emit only the hidden
+                        /// marker below without echoing the argument.
+                        const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
+                        if (func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
+                        {
                             func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
-                        else
-                            argument->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << " = ";
+                            ostr << " = ";
+                        }
                     }
                     if (!secret_arguments.replacement.empty())
                     {

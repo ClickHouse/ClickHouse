@@ -26,8 +26,17 @@ ENGINE = S3('http://localhost:11111/test/04510pos', 'ak', 'SEKRIT_SAK', 'SEKRIT_
 SHOW CREATE TABLE t_04510_pos SETTINGS format_display_secrets_in_show_and_select = 0;
 DROP TABLE t_04510_pos;
 
+-- The parser strips nested maps from any position before assigning positional slots, so a map
+-- placed before the positional session_token must not shift the token out of the masked slot.
+DROP TABLE IF EXISTS t_04510_mid;
+CREATE TABLE t_04510_mid (x UInt8)
+ENGINE = S3('http://localhost:11111/test/04510mid', 'ak', 'SEKRIT_SAK',
+            headers('Authorization' = 'SEKRIT_HDR'), 'SEKRIT_MIDTOK', 'TSV');
+SHOW CREATE TABLE t_04510_mid SETTINGS format_display_secrets_in_show_and_select = 0;
+DROP TABLE t_04510_mid;
+
 -- The forms below all fail at analysis (empty host / missing collection) before any network access,
--- and are logged with secrets replaced.
+-- and are logged with secrets replaced. Each carries a unique marker checked by the final assertion.
 
 -- Explicit-url function form.
 SELECT * FROM s3('url_basic', 'ak', 'SEKRIT_SAK',
@@ -48,6 +57,11 @@ SELECT * FROM s3('url_interleaved', secret_access_key = 'SEKRIT_SAK',
 SELECT * FROM s3('url_postoken', 'ak', 'SEKRIT_SAK', 'SEKRIT_POSTOK',
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A nested map before the positional session_token must not shift it out of the masked slot.
+SELECT * FROM s3('url_midtok', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(external_id = 'SEKRIT_EID'),
+                 'SEKRIT_MIDTOK', 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
 -- A duplicated secret key is malformed but formatted for logging before validation rejects it, so
 -- every occurrence must be masked, not just the first.
 SELECT * FROM s3('url_dup', 'ak', 'sk',
@@ -55,6 +69,11 @@ SELECT * FROM s3('url_dup', 'ak', 'sk',
                  format = 'TSV',
                  session_token = 'SEKRIT_DUP2',
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- A nested map with a malformed child (not `key = value`) must fail closed in formatting.
+SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
+                 extra_credentials('SEKRIT_RAWCRED'),
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION }
 
 -- Named-collection form: an extra_credentials override alongside a collection must be masked too.
 -- The collection need not exist; masking runs on the AST before the collection is resolved.
@@ -65,8 +84,17 @@ SELECT * FROM s3(nc_04510_missing, extra_credentials(external_id = 'SEKRIT_EID')
 SELECT * FROM s3(nc_headers_missing, headers('Authorization' = 'SEKRIT_HDRVAL'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
+-- Named-collection form: a headers() override with a malformed child must fail closed.
+SELECT * FROM s3(nc_badhdr_missing, headers('Authorization: SEKRIT_RAWHDR'),
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+-- A positional argument swept inside a named secret span must not be echoed as a bogus key.
+SELECT * FROM s3(nc_span_missing, secret_access_key = 'SEKRIT_SPAN1', 'SEKRIT_MIDPOS',
+                 session_token = 'SEKRIT_SPAN2',
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
 -- BACKUP ... TO S3 explicit-url form.
-BACKUP TABLE nonexistent_04510 TO S3('url_backup', 'ak', 'SEKRIT_SAK',
+BACKUP TABLE nonexistent_04510 TO S3('url_bkp_named', 'ak', 'SEKRIT_SAK',
                  session_token = 'SEKRIT_ST',
                  google_adc_client_secret = 'SEKRIT_ADCCS',
                  google_adc_refresh_token = 'SEKRIT_ADCRT',
@@ -74,7 +102,7 @@ BACKUP TABLE nonexistent_04510 TO S3('url_backup', 'ak', 'SEKRIT_SAK',
 
 -- BACKUP ... TO S3 with an invalid 4th positional argument (a session token) is rejected by the
 -- backup engine, but the positional token must still be masked in the logged query text.
-BACKUP TABLE nonexistent_04510 TO S3('url_backup_pos', 'ak', 'SEKRIT_SAK',
+BACKUP TABLE nonexistent_04510 TO S3('url_bkp_pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_BACKUPTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
@@ -106,23 +134,28 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak'
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM FLUSH LOGS query_log;
--- Assert every form was logged and masked, and that no form leaks any secret (SEKRIT marker).
+-- One row per form: it must be logged with '[HIDDEN]' (masked = 1) and leak no tagged secret
+-- (leaked = 0). Add a marker here for every new query above.
 SELECT
-    countIf(query LIKE '%url_basic%'        AND query LIKE '%[HIDDEN]%') > 0 AS s3_masked,
-    countIf(query LIKE '%url_interleaved%'  AND query LIKE '%[HIDDEN]%') > 0 AS s3_interleaved_masked,
-    countIf(query LIKE '%url_postoken%'     AND query LIKE '%[HIDDEN]%') > 0 AS s3_positional_session_token_masked,
-    countIf(query LIKE '%url_dup%'          AND query LIKE '%[HIDDEN]%') > 0 AS s3_duplicate_key_masked,
-    countIf(query LIKE '%nc_04510_missing%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_named_collection_masked,
-    countIf(query LIKE '%nc_headers_missing%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_named_collection_headers_masked,
-    countIf(query LIKE '%url_backup''%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
-    countIf(query LIKE '%url_backup_pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS backup_positional_masked,
-    countIf(query LIKE '%db_04510_ec%'      AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_masked,
-    countIf(query LIKE '%db_04510_postok%'  AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_positional_masked,
-    countIf(query LIKE '%db_04510_hdr%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_headers_masked,
-    countIf(query LIKE '%db_04510_expr%'    AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_expr_key_masked,
-    countIf(query LIKE '%db_04510_s3pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS s3_db_positional_masked,
-    countIf(query LIKE '%url_dbenv%'        AND query LIKE '%use_environment_credentials = 1%') > 0 AS s3_db_env_override_visible,
-    countIf(query LIKE '%SEKRIT%') AS leaked
+    m.marker AS marker,
+    countIf(query LIKE '%' || marker || '%' AND query LIKE '%[HIDDEN]%') > 0 AS masked,
+    countIf(query LIKE '%' || marker || '%' AND query LIKE '%SEKRIT%') AS leaked
+FROM system.query_log
+CROSS JOIN (SELECT arrayJoin([
+    'url_basic', 'url_interleaved', 'url_postoken', 'url_midtok', 'url_dup', 'url_badmap',
+    'nc_04510_missing', 'nc_headers_missing', 'nc_badhdr_missing', 'nc_span_missing',
+    'url_bkp_named', 'url_bkp_pos',
+    'db_04510_ec', 'db_04510_postok', 'db_04510_hdr', 'db_04510_expr', 'db_04510_s3pos']) AS marker) AS m
+WHERE current_database = currentDatabase()
+  AND query NOT LIKE '%query_log%' -- exclude this counting query itself
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
+GROUP BY marker
+ORDER BY marker;
+
+-- The valid named override stays visible, and no logged query leaks any tagged secret at all.
+SELECT
+    countIf(query LIKE '%url_dbenv%' AND query LIKE '%use_environment_credentials = 1%') > 0 AS env_override_visible,
+    countIf(query LIKE '%SEKRIT%') AS total_leaked
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND query NOT LIKE '%query_log%' -- exclude this counting query itself
