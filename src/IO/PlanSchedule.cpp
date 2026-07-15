@@ -71,7 +71,7 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange 
 }
 
 /// The source-fetch runs of one fill part: `part` minus every plan-resident region (a resident
-/// region is served / filled down from its tier, never SCHEDULED as a source read - whether the
+/// region is served from its tier, never SCHEDULED as a source read - whether the
 /// executor reads through one at run time is a display-state decision, not a schedule property:
 /// see the drain-loop's frontier-in-hole read-through). Beyond the plan span the geometry has no
 /// residency info (`gapEnd` returns `plan_end`), so the remainder - the fill closure's
@@ -174,7 +174,6 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
 
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
-    size_t min_bytes_for_seek,
     size_t serve_window_bytes,
     size_t serve_block_bytes)
 {
@@ -300,68 +299,6 @@ PlanSchedule buildSchedule(
         if (!promote.into.empty())
             sched.retrieves.push_back(std::move(promote));
     }
-
-    /// A lower-tier fill cell that spans a resident run held by a FASTER tier is filled across the
-    /// run from the upper cache (`UpperCacheRead`) rather than over-read from remote - so the
-    /// append-only lower segment completes without re-fetching bytes a faster tier already has -
-    /// UNLESS the run is a small hole the runtime bridges on the open GET (strictly narrower than
-    /// `min_bytes_for_seek`), which stays a remote over-read because reopening for it would cost
-    /// more than the wasted bytes. Collect the unique lower cells from the Remote retrieves first.
-    VectorWithMemoryTracking<PlanSchedule::WriteTarget> lower_cells;
-    for (const auto & r : sched.retrieves)
-    {
-        if (r.source != PlanSchedule::Source::Remote)
-            continue;
-        for (const auto & wt : r.into)
-        {
-            bool seen = false;
-            for (const auto & c : lower_cells)
-                if (c.entry == wt.entry && c.cell.offset == wt.cell.offset && c.cell.size == wt.cell.size)
-                    seen = true;
-            if (!seen)
-                lower_cells.push_back(wt);
-        }
-    }
-    /// Whether the runtime connection skips (over-reads on the open GET) the resident region
-    /// containing `sub`, rather than filling it down: true iff that contiguous resident region is
-    /// strictly narrower than `min_bytes_for_seek` - the `LongConnection::canContinue` rule. The
-    /// region end is the first gap at/after `sub`; the start is walked back over the contiguous
-    /// resident ranges (a wide cached run that splits the fetch is NOT bridged -> UpperCacheRead).
-    const auto bridged = [&](ByteRange sub)
-    {
-        const size_t region_end = geometry.nextGapStart(sub.offset);
-        size_t region_start = sub.offset;
-        bool extended = true;
-        while (extended)
-        {
-            extended = false;
-            for (const auto & tr : sched.ranges)
-                if (tr.resident && tr.range.offset < region_start && tr.range.end() >= region_start)
-                {
-                    region_start = tr.range.offset;
-                    extended = true;
-                }
-        }
-        return region_end > region_start && region_end - region_start < min_bytes_for_seek;
-    };
-    for (const auto & cell : lower_cells)
-        for (const auto & rr : sched.ranges)
-        {
-            if (!rr.resident || rr.tier_entry >= cell.entry)
-                continue;  /// only a strictly-faster resident tier fills the lower cell
-            const size_t lo = std::max(rr.range.offset, cell.cell.offset);
-            const size_t hi = std::min(rr.range.end(), cell.cell.end());
-            if (lo >= hi)
-                continue;
-            const ByteRange sub{lo, hi - lo};
-            if (bridged(sub))
-                continue;  /// bridged on the open GET -> stays a remote over-read
-            PlanSchedule::Retrieve up;
-            up.range = sub;
-            up.source = PlanSchedule::Source::UpperCacheRead;
-            up.into.push_back(cell);
-            sched.retrieves.push_back(std::move(up));
-        }
 
     /// --- steps: what each readNextWindow returns, wired to its retrieve ---
     size_t cursor = span.offset;

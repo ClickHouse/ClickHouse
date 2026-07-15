@@ -3414,9 +3414,10 @@ TEST(ReaderExecutor, PrunesLowerTierMissCoveredByFasterTier)
 /// Proactive fill down to the deepest tier, across an EMBEDDED faster-tier hit. Disk cell
 /// is 4K; page block is 1K and holds [1K,2K) inside that cell; disk is cold. Read [1K,4K)
 /// (seek to 1K). The [2K,4K) no-tier gap's fetch aligns to the disk cell [0,4K), reaching
-/// LEFT past the seek position and across the page hit to the cell floor, so the disk cell
-/// fills WHOLE: [0,1K) over-read from source (left of the request), [1K,2K) promoted from
-/// page, [2K,4K) from source. The client still gets only [1K,4K).
+/// LEFT past the seek position to the cell floor, so the disk cell fills WHOLE: [0,1K)
+/// over-read from source (left of the request), [1K,2K) READ THROUGH from the source (the
+/// page hit serves the user but is never written down), [2K,4K) from source. The client
+/// still gets only [1K,4K).
 TEST(ReaderExecutor, ProactivelyFillsLowerCellAcrossEmbeddedFasterHit)
 {
     const size_t page_block = 1024;
@@ -5443,7 +5444,7 @@ void validateScheduleMatchesReality(
     /// The oracle must predict with the HARNESS executor's serve sizes (window/block span the
     /// file, so runs are never chunked) - mismatched constants would silently diverge if this
     /// oracle ever predicts per-call windows.
-    auto sched = buildSchedule(*geom, min_bytes_for_seek,
+    auto sched = buildSchedule(*geom,
         /*serve_window_bytes=*/file_size * 2 + 1, /*serve_block_bytes=*/file_size * 2 + 1);
 
     ASSERT_EQ(outputs.size(), sched.serve_runs.size()) << "serve-run count vs live windows";
@@ -5787,7 +5788,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
 
     /// The oracle schedules over the geometry's own span - the live plan was built
     /// at the post-seek cursor, so `plan_start == 32 KiB` already.
-    auto sched = buildSchedule(*geom, 0,
+    auto sched = buildSchedule(*geom,
         /*serve_window_bytes=*/file * 2, /*serve_block_bytes=*/file * 2);
     auto k = predictKpi(sched);
 
@@ -5797,15 +5798,13 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
         k.served_from_cache) << "served from cache";
 }
 
-/// An embedded upper-tier hit inside a lower-tier segment is sourced from the
-/// UPPER serve and written down via assemble-and-push - NOT over-read from
-/// remote - when the window covers the segment (the production case, window >=
-/// segment). The fast 64K tier holds [192K,256K) inside the slow 256K segment
-/// [0,256K); reading [0,512K) in one window fetches only the true gaps
-/// ([0,192K)+[256K,512K) = 448K) with no over-read of the embedded hit, and the
-/// slow segment completes. (This is the win the UpperCacheRead stage targeted,
-/// already delivered by assemble-and-push.)
-TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
+/// Cache-chain policy: an embedded upper-tier hit at the CELL TAIL is served from
+/// the upper tier and never re-fetched - the fast 64K tier holds [192K,256K) at the
+/// tail of the slow 256K segment [0,256K); reading [0,512K) fetches only the true
+/// gaps ([0,192K)+[256K,512K) = 448K). Nothing writes the hit down into the slow
+/// cell (no cross-tier down-fill), so the slow segment keeps a tail hole - it heals
+/// as a plain miss once the upper tier evicts.
+TEST(ReaderExecutor, EmbeddedUpperHitAtCellTailIsNotRefetched)
 {
     const size_t file = 512 * 1024;
     auto [src, objects] = srcOf(file);
@@ -5827,23 +5826,19 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     while (!executor.readNextWindow().empty()) {}
     executor.seek(0);  // reap any deferred fills
 
-    /// Only the true gaps reach the source; the embedded hit is NOT over-read.
+    /// Only the true gaps reach the source; the embedded hit is NOT re-fetched.
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 448u * 1024u)
         << "only the gaps [0,192K)+[256K,512K) are fetched";
-    /// The slow segment still completes (filled across the embedded hit).
-    EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
+    /// No down-fill: the slow segment keeps its tail hole behind the upper hit.
+    EXPECT_FALSE(slow->hasBlock(0)) << "slow segment [0,256K) keeps the tail hole (no down-fill)";
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
 }
 
-/// Same rule, REOPEN side: the embedded faster-tier hit is WIDER than
-/// `min_bytes_for_seek` (128K > 64K), so bridging it on the open GET would
-/// over-read more than the breakeven. The schedule splits the slow segment into
-/// gap [0,128K) / hit [128K,256K) / gap [256K,512K): the two gaps are fetched as
-/// SEPARATE source reads (reopen), the hit is filled DOWN from the faster tier,
-/// and nothing is over-read. Complements `EmbeddedUpperHitFilledFromUpperServeNotRemote`,
-/// which sits exactly AT the boundary (a `< min_bytes_for_seek` hole would bridge
-/// instead, over-reading the hole rather than reopening).
-TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
+/// Same rule, wider hit: the faster-tier hit [128K,256K) spans the tail half of the
+/// slow segment [0,256K). The schedule splits gap [0,128K) / hit / gap [256K,512K):
+/// the two gaps are fetched, the hit serves from the fast tier and is never
+/// re-fetched, and the slow segment keeps the hole behind it (no down-fill).
+TEST(ReaderExecutor, WideEmbeddedUpperHitIsNotRefetched)
 {
     const size_t file = 512 * 1024;
     auto [src, objects] = srcOf(file);
@@ -5866,12 +5861,11 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
     while (!executor.readNextWindow().empty()) {}
     executor.seek(0);  // reap any deferred fills
 
-    /// The hit (128K >= min_bytes_for_seek) is NOT bridged: only the two gaps reach
-    /// the source, and the hit is never over-read.
+    /// Only the two gaps reach the source; the hit is never re-fetched.
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 384u * 1024u)
-        << "only the gaps [0,128K)+[256K,512K) are fetched; the wide hit reopens, not bridges";
-    /// The slow segment still completes (filled down across the embedded hit).
-    EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
+        << "only the gaps [0,128K)+[256K,512K) are fetched";
+    /// No down-fill: the slow segment keeps the hole behind the upper hit.
+    EXPECT_FALSE(slow->hasBlock(0)) << "slow segment [0,256K) keeps the hole (no down-fill)";
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
 }
 

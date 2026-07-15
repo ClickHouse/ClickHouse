@@ -760,13 +760,15 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
 }
 
 
-/// Cross-cache fill (example A): the page holds the PREFIX `[0,16)` and the SUFFIX
-/// `[32,64)` of an fs segment but not the interior hole `[16,32)`; the fs is empty.
-/// Reading the whole fs segment, the cross-cache expansion probes the page over the
-/// WHOLE segment, so the executor fetches ONLY the genuine hole `[16,32)` from the
-/// source and fills the page-covered prefix/suffix DOWN into the fs cell - it does NOT
-/// fetch `[16,64)` from the source.
-TEST_F(ReaderExecutorCacheChain, CrossCacheFillsMissTailFromPage)
+/// Cache-chain policy, interior hole (example A): the page holds the PREFIX `[0,16)`
+/// and the SUFFIX `[32,64)` of an fs segment; the interior hole is `[16,32)`; fs is
+/// empty. The page ranges SERVE directly (the upper tier is a serve bonus) but nothing
+/// writes them down into the fs cell, so the demand fetch for the hole starts at the
+/// cell's append-only floor and READS THROUGH the page-held prefix from the source:
+/// `[0,32)` crosses the wire, the fs segment fills to 32, and the page-held suffix
+/// costs nothing (no window pumps past it - the fs tail stays a hole until the page
+/// tier evicts).
+TEST_F(ReaderExecutorCacheChain, PageHeldRangesServeWhileFsFillsByReadThrough)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -811,22 +813,24 @@ TEST_F(ReaderExecutorCacheChain, CrossCacheFillsMissTailFromPage)
         ReaderExecutor executor(source, objects, caches, o);
         EXPECT_EQ(readBigAtViaTransient(executor, 0, segment_size), content.substr(0, segment_size));
     }
-    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, block_size)
-        << "only the [16,32) hole is fetched; the page-covered prefix/suffix fill down from the page";
+    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, 2 * block_size)
+        << "the hole's fetch reads through the page-held prefix ([0,32) from the source); "
+           "the page-held suffix is never pumped";
 
-    /// The fs cell [0,64) is now populated (page-filled + source-filled).
+    /// The fs segment holds the read-through prefix + the hole; its tail stays a hole.
     {
         StoredObject object{"obj", "", file_size};
         auto view = disk_provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, segment_size});
-        EXPECT_FALSE(view->hits().empty()) << "the fs cell must be filled from page + source";
+        EXPECT_FALSE(view->hits().empty()) << "the fs segment must hold the read-through prefix + the hole";
     }
 }
 
 
 /// Contrast to example A: the page holds ONLY the prefix `[0,16)` of the fs segment; the
-/// suffix `[16,64)` is covered by no tier. Reading the segment, the executor fetches the
-/// WHOLE uncovered tail `[16,64)` from the source - cross-cache fill is impossible there.
-TEST_F(ReaderExecutorCacheChain, CrossCacheFetchesUncoveredTail)
+/// suffix `[16,64)` is covered by no tier. The demand fetch starts at the cell's
+/// append-only floor and takes the whole cell in one piece - the page-held prefix is
+/// read through and the uncovered tail fetched: `[0,64)` from the source.
+TEST_F(ReaderExecutorCacheChain, CrossCacheFetchesWholeCellForUncoveredTail)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -867,8 +871,9 @@ TEST_F(ReaderExecutorCacheChain, CrossCacheFetchesUncoveredTail)
         ReaderExecutor executor(source, objects, caches, o);
         EXPECT_EQ(readBigAtViaTransient(executor, 0, segment_size), content.substr(0, segment_size));
     }
-    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, segment_size - block_size)
-        << "the page covers only [0,16); the uncovered tail [16,64) is fetched from the source";
+    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, segment_size)
+        << "the whole cell is fetched from its floor: the page-held prefix is read through, "
+           "the uncovered tail follows";
 }
 
 
@@ -1310,15 +1315,15 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
 }
 
 
-/// T3's ahead-anchor CLAMP (`clampAllowsAhead`): a background launch must not run past an
-/// unfilled range ANOTHER job contributes to the same append-only segment. With
-/// `boundary_alignment` (16) finer than the fs segment (64), the gaps around a page-resident
-/// middle [16,48) stay two Remote retrieves - [0,16) and [48,64) - both filling the ONE
-/// spanning segment. The deleted deps graph could not order the tail Remote after the
-/// middle's down-fill (`UpperCacheRead`s are appended after all Remotes), so it launched
-/// early and its write was refused at the segment frontier. The clamp holds the launch until
-/// the down-fills commit the middle, and releases exactly then.
-TEST_F(ReaderExecutorCacheChain, AheadClampHoldsBehindForeignMiddle)
+/// THE CACHE-CHAIN POLICY's degradation path: correctness with several populating tiers,
+/// performance for one. A page-resident middle [16,48) splits the fs segment's gaps into
+/// a head and a tail Remote. Nothing orders the tail behind the middle (no down-fill is
+/// scheduled, no launch clamp exists): the ahead launch runs immediately, its write is
+/// refused at the append-only segment frontier, the bytes are BANKED at collect, and the
+/// serve delivers the head from the cell, the middle from the page hit, and the tail from
+/// the bank - every byte correct, the fs segment simply stays partial (it heals as a plain
+/// miss once the page tier evicts the middle).
+TEST_F(ReaderExecutorCacheChain, ForeignMiddleBanksTailAndServesCorrectly)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t alignment = 16;
@@ -1376,26 +1381,20 @@ TEST_F(ReaderExecutorCacheChain, AheadClampHoldsBehindForeignMiddle)
     };
 
     read_window();   /// [0,16): the pump fetches the head Remote; segment committed to 16
-    EXPECT_FALSE(inspect(executor).hasInflightPrefetch())
-        << "the tail Remote must HOLD: the segment below its launch position waits on the middle's down-fill";
-    read_window();   /// [16,32): page hit; the down-fill commits the segment to 32
-    EXPECT_FALSE(inspect(executor).hasInflightPrefetch())
-        << "still held: [32,48) of the middle is not yet in the segment";
-    read_window();   /// [32,48): page hit; the down-fill completes the middle - the clamp releases
     EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
-        << "released: everything below the tail's launch position is committed";
-    read_window();   /// [48,64): served from the ahead machine's cells
+        << "the tail Remote launches immediately - nothing orders it behind the page-held middle";
+    read_window();   /// [16,32): page hit, served from the hit view (never written down)
+    read_window();   /// [32,48): page hit
+    read_window();   /// [48,64): the refused tail was banked at collect - served from the bank
     EXPECT_TRUE(executor.readNextWindow().empty());
     EXPECT_EQ(got, content);
 }
 
 
-/// T3 clamp, the SAME-TIER exemption: bytes already resident in the cell's own tier - here a
-/// partially-downloaded fs segment's prefix, held alive (no downloader) by another holder -
-/// can never enter this plan's committed sets, but they are the segment's CONTENT: the tail
-/// write appends right after them. The clamp must not hold the ahead launch on them (the
-/// gate found the un-exempted version parked read-ahead for every resumed partial segment).
-TEST_F(ReaderExecutorCacheChain, AheadClampIgnoresSameTierResidentPrefix)
+/// A resumed partially-downloaded fs segment: its resident prefix is the segment's own
+/// CONTENT (the tail write appends right after it), so read-ahead runs immediately and
+/// the append continues the segment - a same-tier resident prefix never stalls the fill.
+TEST_F(ReaderExecutorCacheChain, AheadRunsOverSameTierResidentPrefix)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t file_size = 64;
@@ -1443,7 +1442,7 @@ TEST_F(ReaderExecutorCacheChain, AheadClampIgnoresSameTierResidentPrefix)
             got.append(node.data(), node.size);
     }
     EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
-        << "the resident prefix is the segment's own content - the tail launch must NOT be held on it";
+        << "the resident prefix is the segment's own content - the tail launch runs over it";
 
     while (true)
     {

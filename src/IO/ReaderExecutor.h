@@ -59,9 +59,8 @@ class EncryptionHeaderCache;
 ///
 /// The PRODUCER is the `FillLane` + the fill flow, ONE body of code with two
 /// anchors: AHEAD (`prefetch` - the wake rule and the launch scan at the
-/// lane's `attempted_end` cursor, held by `clampAllowsAhead` at cells awaiting
-/// another job's fill) runs pool pieces; the PUMP (`pump` - anchored at the
-/// consumer's window, may run BEHIND the cursor) heals on the serve thread
+/// lane's `attempted_end` cursor) runs pool pieces; the PUMP (`pump` -
+/// anchored at the consumer's window, may run BEHIND the cursor) heals on the serve thread
 /// whatever the display cannot cover: it waits live writers, runs inline
 /// pieces, and falls to the shared heal verb `bankDirectRead` - one bounded
 /// cache-blind read for state no planned job can produce (a hung sibling
@@ -74,9 +73,21 @@ class EncryptionHeaderCache;
 /// The CONSUMER serves windows off the DISPLAY - the one read surface (hit
 /// views + live committed cells + the bank as the overflow holder) - pumping
 /// the producer until the cursor is covered, and hands the served bytes to
-/// the scheduled handed fills (`runHandedFills`, BOTH directions: a served
-/// hit down-fills the cell it completes, served bytes promote up). It opens
-/// no source path of its own - healing runs producer code.
+/// the scheduled promotes (`runHandedFills`: served bytes fill the faster
+/// cells the fetch skipped). It opens no source path of its own - healing
+/// runs producer code.
+///
+/// CACHE-CHAIN POLICY - correctness for many tiers, performance for one.
+/// With several populating caches the executor stays CORRECT but plans and
+/// paces against the BOTTOM populating tier alone; upper tiers are a serve
+/// bonus (a hit serves from its fastest holder), not a coordination target.
+/// There is deliberately NO cross-tier down-fill: a faster tier's resident
+/// range over a lower cell leaves the lower segment partial - a write past
+/// it is refused into the bank (served, not persisted), the demand
+/// read-through completes an interior hole from the source, and a tail hole
+/// heals once the upper tier evicts and the range becomes a plain miss. One
+/// populating tier - the production shape - has no such ranges and takes
+/// the unimpaired path.
 ///
 /// Tuned for sequential scans: one machine (the in-flight PIECE) ahead on a
 /// `PrefetchThreadPool`, window/block sizes shrink under memory pressure.
@@ -102,8 +113,7 @@ public:
     /// Gap bound for `buildSchedule`'s bridge threshold and the producer's led-run
     /// merge (`mergeRanges`): a gap strictly smaller than this is coalesced
     /// (over-read) into one source request rather than read separately; a gap at or
-    /// above it reopens, and if a faster tier holds it the bytes are filled down
-    /// from there. Near the bandwidth/request cost breakeven.
+    /// above it reopens. Near the bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     /// Drain bound: if only a tail of at most this many bytes remains to a long
     /// connection's read bound, drain it so the connection completes pool-reusable
@@ -490,17 +500,14 @@ private:
     /// fill logged, never thrown).
     void runPutStep(const FetchMachine & m, const ChainedBuffers & assembled);
 
-    /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
-    /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
-    /// inherently serve-front jobs; the background never runs them ahead - `ahead_eligible`):
-    ///   `UpperCacheRead` - write a served faster-tier hit DOWN into the lower cell it
-    ///                      completes (so an embedded hit costs no remote over-read);
-    ///   `HandedChain`    - write served bytes UP into the faster cells the fetch deliberately
-    ///                      skipped (`writeTargetsFor` fills only the bottom tier; the pc fill
-    ///                      thus trails the serve cursor instead of riding the fetch lead).
-    /// The one schedule-driven executor for both directions; the jobs' `into` cells carry the
-    /// `[CF-promote]` no-same-tier rule as data. The writers' committed sets make every write
-    /// idempotent. `served_range`/`bytes` are physical, pre-decryption.
+    /// Run the scheduled PROMOTE jobs overlapping the just-served range (`HandedChain`):
+    /// write served bytes UP into the faster cells the fetch deliberately skipped
+    /// (`writeTargetsFor` fills only the bottom tier; the pc fill thus trails the serve
+    /// cursor instead of riding the fetch lead). Their INPUT is the served bytes, so they
+    /// are inherently serve-front jobs; the background never runs them ahead
+    /// (`ahead_eligible`). The jobs' `into` cells carry the `[CF-promote]` no-same-tier
+    /// rule as data. The writers' committed sets make every write idempotent.
+    /// `served_range`/`bytes` are physical, pre-decryption.
     void runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats);
 
     // ─── Plan build ──────────────────────────────────────────────────────
@@ -645,12 +652,6 @@ private:
     /// reject (the connection is reclaimed). The sole machine builder, shared by both runners.
     bool launchMachineForWindow(size_t ri, ByteRange window, IFetchMachineRunner & machine_runner);
     void launchRetrieve(size_t ri);
-    /// The ahead-anchor CLAMP: may job `ri`'s next background piece launch, or does one of
-    /// its target cells wait, below the launch position, on bytes outside the job's own
-    /// fetch runs (an embedded resident middle awaiting its serve-time down-fill - the
-    /// append-only cell would refuse a write past it)? Replaces the schedule deps graph;
-    /// the pump is exempt.
-    bool clampAllowsAhead(size_t ri) const;
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
     /// retrieves, in offset order) into `fetch_tracker`; the tracker skips

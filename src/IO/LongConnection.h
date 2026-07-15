@@ -51,7 +51,7 @@ struct LongConnection
     /// (`off == current_position`) always continues - it is not a bridge. A
     /// forward HOLE is bridged (over-read on the open GET) only if STRICTLY smaller
     /// than `bridgeable_gap`; a hole of exactly `bridgeable_gap` reopens instead - over-reading
-    /// it costs about as much, and a faster tier holding it fills it down.
+    /// it costs about as much.
     bool canContinue(size_t off, size_t want, size_t bridgeable_gap) const
     {
         return canStartServing(off, bridgeable_gap) && off + want <= read_until;

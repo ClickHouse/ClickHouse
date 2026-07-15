@@ -904,8 +904,7 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
         size_t gap = sorted[i].offset > prev.end() ? sorted[i].offset - prev.end() : 0;
 
         /// Strict `<`: a gap exactly `min_gap` wide is NOT bridged - reopening past it
-        /// costs about the same as over-reading it, and if it is resident in a faster
-        /// tier it is filled down from there rather than re-fetched.
+        /// costs about the same as over-reading it.
         if (gap < min_gap)
         {
             size_t new_end = std::max(prev.end(), sorted[i].end());
@@ -1421,7 +1420,7 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
     /// extent floor: the estimator's `predictedEnd` clamped to the file end, then clamped
     /// DOWN at the next WIDE cached run the plan shows - a resident run at/above
     /// `min_bytes_for_seek` before `plan_end`, where the channel must stop (that region is
-    /// served from cache / filled down, not over-read; holes strictly below the bound are
+    /// served from cache, not over-read; holes strictly below the bound are
     /// bridged by `LongConnection::canContinue` on the open GET). A run cut by the plan
     /// boundary appears short here and is not a real stop, so the trajectory stays free to
     /// extend past the look-ahead. This is the SINGLE reach source shared by the open trigger
@@ -1666,23 +1665,12 @@ void ReaderExecutor::runPutStep(const FetchMachine & m, const ChainedBuffers & a
 
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
 {
-    /// A writer the in-flight machine holds as a fill target is ON LOAN: its worker streams
-    /// into it from the pool thread, and an `UpperCacheRead`'s `into` cell IS a Remote
-    /// retrieve's cell - the same `CacheWriter`. Skip it (handed fills are opportunistic;
-    /// a skipped down-fill lands on a later pass or the next plan) - the invariant
-    /// `FillLane`'s guard pins.
-    const auto on_loan = [&](const CacheWriter * w)
-    {
-        if (!machine)
-            return false;
-        for (const auto & v : machine->writer_views)
-            if (v.writer == w)
-                return true;
-        return false;
-    };
+    /// A promote's targets are strictly-faster-tier cells, so its `CacheWriter`s are
+    /// never the ones lent to the in-flight machine (a Remote's `into` routes only the
+    /// bottom tier and same-tier slower layers) - no thread shares these writers.
     for (const auto & r : read_plan.schedule.retrieves)
     {
-        if (r.source == PlanSchedule::Source::Remote)
+        if (r.source != PlanSchedule::Source::HandedChain)
             continue;
         if (!(r.range.offset < served_range.end() && served_range.offset < r.range.end()))
             continue;
@@ -1692,7 +1680,7 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                 continue;
             for (const auto & w : read_plan.tiers[wt.entry].view->misses())
             {
-                if (!w.writer || on_loan(w.writer.get()))
+                if (!w.writer)
                     continue;
                 const size_t lo = std::max({served_range.offset, r.range.offset, w.writer->range().offset, wt.cell.offset});
                 const size_t hi = std::min({served_range.end(), r.range.end(), w.writer->range().end(), wt.cell.end()});
@@ -1705,12 +1693,9 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
                 auto handed_claim = w.writer->claim(ByteRange{lo, hi - lo});
                 const size_t written = w.writer->write(std::move(slice));
-                if (r.source == PlanSchedule::Source::HandedChain)
-                {
-                    out_stats.add(Stats::BytesPromoted, written);
-                    HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-                        static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
-                }
+                out_stats.add(Stats::BytesPromoted, written);
+                HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+                    static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
             }
         }
     }
@@ -1739,60 +1724,6 @@ size_t ReaderExecutor::serveRunAt(size_t pos_phys) const
 // the buffer); what the cells cannot hold goes to the lane's bank (PHYSICAL coords, like
 // everything inside the executor - the one shift to logical happens on the consumer exit,
 // `finishWindow`). The long connection coalesces the GETs across pieces.
-
-bool ReaderExecutor::clampAllowsAhead(size_t ri) const
-{
-    /// THE CLAMP - same-cell ordering as a frontier bound, not a graph. A cell is
-    /// append-only: bytes launched past an unfilled range the job does NOT fetch itself -
-    /// an embedded resident middle awaiting its serve-time down-fill (`UpperCacheRead` /
-    /// handed) - would only be refused at the frontier and discarded. Hold the AHEAD launch
-    /// until everything in the target cells below the launch position is committed or lies
-    /// in the job's OWN fetch runs (its refused or pending bytes were never a reason to
-    /// hold - the serve banks them; same-cell gaps FOLD into one Remote, so no
-    /// Remote-vs-Remote ordering exists). The PUMP is exempt:
-    /// demand production heals through the bank; only the ahead anchor waits. A hold is
-    /// BOUNDED by the held job's own consumption: the pump advances the launch high-water
-    /// past every served window regardless of refusals, so the scan retires the job even
-    /// when the awaited down-fill itself was refused - degradation, never a livelock.
-    const auto & r = read_plan.schedule.retrieves[ri];
-    const auto & geom = read_plan.geometry();
-    const size_t launch_pos = std::max(r.range.offset, launchProgress(ri));
-    for (const auto & wt : r.into)
-    {
-        const size_t lo = wt.cell.offset;
-        const size_t hi = std::min(wt.cell.end(), launch_pos);
-        if (lo >= hi)
-            continue;
-        const ByteRange below{lo, hi - lo};
-        for (const auto & gap : display.committedCoverage(below).subtract(below))
-        {
-            bool own = false;
-            for (const auto & run : r.fetch_runs)
-                if (run.offset <= gap.offset && gap.end() <= run.end())
-                {
-                    own = true;
-                    break;
-                }
-            if (own)
-                continue;
-            /// Bytes resident in the CELL's OWN tier are already the segment's content - a
-            /// resumed partially-downloaded segment's prefix, a DOWNLOADED middle merged into
-            /// the cell - and can never enter this plan's committed sets (the writer appends
-            /// at the live segment frontier, past them). Nothing to wait for: only a FASTER
-            /// tier's resident range awaits a down-fill into this cell.
-            bool in_cell_tier = false;
-            for (const auto & res : geom->entries[wt.entry].resident)
-                if (res.offset <= gap.offset && gap.end() <= res.end())
-                {
-                    in_cell_tier = true;
-                    break;
-                }
-            if (!in_cell_tier)
-                return false;
-        }
-    }
-    return true;
-}
 
 std::function<StepResult()> ReaderExecutor::makeFetchStep(FetchMachine & m)
 {
@@ -1958,8 +1889,8 @@ void ReaderExecutor::prefetch()
     for (size_t ri = read_plan.launch_frontier; ri < retrieves.size(); ++ri)
     {
         const auto & r = retrieves[ri];
-        /// The schedule says which jobs may run ahead (`ahead_eligible`: the handed kinds take
-        /// the serve's output as input, so they are serve-front only); a job whose launch
+        /// The schedule says which jobs may run ahead (`ahead_eligible`: a promote takes
+        /// the serve's output as input, so it is serve-front only); a job whose launch
         /// frontier reached its end is done. Advance the scan past them so it never rescans.
         if (!r.ahead_eligible || launchProgress(ri) >= r.range.end())
         {
@@ -1967,8 +1898,6 @@ void ReaderExecutor::prefetch()
                 ++read_plan.launch_frontier;
             continue;
         }
-        if (!clampAllowsAhead(ri))
-            return;  /// hold: the target cell waits on another job's fill below the launch position
         launchRetrieve(ri);
         return;
     }
@@ -1977,18 +1906,17 @@ void ReaderExecutor::prefetch()
 ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) const
 {
     /// The next PIECE of a populatable retrieve, straight off the schedule: the job's
-    /// `fetch_runs` are the source ranges (split at every embedded resident region - served /
-    /// filled down from its tier, never scheduled as a source read), and its fetch grids give
+    /// `fetch_runs` are the source ranges (split at every embedded resident region - served
+    /// from its tier, never scheduled as a source read), and its fetch grids give
     /// the cell-fill granularity. The piece starts at the CELL frontier of the grid-floored
-    /// window start - a mid-cell read fills from the cell floor (append-only), and a
-    /// down-filled hit advances the frontier past itself so the next piece resumes after it -
-    /// and runs to the window's end ceiled to the grid (the whole-cell over-read that makes
+    /// window start - a mid-cell read fills from the cell floor (append-only) - and runs to
+    /// the window's end ceiled to the grid (the whole-cell over-read that makes
     /// one cold cell ONE source read), clamped into the run. No geometry is consulted here -
     /// the schedule is the job.
     const auto & r = read_plan.schedule.retrieves[ri];
-    /// The walk frontier is committed CELLS plus the BANK - not resident views (a refused
-    /// down-fill's resident hole must be read through, below) - so a refused-write piece whose
-    /// bytes went to the bank is walked PAST, not refetched forever.
+    /// The walk frontier is committed CELLS plus the BANK - not resident views (an inter-run
+    /// resident hole is not cell content and must be read through, below) - so a
+    /// refused-write piece whose bytes went to the bank is walked PAST, not refetched forever.
     const auto fill_prefix_end = [&](ByteRange range)
     {
         IntervalSet cov = display.committedCoverage(range);
@@ -2005,9 +1933,10 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
         ? fill_prefix_end(ByteRange{floor_off, missing - floor_off})
         : missing;
     /// The piece: from the frontier to the end of the first run past it. The frontier can sit
-    /// in an inter-run resident hole (its down-fill write was skipped by the append-only
-    /// cell); the piece then reads THROUGH the hole from the source so the cell still
-    /// completes - display gaps stop at resident regions and would leave the cell short.
+    /// in an inter-run resident hole (nothing writes a faster tier's bytes into the cell -
+    /// the cache-chain policy); the piece then reads THROUGH the hole from the source so the
+    /// cell still completes - display gaps stop at resident regions and would leave the cell
+    /// short.
     for (const auto & fr : r.fetch_runs)
         if (fr.end() > base)
             return ByteRange{base,
@@ -2113,7 +2042,7 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     ///    + fetch with the in-flow connection policy + commit; the collect pins, runs the
     ///    deferred put, and overflow-banks what the cells refused). A POPULATABLE job's piece
     ///    comes off the SCHEDULE walk (the cell's append-only floor and the fetch runs, reading
-    ///    through refused-down-fill resident holes so the cell completes); when the walk is
+    ///    through inter-run resident holes so the cell completes); when the walk is
     ///    exhausted - or for a bypass job - the piece is the display's first uncovered gap.
     ///    A latched `reached_eof` does NOT refuse the launch: under a size-unknown source the
     ///    latch records that AN end was seen, not where - a below-end gap (a pool lead's put
@@ -2569,7 +2498,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// receives slack bytes (see `ReadPlan::schedule`).
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
-        min_bytes_for_seek,
         effectiveWindowSize(read_plan.geometry()->pressure_level),
         effectiveBlockSize(read_plan.geometry()->pressure_level));
 

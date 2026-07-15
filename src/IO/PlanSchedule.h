@@ -24,9 +24,8 @@ struct PlanSchedule
 
     enum class Source : uint8_t
     {
-        Remote,          /// a source connection (may bridge small resident holes)
-        UpperCacheRead,  /// read a FillOnly range from a faster resident tier, no remote
-        HandedChain,      /// promote: bytes already in hand (the served chain), written up
+        Remote,       /// a source connection (may bridge small resident holes)
+        HandedChain,  /// promote: bytes already in hand (the served chain), written up
     };
 
     /// The typed decomposition of the fill region (purpose x residency), one
@@ -58,17 +57,16 @@ struct PlanSchedule
         Source source = Source::Remote;
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
         /// May the background run this job ahead of the serve? `Remote` fills depend on nothing
-        /// but the source; the handed kinds (`UpperCacheRead`, `HandedChain`) take the SERVE's
-        /// output as their input, so they are inherently serve-front (sync) jobs. The fg/bg
-        /// partition of the work, as schedule data.
+        /// but the source; `HandedChain` takes the SERVE's output as its input, so it is
+        /// inherently a serve-front (sync) job. The fg/bg partition of the work, as
+        /// schedule data.
         bool ahead_eligible = false;
         /// The sub-ranges of `range` to read from the SOURCE (`Remote` only, empty otherwise).
         /// `range` merges adjacent cell-aligned gaps, so it can span an embedded resident
-        /// region - served / filled down from its tier, never SCHEDULED as a source read; the
-        /// runs split at every one. (Whether the executor reads THROUGH one at run time - its
-        /// down-fill was skipped by the append-only cell - is a display-state decision, not a
-        /// schedule property.) Executable as written: the executor fetches these runs verbatim,
-        /// with no geometry query at serve time.
+        /// region - served from its tier, never SCHEDULED as a source read; the runs split at
+        /// every one. (Whether the executor reads THROUGH one at run time is a display-state
+        /// decision, not a schedule property.) Executable as written: the executor fetches
+        /// these runs verbatim, with no geometry query at serve time.
         VectorWithMemoryTracking<ByteRange> fetch_runs;
     };
 
@@ -95,11 +93,19 @@ struct PlanSchedule
 
 /// Describe the work of the plan `geometry` over its own span
 /// `[plan_start, plan_end)` (physical coords). Pure function of the geometry;
-/// `min_bytes_for_seek` shapes the bridge threshold (the streaming footprint);
 /// the serve sizes (pressure-scaled by the caller) become each run's `serve_bound`.
+///
+/// CACHE-CHAIN POLICY - correctness for many tiers, performance for one. With
+/// several populating caches the schedule stays CORRECT but optimises for the
+/// BOTTOM populating tier alone; upper tiers are a serve bonus (a hit serves
+/// from its fastest holder), not a coordination target. There is deliberately
+/// NO cross-tier down-fill job: a faster tier's resident range over a lower
+/// cell leaves the lower segment partial (the demand read-through completes an
+/// interior hole from the source; a tail hole heals once the upper tier evicts
+/// and the range becomes a plain miss). One populating tier - the production
+/// shape - has no such ranges and takes the unimpaired path.
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
-    size_t min_bytes_for_seek,
     size_t serve_window_bytes,
     size_t serve_block_bytes);
 
