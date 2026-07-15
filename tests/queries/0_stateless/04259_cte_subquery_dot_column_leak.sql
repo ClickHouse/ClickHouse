@@ -33,7 +33,7 @@ SELECT b.id FROM t2_compat b SETTINGS analyzer_compatibility_prefer_alias_over_s
 -- ---------------------------------------------------------------------------
 -- CTE / subquery leak: a `SELECT *` over an inner JOIN exposes columns like
 -- `b.id` to the outer scope; when the outer JOIN also brings a sibling table
--- aliased `b`, `b.id` is ambiguous and the new analyzer raises an error.
+-- aliased `b`, `b.id` is ambiguous and the analyzer raises an error.
 -- The compat setting prefers the outer alias-prefix and resolves it.
 -- ---------------------------------------------------------------------------
 
