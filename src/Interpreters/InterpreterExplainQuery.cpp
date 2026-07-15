@@ -240,6 +240,9 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            if (select.limit_shuffle && data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+                return;
+
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 

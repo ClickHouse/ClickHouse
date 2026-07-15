@@ -153,6 +153,17 @@ bool remoteTableFunctionTargetIsPredefinedDatabase(const ASTFunction & function)
     return table_name && !table_name->empty() && DatabaseCatalog::isPredefinedDatabase(*database_or_qualified_table);
 }
 
+bool isSelfContainedDeterministicRemoteTableFunction(const ASTFunction & function)
+{
+    return function.name == "numbers"
+        || function.name == "numbers_mt"
+        || function.name == "zeros"
+        || function.name == "zeros_mt"
+        || function.name == "generateSeries"
+        || function.name == "generate_series"
+        || function.name == "values";
+}
+
 bool remoteTableTargetHasLimitShuffle(ASTs & args, size_t arg_num, const ContextPtr & context, std::unordered_set<String> & visited_views)
 {
     if (arg_num >= args.size())
@@ -161,7 +172,7 @@ bool remoteTableTargetHasLimitShuffle(ASTs & args, size_t arg_num, const Context
     if (const auto * nested_function = args[arg_num]->as<ASTFunction>();
         nested_function && TableFunctionFactory::instance().isTableFunctionName(nested_function->name))
     {
-        if (nested_function->name == "numbers" || nested_function->name == "numbers_mt")
+        if (isSelfContainedDeterministicRemoteTableFunction(*nested_function))
             return false;
 
         if (nested_function->name == "view" || nested_function->name == "viewIfPermitted")

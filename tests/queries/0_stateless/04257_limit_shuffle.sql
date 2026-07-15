@@ -48,6 +48,8 @@ SELECT * FROM cluster('test_shard_localhost', 'limit_shuffle_query_cache_db', 'l
 SELECT * FROM remote('127.0.0.1', 'limit_shuffle_query_cache_db', 'limit_shuffle_plain_local') SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM cluster('test_shard_localhost', numbers(2)) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM remote('127.0.0.1', numbers_mt(2)) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
+SELECT * FROM cluster('test_shard_localhost', generateSeries(1, 3)) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
+SELECT * FROM remote('127.0.0.1', values('number UInt64', 1, 2, 3)) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM cluster('test_shard_localhost', view(SELECT number FROM numbers(2))) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM cluster('test_shard_localhost', view(SELECT number FROM numbers(10) LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1)) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM limit_shuffle_temporary_view SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
@@ -72,6 +74,13 @@ EXPLAIN SELECT number FROM numbers(10) LIMIT 1 SHUFFLE; -- { serverError SUPPORT
 
 SET allow_experimental_shuffle_query = 1;
 SET enable_analyzer = 1;
+
+EXPLAIN SYNTAX
+INSERT INTO limit_shuffle_insert_sink
+SELECT number
+FROM numbers(10)
+LIMIT 1 SHUFFLE
+FORMAT Null;
 
 EXPLAIN SYNTAX
 SELECT number
