@@ -213,6 +213,16 @@ def generate_missing_required_fields() -> None:
             ),
         )
 
+    case_payload = json.loads(footer_json.decode("utf-8"))
+    case_payload["blobs"][0]["compression-codec"] = "lz4"
+    write_fixture(
+        "dv_with_compression_codec.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
+
 
 def generate_sparse_large_key() -> None:
     bitmap = pyroaring.BitMap()

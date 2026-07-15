@@ -238,6 +238,12 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
 
         if (blob.type == "deletion-vector-v1")
         {
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Puffin blob {}: deletion-vector-v1 must omit 'compression-codec'",
+                    i);
+
             requireBlobMetadataField(blob_obj, "properties", i);
 
             auto props_obj = blob_obj->getObject("properties");

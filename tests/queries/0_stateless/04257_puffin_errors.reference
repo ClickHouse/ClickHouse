@@ -40,6 +40,8 @@ missing required property
 field 'properties' must be an object
 --- invalid_properties_string.puffin ---
 field 'properties' must be an object
+--- dv_with_compression_codec.puffin ---
+must omit 'compression-codec'
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---

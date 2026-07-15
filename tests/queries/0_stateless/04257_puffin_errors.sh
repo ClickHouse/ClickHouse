@@ -69,6 +69,9 @@ do
     $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "field 'properties' must be an object"
 done
 
+echo "--- dv_with_compression_codec.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/dv_with_compression_codec.puffin', PuffinMetadata)" 2>&1 | grep -oF "must omit 'compression-codec'"
+
 echo "--- puffin_wrong_type ---"
 $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')" 2>&1 | grep -oF 'Unexpected type'
 
