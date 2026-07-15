@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
@@ -708,11 +709,18 @@ Float64 MergeTreeWhereOptimizer::computeConditionCostScore(UInt64 columns_size, 
     /// worth hoisting to the front of PREWHERE if it eliminates proportionally many rows; a cheap,
     /// selective filter on a small column wins. Lower is better.
     ///
-    /// Without a usable estimate (no statistics, or estimate >= total) the benefit is 1, so the score
-    /// degrades to `columns_size` and matches the previous size-based ordering. Two conditions that
-    /// read the same columns keep selectivity-first ordering (equal cost, benefit decides).
-    if (total_rows == 0 || estimated_row_count >= total_rows)
+    /// Without a usable estimate (no statistics / row count unknown) fall back to `columns_size`, which
+    /// matches the previous size-based ordering. Two conditions that read the same columns then keep
+    /// selectivity-first ordering (equal cost, `estimated_row_count` decides in the comparison tuple).
+    if (total_rows == 0)
         return static_cast<Float64>(columns_size);
+
+    /// A condition that keeps all rows eliminates nothing: it is the worst possible prefilter and must
+    /// sort last, regardless of how cheap its columns are. Otherwise a small column that filters nothing
+    /// (e.g. a predicate matched by every row) would be ranked cheaper than a genuinely selective filter
+    /// on a wider column and hoisted ahead of it. See #110462.
+    if (estimated_row_count >= total_rows)
+        return std::numeric_limits<Float64>::max();
 
     const Float64 eliminated_fraction = 1.0 - static_cast<Float64>(estimated_row_count) / static_cast<Float64>(total_rows);
     return static_cast<Float64>(columns_size) / eliminated_fraction;
