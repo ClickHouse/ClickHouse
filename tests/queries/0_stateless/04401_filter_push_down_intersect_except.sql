@@ -2,8 +2,8 @@
 -- branch, exactly as for UNION ALL, so each input prunes with its own index.
 -- https://github.com/ClickHouse/ClickHouse/issues/110113
 
--- This targets the new-analyzer query-plan filter pushdown (query_plan_filter_push_down into
--- IntersectOrExceptStep) and uses new-analyzer-only syntax such as (subquery)(c0). The old
+-- This targets the analyzer query-plan filter pushdown (query_plan_filter_push_down into
+-- IntersectOrExceptStep) and uses analyzer-only syntax such as (subquery)(c0). The old
 -- analyzer has its own AST-level predicate pushdown, so pin the analyzer on to keep the test
 -- stable under the old-analyzer CI runner.
 SET enable_analyzer = 1;
