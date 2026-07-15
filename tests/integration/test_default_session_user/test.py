@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 
 import grpc
 import pymysql
@@ -116,9 +117,7 @@ def postgres_login(port, user, password=""):
         auth_type = struct.unpack("!I", response[5:9])[0]
         if auth_type == 3:  # AuthenticationCleartextPassword
             password_bytes = password.encode("utf-8") + b"\x00"
-            sock.sendall(
-                b"p" + struct.pack("!I", len(password_bytes) + 4) + password_bytes
-            )
+            sock.sendall(b"p" + struct.pack("!I", len(password_bytes) + 4) + password_bytes)
             response = recv_exact(sock, 9)
             if response[:1] != b"R":
                 return False
@@ -126,15 +125,20 @@ def postgres_login(port, user, password=""):
         return auth_type == 0  # AuthenticationOk
 
 
-def assert_login_success(user, interface):
+def login_success_count(user, interface):
     node1.query("SYSTEM FLUSH LOGS session_log")
-    assert (
-        node1.query(
-            f"SELECT count() > 0 FROM system.session_log "
-            f"WHERE type = 'LoginSuccess' AND user = '{user}' AND interface = '{interface}'"
-        )
-        == "1\n"
-    )
+    return int(node1.query(f"SELECT count() FROM system.session_log WHERE type = 'LoginSuccess' AND user = '{user}' AND interface = '{interface}'"))
+
+
+@contextmanager
+def assert_login_success(user, interface):
+    """Assert that the wrapped action produced a new `LoginSuccess` row in
+    `system.session_log`, comparing the count of matching rows before and after,
+    so that a row left by an earlier login of the same user on the same interface
+    cannot satisfy the assertion."""
+    count_before = login_success_count(user, interface)
+    yield
+    assert login_success_count(user, interface) > count_before
 
 
 def test_http_global_default_session_user():
@@ -145,20 +149,17 @@ def test_http_per_protocol_default_session_user():
     assert execute_query_http(8124, "SELECT currentUser()") == "proto_http_user\n"
 
     # An explicitly empty user parameter also means the default session user.
-    assert (
-        execute_query_http(8124, "SELECT currentUser()", user="") == "proto_http_user\n"
-    )
+    assert execute_query_http(8124, "SELECT currentUser()", user="") == "proto_http_user\n"
 
     # An explicitly specified user is not affected.
-    assert (
-        execute_query_http(8124, "SELECT currentUser()", user="explicit_user")
-        == "explicit_user\n"
-    )
+    assert execute_query_http(8124, "SELECT currentUser()", user="explicit_user") == "explicit_user\n"
 
     # An empty user name in Basic credentials also means the default session user.
     assert (
         execute_query_http(
-            8124, "SELECT currentUser()", headers={"Authorization": "Basic Og=="}  # ":"
+            8124,
+            "SELECT currentUser()",
+            headers={"Authorization": "Basic Og=="},  # ":"
         )
         == "proto_http_user\n"
     )
@@ -171,9 +172,9 @@ def test_fixed_user_handler_with_anonymous_logins_disabled():
     # `default_session_user`, which prohibits anonymous logins, must not reject
     # fixed-user handlers.
     url = f"http://{node1.ip_address}:8129/fixed"
-    response = urllib.request.urlopen(url, timeout=10).read()
+    with assert_login_success("fixed_handler_user", "HTTP"):
+        response = urllib.request.urlopen(url, timeout=10).read()
     assert response == b"fixed_handler_user\n"
-    assert_login_success("fixed_handler_user", "HTTP")
 
     # The prohibition still applies to the default handlers on the same endpoint.
     with pytest.raises(urllib.error.HTTPError) as exc_info:
@@ -199,15 +200,12 @@ def grpc_query(query, user_name=None):
 def test_grpc_default_session_user():
     # gRPC is not a composable protocol, so only the global setting applies to it:
     # a query without a user name runs as the global default session user.
-    assert grpc_query("SELECT currentUser()") == "global_default_user\n"
-    assert_login_success("global_default_user", "gRPC")
+    with assert_login_success("global_default_user", "gRPC"):
+        assert grpc_query("SELECT currentUser()") == "global_default_user\n"
 
     # An explicitly specified user is not affected.
-    assert (
-        grpc_query("SELECT currentUser()", user_name="explicit_user")
-        == "explicit_user\n"
-    )
-    assert_login_success("explicit_user", "gRPC")
+    with assert_login_success("explicit_user", "gRPC"):
+        assert grpc_query("SELECT currentUser()", user_name="explicit_user") == "explicit_user\n"
 
 
 def test_native_default_session_user():
@@ -215,27 +213,24 @@ def test_native_default_session_user():
     exception = 2
 
     # The global default session user on the ordinary port.
-    assert native_hello(9000, "") == hello
+    with assert_login_success("global_default_user", "TCP"):
+        assert native_hello(9000, "") == hello
     # A nonexistent user still fails.
     assert native_hello(9000, "nonexistent_user") == exception
     # The per-protocol default session user.
-    assert native_hello(9101, "") == hello
+    with assert_login_success("proto_tcp_user", "TCP"):
+        assert native_hello(9101, "") == hello
     # A protocol without its own default session user uses the global one.
-    assert native_hello(9102, "") == hello
+    with assert_login_success("global_default_user", "TCP"):
+        assert native_hello(9102, "") == hello
     # An endpoint's default session user is found through the `impl` reference.
-    assert native_hello(9103, "") == hello
+    with assert_login_success("proto_endpoint_user", "TCP"):
+        assert native_hello(9103, "") == hello
     # An explicitly specified user is not affected.
-    assert native_hello(9101, "explicit_user") == hello
+    with assert_login_success("explicit_user", "TCP"):
+        assert native_hello(9101, "explicit_user") == hello
     # An empty default session user prohibits connections without a user name.
     assert native_hello(9104, "") == exception
-
-    for user in [
-        "global_default_user",
-        "proto_tcp_user",
-        "proto_endpoint_user",
-        "explicit_user",
-    ]:
-        assert_login_success(user, "TCP")
 
 
 def test_mysql_default_session_user():
@@ -256,9 +251,7 @@ def test_mysql_default_session_user():
             assert cursor.fetchall() == (("proto_mysql_user",),)
 
     # An explicitly specified user is not affected.
-    connection = pymysql.connect(
-        user="explicit_user", password="", host=node1.ip_address, port=9106
-    )
+    connection = pymysql.connect(user="explicit_user", password="", host=node1.ip_address, port=9106)
     with connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT currentUser()")
@@ -266,20 +259,15 @@ def test_mysql_default_session_user():
 
 
 def test_postgres_default_session_user():
-    assert postgres_login(9107, "")
-    assert_login_success("proto_pg_user", "PostgreSQL")
+    with assert_login_success("proto_pg_user", "PostgreSQL"):
+        assert postgres_login(9107, "")
 
 
 def test_interserver_connections_do_not_use_default_session_user():
     # Interserver connections (the cluster has a secret) are authenticated by the
     # initial user, so remote queries must run as the initiating user, not as the
     # default session user.
-    assert (
-        node1.query(
-            "SELECT hostName(), currentUser() FROM clusterAllReplicas('secret_cluster', system.one) ORDER BY hostName()"
-        )
-        == "node1\tdefault\nnode2\tdefault\n"
-    )
+    assert node1.query("SELECT hostName(), currentUser() FROM clusterAllReplicas('secret_cluster', system.one) ORDER BY hostName()") == "node1\tdefault\nnode2\tdefault\n"
 
 
 def ws_handshake(sock, host, origin):
@@ -366,18 +354,14 @@ def test_webterminal_default_session_user():
     # override reaches `WebTerminalRequestHandler` and is not the global default.
     # A successful session forwards PTY data as a binary frame (0x02); a failure
     # would send a close frame (0x08).
-    opcode = webterminal_auth_opcode(
-        8125, json.dumps({"type": "auth", "password": ""})
-    )
-    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
-    assert_login_success("proto_webterminal_user", "HTTP")
+    with assert_login_success("proto_webterminal_user", "HTTP"):
+        opcode = webterminal_auth_opcode(8125, json.dumps({"type": "auth", "password": ""}))
+        assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
 
     # An explicitly specified user is not affected by the default session user.
-    opcode = webterminal_auth_opcode(
-        8125, json.dumps({"type": "auth", "user": "explicit_user", "password": ""})
-    )
-    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
-    assert_login_success("explicit_user", "HTTP")
+    with assert_login_success("explicit_user", "HTTP"):
+        opcode = webterminal_auth_opcode(8125, json.dumps({"type": "auth", "user": "explicit_user", "password": ""}))
+        assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
 
 
 def test_custom_webterminal_rule_default_session_user():
@@ -386,18 +370,14 @@ def test_custom_webterminal_rule_default_session_user():
     # must still honor the endpoint's own `default_session_user` override, not the
     # global setting. An auth message without a "user" field must therefore log in
     # as the endpoint user.
-    opcode = webterminal_auth_opcode(
-        8128, json.dumps({"type": "auth", "password": ""})
-    )
-    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
-    assert_login_success("proto_custom_webterminal_user", "HTTP")
+    with assert_login_success("proto_custom_webterminal_user", "HTTP"):
+        opcode = webterminal_auth_opcode(8128, json.dumps({"type": "auth", "password": ""}))
+        assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
 
     # An explicitly specified user is not affected by the default session user.
-    opcode = webterminal_auth_opcode(
-        8128, json.dumps({"type": "auth", "user": "explicit_user", "password": ""})
-    )
-    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
-    assert_login_success("explicit_user", "HTTP")
+    with assert_login_success("explicit_user", "HTTP"):
+        opcode = webterminal_auth_opcode(8128, json.dumps({"type": "auth", "user": "explicit_user", "password": ""}))
+        assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
 
 
 def scrape_prometheus_status(port):
@@ -430,20 +410,13 @@ def test_config_reload_default_session_user():
     assert execute_query_http(8126, "SELECT currentUser()") == "reload_effective_before\n"
     # ... and, for an endpoint that references a base via `impl`, the value closest
     # to the endpoint wins (the base's value is shadowed).
-    assert (
-        execute_query_http(8127, "SELECT currentUser()")
-        == "reload_shadow_endpoint_user\n"
-    )
+    assert execute_query_http(8127, "SELECT currentUser()") == "reload_shadow_endpoint_user\n"
 
     # In a single reload, change one endpoint's own (effective) value and a base
     # value that a closer module shadows (so the shadow endpoint's effective value
     # does not change).
-    node1.replace_in_config(
-        config_path, "reload_effective_before", "reload_effective_after"
-    )
-    node1.replace_in_config(
-        config_path, "reload_shadow_base_before", "reload_shadow_base_after"
-    )
+    node1.replace_in_config(config_path, "reload_effective_before", "reload_effective_after")
+    node1.replace_in_config(config_path, "reload_shadow_base_before", "reload_shadow_base_after")
     node1.query("SYSTEM RELOAD CONFIG")
 
     # The endpoint whose effective value changed is restarted and now serves the
@@ -451,10 +424,7 @@ def test_config_reload_default_session_user():
     # required for it to take effect).
     for _ in range(30):
         try:
-            if (
-                execute_query_http(8126, "SELECT currentUser()")
-                == "reload_effective_after\n"
-            ):
+            if execute_query_http(8126, "SELECT currentUser()") == "reload_effective_after\n":
                 break
         except Exception:
             pass
@@ -463,23 +433,14 @@ def test_config_reload_default_session_user():
 
     # The shadow endpoint's effective value is unchanged, so it keeps serving the
     # same user.
-    assert (
-        execute_query_http(8127, "SELECT currentUser()")
-        == "reload_shadow_endpoint_user\n"
-    )
+    assert execute_query_http(8127, "SELECT currentUser()") == "reload_shadow_endpoint_user\n"
 
     # The endpoint with a changed effective value was reloaded ...
     for _ in range(30):
-        if node1.contains_in_log(
-            "<default_session_user> had been changed, will reload http-reload-effective"
-        ):
+        if node1.contains_in_log("<default_session_user> had been changed, will reload http-reload-effective"):
             break
         time.sleep(1)
-    assert node1.contains_in_log(
-        "<default_session_user> had been changed, will reload http-reload-effective"
-    )
+    assert node1.contains_in_log("<default_session_user> had been changed, will reload http-reload-effective")
     # ... but the shadow endpoint was not reloaded for `default_session_user`,
     # because only a shadowed base changed and its effective value is the same.
-    assert not node1.contains_in_log(
-        "<default_session_user> had been changed, will reload http-reload-shadow-endpoint"
-    )
+    assert not node1.contains_in_log("<default_session_user> had been changed, will reload http-reload-shadow-endpoint")
