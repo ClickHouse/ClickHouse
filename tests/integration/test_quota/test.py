@@ -1885,3 +1885,45 @@ EOF""",
         )
     finally:
         instance.query("DROP QUOTA IF EXISTS q_legacy_zero")
+
+
+def test_persisted_legacy_negative_interval_quota_loads_inert():
+    # A persisted FOR INTERVAL -1 SECOND quota must load inert (like the zero-interval case)
+    # and must not surface its interval, which would otherwise wrap to 4294967295 when
+    # system.quotas / system.quota_limits cast the duration to UInt32.
+    instance.stop_clickhouse()
+
+    quota_id = uuid.uuid4()
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+        cat > /var/lib/clickhouse/access/{quota_id}.sql << 'EOF'
+ATTACH QUOTA q_legacy_neg KEYED BY user_name FOR INTERVAL -1 SECOND MAX queries = 1000 TO ALL;
+EOF""",
+        ]
+    )
+    instance.exec_in_container(
+        ["bash", "-c", "touch /var/lib/clickhouse/access/need_rebuild_lists.mark"]
+    )
+    instance.start_clickhouse()
+
+    try:
+        # The negative interval is dropped on load, so no interval is exposed.
+        assert (
+            instance.query(
+                "SELECT durations FROM system.quotas WHERE name = 'q_legacy_neg'"
+            )
+            == "[]\n"
+        )
+        # It never shows up as 4294967295 in the read-only surfaces.
+        assert (
+            instance.query(
+                "SELECT count() FROM system.quota_limits WHERE quota_name = 'q_legacy_neg'"
+            )
+            == "0\n"
+        )
+        assert instance.query("SELECT count() FROM numbers(3)") == "3\n"
+    finally:
+        instance.query("DROP QUOTA IF EXISTS q_legacy_neg")

@@ -114,10 +114,12 @@ namespace
             }
         }
 
-        /// An ALTER cloned from a legacy inert quota still carries its non-positive interval; drop it
-        /// so a user-facing CREATE/ALTER never republishes the crash-triggering definition.
-        if (validate)
-            std::erase_if(quota_all_limits, [](const Quota::Limits & x) { return x.duration.count() <= 0; });
+        /// CREATE/ALTER drops every non-positive interval; the deserialize path keeps only the legacy
+        /// zero-interval carve-out inert and still drops negatives (they would wrap to UInt32 max in system.quotas).
+        std::erase_if(quota_all_limits, [&](const Quota::Limits & x)
+        {
+            return validate ? x.duration.count() <= 0 : x.duration.count() < 0;
+        });
 
         if (override_to_roles)
             quota.to_roles = *override_to_roles;
