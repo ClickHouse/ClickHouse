@@ -31,7 +31,7 @@ EOF
 
 ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
     SELECT 4550 FORMAT Null;
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 
     SELECT 'correctness';
 
@@ -47,7 +47,7 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
     SELECT count() FROM
     (
         SELECT query_id FROM system.user_query_log
-        WHERE event_date >= today() AND query_id = 'nonexistent'
+        WHERE event_date >= yesterday() AND query_id = 'nonexistent'
         ORDER BY query_start_time DESC LIMIT 10
     );
 
@@ -63,14 +63,14 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
     SET log_comment = '04550_pruned_old_analyzer';
     SELECT count() FROM system.user_query_log WHERE event_date > today() + 1 SETTINGS enable_analyzer = 0 FORMAT Null;
     SET log_comment = '';
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 
     SELECT read_rows >= 1 FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND log_comment = '04550_full';
+    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_full';
     SELECT read_rows FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND log_comment = '04550_pruned_analyzer';
+    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned_analyzer';
     SELECT read_rows FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND log_comment = '04550_pruned_old_analyzer';
+    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned_old_analyzer';
 "
 
 rm -rf "${test_dir}"
