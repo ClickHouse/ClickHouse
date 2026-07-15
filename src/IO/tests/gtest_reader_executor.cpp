@@ -4044,7 +4044,7 @@ TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
 TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
 {
     /// The read extent (`setReadUntilPosition`) bounds the CONSUMER, not the producer:
-    /// where the run is predicted to continue (`fetchAllowance` = max(extent, reach)),
+    /// where the run is predicted to continue (`prefetchAllowance` = max(extent, reach)),
     /// the fill-ahead machine crosses the extent instead of stopping and restarting at
     /// every per-mark-range advance. The serve still EOFs at the extent; once the extent
     /// advances, the already-fetched bytes serve with ZERO new source requests.

@@ -275,7 +275,7 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
     /// At the read extent there is nothing to serve, so nothing to (re)plan for - a replan
     /// here would only reset the in-flight pin. `serveWindow` returns empty - the correct
     /// EOF for this extent; a later `setReadExtent` resumes from the new bound. (A machine
-    /// may still be in flight PAST the extent - reach-allowed read-ahead, `fetchAllowance` -
+    /// may still be in flight PAST the extent - reach-allowed read-ahead, `prefetchAllowance` -
     /// it stays held and is collected when the serve resumes.)
     if (atExtent())
         return;
@@ -322,7 +322,7 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
     if (reached_eof)
         fill_lane.pin.reset();
 
-    advanceAhead();
+    prefetch();
 
     /// THE consumer exit: the whole serve machinery works in physical coordinates;
     /// this one shift rebases the window to logical for the decryptor (CTR position
@@ -371,7 +371,7 @@ void ReaderExecutor::seek(size_t new_position)
     read_plan = {};
     fill_lane.resetEpoch();
 
-    advanceAhead();
+    prefetch();
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -1884,7 +1884,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     /// horizon- or tail-bound cut needs no ceil: the next top-up continues the same job
     /// and completes the cell. Zero stays zero - the ceil must not resurrect an exhausted
     /// allowance.
-    size_t allowance = fetchAllowance(base);
+    size_t allowance = prefetchAllowance(base);
     if (allowance)
         allowance = std::min(r.range.end(), cellCeil(r, base + allowance)) - base;
     const size_t chunk = std::min({r.range.end() - base, capacity, allowance});
@@ -1905,7 +1905,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     launchMachineForWindow(ri, ByteRange{base, chunk}, *runner);
 }
 
-void ReaderExecutor::advanceAhead()
+void ReaderExecutor::prefetch()
 {
     if (!prefetch_pool)
         return;
@@ -1940,7 +1940,7 @@ void ReaderExecutor::advanceAhead()
     }
 
     const size_t position_phys = toPhys(position);
-    const size_t probe = std::min(window_size, fetchAllowance(position_phys));
+    const size_t probe = std::min(window_size, prefetchAllowance(position_phys));
     if (probe == 0)
         return;
     /// The producer's look-ahead replan: demand coverage through the next ahead window
@@ -2877,7 +2877,7 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
-size_t ReaderExecutor::fetchAllowance(size_t phys_from) const
+size_t ReaderExecutor::prefetchAllowance(size_t phys_from) const
 {
     /// PRODUCER-side allowance: how many PHYSICAL bytes a fetch may take from `phys_from`
     /// (a launch frontier or the cursor). Bounded by what exists (the file end) and by how

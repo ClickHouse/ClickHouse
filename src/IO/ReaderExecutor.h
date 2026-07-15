@@ -58,7 +58,7 @@ class EncryptionHeaderCache;
 /// execution interprets it.
 ///
 /// The PRODUCER is the `FillLane` + the fill flow, ONE body of code with two
-/// anchors: AHEAD (`advanceAhead` - the wake rule and the launch scan at the
+/// anchors: AHEAD (`prefetch` - the wake rule and the launch scan at the
 /// lane's `attempted_end` cursor, held by `clampAllowsAhead` at cells awaiting
 /// another job's fill) runs pool pieces; the PUMP (`pump` - anchored at the
 /// consumer's window, may run BEHIND the cursor) heals on the serve thread
@@ -187,7 +187,7 @@ public:
     /// Advertise the read extent (from `ReadBuffer::setReadUntilPosition`,
     /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`). The
     /// extent is the CONSUMER's serve/EOF bound; the producer may fetch past it
-    /// by the consumed run's earned reach (`fetchAllowance`). `nullopt` clears
+    /// by the consumed run's earned reach (`prefetchAllowance`). `nullopt` clears
     /// it. A backward shrink cancels the in-flight machine; an advance or a
     /// clear keeps it running.
     void setReadExtent(std::optional<size_t> logical_end);
@@ -288,12 +288,12 @@ private:
         PlanSchedule schedule;
 
         /// The launch interpreter's authority - the first `schedule.retrieves` index not
-        /// yet launched/exhausted; advanced by `advanceAhead`. Reset on re-plan.
+        /// yet launched/exhausted; advanced by `prefetch`. Reset on re-plan.
         size_t launch_frontier = 0;
 
         /// True iff `schedule.retrieves` contains a `Source::Remote` job. When false
         /// the plan is served entirely from cache tiers, so there is no source
-        /// connection to open and `advanceAhead` skips its prefetch bookkeeping
+        /// connection to open and `prefetch` skips its prefetch bookkeeping
         /// (after its look-ahead re-plan, which still discovers cold beyond the plan).
         bool has_remote_retrieves = false;
 
@@ -523,7 +523,7 @@ private:
     ///   - `coverage_ahead == 0` (the serve front): only a fully consumed plan replans (the
     ///     position before `plan_start`, or at `plan_end` with the plan not running to EOF) -
     ///     plans are used to their last byte, no pre-emptive look-ahead on the consumer side.
-    ///   - `coverage_ahead > 0` (`advanceAhead`): replan when coverage does not reach
+    ///   - `coverage_ahead > 0` (`prefetch`): replan when coverage does not reach
     ///     `position_phys + coverage_ahead`, so the ahead launch always has scheduled jobs -
     ///     the producer's deliberately pre-emptive look-ahead extension.
     void preparePlan(size_t position_phys, size_t coverage_ahead = 0);
@@ -535,7 +535,7 @@ private:
 
     /// The CONSUMER's serve, serve-first: try the display, and only when nothing is
     /// deliverable heal (claimed-but-unreadable) or pump (a hit run has nothing to pump -
-    /// its unservable window is EOF). `advanceAhead` launches the schedule's `Remote` jobs
+    /// its unservable window is EOF). `prefetch` launches the schedule's `Remote` jobs
     /// at the lane cursor.
     ChainedBuffers serveWindow(size_t position_phys);
     /// The next source piece of a populatable retrieve, off the schedule: the cell's
@@ -636,7 +636,7 @@ private:
     /// refused residue, bank what is still homeless, and advance the lane's attempted
     /// cursor to the fetch reach.
     void collectInFlightInto();
-    void advanceAhead();
+    void prefetch();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
     /// pool runner and the future inline runner.
     std::function<StepResult()> makeFetchStep(FetchMachine & m);
@@ -757,11 +757,11 @@ private:
     /// PRODUCER-side allowance: physical bytes a fetch may take from `phys_from`,
     /// bounded by the file end and by `reachPastExtent` - see the definition for
     /// the past-extent rationale.
-    size_t fetchAllowance(size_t phys_from) const;
+    size_t prefetchAllowance(size_t phys_from) const;
 
     /// `max(extent, reach)` - except for a `readBigAt` transient, whose extent IS
     /// its request and is never crossed. The single statement of the transient
-    /// rule, shared by `fetchAllowance` and `longConnectionBound`.
+    /// rule, shared by `prefetchAllowance` and `longConnectionBound`.
     size_t reachPastExtent(size_t extent_phys, size_t reach) const;
 
     /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
@@ -778,7 +778,7 @@ private:
 
     /// CONSUMER-side horizon in LOGICAL bytes: the most a serve could return from `position`
     /// right now (the file remainder, or one window when the size is unknown, clamped to the
-    /// extent); zero = the extent is exhausted. The producer's bound is `fetchAllowance`.
+    /// extent); zero = the extent is exhausted. The producer's bound is `prefetchAllowance`.
     /// Deliberately does NOT test `reached_eof`: when EOF latches with a machine still in
     /// flight, `readNextWindow` drains that final window through `serveWindow`, which serves
     /// only while `readCeiling() > 0`.
@@ -864,7 +864,7 @@ private:
     ReadContinuityTracker fetch_tracker;
     /// CONSUMPTION-pattern estimator: unlike `fetch_tracker` (planned source reads,
     /// sizes connections), it is fed every SERVED window and every seek, so it predicts
-    /// how far the consumer will actually go. `fetchAllowance` keys past-extent prefetch
+    /// how far the consumer will actually go. `prefetchAllowance` keys past-extent prefetch
     /// off it.
     ReadContinuityTracker consume_tracker;
 
