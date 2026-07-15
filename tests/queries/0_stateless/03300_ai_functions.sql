@@ -445,10 +445,6 @@ DROP TABLE IF EXISTS _03300_ret_mask;
 SELECT '-- aiMask: with replacement and temperature';
 SELECT count() FROM (SELECT aiMask(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
 
--- A provider error aborts the query even with ai_function_throw_on_error = 0.
-SELECT '-- aiMask: provider error aborts the query despite throw_on_error = 0';
-SELECT aiMask('secret', ['email']) SETTINGS ai_function_throw_on_error = 0; -- { serverError POCO_EXCEPTION, NETWORK_ERROR, SOCKET_TIMEOUT }
-
 -- =============================================================================
 -- 18. aiEmbed
 -- =============================================================================
@@ -589,9 +585,7 @@ INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(translation) FROM _03300_translate_default;
 DROP TABLE _03300_translate_default;
 
--- Counterpart to the survives-INSERT cases above. aiMask aborts the query on error, so its DEFAULT
--- INSERT fails even under ai_function_throw_on_error = 0.
-SELECT '-- aiMask: DEFAULT INSERT fails on error, unlike the functions above';
+SELECT '-- aiMask: DEFAULT survives INSERT (no exception)';
 DROP TABLE IF EXISTS _03300_mask_default;
 CREATE TABLE _03300_mask_default
 (
@@ -599,7 +593,8 @@ CREATE TABLE _03300_mask_default
     doc String,
     masked String DEFAULT aiMask(doc, ['email'])
 ) ENGINE = MergeTree ORDER BY id;
-INSERT INTO _03300_mask_default (id, doc) VALUES (1, 'hello world'); -- { serverError POCO_EXCEPTION, NETWORK_ERROR, SOCKET_TIMEOUT }
+INSERT INTO _03300_mask_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(masked) FROM _03300_mask_default;
 DROP TABLE _03300_mask_default;
 
 SET ai_function_throw_on_error = 1;

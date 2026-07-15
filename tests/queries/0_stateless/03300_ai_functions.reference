@@ -108,7 +108,6 @@ aiMask
 result	String
 -- aiMask: with replacement and temperature
 0
--- aiMask: provider error aborts the query despite throw_on_error = 0
 -- aiEmbed: registered
 aiEmbed
 -- aiEmbed: too few arguments
@@ -141,5 +140,6 @@ result	Array(Float32)
 1	0
 -- aiTranslate: DEFAULT survives INSERT (no exception)
 1	0
--- aiMask: DEFAULT INSERT fails on error, unlike the functions above
+-- aiMask: DEFAULT survives INSERT (no exception)
+1	0
 -- Re-disabled blocks function

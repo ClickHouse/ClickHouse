@@ -72,9 +72,6 @@ private:
 
     String functionName() const override { return name; }
 
-    /// The query fails on any error regardless of `ai_function_throw_on_error`.
-    bool failClosedOnError() const override { return true; }
-
     AIParamSpecs functionParams() const override
     {
         return {
@@ -185,7 +182,7 @@ private:
         catch (const Poco::Exception &) {} // NOLINT(bugprone-empty-catch) Ok: fall through to the throw below.
 
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-            "aiMask: provider did not return a redacted-text object of the form {{\"masked_text\": \"...\"}}");
+            R"(aiMask: provider did not return a redacted-text object of the form {{"masked_text": "..."}})");
     }
 };
 
@@ -209,23 +206,16 @@ Each detected PII span is replaced with a masking token (`[MASKED]` by default, 
 means "redact every category the model can detect".
 
 Because `aiMask` returns the whole input text with PII replaced, the output is about as long as the input.
-Set `max_tokens` (default `1024`) above the input length in tokens. If the reply is truncated because the
-limit is too low, it no longer parses as a valid response and the query fails.
-
-`aiMask` always aborts the query on error and never returns a default value: any error (a provider failure
-with retries exhausted, or a malformed or truncated response) fails the whole query regardless of
-`ai_function_throw_on_error`. The one exception is quota exhaustion: when
-`ai_function_throw_on_quota_exceeded = 0`, rows over the per-query quota are left unprocessed and yield an
-empty string instead of throwing. An empty string contains no PII, but such rows are emptied rather than
-redacted.
+Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
+may be incomplete or fail to parse.
 )",
         .syntax = "aiMask(text, categories[, params])",
         .arguments = {
             {"text", "Text to redact.", {"String"}},
             {"categories", "Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array redacts all detected PII.", {"Array(String)"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiMask` returns the full text, set it above the input length in tokens or the reply is truncated and the query fails), `replacement` (token that replaces each detected PII span; default `[MASKED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiMask` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[MASKED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
-        .returned_value = {"The text with detected PII replaced by the masking token.", {"String"}},
+        .returned_value = {"The text with detected PII replaced by the masking token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Mask specific categories", "SELECT aiMask('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [MASKED] with email [MASKED]"},
             {"Mask all detected PII with a custom token", "SELECT aiMask(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},

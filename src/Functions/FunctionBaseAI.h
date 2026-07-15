@@ -162,9 +162,6 @@ protected:
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
-    /// When true, the function propagates any per-row error regardless of `ai_function_throw_on_error`.
-    virtual bool failClosedOnError() const { return false; }
-
 private:
     /// Full parameter spec for this function: `commonParams` followed by `functionParams`.
     AIParamSpecs allParams() const;
