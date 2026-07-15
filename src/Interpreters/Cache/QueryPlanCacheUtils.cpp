@@ -97,7 +97,8 @@ std::map<String, Int64> getTableMetadataVersionsForQueryPlanCache(
     const StoragePtr & storage,
     const ContextPtr & context)
 {
-    return getTableMetadataVersionsForQueryPlanCache(storage_id, storage->getInMemoryMetadataPtr(context, false));
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    return getTableMetadataVersionsForQueryPlanCache(storage_id, metadata_snapshot);
 }
 
 IASTHash getRowPolicyHashForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id)

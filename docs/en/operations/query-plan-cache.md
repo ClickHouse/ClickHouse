@@ -17,7 +17,7 @@ For repeated `SELECT` queries against the same table, ClickHouse spends a non-tr
 On simple OLTP-style workloads (single-table dashboard queries, prepared-statement-style traffic, lightweight point lookups), the planning step itself can dominate end-to-end latency.
 
 The query plan cache stores the serialized `QueryPlan` produced by the analyzer-based planner, keyed by the query AST and the planner-affecting subset of the session settings.
-On a subsequent identical query, ClickHouse skips parsing, analysis, and planning, and instead deserializes the cached plan, re-binds it to the current table snapshot, and re-validates access rights before execution.
+On a subsequent identical query, ClickHouse still parses the SQL text to build the cache lookup key. If a matching entry is found and its dependencies are still valid, ClickHouse skips analysis and planning, deserializes the cached plan, re-binds it to the current table snapshot, and re-validates access rights before execution.
 
 Unlike the [query cache](query-cache.md), which caches query *results*, the query plan cache caches only the *plan*: every cache hit still executes the query and reads up-to-date data.
 This makes the query plan cache transactionally consistent — there is no risk of returning stale rows.
@@ -28,6 +28,8 @@ When a `SELECT` query is admitted, the cached plan is built in two stages so tha
 
 - *Universalize*: before serialization, every `ReadFromMergeTree` (and similar storage-bound steps) is replaced with a storage-independent `ReadFromTableStep` that carries only the `StorageID` and the columns to read. Storage-specific state (parts, marks, prewhere actions) is stripped.
 - *Materialize*: on a cache hit, the universalized plan is deserialized and `resolveStorages` rebinds each `ReadFromTableStep` to the current `IStorage` snapshot, restoring a directly executable `QueryPlan`.
+
+The lookup key is built before query analysis. A found entry is treated as a candidate and is executed only after dependency validation succeeds. The validation checks storage identity, table metadata, row policy fingerprints, selected columns, and relevant settings. If validation fails, ClickHouse falls back to normal analysis and planning.
 
 The cache key includes:
 
@@ -87,7 +89,7 @@ Queries that fail any check are still executed normally; they simply do not inte
 To inspect cache state at runtime:
 
 - The number of cache entries and the total bytes used are exposed in [`system.metrics`](/operations/system-tables/metrics) as `QueryPlanCacheEntries` and `QueryPlanCacheBytes`.
-- Hit/miss counters since server start are exposed in [`system.events`](/operations/system-tables/events) as `QueryPlanCacheHits` and `QueryPlanCacheMisses`.
+- Hit/miss counters since server start are exposed in [`system.events`](/operations/system-tables/events) as `QueryPlanCacheHits` and `QueryPlanCacheMisses`. `QueryPlanCacheHits` means a candidate entry was found. `QueryPlanCachePreAnalysisHits` counts validated hits that skipped analyzer construction. `QueryPlanCacheValidationMisses` and `QueryPlanCacheStaleMisses` count candidate entries that were rejected before execution.
 
 To clear the cache:
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/CacheBase.h>
+#include <Common/OwnedCacheBase.h>
 #include <Common/SipHash.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
@@ -10,12 +10,10 @@
 #include <base/UUID.h>
 
 #include <map>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -111,15 +109,6 @@ struct QueryPlanCacheEntry
     /// They are revalidated on every hit before the serialized plan is materialized.
     QueryPlanCacheDependencyFingerprint dependencies;
 
-    /// User who inserted this entry. Stamped by `QueryPlanCache::set` so that the
-    /// eviction callback can decrement the right per-user accounting bucket.
-    /// Not part of the cache key and never serialized.
-    std::optional<UUID> inserter_user_id;
-
-    /// Cache key under which this entry is stored. Stamped by `QueryPlanCache::set`
-    /// so that `onEntryRemoval` can erase the matching `entry_weights` record on
-    /// LRU/SLRU eviction. Not part of the cache key and never serialized.
-    std::optional<QueryPlanCacheKey> cache_key;
 };
 
 /// Hasher for QueryPlanCacheKey. Uses SipHash over all identifying fields.
@@ -148,11 +137,11 @@ struct QueryPlanCacheEntryWeight
 };
 
 /// Thread-safe LRU/SLRU cache mapping QueryPlanCacheKey -> QueryPlanCacheEntry.
-/// Follows the same design pattern as QueryResultCache (both use CacheBase).
-class QueryPlanCache : private CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>
+/// Uses `OwnedCacheBase` so per-user quota accounting follows cache entry lifetime.
+class QueryPlanCache : private OwnedCacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>
 {
 private:
-    using Base = CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
+    using Base = OwnedCacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
 
 public:
     using Cache = Base;
@@ -181,32 +170,6 @@ public:
 
     /// Exposes the underlying cache for system table introspection
     std::vector<KeyMapped> dump() const;
-
-protected:
-    /// Called by CacheBase whenever an entry is removed (replacement or LRU eviction).
-    /// Used to keep `per_user_bytes` in sync without scanning the whole cache.
-    void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr) override;
-
-private:
-    /// Best-effort admission check against the current query's quota.
-    /// O(1): reads the cached per-user byte count rather than scanning the cache.
-    bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const;
-
-    /// Serializes compound `CacheBase` + accounting mutations. Do not hold
-    /// `per_user_mutex` while calling into `CacheBase`: eviction callbacks enter
-    /// `onEntryRemoval` and need to lock `per_user_mutex`.
-    mutable std::mutex operation_mutex;
-
-    mutable std::mutex per_user_mutex;
-    std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
-
-    /// Per-key weight tracker. `LRUCachePolicy::set` and `SLRUCachePolicy::set` overwrite
-    /// existing cells silently (without invoking `onEntryRemoval`), so `set` cannot rely on
-    /// the eviction hook to compensate the previous weight on a same-key replacement.
-    /// We track the inserter+weight here at insert time, decrement on replacement, and
-    /// erase on eviction inside `onEntryRemoval`.
-    std::unordered_map<QueryPlanCacheKey, std::pair<std::optional<UUID>, size_t>, QueryPlanCacheKeyHasher>
-        entry_weights TSA_GUARDED_BY(per_user_mutex);
 };
 
 using QueryPlanCachePtr = std::shared_ptr<QueryPlanCache>;

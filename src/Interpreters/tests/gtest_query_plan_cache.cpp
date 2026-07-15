@@ -81,4 +81,37 @@ TEST(QueryPlanCache, ClearDropsUserQuotaAccounting)
     EXPECT_EQ(cache.count(), 1);
 }
 
+TEST(QueryPlanCache, GlobalEvictionDropsUserQuotaAccounting)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/10, /*max_entries=*/10);
+    auto key = makeKey(1);
+    auto evicting_key = makeKey(2);
+    auto fitting_key = makeKey(3);
+    evicting_key.user_id = key.user_id;
+    fitting_key.user_id = key.user_id;
+
+    cache.set(key, makeEntry(6), /*max_size_in_bytes_for_user=*/20);
+    cache.set(evicting_key, makeEntry(6), /*max_size_in_bytes_for_user=*/20);
+
+    EXPECT_EQ(cache.get(key), nullptr);
+    EXPECT_NE(cache.get(evicting_key), nullptr);
+
+    cache.set(fitting_key, makeEntry(4), /*max_size_in_bytes_for_user=*/10);
+
+    EXPECT_NE(cache.get(evicting_key), nullptr);
+    EXPECT_NE(cache.get(fitting_key), nullptr);
+    EXPECT_EQ(cache.count(), 2);
+}
+
+TEST(QueryPlanCache, ZeroMaxEntriesDisablesZeroWeightInsert)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/0);
+    auto key = makeKey(1);
+
+    cache.set(key, makeEntry(0), /*max_size_in_bytes_for_user=*/0);
+
+    EXPECT_EQ(cache.get(key), nullptr);
+    EXPECT_EQ(cache.count(), 0);
+}
+
 }

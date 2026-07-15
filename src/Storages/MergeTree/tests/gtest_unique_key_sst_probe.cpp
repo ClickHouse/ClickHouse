@@ -485,6 +485,7 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
 #include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <filesystem>
 #include <string>
@@ -493,10 +494,11 @@ using namespace DB;
 
 TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 {
+    const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_"
            + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + "_" + test_info->name());
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -532,10 +534,11 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 
 TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
 {
+    const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_ctor_"
            + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + "_" + test_info->name());
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());

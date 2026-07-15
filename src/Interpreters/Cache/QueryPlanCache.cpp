@@ -119,19 +119,11 @@ QueryPlanCache::QueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
 
 void QueryPlanCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries)
 {
-    std::lock_guard operation_lock(operation_mutex);
-
-    Base::setMaxSizeInBytes(max_size_in_bytes);
-    Base::setMaxCount(max_entries);
+    Base::updateConfiguration(max_size_in_bytes, max_entries);
     /// max_count=0 means "unlimited" in LRUCachePolicy, but for query plan cache
     /// we treat 0 as "disabled" -- clear all existing entries.
     if (max_size_in_bytes == 0 || max_entries == 0)
-    {
         Base::clear();
-        std::lock_guard lock(per_user_mutex);
-        per_user_bytes.clear();
-        entry_weights.clear();
-    }
 }
 
 QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
@@ -142,13 +134,7 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
         /// Reject entries with incompatible format version.
         if (result->format_version != QUERY_PLAN_CACHE_FORMAT_VERSION)
         {
-            std::lock_guard operation_lock(operation_mutex);
-            const bool removed = Base::removeIfMatches(key, [&](const MappedPtr & candidate)
-            {
-                return candidate.get() == result.get();
-            });
-            if (removed)
-                onEntryRemoval(QueryPlanCacheEntryWeight{}(*result), result);
+            Base::removeIfMatches(key, result);
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheMisses);
             return nullptr;
         }
@@ -163,71 +149,16 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
 
 void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user)
 {
-    std::lock_guard operation_lock(operation_mutex);
-
-    /// CacheBase treats max_count=0 as "unlimited", but for query plan cache
-    /// we treat 0 as "disabled". Guard against inserting into a disabled cache.
-    if (Base::maxSizeInBytes() == 0 || Base::maxCount() == 0)
-        return;
-
-    if (!canStoreForUser(key, entry, max_size_in_bytes_for_user))
-        return;
-
-    /// Stamp the inserter and the key so that `onEntryRemoval` can decrement the
-    /// right user counter and erase the matching `entry_weights` record when this
-    /// entry is later evicted.
-    entry.inserter_user_id = key.user_id;
-    entry.cache_key = key;
-    const size_t entry_weight = QueryPlanCacheEntryWeight{}(entry);
-
-    /// Skip entries that cannot fit globally: `Base::set` would admit them and
-    /// `removeOverflow` would evict them synchronously. The eviction callback
-    /// runs before we add the new weight to `per_user_bytes`, so a ghost charge
-    /// would be left behind that future inserts could not amortize.
-    if (entry_weight > Base::maxSizeInBytes())
-        return;
-
-    /// Same-key replacement is silent in `LRU/SLRUCachePolicy::set`: it overwrites
-    /// the existing cell without invoking `onEntryRemoval`. Account the prior
-    /// entry's weight ourselves so `per_user_bytes` and `entry_weights` stay in sync.
-    {
-        std::lock_guard lock(per_user_mutex);
-        if (auto it = entry_weights.find(key); it != entry_weights.end())
-        {
-            const auto & [old_user, old_weight] = it->second;
-            if (old_user.has_value())
-            {
-                auto user_it = per_user_bytes.find(*old_user);
-                if (user_it != per_user_bytes.end())
-                {
-                    if (user_it->second <= old_weight)
-                        per_user_bytes.erase(user_it);
-                    else
-                        user_it->second -= old_weight;
-                }
-            }
-            entry_weights.erase(it);
-        }
-    }
-
-    Base::set(key, std::make_shared<QueryPlanCacheEntry>(std::move(entry)));
-
-    {
-        std::lock_guard lock(per_user_mutex);
-        if (key.user_id.has_value())
-            per_user_bytes[*key.user_id] += entry_weight;
-        entry_weights[key] = {key.user_id, entry_weight};
-    }
+    Base::setOwned(
+        key,
+        std::make_shared<QueryPlanCacheEntry>(std::move(entry)),
+        Base::OwnerQuota{key.user_id, max_size_in_bytes_for_user},
+        /*zero_max_count_is_disabled=*/true);
 }
 
 void QueryPlanCache::clear()
 {
-    std::lock_guard operation_lock(operation_mutex);
-
     Base::clear();
-    std::lock_guard lock(per_user_mutex);
-    per_user_bytes.clear();
-    entry_weights.clear();
 }
 
 size_t QueryPlanCache::sizeInBytes() const
@@ -243,55 +174,6 @@ size_t QueryPlanCache::count() const
 std::vector<QueryPlanCache::KeyMapped> QueryPlanCache::dump() const
 {
     return Base::dump();
-}
-
-bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const
-{
-    if (!key.user_id.has_value() || max_size_in_bytes_for_user == 0)
-        return true;
-
-    const size_t new_entry_size = QueryPlanCacheEntryWeight{}(entry);
-
-    /// Early rejection: a single entry larger than the quota can never fit.
-    if (new_entry_size > max_size_in_bytes_for_user)
-        return false;
-
-    /// O(1) admission: read the cached per-user byte count maintained by `set`
-    /// and `onEntryRemoval`. `set` serializes this check with cache mutations via
-    /// `operation_mutex`, but the quota is still a per-query admission setting, not
-    /// persisted cache state or a correctness/security boundary. The global
-    /// `CacheBase` limit remains authoritative.
-    std::lock_guard lock(per_user_mutex);
-    auto it = per_user_bytes.find(*key.user_id);
-    const size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;
-    return current_size_for_user + new_entry_size <= max_size_in_bytes_for_user;
-}
-
-void QueryPlanCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr)
-{
-    if (!mapped_ptr)
-        return;
-
-    std::lock_guard lock(per_user_mutex);
-
-    if (mapped_ptr->inserter_user_id.has_value())
-    {
-        auto it = per_user_bytes.find(*mapped_ptr->inserter_user_id);
-        if (it != per_user_bytes.end())
-        {
-            if (it->second <= weight_loss)
-                per_user_bytes.erase(it);
-            else
-                it->second -= weight_loss;
-        }
-    }
-
-    /// LRU/SLRU eviction is the only path that reaches `onEntryRemoval`: same-key
-    /// replacement bypasses it (handled in `set` directly). Erase the tracking
-    /// record so a future `set` for this key does not see a stale weight and
-    /// double-decrement.
-    if (mapped_ptr->cache_key.has_value())
-        entry_weights.erase(*mapped_ptr->cache_key);
 }
 
 UInt64 SemanticSettings::computeHash(const Settings & settings)
