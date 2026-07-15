@@ -322,6 +322,14 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
+
+            /// If every configured key was filtered out above (all unusable in FIPS mode), do not
+            /// materialize an SSH_KEY method with an empty key list: it is not round-trippable
+            /// (toAST would emit "ssh_key BY" with no keys). Reject the user; parseUsers adds context.
+            if (keys.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "No SSH key usable in FIPS mode is configured for user {}", user_name);
+
             auth_data.setSSHKeys(std::move(keys));
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");

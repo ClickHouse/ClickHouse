@@ -540,6 +540,14 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             }
         }
 
+        /// If every key was filtered out above (all keys unusable in FIPS mode), do not materialize an
+        /// SSH_KEY method with an empty key list: such an entity is not round-trippable (toAST would emit
+        /// "ssh_key BY" with no keys, which ParserCreateUserQuery rejects). Reject the whole method instead.
+        /// On reload/ATTACH the per-entity error handling drops the user cleanly rather than persisting
+        /// an unparsable definition.
+        if (keys.empty())
+            throw Exception(ErrorCodes::LIBSSH_ERROR, "No SSH key usable in FIPS mode is left for this authentication method");
+
         auth_data.setSSHKeys(std::move(keys));
         auth_data.setValidUntil(valid_until);
         return auth_data;
