@@ -1177,6 +1177,21 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
+    /// commit-order projections, so they must be validated against the settings the table WILL
+    /// have after this operation, not the live ones. On ALTER the live storage settings still hold
+    /// the OLD values while `new_metadata.settings_changes` carries the post-ALTER change set, so
+    /// `getSettings(&changes)` gives the effective settings. Otherwise
+    /// `ALTER TABLE ... MODIFY SETTING enable_block_number_column = 0` (or the offset one) on a
+    /// table with such a projection would be accepted, yet a later merge / MATERIALIZE PROJECTION
+    /// rebuild would run without materializing the required `_block_number` / `_block_offset`.
+    MergeTreeSettingsPtr effective_settings = getSettings();
+    if (new_metadata.settings_changes)
+    {
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        effective_settings = getSettings(&new_changes);
+    }
+
     for (const auto & projection : new_metadata.projections)
     {
         /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
@@ -1189,8 +1204,8 @@ void MergeTreeData::checkProperties(
         /// (MergeTask pushes it to projections_to_rebuild), and that rebuild only produces the
         /// `_block_number` / `_block_offset` columns when these settings are enabled
         /// (MergeTask::enabledBlockNumberColumn / enabledBlockOffsetColumn). So keep validating
-        /// them even on ATTACH: attaching with them disabled would let a later merge run without
-        /// the columns the projection requires.
+        /// them even on ATTACH (against the effective settings above): attaching or altering with
+        /// them disabled would let a later merge run without the columns the projection requires.
         if (!attach)
         {
             if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
@@ -1215,13 +1230,13 @@ void MergeTreeData::checkProperties(
                     projection.name);
         }
 
-        if (projection.with_block_number && !(*getSettings())[MergeTreeSetting::enable_block_number_column])
+        if (projection.with_block_number && !(*effective_settings)[MergeTreeSetting::enable_block_number_column])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
                 projection.name);
 
-        if (projection.with_block_offset && !(*getSettings())[MergeTreeSetting::enable_block_offset_column])
+        if (projection.with_block_offset && !(*effective_settings)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",

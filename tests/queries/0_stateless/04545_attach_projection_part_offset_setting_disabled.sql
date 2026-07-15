@@ -40,28 +40,51 @@ ATTACH TABLE t_04545_co;
 SELECT 'commit_order attach', count() FROM t_04545_co;
 DROP TABLE t_04545_co;
 
--- (3) commit-order projection: enable_block_number_column is a merge-time dependency ->
--- ATTACH must still be rejected when it is disabled (would otherwise attach into a state where
--- the next commit-order projection rebuild runs without _block_number). Left detached; the
--- per-test database drop cleans it up.
+-- enable_block_number_column / enable_block_offset_column are merge-time dependencies of a
+-- commit-order projection, so they must be validated against the EFFECTIVE post-ALTER settings,
+-- not the live ones. Disabling them via ALTER while such a projection exists must be rejected up
+-- front (otherwise the ALTER is accepted but a later merge / MATERIALIZE PROJECTION rebuild runs
+-- without materializing the required _block_number / _block_offset). checkProperties reads the
+-- candidate settings from new_metadata.settings_changes via getSettings(&changes).
+
+-- (3) ALTER disabling enable_block_number_column while a commit-order projection exists -> rejected.
 DROP TABLE IF EXISTS t_04545_bn;
 CREATE TABLE t_04545_bn (a UInt64,
     PROJECTION p (SELECT a, _block_number, _block_offset ORDER BY _block_number, _block_offset))
 ENGINE = MergeTree ORDER BY a
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1;
 INSERT INTO t_04545_bn(a) VALUES (1), (2);
-ALTER TABLE t_04545_bn MODIFY SETTING enable_block_number_column = 0;
-DETACH TABLE t_04545_bn;
-ATTACH TABLE t_04545_bn; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_04545_bn MODIFY SETTING enable_block_number_column = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_04545_bn;
 
--- (4) commit-order projection: enable_block_offset_column is also a merge-time dependency ->
--- ATTACH must still be rejected when it is disabled.
+-- (4) ALTER disabling enable_block_offset_column while a commit-order projection exists -> rejected.
 DROP TABLE IF EXISTS t_04545_bo;
 CREATE TABLE t_04545_bo (a UInt64,
     PROJECTION p (SELECT a, _block_number, _block_offset ORDER BY _block_number, _block_offset))
 ENGINE = MergeTree ORDER BY a
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1;
 INSERT INTO t_04545_bo(a) VALUES (1), (2);
-ALTER TABLE t_04545_bo MODIFY SETTING enable_block_offset_column = 0;
-DETACH TABLE t_04545_bo;
-ATTACH TABLE t_04545_bo; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_04545_bo MODIFY SETTING enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_04545_bo;
+
+-- (5) control: disabling enable_block_number_column on a table WITHOUT a commit-order projection
+-- must stay allowed (nothing depends on the column).
+DROP TABLE IF EXISTS t_04545_plain;
+CREATE TABLE t_04545_plain (a UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS enable_block_number_column = 1;
+ALTER TABLE t_04545_plain MODIFY SETTING enable_block_number_column = 0;
+SELECT 'plain disable ok';
+DROP TABLE t_04545_plain;
+
+-- (6) control: disabling the CREATE-only allow_commit_order_projection via ALTER stays allowed
+-- (issue #102445 principle: it is not consulted after CREATE).
+DROP TABLE IF EXISTS t_04545_coa;
+CREATE TABLE t_04545_coa (a UInt64,
+    PROJECTION p (SELECT a, _block_number, _block_offset ORDER BY _block_number, _block_offset))
+ENGINE = MergeTree ORDER BY a
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1;
+INSERT INTO t_04545_coa(a) VALUES (1), (2);
+ALTER TABLE t_04545_coa MODIFY SETTING allow_commit_order_projection = 0;
+SELECT 'commit_order create-only disable ok';
+DROP TABLE t_04545_coa;
