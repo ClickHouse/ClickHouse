@@ -53,6 +53,18 @@ Indicates startup scripts failures by error type. Set to 1 when a startup script
 ### merge_tree_parts {#merge_tree_parts}
 Number of merge tree data parts, labelled by part state, part type, and whether it is a projection part.
 
+### `filesystem_cache_evictions_total` {#filesystem-cache-evictions-total}
+Number of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.
+
+### `filesystem_cache_evicted_bytes_total` {#filesystem-cache-evicted-bytes-total}
+Total bytes of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.
+
+### `filesystem_cache_evictions_by_user_total` {#filesystem-cache-evictions-by-user-total}
+Number of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
+
+### `filesystem_cache_evicted_bytes_by_user_total` {#filesystem-cache-evicted-bytes-by-user-total}
+Total bytes of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
+
 ## See also {#see-also}
 
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.

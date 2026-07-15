@@ -1,0 +1,10 @@
+-- no WHERE, aggregate projection used: the x = 0 group must be present
+0
+1
+2
+-- aggregate projection with sum, the x = 0 group must be present
+-5	40
+0	30
+1	30
+-- WHERE flag (bare column) over a projection: the flag = 0 group is excluded
+1	70

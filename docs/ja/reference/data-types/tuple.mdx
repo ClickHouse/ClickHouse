@@ -1,0 +1,226 @@
+---
+description: 'ClickHouse の Tuple データ型に関するドキュメント'
+sidebarTitle: 'Tuple(T1, T2, ...)'
+slug: /sql-reference/data-types/tuple
+title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
+---
+
+各要素がそれぞれ個別の[型](/ja/reference/data-types/index)を持つタプルです。Tuple には少なくとも 1 つの要素が含まれている必要があります。
+
+Tuple は、一時的にカラムをグループ化するために使用されます。クエリで IN 式を使用するときや、ラムダ関数の特定の形式引数を指定するときに、カラムをグループ化できます。詳しくは、[IN 演算子](/ja/reference/statements/in)および[高階関数](/ja/reference/functions/regular-functions/overview#higher-order-functions)のセクションを参照してください。
+
+Tuple はクエリの結果になることもあります。この場合、JSON 以外のテキストフォーマットでは、値は `()` で囲まれたカンマ区切りで出力されます。JSON フォーマットでは、タプルは配列 (`[]`) として出力されます。
+
+<div id="creating-tuples">
+  ## Tuple の作成
+</div>
+
+関数を使ってタプルを作成できます。
+
+```sql
+tuple(T1, T2, ...)
+```
+
+タプルを作成する例:
+
+```sql
+SELECT tuple(1, 'a') AS x, toTypeName(x)
+```
+
+```text
+┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+│ (1,'a') │ Tuple(UInt8, String)      │
+└─────────┴───────────────────────────┘
+```
+
+Tuple には 1 つの要素だけを含めることができます
+
+例:
+
+```sql
+SELECT tuple('a') AS x;
+```
+
+```text
+┌─x─────┐
+│ ('a') │
+└───────┘
+```
+
+`tuple()` 関数を呼び出さなくても、構文 `(tuple_element1, tuple_element2)` を使って複数の要素からなるタプルを作成できます。
+
+例:
+
+```sql
+SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
+```
+
+```text
+┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
+│ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
+└─────────┴────────────────────────────────────────┴─────────────┘
+```
+
+<div id="data-type-detection">
+  ## データ型の検出
+</div>
+
+その場でタプルを作成する際、ClickHouse は、指定された引数の値を格納できる最小の型として、各引数の型を推定します。値が [NULL](/ja/reference/settings/formats#input_format_null_as_default) の場合、推定される型は [Nullable](/ja/reference/data-types/nullable) です。
+
+データ型の自動検出の例:
+
+```sql
+SELECT tuple(1, NULL) AS x, toTypeName(x)
+```
+
+```text
+┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
+│ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+└───────────┴─────────────────────────────────┘
+```
+
+<div id="referring-to-tuple-elements">
+  ## Tuple 要素の参照方法
+</div>
+
+Tuple 要素は、名前またはインデックスで参照できます。
+
+```sql title="Query"
+CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples; -- 名前で参照
+SELECT a.2 FROM named_tuples; -- 索引で参照
+```
+
+```text title="Response"
+┌─a.s─┐
+│ y   │
+│ x   │
+└─────┘
+
+┌─tupleElement(a, 2)─┐
+│                 10 │
+│                -10 │
+└────────────────────┘
+```
+
+<div id="comparison-operations-with-tuple">
+  ## Tuple の比較演算
+</div>
+
+2 つのタプルは、左から右へ要素を順に比較していきます。最初のタプルの要素が 2 番目のタプルの対応する要素より大きい (小さい) 場合、最初のタプルは 2 番目のタプルより大きい (小さい) と見なされます。そうでない場合 (両方の要素が等しい場合) は、次の要素を比較します。
+
+例:
+
+```sql
+SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,2,1) c3;
+```
+
+```text
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  0 │  0 │
+└────┴────┴────┘
+```
+
+実際の例:
+
+```sql
+CREATE TABLE test
+(
+    `year` Int16,
+    `month` Int8,
+    `day` Int8
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((2022, 12, 31), (2000, 1, 1));
+
+SELECT * FROM test;
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+│ 2000 │     1 │   1 │
+└──────┴───────┴─────┘
+
+SELECT *
+FROM test
+WHERE (year, month, day) > (2010, 1, 1);
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+└──────┴───────┴─────┘
+CREATE TABLE test
+(
+    `key` Int64,
+    `duration` UInt32,
+    `value` Float64
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((1, 42, 66.5), (1, 42, 70), (2, 1, 10), (2, 2, 0));
+
+SELECT * FROM test;
+
+┌─key─┬─duration─┬─value─┐
+│   1 │       42 │  66.5 │
+│   1 │       42 │    70 │
+│   2 │        1 │    10 │
+│   2 │        2 │     0 │
+└─────┴──────────┴───────┘
+
+-- 各キーについて、最大のdurationを持つvalueを見つける。durationが等しい場合は、最大のvalueを選択する
+
+SELECT
+    key,
+    max(duration),
+    argMax(value, (duration, value))
+FROM test
+GROUP BY key
+ORDER BY key ASC;
+
+┌─key─┬─max(duration)─┬─argMax(value, tuple(duration, value))─┐
+│   1 │            42 │                                    70 │
+│   2 │             2 │                                     0 │
+└─────┴───────────────┴───────────────────────────────────────┘
+```
+
+<div id="nullable-tuple">
+  ## Nullable(Tuple(T1, T2, ...))
+</div>
+
+<Info>
+  **ベータ機能**
+
+  `SET enable_nullable_tuple_type = 1` が必要です
+  これはベータ機能です。
+</Info>
+
+`Tuple(Nullable(T1), Nullable(T2), ...)` では個々の要素のみを `NULL` にできるのに対し、こちらではタプル全体を `NULL` にできます。
+
+| 型                                          | タプル全体を NULL にできる | 要素を NULL にできる |
+| ------------------------------------------ | ---------------- | ------------- |
+| `Nullable(Tuple(String, Int64))`           | ✅                | ❌             |
+| `Tuple(Nullable(String), Nullable(Int64))` | ❌                | ✅             |
+
+例:
+
+```sql
+SET enable_nullable_tuple_type = 1;
+
+CREATE TABLE test (
+    id UInt32,
+    data Nullable(Tuple(String, Int64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
+
+SELECT * FROM test WHERE data IS NULL;
+```
+
+```txt
+ ┌─id─┬─data─┐
+ │  2 │ ᴺᵁᴸᴸ │
+ └────┴──────┘
+```

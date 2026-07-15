@@ -1,6 +1,6 @@
 
+#include <charconv>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -9,8 +9,11 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -49,7 +52,10 @@
 #include <filesystem>
 #include <regex>
 
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -161,6 +167,23 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
+/// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
+/// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
+/// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
+static Int32 parseMetadataVersion(const String & version_str, const String & file_name)
+{
+    Int32 version = 0;
+    const char * begin = version_str.data();
+    const char * end = begin + version_str.size();
+    auto [ptr, ec] = std::from_chars(begin, end, version);
+    if (ec != std::errc{} || ptr != end)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Version number is not a valid 32-bit integer",
+            file_name);
+    return version;
+}
+
 static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
@@ -204,7 +227,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             file_name);
 
     return MetadataFileWithInfo{
-        .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .version = parseMetadataVersion(version_str, file_name),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -342,7 +367,7 @@ bool writeMetadataFileAndVersionHint(
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
             {
-                old_version = std::stoi(version_hint_value);
+                old_version = parseMetadataVersion(version_hint_value, version_hint_value);
             }
             else
             {
@@ -614,8 +639,18 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
             return "long";
+        case TypeIndex::DateTime64:
+        {
+            if (getDecimalScale(*type) != 6)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+            Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
+            timestamp_type->set("type", "long");
+            timestamp_type->set("logicalType", "timestamp-micros");
+            timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
+            return timestamp_type;
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -1048,9 +1083,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
+    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
 /**
@@ -1271,6 +1304,61 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         return getLatestMetadataFileAndVersion(
             object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
     }
+}
+
+MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
+    const ObjectStoragePtr & object_storage,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid,
+    CompressionMethod known_compression_method,
+    bool ignore_explicit_metadata_file_path)
+{
+    if (!catalog)
+        return getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            log,
+            table_uuid,
+            known_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            ignore_explicit_metadata_file_path);
+
+    DataLake::TableMetadata table_metadata;
+    table_metadata.withDataLakeSpecificProperties().withLocation();
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog did not return a metadata file location for table '{}.{}'",
+            namespace_name, table_name);
+
+    DataLakeStorageSettings effective_settings = data_lake_settings;
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+
+    return getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        table_path,
+        effective_settings,
+        metadata_cache,
+        local_context,
+        log,
+        table_uuid,
+        known_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ false);
 }
 
 

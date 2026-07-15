@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -15,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -53,2191 +55,2205 @@ namespace ErrorCodes
   */
 #define MERGE_TREE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, R"(
-    Minimum size of blocks of uncompressed data required for compression when
-    writing the next mark. You can also specify this setting in the global settings
-    (see [min_compress_block_size](/operations/settings/merge-tree-settings#min_compress_block_size)
-    setting). The value specified when the table is created overrides the global value
-    for this setting.
-    )", 0) \
+Minimum size of blocks of uncompressed data required for compression when
+writing the next mark. You can also specify this setting in the global settings
+(see [min_compress_block_size](/operations/settings/merge-tree-settings#min_compress_block_size)
+setting). The value specified when the table is created overrides the global value
+for this setting.
+)", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    The maximum size of blocks of uncompressed data before compressing for writing
-    to a table. You can also specify this setting in the global settings
-    (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
-    setting). The value specified when the table is created overrides the global
-    value for this setting.
-    )", 0) \
+The maximum size of blocks of uncompressed data before compressing for writing
+to a table. You can also specify this setting in the global settings
+(see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
+setting). The value specified when the table is created overrides the global
+value for this setting.
+)", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
-    Maximum number of data rows between the marks of an index. I.e how many rows
-    correspond to one primary key value.
-    )", 0) \
+Maximum number of data rows between the marks of an index. I.e how many rows
+correspond to one primary key value.
+)", 0) \
     \
     /** Data storing format settings. */ \
     DECLARE(UInt64, min_bytes_for_wide_part, default_min_bytes_for_wide_part, R"(
-    Minimum number of bytes/rows in a data part that can be stored in `Wide`
-    format. You can set one, both or none of these settings.
-    )", 0) \
+Minimum number of bytes/rows in a data part that can be stored in `Wide`
+format. You can set one, both or none of these settings.
+)", 0) \
     DECLARE(UInt32, min_level_for_wide_part, 0, R"(
-    Minimal part level to create a data part in `Wide` format instead of `Compact`.
-    )", 0) \
+Minimal part level to create a data part in `Wide` format instead of `Compact`.
+)", 0) \
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
-    Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
-    )", 0) \
+Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
+)", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
-    The maximum number of streams (columns) that can be flushed in parallel
-    (analog of max_insert_delayed_streams_for_parallel_write for merges). Works
-    only for Vertical merges.
-    )", 0) \
+The maximum number of streams (columns) that can be flushed in parallel
+(analog of max_insert_delayed_streams_for_parallel_write for merges). Works
+only for Vertical merges.
+)", 0) \
     DECLARE(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, R"(
-    Minimal ratio of the number of _default_ values to the number of _all_ values
-    in a column. Setting this value causes the column to be stored using sparse
-    serializations.
+Minimal ratio of the number of _default_ values to the number of _all_ values
+in a column. Setting this value causes the column to be stored using sparse
+serializations.
 
-    If a column is sparse (contains mostly zeros), ClickHouse can encode it in
-    a sparse format and automatically optimize calculations - the data does not
-    require full decompression during queries. To enable this sparse
-    serialization, define the `ratio_of_defaults_for_sparse_serialization`
-    setting to be less than 1.0. If the value is greater than or equal to 1.0,
-    then the columns will be always written using the normal full serialization.
+If a column is sparse (contains mostly zeros), ClickHouse can encode it in
+a sparse format and automatically optimize calculations - the data does not
+require full decompression during queries. To enable this sparse
+serialization, define the `ratio_of_defaults_for_sparse_serialization`
+setting to be less than 1.0. If the value is greater than or equal to 1.0,
+then the columns will be always written using the normal full serialization.
 
-    Possible values:
+Possible values:
 
-    - Float between `0` and `1` to enable sparse serialization
-    - `1.0` (or greater) if you do not want to use sparse serialization
+- Float between `0` and `1` to enable sparse serialization
+- `1.0` (or greater) if you do not want to use sparse serialization
 
-    **Example**
+**Example**
 
-    Notice the `s` column in the following table is an empty string for 95% of
-    the rows. In `my_regular_table` we do not use sparse serialization, and in
-    `my_sparse_table` we set `ratio_of_defaults_for_sparse_serialization` to
-    0.95:
+Notice the `s` column in the following table is an empty string for 95% of
+the rows. In `my_regular_table` we do not use sparse serialization, and in
+`my_sparse_table` we set `ratio_of_defaults_for_sparse_serialization` to
+0.95:
 
-    ```sql
-    CREATE TABLE my_regular_table
-    (
-        `id` UInt64,
-        `s` String
-    )
-    ENGINE = MergeTree
-    ORDER BY id;
+```sql
+CREATE TABLE my_regular_table
+(
+    `id` UInt64,
+    `s` String
+)
+ENGINE = MergeTree
+ORDER BY id;
 
-    INSERT INTO my_regular_table
-    SELECT
-        number AS id,
-        number % 20 = 0 ? toString(number): '' AS s
-    FROM
-        numbers(10000000);
+INSERT INTO my_regular_table
+SELECT
+    number AS id,
+    number % 20 = 0 ? toString(number): '' AS s
+FROM
+    numbers(10000000);
 
 
-    CREATE TABLE my_sparse_table
-    (
-        `id` UInt64,
-        `s` String
-    )
-    ENGINE = MergeTree
-    ORDER BY id
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.95;
+CREATE TABLE my_sparse_table
+(
+    `id` UInt64,
+    `s` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.95;
 
-    INSERT INTO my_sparse_table
-    SELECT
-        number,
-        number % 20 = 0 ? toString(number): ''
-    FROM
-        numbers(10000000);
-    ```
+INSERT INTO my_sparse_table
+SELECT
+    number,
+    number % 20 = 0 ? toString(number): ''
+FROM
+    numbers(10000000);
+```
 
-    Notice the `s` column in `my_sparse_table` uses less storage space on disk:
+Notice the `s` column in `my_sparse_table` uses less storage space on disk:
 
-    ```sql
-    SELECT table, name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
-    WHERE table LIKE 'my_%_table';
-    ```
+```sql
+SELECT table, name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
+WHERE table LIKE 'my_%_table';
+```
 
-    ```response
-    ┌─table────────────┬─name─┬─data_compressed_bytes─┬─data_uncompressed_bytes─┐
-    │ my_regular_table │ id   │              37790741 │                75488328 │
-    │ my_regular_table │ s    │               2451377 │                12683106 │
-    │ my_sparse_table  │ id   │              37790741 │                75488328 │
-    │ my_sparse_table  │ s    │               2283454 │                 9855751 │
-    └──────────────────┴──────┴───────────────────────┴─────────────────────────┘
-    ```
+```response
+┌─table────────────┬─name─┬─data_compressed_bytes─┬─data_uncompressed_bytes─┐
+│ my_regular_table │ id   │              37790741 │                75488328 │
+│ my_regular_table │ s    │               2451377 │                12683106 │
+│ my_sparse_table  │ id   │              37790741 │                75488328 │
+│ my_sparse_table  │ s    │               2283454 │                 9855751 │
+└──────────────────┴──────┴───────────────────────┴─────────────────────────┘
+```
 
-    You can verify if a column is using the sparse encoding by viewing the
-    `serialization_kind` column of the `system.parts_columns` table:
+You can verify if a column is using the sparse encoding by viewing the
+`serialization_kind` column of the `system.parts_columns` table:
 
-    ```sql
-    SELECT column, serialization_kind FROM system.parts_columns
-    WHERE table LIKE 'my_sparse_table';
-    ```
+```sql
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE table LIKE 'my_sparse_table';
+```
 
-    You can see which parts of `s` were stored using the sparse serialization:
+You can see which parts of `s` were stored using the sparse serialization:
 
-    ```response
-    ┌─column─┬─serialization_kind─┐
-    │ id     │ Default            │
-    │ s      │ Default            │
-    │ id     │ Default            │
-    │ s      │ Default            │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    │ id     │ Default            │
-    │ s      │ Sparse             │
-    └────────┴────────────────────┘
-    ```
-    )", 0) \
+```response
+┌─column─┬─serialization_kind─┐
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+└────────┴────────────────────┘
+```
+)", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+)", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
-    If the file name for column is too long (more than 'max_file_name_length'
-    bytes) replace it to SipHash128
-    )", 0) \
+If the file name for column is too long (more than 'max_file_name_length'
+bytes) replace it to SipHash128
+)", 0) \
     DECLARE(Bool, escape_index_filenames, true, R"(
-    Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
-    characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
-    are reading old parts with indices using non-ascii characters in their names.
-    )", 0) \
+Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
+characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
+are reading old parts with indices using non-ascii characters in their names.
+)", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
-    The maximal length of the file name to keep it as is without hashing.
-    Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
-    The value of this setting does not include the length of file extension. So,
-    it is recommended to set it below the maximum filename length (usually 255
-    bytes) with some gap to avoid filesystem errors.
-    )", 0) \
+The maximal length of the file name to keep it as is without hashing.
+Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
+The value of this setting does not include the length of file extension. So,
+it is recommended to set it below the maximum filename length (usually 255
+bytes) with some gap to avoid filesystem errors.
+)", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
-    Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
-    use full type of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
+use full type of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
-    Only available in ClickHouse Cloud. Minimal part level to
-    use full type of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal part level to
+use full type of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
-    Only available in ClickHouse Cloud. Minimal number of rows to use full type
-    of storage for data part instead of packed
-    )", 0) \
+Only available in ClickHouse Cloud. Minimal number of rows to use full type
+of storage for data part instead of packed
+)", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
-    Only available in ClickHouse Cloud. Maximal number of bytes to write in a
-    single stripe in compact parts
-    )", 0) \
+Only available in ClickHouse Cloud. Maximal number of bytes to write in a
+single stripe in compact parts
+)", 0) \
     DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
-    Only available in ClickHouse Cloud. Maximal number of granules to write in a
-    single stripe in compact parts
-    )", 0) \
+Only available in ClickHouse Cloud. Maximal number of granules to write in a
+single stripe in compact parts
+)", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
-    Only available in ClickHouse Cloud. Maximal size of compact part to read it
-    in a whole to memory during merge.
-    )", 0) \
+Only available in ClickHouse Cloud. Maximal size of compact part to read it
+in a whole to memory during merge.
+)", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
-    Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
-    to prewarm cache during merge.
-    )", 0) \
+Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
+to prewarm cache during merge.
+)", 0) \
     DECLARE(UInt64, merge_total_max_bytes_to_prewarm_cache, 15ULL * 1024 * 1024 * 1024, R"(
-    Only available in ClickHouse Cloud. Maximal size of parts in total to prewarm
-    cache during merge.
-    )", 0) \
+Only available in ClickHouse Cloud. Maximal size of parts in total to prewarm
+cache during merge.
+)", 0) \
     DECLARE(Bool, load_existing_rows_count_for_old_parts, false, R"(
-    If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge),
-    deleted rows count for existing data parts will be calculated during table
-    starting up. Note that it may slow down start up table loading.
+If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge),
+deleted rows count for existing data parts will be calculated during table
+starting up. Note that it may slow down start up table loading.
 
-    Possible values:
-    - `true`
-    - `false`
+Possible values:
+- `true`
+- `false`
 
-    **See Also**
-    - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
-    )", 0) \
+**See Also**
+- [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
+)", 0) \
     DECLARE(Bool, use_compact_variant_discriminators_serialization, true, R"(
-    Enables compact mode for binary serialization of discriminators in Variant
-    data type.
-    This mode allows to use significantly less memory for storing discriminators
-    in parts when there is mostly one variant or a lot of NULL values.
-    )", 0) \
+Enables compact mode for binary serialization of discriminators in Variant
+data type.
+This mode allows to use significantly less memory for storing discriminators
+in parts when there is mostly one variant or a lot of NULL values.
+)", 0) \
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
-    Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
-    )", 0) \
+Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
+)", 0) \
     DECLARE(Bool, share_nested_offsets, true, R"(
-    When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
-    are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
-    and their array sizes are validated to be equal during INSERT.
-    When disabled, each Array column gets its own independent offset file, dotted names carry no special
-    semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
-    (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
-    )", 0) \
+When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
+are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
+and their array sizes are validated to be equal during INSERT.
+When disabled, each Array column gets its own independent offset file, dotted names carry no special
+semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
+(e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
+)", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
-    Serialization info version used when writing `serialization.json`.
-    This setting is required for compatibility during cluster upgrades.
+Serialization info version used when writing `serialization.json`.
+This setting is required for compatibility during cluster upgrades.
 
-    Possible values:
-    - `basic` - Basic format.
-    - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
-    This makes settings like `string_serialization_version` effective.
+Possible values:
+- `basic` - Basic format.
+- `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
+This makes settings like `string_serialization_version` effective.
 
-    During rolling upgrades, set this to `basic` so that new servers produce
-    data parts compatible with old servers. After the upgrade completes,
-    switch to `WITH_TYPES` to enable per-type serialization versions.
-    )", 0) \
+During rolling upgrades, set this to `basic` so that new servers produce
+data parts compatible with old servers. After the upgrade completes,
+switch to `WITH_TYPES` to enable per-type serialization versions.
+)", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
-    Controls the serialization format for top-level `String` columns.
+Controls the serialization format for top-level `String` columns.
 
-    This setting is only effective when `serialization_info_version` is set to "with_types".
-    When set to `with_size_stream`, top-level `String` columns are serialized with a separate
-    `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
-    subcolumns and can improve compression efficiency.
+This setting is only effective when `serialization_info_version` is set to "with_types".
+When set to `with_size_stream`, top-level `String` columns are serialized with a separate
+`.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
+subcolumns and can improve compression efficiency.
 
-    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
-    are not affected, except when they appear in a `Tuple`.
+Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
+are not affected, except when they appear in a `Tuple`.
 
-    Possible values:
+Possible values:
 
-    - `single_stream` — Use the standard serialization format with inline sizes.
-    - `with_size_stream` — Use a separate size stream for top-level `String` columns.
-    )", 0) \
+- `single_stream` — Use the standard serialization format with inline sizes.
+- `with_size_stream` — Use a separate size stream for top-level `String` columns.
+)", 0) \
     DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
-    Controls the serialization method used for `Nullable(T)` columns.
+Controls the serialization method used for `Nullable(T)` columns.
 
-    Possible values:
+Possible values:
 
-    - basic — Use the standard serialization for `Nullable(T)`.
+- basic — Use the standard serialization for `Nullable(T)`.
 
-    - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
-    )", 0) \
+- allow_sparse — Permit `Nullable(T)` to use sparse encoding.
+)", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
-    Serialization version for JSON data type. Required for compatibility.
+Serialization version for JSON data type. Required for compatibility.
 
-    Possible values:
-    - `v1`
-    - `v2`
-    - `v3`
+Possible values:
+- `v1`
+- `v2`
+- `v3`
 
-    Only version `v3` supports changing the shared data serialization version.
-    )", 0) \
+Only version `v3` supports changing the shared data serialization version.
+)", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
-    Serialization version for shared data inside JSON data type.
+Serialization version for shared data inside JSON data type.
 
-    Possible values:
-    - `map` - store shared data as `Map(String, String)`
-    - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
-    - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
-    Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+Possible values:
+- `map` - store shared data as `Map(String, String)`
+- `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
+- `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
+Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
 
-    The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
-    [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
-    )", 0) \
+The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+[object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
+)", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
-    This setting allows to specify different serialization version of the
-    shared data inside JSON type for zero level parts that are created during inserts.
-    It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
-    the insertion time significantly.
-    )", 0) \
+This setting allows to specify different serialization version of the
+shared data inside JSON type for zero level parts that are created during inserts.
+It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+the insertion time significantly.
+)", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
-    The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
-    The maximum allowed value is 256.
-    )", 0) \
+The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The maximum allowed value is 256.
+)", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
-    The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
-    The maximum allowed value is 256.
-    )", 0) \
+The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The maximum allowed value is 256.
+)", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
-    Serialization version for Dynamic data type. Required for compatibility.
+Serialization version for Dynamic data type. Required for compatibility.
 
-    Possible values:
-    - `v1`
-    - `v2`
-    - `v3`
-    )", 0) \
+Possible values:
+- `v1`
+- `v2`
+- `v3`
+)", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
-    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
-    )", 0)\
+If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
+)", 0)\
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version, "basic", R"(
-    Controls the serialization method used for `Map` columns.
+Controls the serialization method used for `Map` columns.
 
-    Possible values:
+Possible values:
 
-    - basic — Use the standard serialization for `Map`.
-    - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- basic — Use the standard serialization for `Map`.
+- with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
 
-    The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
-    )", 0) \
+The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+)", 0) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
-    This setting allows to specify a different serialization version of
-    `Map` columns for zero level parts that are created during inserts.
-    It can be useful to keep `basic` serialization for zero level parts to avoid
-    performance degradation during inserts, while using `with_buckets` for merged parts.
-    )", 0) \
+This setting allows to specify a different serialization version of
+`Map` columns for zero level parts that are created during inserts.
+It can be useful to keep `basic` serialization for zero level parts to avoid
+performance degradation during inserts, while using `with_buckets` for merged parts.
+)", 0) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
-    The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
-    The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).
-    The maximum allowed value is 256.
-    )", 0) \
+The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
+The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).
+The maximum allowed value is 256.
+)", 0) \
     DECLARE(MergeTreeMapBucketsStrategy, map_buckets_strategy, "sqrt", R"(
-    Controls the strategy for choosing the number of buckets in `with_buckets` `Map` serialization based on the average map size.
+Controls the strategy for choosing the number of buckets in `with_buckets` `Map` serialization based on the average map size.
 
-    Possible values:
+Possible values:
 
-    - constant — Always use [max_buckets_in_map](#max_buckets_in_map) as the number of buckets, regardless of the average map size.
-    - sqrt — Use `round(map_buckets_coefficient * sqrt(avg_map_size))` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
-    - linear — Use `round(map_buckets_coefficient * avg_map_size)` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
-    )", 0) \
+- constant — Always use [max_buckets_in_map](#max_buckets_in_map) as the number of buckets, regardless of the average map size.
+- sqrt — Use `round(map_buckets_coefficient * sqrt(avg_map_size))` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+- linear — Use `round(map_buckets_coefficient * avg_map_size)` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+)", 0) \
     DECLARE(Float, map_buckets_coefficient, 1.0, R"(
-    The coefficient used in `sqrt` and `linear` [map_buckets_strategy](#map_buckets_strategy) to calculate the number of buckets from the average map size.
-    For `sqrt` strategy: `round(map_buckets_coefficient * sqrt(avg_map_size))`.
-    For `linear` strategy: `round(map_buckets_coefficient * avg_map_size)`.
-    Ignored when `map_buckets_strategy` is `constant`.
-    )", 0) \
+The coefficient used in `sqrt` and `linear` [map_buckets_strategy](#map_buckets_strategy) to calculate the number of buckets from the average map size.
+For `sqrt` strategy: `round(map_buckets_coefficient * sqrt(avg_map_size))`.
+For `linear` strategy: `round(map_buckets_coefficient * avg_map_size)`.
+Ignored when `map_buckets_strategy` is `constant`.
+)", 0) \
     DECLARE(UInt64, map_buckets_min_avg_size, 32, R"(
-    The minimum average map size (number of keys per row) required to apply `with_buckets` serialization.
-    If the average map size is less than this value, a single bucket is used regardless of other bucket settings.
-    A value of `0` disables the threshold and always applies the bucketing strategy.
-    This setting is useful to avoid the overhead of bucketed serialization for small maps where the benefit is negligible.
-    )", 0) \
+The minimum average map size (number of keys per row) required to apply `with_buckets` serialization.
+If the average map size is less than this value, a single bucket is used regardless of other bucket settings.
+A value of `0` disables the threshold and always applies the bucketing strategy.
+This setting is useful to avoid the overhead of bucketed serialization for small maps where the benefit is negligible.
+)", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
-    Enables writing marks per each substream instead of per each column in Compact parts.
-    It allows to read individual subcolumns from the data part efficiently.
+Enables writing marks per each substream instead of per each column in Compact parts.
+It allows to read individual subcolumns from the data part efficiently.
 
-    For example, column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
-    - `t.a` for String data of tuple element `a`
-    - `t.b` for UInt32 data of tuple element `b`
-    - `t.c.size0` for array sizes of tuple element `c`
-    - `t.c.null` for null map of nested array elements of tuple element `c`
-    - `t.c` for UInt32 data pf nested array elements of tuple element `c`
+For example, column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
+- `t.a` for String data of tuple element `a`
+- `t.b` for UInt32 data of tuple element `b`
+- `t.c.size0` for array sizes of tuple element `c`
+- `t.c.null` for null map of nested array elements of tuple element `c`
+- `t.c` for UInt32 data pf nested array elements of tuple element `c`
 
-    When this setting is enabled, we will write a mark for each of these 5 substreams, which means that we will be able to read
-    the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
-    substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
-    we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
-    )", 0) \
+When this setting is enabled, we will write a mark for each of these 5 substreams, which means that we will be able to read
+the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
+substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
+we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
+)", 0) \
     DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_wide_part, Field("auto"), R"(
-    The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
-    It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
+The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
+It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
 
-    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
-    after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
-    )", 0) \
+For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
+after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+)", 0) \
     \
     DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_compact_part, Field("auto"), R"(
-    The maximum number of dynamic subcolumns that can be created in every column in the Compact data part after merge.
-    It allows to control the number of dynamic subcolumns in Compact part regardless of dynamic parameters specified in the data type.
+The maximum number of dynamic subcolumns that can be created in every column in the Compact data part after merge.
+It allows to control the number of dynamic subcolumns in Compact part regardless of dynamic parameters specified in the data type.
 
-    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
-    after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
-    )", 0) \
+For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
+after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+)", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
-    Controls when the logic kicks in relatively to the number of parts in
-    partition. The bigger the factor the more belated reaction will be.
-    )", 0) \
+Controls when the logic kicks in relatively to the number of parts in
+partition. The bigger the factor the more belated reaction will be.
+)", 0) \
     DECLARE(UInt64, merge_selector_window_size, 1000, R"(
-    How many parts to look at once.
-    )", 0) \
+How many parts to look at once.
+)", 0) \
     \
     /** Merge settings. */ \
     DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
-    The number of rows that are read from the merged parts into memory.
+The number of rows that are read from the merged parts into memory.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    Merge reads rows from parts in blocks of `merge_max_block_size` rows, then
-    merges and writes the result into a new part. The read block is placed in RAM,
-    so `merge_max_block_size` affects the size of the RAM required for the merge.
-    Thus, merges can consume a large amount of RAM for tables with very wide rows
-    (if the average row size is 100kb, then when merging 10 parts,
-    (100kb * 10 * 8192) = ~ 8GB of RAM). By decreasing `merge_max_block_size`,
-    you can reduce the amount of RAM required for a merge but slow down a merge.
-    )", 0) \
+Merge reads rows from parts in blocks of `merge_max_block_size` rows, then
+merges and writes the result into a new part. The read block is placed in RAM,
+so `merge_max_block_size` affects the size of the RAM required for the merge.
+Thus, merges can consume a large amount of RAM for tables with very wide rows
+(if the average row size is 100kb, then when merging 10 parts,
+(100kb * 10 * 8192) = ~ 8GB of RAM). By decreasing `merge_max_block_size`,
+you can reduce the amount of RAM required for a merge but slow down a merge.
+)", 0) \
     DECLARE(UInt64, merge_max_block_size_bytes, 10 * 1024 * 1024, R"(
-    How many bytes in blocks should be formed for merge operations. By default
-    has the same value as `index_granularity_bytes`.
-    )", 0) \
+How many bytes in blocks should be formed for merge operations. By default
+has the same value as `index_granularity_bytes`.
+)", 0) \
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
-    The maximum total parts size (in bytes) to be merged into one part, if there
-    are enough resources available. Corresponds roughly to the maximum possible
-    part size created by an automatic background merge. (0 means merges will be disabled)
+The maximum total parts size (in bytes) to be merged into one part, if there
+are enough resources available. Corresponds roughly to the maximum possible
+part size created by an automatic background merge. (0 means merges will be disabled)
 
-    Possible values:
+Possible values:
 
-    - Any non-negative integer.
+- Any non-negative integer.
 
-    The merge scheduler periodically analyzes the sizes and number of parts in
-    partitions, and if there are enough free resources in the pool, it starts
-    background merges. Merges occur until the total size of the source parts is
-    larger than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in
+partitions, and if there are enough free resources in the pool, it starts
+background merges. Merges occur until the total size of the source parts is
+larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-    Merges initiated by [OPTIMIZE FINAL](/sql-reference/statements/optimize)
-    ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space
-    is taken into account).
-    )", 0) \
+Merges initiated by [OPTIMIZE FINAL](/sql-reference/statements/optimize)
+ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space
+is taken into account).
+)", 0) \
     DECLARE(UInt64, max_bytes_to_merge_at_min_space_in_pool, 1024 * 1024, R"(
-    The maximum total part size (in bytes) to be merged into one part, with the
-    minimum available resources in the background pool.
+The maximum total part size (in bytes) to be merged into one part, with the
+minimum available resources in the background pool.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    `max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of
-    parts which can be merged despite the lack of available disk space (in pool).
-    This is necessary to reduce the number of small parts and the chance of
-    `Too many parts` errors.
-    Merges book disk space by doubling the total merged parts sizes.
-    Thus, with a small amount of free disk space, a situation may occur in which
-    there is free space, but this space is already booked by ongoing large merges,
-    so other merges are unable to start, and the number of small parts grows
-    with every insert.
-    )", 0) \
+`max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of
+parts which can be merged despite the lack of available disk space (in pool).
+This is necessary to reduce the number of small parts and the chance of
+`Too many parts` errors.
+Merges book disk space by doubling the total merged parts sizes.
+Thus, with a small amount of free disk space, a situation may occur in which
+there is free space, but this space is already booked by ongoing large merges,
+so other merges are unable to start, and the number of small parts grows
+with every insert.
+)", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
-    How many tasks of merging and mutating parts are allowed simultaneously in
-    ReplicatedMergeTree queue.
-    )", 0) \
+How many tasks of merging and mutating parts are allowed simultaneously in
+ReplicatedMergeTree queue.
+)", 0) \
     DECLARE(UInt64, max_replicated_mutations_in_queue, 8, R"(
-    How many tasks of mutating parts are allowed simultaneously in
-    ReplicatedMergeTree queue.
-    )", 0) \
+How many tasks of mutating parts are allowed simultaneously in
+ReplicatedMergeTree queue.
+)", 0) \
     DECLARE(UInt64, max_replicated_merges_with_ttl_in_queue, 1, R"(
-    How many tasks of merging parts with TTL are allowed simultaneously in
-    ReplicatedMergeTree queue.
-    )", 0) \
+How many tasks of merging parts with TTL are allowed simultaneously in
+ReplicatedMergeTree queue.
+)", 0) \
     DECLARE(UInt64, number_of_free_entries_in_pool_to_lower_max_size_of_merge, 8, R"(
-    When there is less than the specified number of free entries in pool
-    (or replicated queue), start to lower maximum size of merge to process
-    (or to put in queue).
-    This is to allow small merges to process - not filling the pool with long
-    running merges.
+When there is less than the specified number of free entries in pool
+(or replicated queue), start to lower maximum size of merge to process
+(or to put in queue).
+This is to allow small merges to process - not filling the pool with long
+running merges.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, number_of_free_entries_in_pool_to_execute_mutation, 20, R"(
-    When there is less than specified number of free entries in pool, do not
-    execute part mutations. This is to leave free threads for regular merges and
-    to avoid "Too many parts" errors.
+When there is less than specified number of free entries in pool, do not
+execute part mutations. This is to leave free threads for regular merges and
+to avoid "Too many parts" errors.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    **Usage**
+**Usage**
 
-    The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
-    should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
-    * [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
-    Otherwise, ClickHouse will throw an exception.
-    )", 0) \
+The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
+should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
+* [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+Otherwise, ClickHouse will throw an exception.
+)", 0) \
     DECLARE(UInt64, max_number_of_mutations_for_replica, 0, R"(
-    Limit the number of part mutations per replica to the specified amount.
-    Zero means no limit on the number of mutations per replica (the execution can
-    still be constrained by other settings).
-    )", 0) \
+Limit the number of part mutations per replica to the specified amount.
+Zero means no limit on the number of mutations per replica (the execution can
+still be constrained by other settings).
+)", 0) \
     DECLARE(UInt64, max_number_of_merges_with_ttl_in_pool, 2, R"(When there is
     more than specified number of merges with TTL entries in pool, do not assign
     new merge with TTL. This is to leave free threads for regular merges and
     avoid \"Too many parts\"
-    )", 0) \
+)", 0) \
     DECLARE(Seconds, old_parts_lifetime, 8 * 60, R"(
-    The time (in seconds) of storing inactive parts to protect against data loss
-    during spontaneous server reboots.
+The time (in seconds) of storing inactive parts to protect against data loss
+during spontaneous server reboots.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    After merging several parts into a new part, ClickHouse marks the original
-    parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-    Inactive parts are removed if they are not used by current queries, i.e. if
-    the `refcount` of the part is 1.
+After merging several parts into a new part, ClickHouse marks the original
+parts as inactive and deletes them only after `old_parts_lifetime` seconds.
+Inactive parts are removed if they are not used by current queries, i.e. if
+the `refcount` of the part is 1.
 
-    `fsync` is not called for new parts, so for some time new parts exist only
-    in the server's RAM (OS cache). If the server is rebooted spontaneously, new
-    parts can be lost or damaged. To protect data inactive parts are not deleted
-    immediately.
+`fsync` is not called for new parts, so for some time new parts exist only
+in the server's RAM (OS cache). If the server is rebooted spontaneously, new
+parts can be lost or damaged. To protect data inactive parts are not deleted
+immediately.
 
-    During startup ClickHouse checks the integrity of the parts. If the merged
-    part is damaged ClickHouse returns the inactive parts to the active list,
-    and later merges them again. Then the damaged part is renamed (the `broken_`
-    prefix is added) and moved to the `detached` folder. If the merged part is
-    not damaged, then the original inactive parts are renamed (the `ignored_`
-    prefix is added) and moved to the `detached` folder.
+During startup ClickHouse checks the integrity of the parts. If the merged
+part is damaged ClickHouse returns the inactive parts to the active list,
+and later merges them again. Then the damaged part is renamed (the `broken_`
+prefix is added) and moved to the `detached` folder. If the merged part is
+not damaged, then the original inactive parts are renamed (the `ignored_`
+prefix is added) and moved to the `detached` folder.
 
-    The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30
-    seconds (the maximum time that written data is stored only in RAM), but under
-    heavy loads on the disk system data can be written much later. Experimentally,
-    a value of 480 seconds was chosen for `old_parts_lifetime`, during which a
-    new part is guaranteed to be written to disk.
-    )", 0) \
+The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30
+seconds (the maximum time that written data is stored only in RAM), but under
+heavy loads on the disk system data can be written much later. Experimentally,
+a value of 480 seconds was chosen for `old_parts_lifetime`, during which a
+new part is guaranteed to be written to disk.
+)", 0) \
     DECLARE(Seconds, temporary_directories_lifetime, 86400, R"(
-    How many seconds to keep tmp_-directories. You should not lower this value
-    because merges and mutations may not be able to work with low value of this
-    setting.
-    )", 0) \
+How many seconds to keep tmp_-directories. You should not lower this value
+because merges and mutations may not be able to work with low value of this
+setting.
+)", 0) \
     DECLARE(Seconds, lock_acquire_timeout_for_background_operations, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
-    For background operations like merges, mutations etc. How many seconds before
-    failing to acquire table locks.
-    )", 0) \
+For background operations like merges, mutations etc. How many seconds before
+failing to acquire table locks.
+)", 0) \
     DECLARE(UInt64, min_rows_to_fsync_after_merge, 0, R"(
-    Minimal number of rows to do fsync for part after merge (0 - disabled)
-    )", 0) \
+Minimal number of rows to do fsync for part after merge (0 - disabled)
+)", 0) \
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_merge, 0, R"(
-    Minimal number of compressed bytes to do fsync for part after merge (0 - disabled)
-    )", 0) \
+Minimal number of compressed bytes to do fsync for part after merge (0 - disabled)
+)", 0) \
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
-    Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
-    )", 0) \
+Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
+)", 0) \
     DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
-    Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
-    (kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
-    Use 1 to postpone fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
-    Default: 0 (fetch all parts regardless of level).
-    )", 0) \
+Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
+(kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
+Use 1 to postpone fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
+Default: 0 (fetch all parts regardless of level).
+)", 0) \
     DECLARE(UInt64, replicated_fetches_min_part_level_timeout_seconds, 300, R"(
-    Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
-    Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
-    Default: 300 (force fetch after 5 minutes).
-    )", 0) \
+Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
+Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
+Default: 300 (force fetch after 5 minutes).
+)", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-    Do fsync for every inserted part. Significantly decreases performance of
-    inserts, not recommended to use with wide parts.
-    )", 0) \
+Do fsync for every inserted part. Significantly decreases performance of
+inserts, not recommended to use with wide parts.
+)", 0) \
     DECLARE(Bool, fsync_part_directory, false, R"(
-    Do fsync for part directory after all part operations (writes, renames, etc.).
-    )", 0) \
+Do fsync for part directory after all part operations (writes, renames, etc.).
+)", 0) \
     DECLARE(UInt64, non_replicated_deduplication_window, 0, R"(
-    The number of the most recently inserted blocks in the non-replicated
-    [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table
-    for which hash sums are stored to check for duplicates.
+The number of the most recently inserted blocks in the non-replicated
+[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table
+for which hash sums are stored to check for duplicates.
 
-    Possible values:
-    - Any positive integer.
-    - `0` (disable deduplication).
+Possible values:
+- Any positive integer.
+- `0` (disable deduplication).
 
-    A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting).
-    The hash sums of the created parts are written to a local file on a disk.
-    )", 0) \
+A deduplication mechanism is used, similar to replicated tables (see
+[replicated_deduplication_window](#replicated_deduplication_window) setting): the deduplication
+hash sum covers the whole inserted block. The hash sums are written to
+a local file on a disk rather than to ClickHouse Keeper.
+)", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
-    Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
-    OPTIMIZE FINAL query.
-    )", 0) \
+Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
+OPTIMIZE FINAL query.
+)", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
     or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
-    When enabled, merges build and store skip indices for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
-    or [during INSERTs](/operations/settings/settings.md/#materialize_skip_indexes_on_insert).
+When enabled, merges build and store skip indices for new parts.
+Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
+or [during INSERTs](/operations/settings/settings.md/#materialize_skip_indexes_on_insert).
 
-    See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
-    )", 0) \
+See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
+)", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_merge, "", R"(
-    Excludes provided comma delimited list of skip indexes from being built and stored during merges. Has no effect if
-    [materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
+Excludes provided comma delimited list of skip indexes from being built and stored during merges. Has no effect if
+[materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
 
-    The excluded skip indexes will still be built and stored by an explicit
-    [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
-    the [materialize_skip_indexes_on_insert](/operations/settings/settings.md/#materialize_skip_indexes_on_insert)
-    session setting.
+The excluded skip indexes will still be built and stored by an explicit
+[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
+the [materialize_skip_indexes_on_insert](/operations/settings/settings.md/#materialize_skip_indexes_on_insert)
+session setting.
 
-    Example:
+Example:
 
-    ```sql
-    CREATE TABLE tab
-    (
-        a UInt64,
-        b UInt64,
-        INDEX idx_a a TYPE minmax,
-        INDEX idx_b b TYPE set(3)
-    )
-    ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    INDEX idx_a a TYPE minmax,
+    INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
 
-    INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- setting has no effect on INSERTs
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- setting has no effect on INSERTs
 
-    -- idx_a will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+-- idx_a will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
 
-    -- can exclude multiple indexes by providing a list
-    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+-- can exclude multiple indexes by providing a list
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
 
-    -- default setting, no indexes excluded from being updated during merge
-    ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
-    ```
-    )", 0) \
+-- default setting, no indexes excluded from being updated during merge
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+```
+)", 0) \
     DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
-    Default dictionary block size for text indexes.
-    Can be overridden by explicit `dictionary_block_size` index argument.
-    )", 0) \
+Default dictionary block size for text indexes.
+Can be overridden by explicit `dictionary_block_size` index argument.
+)", 0) \
     DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
-    Default front-coding compression for text index dictionary blocks.
-    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
-    )", 0) \
+Default front-coding compression for text index dictionary blocks.
+Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+)", 0) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
-    Default posting list block size for text indexes (rows).
-    Can be overridden by explicit `posting_list_block_size` index argument.
-    )", 0) \
+Default posting list block size for text indexes (rows).
+Can be overridden by explicit `posting_list_block_size` index argument.
+)", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
-    Default posting list codec for text indexes.
-    Can be overridden by explicit `posting_list_codec` index argument.
-    )", 0) \
+Default posting list codec for text indexes.
+Can be overridden by explicit `posting_list_codec` index argument.
+)", 0) \
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
-    Minimum time to wait before trying to select parts to merge again after no
-    parts were selected. A lower setting will trigger selecting tasks in
-    background_schedule_pool frequently which result in large amount of requests
-    to zookeeper in large-scale clusters
-    )", 0) \
+Minimum time to wait before trying to select parts to merge again after no
+parts were selected. A lower setting will trigger selecting tasks in
+background_schedule_pool frequently which result in large amount of requests
+to zookeeper in large-scale clusters
+)", 0) \
     DECLARE(UInt64, max_merge_selecting_sleep_ms, 60000, R"(
-    Maximum time to wait before trying to select parts to merge again after no
-    parts were selected. A lower setting will trigger selecting tasks in
-    background_schedule_pool frequently which result in large amount of
-    requests to zookeeper in large-scale clusters
-    )", 0) \
+Maximum time to wait before trying to select parts to merge again after no
+parts were selected. A lower setting will trigger selecting tasks in
+background_schedule_pool frequently which result in large amount of
+requests to zookeeper in large-scale clusters
+)", 0) \
     DECLARE(Float, merge_selecting_sleep_slowdown_factor, 1.2f, R"(
-    The sleep time for merge selecting task is multiplied by this factor when
-    there's nothing to merge and divided when a merge was assigned
-    )", 0) \
+The sleep time for merge selecting task is multiplied by this factor when
+there's nothing to merge and divided when a merge was assigned
+)", 0) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
-    Sets the interval in seconds for ClickHouse to execute the cleanup of old
-    temporary directories.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old
+temporary directories.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_clear_old_parts_interval_seconds, 1, R"(
-    Sets the interval in seconds for ClickHouse to execute the cleanup of old
-    parts, WALs, and mutations.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old
+parts, WALs, and mutations.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, R"(
-    Merge parts if every part in the range is older than the value of
-    `min_age_to_force_merge_seconds`.
+Merge parts if every part in the range is older than the value of
+`min_age_to_force_merge_seconds`.
 
-    By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-    (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
+(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
 
-    Possible values:
-    - Positive integer.
-    )", 0) \
+Possible values:
+- Positive integer.
+)", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
-    Whether `min_age_to_force_merge_seconds` should be applied only on the entire
-    partition and not on subset.
+Whether `min_age_to_force_merge_seconds` should be applied only on the entire
+partition and not on subset.
 
-    By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-    `enable_max_bytes_limit_for_min_age_to_force_merge`).
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
+`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
-    Possible values:
-    - true, false
-    )", false) \
+Possible values:
+- true, false
+)", false) \
     DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
-    If settings `min_age_to_force_merge_seconds` and
-    `min_age_to_force_merge_on_partition_only` should respect setting
-    `max_bytes_to_merge_at_max_space_in_pool`.
+If settings `min_age_to_force_merge_seconds` and
+`min_age_to_force_merge_on_partition_only` should respect setting
+`max_bytes_to_merge_at_max_space_in_pool`.
 
-    Possible values:
-    - `true`
-    - `false`
-    )", false) \
+Possible values:
+- `true`
+- `false`
+)", false) \
     DECLARE(UInt64, number_of_free_entries_in_pool_to_execute_optimize_entire_partition, 25, R"(
-    When there is less than specified number of free entries in pool, do not
-    execute optimizing entire partition in the background (this task generated
-    when set `min_age_to_force_merge_seconds` and enable
-    `min_age_to_force_merge_on_partition_only`). This is to leave free threads
-    for regular merges and avoid "Too many parts".
+When there is less than specified number of free entries in pool, do not
+execute optimizing entire partition in the background (this task generated
+when set `min_age_to_force_merge_seconds` and enable
+`min_age_to_force_merge_on_partition_only`). This is to leave free threads
+for regular merges and avoid "Too many parts".
 
-    Possible values:
-    - Positive integer.
+Possible values:
+- Positive integer.
 
-    The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-    setting should be less than the value of the
-    [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
-    * [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
-    Otherwise, ClickHouse throws an exception.
-    )", 0) \
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+setting should be less than the value of the
+[background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
+* [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+Otherwise, ClickHouse throws an exception.
+)", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, R"(
-    Setting for an incomplete experimental feature.
-    )", EXPERIMENTAL) \
+Setting for an incomplete experimental feature.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, replicated_max_mutations_in_one_entry, 10000, R"(
-    Max number of mutation commands that can be merged together and executed in
-    one MUTATE_PART entry (0 means unlimited)
-    )", 0) \
+Max number of mutation commands that can be merged together and executed in
+one MUTATE_PART entry (0 means unlimited)
+)", 0) \
     DECLARE(UInt64, number_of_mutations_to_delay, 500, R"(If table has at least
     that many unfinished mutations, artificially slow down mutations of table.
     Disabled if set to 0
-    )", 0) \
+)", 0) \
     DECLARE(UInt64, number_of_mutations_to_throw, 1000, R"(
-    If table has at least that many unfinished mutations, throw 'Too many mutations'
-    exception. Disabled if set to 0
-    )", 0) \
+If table has at least that many unfinished mutations, throw 'Too many mutations'
+exception. Disabled if set to 0
+)", 0) \
     DECLARE(UInt64, min_delay_to_mutate_ms, 10, R"(
-    Min delay of mutating MergeTree table in milliseconds, if there are a lot of
-    unfinished mutations
-    )", 0) \
+Min delay of mutating MergeTree table in milliseconds, if there are a lot of
+unfinished mutations
+)", 0) \
     DECLARE(UInt64, max_delay_to_mutate_ms, 1000, R"(
-    Max delay of mutating MergeTree table in milliseconds, if there are a lot of
-    unfinished mutations
-    )", 0) \
+Max delay of mutating MergeTree table in milliseconds, if there are a lot of
+unfinished mutations
+)", 0) \
     DECLARE(Bool, exclude_deleted_rows_for_part_size_in_merge, false, R"(
-    If enabled, estimated actual size of data parts (i.e., excluding those rows
-    that have been deleted through `DELETE FROM`) will be used when selecting
-    parts to merge. Note that this behavior is only triggered for data parts
-    affected by `DELETE FROM` executed after this setting is enabled.
+If enabled, estimated actual size of data parts (i.e., excluding those rows
+that have been deleted through `DELETE FROM`) will be used when selecting
+parts to merge. Note that this behavior is only triggered for data parts
+affected by `DELETE FROM` executed after this setting is enabled.
 
-    Possible values:
-    - `true`
-    - `false`
+Possible values:
+- `true`
+- `false`
 
-    **See Also**
-    - [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts)
-      setting
-    )", 0) \
+**See Also**
+- [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts)
+  setting
+)", 0) \
     DECLARE(String, merge_workload, "", R"(
-    Used to regulate how resources are utilized and shared between merges and
-    other workloads. Specified value is used as `workload` setting value for
-    background merges of this table. If not specified (empty string), then
-    server setting `merge_workload` is used instead.
+Used to regulate how resources are utilized and shared between merges and
+other workloads. Specified value is used as `workload` setting value for
+background merges of this table. If not specified (empty string), then
+server setting `merge_workload` is used instead.
 
-    **See Also**
-    - [Workload Scheduling](/operations/workload-scheduling.md)
-    )", 0) \
+**See Also**
+- [Workload Scheduling](/operations/workload-scheduling.md)
+)", 0) \
     DECLARE(String, mutation_workload, "", R"(
-    Used to regulate how resources are utilized and shared between mutations and
-    other workloads. Specified value is used as `workload` setting value for
-    background mutations of this table. If not specified (empty string), then
-    server setting `mutation_workload` is used instead.
+Used to regulate how resources are utilized and shared between mutations and
+other workloads. Specified value is used as `workload` setting value for
+background mutations of this table. If not specified (empty string), then
+server setting `mutation_workload` is used instead.
 
-    **See Also**
-    - [Workload Scheduling](/operations/workload-scheduling.md)
-    )", 0) \
+**See Also**
+- [Workload Scheduling](/operations/workload-scheduling.md)
+)", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
-    Target time to execution of one step of merge or mutation. Can be exceeded if
-    one step takes longer time
-    )", 0) \
+Target time to execution of one step of merge or mutation. Can be exceeded if
+one step takes longer time
+)", 0) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
-    If this setting is enabled for destination table of a partition manipulation
-    query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be
-    identical between the source and destination tables. Otherwise, the destination
-    table can have a superset of the source table's indices and projections.
-    )", 0) \
+If this setting is enabled for destination table of a partition manipulation
+query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be
+identical between the source and destination tables. Otherwise, the destination
+table can have a superset of the source table's indices and projections.
+)", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
-    The algorithm to select parts for merges assignment
-    )", EXPERIMENTAL) \
+The algorithm to select parts for merges assignment
+)", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
-    Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
-    By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
-    errors but at the same time this will increase the write amplification.
-    )", EXPERIMENTAL) \
+Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+errors but at the same time this will increase the write amplification.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
-    Controls the exponent value used in formulae building lowering curve. Lowering exponent will
-    lower merge widths which will trigger increase in write amplification. The reverse is also true.
-    )", EXPERIMENTAL) \
+Controls the exponent value used in formulae building lowering curve. Lowering exponent will
+lower merge widths which will trigger increase in write amplification. The reverse is also true.
+)", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
-    Enable heuristic for selecting parts for merge which removes parts from right
-    side of range, if their size is less than specified ratio (0.01) of sum_size.
-    Works for Simple and StochasticSimple merge selectors
-    )", 0) \
+Enable heuristic for selecting parts for merge which removes parts from right
+side of range, if their size is less than specified ratio (0.01) of sum_size.
+Works for Simple and StochasticSimple merge selectors
+)", 0) \
     DECLARE(Float, merge_selector_base, 5.0, R"(Affects write amplification of
     assigned merges (expert level setting, don't change if you don't understand
     what it is doing). Works for Simple and StochasticSimple merge selectors
-    )", 0) \
+)", 0) \
     DECLARE(UInt64, min_parts_to_merge_at_once, 0, R"(
-    Minimal amount of data parts which merge selector can pick to merge at once
-    (expert level setting, don't change if you don't understand what it is doing).
-    0 - disabled. Works for Simple and StochasticSimple merge selectors.
-    )", 0) \
+Minimal amount of data parts which merge selector can pick to merge at once
+(expert level setting, don't change if you don't understand what it is doing).
+0 - disabled. Works for Simple and StochasticSimple merge selectors.
+)", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
-    If true patch parts are applied on merges
-    )", 0) \
+If true patch parts are applied on merges
+)", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
-    The maximum uncompressed size of data in all patch parts in bytes.
-    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
-    0 - unlimited.
-    )", 0) \
+The maximum uncompressed size of data in all patch parts in bytes.
+If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
+0 - unlimited.
+)", 0) \
     DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
-    Controls the physical layout of Compact parts. If true (default), each column in a granule
-    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
-    from disk. If false, all columns within a granule are packed into the same compressed block,
-    improving compression ratio but requiring more data to be decompressed during reads.
-    This is beneficial for workloads that always read all columns (e.g. projections).
-    )", 0) \
+Controls the physical layout of Compact parts. If true (default), each column in a granule
+starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+from disk. If false, all columns within a granule are packed into the same compressed block,
+improving compression ratio but requiring more data to be decompressed during reads.
+This is beneficial for workloads that always read all columns (e.g. projections).
+)", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
-    If the number of active parts in a single partition exceeds the
-    `parts_to_delay_insert` value, an `INSERT` is artificially slowed down.
+If the number of active parts in a single partition exceeds the
+`parts_to_delay_insert` value, an `INSERT` is artificially slowed down.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the
-    background merge process can merge parts faster than they are added.
-    )", 0) \
+ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the
+background merge process can merge parts faster than they are added.
+)", 0) \
     DECLARE(UInt64, inactive_parts_to_delay_insert, 0, R"(
-    If the number of inactive parts in a single partition in the table exceeds
-    the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
-    slowed down.
+If the number of inactive parts in a single partition in the table exceeds
+the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
+slowed down.
 
-    :::tip
-    It is useful when a server fails to clean up parts quickly enough.
-    :::
+:::tip
+It is useful when a server fails to clean up parts quickly enough.
+:::
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, parts_to_throw_insert, 3000, R"(
-    If the number of active parts in a single partition exceeds the
-    `parts_to_throw_insert` value, `INSERT` is interrupted with the `Too many
-    parts (N). Merges are processing significantly slower than inserts`
-    exception.
+If the number of active parts in a single partition exceeds the
+`parts_to_throw_insert` value, `INSERT` is interrupted with the `Too many
+parts (N). Merges are processing significantly slower than inserts`
+exception.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    To achieve maximum performance of `SELECT` queries, it is necessary to
-    minimize the number of parts processed, see [Merge Tree](/development/architecture#merge-tree).
+To achieve maximum performance of `SELECT` queries, it is necessary to
+minimize the number of parts processed, see [Merge Tree](/development/architecture#merge-tree).
 
-    Prior to version 23.6 this setting was set to 300. You can set a higher
-    different value, it will reduce the probability of the `Too many parts`
-    error, but at the same time `SELECT` performance might degrade. Also in case
-    of a merge issue (for example, due to insufficient disk space) you will
-    notice it later than you would with the original 300.
+Prior to version 23.6 this setting was set to 300. You can set a higher
+different value, it will reduce the probability of the `Too many parts`
+error, but at the same time `SELECT` performance might degrade. Also in case
+of a merge issue (for example, due to insufficient disk space) you will
+notice it later than you would with the original 300.
 
-    )", 0) \
+)", 0) \
     DECLARE(UInt64, inactive_parts_to_throw_insert, 0, R"(
-    If the number of inactive parts in a single partition more than the
-    `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the
-    following error:
+If the number of inactive parts in a single partition more than the
+`inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the
+following error:
 
-    > "Too many inactive parts (N). Parts cleaning are processing significantly
-      slower than inserts" exception."
+> "Too many inactive parts (N). Parts cleaning are processing significantly
+  slower than inserts" exception."
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, max_avg_part_size_for_too_many_parts, 1ULL * 1024 * 1024 * 1024, R"(
-    The 'too many parts' check according to 'parts_to_delay_insert' and
-    'parts_to_throw_insert' will be active only if the average part size (in the
-    relevant partition) is not larger than the specified threshold. If it is
-    larger than the specified threshold, the INSERTs will be neither delayed or
-    rejected. This allows to have hundreds of terabytes in a single table on a
-    single server if the parts are successfully merged to larger parts. This
-    does not affect the thresholds on inactive parts or total parts.
-    )", 0) \
+The 'too many parts' check according to 'parts_to_delay_insert' and
+'parts_to_throw_insert' will be active only if the average part size (in the
+relevant partition) is not larger than the specified threshold. If it is
+larger than the specified threshold, the INSERTs will be neither delayed or
+rejected. This allows to have hundreds of terabytes in a single table on a
+single server if the parts are successfully merged to larger parts. This
+does not affect the thresholds on inactive parts or total parts.
+)", 0) \
     DECLARE(UInt64, max_delay_to_insert, 1, R"(
-    The value in seconds, which is used to calculate the `INSERT` delay, if the
-    number of active parts in a single partition exceeds the
-    [parts_to_delay_insert](#parts_to_delay_insert) value.
+The value in seconds, which is used to calculate the `INSERT` delay, if the
+number of active parts in a single partition exceeds the
+[parts_to_delay_insert](#parts_to_delay_insert) value.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    The delay (in milliseconds) for `INSERT` is calculated by the formula:
+The delay (in milliseconds) for `INSERT` is calculated by the formula:
 
-    ```code
-    max_k = parts_to_throw_insert - parts_to_delay_insert
-    k = 1 + parts_count_in_partition - parts_to_delay_insert
-    delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
-    ```
-    For example, if a partition has 299 active parts and parts_to_throw_insert
-    = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is
-    delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000`
-    milliseconds.
+```code
+max_k = parts_to_throw_insert - parts_to_delay_insert
+k = 1 + parts_count_in_partition - parts_to_delay_insert
+delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
+```
+For example, if a partition has 299 active parts and parts_to_throw_insert
+= 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is
+delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000`
+milliseconds.
 
-    Starting from version 23.1 formula has been changed to:
+Starting from version 23.1 formula has been changed to:
 
-    ```code
-    allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
-    parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
-    delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000)
-    * parts_over_threshold / allowed_parts_over_threshold)
-    ```
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000)
+* parts_over_threshold / allowed_parts_over_threshold)
+```
 
-    For example, if a partition has 224 active parts and parts_to_throw_insert
-    = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1,
-    min_delay_to_insert_ms = 10, `INSERT` is delayed for `max( 10, 1 * 1000 *
-    (224 - 150 + 1) / (300 - 150) ) = 500` milliseconds.
-    )", 0) \
+For example, if a partition has 224 active parts and parts_to_throw_insert
+= 300, parts_to_delay_insert = 150, max_delay_to_insert = 1,
+min_delay_to_insert_ms = 10, `INSERT` is delayed for `max( 10, 1 * 1000 *
+(224 - 150 + 1) / (300 - 150) ) = 500` milliseconds.
+)", 0) \
     DECLARE(UInt64, min_delay_to_insert_ms, 10, R"(
-    Min delay of inserting data into MergeTree table in milliseconds, if there
-    are a lot of unmerged parts in single partition.
-    )", 0) \
+Min delay of inserting data into MergeTree table in milliseconds, if there
+are a lot of unmerged parts in single partition.
+)", 0) \
     DECLARE(UInt64, max_parts_in_total, 100000, R"(
-    If the total number of active parts in all partitions of a table exceeds the
-    `max_parts_in_total` value `INSERT` is interrupted with the `Too many parts
-    (N)` exception.
+If the total number of active parts in all partitions of a table exceeds the
+`max_parts_in_total` value `INSERT` is interrupted with the `Too many parts
+(N)` exception.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    A large number of parts in a table reduces performance of ClickHouse queries
-    and increases ClickHouse boot time. Most often this is a consequence of an
-    incorrect design (mistakes when choosing a partitioning strategy - too small
-    partitions).
-    )", 0) \
+A large number of parts in a table reduces performance of ClickHouse queries
+and increases ClickHouse boot time. Most often this is a consequence of an
+incorrect design (mistakes when choosing a partitioning strategy - too small
+partitions).
+)", 0) \
     DECLARE(Bool, async_insert, false, R"(
-    If true, data from INSERT query is stored in queue and later flushed to
-    table in background.
-    )", 0) \
+If true, data from INSERT query is stored in queue and later flushed to
+table in background.
+)", 0) \
     DECLARE(Bool, add_implicit_sign_column_constraint_for_collapsing_engine, false, R"(
-    If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree
-    or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
-    )", 0) \
+If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree
+or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
+)", 0) \
     DECLARE(Milliseconds, sleep_before_commit_local_part_in_replicated_table_ms, 0, R"(
-    For testing. Do not change it.
-    )", 0) \
+For testing. Do not change it.
+)", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
-    Controls if the row order should be optimized during inserts to improve the
-    compressability of the newly inserted table part.
+Controls if the row order should be optimized during inserts to improve the
+compressability of the newly inserted table part.
 
-    Only has an effect for ordinary MergeTree-engine tables. Does nothing for
-    specialized MergeTree engine tables (e.g. CollapsingMergeTree).
+Only has an effect for ordinary MergeTree-engine tables. Does nothing for
+specialized MergeTree engine tables (e.g. CollapsingMergeTree).
 
-    MergeTree tables are (optionally) compressed using [compression codecs](/sql-reference/statements/create/table#column_compression_codec).
-    Generic compression codecs such as LZ4 and ZSTD achieve maximum compression
-    rates if the data exposes patterns. Long runs of the same value typically
-    compress very well.
+MergeTree tables are (optionally) compressed using [compression codecs](/sql-reference/statements/create/table#column_compression_codec).
+Generic compression codecs such as LZ4 and ZSTD achieve maximum compression
+rates if the data exposes patterns. Long runs of the same value typically
+compress very well.
 
-    If this setting is enabled, ClickHouse attempts to store the data in newly
-    inserted parts in a row order that minimizes the number of equal-value runs
-    across the columns of the new table part.
-    In other words, a small number of equal-value runs mean that individual runs
-    are long and compress well.
+If this setting is enabled, ClickHouse attempts to store the data in newly
+inserted parts in a row order that minimizes the number of equal-value runs
+across the columns of the new table part.
+In other words, a small number of equal-value runs mean that individual runs
+are long and compress well.
 
-    Finding the optimal row order is computationally infeasible (NP hard).
-    Therefore, ClickHouse uses a heuristics to quickly find a row order which
-    still improves compression rates over the original row order.
+Finding the optimal row order is computationally infeasible (NP hard).
+Therefore, ClickHouse uses a heuristics to quickly find a row order which
+still improves compression rates over the original row order.
 
-    <details markdown="1">
+<details markdown="1">
 
-    <summary>Heuristics for finding a row order</summary>
+<summary>Heuristics for finding a row order</summary>
 
-    It is generally possible to shuffle the rows of a table (or table part)
-    freely as SQL considers the same table (table part) in different row order
-    equivalent.
+It is generally possible to shuffle the rows of a table (or table part)
+freely as SQL considers the same table (table part) in different row order
+equivalent.
 
-    This freedom of shuffling rows is restricted when a primary key is defined
-    for the table. In ClickHouse, a primary key `C1, C2, ..., CN` enforces that
-    the table rows are sorted by columns `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
-    As a result, rows can only be shuffled within "equivalence classes" of row,
-    i.e. rows which have the same values in their primary key columns.
-    The intuition is that primary keys with high-cardinality, e.g. primary keys
-    involving a `DateTime64` timestamp column, lead to many small equivalence
-    classes. Likewise, tables with a low-cardinality primary key, create few and
-    large equivalence classes. A table with no primary key represents the extreme
-    case of a single equivalence class which spans all rows.
+This freedom of shuffling rows is restricted when a primary key is defined
+for the table. In ClickHouse, a primary key `C1, C2, ..., CN` enforces that
+the table rows are sorted by columns `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
+As a result, rows can only be shuffled within "equivalence classes" of row,
+i.e. rows which have the same values in their primary key columns.
+The intuition is that primary keys with high-cardinality, e.g. primary keys
+involving a `DateTime64` timestamp column, lead to many small equivalence
+classes. Likewise, tables with a low-cardinality primary key, create few and
+large equivalence classes. A table with no primary key represents the extreme
+case of a single equivalence class which spans all rows.
 
-    The fewer and the larger the equivalence classes are, the higher the degree
-    of freedom when re-shuffling rows.
+The fewer and the larger the equivalence classes are, the higher the degree
+of freedom when re-shuffling rows.
 
-    The heuristics applied to find the best row order within each equivalence
-    class is suggested by D. Lemire, O. Kaser in
-    [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)
-    and based on sorting the rows within each equivalence class by ascending
-    cardinality of the non-primary key columns.
+The heuristics applied to find the best row order within each equivalence
+class is suggested by D. Lemire, O. Kaser in
+[Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)
+and based on sorting the rows within each equivalence class by ascending
+cardinality of the non-primary key columns.
 
-    It performs three steps:
-    1. Find all equivalence classes based on the row values in primary key columns.
-    2. For each equivalence class, calculate (usually estimate) the cardinalities
-       of the non-primary-key columns.
-    3. For each equivalence class, sort the rows in order of ascending
-       non-primary-key column cardinality.
+It performs three steps:
+1. Find all equivalence classes based on the row values in primary key columns.
+2. For each equivalence class, calculate (usually estimate) the cardinalities
+   of the non-primary-key columns.
+3. For each equivalence class, sort the rows in order of ascending
+   non-primary-key column cardinality.
 
-    </details>
+</details>
 
-    If enabled, insert operations incur additional CPU costs to analyze and
-    optimize the row order of the new data. INSERTs are expected to take 30-50%
-    longer depending on the data characteristics.
-    Compression rates of LZ4 or ZSTD improve on average by 20-40%.
+If enabled, insert operations incur additional CPU costs to analyze and
+optimize the row order of the new data. INSERTs are expected to take 30-50%
+longer depending on the data characteristics.
+Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
-    This setting works best for tables with no primary key or a low-cardinality
-    primary key, i.e. a table with only few distinct primary key values.
-    High-cardinality primary keys, e.g. involving timestamp columns of type
-    `DateTime64`, are not expected to benefit from this setting.
-    )", 0) \
+This setting works best for tables with no primary key or a low-cardinality
+primary key, i.e. a table with only few distinct primary key values.
+High-cardinality primary keys, e.g. involving timestamp columns of type
+`DateTime64`, are not expected to benefit from this setting.
+)", 0) \
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
-    Allow to use adaptive writer buffers during writing dynamic subcolumns to
-    reduce memory usage
-    )", 0) \
+Allow to use adaptive writer buffers during writing dynamic subcolumns to
+reduce memory usage
+)", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
-    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
-    Possible values:
-    - 0 - unlimited
-    - 1 - always enabled
-    )", 0) \
+Possible values:
+- 0 - unlimited
+- 1 - always enabled
+)", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
-    Initial size of an adaptive write buffer
-    )", 0) \
+Initial size of an adaptive write buffer
+)", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
-    The minimum number of bytes that should be free in disk space in order to
-    insert data. If the number of available free bytes is less than
-    `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the
-    insert is not executed. Note that this setting:
-    - takes into account the `keep_free_space_bytes` setting.
-    - does not take into account the amount of data that will be written by the
-      `INSERT` operation.
-    - is only checked if a positive (non-zero) number of bytes is specified
+The minimum number of bytes that should be free in disk space in order to
+insert data. If the number of available free bytes is less than
+`min_free_disk_bytes_to_perform_insert` then an exception is thrown and the
+insert is not executed. Note that this setting:
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the
+  `INSERT` operation.
+- is only checked if a positive (non-zero) number of bytes is specified
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    :::note
-    If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
-    are specified, ClickHouse will count on the value that will allow to perform
-    inserts on a bigger amount of free memory.
-    :::
-    )", 0) \
+:::note
+If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
+are specified, ClickHouse will count on the value that will allow to perform
+inserts on a bigger amount of free memory.
+:::
+)", 0) \
     DECLARE(Float, min_free_disk_ratio_to_perform_insert, 0.0, R"(
-    The minimum free to total disk space ratio to perform an `INSERT`. Must be a
-    floating point value between 0 and 1. Note that this setting:
-    - takes into account the `keep_free_space_bytes` setting.
-    - does not take into account the amount of data that will be written by the
-      `INSERT` operation.
-    - is only checked if a positive (non-zero) ratio is specified
+The minimum free to total disk space ratio to perform an `INSERT`. Must be a
+floating point value between 0 and 1. Note that this setting:
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the
+  `INSERT` operation.
+- is only checked if a positive (non-zero) ratio is specified
 
-    Possible values:
-    - Float, 0.0 - 1.0
+Possible values:
+- Float, 0.0 - 1.0
 
-    Note that if both `min_free_disk_ratio_to_perform_insert` and
-    `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count
-    on the value that will allow to perform inserts on a bigger amount of free
-    memory.
-    )", 0) \
+Note that if both `min_free_disk_ratio_to_perform_insert` and
+`min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count
+on the value that will allow to perform inserts on a bigger amount of free
+memory.
+)", 0) \
     \
     /* Part removal settings. */ \
     DECLARE(UInt64, simultaneous_parts_removal_limit, 0, R"(
-    If there are a lot of outdated parts cleanup thread will try to delete up to
-    `simultaneous_parts_removal_limit` parts during one iteration.
-    `simultaneous_parts_removal_limit` set to `0` means unlimited.
-    )", 0) \
+If there are a lot of outdated parts cleanup thread will try to delete up to
+`simultaneous_parts_removal_limit` parts during one iteration.
+`simultaneous_parts_removal_limit` set to `0` means unlimited.
+)", 0) \
     DECLARE(UInt64, reduce_blocking_parts_sleep_ms, 5000, R"(
-    Only available in ClickHouse Cloud. Minimum time to wait before trying to
-    reduce blocking parts again after no ranges were dropped/replaced. A lower
-    setting will trigger tasks in background_schedule_pool frequently which
-    results in large amount of requests to zookeeper in large-scale clusters
-    )", 0) \
+Only available in ClickHouse Cloud. Minimum time to wait before trying to
+reduce blocking parts again after no ranges were dropped/replaced. A lower
+setting will trigger tasks in background_schedule_pool frequently which
+results in large amount of requests to zookeeper in large-scale clusters
+)", 0) \
     \
     /** Replication settings. */ \
     DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
-    The number of most recently inserted blocks for which ClickHouse Keeper stores
-    hash sums to check for duplicates.
+The number of most recently inserted blocks for which ClickHouse Keeper stores
+hash sums to check for duplicates.
 
-    Possible values:
-    - Any positive integer.
-    - 0 (disable deduplication)
+Possible values:
+- Any positive integer.
+- 0 (disable deduplication)
 
-    The `Insert` command creates one or more blocks (parts). For
-    [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
-    when writing into replicated tables, ClickHouse writes the hash sums of the
-    created parts into ClickHouse Keeper. Hash sums are stored only for the most
-    recent `replicated_deduplication_window` blocks. The oldest hash sums are
-    removed from ClickHouse Keeper.
+For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+when writing into replicated tables, ClickHouse writes deduplication hash sums into
+ClickHouse Keeper. Hash sums are stored only for the most recent
+`replicated_deduplication_window` blocks. The oldest hash sums are removed from
+ClickHouse Keeper.
 
-    A large number for `replicated_deduplication_window` slows down `Inserts`
-    because more entries need to be compared. The hash sum is calculated from
-    the composition of the field names and types and the data of the inserted
-    part (stream of bytes).
-    )", 0) \
+The hash sum covers the whole inserted block, so an insert is deduplicated only when its
+entire data matches a previous insert (a retry), not per individual part.
+
+A large number for `replicated_deduplication_window` slows down `Inserts` because more
+entries need to be compared.
+)", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
-    The number of seconds after which the hash sums of the inserted blocks are
-    removed from ClickHouse Keeper.
+The number of seconds after which the hash sums of the inserted blocks are
+removed from ClickHouse Keeper.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    Similar to [replicated_deduplication_window](#replicated_deduplication_window),
-    `replicated_deduplication_window_seconds` specifies how long to store hash
-    sums of blocks for insert deduplication. Hash sums older than
-    `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper,
-    even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated_deduplication_window),
+`replicated_deduplication_window_seconds` specifies how long to store hash
+sums of blocks for insert deduplication. Hash sums older than
+`replicated_deduplication_window_seconds` are removed from ClickHouse Keeper,
+even if they are less than ` replicated_deduplication_window`.
 
-    The time is relative to the time of the most recent record, not to the wall
-    time. If it's the only record it will be stored forever.
-    )", 0) \
+The time is relative to the time of the most recent record, not to the wall
+time. If it's the only record it will be stored forever.
+)", 0) \
     DECLARE(UInt64, replicated_deduplication_window_for_async_inserts, 10000, R"(
-    The number of most recently async inserted blocks for which ClickHouse Keeper
-    stores hash sums to check for duplicates.
-
-    Possible values:
-    - Any positive integer.
-    - 0 (disable deduplication for async_inserts)
-
-    The [Async Insert](/operations/settings/settings#async_insert) command will
-    be cached in one or more blocks (parts). For [insert deduplication](/engines/table-engines/mergetree-family/replication),
-    when writing into replicated tables, ClickHouse writes the hash sums of each
-    insert into ClickHouse Keeper. Hash sums are stored only for the most recent
-    `replicated_deduplication_window_for_async_inserts` blocks. The oldest hash
-    sums are removed from ClickHouse Keeper.
-    A large number of `replicated_deduplication_window_for_async_inserts` slows
-    down `Async Inserts` because it needs to compare more entries.
-    The hash sum is calculated from the composition of the field names and types
-    and the data of the insert (stream of bytes).
-    )", 0) \
+Legacy setting retained for mixed-version rolling upgrades. New inserts deduplicate with the
+unified hash governed by `replicated_deduplication_window`; this setting now only bounds how many
+legacy async-insert hashes are kept in the `async_blocks` directory in ClickHouse Keeper, which is
+still written by older replicas during a rolling upgrade and cleaned up by the current leader.
+A value of `0` retains none of them — the next cleanup pass removes every entry — so keep the
+default (or a larger value) to preserve the legacy async deduplication window during the upgrade.
+)", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
-    The number of seconds after which the hash sums of the async inserts are
-    removed from ClickHouse Keeper.
-
-    Possible values:
-    - Any positive integer.
-
-    Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts),
-    `replicated_deduplication_window_seconds_for_async_inserts` specifies how
-    long to store hash sums of blocks for async insert deduplication. Hash sums
-    older than `replicated_deduplication_window_seconds_for_async_inserts` are
-    removed from ClickHouse Keeper, even if they are less than
-    `replicated_deduplication_window_for_async_inserts`.
-
-    The time is relative to the time of the most recent record, not to the wall
-    time. If it's the only record it will be stored forever.
-    )", 0) \
+Legacy setting retained for mixed-version rolling upgrades. Together with
+`replicated_deduplication_window_for_async_inserts` it bounds how long legacy async-insert hashes
+are kept in the `async_blocks` directory in ClickHouse Keeper (written by older replicas during a
+rolling upgrade and cleaned up by the current leader). New inserts use
+`replicated_deduplication_window_seconds`.
+)", 0) \
+    DECLARE(Milliseconds, deduplication_hashes_cache_update_wait_ms, 100, R"(
+How long each insert iteration waits for the in-memory `deduplication_hashes` cache to refresh to a
+newer version before re-checking it for already-inserted blocks. The cache mirrors the
+`deduplication_hashes` directory in ClickHouse Keeper so inserts can detect duplicates without a
+Keeper round-trip.
+)", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
-    How long each insert iteration will wait for async_block_ids_cache update
-    )", 0) \
-    DECLARE(Bool, use_async_block_ids_cache, true, R"(
-    If true, we cache the hash sums of the async inserts.
-
-    Possible values:
-    - `true`
-    - `false`
-
-    A block bearing multiple async inserts will generate multiple hash sums.
-    When some of the inserts are duplicated, keeper will only return one
-    duplicated hash sum in one RPC, which will cause unnecessary RPC retries.
-    This cache will watch the hash sums path in Keeper. If updates are watched
-    in the Keeper, the cache will update as soon as possible, so that we are
-    able to filter the duplicated inserts in the memory.
-    )", 0) \
+Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one release for backward
+compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
+default; this setting will be removed in a future release.
+)", 0) \
     DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
-    How many records may be in the ClickHouse Keeper log if there is inactive
-    replica. An inactive replica becomes lost when when this number exceed.
+How many records may be in the ClickHouse Keeper log if there is inactive
+replica. An inactive replica becomes lost when when this number exceed.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, min_replicated_logs_to_keep, 10, R"(
-    Keep about this number of last records in ZooKeeper log, even if they are
-    obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper
-    log before cleaning.
+Keep about this number of last records in ZooKeeper log, even if they are
+obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper
+log before cleaning.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Seconds, prefer_fetch_merged_part_time_threshold, 3600, R"(
-    If the time passed since a replication log (ClickHouse Keeper or ZooKeeper)
-    entry creation exceeds this threshold, and the sum of the size of parts is
-    greater than `prefer_fetch_merged_part_size_threshold`, then prefer fetching
-    merged part from a replica instead of doing merge locally. This is to speed
-    up very long merges.
+If the time passed since a replication log (ClickHouse Keeper or ZooKeeper)
+entry creation exceeds this threshold, and the sum of the size of parts is
+greater than `prefer_fetch_merged_part_size_threshold`, then prefer fetching
+merged part from a replica instead of doing merge locally. This is to speed
+up very long merges.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, prefer_fetch_merged_part_size_threshold, 10ULL * 1024 * 1024 * 1024, R"(
-    If the sum of the size of parts exceeds this threshold and the time since a
-    replication log entry creation is greater than
-    `prefer_fetch_merged_part_time_threshold`, then prefer fetching merged part
-    from a replica instead of doing merge locally. This is to speed up very long
-    merges.
+If the sum of the size of parts exceeds this threshold and the time since a
+replication log entry creation is greater than
+`prefer_fetch_merged_part_time_threshold`, then prefer fetching merged part
+from a replica instead of doing merge locally. This is to speed up very long
+merges.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Seconds, execute_merges_on_single_replica_time_threshold, 0, R"(
-    When this setting has a value greater than zero, only a single replica starts
-    the merge immediately, and other replicas wait up to that amount of time to
-    download the result instead of doing merges locally. If the chosen replica
-    doesn't finish the merge during that amount of time, fallback to standard
-    behavior happens.
+When this setting has a value greater than zero, only a single replica starts
+the merge immediately, and other replicas wait up to that amount of time to
+download the result instead of doing merges locally. If the chosen replica
+doesn't finish the merge during that amount of time, fallback to standard
+behavior happens.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
-    When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage.
+When this setting has a value greater than zero only a single replica starts
+the merge immediately if merged part on shared storage.
 
-    :::note
-    Zero-copy replication is not ready for production
-    Zero-copy replication is disabled by default in ClickHouse version 22.8 and
-    higher.
+:::note
+Zero-copy replication is not ready for production
+Zero-copy replication is disabled by default in ClickHouse version 22.8 and
+higher.
 
-    This feature is not recommended for production use.
-    :::
+This feature is not recommended for production use.
+:::
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Seconds, try_fetch_recompressed_part_timeout, 7200, R"(
-    Timeout (in seconds) before starting merge with recompression. During this
-    time ClickHouse tries to fetch recompressed part from replica which assigned
-    this merge with recompression.
+Timeout (in seconds) before starting merge with recompression. During this
+time ClickHouse tries to fetch recompressed part from replica which assigned
+this merge with recompression.
 
-    Recompression works slow in most cases, so we don't start merge with
-    recompression until this timeout and trying to fetch recompressed part from
-    replica which assigned this merge with recompression.
+Recompression works slow in most cases, so we don't start merge with
+recompression until this timeout and trying to fetch recompressed part from
+replica which assigned this merge with recompression.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Bool, always_fetch_merged_part, false, R"(
-    If true, this replica never merges parts and always downloads merged parts
-    from other replicas.
+If true, this replica never merges parts and always downloads merged parts
+from other replicas.
 
-    Possible values:
-    - true, false
-    )", 0) \
+Possible values:
+- true, false
+)", 0) \
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, R"(
-    Only available in ClickHouse Cloud. Up to top N partitions which we will
-    consider for merge. Partitions picked in a random weighted way where weight
-    is amount of data parts which can be merged in this partition.
-    )", 0) \
+Only available in ClickHouse Cloud. Up to top N partitions which we will
+consider for merge. Partitions picked in a random weighted way where weight
+is amount of data parts which can be merged in this partition.
+)", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts, 100, R"(
-    If the number of broken parts in a single partition exceeds the
-    `max_suspicious_broken_parts` value, automatic deletion is denied.
+If the number of broken parts in a single partition exceeds the
+`max_suspicious_broken_parts` value, automatic deletion is denied.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts_bytes, 1ULL * 1024 * 1024 * 1024, R"(
-    Max size of all broken parts, if more - deny automatic deletion.
+Max size of all broken parts, if more - deny automatic deletion.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts, 0, R"(
-    Max broken parts for SMT, if more - deny automatic detach.
-    )", 0) \
+Max broken parts for SMT, if more - deny automatic detach.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts_bytes, 0, R"(
-    Max size of all broken parts for SMT, if more - deny automatic detach.
-    )", 0) \
+Max size of all broken parts for SMT, if more - deny automatic detach.
+)", 0) \
     DECLARE(UInt64, max_files_to_modify_in_alter_columns, 75, R"(
-    Do not apply ALTER if number of files for modification(deletion, addition)
-    is greater than this setting.
+Do not apply ALTER if number of files for modification(deletion, addition)
+is greater than this setting.
 
-    Possible values:
+Possible values:
 
-    - Any positive integer.
+- Any positive integer.
 
-    Default value: 75
-    )", 0) \
+Default value: 75
+)", 0) \
     DECLARE(UInt64, max_files_to_remove_in_alter_columns, 50, R"(
-    Do not apply ALTER, if the number of files for deletion is greater than this
-    setting.
+Do not apply ALTER, if the number of files for deletion is greater than this
+setting.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Float, replicated_max_ratio_of_wrong_parts, 0.5, R"(
-    If the ratio of wrong parts to total number of parts is less than this -
-    allow to start.
+If the ratio of wrong parts to total number of parts is less than this -
+allow to start.
 
-    Possible values:
-    - Float, 0.0 - 1.0
-    )", 0) \
+Possible values:
+- Float, 0.0 - 1.0
+)", 0) \
     DECLARE(Bool, replicated_can_become_leader, true, R"(
-    If true, replicated tables replicas on this node will try to acquire
-    leadership.
+If true, replicated tables replicas on this node will try to acquire
+leadership.
 
-    Possible values:
-    - `true`
-    - `false`
-    )", 0) \
+Possible values:
+- `true`
+- `false`
+)", 0) \
     DECLARE(Seconds, zookeeper_session_expiration_check_period, 60, R"(
-    ZooKeeper session expiration check period, in seconds.
+ZooKeeper session expiration check period, in seconds.
 
-    Possible values:
-    - Any positive integer.
-    )", 0) \
+Possible values:
+- Any positive integer.
+)", 0) \
     DECLARE(Seconds, initialization_retry_period, 60, R"(
-    Retry period for table initialization, in seconds.
-    )", 0) \
+Retry period for table initialization, in seconds.
+)", 0) \
     DECLARE(Bool, detach_old_local_parts_when_cloning_replica, true, R"(
-    Do not remove old local parts when repairing lost replica.
+Do not remove old local parts when repairing lost replica.
 
-    Possible values:
-    - `true`
-    - `false`
-    )", 0) \
+Possible values:
+- `true`
+- `false`
+)", 0) \
     DECLARE(Bool, detach_not_byte_identical_parts, false, R"(
-    Enables or disables detaching a data part on a replica after a merge or a
-    mutation, if it is not byte-identical to data parts on other replicas. If
-    disabled, the data part is removed. Activate this setting if you want to
-    analyze such parts later.
+Enables or disables detaching a data part on a replica after a merge or a
+mutation, if it is not byte-identical to data parts on other replicas. If
+disabled, the data part is removed. Activate this setting if you want to
+analyze such parts later.
 
-    The setting is applicable to `MergeTree` tables with enabled
-    [data replication](/engines/table-engines/mergetree-family/replacingmergetree).
+The setting is applicable to `MergeTree` tables with enabled
+[data replication](/engines/table-engines/mergetree-family/replacingmergetree).
 
-    Possible values:
+Possible values:
 
-    - `0` — Parts are removed.
-    - `1` — Parts are detached.
-    )", 0) \
+- `0` — Parts are removed.
+- `1` — Parts are detached.
+)", 0) \
     DECLARE(UInt64, max_replicated_fetches_network_bandwidth, 0, R"(
-    Limits the maximum speed of data exchange over the network in bytes per
-    second for [replicated](../../engines/table-engines/mergetree-family/replication.md)
-    fetches. This setting is applied to a particular table, unlike the
-    [`max_replicated_fetches_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
-    setting, which is applied to the server.
+Limits the maximum speed of data exchange over the network in bytes per
+second for [replicated](../../engines/table-engines/mergetree-family/replication.md)
+fetches. This setting is applied to a particular table, unlike the
+[`max_replicated_fetches_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+setting, which is applied to the server.
 
-    You can limit both server network and network for a particular table, but for
-    this the value of the table-level setting should be less than server-level
-    one. Otherwise the server considers only the
-    `max_replicated_fetches_network_bandwidth_for_server` setting.
+You can limit both server network and network for a particular table, but for
+this the value of the table-level setting should be less than server-level
+one. Otherwise the server considers only the
+`max_replicated_fetches_network_bandwidth_for_server` setting.
 
-    The setting isn't followed perfectly accurately.
+The setting isn't followed perfectly accurately.
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
-    - `0` — Unlimited.
+- Positive integer.
+- `0` — Unlimited.
 
-    Default value: `0`.
+Default value: `0`.
 
-    **Usage**
+**Usage**
 
-    Could be used for throttling speed when replicating data to add or replace
-    new nodes.
-    )", 0) \
+Could be used for throttling speed when replicating data to add or replace
+new nodes.
+)", 0) \
     DECLARE(UInt64, max_replicated_sends_network_bandwidth, 0, R"(
-    Limits the maximum speed of data exchange over the network in bytes per
-    second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
-    sends. This setting is applied to a particular table, unlike the
-    [`max_replicated_sends_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
-    setting, which is applied to the server.
+Limits the maximum speed of data exchange over the network in bytes per
+second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
+sends. This setting is applied to a particular table, unlike the
+[`max_replicated_sends_network_bandwidth_for_server`](/operations/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+setting, which is applied to the server.
 
-    You can limit both server network and network for a particular table, but
-    for this the value of the table-level setting should be less than
-    server-level one. Otherwise the server considers only the
-    `max_replicated_sends_network_bandwidth_for_server` setting.
+You can limit both server network and network for a particular table, but
+for this the value of the table-level setting should be less than
+server-level one. Otherwise the server considers only the
+`max_replicated_sends_network_bandwidth_for_server` setting.
 
-    The setting isn't followed perfectly accurately.
+The setting isn't followed perfectly accurately.
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
-    - `0` — Unlimited.
+- Positive integer.
+- `0` — Unlimited.
 
-    **Usage**
+**Usage**
 
-    Could be used for throttling speed when replicating data to add or replace
-    new nodes.
-    )", 0) \
+Could be used for throttling speed when replicating data to add or replace
+new nodes.
+)", 0) \
     DECLARE(Milliseconds, wait_for_unique_parts_send_before_shutdown_ms, 0, R"(
-    Before shutdown table will wait for required amount time for unique parts
-    (exist only on current replica) to be fetched by other replicas (0 means
-    disabled).
-    )", 0) \
+Before shutdown table will wait for required amount time for unique parts
+(exist only on current replica) to be fetched by other replicas (0 means
+disabled).
+)", 0) \
     DECLARE(Float, fault_probability_before_part_commit, 0, R"(
-    For testing. Do not change it.
-    )", 0) \
+For testing. Do not change it.
+)", 0) \
     DECLARE(Float, fault_probability_after_part_commit, 0, R"(
-    For testing. Do not change it.
-    )", 0) \
+For testing. Do not change it.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_disable_merges_and_mutations_assignment, false, R"(
-    Stop merges assignment for shared merge tree. Only available in ClickHouse
-    Cloud
-    )", 0) \
+Stop merges assignment for shared merge tree. Only available in ClickHouse
+Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_use_zookeeper_connection_pool, false, R"(
-    If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
-    )", 0) \
+If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_outdated_parts_check, true, R"(
-    Enable outdated parts check. Only available in ClickHouse Cloud
-    )", 0) \
+Enable outdated parts check. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Float, shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations, 0.5, R"(
-    Will reload merge predicate in merge/mutate selecting task when `<candidate
-    partitions for mutations only (partitions that cannot be merged)>/<candidate
-    partitions for mutations>` ratio is higher than the setting. Only available
-    in ClickHouse Cloud
-    )", 0) \
+Will reload merge predicate in merge/mutate selecting task when `<candidate
+partitions for mutations only (partitions that cannot be merged)>/<candidate
+partitions for mutations>` ratio is higher than the setting. Only available
+in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_parts_load_batch_size, 32, R"(
-    Amount of fetch parts metadata jobs to schedule at once. Only available in
-    ClickHouse Cloud
-    )", 0) \
+Amount of fetch parts metadata jobs to schedule at once. Only available in
+ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_leaders_in_total, 6, R"(
-    Maximum number of parts update leaders. Only available in ClickHouse Cloud
-    )", 0) \
+Maximum number of parts update leaders. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_leaders_per_az, 2, R"(
-    Maximum number of parts update leaders. Only available in ClickHouse Cloud
-    )", 0) \
+Maximum number of parts update leaders. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, R"(
-    Maximum period to recheck leadership for parts update. Only available in
-    ClickHouse Cloud
-    )", 0) \
+Maximum period to recheck leadership for parts update. Only available in
+ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_random_add_seconds, 10, R"(
-    Add uniformly distributed value from 0 to x seconds to
-    shared_merge_tree_leader_update_period to avoid thundering
-    herd effect. Only available in ClickHouse Cloud
-    )", 0) \
+Add uniformly distributed value from 0 to x seconds to
+shared_merge_tree_leader_update_period to avoid thundering
+herd effect. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_read_virtual_parts_from_leader, true, R"(
-    Read virtual parts from leader when possible. Only available in ClickHouse
-    Cloud
-    )", 0) \
+Read virtual parts from leader when possible. Only available in ClickHouse
+Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, R"(
-    Initial backoff for parts update. Only available in ClickHouse Cloud
-    )", 0) \
+Initial backoff for parts update. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_parts_update_backoff_ms, 5000, R"(
-    Max backoff for parts update. Only available in ClickHouse Cloud
-    )", 0) \
+Max backoff for parts update. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_interserver_http_connection_timeout_ms, 100, R"(
-    Timeouts for interserver HTTP connection. Only available in ClickHouse Cloud
-    )", 0) \
+Timeouts for interserver HTTP connection. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_interserver_http_timeout_ms, 10000, R"(
-    Timeouts for interserver HTTP communication. Only available in ClickHouse
-    Cloud
-    )", 0) \
+Timeouts for interserver HTTP communication. Only available in ClickHouse
+Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_for_parts_deletion, 10, R"(
-    Max replicas which will participate in parts deletion (killer thread). Only
-    available in ClickHouse Cloud
-    )", 0) \
+Max replicas which will participate in parts deletion (killer thread). Only
+available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range, 5, R"(
-    Max replicas which will try to assign potentially conflicting merges (allow
-    to avoid redundant conflicts in merges assignment). 0 means disabled. Only
-    available in ClickHouse Cloud
-    )", 0) \
+Max replicas which will try to assign potentially conflicting merges (allow
+to avoid redundant conflicts in merges assignment). 0 means disabled. Only
+available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
-    Use compact format for outdated parts: reduces load to Keeper, improves
-    outdated parts processing. Only available in ClickHouse Cloud
-    )", 0) \
+Use compact format for outdated parts: reduces load to Keeper, improves
+outdated parts processing. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Int64, shared_merge_tree_memo_ids_remove_timeout_seconds, 1800, R"(
-    How long we store insert memoization ids to avoid wrong actions during
-    insert retries. Only available in ClickHouse Cloud
-    )", 0) \
+How long we store insert memoization ids to avoid wrong actions during
+insert retries. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_idle_parts_update_seconds, 3600, R"(
-    Interval in seconds for parts update without being triggered by ZooKeeper
-    watch in the shared merge tree. Only available in ClickHouse Cloud
-    )", 0) \
+Interval in seconds for parts update without being triggered by ZooKeeper
+watch in the shared merge tree. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
-    Maximum amount of outdated parts leader will try to confirm for removal at
-    one HTTP request. Only available in ClickHouse Cloud.
-    )", 0) \
+Maximum amount of outdated parts leader will try to confirm for removal at
+one HTTP request. Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
-    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
-    Only available in ClickHouse Cloud.
-    )", 0) \
+How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
+Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
-    Minimum size of part (in rows) to postpone assigning a next merge just after
-    merging it locally. Only available in ClickHouse Cloud.
-    )", 0) \
+Minimum size of part (in rows) to postpone assigning a next merge just after
+merging it locally. Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms, 0, R"(
-    Time to keep a locally merged part without starting a new merge containing
-    this part. Gives other replicas a chance fetch the part and start this merge.
-    Only available in ClickHouse Cloud.
-    )", 0) \
+Time to keep a locally merged part without starting a new merge containing
+this part. Gives other replicas a chance fetch the part and start this merge.
+Only available in ClickHouse Cloud.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, R"(
-    Time to keep a locally merged part without starting a new merge containing
-    this part. Gives other replicas a chance fetch the part and start this merge.
-    Only available in ClickHouse Cloud
-    )", 0) \
+Window size (in block numbers) used to distribute merge assignment across
+replicas. Parts within the same window are assigned to the same replicas.
+Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, R"(
-    If enabled too many parts counter will rely on shared data in Keeper, not on
-    local replica state. Only available in ClickHouse Cloud
-    )", 0) \
+If enabled too many parts counter will rely on shared data in Keeper, not on
+local replica state. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, R"(
-    Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
-    Only available in ClickHouse Cloud
-    )", 0) \
+Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
+Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, R"(
-    Enables requesting FS cache hints from in-memory
-    cache on other replicas. Only available in ClickHouse Cloud
-    )", 0) \
+Enables requesting FS cache hints from in-memory
+cache on other replicas. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
-    If enabled all the replicas try to fetch part in memory data (like primary
-    key, partition info and so on) from other replicas where it already exists.
-    )", 0) \
+If enabled all the replicas try to fetch part in memory data (like primary
+key, partition info and so on) from other replicas where it already exists.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup, false, R"(
-    If enabled all the replicas try to fetch part in memory data (like primary
-    key, partition info and so on) on startup from other replicas where it already exists.
-    )", 0) \
+If enabled all the replicas try to fetch part in memory data (like primary
+key, partition info and so on) on startup from other replicas where it already exists.
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
-    How often replica will try to reload it's flags according to background schedule.
-    )", 0) \
+How often replica will try to reload it's flags according to background schedule.
+)", 0) \
     DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 1800, R"(
-    How often replicas will try to update replica set in background. Next run is jittered
-    uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
-    the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
-    )", 0) \
+How often replicas will try to update replica set in background. Next run is jittered
+uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
+the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
+)", 0) \
+    DECLARE(Seconds, shared_merge_tree_inactive_replica_cutoff_seconds, 0, R"(
+For how long an inactive replica is still taken into account by the background cleanup
+(`OutdatedPartsQuorumThread`): while a replica has been inactive for less than this many seconds,
+it still holds back removal of outdated parts and truncation of finished mutations. A value of 0
+means use the default of two ZooKeeper session timeouts.
+Only in ClickHouse Cloud
+)", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
-    Background task which reduces blocking parts for shared merge tree tables.
-    Only in ClickHouse Cloud
-    )", 0) \
+Background task which reduces blocking parts for shared merge tree tables.
+Only in ClickHouse Cloud
+)", 0) \
     DECLARE(Seconds, refresh_parts_interval, 0, R"(
-    If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
-    It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
-    )", 0) \
+If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
+It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
+)", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, R"(
-    Calculate relative replica delay only if absolute delay is not less that
-    this value.
-    )", 0) \
+Calculate relative replica delay only if absolute delay is not less that
+this value.
+)", 0) \
     DECLARE(UInt64, cleanup_delay_period, 30, R"(
-    Minimum period to clean old queue logs, blocks hashes and parts.
-    )", 0) \
+Minimum period to clean old queue logs, blocks hashes and parts.
+)", 0) \
     DECLARE(UInt64, max_cleanup_delay_period, 300, R"(
-    Maximum period to clean old queue logs, blocks hashes and parts.
-    )", 0) \
+Maximum period to clean old queue logs, blocks hashes and parts.
+)", 0) \
     DECLARE(UInt64, cleanup_delay_period_random_add, 10, R"(
-    Add uniformly distributed value from 0 to x seconds to cleanup_delay_period
-    to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of
-    very large number of tables.
-    )", 0) \
+Add uniformly distributed value from 0 to x seconds to cleanup_delay_period
+to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of
+very large number of tables.
+)", 0) \
     DECLARE(UInt64, cleanup_thread_preferred_points_per_iteration, 150, R"(
-    Preferred batch size for background cleanup (points are abstract but 1 point
-    is approximately equivalent to 1 inserted block).
-    )", 0) \
+Preferred batch size for background cleanup (points are abstract but 1 point
+is approximately equivalent to 1 inserted block).
+)", 0) \
     DECLARE(UInt64, min_relative_delay_to_close, 300, R"(
-    Minimal delay from other replicas to close, stop serving
-    requests and not return Ok during status check.
-    )", 0) \
+Minimal delay from other replicas to close, stop serving
+requests and not return Ok during status check.
+)", 0) \
     DECLARE(UInt64, min_absolute_delay_to_close, 0, R"(
-    Minimal absolute delay to close, stop serving requests and not
-    return Ok during status check.
-    )", 0) \
+Minimal absolute delay to close, stop serving requests and not
+return Ok during status check.
+)", 0) \
     DECLARE(UInt64, enable_vertical_merge_algorithm, 1, R"(
-    Enable usage of Vertical merge algorithm.
-    )", 0) \
+Enable usage of Vertical merge algorithm.
+)", 0) \
     DECLARE(UInt64, vertical_merge_algorithm_min_rows_to_activate, 16 * 8192, R"(
-    Minimal (approximate) sum of rows in
-    merging parts to activate Vertical merge algorithm.
-    )", 0) \
+Minimal (approximate) sum of rows in
+merging parts to activate Vertical merge algorithm.
+)", 0) \
     DECLARE(UInt64, vertical_merge_algorithm_min_bytes_to_activate, 0, R"(
-    Minimal (approximate) uncompressed size in bytes in merging parts to activate
-    Vertical merge algorithm.
-    )", 0) \
+Minimal (approximate) uncompressed size in bytes in merging parts to activate
+Vertical merge algorithm.
+)", 0) \
     DECLARE(UInt64, vertical_merge_algorithm_min_columns_to_activate, 11, R"(
-    Minimal amount of non-PK columns to activate Vertical merge algorithm.
-    )", 0) \
+Minimal amount of non-PK columns to activate Vertical merge algorithm.
+)", 0) \
     DECLARE(Bool, vertical_merge_remote_filesystem_prefetch, true, R"(
-    If true prefetching of data from remote filesystem is used for the next
-    column during merge
-    )", 0) \
+If true prefetching of data from remote filesystem is used for the next
+column during merge
+)", 0) \
     DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
-    If true, lightweight delete is optimized on vertical merge.
-    )", 0) \
+If true, lightweight delete is optimized on vertical merge.
+)", 0) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
-    If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
-    the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
-    )", 0) \
+If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
+the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
+)", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
-    The maximum postpone time for failed mutations.
-    )", 0) \
+The maximum postpone time for failed mutations.
+)", 0) \
     \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
-    The maximum postpone time for failed replicated fetches.
-    )", 0) \
+The maximum postpone time for failed replicated fetches.
+)", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_merges_ms, 1ULL * 60 * 1000, R"(
-    The maximum postpone time for failed replicated merges.
-    )", 0) \
+The maximum postpone time for failed replicated merges.
+)", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_tasks_ms, 5ULL * 60 * 1000, R"(
-    The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
-    )", 0) \
+The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
+)", 0) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-    Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions
+    )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
     )", 0) \
     DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
-    When enabled, individual elements within Tuple columns participate in
-    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
-    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
-    leaf elements are aggregated independently. This setting is immutable
-    and must be specified at table creation time.
-    )", 0) \
+When enabled, individual elements within Tuple columns participate in
+aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+leaf elements are aggregated independently. This setting is immutable
+and must be specified at table creation time.
+)", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
-    Allow to create a table with sampling expression not in primary key. This is
-    needed only to temporarily allow to run the server with wrong tables for
-    backward compatibility.
-    )", 0) \
+Allow to create a table with sampling expression not in primary key. This is
+needed only to temporarily allow to run the server with wrong tables for
+backward compatibility.
+)", 0) \
     DECLARE(Bool, use_minimalistic_checksums_in_zookeeper, true, R"(
-    Use small format (dozens bytes) for part checksums in ZooKeeper instead of
-    ordinary ones (dozens KB). Before enabling check that all replicas support
-    new format.
-    )", 0) \
+Use small format (dozens bytes) for part checksums in ZooKeeper instead of
+ordinary ones (dozens KB). Before enabling check that all replicas support
+new format.
+)", 0) \
     DECLARE(Bool, use_minimalistic_part_header_in_zookeeper, true, R"(
-    Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
-    stores less data. For details, see [here](/operations/server-configuration-parameters/settings#use_minimalistic_part_header_in_zookeeper).
-    )", 0) \
+Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
+stores less data. For details, see [here](/operations/server-configuration-parameters/settings#use_minimalistic_part_header_in_zookeeper).
+)", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
-    How many records about mutations that are done to keep. If zero, then keep
-    all of them.
-    )", 0) \
+How many records about mutations that are done to keep. If zero, then keep
+all of them.
+)", 0) \
     DECLARE(UInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, R"(
-    The minimum data volume for merge operation that is required for using direct
-    I/O access to the storage disk. When merging data parts, ClickHouse calculates
-    the total storage volume of all the data to be merged. If the volume exceeds
-    `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the
-    data to the storage disk using the direct I/O interface (`O_DIRECT` option).
-    If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
-    )", 0) \
+The minimum data volume for merge operation that is required for using direct
+I/O access to the storage disk. When merging data parts, ClickHouse calculates
+the total storage volume of all the data to be merged. If the volume exceeds
+`min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the
+data to the storage disk using the direct I/O interface (`O_DIRECT` option).
+If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
+)", 0) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
-    Maximum size of data granules in bytes.
+Maximum size of data granules in bytes.
 
-    To restrict the granule size only by number of rows, set to `0` (not recommended).
-    )", 0) \
+To restrict the granule size only by number of rows, set to `0` (not recommended).
+)", 0) \
     DECLARE(UInt64, min_index_granularity_bytes, 1024, R"(
-    Min allowed size of data granules in bytes.
+Min allowed size of data granules in bytes.
 
-    To provide a safeguard against accidentally creating tables with very low
-    `index_granularity_bytes`.
-    )", 1024) \
+To provide a safeguard against accidentally creating tables with very low
+`index_granularity_bytes`.
+)", 1024) \
     DECLARE(Bool, use_const_adaptive_granularity, false, R"(
-    Always use constant granularity for whole part. It allows to compress in
-    memory values of index granularity. It can be useful in extremely large
-    workloads with thin tables.
-    )", 0) \
+Always use constant granularity for whole part. It allows to compress in
+memory values of index granularity. It can be useful in extremely large
+workloads with thin tables.
+)", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
-    Compress in memory values of index granularity if it is possible
-    )", 0) \
+Compress in memory values of index granularity if it is possible
+)", 0) \
     DECLARE(Int64, merge_with_ttl_timeout, 3600 * 4, R"(
-    Minimum delay in seconds before repeating a merge with delete TTL.
-    )", 0) \
+Minimum delay in seconds before repeating a merge with delete TTL.
+)", 0) \
     DECLARE(Int64, merge_with_recompression_ttl_timeout, 3600 * 4, R"(
-    Minimum delay in seconds before repeating a merge with recompression TTL.
-    )", 0) \
+Minimum delay in seconds before repeating a merge with recompression TTL.
+)", 0) \
     DECLARE(Bool, ttl_only_drop_parts, false, R"(
-    Controls whether data parts are fully dropped in MergeTree tables when all
-    rows in that part have expired according to their `TTL` settings.
+Controls whether data parts are fully dropped in MergeTree tables when all
+rows in that part have expired according to their `TTL` settings.
 
-    When `ttl_only_drop_parts` is disabled (by default), only the rows that have
-    expired based on their TTL settings are removed.
+When `ttl_only_drop_parts` is disabled (by default), only the rows that have
+expired based on their TTL settings are removed.
 
-    When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
-    rows in that part have expired according to their `TTL` settings.
-    )", 0) \
+When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
+rows in that part have expired according to their `TTL` settings.
+)", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
-    Only recalculate ttl info when MATERIALIZE TTL
-    )", 0) \
+Only recalculate ttl info when MATERIALIZE TTL
+)", 0) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
-    Enables or disables transitioning to control the granule size with the
-    `index_granularity_bytes` setting. Before version 19.11, there was only the
-    `index_granularity` setting for restricting granule size. The
-    `index_granularity_bytes` setting improves ClickHouse performance when
-    selecting data from tables with big rows (tens and hundreds of megabytes).
-    If you have tables with big rows, you can enable this setting for the tables
-    to improve the efficiency of `SELECT` queries.
-    )", 0) \
+Enables or disables transitioning to control the granule size with the
+`index_granularity_bytes` setting. Before version 19.11, there was only the
+`index_granularity` setting for restricting granule size. The
+`index_granularity_bytes` setting improves ClickHouse performance when
+selecting data from tables with big rows (tens and hundreds of megabytes).
+If you have tables with big rows, you can enable this setting for the tables
+to improve the efficiency of `SELECT` queries.
+)", 0) \
     DECLARE(UInt64, concurrent_part_removal_threshold, 100, R"(
-    Activate concurrent part removal (see 'max_part_removal_threads') only if
-    the number of inactive data parts is at least this.
-    )", 0) \
+Activate concurrent part removal (see 'max_part_removal_threads') only if
+the number of inactive data parts is at least this.
+)", 0) \
     DECLARE(UInt64, concurrent_part_removal_threshold_for_remote_disk, 16, R"(
-    Same as `concurrent_part_removal_threshold`, but used when at least one
-    part being removed is stored on a remote disk. The default is lower
-    because each part removal on remote storage typically requires a network
-    round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
-    serial removal of even 100 parts can stall a `DROP TABLE` for tens of
-    seconds.
-    )", 0) \
+Same as `concurrent_part_removal_threshold`, but used when at least one
+part being removed is stored on a remote disk. The default is lower
+because each part removal on remote storage typically requires a network
+round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
+serial removal of even 100 parts can stall a `DROP TABLE` for tens of
+seconds.
+)", 0) \
     DECLARE(UInt64, zero_copy_concurrent_part_removal_max_split_times, 5, R"(
-    Max recursion depth for splitting independent Outdated parts ranges into
-    smaller subranges. Recommended not to change.
-    )", 0) \
+Max recursion depth for splitting independent Outdated parts ranges into
+smaller subranges. Recommended not to change.
+)", 0) \
     DECLARE(Float, zero_copy_concurrent_part_removal_max_postpone_ratio, static_cast<Float32>(0.05), R"(
-    Max percentage of top level parts to postpone removal in order to get
-    smaller independent ranges. Recommended not to change.
-    )", 0) \
+Max percentage of top level parts to postpone removal in order to get
+smaller independent ranges. Recommended not to change.
+)", 0) \
     DECLARE(String, storage_policy, "default", R"(
-    Name of storage disk policy
-    )", 0) \
+Name of storage disk policy
+)", 0) \
     DECLARE(String, disk, "", R"(
-    Name of storage disk. Can be specified instead of storage policy.
-    )", 0) \
+Name of storage disk. Can be specified instead of storage policy.
+)", 0) \
     DECLARE(Bool, table_disk, false, R"(
-    This is table disk, the path/endpoint should point to the table data, not to
-    the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
-    )", 0) \
+This is table disk, the path/endpoint should point to the table data, not to
+the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+)", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
-    Allow Nullable types as primary keys.
-    )", 0) \
+Allow Nullable types as primary keys.
+)", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow usage of '_part_offset' column in projections select query.
-    )", 0) \
+Allow usage of '_part_offset' column in projections select query.
+)", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
-    Remove empty parts after they were pruned by TTL, mutation, or collapsing
-    merge algorithm.
-    )", 0) \
+Remove empty parts after they were pruned by TTL, mutation, or collapsing
+merge algorithm.
+)", 0) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
-    Remove in background patch parts which are applied for all active parts.
-    )", 0) \
+Remove in background patch parts which are applied for all active parts.
+)", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
-    When enabled, a unique part identifier will be assigned for every new part.
-    Before enabling, check that all replicas support UUID version 4.
-    )", 0) \
+When enabled, a unique part identifier will be assigned for every new part.
+Before enabling, check that all replicas support UUID version 4.
+)", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
-    Limits the maximum number of partitions that can be accessed in one query.
+Limits the maximum number of partitions that can be accessed in one query.
 
-    The setting value specified when the table is created can be overridden via
-    query-level setting.
+The setting value specified when the table is created can be overridden via
+query-level setting.
 
-    Possible values:
-    - Any positive integer.
+Possible values:
+- Any positive integer.
 
-    You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
-    at a query / session / profile level.
-    )", 0) \
+You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
+at a query / session / profile level.
+)", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
-    Max number of concurrently executed queries related to the MergeTree table.
-    Queries will still be limited by other `max_concurrent_queries` settings.
+Max number of concurrently executed queries related to the MergeTree table.
+Queries will still be limited by other `max_concurrent_queries` settings.
 
-    Possible values:
-    - Positive integer.
-    - `0` — No limit.
+Possible values:
+- Positive integer.
+- `0` — No limit.
 
-    Default value: `0` (no limit).
+Default value: `0` (no limit).
 
-    **Example**
+**Example**
 
-    ```xml
-    <max_concurrent_queries>50</max_concurrent_queries>
-    ```
-    )", 0) \
+```xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+)", 0) \
     DECLARE(UInt64, min_marks_to_honor_max_concurrent_queries, 0, R"(
-    The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
-    setting.
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
+setting.
 
-    :::note
-    Queries will still be limited by other `max_concurrent_queries` settings.
-    :::
+:::note
+Queries will still be limited by other `max_concurrent_queries` settings.
+:::
 
-    Possible values:
-    - Positive integer.
-    - `0` — Disabled (`max_concurrent_queries` limit applied to no queries).
+Possible values:
+- Positive integer.
+- `0` — Disabled (`max_concurrent_queries` limit applied to no queries).
 
-    **Example**
+**Example**
 
-    ```xml
-    <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-    ```
-    )", 0) \
+```xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
+)", 0) \
     DECLARE(UInt64, min_bytes_to_rebalance_partition_over_jbod, 0, R"(
-    Sets minimal amount of bytes to enable balancing when distributing new big
-    parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
+Sets minimal amount of bytes to enable balancing when distributing new big
+parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
-    - `0` — Balancing is disabled.
+- Positive integer.
+- `0` — Balancing is disabled.
 
-    **Usage**
+**Usage**
 
-    The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should
-    not be less than the value of the
-    [max_bytes_to_merge_at_max_space_in_pool](/operations/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
-    / 1024. Otherwise, ClickHouse throws an exception.
-    )", 0) \
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should
+not be less than the value of the
+[max_bytes_to_merge_at_max_space_in_pool](/operations/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
+/ 1024. Otherwise, ClickHouse throws an exception.
+)", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
-    Enables the check at table creation, that the data type of a column for s
-    ampling or sampling expression is correct. The data type must be one of unsigned
-    [integer types](/sql-reference/data-types/int-uint): `UInt8`, `UInt16`,
-    `UInt32`, `UInt64`.
+Enables the check at table creation, that the data type of a column for s
+ampling or sampling expression is correct. The data type must be one of unsigned
+[integer types](/sql-reference/data-types/int-uint): `UInt8`, `UInt16`,
+`UInt32`, `UInt64`.
 
-    Possible values:
-    - `true`  — The check is enabled.
-    - `false` — The check is disabled at table creation.
+Possible values:
+- `true`  — The check is enabled.
+- `false` — The check is disabled at table creation.
 
-    Default value: `true`.
+Default value: `true`.
 
-    By default, the ClickHouse server checks at table creation the data type of
-    a column for sampling or sampling expression. If you already have tables with
-    incorrect sampling expression and do not want the server to raise an exception
-    during startup, set `check_sample_column_is_correct` to `false`.
-    )", 0) \
+By default, the ClickHouse server checks at table creation the data type of
+a column for sampling or sampling expression. If you already have tables with
+incorrect sampling expression and do not want the server to raise an exception
+during startup, set `check_sample_column_is_correct` to `false`.
+)", 0) \
     DECLARE(Bool, allow_vertical_merges_from_compact_to_wide_parts, true, R"(
-    Allows vertical merges from compact to wide parts. This settings must have
-    the same value on all replicas.
-    )", 0) \
+Allows vertical merges from compact to wide parts. This settings must have
+the same value on all replicas.
+)", 0) \
     DECLARE(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, R"(
-    Enable the endpoint id with zookeeper name prefix for the replicated merge
-    tree table.
-    )", 0) \
+Enable the endpoint id with zookeeper name prefix for the replicated merge
+tree table.
+)", 0) \
     DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock, 0, R"(
-    If zero copy replication is enabled sleep random amount of time up to 500ms
-    before trying to lock for merge or mutation.
-    )", 0) \
+If zero copy replication is enabled sleep random amount of time up to 500ms
+before trying to lock for merge or mutation.
+)", 0) \
     DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, R"(
-    If zero copy replication is enabled sleep random amount of time before trying
-    to lock depending on parts size for merge or mutation
-    )", 0) \
+If zero copy replication is enabled sleep random amount of time before trying
+to lock depending on parts size for merge or mutation
+)", 0) \
     DECLARE(Bool, allow_floating_point_partition_key, false, R"(
-    Enables to allow floating-point number as a partition key.
+Enables to allow floating-point number as a partition key.
 
-    Possible values:
-    - `0` — Floating-point partition key not allowed.
-    - `1` — Floating-point partition key allowed.
-    )", 0) \
+Possible values:
+- `0` — Floating-point partition key not allowed.
+- `1` — Floating-point partition key allowed.
+)", 0) \
     DECLARE(UInt64, sleep_before_loading_outdated_parts_ms, 0, R"(
-    For testing. Do not change it.
-    )", 0) \
+For testing. Do not change it.
+)", 0) \
     DECLARE(Bool, always_use_copy_instead_of_hardlinks, false, R"(
-    Always copy data instead of hardlinking during mutations/replaces/detaches
-    and so on.
-    )", 0) \
+Always copy data instead of hardlinking during mutations/replaces/detaches
+and so on.
+)", 0) \
     DECLARE(Bool, disable_freeze_partition_for_zero_copy_replication, true, R"(
-    Disable FREEZE PARTITION query for zero copy replication.
-    )", 0) \
+Disable FREEZE PARTITION query for zero copy replication.
+)", 0) \
     DECLARE(Bool, disable_detach_partition_for_zero_copy_replication, true, R"(
-    Disable DETACH PARTITION query for zero copy replication.
-    )", 0) \
+Disable DETACH PARTITION query for zero copy replication.
+)", 0) \
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
-    Disable FETCH PARTITION query for zero copy replication.
-    )", 0) \
+Disable FETCH PARTITION query for zero copy replication.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
-    Enable persisting column _block_number for each row.
-    )", 0, allow_experimental_block_number_column) \
+Enable persisting column _block_number for each row.
+)", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
-    Persists virtual column `_block_offset` on merges.
-    )", 0) \
+Persists virtual column `_block_offset` on merges.
+)", 0) \
     DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
-    Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
+Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
 
-    Possible values:
-    - `partition_key_only` — only the partition-key columns are tracked.
-    - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
-    )", 0) \
+Possible values:
+- `partition_key_only` — only the partition-key columns are tracked.
+- `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
+)", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all numeric columns
-    of the table.
-    )", 0) \
+When enabled, min-max (skipping) indices are added for all numeric columns
+of the table.
+)", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of the table.
-    )", 0) \
+When enabled, min-max (skipping) indices are added for all string columns of the table.
+)", 0) \
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
-    )", 0) \
+When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
+)", 0) \
     DECLARE(Bool, add_minmax_index_for_block_number_column, false, R"(
-    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_number`.
-    Requires `enable_block_number_column = 1` to take effect. The index is built only during merges,
-    not during inserts: at insert time the block number is provisional and would index a constant.
-    )", 0) \
+When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_number`.
+Requires `enable_block_number_column = 1` to take effect. The index is built only during merges,
+not during inserts: at insert time the block number is provisional and would index a constant.
+)", 0) \
     DECLARE(Bool, add_minmax_index_for_block_offset_column, false, R"(
-    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_offset`.
-    Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
-    not during inserts.
-    )", 0) \
+When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_offset`.
+Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
+not during inserts.
+)", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
-    Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: basic, tdigest, countmin, minmax, uniq.
-    )", 0) \
+Comma-separated list of statistics types to calculate automatically on all suitable columns.
+Supported statistics types: basic, tdigest, countmin, minmax, uniq, uniq_v2.
+)", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
-    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
-    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
-    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
-    file. Substreams larger than this stay in the legacy per-file layout. The decision is
-    made independently per substream at write time, so a single part can have small indices
-    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
-    to disable packing entirely (default).
+Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+file. Substreams larger than this stay in the legacy per-file layout. The decision is
+made independently per substream at write time, so a single part can have small indices
+(e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+to disable packing entirely (default).
 
-    Each skip-index substream actually consists of a data file and a marks file; both buffer
-    in memory up to the threshold before the spill decision is made. So peak memory while
-    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
-    below the threshold)`.
+Each skip-index substream actually consists of a data file and a marks file; both buffer
+in memory up to the threshold before the spill decision is made. So peak memory while
+writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+below the threshold)`.
 
-    Full-text indices are not supported by this setting and are never packed.
+Full-text indices are not supported by this setting and are never packed.
 
-    Packing reduces inode pressure when many skip indices are defined on a table (for example
-    with `add_minmax_index_for_numeric_columns`).
+Packing reduces inode pressure when many skip indices are defined on a table (for example
+with `add_minmax_index_for_numeric_columns`).
 
-    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
-    substreams from inside it transparently. Changing this setting affects newly written parts
-    only; existing parts retain whatever layout they had at write time.
-
-    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
-    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
-    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
-    monitoring with one functional consequence:
-    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
-    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
-    strings) may not cross the activation threshold even if the real uncompressed size would.
-    The fallback is the normal query plan, not a wrong result.
-    )", EXPERIMENTAL) \
+The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+substreams from inside it transparently. Changing this setting affects newly written parts
+only; existing parts retain whatever layout they had at write time.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
-    When enabled, allows summing columns in a SummingMergeTree table to be used in
-    the partition or sorting key.
-    )", 0) \
+When enabled, allows summing columns in a SummingMergeTree table to be used in
+the partition or sorting key.
+)", 0) \
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
-    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
-    the partition or sorting key.
-    )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
-    Enables writing attributes into virtual parts and committing blocks in keeper
-    )", 0) \
+When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
+the partition or sorting key.
+)", 0) \
+    DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(
+In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
+key, combining their aggregate states. A column that is neither part of the sorting key nor an
+aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`) is a *dimension*: after
+a merge it keeps an arbitrary value of one of the collapsed rows, which silently produces wrong
+results for queries that `GROUP BY` or filter on it (see
+https://github.com/ClickHouse/ClickHouse/issues/751).
+
+By default, such a schema is rejected when the table is created. Enable this setting if the column is
+functionally dependent on the sorting key (so all collapsed rows share the same value) and the
+behavior is intentional.
+
+The check applies only to tables that actually aggregate (those with at least one aggregate-state
+column) and is skipped when `allow_tuple_element_aggregation` is enabled.
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
+Enables writing attributes into virtual parts and committing blocks in keeper
+)", 0) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
-    Activates rescheduling of coordinated merges tasks. It can be useful even when
-    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
-    statistics and help with cold start.
-    )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
-    Enables coordinated merges strategy
-    )", 0) \
+Activates rescheduling of coordinated merges tasks. It can be useful even when
+shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
+statistics and help with cold start.
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, true, R"(
+Enables coordinated merges strategy
+)", 0) \
     DECLARE(UInt64Auto, shared_merge_tree_merge_coordinator_merges_prepare_count, Field("auto"), R"(
-    Number of merge entries that coordinator should prepare and distribute across workers.
-    When set to 'auto', equals the max number of merge tasks allowed on a single replica multiplied by the number of active replicas.
-    )", 0) \
+Number of merge entries that coordinator should prepare and distribute across workers.
+When set to 'auto', equals the max number of merge tasks allowed on a single replica multiplied by the number of active replicas.
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
-    How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", 0) \
+How often merge coordinator should sync with zookeeper to take fresh metadata
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
-    Number of merges that coordinator can request from MergerMutator at once
-    )", 0) \
+Number of merges that coordinator can request from MergerMutator at once
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
-    Time between runs of merge coordinator election thread
-    )", 0) \
+Time between runs of merge coordinator election thread
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
-    Minimum time between runs of merge coordinator thread
-    )", 0) \
+Minimum time between runs of merge coordinator thread
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
-    Maximum time between runs of merge coordinator thread
-    )", 0) \
+Maximum time between runs of merge coordinator thread
+)", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
-    Time changing factor for delay of coordinator thread
-    )", 0) \
+Time changing factor for delay of coordinator thread
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
-    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", 0) \
+Timeout that merge worker thread will use if it is needed to update it's state after immediate action
+)", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
-    Time between runs of merge worker thread
-    )", 0) \
+Time between runs of merge worker thread
+)", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
-    Experimental/Incomplete feature to move parts between shards. Does not take
-    into account sharding expressions.
-    )", EXPERIMENTAL) \
+Experimental/Incomplete feature to move parts between shards. Does not take
+into account sharding expressions.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
-    Time to wait before/after moving parts between shards.
-    )", EXPERIMENTAL) \
+Time to wait before/after moving parts between shards.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
-    Don't use this setting in production, because it is not ready.
-    )", EXPERIMENTAL) \
+Don't use this setting in production, because it is not ready.
+)", EXPERIMENTAL) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
-    ZooKeeper path for zero-copy table-independent info.
-    )", EXPERIMENTAL) \
+ZooKeeper path for zero-copy table-independent info.
+)", EXPERIMENTAL) \
     DECLARE(Bool, remote_fs_zero_copy_path_compatible_mode, false, R"(
-    Run zero-copy in compatible mode during conversion process.
-    )", EXPERIMENTAL) \
+Run zero-copy in compatible mode during conversion process.
+)", EXPERIMENTAL) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, R"(
-    Force read-through filesystem cache for merges
-    )", EXPERIMENTAL) \
+Force read-through filesystem cache for merges
+)", EXPERIMENTAL) \
     DECLARE(Bool, cache_populated_by_fetch, false, R"(
-    :::note
-    This setting applies only to ClickHouse Cloud.
-    :::
+:::note
+This setting applies only to ClickHouse Cloud.
+:::
 
-    When `cache_populated_by_fetch` is disabled (the default setting), new data
-    parts are loaded into the filesystem cache only when a query is run that requires
-    those parts.
+When `cache_populated_by_fetch` is disabled (the default setting), new data
+parts are loaded into the filesystem cache only when a query is run that requires
+those parts.
 
-    If enabled, `cache_populated_by_fetch` will instead cause all nodes to load
-    new data parts from storage into their filesystem cache without requiring a query
-    to trigger such an action.
+If enabled, `cache_populated_by_fetch` will instead cause all nodes to load
+new data parts from storage into their filesystem cache without requiring a query
+to trigger such an action.
 
-    **See Also**
+**See Also**
 
-    - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
-    - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
-    - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
-    )", 0) \
+- [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
+- [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
+- [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+)", 0) \
     DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
-    :::note
-    This setting applies only to ClickHouse Cloud.
-    :::
+:::note
+This setting applies only to ClickHouse Cloud.
+:::
 
-    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
-    )", 0) \
+If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
+)", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
-    Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
-    column. When enabled, allows using `OPTIMIZE ... FINAL CLEANUP` to manually
-    merge all parts in a partition down to a single part and removing any
-    deleted rows.
+Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
+column. When enabled, allows using `OPTIMIZE ... FINAL CLEANUP` to manually
+merge all parts in a partition down to a single part and removing any
+deleted rows.
 
-    Also allows enabling such merges to happen automatically in the background
-    with settings `min_age_to_force_merge_seconds`,
-    `min_age_to_force_merge_on_partition_only` and
-    `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
-    )", EXPERIMENTAL) \
+Also allows enabling such merges to happen automatically in the background
+with settings `min_age_to_force_merge_seconds`,
+`min_age_to_force_merge_on_partition_only` and
+`enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_replacing_merge_with_cleanup_for_min_age_to_force_merge, false, R"(
-    Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions
-    down to a single part. Requires `allow_experimental_replacing_merge_with_cleanup`,
-    `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only`
-    to be enabled.
+Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions
+down to a single part. Requires `allow_experimental_replacing_merge_with_cleanup`,
+`min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only`
+to be enabled.
 
-    Possible values:
-    - `true`
-    - `false`
-    )", EXPERIMENTAL) \
+Possible values:
+- `true`
+- `false`
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
-    Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
-    Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
-    )", EXPERIMENTAL) \
+Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
+Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
+)", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
-    Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
-    )", EXPERIMENTAL) \
+Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
-    How many partition discoveries should be packed into batch
-    )", EXPERIMENTAL) \
+How many partition discoveries should be packed into batch
+)", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
-    Enabled cleanup of Keeper entries of empty partition.
-    )", 0) \
+Enabled cleanup of Keeper entries of empty partition.
+)", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
-    How many seconds partition will be stored in keeper if it has no parts.
-    )", 0) \
+How many seconds partition will be stored in keeper if it has no parts.
+)", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
-    Marks support compression, reduce mark file size and speed up network
-    transmission.
-    )", 0) \
+Marks support compression, reduce mark file size and speed up network
+transmission.
+)", 0) \
     DECLARE(Bool, compress_primary_key, true, R"(
-    Primary key support compression, reduce primary key file size and speed up
-    network transmission.
-    )", 0) \
+Primary key support compression, reduce primary key file size and speed up
+network transmission.
+)", 0) \
     DECLARE(String, marks_compression_codec, "ZSTD(3)", R"(
-    Compression encoding used by marks, marks are small enough and cached, so
-    the default compression is ZSTD(3).
-    )", 0) \
+Compression encoding used by marks, marks are small enough and cached, so
+the default compression is ZSTD(3).
+)", 0) \
     DECLARE(String, primary_key_compression_codec, "ZSTD(3)", R"(
-    Compression encoding used by primary, primary key is small enough and cached,
-    so the default compression is ZSTD(3).
-    )", 0) \
+Compression encoding used by primary, primary key is small enough and cached,
+so the default compression is ZSTD(3).
+)", 0) \
     DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
-    Mark compress block size, the actual size of the block to compress.
-    )", 0) \
+Mark compress block size, the actual size of the block to compress.
+)", 0) \
     DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
-    Primary compress block size, the actual size of the block to compress.
-    )", 0) \
+Primary compress block size, the actual size of the block to compress.
+)", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
     first use instead of on table initialization. This can save memory in the
     presence of a large number of tables.
-    )", 0) \
+)", 0) \
     DECLARE(Float, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns, 0.9f, R"(
-    If the value of a column of the primary key in data part changes at least in
-    this ratio of times, skip loading next columns in memory. This allows to save
-    memory usage by not loading useless columns of the primary key.
-    )", 0) \
+If the value of a column of the primary key in data part changes at least in
+this ratio of times, skip loading next columns in memory. This allows to save
+memory usage by not loading useless columns of the primary key.
+)", 0) \
     DECLARE(Bool, use_primary_key_cache, false, R"(Use cache for primary index
     instead of saving all indexes in memory. Can be useful for very large tables
-    )", 0) \
+)", 0) \
     DECLARE(Bool, prewarm_primary_key_cache, false, R"(If true primary index
     cache will be prewarmed by saving marks to mark cache on inserts, merges,
     fetches and on startup of server
-    )", 0) \
+)", 0) \
     DECLARE(Bool, prewarm_mark_cache, false, R"(If true mark cache will be
     prewarmed by saving marks to mark cache on inserts, merges, fetches and on
     startup of server
-    )", 0) \
+)", 0) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
-    List of columns to prewarm mark cache for (if enabled). Empty means all columns
-    )", 0) \
+List of columns to prewarm mark cache for (if enabled). Empty means all columns
+)", 0) \
     DECLARE(UInt64, min_bytes_to_prewarm_caches, 0, R"(
-    Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache
-    for new parts
-    )", 0) \
+Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache
+for new parts
+)", 0) \
     /** Projection settings. */ \
     DECLARE(UInt64, max_projections, 25, R"(
-    The maximum number of merge tree projections.
-    )", 0) \
+The maximum number of merge tree projections.
+)", 0) \
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, R"(
-    By default, lightweight delete `DELETE` does not work for tables with
-    projections. This is because rows in a projection may be affected by a
-    `DELETE` operation. So the default value would be `throw`. However, this
-    option can change the behavior. With the value either `drop` or `rebuild`,
-    deletes will work with projections. `drop` would delete the projection so it
-    might be fast in the current query as projection gets deleted but slow in
-    future queries as no projection attached. `rebuild` would rebuild the
-    projection which might affect the performance of the current query, but
-    might speedup for future queries. A good thing is that these options would
-    only work in the part level, which means projections in the part that don't
-    get touched would stay intact instead of triggering any action like
-    drop or rebuild.
+By default, lightweight delete `DELETE` does not work for tables with
+projections. This is because rows in a projection may be affected by a
+`DELETE` operation. So the default value would be `throw`. However, this
+option can change the behavior. With the value either `drop` or `rebuild`,
+deletes will work with projections. `drop` would delete the projection so it
+might be fast in the current query as projection gets deleted but slow in
+future queries as no projection attached. `rebuild` would rebuild the
+projection which might affect the performance of the current query, but
+might speedup for future queries. A good thing is that these options would
+only work in the part level, which means projections in the part that don't
+get touched would stay intact instead of triggering any action like
+drop or rebuild.
 
-    Possible values:
-    - `throw`
-    - `drop`
-    - `rebuild`
-    )", 0) \
+Possible values:
+- `throw`
+- `drop`
+- `rebuild`
+)", 0) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, R"(
-    Whether to allow create projection for the table with non-classic MergeTree,
-    that is not (Replicated, Shared) MergeTree. Ignore option is purely for
-    compatibility which might result in incorrect answer. Otherwise, if allowed,
-    what is the action when merge projections, either drop or rebuild. So classic
-    MergeTree would ignore this setting. It also controls `OPTIMIZE DEDUPLICATE`
-    as well, but has effect on all MergeTree family members. Similar to the
-    option `lightweight_mutation_projection_mode`, it is also part level.
+Whether to allow create projection for the table with non-classic MergeTree,
+that is not (Replicated, Shared) MergeTree. Ignore option is purely for
+compatibility which might result in incorrect answer. Otherwise, if allowed,
+what is the action when merge projections, either drop or rebuild. So classic
+MergeTree would ignore this setting. It also controls `OPTIMIZE DEDUPLICATE`
+as well, but has effect on all MergeTree family members. Similar to the
+option `lightweight_mutation_projection_mode`, it is also part level.
 
-    Possible values:
-    - `ignore`
-    - `throw`
-    - `drop`
-    - `rebuild`
-    )", 0) \
+Possible values:
+- `ignore`
+- `throw`
+- `drop`
+- `rebuild`
+)", 0) \
     DECLARE(AlterColumnSecondaryIndexMode, alter_column_secondary_index_mode, AlterColumnSecondaryIndexMode::REBUILD, R"(
-    Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
-    they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
+Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
+they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
 
-    Possible values:
-    - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
-    - `throw`: Prevents any `ALTER` of columns covered by **explicit** secondary indices by throwing an exception. Implicit indices are excluded from this restriction and will be rebuilt.
-    - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
-    - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
-    - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
-    )", 0) \
+Possible values:
+- `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
+- `throw`: Prevents any `ALTER` of columns covered by **explicit** secondary indices by throwing an exception. Implicit indices are excluded from this restriction and will be rebuilt.
+- `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
+- `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
+- `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
+)", 0) \
     /** Part loading settings. */           \
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
-    Calculate columns and secondary indices sizes lazily on first request instead
-    of on table initialization.
-    )", 0) \
+Calculate columns and secondary indices sizes lazily on first request instead
+of on table initialization.
+)", 0) \
     DECLARE(String, default_compression_codec, "", R"(
-    Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
-    Compression codec selecting order for a column:
-        1. Compression codec defined for the column in the table declaration
-        2. Compression codec defined in `default_compression_codec` (this setting)
-        3. Default compression codec defined in `compression` settings
-    Default value: an empty string (not defined).
-    )", 0) \
+Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
+Compression codec selecting order for a column:
+    1. Compression codec defined for the column in the table declaration
+    2. Compression codec defined in `default_compression_codec` (this setting)
+    3. Default compression codec defined in `compression` settings
+Default value: an empty string (not defined).
+)", 0) \
     DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
-    ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
-    in order to not allow to miss data parts at undefined (not included in policy) disks.
-    Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
-    This setting limits scope of disks to search by traits of the disks.
+ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
+in order to not allow to miss data parts at undefined (not included in policy) disks.
+Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
+This setting limits scope of disks to search by traits of the disks.
 
-    Possible values:
-    - any - scope is not limited.
-    - local - scope is limited by local disks .
-    - none - empty scope, do not search
-    )", 0) \
+Possible values:
+- any - scope is not limited.
+- local - scope is limited by local disks .
+- none - empty scope, do not search
+)", 0) \
     DECLARE(Seconds, refresh_statistics_interval, 300, R"(
-    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
-    )", 0) \
+The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
+)", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
-    Minimal number of parts to activated distributed index analysis
-    )", EXPERIMENTAL) \
+Minimal number of parts to activated distributed index analysis
+)", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
-    Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
-    )", EXPERIMENTAL) \
+Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
+)", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
-    Batch size for ZooKeeper multi-create get-part requests when cloning replica.
-    )", 0) \
+Batch size for ZooKeeper multi-create get-part requests when cloning replica.
+)", 0) \
     DECLARE(Bool, table_readonly, false, R"(
-    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
-    )", 0) \
-    DECLARE(Bool, materialize_projections_on_insert, true, R"(
-    When enabled, INSERTs create new parts with projections.
-    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
-    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
-    )", 0) \
-    DECLARE(Bool, materialize_projections_on_merge, false, R"(
-    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
-    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+If set to true, the table is in read-only mode and performs no modifications on disk.
 
-    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
-    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
-    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
-    )", 0) \
+All foreground operations that would modify the table are rejected: inserts, mutations, `OPTIMIZE`, and the data-mutating partition commands
+(`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, as well as `MOVE PARTITION ... TO TABLE` targeting this table). Operations
+that do not modify the table's data, such as `FREEZE`/`UNFREEZE` and `FORGET PARTITION`, remain allowed.
+
+No background work is scheduled either: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
+and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
+is enabled.
+
+The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
+)", 0) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+When enabled, INSERTs create new parts with projections.
+Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+)", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+)", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -2274,6 +2290,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2294,7 +2311,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
@@ -2324,7 +2341,7 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
     if (storage_def.settings)
     {
@@ -2336,25 +2353,12 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            for (auto & [name, value] : changes)
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+
+            for (const auto & [name, value] : changes)
             {
-                CustomType custom;
                 if (name == "disk")
                 {
-                    ASTPtr value_as_custom_ast = nullptr;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-                    {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
-                        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                        value = disk_name;
-                    }
-                    else
-                    {
-                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
-                    }
                     disk = context->getDisk(value.safeGet<String>());
 
                     if (has("storage_policy"))
@@ -2490,6 +2494,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::index_granularity].value);
     }
 
+    if ((*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size] < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "shared_merge_tree_range_for_merge_window_size: value {} makes no sense",
+            (*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size].value);
+    }
+
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
@@ -2596,6 +2608,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
+    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2658,14 +2684,59 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChanges(changes);
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChanges(resolved_changes);
 }
 
-void MergeTreeSettings::applyChange(const SettingChange & change)
+void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChange(change);
+    auto resolved_change = change;
+    resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    impl->applyChange(resolved_change);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+{
+    for (auto & change : changes)
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+{
+    if (change.name != "disk")
+        return;
+
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+        change.value = disk_name;
+    }
+    else if (!is_loading_from_existing_metadata)
+    {
+        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
+    }
+}
+
+bool MergeTreeSettings::isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes)
+{
+    const Field * new_value = new_changes.tryGet("disk");
+    if (!new_value)
+        return false;
+
+    const Field * old_value = old_changes.tryGet("disk");
+    if (!old_value)
+        return true;
+
+    return applyVisitor(FieldVisitorToString(), *old_value) != applyVisitor(FieldVisitorToString(), *new_value);
 }
 
 void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)
@@ -2699,9 +2770,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
     }
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -2723,14 +2794,24 @@ std::string_view MergeTreeSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

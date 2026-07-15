@@ -1,0 +1,182 @@
+---
+description: 'MergeTree テーブルにカスタムパーティションキーを追加する方法を説明します。'
+sidebarTitle: 'カスタムパーティションキー'
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: 'カスタムパーティションキー'
+doc_type: 'guide'
+---
+
+<Note>
+  ほとんどの場合、パーティションキーは必要ありません。また、日単位でのパーティション化が一般的なオブザーバビリティのユースケースを除き、月単位より細かいパーティションキーも通常は不要です。
+
+  細かすぎるパーティション化は決して使用しないでください。クライアント識別子や名前でデータをパーティション化してはいけません。代わりに、クライアント識別子または名前を ORDER BY 式の最初のカラムにしてください。
+</Note>
+
+パーティション化は、[MergeTree family tables](/ja/reference/engines/table-engines/mergetree-family/mergetree) ([レプリケートテーブル](/ja/reference/engines/table-engines/mergetree-family/replication) や [materialized view](/ja/reference/statements/create/view#materialized-view) を含む) で利用できます。
+
+パーティションは、指定した条件に基づいてテーブル内のレコードを論理的にまとめたものです。月ごと、日ごと、イベントタイプごとなど、任意の条件でパーティションを設定できます。各パーティションは個別に保存されるため、このデータの操作が容易になります。データにアクセスする際、ClickHouse は可能な限り最小のパーティション集合を使用します。パーティションキーを含むクエリでは、ClickHouse がパーティション内のパーツやグラニュールを選択する前に、そのパーティションで絞り込みを行うため、パーティション化はパフォーマンス向上に役立ちます。
+
+パーティションは、[テーブル作成時](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) の `PARTITION BY expr` 句で指定します。パーティションキーには、テーブルのカラムを使った任意の式を指定できます。たとえば、月単位のパーティション化を指定するには、`toYYYYMM(date_column)` 式を使用します。
+
+```sql
+CREATE TABLE visits
+(
+    VisitDate Date,
+    Hour UInt8,
+    ClientID UUID
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(VisitDate)
+ORDER BY Hour;
+```
+
+パーティションキーには、式のタプルを使用することもできます ([主キー](/ja/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) と同様) 。例:
+
+```sql
+ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
+PARTITION BY (toMonday(StartDate), EventType)
+ORDER BY (CounterID, StartDate, intHash32(UserID));
+```
+
+この例では、現在の週に発生したイベントタイプごとにパーティション化を設定します。
+
+デフォルトでは、浮動小数点のパーティションキーはサポートされていません。これを使用するには、設定 [allow&#95;floating&#95;point&#95;partition&#95;key](/ja/reference/settings/merge-tree-settings#allow_floating_point_partition_key) を有効にします。
+
+テーブルに新しいデータを挿入すると、そのデータは主キーでソートされた個別のパーツ (chunk) として保存されます。挿入後 10〜15 分で、同じパーティション内のパーツは 1 つの完全なパーツにマージされます。
+
+<Info>
+  マージは、パーティション化式の値が同じデータパーツに対してのみ実行されます。つまり、**パーティションを細かくしすぎるべきではありません** (目安は約 1,000 パーティション以下です) 。そうしないと、ファイルシステム内のファイル数や開かれたファイルディスクリプタが過剰になり、`SELECT` クエリのパフォーマンスが低下します。
+</Info>
+
+テーブルのパーツとパーティションを確認するには、[system.parts](/ja/reference/system-tables/parts) テーブルを使用します。たとえば、月ごとにパーティション化された `visits` テーブルがあるとします。`system.parts` テーブルに対して `SELECT` クエリを実行してみましょう。
+
+```sql
+SELECT
+    partition,
+    name,
+    active
+FROM system.parts
+WHERE table = 'visits'
+```
+
+```text
+┌─partition─┬─name──────────────┬─active─┐
+│ 201901    │ 201901_1_3_1      │      0 │
+│ 201901    │ 201901_1_9_2_11   │      1 │
+│ 201901    │ 201901_8_8_0      │      0 │
+│ 201901    │ 201901_9_9_0      │      0 │
+│ 201902    │ 201902_4_6_1_11   │      1 │
+│ 201902    │ 201902_10_10_0_11 │      1 │
+│ 201902    │ 201902_11_11_0_11 │      1 │
+└───────────┴───────────────────┴────────┘
+```
+
+`partition` カラムにはパーティション名が入ります。この例には 2 つのパーティションがあり、`201901` と `201902` です。[ALTER ... PARTITION](/ja/reference/statements/alter/partition) クエリでは、このカラムの値を使ってパーティション名を指定できます。
+
+`name` カラムには、パーティションのデータパーツ名が入ります。[ALTER ATTACH PART](/ja/reference/statements/alter/partition#attach-partitionpart) クエリでは、このカラムを使ってパーツ名を指定できます。
+
+パーツ名 `201901_1_9_2_11` を分解してみましょう。
+
+* `201901` はパーティション名です。
+* `1` はデータブロックの最小番号です。
+* `9` はデータブロックの最大番号です。
+* `2` は chunk レベルです (このパーツの元になったマージツリーの深さ) 。
+* `11` は mutation バージョンです (パーツが mutation された場合) 。
+
+<Info>
+  旧形式のテーブルのパーツ名は `20190117_20190123_2_2_0` です (最小日付 - 最大日付 - 最小ブロック番号 - 最大ブロック番号 - レベル) 。
+</Info>
+
+`active` カラムはパーツの状態を示します。`1` はアクティブ、`0` は非アクティブです。非アクティブなパーツには、たとえば、より大きなパーツにマージされたあとに残る元のパーツがあります。破損したデータパーツも非アクティブとして示されます。
+
+例を見ると、同じパーティションに複数の独立したパーツがあることがわかります (たとえば `201901_1_3_1` と `201901_1_9_2`) 。これは、これらのパーツがまだマージされていないことを意味します。ClickHouse は、挿入されたデータのパーツを定期的にマージします。通常、マージは挿入から約 15 分後に実行されます。また、[OPTIMIZE](/ja/reference/statements/optimize) クエリを使って、スケジュール外のマージを実行することもできます。例:
+
+```sql
+OPTIMIZE TABLE visits PARTITION 201902;
+```
+
+```text
+┌─partition─┬─name─────────────┬─active─┐
+│ 201901    │ 201901_1_3_1     │      0 │
+│ 201901    │ 201901_1_9_2_11  │      1 │
+│ 201901    │ 201901_8_8_0     │      0 │
+│ 201901    │ 201901_9_9_0     │      0 │
+│ 201902    │ 201902_4_6_1     │      0 │
+│ 201902    │ 201902_4_11_2_11 │      1 │
+│ 201902    │ 201902_10_10_0   │      0 │
+│ 201902    │ 201902_11_11_0   │      0 │
+└───────────┴──────────────────┴────────┘
+```
+
+非アクティブなパーツは、マージから約10分後に削除されます。
+
+パーツやパーティションの一覧を確認する別の方法は、テーブルのディレクトリ `/var/lib/clickhouse/data/<database>/<table>/` に入ることです。例えば:
+
+```bash
+/var/lib/clickhouse/data/default/visits$ ls -l
+total 40
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_8_8_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_9_9_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_10_10_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_11_11_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:19 201902_4_11_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
+```
+
+&#39;201901&#95;1&#95;1&#95;0&#39;、&#39;201901&#95;1&#95;7&#95;1&#39; などのフォルダは、パーツのディレクトリです。各パーツは対応するパーティションに属しており、特定の月のデータだけを含みます (この例のテーブルは月単位でパーティション化されています) 。
+
+`detached` ディレクトリには、[DETACH](/ja/reference/statements/detach) クエリを使ってテーブルからデタッチされたパーツが格納されます。破損したパーツも削除される代わりに、このディレクトリに移動されます。サーバーは `detached` ディレクトリ内のパーツを使用しません。[ATTACH](/ja/reference/statements/alter/partition#attach-partitionpart) クエリを実行するまでは、このディレクトリ内のデータはいつでも追加、削除、変更できますが、サーバーはそれを認識しません。
+
+稼働中のサーバーでは、ファイルシステム上でパーツの集合やそのデータを手動で変更することはできない点に注意してください。サーバーがその変更を認識しないためです。非レプリケートテーブルでは、サーバー停止中であればこれを行えますが、推奨されません。レプリケートテーブルでは、いかなる場合でもパーツの集合は変更できません。
+
+ClickHouse では、パーティションに対して削除、あるテーブルから別のテーブルへのコピー、バックアップの作成といった操作を実行できます。すべての操作の一覧については、[Manipulations With Partitions and Parts](/ja/reference/statements/alter/partition) セクションを参照してください。
+
+<div id="group-by-optimisation-using-partition-key">
+  ## パーティションキーを使った Group By の最適化
+</div>
+
+テーブルのパーティションキーとクエリの Group By キーの組み合わせによっては、各パーティションごとに独立して集計を実行できる場合があります。
+その場合、最後にすべての実行スレッドから部分的に集計されたデータをマージする必要はありません。
+これは、各 Group By キーの値が 2 つの異なるスレッドのワーキングセットにまたがって現れないことが保証されるためです。
+
+典型的な例は次のとおりです。
+
+```sql
+CREATE TABLE session_log
+(
+    UserID UInt64,
+    SessionID UUID
+)
+ENGINE = MergeTree
+PARTITION BY sipHash64(UserID) % 16
+ORDER BY tuple();
+
+SELECT
+    UserID,
+    COUNT()
+FROM session_log
+GROUP BY UserID;
+```
+
+<Note>
+  このようなクエリのパフォーマンスは、テーブルのレイアウトに大きく依存します。そのため、この最適化はデフォルトでは有効になっていません。
+</Note>
+
+良好なパフォーマンスを得るための主な要因は次のとおりです。
+
+* クエリに含まれるパーティション数が十分に多いこと (`max_threads / 2` より大きいこと) 。そうでないと、クエリはマシンを十分に活用できません
+* パーティションが小さすぎないこと。そうしないと、バッチ処理が行単位の処理に近くなってしまいます
+* パーティションのサイズが同程度であること。そうすることで、すべてのスレッドがほぼ同じ量の処理を行えます
+
+<Info>
+  データを各パーティションに均等に分散するために、`PARTITION BY` 句のカラムに何らかのハッシュ関数を適用することを推奨します。
+</Info>
+
+関連する設定は次のとおりです。
+
+* `allow_aggregate_partitions_independently` - この最適化の使用を有効にするかどうかを制御します
+* `force_aggregate_partitions_independently` - 正しさの観点では適用可能であるものの、その有効性を見積もる内部ロジックによって無効化される場合でも、使用を強制します
+* `max_number_of_partitions_for_independent_aggregation` - テーブルが持てるパーティションの最大数に対するハードリミット
