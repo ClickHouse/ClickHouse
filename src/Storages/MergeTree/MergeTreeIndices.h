@@ -389,6 +389,14 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
+/// A vector similarity index can be built on the vector column directly or on an expression of it
+/// (e.g. identity(vec)). The HNSW index is built over the expression result while the query searches with
+/// the raw reference vector, so the index is only equivalent to (and usable for) the base column when the
+/// expression preserves values. Return the base column name for a bare column optionally wrapped in
+/// value-identity functions (identity(), materialize()); return an empty string for any other expression
+/// (e.g. arrayMap(x -> 100 - x, vec)), which must not use the index or it would return the wrong top-K.
+String getValuePreservingVectorSimilarityIndexColumn(const IndexDescription & index);
+
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
 /// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips

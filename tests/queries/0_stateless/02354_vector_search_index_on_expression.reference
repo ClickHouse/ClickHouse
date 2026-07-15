@@ -1,0 +1,22 @@
+Index on a value-identity expression of vec is used
+Skip
+Name: idx
+Description: vector_similarity GRANULARITY 100000000
+Value-identity expression index returns the correct top-K
+0
+1
+2
+Non-value-preserving expression index is NOT used (would give wrong top-K)
+0
+Non-value-preserving expression index still returns the correct top-K (brute-force)
+0
+1
+2
+With both index kinds on the same column, only the value-preserving index is used
+Name: idx_good
+Mixed-index table returns the correct top-K
+0
+1
+2
+3
+4

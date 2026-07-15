@@ -621,7 +621,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG::Node * /*predicate*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
 {
-    const String & index_column = index.column_names[0];
+    /// The index may be built on the vector column directly or on a value-preserving expression of it. Only in
+    /// that case is the index equivalent to the base column set in VectorSearchParameters::column. For any other
+    /// expression, keep the expression result name so alwaysUnknownOrTrue() rejects the index and the query
+    /// falls back to a correct brute-force scan instead of returning the wrong top-K (a table may carry both a
+    /// value-preserving and a non-value-preserving vector index on the same column).
+    const String value_preserving_column = getValuePreservingVectorSimilarityIndexColumn(index);
+    const String index_column = value_preserving_column.empty() ? index.column_names[0] : value_preserving_column;
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 

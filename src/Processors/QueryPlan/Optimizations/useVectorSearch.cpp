@@ -211,7 +211,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         return no_layers_updated;
 
     /// Check if a vector similarity index exists on top of the search column.
-    /// Multi-column indexes cannot be used
+    /// Multi-column indexes cannot be used. An index built on an expression of the search column is only
+    /// usable if the expression preserves values (see getValuePreservingVectorSimilarityIndexColumn); otherwise the index is
+    /// built over transformed vectors and searching it with the raw reference vector returns the wrong top-K.
     const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
     bool has_vector_similarity_index = false;
     for (const auto & index : indexes)
@@ -220,8 +222,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             continue;
 
         chassert(index.expression);
-        auto required_columns = index.expression->getRequiredColumns();
-        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        if (getValuePreservingVectorSimilarityIndexColumn(index) == search_column)
         {
             has_vector_similarity_index = true;
             break;

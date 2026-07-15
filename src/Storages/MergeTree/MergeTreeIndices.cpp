@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Common/escapeForFileName.h>
@@ -56,6 +57,16 @@ String getIndexFileName(const String & index_name, bool escape_filename)
 String IMergeTreeIndex::getFileName() const
 {
     return getIndexFileName(index.name, index.escape_filenames);
+}
+
+String getValuePreservingVectorSimilarityIndexColumn(const IndexDescription & index)
+{
+    const auto & outputs = index.expression->getActionsDAG().getOutputs();
+    const ActionsDAG::Node * node = outputs.size() == 1 ? outputs[0] : nullptr;
+    while (node && node->type == ActionsDAG::ActionType::FUNCTION && node->children.size() == 1
+        && (node->function_base->getName() == "identity" || node->function_base->getName() == "materialize"))
+        node = node->children[0];
+    return (node && node->type == ActionsDAG::ActionType::INPUT) ? node->result_name : String{};
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
