@@ -29,13 +29,13 @@ namespace
 {
 
 /// The upper bound of the allowed grouping key cardinality.
-/// More group keys make the count aggregation the rewrite adds more expensive. 
+/// More group keys make the count aggregation the rewrite adds more expensive.
 /// Local benchmarks win clearly up to a few hundred thousand observed
 /// keys and lose at several million, so the bound sits at the low end of the gap.
 constexpr UInt64 max_observed_group_keys = 1000000;
 
-/// The lower bound on the average number of distinct argument values per group key. 
-/// The rewrite's savings come from the per-key distinct sets — the larger they are, 
+/// The lower bound on the average number of distinct argument values per group key.
+/// The rewrite's savings come from the per-key distinct sets — the larger they are,
 /// the more duplicated set maintenance and merging is eliminated — while its cost does not
 /// depend on their size. In local benchmarks sets of <= 4 elements lose 2x, sets of ~256 break even,
 /// and the winners have 1700+, so the bound sits between break-even and the winners.
@@ -144,7 +144,7 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
 
     const auto min_overlap
         = std::clamp<UInt64>(hint->merged_hash_tables / 2, min_required_group_key_thread_overlap, max_required_group_key_thread_overlap);
-    
+
     if (hint->sum_of_hash_table_sizes < hint->merged_result_rows * min_overlap)
         return false;
 
