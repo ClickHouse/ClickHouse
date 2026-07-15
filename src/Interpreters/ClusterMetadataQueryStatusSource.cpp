@@ -67,18 +67,9 @@ String ClusterMetadataQueryStatusSource::formatReplicaLabel(const String & repli
 
 std::pair<String, UInt16> ClusterMetadataQueryStatusSource::parseDisplayAddress(const String & label)
 {
-    /// Prefer standard `host:port`. Fall back to `(label, 0)` for legacy UUID-only replica node data.
     if (label.find(':') == String::npos)
         return {label, 0};
-
-    try
-    {
-        return Cluster::Address::fromString(label);
-    }
-    catch (...)
-    {
-        return {label, 0};
-    }
+    return Cluster::Address::fromString(label);
 }
 
 ExecutionStatus ClusterMetadataQueryStatusSource::checkStatus(const String & host_id)
