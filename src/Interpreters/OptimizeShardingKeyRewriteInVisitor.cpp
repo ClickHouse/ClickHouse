@@ -5,10 +5,15 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -82,6 +87,31 @@ bool shardContains(
 
 namespace DB
 {
+
+bool shardingKeyExpressionContainsNotReadySet(const ExpressionActionsPtr & sharding_key_expr)
+{
+    for (const auto & node : sharding_key_expr->getActionsDAG().getNodes())
+    {
+        if (!node.result_type || !WhichDataType(node.result_type).isSet())
+            continue;
+
+        /// A set-typed node in the standalone sharding-key expression is a `ColumnConst(ColumnSet)`
+        /// carrying the `FutureSet`. Tuple/storage sets are materialized eagerly (`get()` is non-null),
+        /// only subquery-backed sets stay unbuilt during planning. Bail out just for the latter, so shard
+        /// pruning is preserved for safe constant-set keys like `bitAnd(dummy + (0 IN (1, 2)), 1)`.
+        if (!node.column)
+            return true;
+        const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+        if (!column_set)
+            column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+        if (!column_set)
+            return true;
+        const auto future_set = column_set->getData();
+        if (!future_set || !future_set->get())
+            return true;
+    }
+    return false;
+}
 
 bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/)
 {

@@ -6,19 +6,23 @@
 # When the sharding key of a `Distributed` table contains an `IN`/subquery
 # (a set), the sharding-key `ExpressionActions` is built standalone from the
 # sharding-key AST, so that set is never populated during planning. The
-# shard-pruning rewriter executes this expression on constant values to prune
-# shards, which hits `FunctionIn` with an unbuilt set and aborts.
-#
-# The fix skips the rewrite when the sharding key contains a set (all shards
-# are queried, the same safe fallback used for non-deterministic sharding
-# keys). The rewriter runs during query planning, so `EXPLAIN` is enough to
-# trip it on master HEAD without connecting to the fake shards. With the fix
-# `EXPLAIN` completes cleanly (exit 0); without it the planner aborts
+# shard-pruning code executes this expression on constant values to prune
+# shards, which hits `FunctionIn` with an unbuilt set and aborts
 # (exit 134 in debug/sanitizer builds).
+#
+# The fix skips the optimization when the sharding key contains such an
+# UNREADY set and queries all shards instead (the same safe fallback used
+# for non-deterministic sharding keys). It does NOT bail for already
+# materialized tuple/storage sets, so shard pruning still applies to safe
+# constant-set keys. Both the analyzer rewrite path and the old-analyzer
+# `StorageDistributed::skipUnusedShards` path are guarded.
 #
 # Modelled on 04243_shardkey_rewrite_in_empty_tuple.sh: run inside a
 # `clickhouse-local` subprocess with a two-shard cluster so the abort stays
-# contained and the bugfix-validation framework sees an invertible output diff.
+# contained. The analyzer path is tripped during planning by `EXPLAIN`; the
+# old-analyzer path only runs shard skipping for a real `SELECT`, so those
+# subtests execute the query (the fake shards are unreachable, so a healthy
+# run ends in a network error, exit != 134 = OK, exit 134 = crash = BUG).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,22 +50,40 @@ cat > "${CLUSTER_CONFIG}" <<'EOF'
 </clickhouse>
 EOF
 
-# Sharding key `bitAnd(dummy + (0 IN (SELECT 1)), 1)` contains a subquery-IN.
-if ${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
-    CREATE TABLE dist_04545 AS system.one
-        ENGINE = Distributed(test_04545_two_shards, system, one, bitAnd(dummy + (0 IN (SELECT 1)), 1));
+COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, optimize_skip_unused_shards_rewrite_in = 1, allow_nondeterministic_optimize_skip_unused_shards = 1"
 
-    SET prefer_localhost_replica = 0;
-    SET optimize_skip_unused_shards = 1;
-    SET optimize_skip_unused_shards_rewrite_in = 1;
-    SET allow_nondeterministic_optimize_skip_unused_shards = 1;
+# $1 = analyzer flag, $2 = sharding key expression, $3 = "explain" | "select".
+# Prints OK unless the planner aborts (exit 134).
+run_case()
+{
+    local analyzer="$1" key="$2" mode="$3" query
+    if [ "$mode" = "explain" ]; then
+        query="EXPLAIN SELECT count() FROM dist_04545 WHERE dummy IN (0, 1)"
+    else
+        query="SELECT count() FROM dist_04545 WHERE dummy IN (0, 1)"
+    fi
 
-    EXPLAIN SELECT count() FROM dist_04545 WHERE dummy IN (0, 1);
-" > /dev/null 2>&1
-then
-    echo "OK"
-else
-    echo "BUG"
-fi
+    ${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
+        CREATE TABLE dist_04545 AS system.one
+            ENGINE = Distributed(test_04545_two_shards, system, one, ${key});
+        SET allow_experimental_analyzer = ${analyzer}, ${COMMON_SETTINGS};
+        ${query};
+    " > /dev/null 2>&1
+
+    # 134 = SIGABRT (the "Not-ready Set" logical error). Any other exit (0, or a
+    # network error from the unreachable fake shards) means planning succeeded.
+    if [ "$?" = "134" ]; then
+        echo "BUG"
+    else
+        echo "OK"
+    fi
+}
+
+# Unready subquery-backed set: must fall back, not abort. Analyzer + old analyzer.
+run_case 1 'bitAnd(dummy + (0 IN (SELECT 1)), 1)' explain
+run_case 0 'bitAnd(dummy + (0 IN (SELECT 1)), 1)' select
+# Ready tuple set: safe, pruning still applies, must not abort. Analyzer + old analyzer.
+run_case 1 'bitAnd(dummy + (0 IN (1, 2)), 1)' explain
+run_case 0 'bitAnd(dummy + (0 IN (1, 2)), 1)' select
 
 rm -f "${CLUSTER_CONFIG}"
