@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -50,6 +51,8 @@ public:
 
     DB::Names getTables() const override;
 
+    Namespaces getNamespaces() const override;
+
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(
@@ -72,6 +75,13 @@ public:
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
 
     bool isTransactional() const override { return true; }
 
@@ -121,7 +131,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
-    mutable std::optional<AccessToken> access_token;
+    mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -141,11 +151,23 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    Namespaces getNamespaces(const std::string & base_namespace) const;
+    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
+    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
+    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
+    /// listing is skipped for them (see `parseNamespaces`).
+    bool hasFlatNamespaces() const;
+
+    /// List the immediate child namespaces directly under `base_namespace`
+    /// (single level, not recursive). An empty base lists the root namespaces.
+    Namespaces listChildNamespaces(const std::string & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
-    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
+    /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
+    /// `limit` is a soft cap on the number of returned names; 0 means no limit.
+    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
@@ -156,6 +178,8 @@ protected:
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+
+    void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -178,6 +202,7 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
+        const std::string & bearer_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -190,9 +215,15 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    String getBearerToken() const;
+
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
+    /// Set from `onelake_bearer_token`.
+    String bearer_token;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -208,7 +239,8 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -230,9 +262,27 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
+    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
+    const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
+};
+
+/// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
+/// (share -> namespace/schema -> table) and ignores the `parent` filter when listing namespaces. It is
+/// otherwise a plain REST catalog, so it reuses RestCatalog's behaviour and only reports a distinct type
+/// so `hasFlatNamespaces()` applies the same top-level-only listing used for BigLake.
+class DeltaSharingCatalog : public RestCatalog
+{
+public:
+    using RestCatalog::RestCatalog;
+
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    {
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+    }
 };
 
 }

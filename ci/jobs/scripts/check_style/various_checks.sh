@@ -105,7 +105,8 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     # These functions genuinely need live context at execution time
     # (dictionary loading, join access, ZooKeeper, ML prediction,
-    # complex type resolution for DateTime/Interval/Tuple arithmetic)
+    # complex type resolution for DateTime/Interval/Tuple arithmetic,
+    # AI provider calls)
     # and cannot use WithContext (weak_ptr) because the context may expire
     # in deferred execution paths (default expressions, async inserts).
     -e /FunctionsExternalDictionaries.h
@@ -120,6 +121,8 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /formatRow.cpp
     -e /structureToFormatSchema.cpp
     -e /UserDefined/
+    -e /FunctionBaseAI.h
+    -e /aiEmbed.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -243,12 +246,6 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
-    -e amazon_model.bin
-    -e nbagames_sample.json
-    -e 02731.arrow
-    -e aes-gcm-avx512.s
-    # TODO: these should be removed and the test should build the JAR from source at runtime
-    -e paimon-rest-catalog/chunk_
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then
@@ -265,3 +262,41 @@ git ls-files -z "$ROOT_PATH" | xargs -0 stat "$STAT_FMT_FLAG" "$STAT_FMT" 2>/dev
     | while IFS= read -r file; do
         echo "File $file is larger than 5 MB. Large files should not be committed to git — download them at test time or build from source instead."
     done
+
+# The analyzer has been enabled by default since ClickHouse 24.3, so it is no longer "new".
+# Do not describe it as "new analyzer" or "new query analyzer" in documentation or comments;
+# write "the analyzer" or "Analyzer" instead.
+# Historical changelogs are excluded on purpose: they are a fixed record of past releases.
+# The exclusion covers only the versioned release-note files inside `changelogs/` directories
+# and the aggregated `changelog.md`/`changelog.mdx` files. The `private-changelogs/` directory
+# of the private repository (where this check also runs, on the synced tree) is excluded as a
+# whole: it contains nothing but release records, some of them named by release codename
+# without a version prefix (e.g. `pegasus.md`). Live pages stay enforced, including
+# the landing/status/security pages that sit inside `changelogs/` directories (`index.mdx`,
+# `release-notes-index.mdx`, `release-status.mdx`, `security-changelog.mdx`) and docs whose path
+# merely contains the substring "changelog" (`keeper_changelogs.md`, `changelog_entry_guidelines.md`).
+# The pattern requires a space or hyphen between the words, so code identifiers that use
+# underscores (e.g. `use_new_analyzer`) are intentionally not matched. Besides the adjacent
+# forms ("new analyzer", "new query analyzer"), it also catches the split phrasing
+# "new and (the) old analyzer", where "new" refers to the analyzer at a distance.
+# A second pass additionally catches wrapped comments where "new" ends one line and
+# "analyzer" continues on the next (possibly after a comment leader such as `--`, `#`,
+# `//` or `*`), which the line-oriented pattern above cannot see across the newline.
+analyzer_wording_files=$(
+    git ls-files $ROOT_PATH/src $ROOT_PATH/base $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/docs $ROOT_PATH/tests |
+        grep -E '\.(md|mdx|cpp|h|sql|sh|py|j2)$' |
+        grep -vE '(^|/)changelogs/(.+/)?v?[0-9][^/]*$|(^|/)private-changelogs/|(^|/)changelog\.mdx?$'
+)
+{
+    # Adjacent forms on a single line, reported with the file name and line number.
+    echo "$analyzer_wording_files" |
+        xargs grep -HniP '\bnew([ \t]+and[ \t]+(the[ \t]+)?old)?[ \t-]+(query[ \t-]+)?analyzer\b' 2>/dev/null
+    # Wrapped comments spanning a single newline. The "-z" mode treats each file as one record
+    # so the pattern can match across the line break; it is anchored to exactly one newline to
+    # avoid matching a distant "new" and "analyzer" that merely appear in the same file.
+    echo "$analyzer_wording_files" |
+        xargs grep -HoPz '\bnew\b[ \t]*(query[ \t]*)?\n[ \t]*([-#*/;]+[ \t]*)?(query[ \t]*)?analyzer\b' 2>/dev/null |
+        tr '\0' '\n'
+} |
+    grep -P '.' &&
+    echo 'The analyzer is enabled by default since ClickHouse 24.3 and is no longer new. Write "the analyzer" or "Analyzer" instead of "new analyzer"/"new query analyzer" in the lines above.'

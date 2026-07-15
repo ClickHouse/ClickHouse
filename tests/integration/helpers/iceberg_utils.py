@@ -16,7 +16,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 from pyspark.sql.functions import expr
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,

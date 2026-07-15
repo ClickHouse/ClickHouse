@@ -494,7 +494,7 @@ ClickHouse vector indexes supports the following quantization options:
 Quantization reduces the precision of vector searches compared to searching the original full-precision floating-point values (`f32`).
 However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
 Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
-We recommend both quantizations only if the the size of the vector similarity index is significantly larger than the available DRAM size.
+We recommend both quantizations only if the size of the vector similarity index is significantly larger than the available DRAM size.
 In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring)) to improve accuracy.
 Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
 Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
@@ -587,7 +587,7 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 
 Queries:
 
-```sql
+```sql title="Query"
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
@@ -599,9 +599,7 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 3;
 ```
 
-Result:
-
-```result
+```result title="Response"
    ┌─id─┬─vec─────┐
 1. │  6 │ [0,2]   │
 2. │  7 │ [0,2.1] │
@@ -632,12 +630,13 @@ This is achieved by storing data in a bit-grouped format (meaning all i-th bits 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Where:
-* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
+* `element_type` – the type of each vector element. Supported types are `Int8`, `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. A divisor of `dimension` that partitions the dimensions into `dimension / stride` contiguous groups stored in separate streams, so a search over only the leading dimensions reads fewer streams (useful for Matryoshka embeddings). Defaults to `dimension`, in which case the type is byte-identical to a non-strided `QBit`. See the [`QBit` data type page](/sql-reference/data-types/qbit) for details.
 
 #### Creating a `QBit` Table and Adding Data {#qbit-create}
 

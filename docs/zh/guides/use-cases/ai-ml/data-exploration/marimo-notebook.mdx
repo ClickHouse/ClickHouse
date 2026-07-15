@@ -1,0 +1,354 @@
+---
+slug: /use-cases/AI/marimo-notebook
+sidebarTitle: '使用 Marimo 笔记本与 chDB 探索数据'
+title: '使用 Marimo 笔记本与 chDB 探索数据'
+description: '本指南介绍如何配置并使用 chDB，在 Marimo 笔记本中探索来自 ClickHouse Cloud 或本地文件的数据'
+keywords: ['ML', 'Marimo', 'chDB', 'pandas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在本指南中，你将学习如何借助 [chDB](/zh/products/chdb/index) (一款由 ClickHouse 驱动的快速进程内 SQL OLAP Engine) ，在 Marimo 笔记本 中探索 ClickHouse Cloud 上的数据集。
+
+**前置条件：**
+
+* Python 3.8 或更高版本
+* 一个虚拟环境
+* 一个可用的 ClickHouse Cloud 服务，以及你的[连接信息](/zh/products/cloud/guides/sql-console/connection-details)
+
+<Tip>
+  如果你还没有 ClickHouse Cloud 账户，可以[注册](https://console.clickhouse.cloud/signUp?loc=docs-marimo-chdb)
+  试用，并获得价值 300 美元的免费额度以开始使用。
+</Tip>
+
+**你将学习到：**
+
+* 使用 chDB 从 Marimo 笔记本 连接到 ClickHouse Cloud
+* 查询远程数据集并将结果转换为 Pandas DataFrame
+* 在 Marimo 中使用 Plotly 进行数据可视化
+* 利用 Marimo 的响应式执行模型进行交互式数据探索
+
+我们将使用 UK Property Price 数据集，这是 ClickHouse Cloud 提供的入门数据集之一。
+其中包含英国 1995 年至 2024 年间房屋成交价格的数据。
+
+<div id="setup">
+  ## 配置
+</div>
+
+<div id="loading-the-dataset">
+  ### 加载数据集
+</div>
+
+要将此数据集添加到现有的 ClickHouse Cloud 服务中，请使用您的账户信息登录 [console.clickhouse.cloud](https://console.clickhouse.cloud/)。
+
+在左侧菜单中，点击 `Data sources`。然后点击 `Predefined sample data`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="添加示例数据集" />
+
+在 UK property price paid data (4GB) 卡片中选择 `Get started`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="选择英国房产成交价数据集" />
+
+然后点击 `Import dataset`：
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="导入英国房产成交价数据集" />
+
+ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表导入 2892 万行价格数据。
+
+为降低凭据泄露的风险，建议您在本地计算机上将 Cloud 用户名和密码设置为环境变量。
+请在终端中运行以下命令，将您的用户名和密码添加为环境变量：
+
+<div id="setting-up-credentials">
+  ### 配置凭据
+</div>
+
+```bash
+export CLICKHOUSE_CLOUD_HOSTNAME=<HOSTNAME>
+export CLICKHOUSE_CLOUD_USER=default
+export CLICKHOUSE_CLOUD_PASSWORD=your_actual_password
+```
+
+<Note>
+  上述环境变量仅在当前终端会话期间有效。
+  若要永久生效，请将其添加到 shell 配置文件中。
+</Note>
+
+<div id="installing-marimo">
+  ### 安装 Marimo
+</div>
+
+现在激活虚拟环境。
+然后在该虚拟环境中安装本指南将用到的以下软件包：
+
+```python
+pip install chdb pandas plotly marimo
+```
+
+使用以下命令新建一个 Marimo 笔记本：
+
+```bash
+marimo edit clickhouse_exploration.py
+```
+
+此时应会打开一个新的浏览器窗口，并在 localhost:2718 显示 Marimo 界面：
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo 界面" />
+
+Marimo 笔记本 以纯 Python 文件的形式存储，因此便于进行版本控制和与他人共享。
+
+<div id="installing-dependencies">
+  ## 安装依赖项
+</div>
+
+在新单元格中，导入所需的软件包：
+
+```python
+import marimo as mo
+import chdb
+import pandas as pd
+import os
+import plotly.express as px
+import plotly.graph_objects as go
+```
+
+将鼠标悬停在单元格上时，会看到出现两个带有 &quot;+&quot; 符号的圆圈。
+点击它们即可添加新的单元格。
+
+添加一个新单元格，并运行一个简单的查询，检查是否已正确完成设置：
+
+```python
+result = chdb.query("SELECT 'Hello ClickHouse from Marimo!'", "DataFrame")
+result
+```
+
+你会在刚刚运行的单元下方看到如下结果：
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+
+<div id="exploring-the-data">
+  ## 探索数据
+</div>
+
+在 Marimo 笔记本 中完成英国房价成交数据集的设置并启动 chDB 后，我们现在就可以开始探索这些数据了。
+假设我们想查看英国某个特定地区 (例如首都伦敦) 的房价如何随时间变化。
+ClickHouse 的 [`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数可让你轻松从 ClickHouse Cloud 获取数据。
+你可以让 chDB 在进程内将这些数据作为 Pandas 数据框返回——这是一种方便且熟悉的数据处理方式。
+
+<div id="querying-clickhouse-cloud-data">
+  ### 查询 ClickHouse Cloud 数据
+</div>
+
+新建一个单元，使用以下查询从你的 ClickHouse Cloud 服务中获取英国房价成交数据，并将其转换为 `pandas.DataFrame`：
+
+```python
+query = f"""
+SELECT
+    toYear(date) AS year,
+    round(avg(price)) AS price,
+    bar(price, 0, 1000000, 80)
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = 'LONDON'
+GROUP BY year
+ORDER BY year
+"""
+
+df = chdb.query(query, "DataFrame")
+df.head()
+```
+
+在上面的代码片段中，`chdb.query(query, "DataFrame")` 会运行指定的查询，并将结果输出为 Pandas DataFrame。
+
+在该查询中，我们使用 [`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数连接到 ClickHouse Cloud。
+
+`remoteSecure` 函数接受以下参数：
+
+* 连接字符串
+* 要使用的数据库和表名称
+* 你的用户名
+* 你的密码
+
+作为安全最佳实践，建议优先使用环境变量来传递用户名和密码参数，而不要直接在函数中指定它们；当然，如果你愿意，也可以直接指定。
+
+`remoteSecure` 函数会连接到远程 ClickHouse Cloud 服务，运行查询并返回结果。
+具体耗时取决于数据量，可能需要几秒钟。
+
+在此示例中，我们返回每年的平均价格，并按 `town='LONDON'` 进行过滤。
+结果随后会作为 DataFrame 存储在名为 `df` 的变量中。
+
+<div id="visualizing-the-data">
+  ### 数据可视化
+</div>
+
+现在数据已经以熟悉的形式呈现出来，接下来看看伦敦房产价格是如何随时间变化的。
+
+Marimo 与 Plotly 这类交互式绘图库配合得尤其好。
+在新单元中，创建一个交互式图表：
+
+```python
+fig = px.line(
+    df, 
+    x='year', 
+    y='price',
+    title='Average Property Prices in London Over Time',
+    labels={'price': 'Average Price (£)', 'year': 'Year'}
+)
+
+fig.update_traces(mode='lines+markers')
+fig.update_layout(hovermode='x unified')
+fig
+```
+
+伦敦的房价长期以来大幅上涨，这一点或许并不令人意外。
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimo 数据可视化" />
+
+Marimo 的一大优势在于其响应式执行模型。接下来，我们创建一个交互式组件，动态选择不同的城镇。
+
+<div id="interactive-town-selection">
+  ### 交互式城镇选择
+</div>
+
+在新的单元格中，创建一个下拉列表，用于选择不同的城镇：
+
+```python
+town_selector = mo.ui.dropdown(
+    options=['LONDON', 'MANCHESTER', 'BIRMINGHAM', 'LEEDS', 'LIVERPOOL'],
+    value='LONDON',
+    label='Select a town:'
+)
+town_selector
+```
+
+在另一个单元中，创建一个会根据城镇选择作出响应的查询。更改下拉菜单时，此单元会自动重新执行：
+
+```python
+query_reactive = f"""
+SELECT
+    toYear(date) AS year,
+    round(avg(price)) AS price
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = '{town_selector.value}'
+GROUP BY year
+ORDER BY year
+"""
+
+df_reactive = chdb.query(query_reactive, "DataFrame")
+df_reactive
+```
+
+现在创建一个图表，使其在更改城镇时自动更新。
+你可以将图表移到动态 DataFrame 上方，这样它会显示
+在带有下拉菜单的单元下方。
+
+```python
+fig_reactive = px.line(
+    df_reactive,
+    x='year',
+    y='price',
+    title=f'Average Property Prices in {town_selector.value} Over Time',
+    labels={'price': 'Average Price (£)', 'year': 'Year'}
+)
+
+fig_reactive.update_traces(mode='lines+markers')
+fig_reactive.update_layout(hovermode='x unified')
+fig_reactive
+```
+
+现在，当你从下拉菜单中选择一个城镇后，图表会动态更新：
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo 动态图表" />
+
+<div id="exploring-price-distributions">
+  ### 使用交互式箱线图探索价格分布
+</div>
+
+让我们通过查看伦敦不同年份的房产价格分布，进一步深入分析这些数据。
+箱线图会展示中位数、四分位数和离群值；与仅看平均价格相比，它能帮助我们更全面地理解数据。
+首先，创建一个年份滑块，以便交互式探索不同年份：
+
+在新的单元中，添加以下内容：
+
+```python
+year_slider = mo.ui.slider(
+    start=1995,
+    stop=2024,
+    value=2020,
+    step=1,
+    label='Select Year:',
+    show_value=True
+)
+year_slider
+```
+
+现在，我们来查询所选年份中各个房产的价格。
+请注意，这里不做聚合——我们需要每一笔单独的交易记录来构建分布：
+
+```python
+query_distribution = f"""
+SELECT
+    price,
+    toYear(date) AS year
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = 'LONDON'
+  AND toYear(date) = {year_slider.value}
+  AND price > 0
+  AND price < 5000000
+"""
+
+df_distribution = chdb.query(query_distribution, "DataFrame")
+
+# 创建交互式箱线图。
+fig_box = go.Figure()
+
+fig_box.add_trace(
+    go.Box(
+        y=df_distribution['price'],
+        name=f'London {year_slider.value}',
+        boxmean='sd',  # 显示均值和标准差
+        marker_color='lightblue',
+        boxpoints='outliers'  # 显示离群点
+    )
+)
+
+fig_box.update_layout(
+    title=f'Distribution of Property Prices in London ({year_slider.value})',
+    yaxis=dict(
+        title='Price (£)',
+        tickformat=',.0f'
+    ),
+    showlegend=False,
+    height=600
+)
+
+fig_box
+```
+
+如果你点击单元格右上角的选项按钮，就可以隐藏
+代码。
+拖动滑块时，图表会借助 Marimo 的响应式执行自动更新：
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo 动态图表" />
+
+<div id="summary">
+  ## 总结
+</div>
+
+本指南演示了如何在 Marimo 笔记本中使用 chDB 探索 ClickHouse Cloud 中的数据。
+我们以英国房产价格数据集为例，展示了如何使用 `remoteSecure()` 函数查询远程 ClickHouse Cloud 数据，并将结果直接转换为 Pandas DataFrame，以便进行分析和可视化。
+借助 chDB 和 Marimo 的响应式执行模型，数据科学家可以将 ClickHouse 强大的 SQL 能力与 Pandas、Plotly 等熟悉的 Python 工具结合使用；再加上交互式小部件和自动依赖跟踪，这让探索性分析更加高效且可复现。

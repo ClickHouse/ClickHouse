@@ -19,7 +19,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -53,7 +53,9 @@ public:
     QueryPipeline(QueryPipeline &&) noexcept;
     QueryPipeline(const QueryPipeline &) = delete;
 
-    QueryPipeline & operator=(QueryPipeline &&) noexcept;
+    /// Not noexcept: move-assignment appends QueryPlanResourceHolder resources, which allocates
+    /// through memory-tracking containers and can throw MEMORY_LIMIT_EXCEEDED.
+    QueryPipeline & operator=(QueryPipeline &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();
@@ -127,6 +129,10 @@ public:
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
+    /// Normalized query hash, propagated to the quota accounting callbacks so that
+    /// `NORMALIZED_QUERY_HASH` quotas bucket their resources per query pattern.
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
+
     void addStorageHolder(StoragePtr storage);
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
@@ -157,6 +163,7 @@ private:
 
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
+    UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
 
     std::shared_ptr<Processors> processors;

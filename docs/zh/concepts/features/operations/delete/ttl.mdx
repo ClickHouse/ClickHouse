@@ -1,0 +1,288 @@
+---
+slug: /guides/developer/ttl
+sidebarTitle: '生存时间 (TTL)'
+keywords: ['ttl', '生存时间', 'clickhouse', '过期', '数据']
+description: '生存时间 (TTL)是一项功能，可在经过一定时间间隔后，将行或列移动、删除或汇总。'
+title: '使用 生存时间 (TTL)管理数据'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview-of-ttl">
+  ## TTL 概述
+</div>
+
+生存时间 (TTL) 是一种能力，允许在经过一定时间间隔后对行或列进行移动、删除或 rollup。虽然 “time-to-live” 这个说法听起来似乎只与删除旧数据有关，但 TTL 实际上有多种用途：
+
+* 删除旧数据：不出所料，你可以在指定时间间隔后删除行或列
+* 在磁盘之间移动数据：经过一段时间后，你可以在不同存储卷之间移动数据——这对于部署热/温/冷架构非常有用
+* 数据 rollup：在删除旧数据之前，先将其 rollup 为各种有用的聚合结果和计算结果
+
+<Note>
+  TTL 可以应用于整个表，也可以应用于特定列。
+</Note>
+
+<div id="ttl-syntax">
+  ## TTL 语法
+</div>
+
+`TTL` 子句可以出现在列定义之后和/或表定义末尾。使用 `INTERVAL` 子句来定义时间长度 (对应的值必须是 `Date` 或 `DateTime` 数据类型) 。例如，下表有两列
+带有 `TTL` 子句：
+
+```sql
+CREATE TABLE example1 (
+   timestamp DateTime,
+   x UInt32 TTL timestamp + INTERVAL 1 MONTH,
+   y String TTL timestamp + INTERVAL 1 DAY,
+   z String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+* x 列的生存时间 (TTL) 为自 timestamp 列起 1 个月
+* y 列的生存时间 (TTL) 为自 timestamp 列起 1 天
+* 当时间间隔到期时，该列就会过期。ClickHouse 会将该列的值替换为其数据类型的默认值。如果数据分区片段中该列的所有值都已过期，ClickHouse 会从文件系统中的该数据分区片段删除这一列。
+
+<Note>
+  生存时间 (TTL) 规则可以修改或删除。更多详情请参见[表生存时间 (TTL) 的操作](/zh/reference/statements/alter/ttl)页面。
+</Note>
+
+<Tip>
+  **最佳实践**
+
+  使用表级生存时间 (TTL) 删除旧行时，我们建议**按 TTL 表达式中使用的同一时间字段的日期或月份对表进行分区**。
+
+  与删除单独的行相比，ClickHouse 删除整个分区的效率要高得多。
+  当分区键与 TTL 表达式一致时，ClickHouse 可以在分区过期时一次性删除整个分区，而不必重写数据分区片段来移除过期行。
+
+  请根据 TTL 周期选择分区粒度：
+
+  * 对于按天/周的 TTL：使用 `toYYYYMMDD(date_field)` 按天分区
+  * 对于按月/年的 TTL：使用 `toYYYYMM(date_field)` 或 `toStartOfMonth(date_field)` 按月分区
+</Tip>
+
+<div id="triggering-ttl-events">
+  ## 触发生存时间 (TTL) 事件
+</div>
+
+删除或聚合已过期的行不会立即发生——只有在表合并时才会执行。如果由于某种原因，你的表没有持续进行合并，则有两个设置会触发生存时间 (TTL) 事件：
+
+* `merge_with_ttl_timeout`：再次执行带有删除生存时间 (TTL) 的合并前，最少需要等待的秒数。默认值为 14400 秒 (4 小时) 。
+* `merge_with_recompression_ttl_timeout`：再次执行带有重压缩生存时间 (TTL) 的合并前，最少需要等待的秒数 (即在删除前先对数据进行汇总的规则) 。默认值：14400 秒 (4 小时) 。
+
+因此，默认情况下，生存时间 (TTL) 规则至少每 4 小时会在你的表上应用一次。如果你需要更频繁地应用生存时间 (TTL) 规则，只需修改上述设置。
+
+<Note>
+  这不是一种理想的方案 (我们也不建议频繁使用) ，不过你也可以使用 `OPTIMIZE` 强制执行一次合并：
+
+  ```sql
+  OPTIMIZE TABLE example1 FINAL
+  ```
+
+  `OPTIMIZE` 会对表中的 parts 启动一次计划外合并；如果你的表已经只剩一个 part，`FINAL` 会强制重新优化。
+</Note>
+
+<div id="removing-rows">
+  ## 删除行
+</div>
+
+若要在一段时间后删除表中的整行数据，请在表级定义生存时间 (TTL) 规则：
+
+```sql
+CREATE TABLE customers (
+timestamp DateTime,
+name String,
+balance Int32,
+address String
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 12 HOUR
+```
+
+此外，还可以根据记录的值定义生存时间 (TTL) 规则。
+通过指定 `WHERE` 条件即可轻松实现。
+也可以使用多个条件：
+
+```sql
+CREATE TABLE events
+(
+    `event` String,
+    `time` DateTime,
+    `value` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (event, time)
+TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
+    time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
+```
+
+<div id="removing-columns">
+  ## 删除列
+</div>
+
+假设你不想删除整行，而只希望 `balance` 和 `address` 这两列过期。现在来修改 `customers` 表，将这两列的生存时间 (TTL) 设置为 2 小时：
+
+```sql
+ALTER TABLE customers
+MODIFY COLUMN balance Int32 TTL timestamp + INTERVAL 2 HOUR,
+MODIFY COLUMN address String TTL timestamp + INTERVAL 2 HOUR
+```
+
+<div id="implementing-a-rollup">
+  ## 实现 rollup
+</div>
+
+假设我们希望在一段时间后删除行，但出于报表目的保留部分数据。我们不需要所有明细——只需一些历史数据的聚合结果。这可以通过在 `TTL` 表达式中添加 `GROUP BY` 子句来实现，同时在表中添加一些列来存储聚合结果。
+
+假设在下面的 `hits` 表中，我们想要删除旧行，但在删除这些行之前保留 `hits` 列的总和与最大值。我们需要一个字段来存储这些值，并且需要在 `TTL` 子句中添加一个 `GROUP BY` 子句，以便对总和与最大值进行 rollup：
+
+```sql
+CREATE TABLE hits (
+   timestamp DateTime,
+   id String,
+   hits Int32,
+   max_hits Int32 DEFAULT hits,
+   sum_hits Int64 DEFAULT hits
+)
+ENGINE = MergeTree
+PRIMARY KEY (id, toStartOfDay(timestamp), timestamp)
+TTL timestamp + INTERVAL 1 DAY
+    GROUP BY id, toStartOfDay(timestamp)
+    SET
+        max_hits = max(max_hits),
+        sum_hits = sum(sum_hits);
+```
+
+关于 `hits` 表的几点说明：
+
+* `TTL` 子句中的 `GROUP BY` 列必须是 `PRIMARY KEY` 的前缀，而我们希望按天起始时间对结果进行分组。因此，我们将 `toStartOfDay(timestamp)` 添加到了主键中
+* 我们添加了两个字段来存储聚合结果：`max_hits` 和 `sum_hits`
+* 根据 `SET` 子句的定义方式，必须将 `max_hits` 和 `sum_hits` 的默认值设为 `hits`，逻辑才能正常工作
+
+<div id="implementing-a-hotwarmcold-architecture">
+  ## 实现热/温/冷架构
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  如果你使用的是 ClickHouse Cloud，本课中的步骤并不适用。在 ClickHouse Cloud 中，你无需操心旧数据的移动。
+</Note>
+
+处理海量数据时，一种常见做法是随着数据逐渐变旧，将其迁移到不同的位置。下面介绍如何在 ClickHouse 中使用 `TTL` 命令的 `TO DISK` 和 `TO VOLUME` 子句实现热/温/冷架构。 (顺便一提，这并不一定非要采用热/冷分层——无论你的具体场景是什么，都可以用生存时间 (TTL) 来移动数据。)
+
+1. `TO DISK` 和 `TO VOLUME` 选项指的是你在 ClickHouse 配置文件中定义的磁盘或卷名称。创建一个名为 `my_system.xml` 的新文件 (文件名也可以自定义) ，在其中定义磁盘，再定义使用这些磁盘的卷。将该 XML 文件放到 `/etc/clickhouse-server/config.d/` 中，以使配置应用到你的系统：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+            </default>
+           <hot_disk>
+              <path>./hot/</path>
+           </hot_disk>
+           <warm_disk>
+              <path>./warm/</path>
+           </warm_disk>
+           <cold_disk>
+              <path>./cold/</path>
+           </cold_disk>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <hot_volume>
+                        <disk>hot_disk</disk>
+                    </hot_volume>
+                    <warm_volume>
+                        <disk>warm_disk</disk>
+                    </warm_volume>
+                    <cold_volume>
+                        <disk>cold_disk</disk>
+                    </cold_volume>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+2. 上述配置中提到了三个磁盘，它们分别指向 ClickHouse 可读写的文件夹。卷可以包含一个或多个磁盘——我们为这三个磁盘分别定义了一个卷。下面来看这些磁盘：
+
+```sql
+SELECT name, path, free_space, total_space
+FROM system.disks
+```
+
+```response
+┌─name────────┬─path───────────┬───free_space─┬──total_space─┐
+│ cold_disk   │ ./data/cold/   │ 179143311360 │ 494384795648 │
+│ default     │ ./             │ 179143311360 │ 494384795648 │
+│ hot_disk    │ ./data/hot/    │ 179143311360 │ 494384795648 │
+│ warm_disk   │ ./data/warm/   │ 179143311360 │ 494384795648 │
+└─────────────┴────────────────┴──────────────┴──────────────┘
+```
+
+3. 接下来……验证一下卷：
+
+```sql
+SELECT
+    volume_name,
+    disks
+FROM system.storage_policies
+```
+
+```response
+┌─volume_name─┬─disks─────────┐
+│ default     │ ['default']   │
+│ hot_volume  │ ['hot_disk']  │
+│ warm_volume │ ['warm_disk'] │
+│ cold_volume │ ['cold_disk'] │
+└─────────────┴───────────────┘
+```
+
+4. 现在我们将添加一条 `TTL` 规则，在热、温、冷存储卷之间移动数据：
+
+```sql
+ALTER TABLE my_table
+   MODIFY TTL
+      trade_date TO VOLUME 'hot_volume',
+      trade_date + INTERVAL 2 YEAR TO VOLUME 'warm_volume',
+      trade_date + INTERVAL 4 YEAR TO VOLUME 'cold_volume';
+```
+
+5. 新的 `TTL` 规则应该会自动生效，但你也可以手动强制执行以确保这一点：
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+6. 使用 `system.parts` 表验证数据是否已移动到预期的磁盘上：
+
+```sql
+使用 system.parts 表，查看 crypto_prices 表中各 parts 所在的磁盘：
+
+SELECT
+    name,
+    disk_name
+FROM system.parts
+WHERE (table = 'my_table') AND (active = 1)
+```
+
+响应内容如下所示：
+
+```response
+┌─name────────┬─disk_name─┐
+│ all_1_3_1_5 │ warm_disk │
+│ all_2_2_0   │ hot_disk  │
+└─────────────┴───────────┘
+```

@@ -1,0 +1,37 @@
+---
+title: Cómo aumentar el número de hilos en ClickHouse
+description: Aprende a configurar el Global Thread pool de ClickHouse ajustando parámetros como `max_thread_pool_size`, `thread_pool_queue_size` y `max_thread_pool_free_size`.
+date: 2023-03-01
+tags: ['Rendimiento y optimización']
+keywords: ['Hilos disponibles']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## Aumentar el número de hilos en ClickHouse
+</div>
+
+ClickHouse usa hilos del **Global Thread pool** para procesar consultas y realizar también operaciones en segundo plano, como merges y mutations. Si no hay ningún hilo inactivo para procesar una consulta, se crea un hilo nuevo en el pool.
+
+El tamaño máximo del pool global de hilos lo determina la configuración `max_thread_pool_size`, cuyo valor predeterminado es 10.000. Puede modificar este valor en su configuración; aquí lo establecemos en 20.000:
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+Si modifica `max_thread_pool_size`, le recomendamos cambiar `thread_pool_queue_size` para que tenga el mismo valor. El ajuste `thread_pool_queue_size` es el número máximo de trabajos que se pueden programar en el Global Thread pool:
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+También puede liberar recursos si su servidor tiene muchos hilos inactivos mediante la configuración `max_thread_pool_free_size`. El valor predeterminado es 1.000, lo que significa que su Global Thread pool nunca tendrá más de 1.000 hilos inactivos. El siguiente ejemplo aumenta el valor a 2.000:
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+Consulta la [documentación](/es/reference/settings/server-settings/settings#max_thread_pool_size) para obtener más información sobre los ajustes anteriores y otros ajustes que afectan al Global Thread pool.

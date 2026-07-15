@@ -58,7 +58,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
 
         String encoding_name = column_obj->getValue<std::string>("encoding");
-        GeoEncoding geo_encoding;
+        GeoEncoding geo_encoding = {};
 
         if (encoding_name == "WKB")
             geo_encoding = GeoEncoding::WKB;
@@ -72,7 +72,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         /// Per the GeoParquet spec, a missing or empty geometry_types array means the geometry
         /// types are unknown (any type is valid). Multiple entries mean the column has mixed types.
         /// In both cases, use GeoType::Mixed which maps to the Geometry (Variant) type.
-        GeoType result_type;
+        GeoType result_type = {};
         if (!types || types->size() == 0)
         {
             result_type = GeoType::Mixed;
@@ -105,11 +105,11 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
     return geo_columns;
 }
 
-inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
-    Float64 x;
-    Float64 y;
-    char ch;
+    Float64 x = 0;
+    Float64 y = 0;
+    char ch = 0;
     while (true)
     {
         if (!in_buffer.peek(ch))
@@ -118,9 +118,18 @@ inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
             break;
         in_buffer.ignore();
     }
-    tryReadFloatText(x, in_buffer);
-    in_buffer.ignore();
-    readFloatText(y, in_buffer);
+    if (precise_float_parsing)
+    {
+        tryReadFloatTextPrecise(x, in_buffer);
+        in_buffer.ignore();
+        readFloatTextPrecise(y, in_buffer);
+    }
+    else
+    {
+        tryReadFloatImpreciseForCompatibility(x, in_buffer);
+        in_buffer.ignore();
+        readFloatImpreciseForCompatibility(y, in_buffer);
+    }
     return {x, y};
 }
 
@@ -128,7 +137,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 {
     while (true)
     {
-        char ch;
+        char ch = 0;
         readBinary(ch, in_buffer);
         if (ch == '(')
             break;
@@ -137,7 +146,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 
 inline bool readItemEnding(ReadBuffer & in_buffer)
 {
-    char ch;
+    char ch = 0;
     while (true)
     {
         readBinary(ch, in_buffer);
@@ -149,40 +158,40 @@ inline bool readItemEnding(ReadBuffer & in_buffer)
     }
 }
 
-inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ls.push_back(parseWKTPoint(in_buffer));
+        ls.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return ls;
 }
 
-inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ring.push_back(parseWKTPoint(in_buffer));
+        ring.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return ring;
 }
 
-inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Polygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     bool should_complete_outer = true;
     while (true)
     {
-        auto parsed_line = parseWKTRing(in_buffer);
+        auto parsed_line = parseWKTRing(in_buffer, precise_float_parsing);
         if (should_complete_outer)
         {
             should_complete_outer = false;
@@ -198,38 +207,38 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
-inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     MultiLineString<CartesianPoint> result;
     readOpenBracket(in_buffer);
     while (true)
     {
-        result.push_back(parseWKTLine(in_buffer));
+        result.push_back(parseWKTLine(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return result;
 }
 
-inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     while (true)
     {
-        poly.push_back(parseWKTPolygon(in_buffer));
+        poly.push_back(parseWKTPolygon(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     std::string type;
     while (true)
     {
-        char current_symbol;
+        char current_symbol = 0;
         if (!in_buffer.peek(current_symbol))
             break;
         if (current_symbol == '(')
@@ -244,16 +253,16 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     if (type == "POINT")
     {
         readOpenBracket(in_buffer);
-        return parseWKTPoint(in_buffer);
+        return parseWKTPoint(in_buffer, precise_float_parsing);
     }
     if (type == "LINESTRING")
-        return parseWKTLine(in_buffer);
+        return parseWKTLine(in_buffer, precise_float_parsing);
     if (type == "POLYGON")
-        return parseWKTPolygon(in_buffer);
+        return parseWKTPolygon(in_buffer, precise_float_parsing);
     if (type == "MULTILINESTRING")
-        return parseWKTMultiLineString(in_buffer);
+        return parseWKTMultiLineString(in_buffer, precise_float_parsing);
     if (type == "MULTIPOLYGON")
-        return parseWKTMultiPolygon(in_buffer);
+        return parseWKTMultiPolygon(in_buffer, precise_float_parsing);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
@@ -365,7 +374,7 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
         case GeoType::Mixed:
         {
             auto & variant_col = assert_cast<ColumnVariant &>(col);
-            ColumnVariant::Discriminator global_discr;
+            ColumnVariant::Discriminator global_discr = 0;
 
             if (std::holds_alternative<CartesianPoint>(object))
                 global_discr = kPointDiscriminator;

@@ -1,0 +1,382 @@
+---
+description: 'サーバーなしでデータを処理するためのclickhouse-local利用ガイド'
+sidebarTitle: 'clickhouse-local'
+slug: /operations/utilities/clickhouse-local
+title: 'clickhouse-local'
+doc_type: 'reference'
+---
+
+<div id="when-to-use-clickhouse-local-vs-clickhouse">
+  ## `clickhouse-local` と ClickHouse の使い分け
+</div>
+
+`clickhouse-local` は、完全なデータベースサーバーをインストールしなくても、ローカルやリモートのファイルに対して SQL で高速に処理を行いたい開発者に最適な、手軽に使える ClickHouse のバージョンです。`clickhouse-local` では、開発者はコマンドラインから直接 SQL コマンド ([ClickHouse SQL dialect](/ja/reference/home) を使用) を実行できるため、完全な ClickHouse 環境をインストールしなくても、ClickHouse の機能をシンプルかつ効率的に利用できます。`clickhouse-local` の主な利点の 1 つは、[clickhouse-client](/ja/concepts/features/tools-and-utilities/clickhouse-local) のインストール時にすでに含まれていることです。つまり、複雑なインストール作業を行わなくても、開発者はすぐに `clickhouse-local` を使い始められます。
+
+`clickhouse-local` は、開発やテスト、ファイル処理には非常に便利なツールですが、エンドユーザーやアプリケーション向けの提供には適していません。このような用途では、オープンソースの [ClickHouse](/ja/get-started/setup/install) を使用することを推奨します。ClickHouse は、大規模な分析ワークロードを処理するよう設計された強力な OLAP データベースです。大規模なデータセットに対する複雑なクエリを高速かつ効率的に処理できるため、高いパフォーマンスが求められる本番環境に最適です。さらに、ClickHouse は、レプリケーション、シャーディング、高可用性など、アプリケーションの提供や大規模データセットの処理に向けてスケールするうえで不可欠な幅広い機能を備えています。より大きなデータセットを扱う必要がある場合や、エンドユーザーやアプリケーション向けに提供する必要がある場合は、`clickhouse-local` ではなくオープンソースの ClickHouse を使用することを推奨します。
+
+以下のドキュメントでは、[ローカルファイルへのクエリ](#query_data_in_file) や [S3 上の Parquet ファイルの読み取り](#query-data-in-a-parquet-file-in-aws-s3) など、`clickhouse-local` の使用例を紹介しています。ぜひご覧ください。
+
+<div id="download-clickhouse-local">
+  ## clickhouse-local をダウンロードする
+</div>
+
+`clickhouse-local` は、ClickHouseサーバーや `clickhouse-client` と同じ `clickhouse` バイナリを使って実行されます。最新バージョンをダウンロードする最も簡単な方法は、次のコマンドを使用することです。
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<Note>
+  先ほどダウンロードしたバイナリを使うと、さまざまな ClickHouse のツールやユーティリティを実行できます。ClickHouse をデータベースサーバーとして実行する場合は、[クイックスタート](/ja/get-started/setup/install)をご覧ください。
+</Note>
+
+<div id="query_data_in_file">
+  ## SQL を使用してファイル内のデータをクエリする
+</div>
+
+`clickhouse-local` の一般的な用途の 1 つは、ファイルに対してアドホッククエリを実行することです。つまり、データをテーブルに挿入する必要はありません。`clickhouse-local` はファイルから一時テーブルにデータをストリーミングし、SQL を実行できます。
+
+ファイルが `clickhouse-local` と同じマシン上にある場合は、読み込むファイルを指定するだけです。次の `reviews.tsv` ファイルには、Amazon 製品レビューのサンプルが含まれています。
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+このコマンドは、次のコマンドのショートカットです。
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+```
+
+ClickHouse は、ファイル名の拡張子から、そのファイルがタブ区切りフォーマットであることを認識します。フォーマットを明示的に指定する必要がある場合は、[多くの ClickHouse 入力フォーマット](/ja/reference/formats/index)のいずれかを追加するだけです。
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
+
+`file`テーブル関数はテーブルを作成し、`DESCRIBE`を使うと推定したスキーマを確認できます：
+
+```bash
+./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+```
+
+<Tip>
+  ファイル名では globs を使用できます ([glob の置換](/ja/reference/functions/table-functions/file#globs-in-path)を参照してください) 。
+
+  例:
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+  ./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+  ./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+  ```
+</Tip>
+
+```response
+marketplace    Nullable(String)
+customer_id    Nullable(Int64)
+review_id    Nullable(String)
+product_id    Nullable(String)
+product_parent    Nullable(Int64)
+product_title    Nullable(String)
+product_category    Nullable(String)
+star_rating    Nullable(Int64)
+helpful_votes    Nullable(Int64)
+total_votes    Nullable(Int64)
+vine    Nullable(String)
+verified_purchase    Nullable(String)
+review_headline    Nullable(String)
+review_body    Nullable(String)
+review_date    Nullable(Date)
+```
+
+最も評価の高い製品を見つけてみましょう：
+
+```bash
+./clickhouse local -q "SELECT
+    argMax(product_title,star_rating),
+    max(star_rating)
+FROM file('reviews.tsv')"
+```
+
+```response
+Monopoly Junior Board Game    5
+```
+
+<div id="query-data-in-a-parquet-file-in-aws-s3">
+  ## AWS S3 内の Parquet ファイル内のデータをクエリする
+</div>
+
+S3 にファイルがある場合は、`clickhouse-local` と `s3` テーブル関数を使って、そのファイルをその場でクエリできます (データを ClickHouse テーブルに挿入する必要はありません) 。ここでは、公開バケット内にある `house_0.parquet` というファイルを使用します。このファイルには、英国で売却された住宅の価格が含まれています。では、行数を見てみましょう。
+
+```bash
+./clickhouse local -q "
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+このファイルには270万行あります:
+
+```response
+2772030
+```
+
+ClickHouse がファイルから推定したスキーマを確認しておくと便利です。
+
+```bash
+./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+```response
+price    Nullable(Int64)
+date    Nullable(UInt16)
+postcode1    Nullable(String)
+postcode2    Nullable(String)
+type    Nullable(String)
+is_new    Nullable(UInt8)
+duration    Nullable(String)
+addr1    Nullable(String)
+addr2    Nullable(String)
+street    Nullable(String)
+locality    Nullable(String)
+town    Nullable(String)
+district    Nullable(String)
+county    Nullable(String)
+```
+
+最も高額な地区がどこなのか見てみましょう。
+
+```bash
+./clickhouse local -q "
+SELECT
+    town,
+    district,
+    count() AS c,
+    round(avg(price)) AS price,
+    bar(price, 0, 5000000, 100)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+GROUP BY
+    town,
+    district
+HAVING c >= 100
+ORDER BY price DESC
+LIMIT 10"
+```
+
+```response
+LONDON    CITY OF LONDON    886    2271305    █████████████████████████████████████████████▍
+LEATHERHEAD    ELMBRIDGE    206    1176680    ███████████████████████▌
+LONDON    CITY OF WESTMINSTER    12577    1108221    ██████████████████████▏
+LONDON    KENSINGTON AND CHELSEA    8728    1094496    █████████████████████▉
+HYTHE    FOLKESTONE AND HYTHE    130    1023980    ████████████████████▍
+CHALFONT ST GILES    CHILTERN    113    835754    ████████████████▋
+AMERSHAM    BUCKINGHAMSHIRE    113    799596    ███████████████▉
+VIRGINIA WATER    RUNNYMEDE    356    789301    ███████████████▊
+BARNET    ENFIELD    282    740514    ██████████████▊
+NORTHWOOD    THREE RIVERS    184    731609    ██████████████▋
+```
+
+<Tip>
+  ClickHouse にファイルを取り込む準備ができたら、ClickHouseサーバー を起動し、`file` および `s3` テーブル関数の結果を `MergeTree` テーブルに挿入します。詳細については、[クイックスタート](/ja/get-started/setup/install) を参照してください。
+</Tip>
+
+<div id="format-conversions">
+  ## フォーマット変換
+</div>
+
+異なるフォーマット間でデータを変換するには、`clickhouse-local` を利用できます。例:
+
+```bash
+$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+```
+
+フォーマットはファイル拡張子から自動的に判別されます:
+
+```bash
+$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+```
+
+手軽な方法として、`--copy` 引数を使って記述することもできます。
+
+```bash
+$ clickhouse-local --copy < data.json > data.csv
+```
+
+<div id="usage">
+  ## 使い方
+</div>
+
+デフォルトでは、`clickhouse-local` は同じホスト上の ClickHouseサーバーのデータにアクセスでき、サーバー設定には依存しません。また、`--config-file` 引数を使用してサーバー設定を読み込むこともできます。一時データ用には、デフォルトで一意の一時データディレクトリが作成されます。
+
+基本的な使い方 (Linux) :
+
+```bash
+$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+```
+
+基本的な使い方 (Mac) ：
+
+```bash
+$ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+```
+
+<Note>
+  `clickhouse-local` は、WSL2 経由で Windows でもサポートされています。
+</Note>
+
+引数:
+
+* `-S`, `--structure` — 入力データのテーブル構造。
+* `--input-format` — 入力フォーマット。デフォルトは `TSV` です。
+* `-F`, `--file` — データへのパス。デフォルトは `stdin` です。
+* `-q`, `--query` — `;` を区切り文字として実行するクエリ。`--query` は複数回指定できます。例: `--query "SELECT 1" --query "SELECT 2"`。`--queries-file` と同時には使用できません。
+* `--queries-file` - 実行するクエリが含まれたファイルのパス。`--queries-file` は複数回指定できます。例: `--query queries1.sql --query queries2.sql`。`--query` と同時には使用できません。
+* `--multiquery, -n` – 指定すると、`--query` オプションの後にセミコロン区切りで複数のクエリを指定できます。利便性のため、`--query` を省略して `--multiquery` の後にクエリを直接渡すこともできます。
+* `-N`, `--table` — 出力データの格納先となるテーブル名。デフォルトは `table` です。
+* `-f`, `--format`, `--output-format` — 出力フォーマット。デフォルトは `TSV` です。
+* `-d`, `--database` — デフォルトのデータベース。デフォルトは `_local` です。
+* `--stacktrace` — 例外発生時にデバッグ出力をダンプするかどうか。
+* `--echo [ <bool> ]` — 実行前に各クエリを表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。注意: `--echo` は省略可能な値を取るようになったため、値を指定しない `--echo` の直後に置かれた位置引数のクエリはその値として解釈されます。代わりに `--echo --query "..."`、`--echo -q "..."`、`--echo=false`、またはパイプされた `stdin` を使用してください。
+* `--echo-formatted [ <bool> ]` — 表示するクエリをフォーマットします。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
+* `--echo-query-id [ <bool> ]` — 実行前に `query_id` を表示します。省略可能なブール値を取ります。対話型モードではデフォルトで有効、バッチモードでは無効です。
+* `--highlight`, `--hilite` `<bool>` — コマンドプロンプトと表示されるクエリのシンタックスハイライトを切り替えます。デフォルトで有効です。ハイライトはターミナルへの出力時にのみ適用されます。
+* `--verbose` — クエリ実行の詳細を表示します。
+* `--logger.console` — コンソールにログを出力します。
+* `--logger.log` — ログファイル名。
+* `--logger.level` — ログレベル。
+* `--ignore-error` — クエリが失敗しても処理を停止しません。
+* `-c`, `--config-file` — ClickHouse server と同じ形式の設定ファイルへのパス。デフォルトでは設定は空です。
+* `--no-system-tables` — システムテーブルをアタッチしません。
+* `--help` — `clickhouse-local` の引数リファレンス。
+* `-V`, `--version` — バージョン情報を表示して終了します。
+
+また、`--config-file` の代わりに、各 ClickHouse 設定変数に対応する引数を使用するほうが一般的です。
+
+<div id="commands">
+  ## コマンド
+</div>
+
+<div id="ls-command">
+  ### LS コマンド
+</div>
+
+clickhouse-local がアクセスできる現在の作業ディレクトリ内のすべてのファイルを一覧表示します。
+
+次のように対話型モードで実行できます。
+
+```sql title="Query"
+ClickHouse local version 26.3.1.1.
+
+:) ls
+
+SELECT _file AS file
+FROM file('*', 'One')
+ORDER BY file ASC
+```
+
+```text title="Response"
+┌─file────────┐
+│ file1.csv   │
+│ file2.json  │
+│ file3.xml   │
+└─────────────┘
+```
+
+引数 -q を使って、クエリとして実行することもできます:
+
+```sh
+./clickhouse-local -q ls
+```
+
+```text title="Response"
+file1.csv
+file2.json
+file3.xml
+```
+
+<div id="clear-command">
+  ### CLEAR コマンド
+</div>
+
+端末画面を消去します (Linux の `clear` コマンドや、多くの端末での Ctrl+L と同様です) 。これはクライアント側の動作であり、SQL エンジンには送信されません。
+
+`clickhouse-local` では、このメタコマンドは **対話** モード、および **`-q`** と **`--queries-file`** の入力で認識されます (`-q` と同じクライアント経路で、考え方は `ls` と同じです) 。そのため、`clear` 単体では `UNKNOWN_IDENTIFIER` エラーは発生しません。リモートの **`clickhouse-client --queries-file`** は変更されていません。ファイルの内容は SQL としてのみ実行されます (テキストレベルのメタコマンドはありません) 。
+
+`clickhouse-client` では、**対話** モードでのみ認識されます。**`-q`** やクエリファイルでは、`clear` は引き続き SQL として解析されるため、自動化では、タイプミスが無言の no-op になるのではなく、従来どおりエラーになる動作が維持されます。
+
+サポートされる形式: `clear`、`CLEAR`、`/clear` (末尾の任意の `;` は無視されます) 。標準出力が端末ではない場合 (たとえば出力をパイプしている場合) 、このメタコマンドは認識されれば受け付けられますが、制御シーケンスは出力されません。
+
+`clickhouse-local` と `-q` を使用する場合:
+
+```sh
+./clickhouse-local -q clear
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+```bash title="Query"
+$ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
+    --input-format "CSV" --query "SELECT * FROM table"
+Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
+1   2
+3   4
+```
+
+前の例と同じです：
+
+```bash title="Query"
+$ echo -e "1,2\n3,4" | clickhouse-local -n --query "
+    CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
+    SELECT a, b FROM table;
+    DROP TABLE table;"
+Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
+1   2
+3   4
+```
+
+`stdin` や `--file` 引数を使用する必要はなく、[`file` テーブル関数](/ja/reference/functions/table-functions/file)を使って任意の数のファイルを開くことができます:
+
+```bash title="Query"
+$ echo 1 | tee 1.tsv
+1
+
+$ echo 2 | tee 2.tsv
+2
+
+$ clickhouse-local --query "
+    select * from file('1.tsv', TSV, 'a int') t1
+    cross join file('2.tsv', TSV, 'b int') t2"
+1    2
+```
+
+それでは、各 Unix ユーザーごとに memory user を出力してみましょう:
+
+```bash title="Query"
+$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
+    | clickhouse-local --structure "user String, mem Float64" \
+        --query "SELECT user, round(sum(mem), 2) as memTotal
+            FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
+```
+
+```text title="Response"
+Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
+┏━━━━━━━━━━┳━━━━━━━━━━┓
+┃ user     ┃ memTotal ┃
+┡━━━━━━━━━━╇━━━━━━━━━━┩
+│ bayonet  │    113.5 │
+├──────────┼──────────┤
+│ root     │      8.8 │
+├──────────┼──────────┤
+...
+```
+
+<div id="related-content-1">
+  ## 関連コンテンツ
+</div>
+
+* [clickhouse-local を使ってローカルファイル内のデータを抽出・変換し、クエリする](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
+* [ClickHouse にデータを取り込む - 第1部](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
+* [大規模な実データセットを探る: ClickHouse で見る100年以上の気象記録](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+* ブログ: [clickhouse-local を使ってローカルファイル内のデータを抽出・変換し、クエリする](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)

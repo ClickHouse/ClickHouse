@@ -8,7 +8,20 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    # Exception messages carry the trailing ", Stack trace (when copying this message,
+    # always include the lines below):" marker, but the frames it promises are on the
+    # following log lines. The failure name is built from the first line only, so the
+    # marker would otherwise dangle with no lines after it (the frames are still kept in
+    # the separate "Stack trace:" section of the info). Drop the marker from the name.
+    STACK_TRACE_MARKER = (
+        ", Stack trace (when copying this message, always include the lines below):"
+    )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    SANITIZER_ERROR_PATTERN = (
+        r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
+        r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
+    )
+    RUNTIME_ERROR_PATTERN = r".*runtime error: .*|.*is located.*"
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -63,7 +76,7 @@ class FuzzerLogParser:
             (
                 "Sanitizer",
                 "is_sanitizer_error",
-                r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*",
+                self.SANITIZER_ERROR_PATTERN,
             ),
             ("Logical error", "is_logical_error", r"Logical error.*"),
             (
@@ -74,7 +87,7 @@ class FuzzerLogParser:
             (
                 "Runtime error",
                 "is_sanitizer_error",
-                r".*runtime error: .*|.*is located.*",
+                self.RUNTIME_ERROR_PATTERN,
             ),
             ("SegFault", "is_segfault", r"Segmentation fault.*"),
             (
@@ -135,6 +148,12 @@ class FuzzerLogParser:
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
+        # The first line may end with the "...always include the lines below):" marker
+        # whose frames are on later lines; cutting it here keeps the name from promising
+        # lines it does not contain.
+        marker_pos = result_name.find(self.STACK_TRACE_MARKER)
+        if marker_pos != -1:
+            result_name = result_name[:marker_pos].rstrip().removesuffix(".")
         format_message = ""
         for i, line in enumerate(error_lines):
             if "Format string: " in line:
@@ -147,10 +166,17 @@ class FuzzerLogParser:
                     substring = substring.strip().rstrip(".").strip("'\"")
                     format_message = substring
                 break
+        is_check_failed = bool(
+            error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
+        )
         # keep all lines before next log line
         for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
+                error_lines = error_lines[:i]
+                break
+            elif is_check_failed and not line.strip():
+                # CHECK failed reports end at the first blank line
                 error_lines = error_lines[:i]
                 break
         error_output = "\n".join(error_lines)
@@ -294,7 +320,8 @@ class FuzzerLogParser:
         def _extract_sanitizer_trace(log_file):
             ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
             sanitizer_start = re.compile(
-                r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|: runtime error: "
+                r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|"
+                r"\b\w+Sanitizer: CHECK failed:|: runtime error: "
             )
             summary_pattern = re.compile(r"SUMMARY: \w+Sanitizer:")
             # ClickHouse log line: "2024.01.15 12:34:56.789 [ 123 ] {id} <Level>"
@@ -308,6 +335,7 @@ class FuzzerLogParser:
             result_lines = []
             in_report = False
             is_runtime_error = False
+            is_check_failed_report = False
             consecutive_blank = 0
 
             for line in all_lines:
@@ -318,11 +346,16 @@ class FuzzerLogParser:
                     if sanitizer_start.search(clean_line):
                         in_report = True
                         is_runtime_error = ": runtime error: " in clean_line
+                        is_check_failed_report = (
+                            "Sanitizer: CHECK failed:" in clean_line
+                        )
                         result_lines.append(stripped)
                         consecutive_blank = 0
                 else:
                     if summary_pattern.search(stripped):
                         result_lines.append(stripped)
+                        break
+                    elif is_check_failed_report and not stripped:
                         break
                     elif not stripped:
                         consecutive_blank += 1

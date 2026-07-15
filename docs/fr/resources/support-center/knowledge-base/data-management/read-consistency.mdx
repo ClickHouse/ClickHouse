@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "Comment garantir la cohérence de lecture des données dans ClickHouse ?"
+description: "Découvrez comment garantir la cohérence des données lors de leur lecture dans ClickHouse, que vous soyez connecté au même nœud ou à un nœud aléatoire."
+tags: ['Performances et optimisations']
+keywords: ['Cohérence de lecture']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+J’écris des données dans ClickHouse Cloud et, lorsque je les lis, j’ai besoin d’avoir la garantie d’obtenir les informations complètes les plus récentes.
+
+<div id="answer">
+  ## Réponse
+</div>
+
+<div id="talking-to-the-same-node">
+  ### Communiquer avec le même nœud
+</div>
+
+Si vous utilisez le protocole natif ou une session pour effectuer vos opérations d’écriture/lecture, vous devez alors être connecté à la même réplique : dans ce scénario, vous lisez directement depuis le nœud sur lequel vous écrivez, et votre lecture sera donc toujours cohérente.
+
+<div id="talking-to-a-random-node">
+  ### Communiquer avec un nœud aléatoire
+</div>
+
+Si vous ne pouvez pas garantir que vous communiquez avec le même nœud (par exemple, si vous passez par des appels HTTPS redistribués par un load balancer), vous avez deux possibilités :
+
+A)
+
+1. écrire vos données
+2. vous connecter à une nouvelle réplique
+3. exécuter `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+4. lire les données les plus récentes
+
+Voir la [référence](/fr/reference/statements/system#sync-replica) des commandes `SYSTEM`
+
+OU
+
+B) lire à tout moment avec une cohérence séquentielle
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+Notez que, lorsque vous utilisez ClickHouse Cloud et son [moteur de table SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree) par défaut, il n’est pas nécessaire d’utiliser `insert_quorum_parallel` — toutes les insertions dans SharedMergeTree sont des insertions avec quorum (par conception).
+
+L’utilisation de [`SYSTEM SYNC REPLICAS`](/fr/reference/statements/system#sync-replica) ou de [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) augmentera la charge de ClickHouse Keeper et pourra dégrader les performances selon la charge du service.
+
+L’approche recommandée consiste à effectuer l’écriture et la lecture dans la même session ou via le protocole natif (connexion persistante).

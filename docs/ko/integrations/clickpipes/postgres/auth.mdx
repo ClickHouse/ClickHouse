@@ -1,0 +1,148 @@
+---
+slug: /integrations/clickpipes/postgres/auth
+sidebarTitle: 'AWS IAM DB 인증 (RDS/Aurora)'
+title: 'AWS IAM DB 인증 (RDS/Aurora)'
+description: '이 문서에서는 ClickPipes 고객이 역할 기반 접근을 활용해 Amazon RDS/Aurora에 인증하고 데이터베이스에 안전하게 액세스하는 방법을 설명합니다.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'rds', 'security', 'aws', 'private connection']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 문서에서는 ClickPipes 고객이 역할 기반 접근을 사용하여 Amazon Aurora 및 RDS에서 인증을 수행하고 데이터베이스에 안전하게 액세스하는 방법을 설명합니다.
+
+<Warning>
+  AWS RDS Postgres 및 Aurora Postgres에서는 AWS IAM DB 인증의 제약으로 인해 `Initial Load Only` ClickPipes만 실행할 수 있습니다.
+
+  MySQL 및 MariaDB에는 이 제약이 적용되지 않으므로 `Initial Load Only` ClickPipes와 `CDC` ClickPipes를 모두 실행할 수 있습니다.
+</Warning>
+
+<div id="setup">
+  ## Setup
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### ClickHouse 서비스 IAM 역할 ARN 가져오기
+</div>
+
+1 - ClickHouse Cloud 계정에 로그인하세요.
+
+2 - 통합을 생성할 ClickHouse 서비스를 선택하세요.
+
+3 - **설정** 탭을 선택하세요.
+
+4 - 페이지 하단의 **Network security information** 섹션으로 스크롤하세요.
+
+5 - 아래와 같이 해당 서비스의 **Service role ID (IAM)** 값을 복사하세요.
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="보안 S3 ARN" size="lg" border />
+
+이 값을 `{ClickHouse_IAM_ARN}`이라고 하겠습니다. 이 IAM 역할은 RDS/Aurora 인스턴스에 액세스하는 데 사용됩니다.
+
+<div id="configuring-the-rds-aurora-instance">
+  ### RDS/Aurora 인스턴스 구성하기
+</div>
+
+<div id="enabling-iam-db-authentication">
+  #### IAM DB 인증 활성화
+</div>
+
+1. AWS 계정에 로그인한 후 구성할 RDS 인스턴스로 이동합니다.
+2. **Modify** 버튼을 클릭합니다.
+3. 아래로 스크롤하여 **Database authentication** 섹션을 찾습니다.
+4. **Password and IAM database authentication** 옵션을 활성화합니다.
+5. **Continue** 버튼을 클릭합니다.
+6. 변경 사항을 검토한 후 **Apply immediately** 옵션을 클릭합니다.
+
+<div id="obtaining-the-rds-resource-id">
+  #### RDS/Aurora Resource ID 확인하기
+</div>
+
+1. AWS 계정에 로그인한 다음, 구성할 RDS 인스턴스 또는 Aurora 클러스터로 이동합니다.
+2. **Configuration** 탭을 클릭합니다.
+3. **Resource ID** 값을 확인합니다. RDS는 `db-xxxxxxxxxxxxxx`, Aurora 클러스터는 `cluster-xxxxxxxxxxxxxx` 형식입니다. 이 값을 `{RDS_RESOURCE_ID}`라고 하겠습니다. 이 값은 RDS 인스턴스에 대한 액세스를 허용하는 IAM 정책에서 사용할 Resource ID입니다.
+
+<div id="setting-up-the-database-user">
+  #### 데이터베이스 사용자 설정하기
+</div>
+
+<div id="setting-up-the-database-user-postgres">
+  ##### PostgreSQL
+</div>
+
+1. RDS/Aurora 인스턴스에 연결한 후, 다음 명령으로 새 데이터베이스 사용자를 생성하십시오.
+   ```sql
+   CREATE USER clickpipes_iam_user; 
+   GRANT rds_iam TO clickpipes_iam_user;
+   ```
+2. [PostgreSQL 소스 설정 가이드](/ko/integrations/clickpipes/postgres/source/rds)의 나머지 단계를 따라 RDS 인스턴스를 ClickPipes용으로 구성하십시오.
+
+<div id="setting-up-the-database-user-mysql">
+  ##### MySQL / MariaDB
+</div>
+
+1. RDS/Aurora 인스턴스에 연결한 다음, 다음 명령으로 새 데이터베이스 사용자를 생성합니다.
+   ```sql
+   CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+   ```
+2. [MySQL 소스 설정 가이드](/ko/integrations/clickpipes/mysql/source/rds)의 나머지 단계를 따라 RDS/Aurora 인스턴스를 ClickPipes에 맞게 구성하십시오.
+
+<div id="setting-up-iam-role">
+  ### IAM 역할 설정하기
+</div>
+
+<div id="manually-create-iam-role">
+  #### IAM 역할을 수동으로 생성합니다.
+</div>
+
+1 - IAM 역할을 생성하고 관리할 권한이 있는 IAM user로 웹 브라우저에서 AWS 계정에 로그인합니다.
+
+2 - IAM Service Console로 이동합니다.
+
+3 - 다음 IAM 및 Trust policy를 사용해 새 IAM 역할을 생성합니다.
+
+Trust policy (`{ClickHouse_IAM_ARN}`을 ClickHouse instance에 속한 IAM Role ARN으로 대체하십시오):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+```
+
+IAM 정책(`{RDS_RESOURCE_ID}`를 RDS 인스턴스의 Resource ID로 바꾸십시오). `{RDS_REGION}`은 RDS/Aurora 인스턴스의 리전으로, `{AWS_ACCOUNT}`는 AWS 계정 ID로 바꾸어야 합니다:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds-db:connect"
+      ],
+      "Resource": [
+        "arn:aws:rds-db:{RDS_REGION}:{AWS_ACCOUNT}:dbuser:{RDS_RESOURCE_ID}/clickpipes_iam_user"
+      ]
+    }
+  ]
+}
+```
+
+4 - 생성 후 새 **IAM Role ARN**을 복사하십시오. 이는 ClickPipes에서 AWS 데이터베이스에 안전하게 액세스하는 데 필요합니다. 이 값을 `{RDS_ACCESS_IAM_ROLE_ARN}`이라고 하겠습니다.
+
+이제 이 IAM 역할을 사용해 ClickPipes에서 RDS/Aurora 인스턴스에 인증할 수 있습니다.

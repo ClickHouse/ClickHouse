@@ -1,0 +1,55 @@
+---
+alias: []
+description: 'Documentation sur le format TemplateIgnoreSpaces'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
+doc_type: 'référence'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✗      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Semblable à [`Template`], mais ignore les caractères d’espacement entre les délimiteurs et les valeurs dans le flux d’entrée.
+En revanche, si les chaînes de format contiennent des caractères d’espacement, ceux-ci seront attendus dans le flux d’entrée.
+Il permet également de spécifier des placeholders vides (`${}` ou `${:None}`) afin de découper certains délimiteurs en parties distinctes pour ignorer les espaces entre elles.
+Ces placeholders servent uniquement à ignorer les caractères d’espacement.
+Il est possible de lire du `JSON` avec ce format si les valeurs des colonnes sont dans le même ordre sur toutes les lignes.
+
+<Note>
+  Ce format convient uniquement en entrée.
+</Note>
+
+<div id="example-usage">
+  ## Exemple d&#39;utilisation
+</div>
+
+La requête suivante permet d’insérer des données à partir de l’exemple de sortie au format [JSON](/fr/reference/formats/JSON/JSON) :
+
+```sql
+INSERT INTO table_name 
+SETTINGS
+    format_template_resultset = '/some/path/resultset.format',
+    format_template_row = '/some/path/row.format',
+    format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
+```
+
+```text title="/some/path/resultset.format"
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+
+```text title="/some/path/row.format"
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>

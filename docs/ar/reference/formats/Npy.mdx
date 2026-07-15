@@ -1,0 +1,87 @@
+---
+alias: []
+description: 'توثيق لتنسيق Npy'
+input_format: true
+keywords: ['Npy']
+output_format: true
+slug: /interfaces/formats/Npy
+title: 'Npy'
+doc_type: 'مرجع'
+---
+
+| الإدخال | الإخراج | الاسم البديل |
+| ------- | ------- | ------------ |
+| ✔       | ✔       |              |
+
+<div id="description">
+  ## الوصف
+</div>
+
+صُمِّم تنسيق `Npy` لتحميل مصفوفة NumPy من ملف `.npy` إلى ClickHouse.
+صيغة ملف NumPy هي صيغة ثنائية تُستخدم لتخزين مصفوفات البيانات العددية بكفاءة.
+أثناء الاستيراد، يتعامل ClickHouse مع البُعد الخارجي على أنه مصفوفة من الصفوف ذات عمود واحد.
+
+يوضح الجدول أدناه أنواع بيانات Npy المدعومة والنوع المقابل لها في ClickHouse:
+
+<div id="data_types-matching">
+  ## مطابقة أنواع البيانات
+</div>
+
+| نوع بيانات Npy (`INSERT`) | نوع بيانات ClickHouse                            | نوع بيانات Npy (`SELECT`) |
+| ------------------------- | ------------------------------------------------ | ------------------------- |
+| `i1`                      | [Int8](/ar/reference/data-types/int-uint)           | `i1`                      |
+| `i2`                      | [Int16](/ar/reference/data-types/int-uint)          | `i2`                      |
+| `i4`                      | [Int32](/ar/reference/data-types/int-uint)          | `i4`                      |
+| `i8`                      | [Int64](/ar/reference/data-types/int-uint)          | `i8`                      |
+| `u1`, `b1`                | [UInt8](/ar/reference/data-types/int-uint)          | `u1`                      |
+| `u2`                      | [UInt16](/ar/reference/data-types/int-uint)         | `u2`                      |
+| `u4`                      | [UInt32](/ar/reference/data-types/int-uint)         | `u4`                      |
+| `u8`                      | [UInt64](/ar/reference/data-types/int-uint)         | `u8`                      |
+| `f2`, `f4`                | [Float32](/ar/reference/data-types/float)           | `f4`                      |
+| `f8`                      | [Float64](/ar/reference/data-types/float)           | `f8`                      |
+| `S`, `U`                  | [String](/ar/reference/data-types/string)           | `S`                       |
+|                           | [FixedString](/ar/reference/data-types/fixedstring) | `S`                       |
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="saving-an-array-in-npy-format-using-python">
+  ### حفظ مصفوفة بتنسيق Npy باستخدام بايثون
+</div>
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+<div id="reading-a-numpy-file-in-clickhouse">
+  ### قراءة ملف NumPy في ClickHouse
+</div>
+
+```sql title="Query"
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+```response title="Response"
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
+
+<div id="selecting-data">
+  ### استخراج البيانات
+</div>
+
+يمكنك استخراج البيانات من جدول في ClickHouse وحفظها في ملف بتنسيق Npy باستخدام الأمر التالي مع clickhouse-client:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
