@@ -10,7 +10,7 @@ SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_rev;
 CREATE TABLE t_rev (id Int64)
 ENGINE = MergeTree ORDER BY id DESC
-SETTINGS min_rows_for_wide_part = 1, index_granularity_bytes = 0, index_granularity = 8, allow_experimental_reverse_key = 1;
+SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity_bytes = 0, index_granularity = 8, allow_experimental_reverse_key = 1;
 INSERT INTO t_rev SELECT number - 500 FROM numbers(1000);
 
 SELECT 'part_type', part_type FROM system.parts WHERE table = 't_rev' AND database = currentDatabase() AND active;
@@ -28,7 +28,7 @@ SELECT 'in_set', count() FROM t_rev WHERE id IN (SELECT number - 500 FROM number
 DROP TABLE IF EXISTS t_rev2;
 CREATE TABLE t_rev2 (id Int64, k UInt32)
 ENGINE = MergeTree ORDER BY (id DESC, k DESC)
-SETTINGS min_rows_for_wide_part = 1, index_granularity_bytes = 0, index_granularity = 8, allow_experimental_reverse_key = 1;
+SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity_bytes = 0, index_granularity = 8, allow_experimental_reverse_key = 1;
 INSERT INTO t_rev2 SELECT number - 500, number % 7 FROM numbers(1000);
 
 -- Multi-column descending key: range on both key columns and set membership.
