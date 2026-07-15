@@ -86,3 +86,36 @@ FROM
 -- Reject `-Distinct` recursively when it wraps another supported combinator.
 SELECT groupBloomFilterIfDistinctState(1000)(number, number = 0)
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+-- Reject combinators that add, replicate, or reshape the nested Bloom filter state.
+SELECT groupBloomFilterArgMinState(1000)(number, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterArgMaxState(1000)(number, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+-- Finalized unsupported combinators must be rejected during query analysis.
+EXPLAIN SELECT groupBloomFilterArgMin(1000)(number, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+EXPLAIN SELECT groupBloomFilterArgMax(1000)(number, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+-- Reject unsupported combinators recursively when they wrap a supported combinator.
+SELECT groupBloomFilterIfArgMinState(1000)(number, number = 0, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterForEachState(1000)([number])
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterMapState(1000)(map(number, number))
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterResampleState(1000, 0, 10, 1)(number, number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterSimpleState(1000)(number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterTupleState(1000)((number, number + 1))
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }

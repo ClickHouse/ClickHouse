@@ -151,6 +151,15 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool supportsCombinator(const String & combinator_name) const override
+    {
+        return combinator_name == "Array"
+            || combinator_name == "If"
+            || combinator_name == "Merge"
+            || combinator_name == "Null"
+            || combinator_name == "State";
+    }
+
     bool isVersioned() const override { return true; }
 
     size_t getDefaultVersion() const override { return GROUP_BLOOM_FILTER_STATE_VERSION; }
@@ -429,6 +438,8 @@ Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, inclu
 `Nullable`.
 The `-Distinct` combinator is not supported because duplicate values do not change a Bloom filter and its
 additional state cannot be consumed by `bloomFilterContains`.
+Other combinators that change or replicate the aggregate state, including `-ArgMin`, `-ArgMax`, `-ForEach`,
+`-Map`, `-Resample`, `-SimpleState`, and `-Tuple`, are rejected during aggregate-function construction.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupBloomFilter(column)

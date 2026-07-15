@@ -461,6 +461,15 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
+    /// Whether a combinator with this name can wrap the aggregate function.
+    /// Wrappers propagate restrictions declared by their nested function by default.
+    virtual bool supportsCombinator(const String & combinator_name) const
+    {
+        if (const auto nested = getNestedFunction())
+            return nested->supportsCombinator(combinator_name);
+        return true;
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 

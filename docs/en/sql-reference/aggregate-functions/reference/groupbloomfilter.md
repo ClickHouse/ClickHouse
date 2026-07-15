@@ -60,6 +60,8 @@ These combinators require a meaningful finalized result, while `groupBloomFilter
 
 The `-Distinct` combinator is not supported, including state-only chains such as `groupBloomFilterDistinctState` and `groupBloomFilterDistinctMergeState`. Duplicate values do not change a Bloom filter, and the additional `Distinct` state cannot be consumed by `bloomFilterContains`.
 
+Other combinators that change or replicate the aggregate state, including `-ArgMin`, `-ArgMax`, `-ForEach`, `-Map`, `-Resample`, `-SimpleState`, and `-Tuple`, are rejected during aggregate-function construction.
+
 ## Parameters {#parameters}
 
 | Parameter | Description | Default |
