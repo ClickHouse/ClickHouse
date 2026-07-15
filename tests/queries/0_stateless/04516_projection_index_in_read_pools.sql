@@ -41,8 +41,24 @@ SELECT /* refiner_query_prefetched_pool */ id, region, value FROM t_proj_pools W
 SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', optimize_read_in_order = 0;
 
 -- Parallel replicas over localhost: MergeTreeReadPoolParallelReplicas on every participant.
-SELECT /* refiner_query_parallel_replicas */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
+SELECT /* refiner_query_parallel_replicas_default */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY ALL
 SETTINGS max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, optimize_read_in_order = 0,
+    enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
+    -- projection support under parallel replicas requires a local plan and no aggregation-in-order
+    parallel_replicas_local_plan = 1, optimize_aggregation_in_order = 0,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- Parallel replicas reading in order: MergeTreeReadPoolParallelReplicasInOrder (WithOrder mode).
+SELECT /* refiner_query_parallel_replicas_in_order */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY id LIMIT 5
+SETTINGS max_threads = 4, optimize_read_in_order = 1,
+    enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
+    -- projection support under parallel replicas requires a local plan and no aggregation-in-order
+    parallel_replicas_local_plan = 1, optimize_aggregation_in_order = 0,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- The same pool in ReverseOrder mode.
+SELECT /* refiner_query_parallel_replicas_reverse */ id, region, value FROM t_proj_pools WHERE region = 'rare' ORDER BY id DESC LIMIT 5
+SETTINGS max_threads = 4, optimize_read_in_order = 1,
     enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
     -- projection support under parallel replicas requires a local plan and no aggregation-in-order
     parallel_replicas_local_plan = 1, optimize_aggregation_in_order = 0,
@@ -96,7 +112,32 @@ WHERE type = 'QueryFinish'
         WHERE current_database = currentDatabase()
             AND type = 'QueryFinish'
             AND is_initial_query
-            AND query LIKE '%refiner_query_parallel_replicas%'
+            AND query LIKE '%refiner_query_parallel_replicas_default%'
+            AND query NOT LIKE '%query_log%');
+
+-- In-order parallel replicas terminate early because of the LIMIT: reading forward only the
+-- marks before the matching one are guaranteed to be cut and dropped, so assert just > 0.
+SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 0 AS dropped_marks
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND type = 'QueryFinish'
+            AND is_initial_query
+            AND query LIKE '%refiner_query_parallel_replicas_in_order%'
+            AND query NOT LIKE '%query_log%');
+
+-- Reading in reverse order has to pass almost the whole part before the matching mark.
+SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 200 AS dropped_marks
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND type = 'QueryFinish'
+            AND is_initial_query
+            AND query LIKE '%refiner_query_parallel_replicas_reverse%'
             AND query NOT LIKE '%query_log%');
 
 DROP TABLE t_proj_pools;
