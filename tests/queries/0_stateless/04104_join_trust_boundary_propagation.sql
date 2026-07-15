@@ -3,11 +3,17 @@
 -- Untrusted estimates stay as `ResultRows: unknown` upstream.
 
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_parallel_replicas = 0;
 SET use_statistics = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_algorithm = 'greedy';
+-- The subquery join must stay a separate optimization scope: merging expressions
+-- into the outer join graph would inline the nested join and dissolve the
+-- trust boundary this test exercises.
+SET query_plan_merge_expression_into_join = 0;
 
 DROP TABLE IF EXISTS t_outer_04104;
 DROP TABLE IF EXISTS t_inner_a_04104;

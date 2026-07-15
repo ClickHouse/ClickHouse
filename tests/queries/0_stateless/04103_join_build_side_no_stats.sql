@@ -3,6 +3,8 @@
 -- fallback numbers cannot leak past the trust boundary to upstream joins.
 
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
 SET query_plan_optimize_join_order_limit = 10;
