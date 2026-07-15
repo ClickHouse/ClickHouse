@@ -672,7 +672,36 @@ TEST(BackupInfo, NormalizedStringIgnoresShadowedAzureNamedCollectionOverrides)
         "connection_string='https://account.blob.core.windows.net')");
 
     EXPECT_EQ(positional_path.toNormalizedString(), positional_path_with_shadowed_override.toNormalizedString());
-    EXPECT_EQ(connection_string.toNormalizedString(), connection_string_with_shadowed_url.toNormalizedString());
+    EXPECT_THROW((void)connection_string.toNormalizedString(), Exception);
+    EXPECT_THROW((void)connection_string_with_shadowed_url.toNormalizedString(), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringResolvesAzureConnectionOverridePrecedence)
+{
+    const String collection_name = "backup_info_azure_connection_precedence";
+
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("connection_string", Field("https://account.blob.core.windows.net"));
+    create_query->changes.emplace_back("storage_account_url", Field("https://base-ignored.blob.core.windows.net"));
+    create_query->changes.emplace_back("container", Field("container"));
+    create_query->changes.emplace_back("blob_path", Field("backup"));
+    create_query->overridability.emplace("storage_account_url", true);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    SCOPE_EXIT({
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    });
+
+    auto context = getContext().context;
+    auto base = BackupInfo::fromString("AzureBlobStorage(" + collection_name + ")");
+    auto shadowed_override = BackupInfo::fromString(
+        "AzureBlobStorage(" + collection_name + ", storage_account_url='https://ignored.blob.core.windows.net')");
+
+    EXPECT_EQ(base.toNormalizedString(context), shadowed_override.toNormalizedString(context));
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonOverridableNamedCollectionOverride)
@@ -721,6 +750,8 @@ TEST(BackupInfo, NormalizedStringRejectsDuplicateNamedCollectionOverrides)
     auto second = BackupInfo::fromString(
         "S3(" + collection_name + ", url='s3://bucket/b', url='s3://bucket/a')");
     auto malformed = BackupInfo::fromString("S3(" + collection_name + ", equals(url))");
+    auto malformed_secret = BackupInfo::fromString(
+        "S3(" + collection_name + ", equals(secret_access_key, 'TOPSECRET', 'extra'))");
 
     ASTs default_args{make_intrusive<ASTIdentifier>(collection_name)};
     default_args.insert(default_args.end(), first.kv_args.begin(), first.kv_args.end());
@@ -732,6 +763,28 @@ TEST(BackupInfo, NormalizedStringRejectsDuplicateNamedCollectionOverrides)
     EXPECT_THROW((void)first.toNormalizedString(), Exception);
     EXPECT_THROW((void)second.toNormalizedString(context), Exception);
     EXPECT_THROW((void)malformed.toNormalizedString(context), Exception);
+
+    try
+    {
+        (void)malformed_secret.getNamedCollection(context);
+        FAIL() << "Expected malformed secret override exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("equals"), String::npos);
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
+
+    try
+    {
+        (void)malformed_secret.toNormalizedString();
+        FAIL() << "Expected malformed secret override normalization exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("equals"), String::npos);
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
 }
 
 TEST(BackupInfo, NormalizedStringChecksNamedCollectionBeforeOverrides)

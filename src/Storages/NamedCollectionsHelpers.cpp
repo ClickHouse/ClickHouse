@@ -149,7 +149,18 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         if (!value_override)
         {
             if (strict_override_validation)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument");
+            {
+                if (const auto * function = (*it)->as<ASTFunction>())
+                {
+                    const size_t arguments_size = function->arguments ? function->arguments->children.size() : 0;
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Expected key-value argument, got function '{}' with {} arguments",
+                        function->name,
+                        arguments_size);
+                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument, got a non-function expression");
+            }
             if (!(*it)->as<ASTFunction>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
             if (allow_override_by_default)

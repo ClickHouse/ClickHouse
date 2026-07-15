@@ -307,6 +307,16 @@ namespace
         result += component;
     }
 
+    String describeASTStructure(const ASTPtr & ast)
+    {
+        if (const auto * function = ast->as<ASTFunction>())
+        {
+            const size_t arguments_size = function->arguments ? function->arguments->children.size() : 0;
+            return fmt::format("function '{}' with {} arguments", function->name, arguments_size);
+        }
+        return "a non-function expression";
+    }
+
     String normalizeS3URL(String s)
     {
         String result;
@@ -684,11 +694,6 @@ namespace
             Strings kv_strings;
             kv_strings.reserve(info.kv_args.size());
             std::unordered_set<String> keys;
-            const bool has_azure_connection_string_override = info.backup_engine_name == "AzureBlobStorage"
-                && std::any_of(
-                    info.kv_args.begin(),
-                    info.kv_args.end(),
-                    [](const auto & kv) { return getKeyValueArgName(kv) == "connection_string"; });
             for (const auto & kv : info.kv_args)
             {
                 auto key = getKeyValueArgName(kv);
@@ -697,7 +702,7 @@ namespace
                         ErrorCodes::BAD_ARGUMENTS,
                         "Backup engine '{}' key-value argument {} must have a string key for normalized backup identity",
                         info.backup_engine_name,
-                        kv->formatForErrorMessage());
+                        describeASTStructure(kv));
 
                 if (!keys.emplace(*key).second)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicated key '{}' in backup named collection overrides", *key);
@@ -709,8 +714,12 @@ namespace
                     continue;
 
                 if (info.backup_engine_name == "AzureBlobStorage"
-                    && ((*key == "blob_path" && !info.args.empty())
-                        || (*key == "storage_account_url" && has_azure_connection_string_override)))
+                    && (*key == "connection_string" || *key == "storage_account_url"))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Context or a frozen named collection is required to normalize Azure connection overrides");
+
+                if (info.backup_engine_name == "AzureBlobStorage" && *key == "blob_path" && !info.args.empty())
                     continue;
 
                 auto value = getKeyValueArgStringValue(kv);
@@ -719,7 +728,7 @@ namespace
                         ErrorCodes::BAD_ARGUMENTS,
                         "Backup engine '{}' key-value argument {} must have a string value for normalized backup identity",
                         info.backup_engine_name,
-                        kv->formatForErrorMessage());
+                        describeASTStructure(kv));
 
                 if (info.backup_engine_name == "S3" && *key == "filename")
                 {
