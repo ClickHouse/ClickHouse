@@ -11,9 +11,13 @@ if __name__ == "__main__":
     info = Info()
 
     # store changed files
+    # Fail-close for PR and merge-queue runs: the merge-queue flaky check
+    # selects tests from this list, so an empty fallback would silently skip
+    # it. Do not fail for master/release CI workflows.
     changed_files = (
-        GH.get_changed_files(strict=info.pr_number) or []
-    )  # do not fail for master/release CI workflow
+        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
+        or []
+    )
     info.store_kv_data("changed_files", changed_files)
 
     # hack to get build digest
