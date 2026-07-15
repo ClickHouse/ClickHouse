@@ -264,18 +264,32 @@ class ClickHouseProc:
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
-    @staticmethod
-    def set_memory_ratio(ratio):
+    def set_memory_ratio(self, ratio):
         config = f"""<clickhouse>
     <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        with open(file_path, "w") as f:
-            f.write(config)
-        print(
-            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
-        )
+        # In DBReplicated mode `install.sh` has already cloned
+        # /etc/clickhouse-server into the two replica config dirs and `start`
+        # launches all three servers, so the override must be written into every
+        # replica config dir too - otherwise the extra replicas keep the default
+        # 0.9 ratio and can still drive the host into a global OOM under the
+        # heavier multi-server footprint (the very failure this cap prevents).
+        config_dirs = [self.ch_config_dir]
+        if self.is_db_replicated:
+            config_dirs += [
+                self.ch_config_dir_replica_1,
+                self.ch_config_dir_replica_2,
+            ]
+        for config_dir in config_dirs:
+            file_path = (
+                f"{config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+            )
+            with open(file_path, "w") as f:
+                f.write(config)
+            print(
+                f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
+            )
 
     def _install_light(self):
         """
