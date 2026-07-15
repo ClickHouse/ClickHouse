@@ -65,7 +65,10 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
             /// filter composition and limit propagation. See issue #82279 and the sibling
             /// guards in `liftUpFunctions`, `optimizeLazyMaterialization`, `optimizeTopK`,
             /// `topKThroughJoin`, and `pushLimitByIntoSort`.
-            if (expression_step->getExpression().hasArrayJoin())
+            /// A stateful expression (e.g. `neighbor`, `logTrace`) must see the same input rows
+            /// it would see without the optimization, so neither the outer `LIMIT` nor filters
+            /// from above it may reduce the source rows. Stop walking here as well.
+            if (expression_step->getExpression().hasArrayJoin() || expression_step->getExpression().hasStatefulFunctions())
                 break;
             expression_dags.push_back(&expression_step->getExpression());
             continue;

@@ -904,6 +904,13 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
         return 0;
 
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
+    /// data-order dependent results and side effects, so it must see the same input rows it would
+    /// see without the optimization. Capping the source to `limit + offset` rows would truncate
+    /// its input. See the sibling guard in `InterpreterSelectQuery::maxBlockSizeByLimit`.
+    if (hasStatefulFunctionNode(main_query_node.getProjectionNode()))
+        return 0;
+
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
@@ -1114,6 +1121,13 @@ void pushOrderByIntoView(
     /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
     /// guard in `mainQueryNodeBlockSizeByLimit`.
     if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
+        return;
+
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) in the outer
+    /// projection gives block- and data-order dependent results and side effects, so it must see
+    /// the same input rows it would see without the optimization. Pushing `ORDER BY/LIMIT` into
+    /// the view would truncate rows before the outer projection runs.
+    if (hasStatefulFunctionNode(outer->getProjectionNode()))
         return;
 
     /// `LIMIT BY` is evaluated globally on the coordinator after merging.

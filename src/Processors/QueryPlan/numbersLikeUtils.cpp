@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -75,7 +76,26 @@ bool astContainsArrayJoinFunction(const ASTPtr & ast)
     return false;
 }
 
-bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
+/// Whether the AST subtree contains a call to a stateful function (`IFunctionBase::isStateful`,
+/// e.g. `neighbor`, `runningAccumulate`, `logTrace`), without descending into nested subqueries.
+/// Mirrors `selectListHasStatefulFunction` in `InterpreterSelectQuery.cpp`.
+bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (function_resolver && function_resolver->isStateful())
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunction(child, context))
+            return true;
+    return false;
+}
+
+bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info, const ContextPtr & context)
 {
     /// Reject negative, fractional, and zero limits for pushdown
     if (lim_info.is_limit_length_negative
@@ -105,6 +125,14 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     if (query.arrayJoinExpressionList().first)
         return false;
 
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
+    /// data-order dependent results and side effects, so it must see the same input rows it would
+    /// see without the optimization. Capping the source to `limit + offset` rows would truncate
+    /// its input. See the sibling guards in `InterpreterSelectQuery::maxBlockSizeByLimit` and
+    /// `mainQueryNodeBlockSizeByLimit`.
+    if (astContainsStatefulFunction(query.select(), context))
+        return false;
+
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
     return !query.distinct
@@ -126,7 +154,7 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
 
     const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (!shouldPushdownLimit(query_info, lim_info))
+    if (!shouldPushdownLimit(query_info, lim_info, context))
         return {};
 
     return lim_info.limit_length + lim_info.limit_offset;

@@ -131,6 +131,12 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
   */
 bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
 
+/** Returns true if there is a node of a stateful function (`IFunctionBase::isStateful`,
+  * e.g. `neighbor`, `runningAccumulate`, `logTrace`) in node children, false otherwise.
+  * Do not visit subqueries.
+  */
+bool hasStatefulFunctionNode(const QueryTreeNodePtr & node);
+
 /** Replace columns in node children.
   * If there is column node and its source is specified table expression node and there is
   * node for column name in map replace column node with node from map.

@@ -882,6 +882,53 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
 namespace
 {
 
+class CheckStatefulFunctionExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckStatefulFunctionExistsVisitor>
+{
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_stateful_function)
+            return;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node || !function_node->isOrdinaryFunction())
+            return;
+
+        const auto & function = function_node->getFunction();
+        has_stateful_function = function && function->isStateful();
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    {
+        if (has_stateful_function)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasStatefulFunction() const
+    {
+        return has_stateful_function;
+    }
+
+private:
+    bool has_stateful_function = false;
+};
+
+}
+
+bool hasStatefulFunctionNode(const QueryTreeNodePtr & node)
+{
+    CheckStatefulFunctionExistsVisitor visitor;
+    visitor.visit(node);
+
+    return visitor.hasStatefulFunction();
+}
+
+namespace
+{
+
 class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
 {
 public:

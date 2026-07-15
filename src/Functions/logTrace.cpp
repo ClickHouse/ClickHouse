@@ -46,8 +46,12 @@ namespace
         /// the call, keeps `tryExecuteFunctionsAfterSorting` from lifting it above an `ORDER BY [... LIMIT]`, keeps
         /// lazy materialization from deferring it past the `LIMIT`, and keeps the top-K `ORDER BY ... LIMIT`
         /// optimizations (`optimizeTopK`, `topKThroughJoin`) from dropping source rows before it via a prewhere
-        /// filter, skip-index pruning, or a sort pushed below a `JOIN`. This mirrors other functions with
-        /// block-level semantics such as `neighbor`.
+        /// filter, skip-index pruning, or a sort pushed below a `JOIN`. The plain `LIMIT` paths check it too:
+        /// the trivial-`LIMIT` source fast paths (`maxBlockSizeByLimit`, `mainQueryNodeBlockSizeByLimit`,
+        /// `numbersLikeUtils::shouldPushdownLimit`), the generic limit pushdown (`tryPushDownLimit`,
+        /// `optimizePrimaryKeyConditionAndLimit`), and the read-in-order `ORDER BY ... LIMIT` early termination
+        /// (`buildSortingDAG`) all keep the limit from truncating the function's input. This mirrors other
+        /// functions with block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

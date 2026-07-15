@@ -24,6 +24,7 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -381,6 +382,27 @@ bool selectListHasArrayJoinFunction(const ASTPtr & ast)
             return true;
     for (const auto & child : ast->children)
         if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
+/// Whether the AST subtree contains a call to a stateful function (`IFunctionBase::isStateful`,
+/// e.g. `neighbor`, `runningAccumulate`, `logTrace`), without descending into nested subqueries.
+/// Stateful functions give block- and data-order dependent results and side effects, so they must
+/// see the same input rows they would see without limit-related optimizations.
+/// Mirrors `numbersLikeUtils::astContainsStatefulFunction`.
+bool selectListHasStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (function_resolver && function_resolver->isStateful())
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && selectListHasStatefulFunction(child, context))
             return true;
     return false;
 }
@@ -2687,6 +2709,13 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
+    /// data-order dependent results and side effects, so it must see the same input rows it would
+    /// see without the optimization. Capping the source to `limit + offset` rows would truncate
+    /// its input. See the sibling guard in `mainQueryNodeBlockSizeByLimit`.
+    if (selectListHasStatefulFunction(query.select(), context))
+        return 0;
+
     if (!query.distinct
        && !query.limit_with_ties
        && !query.prewhere()
@@ -2877,7 +2906,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 query_info.syntax_analyzer_result);
 
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-            UInt64 limit = query.hasFiltration() ? 0 : getLimitForSorting(query, context);
+            /// A stateful function (e.g. `neighbor`, `logTrace`) in the select list must see the
+            /// full pre-sort input, so the storage must not stop reading early because of the limit.
+            UInt64 limit = (query.hasFiltration() || selectListHasStatefulFunction(query.select(), context))
+                ? 0
+                : getLimitForSorting(query, context);
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
         else if (optimize_aggregation_in_order)

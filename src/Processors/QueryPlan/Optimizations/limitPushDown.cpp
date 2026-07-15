@@ -136,6 +136,15 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     if (!transform_traits.preserves_number_of_rows)
         return 0;
 
+    /// Cannot push down through a stateful expression (e.g. `neighbor`, `runningAccumulate`,
+    /// `logTrace`): it gives block- and data-order dependent results and side effects, so it must
+    /// see the same input rows it would see without the optimization, while the pushed-down limit
+    /// would truncate its input. See the sibling guards in `liftUpFunctions`,
+    /// `optimizeLazyMaterialization`, `optimizeTopK`, `topKThroughJoin`, and `pushLimitByIntoSort`.
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(child.get()))
+        if (expression_step->getExpression().hasStatefulFunctions())
+            return 0;
+
     /// Input stream for Limit have changed.
     limit->updateInputHeader(transforming->getInputHeaders().front());
 
@@ -167,7 +176,9 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// `arrayJoin` expansion, silently dropping rows that should have produced output.
     /// See issue #82279 for sibling guards in `liftUpFunctions`, `optimizeLazyMaterialization`,
     /// `optimizeTopK`, and `topKThroughJoin`.
-    if (expr_step->getExpression().hasArrayJoin())
+    /// A stateful expression (e.g. `neighbor`, `logTrace`) above the sort must likewise see the
+    /// same input rows it would see without the optimization, not the per-stream pre-capped ones.
+    if (expr_step->getExpression().hasArrayJoin() || expr_step->getExpression().hasStatefulFunctions())
         return;
 
     /// Pushing down `LIMIT BY` adds a parallel pre-cap before the final single-stream

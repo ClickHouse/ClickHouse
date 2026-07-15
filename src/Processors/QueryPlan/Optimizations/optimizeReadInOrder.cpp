@@ -284,7 +284,9 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         const auto & actions = expression->getExpression();
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
-        if (actions.hasArrayJoin())
+        /// Should also ignore limit for stateful functions (e.g. `neighbor`, `logTrace`): they must
+        /// see the full pre-sort input, so the storage must not stop reading early because of the limit.
+        if (actions.hasArrayJoin() || actions.hasStatefulFunctions())
             limit = 0;
 
         appendExpression(dag, actions);
@@ -1172,11 +1174,20 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
-    const size_t query_limit = limit;
+    size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
+
+    /// `query_limit` sizes the reading tasks (`query_task_size_limit`), so even when the walk
+    /// above dropped the read limit, the first block would still be truncated to the query's
+    /// LIMIT. That is harmless for `arrayJoin`, `DISTINCT`, and filters (all rows still flow,
+    /// only in smaller blocks), but a stateful function (e.g. `neighbor`, `logTrace`) gives
+    /// block-dependent results and side effects, so its input must not be re-chunked because
+    /// of the limit either.
+    if (dag && dag->hasStatefulFunctions())
+        query_limit = 0;
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
