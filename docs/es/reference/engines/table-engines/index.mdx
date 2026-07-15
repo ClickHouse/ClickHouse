@@ -1,0 +1,124 @@
+---
+description: 'Documentación sobre motores de tabla'
+slug: /engines/table-engines/
+toc_folder_title: 'Motores de tabla'
+toc_priority: 26
+toc_title: 'Introducción'
+title: 'Motores de tabla'
+doc_type: 'reference'
+---
+
+El motor de tabla (tipo de tabla) determina:
+
+* Cómo y dónde se almacenan los datos, dónde se escriben y de dónde se leen.
+* Qué consultas se admiten y cómo.
+* El acceso concurrente a los datos.
+* El uso de índices, si los hay.
+* Si es posible la ejecución multihilo de solicitudes.
+* Los parámetros de replicación de datos.
+
+<div id="engine-families">
+  ## Familias de motores
+</div>
+
+<div id="mergetree">
+  ### MergeTree
+</div>
+
+Los motores de tabla más versátiles y funcionales para cargas de trabajo elevadas. La característica común de estos motores es la rápida inserción de datos con su posterior procesamiento en segundo plano. Los motores de la familia `MergeTree` admiten replicación de datos (con las versiones [Replicated*](/es/reference/engines/table-engines/mergetree-family/replication) de estos motores), particionado, índices secundarios de omisión de datos y otras funcionalidades no disponibles en otros motores.
+
+Motores de la familia:
+
+| Motores MergeTree                                                                                              |
+| -------------------------------------------------------------------------------------------------------------- |
+| [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree)                                       |
+| [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
+| [SummingMergeTree](/es/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
+| [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
+| [CollapsingMergeTree](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
+| [VersionedCollapsingMergeTree](/es/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
+| [GraphiteMergeTree](/es/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
+| [CoalescingMergeTree](/es/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+
+<div id="log">
+  ### Log
+</div>
+
+[Motores](/es/reference/engines/table-engines/log-family/index) ligeros con funcionalidad mínima. Son más eficaces cuando necesita escribir rápidamente muchas tablas pequeñas (hasta aproximadamente 1 millón de filas) y leerlas después en conjunto.
+
+Motores de la familia:
+
+| Motores Log                                                        |
+| ------------------------------------------------------------------ |
+| [TinyLog](/es/reference/engines/table-engines/log-family/tinylog)     |
+| [StripeLog](/es/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/es/reference/engines/table-engines/log-family/log)             |
+
+<div id="integration-engines">
+  ### Motores de integración
+</div>
+
+Motores para comunicarse con otros sistemas de almacenamiento y procesamiento de datos.
+
+Motores de la familia:
+
+| Motores de integración                                                            |
+| --------------------------------------------------------------------------------- |
+| [ODBC](/es/reference/engines/table-engines/integrations/odbc)                         |
+| [JDBC](/es/reference/engines/table-engines/integrations/jdbc)                        |
+| [MySQL](/es/reference/engines/table-engines/integrations/mysql)                      |
+| [MongoDB](/es/reference/engines/table-engines/integrations/mongodb)                  |
+| [Redis](/es/reference/engines/table-engines/integrations/redis)                      |
+| [HDFS](/es/reference/engines/table-engines/integrations/hdfs)                        |
+| [S3](/es/reference/engines/table-engines/integrations/s3)                            |
+| [Kafka](/es/reference/engines/table-engines/integrations/kafka)                      |
+| [EmbeddedRocksDB](/es/reference/engines/table-engines/integrations/embedded-rocksdb) |
+| [RabbitMQ](/es/reference/engines/table-engines/integrations/rabbitmq)                |
+| [PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql)            |
+| [S3Queue](/es/reference/engines/table-engines/integrations/s3queue)                  |
+| [TimeSeries](/es/reference/engines/table-engines/integrations/time-series)           |
+
+<div id="special-engines">
+  ### Motores especiales
+</div>
+
+Motores de la familia:
+
+| Motores especiales                                                       |
+| ------------------------------------------------------------------------ |
+| [Distributed](/es/reference/engines/table-engines/special/distributed)      |
+| [Diccionario](/es/reference/engines/table-engines/special/dictionary)       |
+| [Merge](/es/reference/engines/table-engines/special/merge)                  |
+| [Executable](/es/reference/engines/table-engines/special/executable)        |
+| [File](/es/reference/engines/table-engines/special/file)                    |
+| [Null](/es/reference/engines/table-engines/special/null)                    |
+| [Set](/es/reference/engines/table-engines/special/set)                      |
+| [Join](/es/reference/engines/table-engines/special/join)                    |
+| [URL](/es/reference/engines/table-engines/special/url)                      |
+| [View](/es/reference/engines/table-engines/special/view)                    |
+| [Memory](/es/reference/engines/table-engines/special/memory)                |
+| [Búfer](/es/reference/engines/table-engines/special/buffer)                 |
+| [Datos externos](/es/reference/engines/table-engines/special/external-data) |
+| [GenerateRandom](/es/reference/engines/table-engines/special/generate)      |
+| [KeeperMap](/es/reference/engines/table-engines/special/keepermap)          |
+| [FileLog](/es/reference/engines/table-engines/special/filelog)              |
+
+<div id="table_engines-virtual_columns">
+  ## Columnas virtuales
+</div>
+
+Una columna virtual es un atributo inherente del motor de tabla definido en el código fuente del motor.
+
+No debe especificar columnas virtuales en la consulta `CREATE TABLE`, y no puede verlas en los resultados de las consultas `SHOW CREATE TABLE` ni `DESCRIBE TABLE`. Las columnas virtuales también son de solo lectura, por lo que no puede insertar datos en ellas.
+
+Para seleccionar datos de una columna virtual, debe especificar su nombre en la consulta `SELECT`. `SELECT *` no devuelve valores de las columnas virtuales.
+
+Si crea una tabla con una columna que tenga el mismo nombre que una de las columnas virtuales de la tabla, la columna virtual deja de ser accesible. No recomendamos hacerlo. Para evitar conflictos, los nombres de las columnas virtuales suelen llevar un guion bajo como prefijo.
+
+* `_table` — Contiene el nombre de la tabla de la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
+
+  Independientemente del motor de tabla que se utilice, cada tabla incluye una columna virtual universal llamada `_table`.
+
+  Al consultar una tabla con el motor de tabla Merge, puede establecer condiciones constantes sobre `_table` en la cláusula `WHERE/PREWHERE` (por ejemplo, `WHERE _table='xyz'`). En este caso, la operación de lectura se realiza solo en aquellas tablas en las que se cumple la condición sobre `_table`, por lo que la columna `_table` actúa como un índice.
+
+  Al usar consultas con el formato `SELECT ... FROM (... UNION ALL ...)`, podemos determinar de qué tabla real proceden las filas devueltas especificando la columna `_table`.

@@ -1,0 +1,64 @@
+---
+title: '自备 Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: '概述'
+keywords: ['BYOC', '云', '自备云']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: '参考'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+BYOC (自备 Cloud) 允许你在自己的云基础设施上部署 ClickHouse Cloud。如果你有特定要求或约束，无法使用 ClickHouse Cloud 托管服务，那么这项方案会很有帮助。
+
+> **如果你希望获得访问权限，请[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)。** 更多信息请参阅我们的[服务条款](https://clickhouse.com/legal/agreements/terms-of-service)。
+
+BYOC 目前仅支持 AWS。你可以在[这里](https://clickhouse.com/cloud/bring-your-own-cloud)加入 GCP 和 Azure 的候补名单。
+
+<Note>
+  BYOC 专为大规模部署而设计，且要求客户签署长期承诺合同。
+</Note>
+
+<div id="glossary">
+  ## 术语表
+</div>
+
+* **ClickHouse VPC:**  由 ClickHouse Cloud 拥有的 VPC。
+* **Customer BYOC VPC:** 由客户云账户拥有、由 ClickHouse Cloud 预配和管理，并专用于 ClickHouse Cloud BYOC 部署的 VPC。
+* **Customer VPC** 客户云账户拥有的其他 VPC，用于运行需要连接到 Customer BYOC VPC 的应用程序。
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="supported-features">
+  ### 支持的功能
+</div>
+
+* **SharedMergeTree**：ClickHouse Cloud 和 BYOC 使用相同的二进制文件和配置。因此，BYOC 支持 ClickHouse 核心中的全部功能，例如 SharedMergeTree。
+* **通过 Console 管理服务状态**：
+  * 支持启动、停止和终止等操作。
+  * 查看服务及其状态。
+* **备份和恢复。**
+* **手动进行纵向和横向扩缩容。**
+* **空闲休眠。**
+* **仓库**：Compute-Compute Separation
+* **通过 Tailscale 实现零信任网络。**
+* **监控**：
+  * Cloud Console 内置了用于监控服务健康状况的健康仪表盘。
+  * 支持 Prometheus 抓取，可结合 Prometheus、Grafana 和 Datadog 进行集中监控。有关设置说明，请参阅 [Prometheus 文档](/zh/products/cloud/features/monitoring/prometheus)。
+* **VPC 对等连接。**
+* **集成**：请在[此页面](/zh/integrations/home)查看完整列表。
+* **安全的 S3 访问。**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)。**
+
+<div id="planned-features-currently-unsupported">
+  ### 计划中的功能 (当前暂不支持)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/) (也称 CMEK，即客户管理的加密密钥)
+* 用于数据摄取的 ClickPipes
+* 自动扩缩容
+* MySQL 接口

@@ -1,0 +1,112 @@
+---
+description: 'A função de tabela `executable` cria uma tabela com base na saída de uma função definida pelo usuário (UDF) que você define em um script que grava linhas em **stdout**.'
+keywords: ['udf', 'função definida pelo usuário', 'clickhouse', 'executable', 'tabela', 'função']
+sidebarTitle: 'executable'
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
+---
+
+A função de tabela `executable` cria uma tabela com base na saída de uma função definida pelo usuário (UDF) que você define em um script que grava linhas em **stdout**. O script executável é armazenado no diretório `users_scripts` e pode ler dados de qualquer origem. Certifique-se de que seu servidor ClickHouse tenha todos os pacotes necessários para executar o script. Por exemplo, se for um script em Python, verifique se o servidor tem os pacotes Python necessários instalados.
+
+Opcionalmente, você pode incluir uma ou mais consultas de entrada que enviam seus resultados para **stdin**, para que o script possa lê-los.
+
+<Note>
+  Uma vantagem importante da função de tabela `executable` e do motor de tabela `Executable` em relação às funções UDF comuns é que funções UDF comuns não podem alterar a quantidade de linhas. Por exemplo, se a entrada tiver 100 linhas, o resultado deverá retornar 100 linhas. Ao usar a função de tabela `executable` ou o motor de tabela `Executable`, seu script pode realizar quaisquer transformações de dados que você quiser, incluindo agregações complexas.
+</Note>
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+A função de tabela `executable` requer três parâmetros e aceita uma lista opcional de consultas de entrada:
+
+```sql
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
+```
+
+* `script_name`: o nome do arquivo do script, salvo na pasta `user_scripts` (a pasta padrão da configuração `user_scripts_path`)
+* `format`: o formato da tabela gerada
+* `structure`: o esquema da tabela gerada
+* `input_query`: uma consulta opcional (ou coleção ou consultas) cujos resultados são passados ao script via **stdin**
+
+<Note>
+  Se você for invocar o mesmo script repetidamente com as mesmas consultas de entrada, considere usar o [motor de tabela `Executable`](/pt-BR/reference/engines/table-engines/special/executable).
+</Note>
+
+O script Python a seguir se chama `generate_random.py` e é salvo na pasta `user_scripts`. Ele lê um número `i` e imprime `i` strings aleatórias, cada uma precedida por um número separado por uma tabulação:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import string
+import random
+
+def main():
+
+    # Ler valor de entrada
+    for number in sys.stdin:
+        i = int(number)
+
+        # Gerar algumas linhas aleatórias
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # Enviar resultados para stdout
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+Vamos executar o script e fazer com que ele gere 10 sequências aleatórias de caracteres:
+
+```sql
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+```
+
+A resposta é assim:
+
+```response
+┌─id─┬─random─────┐
+│  0 │ xheXXCiSkH │
+│  1 │ AqxvHAoTrl │
+│  2 │ JYvPCEbIkY │
+│  3 │ sWgnqJwGRm │
+│  4 │ fTZGrjcLon │
+│  5 │ ZQINGktPnd │
+│  6 │ YFSvGGoezb │
+│  7 │ QyMJJZOOia │
+│  8 │ NfiyDDhmcI │
+│  9 │ REJRdJpWrg │
+└────┴────────────┘
+```
+
+<div id="settings">
+  ## Configurações
+</div>
+
+* `send_chunk_header` - controla se a contagem de linhas deve ser enviada antes do envio de um fragmento de dados para processamento. O valor padrão é `false`.
+* `pool_size` — Tamanho do pool. Se 0 for especificado como `pool_size`, não haverá restrições para o tamanho do pool. O valor padrão é `16`.
+* `max_command_execution_time` — Tempo máximo de execução do comando do script executável para processar um bloco de dados. Especificado em segundos. O valor padrão é 10.
+* `command_termination_timeout` — o script executável deve conter o loop principal de leitura e escrita. Depois que a função de tabela for destruída, o pipe será fechado, e o executável terá `command_termination_timeout` segundos para encerrar antes que o ClickHouse envie o sinal SIGTERM ao processo filho. Especificado em segundos. O valor padrão é 10.
+* `command_read_timeout` - timeout para leitura de dados da stdout do comando, em milissegundos. O valor padrão é 10000.
+* `command_write_timeout` - timeout para gravação de dados na stdin do comando, em milissegundos. O valor padrão é 10000.
+
+<div id="passing-query-results-to-a-script">
+  ## Passando resultados de consultas para um script
+</div>
+
+Confira também o exemplo no motor de tabela `Executable` sobre [como passar resultados de consultas para um script](/pt-BR/reference/engines/table-engines/special/executable#passing-query-results-to-a-script). Veja como executar o mesmo script desse exemplo usando a função de tabela `executable`:
+
+```sql
+SELECT * FROM executable(
+    'sentiment.py',
+    TabSeparated,
+    'id UInt64, sentiment Float32',
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```

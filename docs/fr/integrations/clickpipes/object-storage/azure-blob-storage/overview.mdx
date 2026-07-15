@@ -1,0 +1,226 @@
+---
+sidebarTitle: 'Vue d’ensemble'
+description: 'Connectez en toute simplicité votre stockage d’objets à ClickHouse Cloud.'
+slug: /integrations/clickpipes/object-storage/abs/overview
+title: 'Intégration d’Azure Blob Storage à ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Le ClickPipe ABS offre une solution entièrement gérée et résiliente pour ingérer des données depuis Azure Blob Storage dans ClickHouse Cloud. Il prend en charge les modes d’ingestion **ponctuelle** et **continue** avec une sémantique exactly-once.
+
+Les ClickPipes ABS peuvent être déployés et gérés manuellement à l’aide de la ClickPipes UI, ainsi que par programmation à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="supported-formats">
+  ## Formats pris en charge
+</div>
+
+* [JSON](/fr/reference/formats/JSON/JSON)
+* [CSV](/fr/reference/formats/CSV/CSV)
+* [TSV](/fr/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/fr/reference/formats/Parquet/Parquet)
+* [Avro](/fr/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## Fonctionnalités
+</div>
+
+<div id="one-time-ingestion">
+  ### Ingestion en une seule fois
+</div>
+
+Le ClickPipe ABS chargera dans la table de destination ClickHouse, en un seul lot, tous les fichiers du conteneur spécifié correspondant à un motif. Une fois la tâche d’ingestion terminée, le ClickPipe s’arrête automatiquement. Ce mode d’ingestion en une seule fois offre une sémantique exactly-once, ce qui assure que chaque fichier est traité de manière fiable, sans doublons.
+
+<div id="continuous-ingestion">
+  ### Ingestion en continu
+</div>
+
+Lorsque l’ingestion en continu est activée, ClickPipes ingère les données en continu depuis le chemin spécifié. Pour déterminer l’ordre d’ingestion, le ClickPipe ABS s’appuie sur l’[ordre lexicographique](#continuous-ingestion-lexicographical-order) implicite des fichiers.
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### Ordre lexicographique
+</div>
+
+Le ClickPipe ABS suppose que les fichiers sont ajoutés à un conteneur dans l’ordre lexicographique et s’appuie sur cet ordre implicite pour ingérer les fichiers séquentiellement. Cela signifie que tout nouveau fichier **doit** se trouver après le dernier fichier ingéré dans l’ordre lexicographique. Par exemple, des fichiers nommés `file1`, `file2` et `file3` seront ingérés séquentiellement, mais si un nouveau fichier `file 0` est ajouté au conteneur, il sera **ignoré**, car son nom ne se trouve pas après celui du dernier fichier ingéré dans l’ordre lexicographique.
+
+Dans ce mode, le ClickPipe ABS effectue un chargement initial de **tous les fichiers** dans le chemin spécifié, puis recherche de nouveaux fichiers à un intervalle configurable (30 secondes par défaut). Il est **impossible** de démarrer l’ingestion à partir d’un fichier spécifique ou d’un point précis dans le temps — ClickPipes chargera toujours tous les fichiers du chemin spécifié.
+
+<div id="file-pattern-matching">
+  ### Correspondance des motifs de fichiers
+</div>
+
+Les Object Storage ClickPipes utilisent la norme POSIX pour la correspondance des motifs de fichiers. Tous les motifs **respectent la casse** et correspondent au **chemin complet** après le nom du conteneur. Pour de meilleures performances, utilisez le motif le plus spécifique possible (par ex., `data-2024-*.csv` au lieu de `*.csv`).
+
+<div id="supported-patterns">
+  #### Motifs pris en charge
+</div>
+
+| Motif                | Description                                                                                                              | Exemple             | Correspondances                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------- | ----------------------------------------------------------------- |
+| `?`                  | Correspond à exactement **un** caractère (hors `/`)                                                                      | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`                  | Correspond à **zéro ou plusieurs** caractères (hors `/`)                                                                 | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> Récursif | Correspond à **zéro ou plusieurs** caractères (y compris `/`). Permet de parcourir les répertoires de manière récursive. | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**Exemples :**
+
+* `https://storageaccount.blob.core.windows.net/container/folder/*.csv`
+* `https://storageaccount.blob.core.windows.net/container/logs/**/data.json`
+* `https://storageaccount.blob.core.windows.net/container/file-?.parquet`
+* `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### Motifs non pris en charge
+</div>
+
+| Motif       | Description                           | Exemple                | Alternatives                                       |
+| ----------- | ------------------------------------- | ---------------------- | -------------------------------------------------- |
+| `{abc,def}` | Expansion entre accolades - variantes | `{logs,data}/file.csv` | Créez des ClickPipes distincts pour chaque chemin. |
+| `{N..M}`    | Expansion de plage numérique          | `file-{1..100}.csv`    | Utilisez `file-*.csv` ou `file-?.csv`.             |
+
+**Exemples :**
+
+* `https://storageaccount.blob.core.windows.net/container/{documents-01,documents-02}.json`
+* `https://storageaccount.blob.core.windows.net/container/file-{1..100}.csv`
+* `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### Sémantique exactly-once
+</div>
+
+Différents types de défaillances peuvent survenir lors de l’ingestion de grands jeux de données, ce qui peut entraîner des insertions partielles ou des doublons. Les Object Storage ClickPipes sont résistants aux échecs d’insertion et offrent une sémantique exactly-once. Cela est possible grâce à l’utilisation de tables de staging. Les données sont d’abord insérées dans les tables de staging. Si un problème survient lors de cette insertion, la table de staging peut être tronquée et l’insertion peut être relancée depuis un état propre. Ce n’est que lorsque l’insertion est terminée avec succès que les partitions de la table de staging sont déplacées vers la table cible. Pour en savoir plus sur cette stratégie, consultez [cet article de blog](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+
+<div id="virtual-columns">
+  ### Colonnes virtuelles
+</div>
+
+Pour suivre les fichiers qui ont été ingérés, incluez la colonne virtuelle `_file` dans la liste de mappage des colonnes. La colonne virtuelle `_file` contient le nom de fichier de l’objet source, ce qui permet d’interroger les fichiers qui ont été traités.
+
+<div id="access-control">
+  ## Contrôle d’accès
+</div>
+
+<div id="permissions">
+  ### Autorisations
+</div>
+
+Le ClickPipe ABS ne prend en charge que les conteneurs privés. Les conteneurs publics ne sont **pas** pris en charge.
+
+Les conteneurs doivent autoriser les actions [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) et [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html) dans la stratégie du bucket.
+
+<div id="authentication">
+  ### Authentification
+</div>
+
+<Note>
+  L’authentification Microsoft Entra ID (y compris Managed Identities) n’est pas prise en charge pour le moment.
+</Note>
+
+L’authentification d’Azure Blob Storage utilise une [chaîne de connexion](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string), qui prend en charge les clés d’accès ainsi que les signatures d’accès partagé (SAS).
+
+<div id="access-key">
+  #### Clé d’accès
+</div>
+
+Pour vous authentifier à l’aide d’une [clé d’accès au compte](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage), fournissez une chaîne de connexion au format suivant :
+
+```bash
+DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=account-access-key;EndpointSuffix=core.windows.net
+```
+
+Vous trouverez le nom de votre compte de stockage et votre clé d’accès dans Azure Portal, sous **Storage Account &gt; Access keys**.
+
+<div id="sas">
+  #### Signature d’accès partagé (SAS)
+</div>
+
+Pour vous authentifier à l’aide d’une [signature d’accès partagé (SAS)](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview), fournissez une chaîne de connexion qui inclut le jeton SAS :
+
+```bash
+BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSignature=sas-token
+```
+
+Générez un SAS token dans l’Azure Portal, sous **Storage Account &gt; Shared access signature**, avec les autorisations appropriées (`Read`, `List`) pour le conteneur et les blobs que vous souhaitez ingérer.
+
+<div id="network-access">
+  ### Accès réseau
+</div>
+
+Les ABS ClickPipes utilisent deux chemins réseau distincts, respectivement pour la découverte des métadonnées et l’ingestion des données : le service ClickPipes et le service ClickHouse Cloud. Si vous souhaitez ajouter une couche de sécurité réseau supplémentaire (par ex. pour des raisons de conformité), l’accès réseau **doit être configuré pour les deux chemins**.
+
+<Warning>
+  Le contrôle d’accès basé sur les adresses IP **ne fonctionne pas** si votre conteneur Azure Blob Storage se trouve dans la même région Azure que votre service ClickHouse Cloud. Lorsque les deux services sont colocalisés, le trafic transite par le réseau interne d’Azure plutôt que par l’Internet public.
+</Warning>
+
+* Pour le **contrôle d’accès basé sur les adresses IP**, les [règles réseau IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) de votre pare-feu Azure Storage doivent autoriser les adresses IP statiques de la région du service ClickPipes indiquées [ici](/fr/integrations/clickpipes/home#list-of-static-ips), ainsi que les [adresses IP statiques](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) du service ClickHouse Cloud. Pour obtenir les adresses IP statiques de votre région ClickHouse Cloud, ouvrez un terminal et exécutez :
+
+  ```bash
+  # Remplacez <your-region> par votre région ClickHouse Cloud
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## Paramètres avancés
+</div>
+
+ClickPipes fournit des valeurs par défaut adaptées qui couvrent les besoins de la plupart des cas d’utilisation. Si votre cas d’utilisation nécessite un réglage plus fin, vous pouvez ajuster les paramètres suivants :
+
+| Paramètre                            | Valeur par défaut | Description                                                                                                                                                                |
+| ------------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB              | Nombre d’octets à traiter dans un seul lot d’insertion.                                                                                                                    |
+| `Max file count`                     | 100               | Nombre maximal de fichiers à traiter dans un seul lot d’insertion.                                                                                                         |
+| `Max threads`                        | auto(3)           | [Nombre maximal de threads concurrents](/fr/reference/settings/session-settings#max_threads) pour le traitement des fichiers.                                                 |
+| `Max insert threads`                 | 1                 | [Nombre maximal de threads d’insertion concurrents](/fr/reference/settings/session-settings#max_insert_threads) pour le traitement des fichiers.                              |
+| `Min insert block size bytes`        | 1GB               | [Taille minimale en octets du bloc](/fr/reference/settings/session-settings#min_insert_block_size_bytes) pouvant être insérée dans une table.                                 |
+| `Max download threads`               | 4                 | [Nombre maximal de threads de téléchargement concurrents](/fr/reference/settings/session-settings#max_download_threads).                                                      |
+| `Object storage polling interval`    | 30s               | Configure la durée d’attente maximale avant l’insertion des données dans le cluster ClickHouse.                                                                            |
+| `Parallel distributed insert select` | 2                 | [Paramètre d’insert select distribué en parallèle](/fr/reference/settings/session-settings#parallel_distributed_insert_select).                                               |
+| `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                   |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Paramètres avancés de ClickPipes" size="lg" border />
+
+<div id="scaling">
+  ### Mise à l’échelle
+</div>
+
+Les Object Storage ClickPipes sont mis à l’échelle en fonction de la taille minimale du service ClickHouse, telle que définie par les [paramètres d’autoscaling vertical configurés](/fr/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). La taille du ClickPipe est déterminée lors de la création du pipe. Les modifications ultérieures des paramètres du service ClickHouse n’affecteront pas la taille du ClickPipe.
+
+Pour augmenter le débit lors de tâches d’ingestion volumineuses, nous recommandons de mettre à l’échelle le service ClickHouse avant de créer le ClickPipe.
+
+<div id="known-limitations">
+  ## Limitations connues
+</div>
+
+<div id="file-size">
+  ### Taille des fichiers
+</div>
+
+ClickPipes n’essaiera d’ingérer que les objets dont la taille est **de 10 GB ou moins**. Si un fichier dépasse 10 GB, une erreur sera ajoutée à la table d’erreurs dédiée de ClickPipes.
+
+<div id="latency">
+  ### Latence
+</div>
+
+Pour les conteneurs contenant plus de 100 000 fichiers, les opérations `LIST` d’Azure Blob Storage ajoutent de la latence lors de la détection de nouveaux fichiers, en plus de l’intervalle d’interrogation par défaut :
+
+* **&lt; 100k fichiers**: ~30 secondes (intervalle d’interrogation par défaut)
+* **100k fichiers**: ~40-45 secondes
+* **250k fichiers**: ~55-70 secondes
+* **500k+ fichiers**: peut dépasser 90 secondes
+
+Pour l’[ingestion en continu](#continuous-ingestion), ClickPipes doit analyser le conteneur pour identifier les nouveaux fichiers dont l’ordre lexicographique est supérieur à celui du dernier fichier ingéré. Nous recommandons d’organiser les fichiers dans des conteneurs plus petits ou d’utiliser des structures de répertoires hiérarchiques afin de réduire le nombre de fichiers par opération de listing.
+
+<div id="view-support">
+  ### Prise en charge des vues
+</div>
+
+Les vues matérialisées sur la table cible sont également prises en charge. ClickPipes crée des tables de staging non seulement pour la table cible, mais aussi pour toute vue matérialisée qui en dépend.
+
+Nous ne créons pas de tables de staging pour les vues non matérialisées. Cela signifie que si vous avez une table cible avec une ou plusieurs vues matérialisées en aval, ces vues matérialisées doivent éviter de sélectionner des données via une vue à partir de la table cible. Sinon, il se peut que des données manquent dans la vue matérialisée.
+
+<div id="dependencies">
+  ### Dépendances
+</div>
+
+Toute modification de la table de destination, de ses vues matérialisées (y compris les vues matérialisées en cascade) ou des tables cibles de ces vues matérialisées pendant l’exécution du ClickPipe entraînera des erreurs récupérables. Pour modifier le schéma de ces dépendances, vous devez mettre le ClickPipe en pause, appliquer les modifications, puis le reprendre.

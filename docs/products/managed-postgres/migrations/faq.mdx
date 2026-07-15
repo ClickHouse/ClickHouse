@@ -1,0 +1,50 @@
+---
+slug: /cloud/managed-postgres/migrations/faq
+sidebarTitle: 'FAQ'
+title: 'Managed Postgres migrations FAQ'
+description: 'Frequently asked questions about migrating data to ClickHouse Managed Postgres.'
+keywords: ['postgres', 'migration', 'faq', 'managed postgres', 'logical replication', 'enum', 'unique constraint']
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
+
+Many questions about how Postgres replication works — including `TOAST` columns, replication slots, publications, schema changes, and data type mappings — are covered in the [ClickPipes for Postgres FAQ](/integrations/clickpipes/postgres/faq). The information there applies to Managed Postgres migrations as well.
+
+### I'm seeing an "invalid input value for enum" error during replication {#invalid-enum-value}
+
+This error occurs when the source Postgres has an enum value that doesn't exist on the target Managed Postgres. Logical replication doesn't automatically propagate `ALTER TYPE ... ADD VALUE` commands, so new enum values added on the source after the initial schema setup will cause inserts to fail on the target.
+
+To fix this, add the missing value to the enum type on the target Postgres:
+
+```sql
+ALTER TYPE your_enum_type ADD VALUE 'new_value';
+```
+
+Replace `your_enum_type` with the name of your enum type and `'new_value'` with the missing value from the error message.
+
+### I'm seeing a unique constraint violation error during replication {#unique-constraint-violation}
+
+Unique constraint violations can occur during logical replication when the replication order causes a conflict with an existing unique constraint on the target. This can occur in CDC workloads involving replaying operations that temporarily violate uniqueness before a subsequent update resolves it.
+
+To unblock replication, drop the unique constraint on the target Postgres:
+
+```sql
+ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+```
+
+You can find the constraint name by running:
+
+```sql
+SELECT conname, conrelid::regclass
+FROM pg_constraint
+WHERE contype = 'u';
+```
+
+Re-add the constraint during cutover, once replication is complete and the source is no longer active:
+
+```sql
+ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+```

@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'direct Dictionary レイアウト'
+sidebarTitle: 'direct'
+description: 'キャッシュを使用せずにソースを直接参照する Dictionary レイアウト。'
+doc_type: 'reference'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+このDictionaryはメモリには保存されず、リクエストの処理時に直接ソースへアクセスします。
+
+Dictionaryキーの型は [UInt64](/ja/reference/data-types/int-uint) です。
+
+ローカルファイルを除く、すべての種類の[sources](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) がサポートされています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+このタイプのストレージは、複合[キー](/ja/reference/statements/create/dictionary/attributes#composite-key)での使用を目的としています。`direct`に似ています。

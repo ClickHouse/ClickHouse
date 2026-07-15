@@ -70,29 +70,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -1112,9 +1090,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27. DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
 
-    To trigger this regression there should duplicated messages
+    To trigger this regression there should be duplicated messages
 
-    Orignal reproducer is:
+    Original reproducer is:
     $ gcc --version |& fgrep gcc
     gcc (GCC) 10.2.0
     $ yes foobarbaz | fold -w 80 | head -n10 >| in-…
@@ -1277,11 +1255,20 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        # query_with_retry returns the last (possibly short) snapshot once its retry
+        # budget is spent, so use a larger budget like the single-view test above to
+        # let each view receive all rows before the assertion below.
         result1 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view1", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view1",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
         result2 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view2", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view2",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
 
         instance.query(f"""
@@ -1611,17 +1598,44 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
         check_callback=lambda res: int(res) >= 100,
     )
 
+    # Stop the producer and join it first, so i[0] is the final message count
+    # and no new messages arrive during the drop/recreate below.
     cancel.set()
-
-    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
-
-    instance.query(create_query)
     kafka_thread.join()
 
+    # Wait until every produced message has reached the view.
     instance.query_with_retry(
         f"SELECT uniqExact(key) FROM test.{kafka_table}_view",
         sleep_time=1,
+        retry_count=60,
         check_callback=lambda res: int(res) >= i[0],
+    )
+
+    # Wait for one full streaming cycle to finish after consumption. The
+    # "stalled. Rescheduling" line is logged by threadFunc only after
+    # streamToViews() returns, i.e. after offsets have been committed.
+    stalled_count = int(
+        instance.count_in_log(f"{kafka_table}.*stalled.*Rescheduling").strip()
+    )
+    instance.wait_for_log_line(
+        f"{kafka_table}.*stalled.*Rescheduling",
+        timeout=60,
+        repetitions=stalled_count + 1,
+    )
+
+    # Offsets are now committed: dropping and recreating must not re-consume.
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+    instance.query(create_query)
+
+    # Let the recreated consumer poll and stall, so any wrong offset would
+    # show up as re-consumed duplicates in the view.
+    stalled_count = int(
+        instance.count_in_log(f"{kafka_table}.*stalled.*Rescheduling").strip()
+    )
+    instance.wait_for_log_line(
+        f"{kafka_table}.*stalled.*Rescheduling",
+        timeout=60,
+        repetitions=stalled_count + 1,
     )
 
     result = int(instance.query(f"SELECT count() == uniqExact(key) FROM test.{kafka_table}_view"))
@@ -1630,8 +1644,6 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
         DROP TABLE test.{kafka_table}_consumer;
         DROP TABLE test.{kafka_table}_view;
     """)
-
-    kafka_thread.join()
 
     assert result == 1, "Messages from kafka get duplicated!"
 
@@ -2807,6 +2819,8 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
             "kafka_handle_error_mode": "stream",
         },
     )
+    # Because we want to make sure the kafka table is streaming to both tables, let's detach and re-attach it before starting sending messages,
+    # otherwise it might happen that a streaming loop is started before the second materialized view is created.
     instance.query(
         f"""
         DROP TABLE IF EXISTS test.{kafka_table};
@@ -2827,6 +2841,9 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
                _raw_message AS raw,
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
+
+        DETACH TABLE test.{kafka_table};
+        ATTACH TABLE test.{kafka_table};
         """
     )
 
@@ -2891,6 +2908,8 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
         },
     )
 
+    # Because we want to make sure the kafka table is streaming to both tables, let's detach and re-attach it before starting sending messages,
+    # otherwise it might happen that a streaming loop is started before the second materialized view is created.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table};
         DROP TABLE IF EXISTS test.{kafka_table}_data;
@@ -2910,6 +2929,9 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
                _raw_message AS raw,
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
+
+        DETACH TABLE test.{kafka_table};
+        ATTACH TABLE test.{kafka_table};
     """)
 
     messages = []
@@ -3308,6 +3330,7 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
             f"""
             DROP TABLE IF EXISTS test.{kafka_table} SYNC;
             DROP TABLE IF EXISTS test.{kafka_table}_view SYNC;
+            DROP TABLE IF EXISTS test.{kafka_table}_target SYNC;
 
             {create_query_generator(
                 kafka_table,
@@ -3321,15 +3344,18 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
                 }
             )};
 
-            CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
+            CREATE TABLE test.{kafka_table}_target (a UInt64, b String) ENGINE=MergeTree ORDER BY tuple();
+            CREATE MATERIALIZED VIEW test.{kafka_table}_view TO test.{kafka_table}_target AS SELECT * FROM test.{kafka_table};
             """
         )
         count = instance.query_with_retry(
-            f"SELECT count() FROM test.{kafka_table}_view",
+            f"SELECT count() FROM test.{kafka_table}_target",
             check_callback=lambda res: int(res) == 6,
         )
         assert int(count) == 6
 
+        # Drop only the materialized view (the explicit target table survives) so the
+        # background Kafka streamer can never observe a missing inner table mid-push.
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
 
         check_query = f"""
@@ -3379,6 +3405,7 @@ last_used_and_last_poll_time: equal
         )
 
         instance.query(f"DROP TABLE test.{kafka_table}")
+        instance.query(f"DROP TABLE IF EXISTS test.{kafka_table}_target SYNC")
 
 
 def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):

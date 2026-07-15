@@ -82,6 +82,10 @@ class LogCluster:
             # profile, which otherwise aborts large INSERTs with
             # "User memory limit exceeded" via the OvercommitTracker.
             "max_memory_usage_for_user": 0,
+            # Parse the input on a single thread: parallel parsing buffers many
+            # chunks at once, and that peak is what crosses the shared cluster's
+            # per-user memory limit when all Build variants upload at once.
+            "input_format_parallel_parsing": 0,
         }
         if db_name:
             params["database"] = db_name

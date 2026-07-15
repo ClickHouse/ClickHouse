@@ -1,0 +1,129 @@
+---
+description: 'Настройки, ограничивающие сложность запросов.'
+sidebarTitle: 'Ограничения на сложность запросов'
+slug: /operations/settings/query-complexity
+title: 'Ограничения на сложность запросов'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Обзор
+</div>
+
+В разделе [настроек](/ru/concepts/features/configuration/settings/overview) ClickHouse предусмотрена
+возможность устанавливать ограничения на сложность запросов. Это помогает защититься от
+потенциально ресурсоёмких запросов, обеспечивая более безопасное и предсказуемое
+выполнение, особенно при использовании пользовательского интерфейса.
+
+Почти все ограничения применяются только к запросам `SELECT`, а при распределённой
+обработке запросов они применяются отдельно на каждом сервере.
+
+Как правило, ClickHouse проверяет ограничения только после полной обработки
+частей данных, а не для каждой строки. Это может
+привести к ситуации, когда ограничения нарушаются в процессе обработки
+части.
+
+<div id="overflow_mode_setting">
+  ## Настройки `overflow_mode`
+</div>
+
+Большинство ограничений также имеют параметр `overflow_mode`, который определяет, что происходит
+при превышении лимита, и может принимать одно из двух значений:
+
+* `throw`: сгенерировать исключение (по умолчанию).
+* `break`: остановить выполнение запроса и вернуть частичный результат, как если бы
+  исходные данные были исчерпаны.
+
+<div id="group_by_overflow_mode_settings">
+  ## Настройки `group_by_overflow_mode`
+</div>
+
+У настройки `group_by_overflow_mode` также есть
+значение `any`:
+
+* `any` : продолжать агрегацию для ключей, уже попавших в набор, но не
+  добавлять в него новые ключи.
+
+<div id="relevant-settings">
+  ## Список настроек
+</div>
+
+Следующие настройки используются для задания ограничений на сложность запросов.
+
+<Note>
+  Ограничения на «максимальное количество чего-либо» могут иметь значение `0`,
+  что означает отсутствие ограничений.
+</Note>
+
+| Параметр                                                                                                                      | Краткое описание                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`max_memory_usage`](/ru/reference/settings/session-settings#max_memory_usage)                                                   | Максимальный объем оперативной памяти, используемый для выполнения запроса на одном сервере.                                                                    |
+| [`max_memory_usage_for_user`](/ru/reference/settings/session-settings#max_memory_usage_for_user)                                 | Максимальный объем оперативной памяти, используемый для выполнения запросов пользователя на одном сервере.                                                      |
+| [`max_rows_to_read`](/ru/reference/settings/session-settings#max_rows_to_read)                                                   | Максимальное количество строк, которое можно прочитать из таблицы при выполнении запроса.                                                                       |
+| [`max_bytes_to_read`](/ru/reference/settings/session-settings#max_bytes_to_read)                                                 | Максимальное количество байтов (несжатых данных), которое можно прочитать из таблицы при выполнении запроса.                                                    |
+| [`read_overflow_mode_leaf`](/ru/reference/settings/session-settings#read_overflow_mode_leaf)                                     | Определяет, что происходит, когда объем прочитанных данных превышает один из лимитов листового узла.                                                            |
+| [`max_rows_to_read_leaf`](/ru/reference/settings/session-settings#max_rows_to_read_leaf)                                         | Максимальное количество строк, которое можно прочитать из локальной таблицы на листовом узле при выполнении распределенного запроса.                            |
+| [`max_bytes_to_read_leaf`](/ru/reference/settings/session-settings#max_bytes_to_read_leaf)                                       | Максимальное количество байтов (несжатых данных), которое можно прочитать из локальной таблицы на листовом узле при выполнении распределенного запроса.         |
+| [`read_overflow_mode_leaf`](/ru/reference/settings/session-settings#read_overflow_mode_leaf)                                     | Определяет, что происходит, когда объем прочитанных данных превышает один из лимитов листового узла.                                                            |
+| [`max_rows_to_group_by`](/ru/reference/settings/session-settings#max_rows_to_group_by)                                           | Максимальное количество уникальных ключей, полученных при агрегации.                                                                                            |
+| [`group_by_overflow_mode`](/ru/reference/settings/session-settings#group_by_overflow_mode)                                       | Определяет, что происходит, когда количество уникальных ключей для агрегации превышает лимит.                                                                   |
+| [`max_bytes_before_external_group_by`](/ru/reference/settings/session-settings#max_bytes_before_external_group_by)               | Включает или отключает выполнение секций `GROUP BY` во внешней памяти.                                                                                          |
+| [`max_bytes_ratio_before_external_group_by`](/ru/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)   | Доля доступной памяти, которую разрешено использовать для `GROUP BY`. После достижения этого значения для агрегации используется внешняя память.                |
+| [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings#max_bytes_before_external_sort)                       | Включает или отключает выполнение секций `ORDER BY` во внешней памяти.                                                                                          |
+| [`max_bytes_ratio_before_external_sort`](/ru/reference/settings/session-settings#max_bytes_ratio_before_external_sort)           | Доля доступной памяти, которую разрешено использовать для `ORDER BY`. После достижения этого значения используется внешняя сортировка.                          |
+| [`max_rows_to_sort`](/ru/reference/settings/session-settings#max_rows_to_sort)                                                   | Максимальное количество строк до сортировки. Позволяет ограничить потребление памяти при сортировке.                                                            |
+| [`max_bytes_to_sort`](/ru/reference/settings/session-settings#max_rows_to_sort)                                                  | Максимальное количество байтов до сортировки.                                                                                                                   |
+| [`sort_overflow_mode`](/ru/reference/settings/session-settings#sort_overflow_mode)                                               | Определяет, что происходит, если количество строк, полученных до сортировки, превышает один из лимитов.                                                         |
+| [`max_result_rows`](/ru/reference/settings/session-settings#max_result_rows)                                                     | Ограничивает количество строк в результате.                                                                                                                     |
+| [`max_result_bytes`](/ru/reference/settings/session-settings#max_result_bytes)                                                   | Ограничивает размер результата в байтах (в несжатом виде).                                                                                                      |
+| [`result_overflow_mode`](/ru/reference/settings/session-settings#result_overflow_mode)                                           | Определяет, что делать, если объем результата превышает один из лимитов.                                                                                        |
+| [`max_execution_time`](/ru/reference/settings/session-settings#max_execution_time)                                               | Максимальное время выполнения запроса в секундах.                                                                                                               |
+| [`timeout_overflow_mode`](/ru/reference/settings/session-settings#timeout_overflow_mode)                                         | Определяет, что делать, если запрос выполняется дольше `max_execution_time` или расчетное время выполнения превышает `max_estimated_execution_time`.            |
+| [`max_execution_time_leaf`](/ru/reference/settings/session-settings#max_execution_time_leaf)                                     | По смыслу аналогичен `max_execution_time`, но применяется только на листовых узлах для распределенных или удаленных запросов.                                   |
+| [`timeout_overflow_mode_leaf`](/ru/reference/settings/session-settings#timeout_overflow_mode_leaf)                               | Определяет, что происходит, когда запрос на листовом узле выполняется дольше `max_execution_time_leaf`.                                                         |
+| [`min_execution_speed`](/ru/reference/settings/session-settings#min_execution_speed)                                             | Минимальная скорость выполнения в строках в секунду.                                                                                                            |
+| [`min_execution_speed_bytes`](/ru/reference/settings/session-settings#min_execution_speed_bytes)                                 | Минимальное количество обрабатываемых байтов в секунду.                                                                                                         |
+| [`max_execution_speed`](/ru/reference/settings/session-settings#max_execution_speed)                                             | Максимальное количество обрабатываемых строк в секунду.                                                                                                         |
+| [`max_execution_speed_bytes`](/ru/reference/settings/session-settings#max_execution_speed_bytes)                                 | Максимальное количество обрабатываемых байтов в секунду.                                                                                                        |
+| [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings#timeout_before_checking_execution_speed)     | Проверяет, не слишком ли низка скорость выполнения (не меньше `min_execution_speed`), после истечения указанного времени в секундах.                            |
+| [`max_estimated_execution_time`](/ru/reference/settings/session-settings#max_estimated_execution_time)                           | Максимальная расчетная продолжительность выполнения запроса в секундах.                                                                                         |
+| [`max_columns_to_read`](/ru/reference/settings/session-settings#max_columns_to_read)                                             | Максимальное количество столбцов, которое можно прочитать из таблицы за один запрос.                                                                            |
+| [`max_temporary_columns`](/ru/reference/settings/session-settings#max_temporary_columns)                                         | Максимальное количество временных столбцов, которые должны одновременно находиться в оперативной памяти при выполнении запроса, включая константные столбцы.    |
+| [`max_temporary_non_const_columns`](/ru/reference/settings/session-settings#max_temporary_non_const_columns)                     | Максимальное количество временных столбцов, которые должны одновременно находиться в оперативной памяти при выполнении запроса, без учёта константных столбцов. |
+| [`max_subquery_depth`](/ru/reference/settings/session-settings#max_subquery_depth)                                               | Определяет, что произойдёт, если в запросе число вложенных подзапросов превысит указанное значение.                                                             |
+| [`max_ast_depth`](/ru/reference/settings/session-settings#max_ast_depth)                                                         | Максимальная глубина вложенности синтаксического дерева запроса.                                                                                                |
+| [`max_ast_elements`](/ru/reference/settings/session-settings#max_ast_elements)                                                   | Максимальное количество элементов в синтаксическом дереве запроса.                                                                                              |
+| [`max_rows_in_set`](/ru/reference/settings/session-settings#max_rows_in_set)                                                     | Максимальное количество строк в наборе данных для выражения IN, созданного из подзапроса.                                                                       |
+| [`max_bytes_in_set`](/ru/reference/settings/session-settings#max_bytes_in_set)                                                   | Максимальное количество байтов (несжатых данных), используемое набором в выражении IN, созданном из подзапроса.                                                 |
+| [`set_overflow_mode`](/ru/reference/settings/session-settings#max_bytes_in_set)                                                  | Определяет, что произойдёт, если объём данных превысит один из лимитов.                                                                                         |
+| [`max_rows_in_distinct`](/ru/reference/settings/session-settings#max_rows_in_distinct)                                           | Максимальное количество различных строк при использовании DISTINCT.                                                                                             |
+| [`max_bytes_in_distinct`](/ru/reference/settings/session-settings#max_bytes_in_distinct)                                         | Максимальный объём состояния в памяти в байтах (несжатых), используемого хеш-таблицей при применении DISTINCT.                                                  |
+| [`distinct_overflow_mode`](/ru/reference/settings/session-settings#distinct_overflow_mode)                                       | Определяет, что произойдёт, если объём данных превысит один из лимитов.                                                                                         |
+| [`max_rows_to_transfer`](/ru/reference/settings/session-settings#max_rows_to_transfer)                                           | Максимальный размер (в строках), который можно передать на удалённый сервер или сохранить во временной таблице при выполнении GLOBAL IN/JOIN.                   |
+| [`max_bytes_to_transfer`](/ru/reference/settings/session-settings#max_bytes_to_transfer)                                         | Максимальное количество байтов (несжатых данных), которое можно передать на удалённый сервер или сохранить во временной таблице при выполнении GLOBAL IN/JOIN.  |
+| [`transfer_overflow_mode`](/ru/reference/settings/session-settings#transfer_overflow_mode)                                       | Определяет, что произойдёт, если объём данных превысит один из лимитов.                                                                                         |
+| [`max_rows_in_join`](/ru/reference/settings/session-settings#max_rows_in_join)                                                   | Ограничивает количество строк в хеш-таблице, используемой при JOIN таблиц.                                                                                      |
+| [`max_bytes_in_join`](/ru/reference/settings/session-settings#max_bytes_in_join)                                                 | Максимальный размер хеш-таблицы, используемой при JOIN таблиц, в байтах.                                                                                        |
+| [`join_overflow_mode`](/ru/reference/settings/session-settings#join_overflow_mode)                                               | Определяет, какое действие ClickHouse выполняет при достижении любого из следующих ограничений JOIN.                                                            |
+| [`max_partitions_per_insert_block`](/ru/reference/settings/session-settings#max_partitions_per_insert_block)                     | Ограничивает максимальное количество партиций в одном вставляемом блоке; если блок содержит слишком много партиций, генерируется исключение.                    |
+| [`throw_on_max_partitions_per_insert_block`](/ru/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | Позволяет управлять поведением при достижении `max_partitions_per_insert_block`.                                                                                |
+| [`max_temporary_data_on_disk_size_for_user`](/ru/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | Максимальный объём данных в байтах, занимаемый временными файлами на диске для всех одновременно выполняемых запросов пользователя.                             |
+| [`max_temporary_data_on_disk_size_for_query`](/ru/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query) | Максимальный объём данных в байтах, занимаемый временными файлами на диске для всех одновременно выполняемых запросов.                                          |
+| [`max_sessions_for_user`](/ru/reference/settings/session-settings#max_sessions_for_user)                                         | Максимальное количество одновременных сеансов для одного аутентифицированного пользователя на сервере ClickHouse.                                               |
+| [`max_partitions_to_read`](/ru/reference/settings/session-settings#max_partitions_to_read)                                       | Ограничивает максимальное количество партиций, к которым можно обратиться в одном запросе.                                                                      |
+
+<div id="obsolete-settings">
+  ## Устаревшие настройки
+</div>
+
+<Note>
+  Следующие настройки устарели.
+</Note>
+
+<div id="max-pipeline-depth">
+  ### max_pipeline_depth
+</div>
+
+Максимальная глубина конвейера. Соответствует числу преобразований, через которые проходит каждый
+блок данных при обработке запроса. Подсчитывается в пределах
+одного сервера. Если глубина конвейера превышает это значение, генерируется исключение.

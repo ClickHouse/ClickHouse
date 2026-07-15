@@ -1,0 +1,214 @@
+---
+slug: /community-wisdom/debugging-insights
+sidebarTitle: 'Claves de depuración'
+doc_type: 'guide'
+keywords: [
+  'solución de problemas de ClickHouse',
+  'errores de ClickHouse',
+  'consultas lentas',
+  'problemas de memoria', 
+  'problemas de conexión',
+  'optimización del rendimiento',
+  'errores de base de datos',
+  'problemas de configuración',
+  'depuración',
+  'soluciones'
+]
+title: 'Lecciones: claves de depuración'
+description: 'Encuentre soluciones a los problemas más comunes de ClickHouse, incluidas las consultas lentas, los errores de memoria, los problemas de conexión y los problemas de configuración.'
+---
+
+*Esta guía forma parte de una colección de conclusiones extraídas de encuentros de la comunidad. Para conocer más soluciones y aprendizajes prácticos, puede [explorar por problema específico](/es/resources/support-center/tips-and-tricks/community-wisdom).*
+*¿Tiene costos operativos elevados? Consulte la guía de la comunidad sobre [Optimización de costos](/es/resources/support-center/tips-and-tricks/cost-optimization).*
+
+<div id="essential-system-tables">
+  ## Tablas del sistema esenciales
+</div>
+
+Estas tablas del sistema son fundamentales para la depuración en entornos de producción:
+
+<div id="system-errors">
+  ### system.errors
+</div>
+
+Muestra todos los errores activos en su instancia de ClickHouse.
+
+```sql
+SELECT name, value, changed 
+FROM system.errors 
+WHERE value > 0 
+ORDER BY value DESC;
+```
+
+<div id="system-replicas">
+  ### system.replicas
+</div>
+
+Contiene información sobre el retraso de replicación y el estado para supervisar el estado del clúster.
+
+```sql
+SELECT database, table, replica_name, absolute_delay, queue_size, inserts_in_queue
+FROM system.replicas 
+WHERE absolute_delay > 60
+ORDER BY absolute_delay DESC;
+```
+
+<div id="system-replication-queue">
+  ### system.replication_queue
+</div>
+
+Proporciona información detallada para diagnosticar problemas de replicación.
+
+```sql
+SELECT database, table, replica_name, position, type, create_time, last_exception
+FROM system.replication_queue 
+WHERE last_exception != ''
+ORDER BY create_time DESC;
+```
+
+<div id="system-merges">
+  ### system.merges
+</div>
+
+Muestra las operaciones de merge en curso y permite identificar procesos atascados.
+
+```sql
+SELECT database, table, elapsed, progress, is_mutation, total_size_bytes_compressed
+FROM system.merges 
+ORDER BY elapsed DESC;
+```
+
+<div id="system-parts">
+  ### system.parts
+</div>
+
+Esencial para monitorizar el número de partes e identificar problemas de fragmentación.
+
+```sql
+SELECT database, table, count() as part_count
+FROM system.parts 
+WHERE active = 1
+GROUP BY database, table
+ORDER BY count() DESC;
+```
+
+<div id="common-production-issues">
+  ## Problemas habituales en producción
+</div>
+
+<div id="disk-space-problems">
+  ### Problemas de espacio en disco
+</div>
+
+El agotamiento del espacio en disco en configuraciones replicadas genera problemas en cascada. Cuando un nodo se queda sin espacio, los demás nodos siguen intentando sincronizarse con él, lo que provoca picos de tráfico de red y síntomas confusos. Un miembro de la comunidad pasó 4 horas depurando un problema que en realidad era simplemente falta de espacio en disco. Consulta esta [consulta](/es/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting#show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases) para supervisar el almacenamiento en disco de un clúster concreto.
+
+Si usas AWS, debes tener en cuenta que los volúmenes EBS de uso general predeterminados tienen un límite de 16 TB.
+
+<div id="too-many-parts-error">
+  ### Error &quot;Too many partes&quot;
+</div>
+
+Las inserciones pequeñas y frecuentes provocan problemas de rendimiento. La comunidad ha identificado que las tasas de inserción superiores a 10 por segundo suelen desencadenar errores &quot;Too many partes&quot; porque ClickHouse no puede fusionar las partes con suficiente rapidez.
+
+**Soluciones:**
+
+* Agrupe los datos en lotes con umbrales de 30 segundos o 200 MB
+* Habilite async&#95;insert para agrupar automáticamente en lotes
+* Use tablas búfer para agrupar en lotes del lado del servidor
+* Configure Kafka para controlar el tamaño de los lotes
+
+[Recomendación oficial](/es/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous): mínimo 1.000 filas por inserción, idealmente entre 10.000 y 100.000.
+
+<div id="data-quality-issues">
+  ### Problemas con marcas de tiempo no válidas
+</div>
+
+Las aplicaciones que envían datos con marcas de tiempo arbitrarias generan problemas de partición. Esto da lugar a particiones con datos de fechas inverosímiles (como 1998 o 2050), lo que provoca un comportamiento de almacenamiento inesperado.
+
+<div id="alter-operation-risks">
+  ### Riesgos de la operación `ALTER`
+</div>
+
+Las operaciones `ALTER` de gran tamaño en tablas de varios terabytes pueden consumir una cantidad considerable de recursos y, potencialmente, bloquear bases de datos. En un caso compartido por la comunidad, se cambió un Integer por un Float en 14 TB de datos, lo que bloqueó toda la base de datos y obligó a reconstruirla a partir de copias de seguridad.
+
+**Supervise las mutaciones costosas:**
+
+```sql
+SELECT database, table, mutation_id, command, parts_to_do, is_done
+FROM system.mutations 
+WHERE is_done = 0;
+```
+
+Pruebe primero los cambios en el esquema con conjuntos de datos más pequeños.
+
+<div id="memory-and-performance">
+  ## Memoria y rendimiento
+</div>
+
+<div id="external-aggregation">
+  ### Agregación externa
+</div>
+
+Habilita la agregación externa para operaciones con un uso intensivo de memoria. Es más lenta, pero evita fallos por falta de memoria al volcar los datos en disco. Puedes hacerlo con `max_bytes_before_external_group_by`, lo que ayuda a evitar fallos por falta de memoria en operaciones `GROUP BY` de gran tamaño. Puedes obtener más información sobre esta configuración [aquí](/es/reference/settings/session-settings#max_bytes_before_external_group_by).
+
+```sql
+SELECT 
+    column1,
+    column2,
+    COUNT(*) as count,
+    SUM(value) as total
+FROM large_table
+GROUP BY column1, column2
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- umbral de 1 GB
+```
+
+<div id="async-insert-details">
+  ### Detalles de async insert
+</div>
+
+Async insert agrupa automáticamente las inserciones pequeñas en lotes en el servidor para mejorar el rendimiento. Puede configurar si se debe esperar a que los datos se escriban en disco antes de devolver la confirmación; la devolución inmediata es más rápida, pero menos duradera. Las versiones modernas admiten deduplicación para gestionar datos duplicados dentro de los lotes.
+
+**Documentación relacionada**
+
+* [Seleccionar una estrategia de inserción](/es/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)
+
+<div id="distributed-table-configuration">
+  ### Configuración de la tabla distribuida
+</div>
+
+De forma predeterminada, las tablas distribuidas realizan las inserciones en un solo hilo. Habilita `insert_distributed_sync` para procesarlas en paralelo y enviar los datos de inmediato a los segmentos.
+
+Supervisa la acumulación de datos temporales al usar tablas distribuidas.
+
+<div id="performance-monitoring-thresholds">
+  ### Umbrales de monitorización del rendimiento
+</div>
+
+Umbrales de monitorización recomendados por la comunidad:
+
+* Partes por partición: preferiblemente, menos de 100
+* Inserciones retrasadas: deben mantenerse en cero
+* Tasa de inserción: limítela a alrededor de 1 por segundo para un rendimiento óptimo
+
+**Documentación relacionada**
+
+* [Clave de particionado personalizada](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key)
+
+<div id="quick-reference">
+  ## Referencia rápida
+</div>
+
+| Problema               | Detección                                     | Solución                                         |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------ |
+| Espacio en disco       | Comprueba los bytes totales en `system.parts` | Supervisa el uso y planifica el escalado         |
+| Demasiadas partes      | Cuenta las partes por tabla                   | Agrupa las inserciones y habilita `async_insert` |
+| Retraso de replicación | Comprueba el retraso en `system.replicas`     | Supervisa la red y reinicia las réplicas         |
+| Datos erróneos         | Valida las fechas de partición                | Implementa la validación de marcas temporales    |
+| Mutaciones atascadas   | Comprueba el estado de `system.mutations`     | Haz primero pruebas con pocos datos              |
+
+<div id="video-sources">
+  ### Videos
+</div>
+
+* [10 lecciones aprendidas al operar ClickHouse](https://www.youtube.com/watch?v=liTgGiTuhJE)
+* [INSERTS asíncronos rápidos, concurrentes y consistentes en ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM)

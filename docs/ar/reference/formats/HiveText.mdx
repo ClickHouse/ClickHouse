@@ -1,0 +1,138 @@
+---
+alias: []
+description: 'وثائق تنسيق HiveText'
+input_format: true
+keywords: ['HiveText']
+output_format: false
+slug: /interfaces/formats/HiveText
+title: 'HiveText'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | اسم مستعار |
+| ----- | ----- | ---------- |
+| ✔     | ✗     |            |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يقرأ `HiveText` تنسيق التسلسل النصي المستخدم في جداول
+[Apache Hive](https://hive.apache.org/) (وهو التنسيق الذي ينتجه `LazySimpleSerDe`
+في Hive). وهو تنسيق نصي مفصول بمحددات، يشبه [`CSV`](/ar/reference/formats/CSV/CSV)،
+وتُفصل فيه الحقول باستخدام محدد Hive الافتراضي `\x01` (Ctrl-A). ويمكن
+تهيئة محدد الحقول عبر [`input_format_hive_text_fields_delimiter`](#format-settings).
+
+يُعد `HiveText` تنسيقًا للإدخال فقط. ولا تحتوي البيانات على صف ترويسة: إذ تُسنَد
+القيم موضعيًا إلى أعمدة الجدول الوجهة، لذلك تُؤخذ أسماء الأعمدة وأنواعها من
+الجدول (أو من البنية المقدَّمة صراحةً) بدلًا من استنتاجها من البيانات. وأثناء
+القراءة، يعالج ClickHouse التواريخ والأوقات في وضع أفضل جهد (راجع
+[`date_time_input_format`](/ar/reference/settings/formats#date_time_input_format))،
+ويملأ الحقول اللاحقة المحذوفة بالقيم الافتراضية للأعمدة، ويتجاوز الحقول التي لا
+يتعرف عليها.
+
+داخل الحقل، تُحلَّل القيم باستخدام قواعد الإفلات نفسها الخاصة بـ `CSV` بدلًا
+من محددات Hive المتداخلة. وعلى وجه الخصوص، يُقرأ العمود من النوع
+[`Array`](/ar/reference/data-types/array) من التمثيل المحاط بأقواس
+(على سبيل المثال، `"['a','b','c']"`)، وليس من القيم المفصولة بمحدد مجموعة
+Hive وهو `\x02`.
+
+<Info>
+  **إعدادات المحددات المتداخلة ليس لها أي تأثير**
+
+  يتم قبول الإعدادين [`input_format_hive_text_collection_items_delimiter`](#format-settings) و
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings) لأغراض التوافق،
+  لكن لا يُستخدمان حاليًا أثناء التحليل.
+</Info>
+
+بشكل افتراضي، يُسمح بأن تحتوي الصفوف على عدد متغير من الحقول (راجع
+[`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)):
+تُملأ الأعمدة المفقودة بالقيم الافتراضية في الصفوف التي تحتوي على حقول أقل من عدد
+حقول الجدول، وتُتجاوز الحقول الزائدة اللاحقة في الصفوف التي تحتوي على حقول إضافية.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+تستخدم الأمثلة أدناه
+[`input_format_hive_text_fields_delimiter`](#format-settings) لاستبدال محدد الحقول الافتراضي بفاصلة (`,`) حتى تكون ملفات
+الإدخال أسهل قراءةً.
+
+<div id="reading-data">
+  ### قراءة ملف HiveText
+</div>
+
+لنفترض وجود ملف `hive_data.txt` يحتوي على حقول مفصولة بفواصل:
+
+```text title="hive_data.txt"
+1,3
+3,5,9
+```
+
+ننشئ جدولًا يحدّد أسماء الأعمدة وأنواعها، ثم نُدخل الملف
+فيه باستخدام `FORMAT HiveText`:
+
+```sql title="Query"
+CREATE TABLE test_tbl (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_tbl FROM INFILE 'hive_data.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_tbl;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 3 │ 0 │
+│ 3 │ 5 │ 9 │
+└───┴───┴───┘
+```
+
+لاحظ أن الصف الأول، `1,3`، يحتوي على حقلين فقط، لذا يُملأ العمود المفقود `c`
+بقيمةِه الافتراضية `0`.
+
+<div id="variable-number-of-columns">
+  ### عدد متغيّر من الأعمدة
+</div>
+
+مع الإعداد الافتراضي `input_format_hive_text_allow_variable_number_of_columns = 1`،
+فإن الصفوف التي تحتوي على حقول أكثر مما يحتويه الجدول تُتخطّى فيها ببساطة
+الحقول الزائدة في النهاية:
+
+```text title="hive_extras.txt"
+1,2,3,4,5
+6,7,8
+```
+
+```sql title="Query"
+CREATE TABLE test_extras (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_extras FROM INFILE 'hive_extras.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_extras ORDER BY a;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 2 │ 3 │
+│ 6 │ 7 │ 8 │
+└───┴───┴───┘
+```
+
+يؤدي تعيين `input_format_hive_text_allow_variable_number_of_columns = 0` بدلًا من ذلك
+إلى فرض عدد صارم من الحقول، ويؤدي وجود صف بعدد حقول أقل من عدد حقول الجدول إلى حدوث
+استثناء أثناء التحليل.
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+| الإعداد                                                   | الوصف                                                                                                                             | الافتراضي |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `input_format_hive_text_fields_delimiter`                 | المحدد بين الحقول في Hive Text File                                                                                               | `\x01`    |
+| `input_format_hive_text_collection_items_delimiter`       | المحدد بين عناصر المجموعة (array أو map) في Hive Text File. يُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء التحليل.              | `\x02`    |
+| `input_format_hive_text_map_keys_delimiter`               | المحدد بين كل زوج مفتاح/قيمة في map في Hive Text File. يُقبل هذا الإعداد، لكنه لا يُستخدم حاليًا أثناء التحليل.                   | `\x03`    |
+| `input_format_hive_text_allow_variable_number_of_columns` | تجاهل الأعمدة الإضافية في مُدخل Hive Text (إذا كان الملف يحتوي على أعمدة أكثر من المتوقع)، واعتبار الحقول المفقودة قيماً افتراضية | `1`       |

@@ -15,6 +15,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -94,12 +95,14 @@ BlockIO InterpreterUpdateQuery::execute()
     /// the initiating user's read access is enforced on every path, including ON CLUSTER, where the
     /// remote DDL worker may not run as the initiating user.
     AccessRightsElements read_access;
+    StoragePtr resolved_table;
     auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_id)
     {
         update_query.setDatabase(resolved_id.database_name);
+        resolved_table = DatabaseCatalog::instance().tryGetTable(resolved_id, getContext());
 
-        if (StoragePtr resolved_table = DatabaseCatalog::instance().tryGetTable(resolved_id, getContext()))
+        if (resolved_table)
         {
             const auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
             const auto & metadata = *metadata_snapshot;
@@ -125,10 +128,31 @@ BlockIO InterpreterUpdateQuery::execute()
         read_access.emplace_back(AccessType::SELECT, update_query.getDatabase(), update_query.getTable());
     }
 
+    /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
+    /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
+    /// ALTER DELETE. Any other assignment - including `_row_exists = <expr>` that edits the deletion
+    /// mask - stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
+    /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
+    /// update. Reuse the table resolved above (null for a non-local ON CLUSTER target) and fail closed.
+    const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(resolved_table, getContext());
+
+    bool deletes_via_row_exists = false;
+    bool updates_columns = false;
+    for (const ASTPtr & assignment_ast : update_query.assignments->children)
+    {
+        if (row_exists_is_marker && isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
+            deletes_via_row_exists = true;
+        else
+            updates_columns = true;
+    }
+
     /// Built after `setDatabase` so the ALTER_UPDATE requirement uses the same (resolved) database as
     /// the dispatched query and the read requirements above.
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    if (deletes_via_row_exists)
+        required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
+    if (updates_columns)
+        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {

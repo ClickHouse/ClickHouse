@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'Gérer les utilisateurs du cloud'
+slug: /cloud/security/manage-cloud-users
+title: 'Gérer les utilisateurs du cloud'
+description: 'Cette page explique comment les administrateurs peuvent ajouter des utilisateurs, gérer les attributions et supprimer des utilisateurs'
+doc_type: 'guide'
+keywords: ['utilisateurs du cloud', 'gestion des accès', 'sécurité', 'autorisations', "gestion de l'équipe"]
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+Ce guide s’adresse aux utilisateurs ayant le rôle Admin dans ClickHouse Cloud.
+
+<div id="add-users">
+  ## Ajouter des utilisateurs à votre organisation
+</div>
+
+<div id="invite-users">
+  ### Inviter des utilisateurs
+</div>
+
+Les administrateurs peuvent inviter plusieurs utilisateurs à la fois et leur attribuer un ou plusieurs rôles au moment de l’invitation.
+
+<Steps>
+  <Step>
+    ### Accédez aux paramètres de l’organisation et sélectionnez Users and roles
+
+    Depuis la page des services, sélectionnez le nom de votre organisation. Dans le menu contextuel, sélectionnez l’élément de menu `Users and roles`.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Sélectionnez &#39;Invite members&#39; dans le coin supérieur gauche
+
+    Cliquez sur le bouton `Invite members` dans le coin supérieur gauche.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Saisissez l’adresse e-mail des nouveaux membres et attribuez des rôles
+
+    Saisissez les adresses e-mail en haut de l’écran d’invitation. Sélectionnez un ou plusieurs rôles à attribuer aux utilisateurs.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Cliquez sur `Send invites`
+
+    Cliquez sur `Send invites` en bas de l’écran. Les utilisateurs recevront un e-mail leur permettant de rejoindre l’organisation. Pour plus d’informations sur l’acceptation des invitations, consultez [Manage my account](/fr/products/cloud/guides/security/cloud-access-management/manage-my-account).
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### Ajouter des utilisateurs via un fournisseur d’identité SAML
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+Si votre organisation est configurée pour [SAML SSO](/fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup), suivez ces étapes pour ajouter des utilisateurs à votre organisation.
+
+1. Ajoutez des utilisateurs à votre application SAML auprès de votre fournisseur d’identité. Ils n’apparaîtront dans ClickHouse qu’après leur première connexion.
+2. Lorsqu’un utilisateur se connecte à ClickHouse Cloud, le rôle par défaut sélectionné dans votre configuration SAML lui est automatiquement attribué.
+3. Suivez les instructions de la section `Manage user role assignments` ci-dessous pour accorder les permissions
+
+<div id="enforce-saml">
+  ### Imposer l’authentification SAML uniquement
+</div>
+
+Une fois qu’au moins un utilisateur SAML de l’organisation s’est vu attribuer le rôle Admin, supprimez de l’organisation les utilisateurs utilisant d’autres méthodes d’authentification afin d’imposer l’authentification SAML uniquement pour l’organisation.
+
+<div id="manage-role-assignments">
+  ## Gérer les attributions de rôles des utilisateurs
+</div>
+
+Les utilisateurs disposant du rôle Admin peuvent mettre à jour les permissions des autres utilisateurs à tout moment.
+
+<Steps>
+  <Step>
+    ### Accédez aux paramètres de l’organisation et sélectionnez Users and roles
+
+    Depuis la page des services, sélectionnez le nom de votre organisation. Sélectionnez l’élément de menu `Users and roles` dans le menu contextuel.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Sélectionnez l’utilisateur à mettre à jour, puis Edit
+
+    Sélectionnez l’élément de menu à la fin de la ligne de l’utilisateur dont vous souhaitez modifier l’accès. Sélectionnez `edit` dans le menu contextuel.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Mettre à jour les permissions
+
+    Cliquez dans le champ `Roles` pour développer le menu. Cochez les cases pour ajouter ou supprimer des rôles pour l’utilisateur. Consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles) pour obtenir la liste des rôles et des permissions associées.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Enregistrez vos modifications
+
+    Enregistrez vos modifications à l’aide du bouton `Save changes` en bas de l’onglet.
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## Supprimer un utilisateur
+</div>
+
+<Info>
+  **Supprimer des utilisateurs SAML**
+
+  Les utilisateurs SAML qui ne sont plus affectés à l&#39;application ClickHouse dans votre fournisseur d&#39;identité ne peuvent plus se connecter à ClickHouse Cloud. Le compte n&#39;est pas supprimé de la console et doit être supprimé manuellement.
+</Info>
+
+Suivez les étapes ci-dessous pour supprimer un utilisateur.
+
+1. Sélectionnez le nom de l&#39;organisation dans le coin inférieur gauche
+2. Cliquez sur `Users and roles`
+3. Cliquez sur les trois points à côté du nom de l&#39;utilisateur, puis sélectionnez `Remove`
+4. Confirmez l&#39;action en cliquant sur le bouton `Remove user`
